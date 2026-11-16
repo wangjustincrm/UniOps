@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { createPortal } from 'react-dom'
@@ -34,7 +34,9 @@ import { buildApprovalNodes } from '@/lib/approvalTimeline'
 import type { InvoiceStatus } from '@/services/invoices'
 import { isAgreementAdmissible } from '@/lib/agreements'
 import { canRecallDocument, canWithdrawDocument } from '@/lib/documentActions'
-import { clearSubmitFailure, peekSubmitFailure } from '@/lib/submitFailure'
+import { clearSubmitFailure, errorMessage, peekSubmitFailure } from '@/lib/submitFailure'
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { ATTACHMENT_RULE, uploadProblem } from '@/lib/uploadLimits'
 
 const TYPE_LABELS: Record<AgreementType, string> = {
   house_account: 'House Account',
@@ -259,17 +261,36 @@ export default function AgreementDetailPage() {
   const departments = deptData?.items ?? []
   // Submit / Cancel refusals are shown in the banner below, not in a browser
   // pop-up (ISS-0090 follow-up: the draft page's Submit only alerted).
-  const agreementAction = useAgreementAction(id ?? '', { alertOnError: false })
+  const agreementAction = useAgreementAction(id ?? '')
   // The approval dialog and Recall show the server's refusal on the page
   // instead of in an alert().
-  const agreementDecision = useAgreementAction(id ?? '', { alertOnError: false })
-  const agreementRecall = useAgreementAction(id ?? '', { alertOnError: false })
+  const agreementDecision = useAgreementAction(id ?? '')
+  const agreementRecall = useAgreementAction(id ?? '')
   const { user } = useAuthStore()
   const [pendingAction, setPendingAction] = useState<ApprovalAction | null>(null)
   // Why New Agreement's Submit for Approval was refused, when it brought the
   // saved draft here instead (ISS-0090).
-  const [createSubmitError] = useState<string | null>(() => peekSubmitFailure(id))
+  const [createSubmitError, setCreateSubmitError] = useState<string | null>(() => peekSubmitFailure(id))
   useEffect(() => { clearSubmitFailure(id) }, [id])
+  // A refusal describes the agreement as it was when it was refused. This
+  // page stays mounted while the user fixes it on Edit (Save & Submit) or
+  // acts on it elsewhere, so once the agreement itself changes — status or
+  // any saved edit — the old red banner no longer applies and is cleared
+  // (ISS-0090 retest: "Add at least one milestone stage…" stayed after a
+  // successful Save & Submit, and after Recall).
+  const changeKey = agreement ? `${agreement.status}|${agreement.updated_at}` : ''
+  const lastChangeKey = useRef(changeKey)
+  const resetAction = agreementAction.reset
+  const resetRecall = agreementRecall.reset
+  useEffect(() => {
+    if (!changeKey) return
+    if (lastChangeKey.current && lastChangeKey.current !== changeKey) {
+      resetAction()
+      resetRecall()
+      setCreateSubmitError(null)
+    }
+    lastChangeKey.current = changeKey
+  }, [changeKey, resetAction, resetRecall])
 
   const { data: invoicesData, isLoading: invoicesLoading } = useInvoices(
     agreement ? { agreement_id: agreement.id } : undefined,
@@ -436,6 +457,9 @@ export default function AgreementDetailPage() {
   const { data: attachmentsData, isLoading: attachmentsLoading } = useAgreementAttachments(agreement?.id ?? '')
   const attachments = attachmentsData ?? []
   const uploadAttachment = useUploadAgreementAttachment(agreement?.id ?? '')
+  const confirmDlg = useConfirmDialog()
+  // A picked file the upload rule refuses (ISS-0093), shown under the button.
+  const [attachmentProblem, setAttachmentProblem] = useState<string | null>(null)
   const deleteAttachment = useDeleteAgreementAttachment(agreement?.id ?? '')
 
   const handleConfirm = (action: ApprovalAction, comment: string) => {
@@ -529,11 +553,15 @@ export default function AgreementDetailPage() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => {
-                  if (confirm(`Recall ${agreement.number}? It will be moved back to Draft; the next submit starts from the first approval step.`)) {
-                    agreementRecall.mutate({ action: 'recall' })
-                  }
-                }}
+                onClick={() => confirmDlg.ask({
+                  title: 'Recall Agreement',
+                  subtitle: agreement.number,
+                  message: `Recall ${agreement.number}? It will be moved back to Draft; the next submit starts from the first approval step.`,
+                  confirmLabel: 'Recall',
+                  tone: 'primary',
+                  // Closes at once; a refusal shows beside the Recall button.
+                  onConfirm: () => agreementRecall.mutate({ action: 'recall' }),
+                })}
                 disabled={agreementRecall.isPending}
               >
                 <RotateCcw className="h-3.5 w-3.5" />
@@ -823,17 +851,32 @@ export default function AgreementDetailPage() {
                   <input
                     id="agreement-attachment-upload"
                     type="file"
+                    accept={ATTACHMENT_RULE.accept}
                     className="sr-only"
                     disabled={uploadAttachment.isPending}
                     onChange={(e) => {
                       const file = e.target.files?.[0]
-                      if (file) uploadAttachment.mutate(file)
                       e.target.value = ''
+                      if (!file) return
+                      // Same rule as the other upload areas (ISS-0093).
+                      const problem = uploadProblem(file, ATTACHMENT_RULE)
+                      setAttachmentProblem(problem)
+                      deleteAttachment.reset()
+                      if (!problem) uploadAttachment.mutate(file)
                     }}
                   />
                 </label>
               )}
             </div>
+            {canWrite && <p className="-mt-2 mb-3 text-xs text-neutral-400">{ATTACHMENT_RULE.hint}</p>}
+            {attachmentProblem && <p role="alert" className="mb-3 text-xs text-danger-600">{attachmentProblem}</p>}
+            {(uploadAttachment.isError || deleteAttachment.isError) && (
+              <p role="alert" className="mb-3 text-xs text-danger-600">
+                {uploadAttachment.isError
+                  ? errorMessage(uploadAttachment.error, 'Failed to upload attachment')
+                  : errorMessage(deleteAttachment.error, 'Failed to delete attachment')}
+              </p>
+            )}
             {attachmentsLoading ? (
               <div className="py-8 text-center text-sm text-neutral-400">Loading…</div>
             ) : attachments.length === 0 ? (
@@ -858,7 +901,7 @@ export default function AgreementDetailPage() {
                     {canWrite && (
                       <button
                         type="button"
-                        onClick={() => deleteAttachment.mutate(att.id)}
+                        onClick={() => { uploadAttachment.reset(); deleteAttachment.mutate(att.id) }}
                         disabled={deleteAttachment.isPending}
                         className="text-neutral-300 hover:text-danger-500 disabled:opacity-40"
                       >
@@ -943,6 +986,8 @@ export default function AgreementDetailPage() {
           </div>
         </div>
       )}
+
+      {confirmDlg.dialog}
 
       {/* Approval modal */}
       {pendingAction && (

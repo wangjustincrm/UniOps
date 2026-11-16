@@ -86,7 +86,6 @@ export function useCreatePo() {
       queryClient.invalidateQueries({ queryKey: ['pos'] })
       queryClient.invalidateQueries({ queryKey: ['prs'] })
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to create purchase order'),
   })
 }
 
@@ -100,7 +99,6 @@ export function useUpdatePo() {
       queryClient.invalidateQueries({ queryKey: ['pos'] })
       queryClient.invalidateQueries({ queryKey: ['pos', id] })
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to update purchase order'),
   })
 }
 
@@ -118,9 +116,9 @@ export function useUpdatePoImportedDetails(id: string) {
   })
 }
 
-// alertOnError: false leaves the refusal to the caller, which shows it on the
-// page (mutation.error) instead of in a browser alert.
-export function usePoAction(id: string, { alertOnError = true }: { alertOnError?: boolean } = {}) {
+// No onError alert here or on create / update / place order: every caller
+// shows a refusal on the page (mutation.error / mutateAsync).
+export function usePoAction(id: string) {
   const queryClient = useQueryClient()
 
   return useMutation({
@@ -131,9 +129,6 @@ export function usePoAction(id: string, { alertOnError = true }: { alertOnError?
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
-    onError: alertOnError
-      ? (err: unknown) => alert(err instanceof Error ? err.message : 'Purchase order action failed')
-      : undefined,
   })
 }
 
@@ -181,7 +176,6 @@ export function usePlaceOrder(id: string) {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to place order'),
   })
 }
 

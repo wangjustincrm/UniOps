@@ -160,7 +160,6 @@ export function useVoidReceipt(agreementId: string) {
     onSuccess: async () => {
       await invalidateReceiptViews(queryClient, agreementId)
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to remove receipt'),
   })
 }
 
@@ -173,9 +172,11 @@ export function useApReviewReceipt(agreementId: string) {
     onSuccess: async () => {
       await invalidateReceiptViews(queryClient, agreementId)
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to record AP review'),
   })
 }
+
+// None of these mutations alerts: each caller shows a refusal on its page
+// (mutation.error / mutateAsync), never in a browser pop-up.
 
 // ─── Cross-agreement variants (Task 10 fix round 1) ────────────────────────
 //
@@ -199,7 +200,6 @@ export function useVoidReceiptAny() {
     onSuccess: async (_data, { agreementId }) => {
       await invalidateReceiptViews(queryClient, agreementId)
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to remove receipt'),
   })
 }
 
@@ -212,7 +212,6 @@ export function useApReviewReceiptAny() {
     onSuccess: async (_data, { agreementId }) => {
       await invalidateReceiptViews(queryClient, agreementId)
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to record AP review'),
   })
 }
 
@@ -233,7 +232,6 @@ export function useUpdateReceiptAny() {
     onSuccess: async (_data, { agreementId }) => {
       await invalidateReceiptViews(queryClient, agreementId)
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to save receipt'),
   })
 }
 
@@ -253,7 +251,6 @@ export function useUploadReceiptAttachment() {
       await queryClient.invalidateQueries({ queryKey: receiptAttachmentsQueryKey(agreementId, receiptId) })
       await invalidateReceiptViews(queryClient, agreementId)
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to upload photo'),
   })
 }
 
@@ -267,6 +264,5 @@ export function useDeleteReceiptAttachment() {
       await queryClient.invalidateQueries({ queryKey: receiptAttachmentsQueryKey(agreementId, receiptId) })
       await invalidateReceiptViews(queryClient, agreementId)
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to delete photo'),
   })
 }

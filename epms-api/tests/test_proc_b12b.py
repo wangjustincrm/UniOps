@@ -46,7 +46,7 @@ async def test_exception_reason_compares_pre_tax_figures(admin_client):
     body = await _exception_invoice(admin_client, "VND-B12B-EXC-01")
     assert body["status"] == "exception"
     reason = body["exception_reason"]
-    assert "invoice pre-tax 44.00 vs PO pre-tax 40.00" in reason, reason
+    assert "all invoices pre-tax 44.00 vs PO pre-tax 40.00" in reason, reason
     assert "49.72" not in reason
 
 
@@ -70,5 +70,5 @@ async def test_reviewed_exception_reason_compares_pre_tax_figures(admin_client, 
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "exception"
     reason = r.json()["exception_reason"]
-    assert "invoice pre-tax 44.00 vs PO pre-tax 40.00" in reason, reason
+    assert "all invoices pre-tax 44.00 vs PO pre-tax 40.00" in reason, reason
     assert "49.72" not in reason

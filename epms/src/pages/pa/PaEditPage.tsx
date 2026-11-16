@@ -22,6 +22,7 @@ import { DerivedPaLinesTable } from './DerivedPaLinesTable'
 import { FreightPaEditForm } from './FreightPaEditForm'
 import { DirectPaEditForm } from './DirectPaEditForm'
 import { derivePaLines, derivedLinesTotal, invoiceOwnLines } from '@/lib/paLinesFromInvoices'
+import { paEditAutoAmounts } from './paEditAmounts'
 import { dueWindowViolation } from './invoiceDueWindow'
 import { invoiceClaims, poLinesSubtotal } from './invoiceClaims'
 
@@ -92,6 +93,9 @@ function PoPaEditPage() {
   const [paType, setPaType]                         = useState<'regular' | 'prepayment'>('regular')
   const [prepaymentPct, setPrepaymentPct]           = useState('50')
   const [expectedSettlement, setExpectedSettlement] = useState('')
+  // The date box lets a 5-digit year through (03/01/22026); the server then
+  // answered with its parser's text and the field name (ISS-0251).
+  const settlementDateInvalid = expectedSettlement !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(expectedSettlement)
 
   // ── Step 3 — Charge breakdown & details ───────────────────────────────────
   const [title, setTitle]               = useState('')
@@ -101,6 +105,11 @@ function PoPaEditPage() {
   // Set once the user ticks or unticks an invoice. Until then the saved
   // amounts stand; from then on they follow the selection (ISS-0113).
   const [invoicesTouched, setInvoicesTouched] = useState(false)
+  // Same for the PO lines: once one is ticked or unticked, a PA with no
+  // invoice ticked takes its Pre-tax from the ticked lines (ISS-0261).
+  const [linesTouched, setLinesTouched] = useState(false)
+  // Same for the prepayment %: the saved tax stands until the % is changed.
+  const [pctTouched, setPctTouched] = useState(false)
   const [shippingAmount, setShipping]   = useState('')
   const [otherCharges, setOther]        = useState('')
   const [otherChargesNote, setOtherNote]= useState('')
@@ -154,6 +163,9 @@ function PoPaEditPage() {
     if (!pa || initialized) return
     setEditPoIds(pa.po_ids?.length ? [...pa.po_ids] : (pa.po_id ? [pa.po_id] : []))
     setSelectedInvoiceIds(new Set(pa.invoice_ids))
+    // The GRs already linked. Left empty they showed unticked and Save sent
+    // gr_ids: [], unlinking them (ISS-0238; PA-EDIT-004).
+    setSelectedGrIds(new Set(pa.gr_ids ?? []))
     setSelectedLineIds(new Set(pa.line_items.flatMap((l) => (l.po_line_id ? [l.po_line_id] : []))))
     setPrepaymentPct(pa.prepayment_pct?.toString() ?? '50')
     setExpectedSettlement(pa.expected_settlement_date ?? '')
@@ -279,7 +291,10 @@ function PoPaEditPage() {
 
   // After a change to the invoice selection, Pre-tax and Tax follow the ticked
   // invoices, as on New PA (PRD §3.15.2). Tax a user types afterwards sticks.
-  // The saved tax is kept until the % changes; then it follows, unless typed.
+  // The saved tax is kept until the % changes; then it follows, unless typed
+  // on this page. The saved tax counts as "edited" only until then — it was
+  // for the old %, and keeping it left Tax at 30% while Pre-tax moved to 40%
+  // (ISS-0133).
   const prepayPctRef = useRef<string | null>(null)
   useEffect(() => {
     if (!isPrepayment || !initialized) return
@@ -291,18 +306,26 @@ function PoPaEditPage() {
 
   useEffect(() => {
     // A prepayment's amount follows its %, not the invoices (ISS-0133).
-    if (!invoicesTouched || isPrepayment) return
-    const linked = selectedInvoices.length > 0
-    const auto = linked ? (derivedTotal ?? invoiceSubtotal) : (isAgreementMode ? 0 : autoSubtotal)
-    setSubtotal(auto > 0 ? String(Number(auto.toFixed(2))) : '')
-    if (!taxManuallyEdited && linked) setTaxAmount(invoiceTax.toFixed(2))
-    else if (!taxManuallyEdited && isAgreementMode) setTaxAmount('')
-  }, [invoicesTouched, invoiceSubtotal, invoiceTax, derivedTotal, selectedInvoices.length]) // eslint-disable-line react-hooks/exhaustive-deps
+    // A line ticked beside ticked invoices changes nothing: they set the amount.
+    const linesDecide = linesTouched && selectedInvoices.length === 0
+    if (!(invoicesTouched || linesDecide) || isPrepayment) return
+    // With no invoice ticked, Pre-tax follows the ticked PO lines and Tax the
+    // pre-tax at the PO's rate (CAD only), as on New PA; with no line either,
+    // both are empty. Unticking a line used to change nothing (ISS-0261).
+    const auto = paEditAutoAmounts({
+      invoiceCount: selectedInvoices.length, derivedTotal, invoiceSubtotal, invoiceTax,
+      poLinesSubtotal: autoSubtotal, isAgreementMode, currency: po?.currency, taxRate: paTaxRate,
+    })
+    setSubtotal(auto.subtotal)
+    if (!taxManuallyEdited) setTaxAmount(auto.tax)
+  }, [invoicesTouched, linesTouched, invoiceSubtotal, invoiceTax, derivedTotal, selectedInvoices.length, autoSubtotal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (isPrepayment || taxManuallyEdited || (invoicesTouched && selectedInvoices.length > 0)) return
     if (po?.currency === 'CAD' && subtotalNum > 0) {
       setTaxAmount((subtotalNum * paTaxRate).toFixed(2))
+    } else if (invoicesTouched || linesTouched) {
+      setTaxAmount('')   // Pre-tax cleared → no tax left on its own (ISS-0261)
     }
   }, [subtotalNum, po?.currency, paTaxRate, taxManuallyEdited])  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -317,6 +340,8 @@ function PoPaEditPage() {
       errors.push('Prepayment percentage must be between 1 and 100')
     if (paType === 'prepayment' && !expectedSettlement)
       errors.push('Expected settlement date is required for prepayment')
+    if (paType === 'prepayment' && settlementDateInvalid)
+      errors.push('Expected Settlement Date is not a valid date')
     if (paymentTotal <= 0)
       errors.push('Total payment amount must be greater than zero')
   }
@@ -325,7 +350,7 @@ function PoPaEditPage() {
     setSelectedInvoiceIds((prev) => { const n = new Set(prev); if (n.has(invId)) n.delete(invId); else n.add(invId); return n })
     if (!invoicesTouched) {
       setInvoicesTouched(true)
-      setTaxManuallyEdited(false)   // the saved tax was for the old selection
+      if (!linesTouched) setTaxManuallyEdited(false)   // the saved tax was for the old selection
     }
   }
   const toggleGr = (grId: string) => {
@@ -333,6 +358,10 @@ function PoPaEditPage() {
   }
   const toggleLine = (lineId: string) => {
     setSelectedLineIds((prev) => { const n = new Set(prev); if (n.has(lineId)) n.delete(lineId); else n.add(lineId); return n })
+    if (!linesTouched && selectedInvoices.length === 0) {
+      setLinesTouched(true)
+      if (!invoicesTouched) setTaxManuallyEdited(false)   // the saved tax was for the old selection
+    }
   }
 
   const handleSave = async (andSubmit: boolean) => {
@@ -346,7 +375,7 @@ function PoPaEditPage() {
     if (!title.trim() || subtotalNum <= 0 || taxNum < 0 || taxMissing || paymentTotal <= 0) return
     // Same bounds as the on-page message above (ISS-0115: 120% reached the
     // server and came back as a raw pop-up).
-    if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement || prepayPctNum <= 0 || prepayPctNum > 100)) return
+    if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement || settlementDateInvalid || prepayPctNum <= 0 || prepayPctNum > 100)) return
     // PO route only — agreement PAs are exempt. The notice under the invoice
     // list already names the two ends.
     if (!isAgreementMode && dueWindowViolation(poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id)))) return
@@ -820,7 +849,13 @@ function PoPaEditPage() {
                         <input
                           type="number" min={1} max={100} step={1}
                           value={prepaymentPct}
-                          onChange={(e) => setPrepaymentPct(e.target.value)}
+                          onChange={(e) => {
+                            setPrepaymentPct(e.target.value)
+                            if (!pctTouched) {
+                              setPctTouched(true)
+                              setTaxManuallyEdited(false)   // the saved tax was for the old %
+                            }
+                          }}
                           className={cn(
                             'h-9 w-full pl-3 pr-8 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
                             submitted && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100) ? 'border-danger-400' : 'border-neutral-300'
@@ -835,13 +870,17 @@ function PoPaEditPage() {
                       </label>
                       <input
                         type="date"
+                        max="9999-12-31"
                         value={expectedSettlement}
                         onChange={(e) => setExpectedSettlement(e.target.value)}
                         className={cn(
                           'h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                          submitted && !expectedSettlement ? 'border-danger-400' : 'border-neutral-300'
+                          submitted && (!expectedSettlement || settlementDateInvalid) ? 'border-danger-400' : 'border-neutral-300'
                         )}
                       />
+                      {submitted && settlementDateInvalid && (
+                        <p className="text-xs text-danger-600">Expected Settlement Date is not a valid date</p>
+                      )}
                     </div>
                   </div>
                 </div>

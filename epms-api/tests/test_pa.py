@@ -816,6 +816,49 @@ async def test_net_zero_settlement_over_staged_prepayments_auto_reconciles(admin
 
 
 @pytest.mark.asyncio
+async def test_overpaid_staged_settlement_applied_at_final_value_goes_to_finance_bp(admin_client, test_engine):
+    """ISS-0237 / ISS-0133: prepaid 120 + 280 = 400, final invoice 300. New PA
+    now pre-fills Prepayment applied = min(total prepaid, final) = 300, so the
+    net is 0 — the settlement is accepted, waits in `submitted` with a
+    confirm_settlement task for the Finance BP pool, and the variance it
+    carries is final − TOTAL prepaid (−100), not final − applied (PP-013/016)."""
+    import uuid as _uuid
+    from app.crud import pa as pa_crud
+    from app.models.task import Task
+
+    v = await _make_vendor(admin_client, "VND-PA-STAGE-OVER")
+    po = await _make_po(admin_client, v["id"])
+    a = (await _prepay_pct(admin_client, po["id"], "30", "120.00")).json()
+    b = (await _prepay_pct(admin_client, po["id"], "70", "280.00")).json()
+    await _mark_processed(test_engine, a["id"], b["id"])
+
+    # The whole pool (400) is refused against a 300 invoice: net negative.
+    whole = await admin_client.post(PA_URL, json=_pa_payload(
+        po["id"], pa_type="settlement", prepayment_pa_id=a["id"],
+        subtotal="300.00", tax_amount="0.00", prepayment_applied="400.00",
+        receipt_override=True, receipt_override_reason="settlement test setup"))
+    assert whole.status_code == 422, whole.text
+
+    s = await admin_client.post(PA_URL, json=_pa_payload(
+        po["id"], pa_type="settlement", prepayment_pa_id=a["id"],
+        subtotal="300.00", tax_amount="0.00", prepayment_applied="300.00",
+        receipt_override=True, receipt_override_reason="settlement test setup"))
+    assert s.status_code == 201, s.text
+    assert float(s.json()["payment_amount"]) == pytest.approx(0.0)
+    assert s.json()["status"] == "submitted"
+
+    async with async_sessionmaker(test_engine, class_=AsyncSession)() as db:
+        tasks = (await db.execute(select(Task).where(
+            Task.document_id == _uuid.UUID(s.json()["id"]),
+            Task.type == "confirm_settlement"))).scalars().all()
+        assert len(tasks) == 1
+        assert tasks[0].assigned_role == "finance_bp"
+        assert "-100" in tasks[0].description
+        for pid in (a["id"], b["id"]):
+            assert (await pa_crud.get_by_id(db, _uuid.UUID(pid))).settlement_status == "pending"
+
+
+@pytest.mark.asyncio
 async def test_settlement_refused_while_another_stage_is_unpaid(admin_client, test_engine):
     v = await _make_vendor(admin_client, "VND-PA-STAGE-06")
     po = await _make_po(admin_client, v["id"])

@@ -38,6 +38,8 @@ export interface ApiTask {
   document_id: string
   document_number: string
   assigned_role: string
+  // Set when the step went to one person; null = a role pool.
+  assigned_user_id?: string | null
   title: string
   description?: string
   due_date?: string

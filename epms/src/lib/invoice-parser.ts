@@ -63,9 +63,10 @@ export type ParseResult =
   | { ok: false; error: string; kind: ParseFailureKind }
 
 // Shape returned by expense-api POST /api/v1/ocr/invoice (see ocr_service.extract_invoice).
-interface OcrLineItem {
+export interface OcrLineItem {
   description?: string | null
   quantity?:    number | null
+  unit?:        string | null   // as printed; null when the invoice shows none (ISS-0232)
   unit_price?:  number | null
   amount?:      number | null
   tax_amount?:  number | null
@@ -119,6 +120,20 @@ function readTotalCheck(raw: OcrInvoiceResponse['total_check']): ParsedTotalChec
   }
 }
 
+/** The extracted lines as the Upload Invoice form's rows. The unit is the one
+ *  printed on the invoice, or null (an expense-api older than ISS-0232 sends
+ *  none) — the form then leaves Unit blank for the user to fill. */
+export function readLineItems(raw: OcrLineItem[] | null | undefined): ParsedLineItem[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null
+  return raw.map((li) => ({
+    description: li.description ?? '',
+    quantity:    li.quantity ?? 1,
+    unit:        typeof li.unit === 'string' && li.unit.trim() ? li.unit.trim() : null,
+    unit_price:  li.unit_price ?? 0,
+    line_total:  li.amount ?? 0,
+  }))
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 /**
@@ -155,16 +170,7 @@ export async function parseInvoiceFile(file: File): Promise<ParseResult> {
 
     const r = await res.json() as OcrInvoiceResponse
 
-    const lineItems: ParsedLineItem[] | null =
-      Array.isArray(r.line_items) && r.line_items.length > 0
-        ? r.line_items.map((li) => ({
-            description: li.description ?? '',
-            quantity:    li.quantity ?? 1,
-            unit:        null,
-            unit_price:  li.unit_price ?? 0,
-            line_total:  li.amount ?? 0,
-          }))
-        : null
+    const lineItems = readLineItems(r.line_items)
 
     const fields: ParsedInvoiceFields = {
       vendorName:          r.vendor_name ?? null,

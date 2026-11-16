@@ -127,6 +127,34 @@ async def get_by_erp_id(db: AsyncSession, erp_id: str) -> Vendor | None:
     return result.scalar_one_or_none()
 
 
+async def find_similar(
+    db: AsyncSession,
+    *,
+    name: str | None,
+    erp_id: str | None,
+    exclude_id: uuid.UUID | None = None,
+) -> tuple[list[Vendor], list[Vendor]]:
+    """Suppliers that look like the one being added or edited (ISS-0268): the
+    same name ignoring case and spaces, or the same ERP ID ignoring case and
+    surrounding spaces. Inactive vendors count — a deactivated duplicate is
+    still a duplicate. Returns (name matches, ERP ID matches)."""
+    base = select(Vendor).where(Vendor.is_supplier.is_(True))
+    if exclude_id is not None:
+        base = base.where(Vendor.id != exclude_id)
+    by_name: list[Vendor] = []
+    by_erp: list[Vendor] = []
+    key = "".join((name or "").split()).lower()
+    if key:
+        squashed = func.lower(func.regexp_replace(Vendor.name, r"\s+", "", "g"))
+        by_name = list((await db.execute(
+            base.where(squashed == key).order_by(Vendor.code))).scalars().all())
+    erp = (erp_id or "").strip().lower()
+    if erp:
+        by_erp = list((await db.execute(
+            base.where(func.lower(func.trim(Vendor.erp_id)) == erp).order_by(Vendor.code))).scalars().all())
+    return by_name, by_erp
+
+
 # NOTE: vendor master is OWNED by mdm-api (B3 / P1). EPMS no longer writes
 # business_partners directly — create/update/import forward to mdm /partners
 # (see api/v1/vendors.py). This module is read-only on purpose.

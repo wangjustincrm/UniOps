@@ -21,6 +21,7 @@ import {
 } from './freightUi'
 import { SortTh, useSort, sortParams } from '@uniops/shell'
 import { ShipmentAttachmentsPanel, StagedShipmentAttachments } from './ShipmentAttachments'
+import { useConfirmDialog, useNoticeDialog } from '@/components/ui/ConfirmDialog'
 
 type ShipmentSortKey =
   | 'carrier' | 'tracking_no' | 'direction' | 'department' | 'created_by_name'
@@ -53,10 +54,18 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
   const total = data?.total ?? 0
 
   const voidShipment = useVoidShipment()
+  const confirmDlg = useConfirmDialog()
   const handleVoid = (s: FreightShipment) => {
     if (voidShipment.isPending) return
-    if (!window.confirm(`Void shipment ${s.tracking_no}? It will no longer be matched to any invoice.`)) return
-    voidShipment.mutate(s.id, { onError: (e) => alert(errorMessage(e, 'Could not void the shipment')) })
+    // Asked in-page; a refusal shows in the dialog (both were browser pop-ups).
+    confirmDlg.ask({
+      title: 'Void Shipment',
+      subtitle: s.tracking_no,
+      message: `Void shipment ${s.tracking_no}? It will no longer be matched to any invoice.`,
+      confirmLabel: 'Void',
+      failureFallback: 'Could not void the shipment',
+      onConfirm: () => voidShipment.mutateAsync(s.id),
+    })
   }
 
   return (
@@ -198,6 +207,7 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
         <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
       </div>
 
+      {confirmDlg.dialog}
       {dialog && (
         <ShipmentDialog
           key={dialog.mode === 'edit' ? dialog.shipment.id : 'new'}
@@ -244,6 +254,8 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
   const createShipment = useCreateShipment()
   const updateShipment = useUpdateShipment()
   const busy = createShipment.isPending || updateShipment.isPending || attaching
+  const confirmDlg = useConfirmDialog()
+  const notice = useNoticeDialog()
 
   // Latest department the user picked — a slow default-cost-center response for
   // a department they have since changed away from must not overwrite anything.
@@ -319,13 +331,28 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
     !!costCenterId && !!defaultInfo && defaultInfo.budgeted_cost_center_ids.length > 0 &&
     !defaultInfo.budgeted_cost_center_ids.includes(costCenterId)
 
-  const save = async (addAnother: boolean) => {
+  const save = (addAnother: boolean) => {
     if (busy) return
     setError(null)
     if (!carrierId) return setError('Choose the carrier.')
     if (!tracking.trim()) return setError('Enter the tracking number.')
     if (!costCenterId) return setError('Choose the cost center that pays for this shipment.')
-    if (ccOutsideBudget && !window.confirm('This cost center has no freight budget — continue?')) return
+    if (ccOutsideBudget) {
+      // Asked in-page (was the browser's confirm); the dialog closes at once
+      // and the save reports on the form as before.
+      confirmDlg.ask({
+        title: 'No freight budget',
+        message: 'This cost center has no freight budget — continue?',
+        confirmLabel: 'Continue',
+        tone: 'primary',
+        onConfirm: () => { void proceed(addAnother) },
+      })
+      return
+    }
+    void proceed(addAnother)
+  }
+
+  const proceed = async (addAnother: boolean) => {
     try {
       if (isEdit && shipment) {
         await updateShipment.mutateAsync({
@@ -363,8 +390,11 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
         setAttaching(false)
         qc.invalidateQueries({ queryKey: ['freight', 'shipments'] })
         if (failed.length) {
-          window.alert(`Shipment ${created.tracking_no} was saved, but these files could not be attached:\n\n`
-            + failed.join('\n') + '\n\nOpen the shipment with View to add them again.')
+          await notice.show({
+            title: 'Files not attached',
+            message: `Shipment ${created.tracking_no} was saved, but these files could not be attached:\n\n`
+              + failed.join('\n') + '\n\nOpen the shipment with View to add them again.',
+          })
         }
       }
       setLabelFile(null)
@@ -501,6 +531,8 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
           </Button>
         </div>
       </div>
+      {confirmDlg.dialog}
+      {notice.dialog}
     </Modal>
   )
 }

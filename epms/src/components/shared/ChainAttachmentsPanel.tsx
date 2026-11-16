@@ -12,6 +12,7 @@ import {
   fetchAuthedBlob, saveBlob, downloadAllAsZip, printFiles, type BundleFile,
 } from '@/lib/attachmentBundle'
 import { formatBytes } from '@/lib/utils'
+import { ActionMessage } from '@/components/ui/ConfirmDialog'
 
 const DOC_ICON: Record<ChainDocGroup['docType'], React.ReactNode> = {
   PR: <FileText className="h-3.5 w-3.5" />,
@@ -44,49 +45,57 @@ export function ChainAttachmentsPanel({
   const [busy, setBusy] = useState<string | null>(null)
   const [rowBusy, setRowBusy] = useState<string | null>(null)
   const isBusy = busy !== null || rowBusy !== null
+  // What a download / print did, shown under the toolbar (were browser alerts).
+  const [message, setMessage] = useState<{ tone: 'error' | 'warning'; text: string } | null>(null)
+  const fail = (text: string) => setMessage({ tone: 'error', text })
+  const partly = (text: string) => setMessage({ tone: 'warning', text })
 
   const allFiles: BundleFile[] = groups.flatMap((g) => g.attachments.map((a) => toBundle(g, a)))
 
   const handleSingleDownload = async (a: ChainAttachment) => {
     setRowBusy(a.id)
+    setMessage(null)
     try {
       const blob = await fetchAuthedBlob(a.fetchUrl, token)
       saveBlob(blob, a.filename)
-    } catch { alert(`Download failed: ${a.filename}`) }
+    } catch { fail(`Download failed: ${a.filename}`) }
     finally { setRowBusy(null) }
   }
 
   const handleSinglePrint = async (g: ChainDocGroup, a: ChainAttachment) => {
     setRowBusy(a.id)
+    setMessage(null)
     try {
       const r = await printFiles([toBundle(g, a)], token)
-      if (r.ok === 0) alert('Nothing printable in this file.')
-    } catch { alert(`Print failed: ${a.filename}`) }
+      if (r.ok === 0) fail('Nothing printable in this file.')
+    } catch { fail(`Print failed: ${a.filename}`) }
     finally { setRowBusy(null) }
   }
 
   const handleDownloadAll = async () => {
     setBusy('Zipping…')
+    setMessage(null)
     try {
       const r = await downloadAllAsZip(
         allFiles, token, `PA-${paNumber}-attachments.zip`,
         (done, t) => setBusy(`Zipping ${done}/${t}…`),
       )
-      if (r.skipped) alert(`Downloaded ${r.ok} file(s). Skipped ${r.skipped} that failed.`)
-    } catch { alert('Download-all failed.') }
+      if (r.skipped) partly(`Downloaded ${r.ok} file(s). Skipped ${r.skipped} that failed.`)
+    } catch { fail('Download-all failed.') }
     finally { setBusy(null) }
   }
 
   const handlePrintAll = async () => {
     setBusy('Preparing print…')
+    setMessage(null)
     try {
       const r = await printFiles(
         allFiles, token,
         (done, t) => setBusy(`Preparing print ${done}/${t}…`),
       )
-      if (r.ok === 0) alert('No printable files in this chain.')
-      else if (r.skipped) alert(`Printing ${r.ok} file(s). Skipped ${r.skipped} non-printable.`)
-    } catch { alert('Print-all failed.') }
+      if (r.ok === 0) fail('No printable files in this chain.')
+      else if (r.skipped) partly(`Printing ${r.ok} file(s). Skipped ${r.skipped} non-printable.`)
+    } catch { fail('Print-all failed.') }
     finally { setBusy(null) }
   }
 
@@ -119,6 +128,12 @@ export function ChainAttachmentsPanel({
             </span>
           )}
         </div>
+
+        {message && (
+          <ActionMessage tone={message.tone} onDismiss={() => setMessage(null)} className="mx-4 mt-3 text-xs">
+            {message.text}
+          </ActionMessage>
+        )}
 
         <div className="flex-1 overflow-auto px-4 py-3">
           {isLoading ? (

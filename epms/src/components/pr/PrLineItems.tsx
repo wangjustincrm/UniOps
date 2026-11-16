@@ -429,7 +429,9 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
               <th className="w-16 px-3 py-2.5 text-left text-xs font-semibold text-neutral-600">
                 Qty <span className="text-danger-600">*</span>
               </th>
-              <th className="w-16 px-3 py-2.5 text-left text-xs font-semibold text-neutral-600">Unit</th>
+              {/* Wide enough to read the chosen unit: at w-16 the select showed
+                  only its first letter beside the arrow (ISS-0225). */}
+              <th className="w-28 px-3 py-2.5 text-left text-xs font-semibold text-neutral-600">Unit</th>
               <th className="w-28 px-3 py-2.5 text-right text-xs font-semibold text-neutral-600">
                 Unit Price <span className="text-danger-600">*</span>
               </th>
@@ -559,7 +561,7 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
                     <select
                       value={item.unit}
                       onChange={(e) => update(i, { unit: e.target.value })}
-                      className="h-8 w-full rounded border border-neutral-300 bg-white px-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600"
+                      className="h-8 w-full min-w-[5rem] rounded border border-neutral-300 bg-white px-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600"
                     >
                       {unitOptions(item.unit).map((u) => (
                         <option key={u} value={u}>{u}</option>

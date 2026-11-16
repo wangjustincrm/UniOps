@@ -65,7 +65,9 @@ async def test_enrich_pool_task_has_null_approver_and_non_in_review_is_none(test
         await enrich_current_step(db, "pr", items)
 
     assert items[0].current_step["label"] == "Finance BP"
-    assert items[0].current_step["approver_name"] is None
+    # A pool step names the post's current holders (ISS-0085/0088, covered in
+    # test_current_step_pool.py); which users hold finance_bp depends on what
+    # other tests left in the shared DB, so only the label is pinned here.
     assert items[1].current_step is None   # not in_review
     assert items[2].current_step is None   # in_review but no open task
 

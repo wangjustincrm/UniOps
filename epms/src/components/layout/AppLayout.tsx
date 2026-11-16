@@ -82,7 +82,7 @@ export function AppLayout() {
   if (isEmbedded) {
     return (
       <div className="flex h-screen flex-col overflow-hidden bg-[#FAFBFC]">
-        <main id="main-content" className="flex-1 overflow-y-auto p-6" tabIndex={-1}>
+        <main id="main-content" className="flex-1 overflow-y-auto p-6 pb-20 sm:pb-6" tabIndex={-1}>
           <div className="mx-auto max-w-[1440px]">
             <Routes>
               {epmsRoutes.map((r) => (
@@ -124,7 +124,9 @@ export function AppLayout() {
             <TabRefreshButton />
           </div>
           <main id="main-content" className="relative flex-1 overflow-hidden" tabIndex={-1}>
-            <TabHost routes={tabRoutes} pageClassName="mx-auto max-w-[1440px] p-6" />
+            {/* pb-20 below sm: the floating chat button (48px, 24px from the bottom) would
+                otherwise cover the last controls on a phone, e.g. Invoice Detail → Add. */}
+            <TabHost routes={tabRoutes} pageClassName="mx-auto max-w-[1440px] p-6 pb-20 sm:pb-6" />
           </main>
         </div>
 

@@ -18,11 +18,12 @@ import { usePo, useUpdatePo, usePoAction, usePoAttachments, useUploadPoAttachmen
 import { poAttachmentService } from '@/services/poAttachments'
 import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { poService } from '@/services/po'
-import { useVendors } from '@/hooks/useVendors'
+import { useVendor, useVendors } from '@/hooks/useVendors'
 import { useTaxCodes } from '@/hooks/useTaxCodes'
 import type { ApiVendor } from '@/services/vendors'
 import { PaymentTermsField } from '@/components/po/PaymentTermsField'
 import { formatPaymentTerms } from '@/lib/paymentTerms'
+import { clearSubmitFailure, errorMessage, peekSubmitFailure } from '@/lib/submitFailure'
 
 const TYPE_LABELS: Record<number, string> = {
   1: 'Type 1 — Raw Mat./Packaging',
@@ -69,6 +70,10 @@ export default function PoEditPage() {
   const [lineErrors, setLineErrors] = useState<Record<string, { description?: string; qty?: string; unitPrice?: string }>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // A refusal shown beside the buttons — including one New PO hands over when
+  // it saved the draft but the submit was refused (ISS-0267, PO-006).
+  const [submitError, setSubmitError] = useState<string | null>(() => peekSubmitFailure(id))
+  useEffect(() => { clearSubmitFailure(id) }, [id])
 
   const { data: vendorsData } = useVendors({
     active_only: true,
@@ -113,6 +118,12 @@ export default function PoEditPage() {
     }
   }, [po?.id])
 
+  // PO-006: whether the PO's own vendor has been deactivated since.
+  const { data: poVendor } = useVendor(po?.vendor_id ?? '')
+  const vendorInactive = selectedVendor?.id === po?.vendor_id
+    ? poVendor?.is_active === false
+    : selectedVendor?.is_active === false
+
   useEffect(() => {
     if (!po || !selectedVendor || selectedVendor.id === po.vendor_id) return
     if (selectedVendor.payment_terms) setPaymentTerms(selectedVendor.payment_terms)
@@ -145,7 +156,11 @@ export default function PoEditPage() {
       const lineErrs = validateLineItems(lineItems)
       if (Object.keys(lineErrs).length > 0) { setLineErrors(lineErrs); return }
     }
-    if (!validate(mode)) return
+    setSubmitError(null)
+    if (!validate(mode)) {
+      setSubmitError('Some fields need attention — see the fields marked in red above.')
+      return
+    }
 
     setIsSubmitting(true)
     try {
@@ -191,6 +206,8 @@ export default function PoEditPage() {
         ])
       }
       replaceTab(`/po/${id}`)
+    } catch (err) {
+      setSubmitError(errorMessage(err, 'The purchase order could not be saved'))
     } finally {
       setIsSubmitting(false)
     }
@@ -280,7 +297,12 @@ export default function PoEditPage() {
                     </>
                   )}
                 </div>
-                {selectedVendor && <p className="text-xs text-success-600">✓ {selectedVendor.name}{selectedVendor.code ? ` (${selectedVendor.code})` : ''}</p>}
+                {selectedVendor && !vendorInactive && <p className="text-xs text-success-600">✓ {selectedVendor.name}{selectedVendor.code ? ` (${selectedVendor.code})` : ''}</p>}
+                {selectedVendor && vendorInactive && (
+                  <p role="alert" className="text-xs text-danger-600">
+                    Vendor {selectedVendor.name} is inactive. Choose another vendor.
+                  </p>
+                )}
                 {errors.vendor && <p className="text-xs text-danger-600">{errors.vendor}</p>}
               </div>
 
@@ -461,6 +483,9 @@ export default function PoEditPage() {
             <Link to={`/po/${id}`}>
               <Button variant="ghost">Cancel</Button>
             </Link>
+            {submitError && (
+              <p role="alert" className="flex-1 mx-4 text-sm text-danger-600">{submitError}</p>
+            )}
             <div className="flex items-center gap-3">
               <Button variant="secondary" onClick={() => handleSave(false)} disabled={isSubmitting}>
                 Save Draft

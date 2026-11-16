@@ -23,6 +23,7 @@ import {
   TH_CLS, cents, errorMessage, num,
 } from '@/pages/freight/freightUi'
 import { useStaticTabNav } from '@/hooks/useStaticTabNav'
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 /** What would free an invoice from its PA, by the PA's status. Only a draft /
  *  returned PA can be cancelled; one in approval must first be recalled or
@@ -68,6 +69,7 @@ export function CourierInvoiceView({ id }: { id: string }) {
   const del = useDeleteFreightInvoice(id)
   const [actionError, setActionError] = useState<string | null>(null)
 
+  const confirmDlg = useConfirmDialog()
   const busy = updateLine.isPending || autoMatch.isPending || finalize.isPending || reopen.isPending || del.isPending
 
   // Pending shipments of this carrier — registered but not on this invoice.
@@ -105,16 +107,29 @@ export function CourierInvoiceView({ id }: { id: string }) {
   const handleFinalize = () => { if (!busy) run(finalize.mutateAsync(), 'Could not finalise the invoice') }
   const handleReopen = () => {
     if (busy) return
-    if (!window.confirm('Reopen this invoice for matching? Its shipments go back to pending until it is finalised again.')) return
-    run(reopen.mutateAsync(), 'Could not reopen the invoice')
+    confirmDlg.ask({
+      title: 'Reopen invoice',
+      subtitle: inv.vendor_invoice_number,
+      message: 'Reopen this invoice for matching? Its shipments go back to pending until it is finalised again.',
+      confirmLabel: 'Reopen',
+      tone: 'primary',
+      onConfirm: () => reopen.mutateAsync(),
+      failureFallback: 'Could not reopen the invoice',
+    })
   }
   const handleDelete = () => {
     if (busy) return
-    if (!window.confirm(`Delete invoice ${inv.vendor_invoice_number}? Its lines are removed; registered shipments stay pending.`)) return
-    setActionError(null)
-    del.mutateAsync()
-      .then(() => replaceWithTab('/invoices'))
-      .catch((e) => setActionError(errorMessage(e, 'Could not delete the invoice')))
+    confirmDlg.ask({
+      title: 'Delete invoice',
+      subtitle: inv.vendor_invoice_number,
+      message: `Delete invoice ${inv.vendor_invoice_number}? Its lines are removed; registered shipments stay pending.`,
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        await del.mutateAsync()
+        replaceWithTab('/invoices')
+      },
+      failureFallback: 'Could not delete the invoice',
+    })
   }
 
   const ccy = inv.currency
@@ -128,6 +143,7 @@ export function CourierInvoiceView({ id }: { id: string }) {
 
   return (
     <div className="flex flex-col gap-6">
+      {confirmDlg.dialog}
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">

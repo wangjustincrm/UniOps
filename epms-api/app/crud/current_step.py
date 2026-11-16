@@ -148,6 +148,18 @@ def configured_label(steps: list[dict], step_idx: int | None, task_role: str) ->
     return None
 
 
+# Steps routed to a role pool (PRD §3.3 role tokens: the company posts, Finance
+# BP, AP Clerk) open ONE task with no assigned user, so the task alone names no
+# one — every PO step, and most PA / agreement / over-budget PR steps, read as a
+# bare post on the timeline (ISS-0085/0088). For these the step names the
+# post's current holders, the people the engine routes the pool task to.
+POOL_ROLES = frozenset({
+    "gm", "opm", "procurement_manager", "finance_manager", "finance_director",
+    "vendor_manager", "finance_bp", "ap_clerk",
+})
+_POOL_NAMES_SHOWN = 3
+
+
 def _approver_label(name: str | None, stand_in: str | None) -> str | None:
     """"Sivers" normally; "Sivers (delegated: Mohammadi)" while she is away, so
     a reader can tell why someone else is expected to act."""
@@ -161,7 +173,8 @@ async def enrich_current_step(db: AsyncSession, doc_type: str, items: list,
     """Set `.current_step` on each item: a dict for items awaiting approval
     (submitted / in_review) with an open approval task, else None. Mutates
     items in place. One batched task query +
-    one batched user-name query (no N+1). With the caller's token the label is
+    one batched user-name query (no N+1), plus one holder query when a
+    role-pool step is open. With the caller's token the label is
     the step's configured name (see _configured_steps)."""
     for it in items:
         it.current_step = None
@@ -187,7 +200,16 @@ async def enrich_current_step(db: AsyncSession, doc_type: str, items: list,
     for t in rows:
         task_by_doc.setdefault(t.document_id, t)  # earliest open task wins
 
+    pool_roles = {t.assigned_role for t in task_by_doc.values()
+                  if not t.assigned_user_id and t.assigned_role in POOL_ROLES}
+    holders_by_role: dict = {}
+    if pool_roles:
+        from app.core.access_scope import role_holder_ids
+        holders_by_role = await role_holder_ids(db, tuple(sorted(pool_roles)))
+
     user_ids = {t.assigned_user_id for t in task_by_doc.values() if t.assigned_user_id}
+    for holders in holders_by_role.values():
+        user_ids |= holders
     name_by_user: dict = {}
     if user_ids:
         urows = (await db.execute(
@@ -224,16 +246,38 @@ async def enrich_current_step(db: AsyncSession, doc_type: str, items: list,
             if label:
                 configured[it.id] = label
 
+    def _pool_label(role: str) -> str | None:
+        """"Raghul" for a one-holder post; "Ji, Monga, Sun +5" for a wide pool;
+        None when the post has no holder (the document waits for one, §3.3)."""
+        holders = sorted(
+            (uid for uid in holders_by_role.get(role, ()) if name_by_user.get(uid)),
+            key=lambda uid: name_by_user[uid].lower(),
+        )
+        if not holders:
+            return None
+        shown = ", ".join(
+            _approver_label(name_by_user[uid], stand_in_names.get(uid))
+            for uid in holders[:_POOL_NAMES_SHOWN]
+        )
+        extra = len(holders) - _POOL_NAMES_SHOWN
+        return f"{shown} +{extra}" if extra > 0 else shown
+
     for it in awaiting:
         t = task_by_doc.get(it.id)
         if t is None:
             continue
+        if t.assigned_user_id:
+            approver = _approver_label(
+                name_by_user.get(t.assigned_user_id),
+                stand_in_names.get(t.assigned_user_id),
+            )
+        elif t.assigned_role in POOL_ROLES:
+            approver = _pool_label(t.assigned_role)
+        else:
+            approver = None
         it.current_step = {
             "role": t.assigned_role,
             "label": configured.get(it.id) or role_label(t.assigned_role),
-            "approver_name": _approver_label(
-                name_by_user.get(t.assigned_user_id),
-                stand_in_names.get(t.assigned_user_id),
-            ) if t.assigned_user_id else None,
+            "approver_name": approver,
             "since": t.created_at,
         }

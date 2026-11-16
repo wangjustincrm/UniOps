@@ -17,6 +17,8 @@ import { type GrStatus, type ApiGr, type ApiGrLineItem, type GrDamageResolution 
 import { useGrAttachments, useDeleteGrAttachment, useRegenerateGrPdf } from '@/hooks/useGrAttachments'
 import { grAttachmentService } from '@/services/grAttachments'
 import { canCancelGr } from '@/lib/documentActions'
+import { serviceHasIssues } from '@/lib/grNotes'
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 // Statuses the backend accepts for POST /gr/{id}/attachments/regenerate-pdf
 // (anything from the acknowledge step onward, excluding cancelled).
@@ -27,6 +29,7 @@ const CONDITION_CONFIG = {
   discrepancy: { label: 'Discrepancy', cls: 'bg-warning-50 text-warning-700' },
   damaged:     { label: 'Damaged',     cls: 'bg-danger-50 text-danger-600'   },
 }
+const SERVICE_ISSUES_CONDITION = { label: 'Has Issues', cls: 'bg-warning-50 text-warning-700' }
 
 // ─── GR Status helpers ────────────────────────────────────────────────────────
 
@@ -188,6 +191,7 @@ export default function GrDetailPage() {
   const grAction = useGrAction(id ?? '')
   // Cancel has its own mutation so its refusal shows next to the button.
   const grCancel = useGrAction(id ?? '')
+  const confirmDlg = useConfirmDialog()
   const grPerms = useRolePermissions().data?.permissions
   const { data: po } = usePo(gr?.po_id ?? '')
   const { data: attachments = [] } = useGrAttachments(id ?? '')
@@ -209,6 +213,9 @@ export default function GrDetailPage() {
 
   const totalValue = gr.line_items.reduce((s, l) => s + Number(l.line_total), 0)
   const hasDiscrepancy = gr.line_items.some((l) => l.condition !== 'good')
+  // A service confirmed with Has Issues: the issue is kept only in the
+  // acceptance notes, so Issues and the line condition say so (ISS-0179).
+  const serviceIssues = serviceHasIssues(gr)
 
   const isRequesterRole = user?.role === 'requester' || user?.role === 'dept_manager' || user?.role === 'procurement_officer' || user?.role === 'procurement_manager' || user?.role === 'system_admin'
 
@@ -282,11 +289,15 @@ export default function GrDetailPage() {
               variant="secondary"
               className="gap-2 border-danger-200 text-danger-600 hover:bg-danger-50"
               disabled={grCancel.isPending}
-              onClick={() => {
-                if (confirm(`Cancel ${gr.number}? Nothing will be recorded as received and its open tasks will be closed.`)) {
-                  grCancel.mutate({ action: 'cancel' })
-                }
-              }}
+              onClick={() => confirmDlg.ask({
+                title: 'Cancel GR',
+                subtitle: gr.number,
+                message: `Cancel ${gr.number}? Nothing will be recorded as received and its open tasks will be closed.`,
+                confirmLabel: 'Cancel GR',
+                cancelLabel: 'Back',
+                // Closes at once; a refusal shows beside the buttons.
+                onConfirm: () => grCancel.mutate({ action: 'cancel' }),
+              })}
             >
               <X className="h-4 w-4" />
               Cancel GR
@@ -297,11 +308,13 @@ export default function GrDetailPage() {
               variant="secondary"
               className="gap-2 border-danger-200 text-danger-600 hover:bg-danger-50"
               disabled={grCancel.isPending}
-              onClick={() => {
-                if (confirm(`Flag ${gr.number} as Discrepancy? Its open tasks will be closed; nothing else changes.`)) {
-                  grCancel.mutate({ action: 'discrepancy' })
-                }
-              }}
+              onClick={() => confirmDlg.ask({
+                title: 'Flag Discrepancy',
+                subtitle: gr.number,
+                message: `Flag ${gr.number} as Discrepancy? Its open tasks will be closed; nothing else changes.`,
+                confirmLabel: 'Flag Discrepancy',
+                onConfirm: () => grCancel.mutate({ action: 'discrepancy' }),
+              })}
             >
               <AlertTriangle className="h-4 w-4" />
               Flag Discrepancy
@@ -432,10 +445,10 @@ export default function GrDetailPage() {
                   </div>
                   <div>
                     <p className="text-xs text-neutral-400">Issues</p>
-                    <p className={cn('text-lg font-bold mt-0.5', hasDiscrepancy ? 'text-danger-600' : 'text-success-600')}>
+                    <p className={cn('text-lg font-bold mt-0.5', hasDiscrepancy ? 'text-danger-600' : serviceIssues ? 'text-warning-600' : 'text-success-600')}>
                       {hasDiscrepancy
                         ? `${gr.line_items.filter((l) => l.condition !== 'good').length} line(s)`
-                        : 'None'}
+                        : serviceIssues ? 'Service has issues' : 'None'}
                     </p>
                   </div>
                 </div>
@@ -465,7 +478,7 @@ export default function GrDetailPage() {
                     </thead>
                     <tbody>
                       {gr.line_items.map((line, idx) => (
-                        <LineDetailRow key={line.id} line={line} idx={idx} currency={gr.currency} />
+                        <LineDetailRow key={line.id} line={line} idx={idx} currency={gr.currency} serviceIssues={serviceIssues} />
                       ))}
                     </tbody>
                   </table>
@@ -552,6 +565,8 @@ export default function GrDetailPage() {
         </div>
       </div>
 
+      {confirmDlg.dialog}
+
       {/* Acknowledge modal */}
       {showAckModal && (
         <AcknowledgeModal
@@ -566,8 +581,11 @@ export default function GrDetailPage() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function LineDetailRow({ line, idx, currency }: { line: ApiGrLineItem; idx: number; currency: string }) {
-  const cond = CONDITION_CONFIG[line.condition]
+function LineDetailRow({ line, idx, currency, serviceIssues }: {
+  line: ApiGrLineItem; idx: number; currency: string; serviceIssues?: boolean
+}) {
+  // Has Issues is recorded for the whole service, not per line (ISS-0179).
+  const cond = serviceIssues && line.condition === 'good' ? SERVICE_ISSUES_CONDITION : CONDITION_CONFIG[line.condition]
   return (
     <>
       <tr className={cn('border-b border-neutral-100', idx % 2 === 1 && 'bg-neutral-50/50')}>

@@ -63,7 +63,9 @@ values:
         PA takes the invoices' own lines. A PA raised against an agreement
         always takes its invoices' own lines (an invoice whose lines do not
         add up to its pre-tax amount becomes one line), and its PDF names the
-        agreement.
+        agreement. Each such line's unit is the unit on the invoice line; when
+        the invoice line has none, the PO line's unit, otherwise "ea". Lines
+        already saved keep the unit they were saved with.
       - >-
         Courier charges (UPS, FedEx, Purolator…) are not paid this way. Buyers
         register each tracking number on EPMS → Freight → Shipments with the
@@ -132,8 +134,10 @@ values:
         still waiting for approval or payment — pay or cancel that one first.
       - If the invoice exactly matches what was prepaid, nothing is owed and it
         reconciles immediately — no approval, no payment, no bank movement.
-      - If the prepayment was too large, a finance confirmation task gates the
-        reconciliation rather than it going through silently.
+      - If the prepayment was too large, the form applies only the final
+        amount (net payable 0, a credit note is expected for the difference)
+        and a finance confirmation task gates the reconciliation rather than it
+        going through silently.
       - The paid prepayment PA offers Settle Prepayment / Settle Now to a System
         Admin, and to a user whose primary role is Requester who may create PAs
         and either raised the order's PR, also holds Procurement Officer or

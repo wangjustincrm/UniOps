@@ -6,7 +6,7 @@ import { cn, formatCAD, formatDate, formatDateTime, isoDateInZone, todayISO } fr
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useTasks } from '@/hooks/useTasks'
-import { TASK_TYPE_LABELS, isEpmsInboxTask, overBudgetJustification, taskHref } from '@/lib/taskTypes'
+import { TASK_TYPE_LABELS, isEpmsInboxTask, isRetitledTask, overBudgetJustification, taskCardLabel, taskGroupType, taskHref } from '@/lib/taskTypes'
 import type { TaskType } from '@/lib/taskTypes'
 import type { ApiTask } from '@/services/tasks'
 import { groupTasks } from '@/lib/groupTasks'
@@ -127,7 +127,7 @@ function FullTaskCard({ task }: FullTaskCardProps) {
             >
               {obJustification !== null
                 ? 'Over-Budget Pre-Approval'
-                : TASK_TYPE_LABELS[task.type as TaskType] ?? task.type}
+                : taskCardLabel(task)}
             </p>
             {isDone && (
               <span className="inline-flex items-center gap-1 rounded-full bg-success-100 px-2 py-0.5 text-[11px] font-medium text-success-700">
@@ -160,7 +160,7 @@ function FullTaskCard({ task }: FullTaskCardProps) {
               so there is no document page to open and read. Every other task
               type has a boilerplate description ("Step 5/6: ...") that would
               only add noise here. */}
-          {REASON_IN_CARD.has(task.document_type) && task.description && (
+          {(REASON_IN_CARD.has(task.document_type) || isRetitledTask(task)) && task.description && (
             <p
               className={cn(
                 'mt-2 whitespace-pre-line text-xs leading-relaxed',
@@ -299,17 +299,17 @@ export default function TaskInboxPage() {
 
   const labelOf = (k: string) => TASK_TYPE_LABELS[k as TaskType] ?? k
   // Type filter options: the types present on this tab, in group order.
-  const typeOptions = groupTasks(tabFiltered, (t) => t.type, labelOf, GROUP_ORDER)
+  const typeOptions = groupTasks(tabFiltered, taskGroupType, labelOf, GROUP_ORDER)
     .map((g) => ({ value: g.key, label: g.label }))
   const needle = search.trim().toLowerCase()
   const visible = tabFiltered.filter((t) =>
-    (!typeFilter || t.type === typeFilter) &&
+    (!typeFilter || taskGroupType(t) === typeFilter) &&
     (!needle || [t.document_number, t.vendor, t.title].some((v) => v?.toLowerCase().includes(needle)))
   )
 
   const groups = groupTasks(
     visible,
-    (t) => t.type,
+    taskGroupType,
     labelOf,
     GROUP_ORDER,
   )

@@ -103,3 +103,24 @@ describe('invoiceOwnLines', () => {
     expect(invoiceOwnLines([])).toBeNull()
   })
 })
+
+// ISS-0232 (user decision 16/11): the unit printed on the invoice wins, then the
+// PO line's unit, then 'ea'. Mirrors test_pa_lines.py::test_unit_*.
+describe('PA line unit', () => {
+  it('takes the invoice line unit over the PO line unit', () => {
+    const inv = invoice({
+      line_items: [line('l1', 3, 10, 30, { unit: 'box' }), line('l2', 2, 5, 10)],
+      allocations: [alloc('l1', PO_A, 'pl-1', 30), alloc('l2', PO_A, 'pl-2', 10)],
+    })
+    expect(derivePaLines([inv], [PO_A], poLines)!.map((l) => l.unit)).toEqual(['box', 'pcs'])
+  })
+
+  it("falls back to 'ea' when neither the invoice nor a PO line has a unit", () => {
+    const inv = invoice({
+      po_id: PO_A,
+      line_items: [line('f1', 1, 9, 9, { non_po_fee: true, unit: '  ' }), line('f2', 1, 4, 4, { non_po_fee: true, unit: 'trip' })],
+    })
+    expect(derivePaLines([inv], [PO_A], poLines)!.map((l) => l.unit)).toEqual(['ea', 'trip'])
+    expect(invoiceOwnLines([invoice({ amount: 30, line_items: [line('l1', 3, 10, 30, { unit: 'kg' })] })])![0].unit).toBe('kg')
+  })
+})

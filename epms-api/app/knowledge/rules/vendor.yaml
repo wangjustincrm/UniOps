@@ -15,21 +15,28 @@ rules:
       en: >
         An inactive vendor cannot be picked on a new PR, PO or agreement — the
         vendor pickers list active vendors only. Documents that already name
-        the vendor keep it and still show it. The pickers enforce this; the
-        server does not check it separately.
+        the vendor keep it and still show it. A PO also cannot be saved with a
+        newly chosen inactive vendor or submitted while its vendor is inactive
+        (for example a PO created from a PR whose vendor was deactivated during
+        approval) — choose another vendor. For PRs and agreements the pickers
+        enforce this; the server does not check it separately.
       zh: >
         停用的供应商不能再用于新单据：新建请购单、采购订单或协议时，供应商选择框只列出启用中的
-        供应商，选不到停用的。已经用了这个供应商的单据不受影响，照常显示。这是由选择框控制的，
-        服务器端没有另外校验。
+        供应商，选不到停用的。已经用了这个供应商的单据不受影响，照常显示。采购订单另有服务器校验：
+        不能改选停用的供应商，供应商已停用时也不能提交（例如从 PR 建 PO，而 PR 审批期间供应商被停用），
+        需要换一个供应商。请购单和协议由选择框控制，服务器端没有另外校验。
     asked_as:
       - 停用后还能下单吗？
       - can an inactive vendor still be ordered from
     answer: >
       An inactive vendor cannot be picked on a new PR, PO or agreement — the
       vendor pickers list active vendors only. Documents that already name
-      the vendor keep it and still show it. The pickers enforce this; the
-      server does not check it separately.
-    enforced_in: "epms/src/pages/pr/PrCreatePage.tsx, PrEditPage.tsx, po/PoCreatePage.tsx, PoEditPage.tsx, agreements/AgreementCreatePage.tsx useVendors({ active_only: true })"
+      the vendor keep it and still show it. A PO also cannot be saved with a
+      newly chosen inactive vendor or submitted while its vendor is inactive
+      (for example a PO created from a PR whose vendor was deactivated during
+      approval) — choose another vendor. For PRs and agreements the pickers
+      enforce this; the server does not check it separately.
+    enforced_in: "epms/src/pages/pr/PrCreatePage.tsx, PrEditPage.tsx, po/PoCreatePage.tsx, PoEditPage.tsx, agreements/AgreementCreatePage.tsx useVendors({ active_only: true }); epms-api app/api/v1/po.py _refuse_inactive_vendor (create, vendor change, submit — VND-002 / PO-006)"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_vendor_pickers_list_active_vendors_only"
@@ -45,3 +52,19 @@ rules:
     provenance: not_built
     test:
       - "tests/test_rule_registry.py::test_vendor_edits_leave_no_history"
+  - id: duplicate_vendor_warning
+    asked_as:
+      - 新建供应商时名字和已有的一样会怎样？
+      - what happens if I add a vendor that already exists
+    answer: >
+      The POID (vendor code) must be unique — a repeated one is refused. When
+      a vendor is added or its name or ERP ID is changed by hand on the
+      Vendors page and another vendor (active or inactive) already has the
+      same name (ignoring case and spaces) or the same ERP ID, the page warns
+      "A vendor with this name / ERP ID already exists: <POID>" and saves only
+      if you press Save anyway. It is a warning, not a block.
+    enforced_in: "epms-api app/api/v1/vendors.py similar_vendors + crud/vendor.py find_similar; epms/src/pages/vendors/VendorsPage.tsx findDuplicates (Save anyway)"
+    provenance: pinned
+    test:
+      - "tests/test_vendor_similar.py::test_same_name_ignoring_case_and_spaces_and_same_erp_id"
+      - "tests/test_vendor_similar.py::test_a_duplicate_name_is_still_saved"

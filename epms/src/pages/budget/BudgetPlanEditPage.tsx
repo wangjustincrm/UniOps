@@ -27,6 +27,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { budgetService, type ApiAccountPlanRow, type PlanImportResult } from '@/services/budget'
 import type { DocumentStatus } from '@/types'
 import { BreakdownMatrixModal } from './BreakdownMatrixModal'
+import { ActionMessage, useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const MONTHS = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -74,6 +75,9 @@ export default function BudgetPlanEditPage() {
   const [breakdownCell, setBreakdownCell] = useState<{ row: ApiAccountPlanRow; month: number } | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [reviseOpen, setReviseOpen] = useState(false)
+  const [reviseError, setReviseError] = useState<string | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const confirmDlg = useConfirmDialog()
   const [importResult, setImportResult] = useState<PlanImportResult | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
 
@@ -170,22 +174,34 @@ export default function BudgetPlanEditPage() {
     (v) => v.id !== plan.id && _nonTerminal.has(v.status),
   ) ?? null
 
+  // Asked in-page (were the browser's confirm); a refusal shows in the dialog.
   const handleAction = (action: 'submit' | 'approve' | 'return' | 'reject') => {
     const verb = { submit: 'submit', approve: 'approve', return: 'return', reject: 'reject' }[action]
-    if (!confirm(`Are you sure you want to ${verb} this plan?`)) return
-    planAction.mutate({ planId: plan.id, action })
+    confirmDlg.ask({
+      title: `${verb[0].toUpperCase()}${verb.slice(1)} Plan`,
+      message: `Are you sure you want to ${verb} this plan?`,
+      confirmLabel: `${verb[0].toUpperCase()}${verb.slice(1)}`,
+      tone: action === 'reject' ? 'danger' : 'primary',
+      onConfirm: () => planAction.mutateAsync({ planId: plan.id, action }),
+    })
   }
 
   const handleCopyPrev = () => {
-    if (!confirm(`Copy plan amounts from FY ${plan.fiscal_year - 1}? Overwrites current draft.`)) return
-    copyPrev.mutate(plan.id)
+    confirmDlg.ask({
+      title: `Copy FY ${plan.fiscal_year - 1}`,
+      message: `Copy plan amounts from FY ${plan.fiscal_year - 1}? Overwrites current draft.`,
+      confirmLabel: 'Copy',
+      tone: 'primary',
+      onConfirm: () => copyPrev.mutateAsync(plan.id),
+    })
   }
 
   const handleExport = async () => {
+    setExportError(null)
     try {
       await budgetService.exportPlan(plan.id)
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Export failed')
+      setExportError(e instanceof Error ? e.message : 'Export failed')
     }
   }
 
@@ -350,6 +366,11 @@ export default function BudgetPlanEditPage() {
         </div>
       )}
 
+      {exportError && (
+        <ActionMessage onDismiss={() => setExportError(null)}>{exportError}</ActionMessage>
+      )}
+      {confirmDlg.dialog}
+
       {/* Import result banner */}
       {importResult && (
         <ImportResultBanner result={importResult} onClose={() => setImportResult(null)} />
@@ -358,16 +379,18 @@ export default function BudgetPlanEditPage() {
       {/* Revise modal */}
       {reviseOpen && (
         <ReviseModal
-          onClose={() => setReviseOpen(false)}
+          onClose={() => { setReviseOpen(false); setReviseError(null) }}
           onSubmit={async (notes) => {
             try {
+              setReviseError(null)
               const next = await reviseMut.mutateAsync({ planId: plan.id, revision_notes: notes || undefined })
               setReviseOpen(false)
               navigate(`/budget/plans/${next.id}`)
             } catch (e: unknown) {
-              alert(e instanceof Error ? e.message : 'Revise failed')
+              setReviseError(e instanceof Error ? e.message : 'Revise failed')
             }
           }}
+          error={reviseError}
           pending={reviseMut.isPending}
           fiscalYear={plan.fiscal_year}
           version={plan.version}
@@ -642,11 +665,13 @@ function CellInput({
 // ── Revise modal ──────────────────────────────────────────────────────────────
 
 function ReviseModal({
-  onClose, onSubmit, pending, fiscalYear, version,
+  onClose, onSubmit, pending, fiscalYear, version, error,
 }: {
   onClose: () => void
   onSubmit: (notes: string) => void | Promise<void>
   pending: boolean
+  /** A refused revise, shown here (was a browser alert). */
+  error?: string | null
   fiscalYear: number
   version: number
 }) {
@@ -678,6 +703,7 @@ function ReviseModal({
               Stored as <code>revision_notes</code> on the new draft. Visible on the version history.
             </p>
           </div>
+          {error && <p role="alert" className="text-sm text-danger-600">{error}</p>}
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
             <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
             <Button onClick={() => onSubmit(notes.trim())} disabled={pending}>

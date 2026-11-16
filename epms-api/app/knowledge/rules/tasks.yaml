@@ -69,12 +69,15 @@ rules:
       created, and so on. Open the task's document and do that. If that PA is
       later rejected (cancelled) and no other live PA covers the order, the
       Create Payment Application task comes back; a returned PA still counts.
-    enforced_in: "epms/src/services/tasks.ts (no complete() on purpose); epms/src/pages/tasks/TaskInboxPage.tsx; epms-api app/api/v1/tasks.py complete refuses approval tasks; app/api/v1/pa.py pa_action → crud/pa.py reopen_create_pa_tasks_if_unpaid (live PAs only, crud/pa_links.py pa_is_live)"
+      An order has at most one open Create Payment Application task: a later
+      invoice re-notifies the open one instead of adding another.
+    enforced_in: "epms/src/services/tasks.ts (no complete() on purpose); epms/src/pages/tasks/TaskInboxPage.tsx; epms-api app/api/v1/tasks.py complete refuses approval tasks; app/api/v1/pa.py pa_action → crud/pa.py reopen_create_pa_tasks_if_unpaid (live PAs only, crud/pa_links.py pa_is_live; reopens one task, none when one is open); crud/task.py _collapse_duplicate_create_pa_tasks"
     provenance: pinned
     test:
       - "tests/test_task_complete_rejects_approvals.py::test_complete_rejects_approval_tasks"
       - "tests/test_rule_registry.py::test_the_task_inbox_has_no_mark_done"
       - "tests/test_pa_cancel_reopens_create_pa.py::test_rejecting_the_only_pa_reopens_create_pa"
+      - "tests/test_proc_b15_create_pa.py::test_cancelled_pa_reopens_only_one_create_pa"
   # ISS-0131 follow-up: the groups' order is DSH-001's.
   - id: task_inbox_group_order
     asked_as:

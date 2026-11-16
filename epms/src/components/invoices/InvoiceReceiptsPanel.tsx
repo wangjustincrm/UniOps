@@ -216,6 +216,25 @@ function InvoiceReceiptsPanelBody({
     selectedReceiptIdsRef.current = selectedReceiptIds
   }, [selectedReceiptIds])
 
+  // ISS-0240: the selection is local state seeded once from the saved
+  // receipt_ids, and the accelerator below can release "its" pick when the
+  // receipt drops out of the open pool. After a save, the hook's own onSuccess
+  // awaits the refetch (receipt now `reconciled`) BEFORE the per-call
+  // onSuccess clears autoSelectedReceiptIdRef — so the accelerator unticked
+  // the receipt it had just saved, and the page asked for a "settle without
+  // receipt" reason under a header reading "backed by 1 receipt". Whenever the
+  // SAVED set changes, the saved set is what is ticked, and it is no longer
+  // the accelerator's to release. Keyed on the ids' content, so a refetch
+  // returning the same set does not discard an unsaved edit.
+  const persistedKey = (invoice.receipt_ids ?? []).join(',')
+  const persistedKeyRef = useRef(persistedKey)
+  useEffect(() => {
+    if (persistedKeyRef.current === persistedKey) return
+    persistedKeyRef.current = persistedKey
+    autoSelectedReceiptIdRef.current = null
+    setSelectedReceiptIds(persistedKey ? persistedKey.split(',') : [])
+  }, [persistedKey])
+
   const toggleReceipt = (receiptId: string) => {
     if (autoSelectedReceiptIdRef.current === receiptId) {
       // The operator is taking manual control of a receipt an accelerator

@@ -165,6 +165,17 @@ def split_epms_inbox(tasks: list[dict]) -> tuple[list[dict], list[dict]]:
     return inbox, elsewhere
 
 
+def inbox_group_type(task: dict) -> str:
+    """The inbox group a task is listed under: its type, except a service
+    GR's acknowledge_gr task (titled "Confirm Service Completion: GR-…" by
+    crud/gr.py _create_ack_task), which the inbox groups with
+    confirm_service_gr — epms/src/lib/taskTypes.ts taskGroupType (ISS-0179)."""
+    if (task.get("type") == "acknowledge_gr"
+            and str(task.get("title") or "").startswith("Confirm Service Completion")):
+        return "confirm_service_gr"
+    return task.get("type")
+
+
 def _groups(tasks: list[dict], label=None) -> list[dict]:
     """Counts per type. Labelled as the EPMS Task Inbox labels its headers —
     the key itself for a type it has no label for, so the reply matches the
@@ -173,7 +184,8 @@ def _groups(tasks: list[dict], label=None) -> list[dict]:
     label = label or (lambda k: TASK_TYPE_LABELS.get(k, k))
     by_type: dict[str, int] = {}
     for t in tasks:
-        by_type[t["type"]] = by_type.get(t["type"], 0) + 1
+        k = inbox_group_type(t)
+        by_type[k] = by_type.get(k, 0) + 1
     return sorted(
         ({"type": k, "label": label(k), "count": n}
          for k, n in by_type.items()),

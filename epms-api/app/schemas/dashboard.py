@@ -40,6 +40,9 @@ class BudgetGroupRow(BaseModel):
     actual_spent: Decimal
     available: Decimal
     utilisation_pct: float
+    # Cost center × account lines in this group that are over budget (red
+    # threshold reached, or spend with no budget) — BDASH-003's alert.
+    over_accounts: int = 0
 
 
 class BudgetOverview(BaseModel):

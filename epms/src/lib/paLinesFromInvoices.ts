@@ -21,6 +21,12 @@ export interface DerivedPaLine {
 }
 
 const FALLBACK_UNIT = 'ea'
+const UNIT_MAX = 30   // PaLineItem.unit is String(30); an invoice line allows 50
+
+// The unit the invoice prints wins (ISS-0232, user decision 16/11), then the
+// PO line's unit, then 'ea' — same as crud/pa_lines.py::_unit.
+const unitOf = (li: InvoiceLineItem | undefined, poUnit?: string | null): string =>
+  String(li?.unit ?? '').trim().slice(0, UNIT_MAX) || poUnit || FALLBACK_UNIT
 
 const num = (v: unknown): number | null => {
   if (v === null || v === undefined || v === '') return null
@@ -75,7 +81,7 @@ export function derivePaLines(
         out.push({
           po_line_id: a.po_line_id,
           description: (pl?.description ?? li.description ?? '').slice(0, 500) || inv.internal_ref,
-          qty, unit: pl?.unit || li.unit || FALLBACK_UNIT, unit_price: price,
+          qty, unit: unitOf(li, pl?.unit), unit_price: price,
           line_total: amount, notes: note(inv),
         })
       } else if (li.non_po_fee && feesHere) {
@@ -84,7 +90,7 @@ export function derivePaLines(
         const desc = li.non_po_note ? `${li.description || 'Non-PO fee'} — ${li.non_po_note}` : (li.description || 'Non-PO fee')
         out.push({
           po_line_id: null, description: desc.slice(0, 500),
-          qty, unit: li.unit || FALLBACK_UNIT, unit_price: price,
+          qty, unit: unitOf(li), unit_price: price,
           line_total: Number(amount.toFixed(2)), notes: note(inv),
         })
       }
@@ -130,7 +136,7 @@ export function invoiceOwnLines(invoices: ApiInvoice[]): DerivedPaLine[] | null 
       const [qty, price] = qtyPrice(li, lineTotal)
       out.push({
         po_line_id: null, description: (li.description || inv.internal_ref).slice(0, 500),
-        qty, unit: li.unit || FALLBACK_UNIT, unit_price: price, line_total: lineTotal, notes: note(inv),
+        qty, unit: unitOf(li), unit_price: price, line_total: lineTotal, notes: note(inv),
       })
     }
   }

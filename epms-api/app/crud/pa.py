@@ -862,23 +862,31 @@ async def reopen_create_pa_tasks_if_unpaid(
         return 0
 
     gr_ids_subq = select(GoodsReceipt.id).where(GoodsReceipt.po_id == po_id)
-    result = await db.execute(
-        select(Task).where(
-            Task.type == "create_pa",
-            Task.is_completed.is_(True),
-            or_(
-                and_(Task.document_type == "po", Task.document_id == po_id),
-                and_(Task.document_type == "gr", Task.document_id.in_(gr_ids_subq)),
-            ),
-        )
+    on_po = or_(
+        and_(Task.document_type == "po", Task.document_id == po_id),
+        and_(Task.document_type == "gr", Task.document_id.in_(gr_ids_subq)),
     )
-    reopened = 0
-    for task in result.scalars().all():
-        task.is_completed = False
-        task.completed_at = None
-        reopened += 1
+    # One open create_pa per PO (INV-011, §3.14.2 Deduplication rule). Every
+    # earlier cycle of "invoice matched → task → PA" left a completed task on
+    # the PO, and reopening all of them put one open task per past invoice back
+    # in the requester's inbox (ISS-0172 follow-up: PO-400-2611-15 had four).
+    # Bring back only the most recent one, and none when one is already open.
+    already_open = (await db.execute(
+        select(Task.id).where(Task.type == "create_pa", Task.is_completed.is_(False), on_po)
+        .limit(1)
+    )).scalar_one_or_none()
+    if already_open is not None:
+        return 0
+    task = (await db.execute(
+        select(Task).where(Task.type == "create_pa", Task.is_completed.is_(True), on_po)
+        .order_by(Task.created_at.desc()).limit(1)
+    )).scalar_one_or_none()
+    if task is None:
+        return 0
+    task.is_completed = False
+    task.completed_at = None
     await db.flush()
-    return reopened
+    return 1
 
 
 async def _complete_create_prepayment_pa_tasks(db: AsyncSession, po_id: uuid.UUID) -> None:

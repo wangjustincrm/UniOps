@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import and_, or_, select, text
+from sqlalchemy import and_, case, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agreement import PurchaseAgreement
@@ -125,6 +125,41 @@ async def _complete_orphan_create_pa_tasks(
     for task in tasks:
         task.is_completed = True
         task.completed_at = now
+    await db.flush()
+
+
+async def _collapse_duplicate_create_pa_tasks(db: AsyncSession) -> None:
+    """Keep one open create_pa per PO (INV-011, §3.14.2 Deduplication rule).
+
+    The live paths dedupe (they re-notify the open task instead), but before
+    ISS-0172's follow-up a rejected / cancelled PA reopened EVERY completed
+    create_pa on its PO — one per earlier invoice — so a PO could carry several
+    open prompts, some naming invoices that are no longer matched
+    (PO-400-2611-15: four). Heal those: the newest open task on the PO (either
+    anchor — PO, or a GR of that PO) stays, the rest are closed by the system.
+    A survivor anchored on the PO gets the PO-level wording, since the invoice
+    its text named may no longer be the one awaiting payment.
+    """
+    po_of_gr = (select(GoodsReceipt.po_id).where(GoodsReceipt.id == Task.document_id)
+                .correlate(Task).scalar_subquery())
+    rows = (await db.execute(
+        select(Task, case((Task.document_type == "po", Task.document_id),
+                          else_=po_of_gr).label("po_id"))
+        .where(Task.type == "create_pa", Task.is_completed.is_(False),
+               Task.document_type.in_(("po", "gr")))
+        .order_by(Task.created_at.desc())
+    )).all()
+    keep: dict[uuid.UUID, Task] = {}
+    now = datetime.now(timezone.utc)
+    for task, po_id in rows:
+        survivor = keep.setdefault(po_id, task)
+        if survivor is task:
+            continue
+        task.is_completed = True
+        task.completed_at = now
+        if survivor.document_type == "po":
+            survivor.description = (f"Invoices matched to PO {survivor.document_number} "
+                                    "await a Payment Application.")
     await db.flush()
 
 
@@ -280,7 +315,8 @@ _TASK_DEDICATED_HANDLING: dict[str, str] = {
     "create_po": "_complete_stale_create_po_tasks:看 PR 是否已有 PO,两个方向的外键都要看。",
     "place_order": "_complete_stale_place_order_tasks:PO 不再是 approved 即失效。",
     "create_pa": "_complete_stale_create_pa_tasks + _complete_orphan_create_pa_tasks:"
-                 "既看 PA 在不在,也看 matched 发票还在不在,还跨 po/gr 两种锚点。",
+                 "既看 PA 在不在,也看 matched 发票还在不在,还跨 po/gr 两种锚点;"
+                 "_collapse_duplicate_create_pa_tasks 保证每张 PO 只留一条(INV-011)。",
     "create_prepayment_pa": "_complete_stale_create_prepayment_pa_tasks:只有 prepayment 型 PA 算数。",
     "confirm_receipt": "不变量是「PO 有收货证据」(crud.po.po_has_receipt_evidence:有活 GR "
                        "单据 或 任一行 received_qty>0),要 per-PO 子查询而不是比状态;"
@@ -666,6 +702,7 @@ async def get_for_role(
     await _complete_stale_create_po_tasks(db)
     await _complete_stale_create_pa_tasks(db)
     await _complete_orphan_create_pa_tasks(db)
+    await _collapse_duplicate_create_pa_tasks(db)
     await _complete_stale_place_order_tasks(db)
     await _complete_stale_create_prepayment_pa_tasks(db)
     await _backfill_create_po_tasks(db)

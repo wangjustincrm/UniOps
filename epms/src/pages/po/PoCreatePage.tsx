@@ -15,13 +15,14 @@ import { enabledCurrencyOptions } from '@/lib/currencies'
 import { useCreatePo } from '@/hooks/usePos'
 import { poService } from '@/services/po'
 import { usePr, usePrs } from '@/hooks/usePrs'
-import { useVendors } from '@/hooks/useVendors'
+import { useVendor, useVendors } from '@/hooks/useVendors'
 import type { ApiVendor } from '@/services/vendors'
 import { useTaxCodes } from '@/hooks/useTaxCodes'
 import { useAuthStore } from '@/stores/auth.store'
 import { PaymentTermsField } from '@/components/po/PaymentTermsField'
 import { formatPaymentTerms } from '@/lib/paymentTerms'
 import { ATTACHMENT_RULE, partitionUploads } from '@/lib/uploadLimits'
+import { errorMessage, rememberSubmitFailure } from '@/lib/submitFailure'
 
 // PO lines can originate from a PR line — carry that source id so the backend
 // can persist pr_line_id and keep the PO↔PR line link.
@@ -88,9 +89,11 @@ export default function PoCreatePage() {
   // PRD §3.12.1: payment terms default from the vendor and can be changed
   // (ISS-0087). Re-defaulted each time a different vendor is picked.
   const [paymentTerms, setPaymentTerms] = useState('')
+  // Keyed on the terms too: a vendor pre-filled from a PR is first a stub
+  // (id + name) and gets its terms only once the vendor record loads (ISS-0234).
   useEffect(() => {
     if (selectedVendor?.payment_terms) setPaymentTerms(selectedVendor.payment_terms)
-  }, [selectedVendor?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedVendor?.id, selectedVendor?.payment_terms]) // eslint-disable-line react-hooks/exhaustive-deps
   const [vendorQuery, setVendorQuery] = useState('')
   const [vendorOpen, setVendorOpen] = useState(false)
 
@@ -116,6 +119,9 @@ export default function PoCreatePage() {
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // Shown beside the buttons: the field errors sit far above them, so a
+  // refused Submit looked like nothing happened (ISS-0267).
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   useEffect(() => {
     if (config?.delivery_address) setDeliveryAddress(config.delivery_address)
@@ -129,6 +135,11 @@ export default function PoCreatePage() {
     const match = taxCodes.find((c) => Number(c.rate) === taxRate) ?? taxCodes[0]
     if (match) { setTaxCode(match.code); setTaxRate(Number(match.rate)) }
   }, [taxCodes, currency]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The PR's vendor as a full record — its payment terms (PO-016 / §3.12.1,
+  // ISS-0234) and whether it is still active (PO-006, ISS-0267). The vendor
+  // list above holds active vendors only, and only the first page of them.
+  const { data: prVendor } = useVendor(linkedPrData?.vendor_id ?? '')
 
   // Pre-fill from linked PR
   useEffect(() => {
@@ -161,13 +172,21 @@ export default function PoCreatePage() {
         notes: li.notes ?? '',
       }
     }))
-    const vendor = vendors.find((v) => v.id === pr.vendor_id)
+    const vendor = (prVendor?.id === pr.vendor_id ? prVendor : undefined)
+      ?? vendors.find((v) => v.id === pr.vendor_id)
     if (vendor) setSelectedVendor(vendor)
     else if (pr.vendor_id && pr.vendor_name) {
       // Vendor exists in DB but not yet in loaded vendor list — use real ID
       setSelectedVendor({ id: pr.vendor_id, code: '', name: pr.vendor_name })
     }
   }, [prId, linkedPrData])
+
+  useEffect(() => {
+    if (!prVendor || prVendor.id !== linkedPrData?.vendor_id) return
+    // Only while the PR's vendor is still the chosen one (not picked over).
+    setSelectedVendor((cur) => (cur && cur.id === prVendor.id ? prVendor : cur))
+  }, [prVendor, linkedPrData?.vendor_id])
+  const vendorInactive = selectedVendor?.is_active === false
 
   const filteredVendors = vendors
 
@@ -181,25 +200,39 @@ export default function PoCreatePage() {
     const e: Record<string, string> = {}
     if (!title.trim()) e.title = 'Title is required'
     if (!selectedVendor) e.vendor = 'Please select a vendor'
+    else if (vendorInactive) e.vendor = `Vendor ${selectedVendor.name} is inactive. Choose another vendor.`
     if (selectedVendor && !paymentTerms) e.paymentTerms = 'Choose the payment terms'
     if (status === 'submitted' && !expectedDelivery) e.expectedDelivery = 'Expected delivery date is required'
     setErrors(e)
     return Object.keys(e).length === 0
   }
 
+  // A refused click must be visible where it was made: say so by the buttons
+  // and bring the first marked field into view.
+  const showFieldErrors = () => {
+    setSubmitError('Some fields need attention — see the fields marked in red above.')
+    requestAnimationFrame(() => {
+      document.querySelector('[data-po-create] .border-danger-600, [data-po-create] .border-danger-400, [data-po-create] [aria-invalid="true"]')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }
+
   const handleSubmit = async (status: 'draft' | 'submitted') => {
+    setSubmitError(null)
     if (status === 'submitted') {
       const lineErrs = validateLineItems(lineItems)
       if (Object.keys(lineErrs).length > 0) {
         setLineErrors(lineErrs)
+        showFieldErrors()
         return
       }
     }
-    if (!validate(status)) return
+    if (!validate(status)) { showFieldErrors(); return }
 
     setIsSubmitting(true)
+    let newPo: Awaited<ReturnType<typeof createPo.mutateAsync>> | undefined
     try {
-      const newPo = await createPo.mutateAsync({
+      newPo = await createPo.mutateAsync({
         title,
         type: procurementType ?? 2,
         vendor_id: selectedVendor!.id,
@@ -228,12 +261,24 @@ export default function PoCreatePage() {
             notes: item.notes || undefined,
           })),
       })
+      const created = newPo
       // Upload locally-collected attachments now that the PO has an id.
-      await Promise.all(attachments.map((f) => uploadPoAttachment(newPo.id, f)))
+      await Promise.all(attachments.map((f) => uploadPoAttachment(created.id, f)))
       if (status === 'submitted') {
-        await poService.action(newPo.id, { action: 'submit' })
+        await poService.action(created.id, { action: 'submit' })
       }
-      replaceTab(`/po/${newPo.id}`)
+      replaceTab(`/po/${created.id}`)
+    } catch (err) {
+      // As New PR does (ISS-0166): once the PO exists it is a draft — go to it
+      // with the reason rather than stay here, where each click would save
+      // another draft. Before that, the form stays and says why.
+      const message = errorMessage(err, 'The purchase order could not be saved')
+      if (newPo) {
+        rememberSubmitFailure(newPo.id, `Saved as a draft but not submitted: ${message}`)
+        replaceTab(`/po/${newPo.id}/edit`)
+      } else {
+        setSubmitError(message)
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -274,7 +319,7 @@ export default function PoCreatePage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Main form */}
-        <div className="lg:col-span-9 flex flex-col gap-6">
+        <div data-po-create className="lg:col-span-9 flex flex-col gap-6">
 
           {/* Basic Details */}
           <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
@@ -362,7 +407,14 @@ export default function PoCreatePage() {
                 </div>
                 {/* A vendor prefilled from the PR may not be in the loaded page of the
                     list, so its code is unknown — no empty "()" (ISS-0183). */}
-                {selectedVendor && <p className="text-xs text-success-600">✓ {selectedVendor.name}{selectedVendor.code ? ` (${selectedVendor.code})` : ''}</p>}
+                {selectedVendor && !vendorInactive && <p className="text-xs text-success-600">✓ {selectedVendor.name}{selectedVendor.code ? ` (${selectedVendor.code})` : ''}</p>}
+                {/* PO-006: a vendor deactivated after the PR was raised still
+                    comes in with it — say so before anyone tries to submit. */}
+                {vendorInactive && !errors.vendor && (
+                  <p role="alert" className="text-xs text-danger-600">
+                    Vendor {selectedVendor.name} is inactive. Choose another vendor.
+                  </p>
+                )}
                 {errors.vendor && <p className="text-xs text-danger-600">{errors.vendor}</p>}
               </div>
 
@@ -588,6 +640,9 @@ export default function PoCreatePage() {
             <Link to="/po">
               <Button variant="ghost">Cancel</Button>
             </Link>
+            {submitError && (
+              <p role="alert" className="flex-1 mx-4 text-sm text-danger-600">{submitError}</p>
+            )}
             <div className="flex items-center gap-3">
               <Button
                 variant="secondary"
@@ -615,7 +670,7 @@ export default function PoCreatePage() {
               <li>• Line items are pre-filled from the PR when linked — adjust quantities or prices if negotiated differently.</li>
               <li>• Delivery address defaults from the PR. Leave blank if the vendor will confirm separately.</li>
               <li>• Attach vendor quotes, SOWs, or contracts before submitting for approval.</li>
-              <li>• After approval, use <strong>Issue PO</strong> to send the official order to the vendor.</li>
+              <li>• After approval, use <strong>Place Order</strong> to send the official order to the vendor.</li>
             </ul>
 
             {linkedPr && (

@@ -19,6 +19,7 @@ import { UnitsOfMeasure } from './UnitsOfMeasure'
 import { NcSyncSection } from './nc-sync/NcSyncSection'
 import { WmsSyncSection } from './WmsSyncSection'
 import { TaskNotificationPolicies } from './TaskNotificationPolicies'
+import { useConfirmDialog } from '@/components/ConfirmDialog'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -219,6 +220,7 @@ function zoneLabel(tz: string): string {
 }
 
 function CompanySettings() {
+  const dlg = useConfirmDialog()
   const { data: cfg, isLoading } = useConfig()
   const save = useSaveConfig()
   const [form, setForm] = useState({ name: '', tagline: '', delivery_address: '' })
@@ -275,12 +277,16 @@ function CompanySettings() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (zoneChanged && !window.confirm(
-      `Change the company time zone from ${cfg?.timezone} to ${timeZone}?\n\n`
-      + 'From now on every module uses it for "today", accounting periods, the dates in '
-      + 'new document numbers, times on screen, in PDFs and emails, and the hour daily '
-      + 'reminders run. Existing records are not changed.',
-    )) return
+    // Asked in-page (was the browser's confirm).
+    if (zoneChanged && !(await dlg.confirm({
+      title: 'Change time zone',
+      message: `Change the company time zone from ${cfg?.timezone} to ${timeZone}?\n\n`
+        + 'From now on every module uses it for "today", accounting periods, the dates in '
+        + 'new document numbers, times on screen, in PDFs and emails, and the hour daily '
+        + 'reminders run. Existing records are not changed.',
+      confirmLabel: 'Change time zone',
+      tone: 'primary',
+    }))) return
     try {
       const body: any = { name: values.name, tagline: values.tagline, delivery_address: values.delivery_address }
       if (moduleTaglines !== undefined) body.module_taglines = moduleTaglines
@@ -362,6 +368,7 @@ function CompanySettings() {
         <SaveButton loading={save.isPending} />
         {toast && <Toast {...toast} />}
       </div>
+      {dlg.dialog}
     </form>
   )
 }
@@ -424,6 +431,8 @@ function SecuritySettings() {
 // ── 3. Department Management ──────────────────────────────────────────────────
 
 export function DepartmentManagement() {
+  const dlg = useConfirmDialog()
+  const [listError, setListError] = useState('')
   // Source of truth lives in mdm-api (master-data service). The shared Postgres
   // DB means epms-api / budget-api still read the same physical rows.
   const qc = useQueryClient()
@@ -457,12 +466,14 @@ export function DepartmentManagement() {
     } catch (err: any) { setError(err.message) } finally { setSaving(false) }
   }
 
+  // Asked in-page; a refusal shows above the table (both were browser pop-ups).
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this department?')) return
+    if (!(await dlg.confirm({ title: 'Delete department', message: 'Delete this department?', confirmLabel: 'Delete' }))) return
+    setListError('')
     try {
       await mdmApi.delete(`/departments/${id}`)
       qc.invalidateQueries({ queryKey: ['portal-departments'] })
-    } catch (err: any) { alert(err.message) }
+    } catch (err: any) { setListError(err.message) }
   }
 
   return (
@@ -474,6 +485,8 @@ export function DepartmentManagement() {
           <Plus className="h-4 w-4" />Add Department
         </button>
       </div>
+      {listError && <div className="mb-4"><Toast ok={false} msg={listError} /></div>}
+      {dlg.dialog}
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
         {isLoading ? (
           <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
@@ -546,6 +559,8 @@ const PAGE_SIZE = 20
 interface ImportResult { created: number; updated: number; errors: string[] }
 
 export function UserManagement() {
+  const dlg = useConfirmDialog()
+  const [listError, setListError] = useState('')
   const qc = useQueryClient()
 
   // ── Filters + pagination ──
@@ -636,18 +651,22 @@ export function UserManagement() {
     } catch (err: any) { setError(err.message) } finally { setSaving(false) }
   }
 
+  // Asked in-page; refusals of deactivate / export / import show above the
+  // table (all were browser pop-ups).
   const handleDelete = async (id: string) => {
-    if (!confirm('Deactivate this user?')) return
+    if (!(await dlg.confirm({ title: 'Deactivate user', message: 'Deactivate this user?', confirmLabel: 'Deactivate' }))) return
+    setListError('')
     try { await epmsApi.delete(`/users/${id}`); qc.invalidateQueries({ queryKey: ['portal-users'] }) }
-    catch (err: any) { alert(err.message) }
+    catch (err: any) { setListError(err.message) }
   }
 
   // ── Export ──
   const [exporting, setExporting] = useState(false)
   const handleExport = async () => {
     setExporting(true)
+    setListError('')
     try { await epmsDownload('/users/export', 'users.csv') }
-    catch (err: any) { alert(err.message) }
+    catch (err: any) { setListError(err.message) }
     finally { setExporting(false) }
   }
 
@@ -660,12 +679,12 @@ export function UserManagement() {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
-    setImporting(true); setImportResult(null)
+    setImporting(true); setImportResult(null); setListError('')
     try {
       const result = await epmsUpload<ImportResult>('/users/import', file)
       setImportResult(result)
       qc.invalidateQueries({ queryKey: ['portal-users'] })
-    } catch (err: any) { alert(err.message) }
+    } catch (err: any) { setListError(err.message) }
     finally { setImporting(false) }
   }
 
@@ -735,6 +754,9 @@ export function UserManagement() {
           </button>
         </div>
       </div>
+
+      {listError && <div className="mb-4"><Toast ok={false} msg={listError} /></div>}
+      {dlg.dialog}
 
       {/* Import result */}
       {importResult && (
@@ -937,6 +959,16 @@ function CurrencySettings() {
 
   const currDefault = defaultCurrency || cfg?.default_currency || 'CAD'
   const currEnabled = enabled ?? cfg?.enabled_currencies ?? ['CAD']
+  // Every currency the forms may offer must be on this page, so an admin can
+  // see it and switch it off: a code enabled outside the presets (e.g. HKD,
+  // added as a custom currency on the old EPMS settings page) was stored as
+  // enabled, offered on New PO / New PR, but never shown here (ISS-0118).
+  const allCurrencies = [...new Set([
+    ...PRESET_CURRENCIES,
+    ...(cfg?.custom_currencies ?? []).map((c) => c.value),
+    ...(cfg?.enabled_currencies ?? []),
+    currDefault,
+  ])]
 
   const toggleEnabled = (code: string) => {
     const next = currEnabled.includes(code) ? currEnabled.filter((c) => c !== code) : [...currEnabled, code]
@@ -959,12 +991,12 @@ function CurrencySettings() {
       <Field label="Default Currency">
         <select value={currDefault} onChange={(e) => setDefaultCurrency(e.target.value)}
           className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
-          {PRESET_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          {allCurrencies.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       </Field>
       <Field label="Enabled Currencies" hint="Only enabled currencies appear in transaction forms.">
         <div className="grid grid-cols-4 gap-2 mt-1">
-          {PRESET_CURRENCIES.map((c) => {
+          {allCurrencies.map((c) => {
             const on = currEnabled.includes(c)
             return (
               <button key={c} type="button" onClick={() => toggleEnabled(c)}
@@ -2071,9 +2103,16 @@ function ErpSyncToolbar({ kind, onSearchChange, search, filters }: {
   const s = status.data?.[kind]
   const [syncing, setSyncing] = useState<'inc' | 'full' | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const dlg = useConfirmDialog()
 
   const trigger = async (full: boolean) => {
-    if (full && !confirm('Pull ALL records from ERP from the beginning. This may take several minutes. Continue?')) return
+    // Asked in-page (was the browser's confirm).
+    if (full && !(await dlg.confirm({
+      title: 'Full resync',
+      message: 'Pull ALL records from ERP from the beginning. This may take several minutes. Continue?',
+      confirmLabel: 'Continue',
+      tone: 'primary',
+    }))) return
     setSyncing(full ? 'full' : 'inc')
     try {
       const r = await mdmApi.post<ErpSyncResult>(`/erp/sync/${kind}?full=${full}`)
@@ -2117,6 +2156,7 @@ function ErpSyncToolbar({ kind, onSearchChange, search, filters }: {
         {filters}
       </div>
       {toast && <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{toast}</div>}
+      {dlg.dialog}
     </div>
   )
 }
@@ -2654,8 +2694,10 @@ export default function AdminPanel() {
           </a>
         </div>
 
-        {/* Section nav */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+        {/* Section nav. No scrollbar of its own (ISS-0182): Chrome on Windows
+            gives it ~15px, narrowing the menu out of line with "Back to Portal"
+            above; it still scrolls with wheel, touchpad and keyboard. */}
+        <div className="flex-1 overflow-y-auto p-2 space-y-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {SECTIONS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}

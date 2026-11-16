@@ -9,7 +9,7 @@ import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
 import { formatAmount, formatDate, formatQty, cn } from '@/lib/utils'
 import type { ApprovalStep, CurrentStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
-import { useConfig } from '@/hooks/useConfig'
+import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import { usePr, usePrAction, usePrEvents, usePrWorkflowSteps } from '@/hooks/usePrs'
 import { useApprovalReminder } from '@/hooks/useApprovalReminder'
 import { prService } from '@/services/pr'
@@ -17,6 +17,7 @@ import type { ApiEvent } from '@/services/pr'
 import { historyLine } from '@/lib/approvalHistory'
 import { buildApprovalNodes } from '@/lib/approvalTimeline'
 import { useTasks } from '@/hooks/useTasks'
+import { holdsApproveTask } from '@/lib/stepHolder'
 import { useCloseOnEscape } from '@/hooks/useCloseOnEscape'
 import { useBudgetOverview, useFactors } from '@/hooks/useBudget'
 import { usePrAttachments, useUploadAttachment, useDeleteAttachment, useRegeneratePrPdf } from '@/hooks/usePrAttachments'
@@ -25,6 +26,7 @@ import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
 import { generatePrHtml } from '@/lib/pr-document'
 import { downloadPdf } from '@/lib/pdf-utils'
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const TYPE_LABELS: Record<number, string> = {
   1: 'Raw Mat./Pack.',
@@ -245,8 +247,11 @@ export default function PrDetailPage() {
   // is the only reliable way to determine canApprove — role string comparison
   // alone breaks for routing tokens (gm_or_opm) and multi-role users (PRD §1.2, §3.3.6).
   const { data: myTasks } = useTasks({ is_completed: false })
-  const hasApproveTask = !!pr && !!(myTasks?.items ?? []).some(
-    (t) => t.document_id === pr.id && t.type === 'approve_pr'
+  // Only the viewer's own task counts — an admin's list holds everyone's
+  // (ISS-0156; lib/stepHolder.ts).
+  const myRoles = useRolePermissions().data?.roles
+  const hasApproveTask = !!pr && !!user && holdsApproveTask(
+    myTasks?.items ?? [], pr.id, 'approve_pr', user, myRoles,
   )
   // system_admin bypass per PRD §3.3.6 — admin can act on any submitted/in_review doc.
   const isAdmin = user?.role === 'system_admin'
@@ -263,8 +268,14 @@ export default function PrDetailPage() {
   // (REJ-004 / REJ-005); the engine refuses everyone else, so don't offer them.
   // (The approver currently holding the PR acts from the approval bar instead.)
   const isRequesterOrAdmin = !!pr && (isAdmin || pr.created_by === user?.id)
+  // "The current approver" (PRD 3.2.4) is whoever holds the step — not a
+  // System Admin seeing the approval bar through the bypass: admins are never
+  // step holders (3.3.5), so gating on canApprove hid Recall from them on
+  // every submitted / in-review PR (ISS-0156).
+  const isCurrentApprover = hasApproveTask || (!tasksLoaded && !isAdmin && roleMatchesStep)
   // A refused action used to leave the page silent (ISS-0156).
   const [actionError, setActionError] = useState<string | null>(null)
+  const confirmDlg = useConfirmDialog()
   const onActionError = (e: unknown) =>
     setActionError(e instanceof Error ? e.message : 'The action could not be completed.')
 
@@ -337,7 +348,7 @@ export default function PrDetailPage() {
             <p className="mt-0.5 text-sm text-neutral-400">Submitted {formatDate(pr.submitted_at ?? '')}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {['draft', 'returned', 'submitted', 'in_review'].includes(pr.status) && !canApprove && isRequesterOrAdmin && (
+            {['draft', 'returned', 'submitted', 'in_review'].includes(pr.status) && !isCurrentApprover && isRequesterOrAdmin && (
               <>
                 {['draft', 'returned'].includes(pr.status) ? (
                   <Link to={`/pr/${pr.id}/edit`}>
@@ -350,15 +361,22 @@ export default function PrDetailPage() {
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => {
-                      if (confirm(`Recall ${pr.number} for editing? It will be moved back to Draft.`)) {
+                    onClick={() => confirmDlg.ask({
+                      title: 'Recall PR',
+                      subtitle: pr.number,
+                      message: `Recall ${pr.number} for editing? It will be moved back to Draft.`,
+                      confirmLabel: 'Recall',
+                      tone: 'primary',
+                      // Closes at once; a refusal shows under the header.
+                      onConfirm: () => {
                         setActionError(null)
                         prAction.mutate(
                           { action: 'recall' },
                           { onSuccess: () => navigate(`/pr/${pr.id}/edit`), onError: onActionError }
                         )
-                      }
-                    }}
+                      },
+                    })}
+                    disabled={prAction.isPending}
                   >
                     <Pencil className="h-3.5 w-3.5" />
                     Recall to Edit
@@ -371,12 +389,16 @@ export default function PrDetailPage() {
                   variant="secondary"
                   size="sm"
                   className="border-danger-200 text-danger-600 hover:bg-danger-50"
-                  onClick={() => {
-                    if (confirm(`Withdraw ${pr.number}? This will cancel the PR.`)) {
+                  onClick={() => confirmDlg.ask({
+                    title: 'Withdraw PR',
+                    subtitle: pr.number,
+                    message: `Withdraw ${pr.number}? This will cancel the PR.`,
+                    confirmLabel: 'Withdraw',
+                    onConfirm: () => {
                       setActionError(null)
                       prAction.mutate({ action: 'cancel' }, { onError: onActionError })
-                    }
-                  }}
+                    },
+                  })}
                   disabled={prAction.isPending}
                 >
                   Withdraw
@@ -706,6 +728,8 @@ export default function PrDetailPage() {
           </div>
         </div>
       )}
+
+      {confirmDlg.dialog}
 
       {/* Approval action modal */}
       {pendingAction && (

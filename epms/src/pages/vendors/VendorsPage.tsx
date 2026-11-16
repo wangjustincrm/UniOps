@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  Search, Plus, Pencil, Trash2, X, Check, Filter,
+  Search, Plus, Pencil, X, Check, Filter,
   Building2, ToggleLeft, ToggleRight, Download, Upload, Database,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,8 @@ import { downloadCsv } from '@/lib/api'
 import { normalizeEmailList } from '@/lib/emailList'
 import { useVendors, useCreateVendor, useUpdateVendor, useImportVendors } from '@/hooks/useVendors'
 import type { VendorImportResult } from '@/hooks/useVendors'
-import type { ApiVendor, CreateVendorBody, UpdateVendorBody } from '@/services/vendors'
+import { vendorService } from '@/services/vendors'
+import type { ApiVendor, CreateVendorBody, SimilarVendor, SimilarVendors, UpdateVendorBody } from '@/services/vendors'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import {
@@ -116,9 +117,12 @@ interface VendorFormProps {
   currencies: string[]
   saveError?: string | null
   saving?: boolean
+  /** Likely duplicate (ISS-0268): a warning the user may save through. */
+  duplicateWarning?: string | null
+  onSaveAnyway?: () => void
 }
 
-function VendorForm({ form, onChange, onSave, onCancel, title, errors, categories, currencies, saveError, saving }: VendorFormProps) {
+function VendorForm({ form, onChange, onSave, onCancel, title, errors, categories, currencies, saveError, saving, duplicateWarning, onSaveAnyway }: VendorFormProps) {
   const set = (k: keyof VendorFormData, v: string | boolean) =>
     onChange({ ...form, [k]: v })
 
@@ -375,6 +379,15 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         </div>
       )}
 
+      {duplicateWarning && (
+        <div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+          <span>{duplicateWarning} Check it is not the same vendor before saving.</span>
+          <Button variant="secondary" size="sm" onClick={onSaveAnyway} disabled={saving}>
+            Save anyway
+          </Button>
+        </div>
+      )}
+
       <div className="mt-4 flex justify-end gap-2 border-t border-primary-200 pt-4">
         <Button variant="secondary" size="sm" onClick={onCancel} disabled={saving}>
           Cancel
@@ -420,7 +433,11 @@ export default function VendorsPage() {
   const [formData, setFormData] = useState<VendorFormData>(BLANK_FORM)
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof VendorFormData, string>>>({})
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  // ISS-0268: a hand-entered vendor with the same name or ERP ID as one we
+  // already have (e.g. ALS / ALS-DUP, ERP ID 0001155) is warned about, not
+  // refused — VND-001 refuses only a repeated POID.
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null)
+  const [editOriginal, setEditOriginal] = useState<ApiVendor | null>(null)
   const [importResult, setImportResult] = useState<VendorImportResult | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [showErpImport, setShowErpImport] = useState(false)
@@ -491,24 +508,64 @@ export default function VendorsPage() {
     setFormData({ ...BLANK_FORM })
     setFormErrors({})
     setSaveError(null)
+    setDuplicateWarning(null)
+    setEditOriginal(null)
     setMode('add')
-    setDeleteConfirm(null)
   }
 
   const openEdit = (vendor: ApiVendor) => {
     setFormData(vendorToForm(vendor))
     setFormErrors({})
     setSaveError(null)
+    setDuplicateWarning(null)
+    setEditOriginal(vendor)
     setMode({ edit: vendor.id })
-    setDeleteConfirm(null)
   }
 
   const asMessage = (err: unknown) =>
     err instanceof Error ? err.message : 'Failed to save vendor'
 
-  const handleSave = () => {
+  // On edit only a CHANGED name / ERP ID is checked, so a vendor that already
+  // has a twin does not warn on every contact-detail edit.
+  const findDuplicates = async (): Promise<string | null> => {
+    const name = formData.name.trim()
+    const erpId = formData.erpId.trim()
+    const squash = (v: string) => v.split(/\s+/).join('').toLowerCase()
+    const orig = typeof mode === 'object' ? editOriginal : null
+    const q = {
+      name: !orig || squash(orig.name) !== squash(name) ? name : undefined,
+      erp_id: !orig || (orig.erp_id ?? '').trim().toLowerCase() !== erpId.toLowerCase() ? erpId : undefined,
+      exclude_id: orig?.id,
+    }
+    if (!q.name && !q.erp_id) return null
+    let found: SimilarVendors
+    try {
+      found = await vendorService.similar(q)
+    } catch {
+      return null // a failed check must not stop the save; the warning is advisory
+    }
+    const codes = (vs: SimilarVendor[]) =>
+      vs.map((v) => (v.is_active ? v.code : `${v.code} (inactive)`)).join(', ')
+    const byName = codes(found.name_matches)
+    const byErp = codes(found.erp_id_matches)
+    if (byName && byName === byErp) return `A vendor with this name and ERP ID already exists: ${byName}.`
+    return [
+      byName && `A vendor with this name already exists: ${byName}.`,
+      byErp && `A vendor with this ERP ID already exists: ${byErp}.`,
+    ].filter(Boolean).join(' ') || null
+  }
+
+  const handleSave = async () => {
     if (!validate(formData)) return
     setSaveError(null)
+    setDuplicateWarning(null)
+    const warning = await findDuplicates()
+    if (warning) { setDuplicateWarning(warning); return }
+    saveVendor()
+  }
+
+  const saveVendor = () => {
+    setDuplicateWarning(null)
     if (mode === 'add') {
       const body: CreateVendorBody = {
         code: formData.code.trim(),
@@ -702,13 +759,15 @@ export default function VendorsPage() {
           }
           form={formData}
           errors={formErrors}
-          onChange={setFormData}
-          onSave={handleSave}
-          onCancel={() => { setMode('none'); setSaveError(null) }}
+          onChange={(f) => { setFormData(f); setDuplicateWarning(null) }}
+          onSave={() => { void handleSave() }}
+          onCancel={() => { setMode('none'); setSaveError(null); setDuplicateWarning(null) }}
           categories={vendorCategories}
           currencies={enabledCurrencies}
           saveError={saveError}
           saving={createVendor.isPending || updateVendor.isPending}
+          duplicateWarning={duplicateWarning}
+          onSaveAnyway={saveVendor}
         />
       )}
 
@@ -822,71 +881,37 @@ export default function VendorsPage() {
                   {canWrite && (
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
-                        {deleteConfirm === vendor.id ? (
-                          <>
-                            <button
-                              onClick={() => {
-                                // No delete endpoint available — dismiss confirmation
-                                setDeleteConfirm(null)
-                              }}
-                              className="flex h-7 w-7 items-center justify-center rounded text-danger-600 hover:bg-danger-50"
-                              title="Confirm delete"
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={() => setDeleteConfirm(null)}
-                              className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100"
-                              title="Cancel"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => {
-                                openEdit(vendor)
-                                setDeleteConfirm(null)
-                              }}
-                              className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-primary-50 hover:text-primary-600"
-                              title="Edit vendor"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                updateVendor.mutate({
-                                  id: vendor.id,
-                                  body: { is_active: !vendor.is_active },
-                                })
-                              }}
-                              className={cn(
-                                'flex h-7 w-7 items-center justify-center rounded text-neutral-400',
-                                vendor.is_active
-                                  ? 'hover:bg-warning-50 hover:text-warning-600'
-                                  : 'hover:bg-success-50 hover:text-success-600'
-                              )}
-                              title={vendor.is_active ? 'Deactivate vendor' : 'Activate vendor'}
-                            >
-                              {vendor.is_active ? (
-                                <ToggleRight className="h-3.5 w-3.5" />
-                              ) : (
-                                <ToggleLeft className="h-3.5 w-3.5" />
-                              )}
-                            </button>
-                            <button
-                              onClick={() => {
-                                setDeleteConfirm(vendor.id)
-                                setMode('none')
-                              }}
-                              className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-danger-50 hover:text-danger-500"
-                              title="Delete vendor"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </>
-                        )}
+                        {/* No delete (ISS-0268): vendors have no delete in the PRD
+                            (EPMS §3.10, Portal "There is no delete"); deactivate
+                            retires a vendor. */}
+                        <button
+                          onClick={() => openEdit(vendor)}
+                          className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-primary-50 hover:text-primary-600"
+                          title="Edit vendor"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            updateVendor.mutate({
+                              id: vendor.id,
+                              body: { is_active: !vendor.is_active },
+                            })
+                          }}
+                          className={cn(
+                            'flex h-7 w-7 items-center justify-center rounded text-neutral-400',
+                            vendor.is_active
+                              ? 'hover:bg-warning-50 hover:text-warning-600'
+                              : 'hover:bg-success-50 hover:text-success-600'
+                          )}
+                          title={vendor.is_active ? 'Deactivate vendor' : 'Activate vendor'}
+                        >
+                          {vendor.is_active ? (
+                            <ToggleRight className="h-3.5 w-3.5" />
+                          ) : (
+                            <ToggleLeft className="h-3.5 w-3.5" />
+                          )}
+                        </button>
                       </div>
                     </td>
                   )}

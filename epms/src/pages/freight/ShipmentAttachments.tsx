@@ -8,6 +8,7 @@ import {
 } from '@/hooks/useFreight'
 import { shipmentAttachmentService, type ShipmentAttachment } from '@/services/freight'
 import { errorMessage } from './freightUi'
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 export function ShippingLabelBadge() {
   return (
@@ -55,6 +56,7 @@ export function ShipmentAttachmentsPanel({ shipmentId, editable }: { shipmentId:
   const upload = useUploadShipmentAttachment(shipmentId)
   const remove = useDeleteShipmentAttachment(shipmentId)
   const [error, setError] = useState<string | null>(null)
+  const confirmDlg = useConfirmDialog()
 
   const addFiles = async (files: File[]) => {
     if (upload.isPending) return
@@ -73,9 +75,18 @@ export function ShipmentAttachmentsPanel({ shipmentId, editable }: { shipmentId:
 
   const handleDelete = (a: ShipmentAttachment) => {
     if (remove.isPending) return
-    if (!window.confirm(`Remove ${a.filename} from this shipment?`)) return
-    setError(null)
-    remove.mutate(a.id, { onError: (e) => setError(errorMessage(e, 'Could not remove the file')) })
+    // Asked in-page (was the browser's confirm); a refusal still shows under
+    // the list.
+    confirmDlg.ask({
+      title: 'Remove File',
+      subtitle: a.filename,
+      message: `Remove ${a.filename} from this shipment?`,
+      confirmLabel: 'Remove',
+      onConfirm: () => {
+        setError(null)
+        remove.mutate(a.id, { onError: (e) => setError(errorMessage(e, 'Could not remove the file')) })
+      },
+    })
   }
 
   const run = (p: Promise<void>) => p.catch((e) => setError(errorMessage(e, 'Could not open the file')))
@@ -122,6 +133,7 @@ export function ShipmentAttachmentsPanel({ shipmentId, editable }: { shipmentId:
         </div>
       )}
       {error && <p className="text-xs text-danger-600">{error}</p>}
+      {confirmDlg.dialog}
     </div>
   )
 }

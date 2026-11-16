@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom'
 import { X, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useCloseOnEscape } from '@/hooks/useCloseOnEscape'
 
 /**
  * In-page confirmation for an AP Reject of a pending_ap_review receipt — in
@@ -18,6 +19,8 @@ export function RejectReceiptDialog({ receiptLabel, onClose, onConfirm }: {
   onClose: () => void
   onConfirm: () => void
 }) {
+  // Escape closes without rejecting, like Cancel.
+  useCloseOnEscape(true, onClose)
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
       <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true">

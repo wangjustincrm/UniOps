@@ -5,7 +5,7 @@ import { useBack, useDocTabTitle } from '@/components/BackLink'
 import { NotFoundState } from '@/components/shared/NotFoundState'
 import {
   ArrowLeft, FileText, ExternalLink, CheckCircle2,
-  AlertTriangle, GitMerge, Paperclip, TrendingUp, Trash2, Pencil, X, Plus, Save, Upload, UserPlus,
+  AlertTriangle, GitMerge, TrendingUp, Trash2, Pencil, X, Plus, Save, Upload, UserPlus,
   Unlink, Info,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -32,6 +32,7 @@ import { AssignMatchDialog } from './AssignMatchDialog'
 import { MatchPanel } from './MatchPanel'
 import { CourierInvoiceView } from './CourierInvoiceView'
 import { useStaticTabNav } from '@/hooks/useStaticTabNav'
+import { ATTACHMENT_RULE, uploadProblem } from '@/lib/uploadLimits'
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
@@ -880,7 +881,7 @@ export default function InvoiceDetailPage() {
                         <tr className="border-b border-neutral-100">
                           <th className="pb-2 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide">Description</th>
                           <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-16">Qty</th>
-                          <th className="pb-2 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide w-16">Unit</th>
+                          <th className="pb-2 pl-3 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide w-16">Unit</th>
                           <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-28">Unit Price</th>
                           <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-28">Line Total</th>
                         </tr>
@@ -948,20 +949,12 @@ export default function InvoiceDetailPage() {
                 <InvoiceAttachments invoiceId={inv.id} fileName={inv.file_name} fileSize={inv.file_size} canUpload={hasInvoiceUpload} />
               </div>
 
-              {/* File / notes */}
-              {(inv.file_name || inv.notes) && (
+              {/* Notes. The invoice file itself is listed once, under
+                  Attachments above (ISS-0243: it used to repeat here with a
+                  Download button that did nothing). */}
+              {inv.notes && (
                 <div className="rounded-xl border border-neutral-200 bg-white p-5 sm:col-span-2">
-                  {inv.file_name && (
-                    <div className="flex items-center gap-3 mb-3">
-                      <Paperclip className="h-4 w-4 text-neutral-400" />
-                      <span className="text-sm text-neutral-700">{inv.file_name}</span>
-                      {inv.file_size && <span className="text-xs text-neutral-400">{inv.file_size}</span>}
-                      <Button variant="secondary" size="sm" className="ml-auto">Download</Button>
-                    </div>
-                  )}
-                  {inv.notes && (
-                    <p className="text-sm text-neutral-600 border-t border-neutral-100 pt-3 mt-3">{inv.notes}</p>
-                  )}
+                  <p className="text-sm text-neutral-600">{inv.notes}</p>
                 </div>
               )}
             </div>
@@ -1145,7 +1138,7 @@ export default function InvoiceDetailPage() {
                         <tr className="border-b border-neutral-100">
                           <th className="pb-2 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide">Description</th>
                           <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-20">Qty</th>
-                          <th className="pb-2 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide w-20">Unit</th>
+                          <th className="pb-2 pl-2 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide w-20">Unit</th>
                           <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-28">Unit Price</th>
                           <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-28">Total</th>
                           <th className="pb-2 w-8" />
@@ -1802,6 +1795,10 @@ function InvoiceAttachments({
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
+    // Same rule as the other attachment areas (ISS-0093); expense-api only
+    // checks the size, so the type is refused here before anything is sent.
+    const problem = uploadProblem(file, ATTACHMENT_RULE)
+    if (problem) { setUploadError(problem); return }
     setUploading(true)
     setUploadError(null)
     try {
@@ -1826,7 +1823,7 @@ function InvoiceAttachments({
   const UploadButton = ({ label = 'Upload file' }: { label?: string }) => (
     canUpload ? (
       <>
-        <input ref={fileInputRef} type="file" className="sr-only" onChange={handleFileChange} />
+        <input ref={fileInputRef} type="file" accept={ATTACHMENT_RULE.accept} className="sr-only" onChange={handleFileChange} />
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
@@ -1847,6 +1844,7 @@ function InvoiceAttachments({
         </h3>
         {attachments.length > 0 && <UploadButton label="Add" />}
       </div>
+      {canUpload && <p className="-mt-2 mb-3 text-xs text-neutral-400">{ATTACHMENT_RULE.hint}</p>}
 
       {uploadError && (
         <p className="mb-2 text-xs text-danger-600 flex items-center gap-1">

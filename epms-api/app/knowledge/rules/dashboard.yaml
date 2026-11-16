@@ -42,3 +42,22 @@ rules:
     test:
       - "tests/test_rule_registry.py::test_the_three_committed_figures"
       - "tests/test_dashboard_dept_scope.py::test_dept_manager_open_pos_are_their_departments"
+  - id: budget_overview_colours
+    asked_as:
+      - Dashboard 的 Budget Overview 为什么显示 No budget 或红色？
+      - why does Budget Overview show No budget or red
+      - Budget Overview says 0% but Finance shows spending
+    answer: >
+      Budget Overview on the Approver dashboard shows one bar per budget
+      category (L1) with the figures of Finance → Budget Dashboard for the
+      cost centers you may see, unposted vouchers included. A category with
+      spending but no budget reads "No budget" in red, as on the Budget
+      Dashboard, where spend with no budget counts as over. A category whose
+      total is under budget but that holds an over-budget account is red too,
+      with the number of over-budget accounts ("20% · 1 over"). Otherwise the
+      bar is green, amber from 70% and red from 90%.
+    enforced_in: "epms-api app/crud/dashboard.py _approver_budget (BudgetGroupRow.over_accounts); epms/src/components/dashboard/BudgetOverview.tsx groupStatus"
+    provenance: pinned
+    test:
+      - "tests/test_dashboard_dept_scope.py::test_budget_is_judged_per_cost_center_and_account"
+      - "epms/src/components/dashboard/BudgetOverview.test.ts"

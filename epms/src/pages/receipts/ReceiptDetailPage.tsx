@@ -25,6 +25,8 @@ import {
 } from '@/hooks/useAgreementReceipts'
 import { VOIDABLE_STATUSES } from '@/components/agreements/ReceiptTable'
 import { RejectReceiptDialog } from '@/components/agreements/RejectReceiptDialog'
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { errorMessage } from '@/lib/submitFailure'
 import {
   ReceiptVendorPicker,
   type ReceiptVendorValue,
@@ -230,9 +232,10 @@ function ReceiptDetail({
       }
     }
     setFormError(null)
-    // mutate, not mutateAsync: the hook's onError already alerts, and
-    // mutateAsync would ALSO reject — an unhandled promise rejection out of
-    // this submit handler on every failed save.
+    // mutate, not mutateAsync: a refusal shows beside Save Changes
+    // (updateReceipt.error), and mutateAsync would ALSO reject — an unhandled
+    // promise rejection out of this submit handler on every failed save.
+    updateReceipt.reset()
     updateReceipt.mutate({
       agreementId,
       receiptId: receipt.id,
@@ -266,12 +269,19 @@ function ReceiptDetail({
     })
   }
 
+  const confirmDlg = useConfirmDialog()
   const handleVoid = () => {
-    if (!confirm(
-      'Remove this receipt? This cannot be undone — a removed receipt is final and can never be ' +
-      'edited, approved, or claimed by an invoice. Record a new receipt if the spend still needs paying.'
-    )) return
-    voidReceipt.mutate({ agreementId, receiptId: receipt.id })
+    // Asked in-page; a refusal shows in the dialog (both were browser pop-ups).
+    confirmDlg.ask({
+      title: 'Remove Receipt',
+      subtitle: heading,
+      message:
+        'Remove this receipt? This cannot be undone — a removed receipt is final and can never be ' +
+        'edited, approved, or claimed by an invoice. Record a new receipt if the spend still needs paying.',
+      confirmLabel: 'Remove',
+      failureFallback: 'Failed to remove receipt',
+      onConfirm: () => voidReceipt.mutateAsync({ agreementId, receiptId: receipt.id }),
+    })
   }
 
   const [confirmReject, setConfirmReject] = useState(false)
@@ -284,6 +294,7 @@ function ReceiptDetail({
     // action and it lands on `open`, which is still editable and voidable.
     // Reject is confirmed in RejectReceiptDialog (ISS-0115), which calls here.
     setPendingReview(action)
+    apReview.reset()
     apReview.mutate({ agreementId, receiptId: receipt.id, action }, {
       onSettled: () => setPendingReview(null),
     })
@@ -350,6 +361,13 @@ function ReceiptDetail({
           )}
         </div>
       </div>
+
+      {/* A refused Approve / Reject (was a browser alert). */}
+      {apReview.isError && (
+        <p role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+          {errorMessage(apReview.error, 'Failed to record AP review')}
+        </p>
+      )}
 
       {/* Why this receipt is in AP review — the same fact ReceiptListPage shows
           on its sub-row, repeated here because this page is now a place AP can
@@ -550,6 +568,9 @@ function ReceiptDetail({
                 </FormField>
 
                 {formError && <p className="text-sm text-danger-600">{formError}</p>}
+                {!formError && updateReceipt.isError && (
+                  <p role="alert" className="text-sm text-danger-600">{errorMessage(updateReceipt.error, 'Failed to save receipt')}</p>
+                )}
 
                 <div className="flex justify-end">
                   <Button type="submit" disabled={anyPending} className={cn(anyPending && 'cursor-not-allowed')}>
@@ -672,6 +693,7 @@ function ReceiptDetail({
         </div>
       </div>
 
+      {confirmDlg.dialog}
       {confirmReject && (
         <RejectReceiptDialog
           receiptLabel={`${heading} · ${receipt.agreement_number}`}
@@ -697,11 +719,15 @@ function ReceiptAttachmentsCard({
   const remove = useDeleteReceiptAttachment()
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const busy = upload.isPending || remove.isPending
+  const confirmDlg = useConfirmDialog()
+  // A failed upload / download, shown in the card (were browser alerts).
+  const [downloadError, setDownloadError] = useState<string | null>(null)
 
   const handlePick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
+    setDownloadError(null)
     upload.mutate({ agreementId, receiptId: receipt.id, file })
   }
 
@@ -711,16 +737,27 @@ function ReceiptAttachmentsCard({
     // delete (the attachment routes gate on permission, not receipt status),
     // so the honest thing is to say what it costs rather than hide the button.
     const claimed = receipt.status === 'reconciled'
-    if (!confirm(
-      `Delete ${filename}?` +
-      (claimed
-        ? ` This receipt has already been claimed by invoice ${receipt.invoice_ref ?? '(matched)'} — ` +
-          'this file is the evidence behind that payment. Deleting it cannot be undone.'
-        : ' This cannot be undone.')
-    )) return
-    setPendingDeleteId(attachmentId)
-    remove.mutate({ agreementId, receiptId: receipt.id, attachmentId }, {
-      onSettled: () => setPendingDeleteId(null),
+    confirmDlg.ask({
+      title: 'Delete File',
+      subtitle: filename,
+      message:
+        `Delete ${filename}?` +
+        (claimed
+          ? ` This receipt has already been claimed by invoice ${receipt.invoice_ref ?? '(matched)'} — ` +
+            'this file is the evidence behind that payment. Deleting it cannot be undone.'
+          : ' This cannot be undone.'),
+      confirmLabel: 'Delete',
+      failureFallback: 'Failed to delete photo',
+      onConfirm: async () => {
+        upload.reset()
+        setDownloadError(null)
+        setPendingDeleteId(attachmentId)
+        try {
+          await remove.mutateAsync({ agreementId, receiptId: receipt.id, attachmentId })
+        } finally {
+          setPendingDeleteId(null)
+        }
+      },
     })
   }
 
@@ -752,6 +789,13 @@ function ReceiptAttachmentsCard({
         )}
       </div>
 
+      {(upload.isError || downloadError) && (
+        <p role="alert" className="mb-3 text-sm text-danger-600">
+          {downloadError ?? errorMessage(upload.error, 'Failed to upload photo')}
+        </p>
+      )}
+      {confirmDlg.dialog}
+
       {isLoading ? (
         <p className="py-6 text-center text-sm text-neutral-400">Loading…</p>
       ) : attachments.length === 0 ? (
@@ -778,9 +822,9 @@ function ReceiptAttachmentsCard({
                 // nginx's SPA fallback then serves the app shell, which reads
                 // as "Download bounces me to the homepage". Errors are surfaced
                 // — download() rejects rather than failing silently.
-                onClick={() => agreementReceiptAttachmentService
+                onClick={() => { setDownloadError(null); agreementReceiptAttachmentService
                   .download(agreementId, receipt.id, att.id, att.filename)
-                  .catch((err: unknown) => alert(err instanceof Error ? err.message : 'Download failed'))}
+                  .catch((err: unknown) => setDownloadError(errorMessage(err, 'Download failed'))) }}
                 className="text-xs text-primary-600 hover:underline"
               >
                 Download

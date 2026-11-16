@@ -50,6 +50,10 @@ values:
         collected; off by default.
       - A short delivery is recorded as a discrepancy rather than being forced
         to match the order.
+      - On Collect Goods the requester can mark each line Good, Discrepancy or
+        Damaged with a note. These are not stored on the lines; they are added
+        to the GR's Collection Notes after the General Notes. Nobody is
+        notified and no task is raised.
       - A collected receipt can also be flagged Discrepancy by hand (Flag
         Discrepancy on the GR page, for the requester, Procurement or a
         System Admin). That closes its open tasks and creates none; it does not
@@ -67,8 +71,9 @@ values:
       the warehouse to check in.
     notes:
       - When someone else records the service receipt, the owner's task reads
-        "Confirm Service Completion" and is done with that button on the GR
-        page (Satisfactory or Has Issues).
+        "Confirm Service Completion" (listed under Confirm Service Receipt in
+        the Task Inbox) and is done with that button on the GR page
+        (Satisfactory or Has Issues).
       - The PR's expected completion date is what triggers the reminder; once
         it passes you are nudged to confirm.
       - A purchase order whose PR never carried a completion date is outside

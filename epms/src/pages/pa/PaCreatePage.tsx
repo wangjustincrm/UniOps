@@ -27,6 +27,7 @@ import { DerivedPaLinesTable } from './DerivedPaLinesTable'
 import { derivePaLines, derivedLinesTotal, invoiceOwnLines } from '@/lib/paLinesFromInvoices'
 import { dueWindowViolation, earliestDueGroup, PA_INVOICE_DUE_WINDOW_DAYS } from './invoiceDueWindow'
 import { invoiceClaims } from './invoiceClaims'
+import { defaultPrepaymentApplied, isSettlementOverpaid } from './settlementApplied'
 
 // Invoice multi-select list — shared by the PO route (the PO's invoices) and
 // the agreement route (matched-but-unpaid invoices only). Both routes hand it
@@ -215,6 +216,9 @@ function PoPaCreate() {
   const [paType, setPaType]                         = useState<'regular' | 'prepayment' | 'settlement' | 'balance'>('regular')
   const [prepaymentPct, setPrepaymentPct]           = useState('50')
   const [expectedSettlement, setExpectedSettlement] = useState('')
+  // The date box lets a 5-digit year through (03/01/22026); the server then
+  // answered with its parser's text and the field name (ISS-0251).
+  const settlementDateInvalid = expectedSettlement !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(expectedSettlement)
   const [prepaymentPaId, setPrepaymentPaId]         = useState('')
 
   // ── Step 3 — Charge breakdown & details ───────────────────────────────────
@@ -226,6 +230,8 @@ function PoPaCreate() {
   const [otherCharges, setOther]        = useState('')
   const [otherChargesNote, setOtherNote]= useState('')
   const [prepaymentApplied, setPrepaymentApplied] = useState('')
+  // Typed by the user — the default below then stops following the final value.
+  const [appliedEdited, setAppliedEdited] = useState(false)
   const [notes, setNotes]               = useState('')
   const [submitted, setSubmitted]       = useState(false)
   const [receiptOverride, setReceiptOverride]             = useState(false)
@@ -349,7 +355,10 @@ function PoPaCreate() {
         && !grsData.items.some((g) => g.po_id === p.id && ['collected', 'confirmed', 'discrepancy'].includes(g.status))
         && !p.line_items.some((l) => Number(l.received_qty) > 0))
     : []
-  const receiptBlocked = !isAgreementMode && !isPrepayment && (!hasThreeWay || uncollectedPos.length > 0)
+  // Only once a PO is chosen and its invoices have loaded: with nothing picked
+  // yet the warning and its override showed on an empty form (ISS-0241).
+  const receiptBlocked = !isAgreementMode && !isPrepayment && selectedPos.length > 0 && invoicesData !== undefined
+    && (!hasThreeWay || uncollectedPos.length > 0)
   // Which of the two the warning names — the server reports "no receipt" first.
   const blockedByCollection = receiptBlocked && hasThreeWay
   const receiptOverrideMissing = receiptBlocked && (!canOverride || !receiptOverride || !receiptOverrideReason.trim())
@@ -471,7 +480,9 @@ function PoPaCreate() {
   const prepaidAmount = settlementPool.reduce((sum, p) => sum + Number(p.payment_amount ?? 0), 0)
   // Net payable = 全额 − 预付抵扣(余款);非 settlement 类型即全额
   const netPayable   = isSettlementType ? Math.max(grossTotal - appliedNum, 0) : grossTotal
-  const isOverpaid   = isSettlementType && grossTotal - appliedNum < -0.01
+  // Overpaid = more was prepaid than the final value (PP-013) — the applied
+  // amount itself is capped at the final value, so it is not the test.
+  const isOverpaid   = isSettlementType && isSettlementOverpaid(prepaidAmount, grossTotal)
   // net==0 settlement = pure reconciliation: no cash, no bank, no standard approval
   const isReconcileOnly  = isSettlementType && grossTotal > 0 && netPayable === 0
 
@@ -527,6 +538,7 @@ function PoPaCreate() {
     setExpectedSettlement('')
     setPrepaymentPaId('')
     setPrepaymentApplied('')
+    setAppliedEdited(false)
     setTitle('')
     setSubtotal('')
     setTaxAmount('')
@@ -546,21 +558,35 @@ function PoPaCreate() {
     setPrepaymentApplied(String(sourcePrepay.payment_amount ?? ''))
   }, [sourcePrepay?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Prefill "Prepayment applied" with the whole pool once per pool — with staged
-  // prepayments that is the sum of every stage, not the one picked. Keyed so a
-  // background refetch does not overwrite an amount the user has since edited.
+  // Prefill "Prepayment applied" with the whole pool — with staged prepayments
+  // that is the sum of every stage, not the one picked — capped at the final
+  // value: when more was prepaid than invoiced, the whole pool would make the
+  // net negative and the form refused its own number (ISS-0237). Capped, the
+  // net is 0 and the server sends the overpaid settlement to Finance BP
+  // (PP-013). Follows the final value as invoices are ticked, until the user
+  // types an amount; a new pool fills it again.
   const poolKey = settlementPool.map((p) => p.id).join(',')
   const prefilledPoolRef = useRef('')
   useEffect(() => {
-    if (!isSettlementType || !poolKey || prefilledPoolRef.current === poolKey) return
+    if (!isSettlementType || !poolKey) return
+    const newPool = prefilledPoolRef.current !== poolKey
+    if (!newPool && appliedEdited) return
     prefilledPoolRef.current = poolKey
-    setPrepaymentApplied(prepaidAmount.toFixed(2))
-  }, [isSettlementType, poolKey]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (newPool) setAppliedEdited(false)
+    setPrepaymentApplied(defaultPrepaymentApplied(prepaidAmount, grossTotal).toFixed(2))
+  }, [isSettlementType, poolKey, grossTotal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pre-select the PO's matched invoices (and the GRs they were matched against)
   // once their data has loaded. Matched invoices are the ones ready to pay, so
   // defaulting them in saves the user re-checking what the 3-way match already
   // confirmed. Runs once per PO (guarded by the ref) so manual de-selection sticks.
+  //
+  // `posData` is a dependency because the reset above waits for the PO list and
+  // clears the ref and the ticks. Opened from a PO page or a Create PA task
+  // (?poId=), this PO's invoices / GRs / PAs land long before the whole PO list,
+  // so the ticks were made first, then wiped by the reset, and none of the
+  // inputs below changed again to put them back (ISS-0136). Picking the PO by
+  // hand worked because the list was already there.
   useEffect(() => {
     if (!selectedPoId) return
     if (autoSelectedForPoRef.current === poSelectionKey) return
@@ -576,7 +602,7 @@ function PoPaCreate() {
     // The receipts are NOT chosen here — they follow the invoice selection in
     // the effect below, which covers this first fill and every later change
     // with one rule instead of two.
-  }, [poSelectionKey, invoicesData, grsData, poActivePas]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [poSelectionKey, invoicesData, grsData, poActivePas, posData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Goods receipts follow the invoices. An invoice is matched against the
   // receipts it covers before it can be paid, so "which goods did this payment
@@ -734,7 +760,9 @@ function PoPaCreate() {
       else if (paType === 'prepayment' && priorPrepaidPct + parseFloat(prepaymentPct) > 100)
         errors.push(`Prepayment percentage cannot exceed ${100 - priorPrepaidPct}% — ${priorPrepaidPct}% of this PO is already prepaid`)
       if (paType === 'prepayment' && !expectedSettlement)
-        errors.push('Expected settlement date is required for prepayment')
+          errors.push('Expected settlement date is required for prepayment')
+      if (paType === 'prepayment' && settlementDateInvalid)
+        errors.push('Expected Settlement Date is not a valid date')
       if (isSettlementType && !prepaymentPaId)
         errors.push('Original Prepayment PA is required')
       if (isSettlementType && unpaidStages.length > 0)
@@ -876,7 +904,7 @@ function PoPaCreate() {
     if (isSettlementType && (appliedNum > grossTotal + 0.01)) return
     // Same bounds as the on-page message above — sending 120% only bought a
     // second, raw copy of it in a browser pop-up (ISS-0115).
-    if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement || prepayPctNum <= 0 || prepayPctNum > 100
+    if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement || settlementDateInvalid || prepayPctNum <= 0 || prepayPctNum > 100
       || priorPrepaidPct + prepayPctNum > 100)) return
     if (isSettlementType && !prepaymentPaId) return
     if (receiptOverrideMissing) return
@@ -1482,13 +1510,17 @@ function PoPaCreate() {
                         </label>
                         <input
                           type="date"
+                          max="9999-12-31"
                           value={expectedSettlement}
                           onChange={(e) => setExpectedSettlement(e.target.value)}
                           className={cn(
                             'h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                            submitted && !expectedSettlement ? 'border-danger-400' : 'border-neutral-300'
+                            submitted && (!expectedSettlement || settlementDateInvalid) ? 'border-danger-400' : 'border-neutral-300'
                           )}
                         />
+                        {submitted && settlementDateInvalid && (
+                          <p className="text-xs text-danger-600">Expected Settlement Date is not a valid date</p>
+                        )}
                       </div>
                     </div>
                     <p className="text-[11px] text-info-700">
@@ -1692,7 +1724,7 @@ function PoPaCreate() {
                     <input
                       type="number" min={0} step={0.01}
                       value={prepaymentApplied}
-                      onChange={(e) => setPrepaymentApplied(e.target.value)}
+                      onChange={(e) => { setPrepaymentApplied(e.target.value); setAppliedEdited(true) }}
                       placeholder="0.00"
                       className="h-10 px-3 rounded-lg border border-neutral-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
                     />
@@ -1701,7 +1733,8 @@ function PoPaCreate() {
                     </p>
                     {isOverpaid && (
                       <p className="text-xs text-warning-700">
-                        Prepayment exceeds the final amount — net payable is 0; a credit note is expected.
+                        Total prepaid {formatAmount(prepaidAmount, formCurrency)} exceeds the final amount — only
+                        the final amount is applied, net payable is 0; a credit note is expected for the difference.
                       </p>
                     )}
                   </div>
