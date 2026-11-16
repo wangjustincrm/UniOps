@@ -627,6 +627,7 @@ async def edit_incident_type(code: str, payload: IncidentTypePatch, db: SessionD
 class EmailTemplateOut(BaseModel):
     key: str
     name: str
+    group: str
     audience: str
     when: str
     placeholders: dict[str, str]
@@ -653,7 +654,8 @@ def _template_out(cfg: EhsConfig, key: str) -> EmailTemplateOut:
     t = et.TEMPLATES[key]
     mine = (cfg.email_templates or {}).get(key) or {}
     return EmailTemplateOut(
-        key=key, name=t.name, audience=t.audience, when=t.when, placeholders=t.placeholders,
+        key=key, name=t.name, group=t.group, audience=t.audience, when=t.when,
+        placeholders=t.placeholders,
         default_subject=t.subject, default_body=t.body,
         subject=mine.get("subject") or t.subject, body=mine.get("body") or t.body,
         customised=bool(mine))
@@ -712,8 +714,8 @@ async def preview_email_template(key: str, payload: EmailTemplateIn,
     found = et.problems(key, payload.subject, payload.body)
     if found:
         return EmailPreviewOut(subject="", html="", problems=found)
-    subject = et.fill(payload.subject, t.sample).strip()
+    subject = et.fill(payload.subject, t.sample, drop_empty_lines=False).strip()
     body = et.fill(payload.body, t.sample).strip()
-    links = {v: "#" for k, v in t.sample.items() if k in ("action_no", "source_no")}
+    links = {t.sample[k]: "#" for k in t.linked if t.sample.get(k)}
     return EmailPreviewOut(subject=subject, problems=[],
                            html=mail.render(body, title=subject, link="#", links=links))

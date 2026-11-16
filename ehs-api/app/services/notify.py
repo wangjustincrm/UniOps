@@ -215,28 +215,27 @@ async def incident_reported(db: AsyncSession, incident) -> None:
     if not people:
         return
 
-    where = incident.location_path or "the plant"
-    lines = [
-        f"{incident.incident_no} was reported at {where}.",
-        "",
-        (incident.description or "")[:600],
-    ]
-    if named_here:
-        lines += ["", named_here]
-    if also_why:
-        lines += ["", f"Copied to {' and '.join(also_why)}."]
-    if incident.mol_reportable:
-        lines += ["", "This has been flagged as reportable to the Ministry. "
-                      "OHSA s.51(1) allows forty-eight hours from the occurrence "
-                      "for the written report."]
-    if incident.injury_class:
-        lines += ["", f"Recorded as: {incident.injury_class.replace('_', ' ')}."]
+    # ★ UAT 14: HSE's wording (Settings → Email wording → A new incident is
+    # reported); each sentence that may not apply is its own placeholder, and
+    # its line drops out when it is empty.
+    values, links = _incident_values(incident)
+    values.update(
+        description=(incident.description or "")[:600],
+        area_owner_note=named_here,
+        copied_note=f"Copied to {' and '.join(also_why)}." if also_why else "",
+        ministry_note=("This has been flagged as reportable to the Ministry. "
+                       "OHSA s.51(1) allows forty-eight hours from the occurrence "
+                       "for the written report.") if incident.mol_reportable else "",
+        injury_class=(incident.injury_class or "").replace("_", " "),
+    )
+    subject, body = await email_templates.compose(db, "incident_reported", values)
 
     await mail.queue(
         db,
         to=[u.email for u in people],
-        subject=f"Safety incident {incident.incident_no}",
-        body="\n".join(lines),
+        subject=subject,
+        body=body,
+        links=links,
         doc_type=task_service.DOC_INCIDENT,
         doc_id=incident.id,
         template_key="incident_reported",
@@ -287,23 +286,21 @@ async def incident_status_changed(
     if not people:
         return
 
-    lines = [f"{incident.incident_no} — {label.lower()}"
-             + (f" by {by_name}." if by_name else "."), ""]
-    if detail:
-        lines += [detail, ""]
-    if incident.title:
-        lines.append(incident.title)
-    if incident.location_path:
-        lines.append(f"Where: {incident.location_path}")
-    if also_why:
-        lines += ["", f"Copied to {' and '.join(also_why)}, as Settings → Who is told asks."]
-    lines += ["", "Sent to the list for this change under Settings → Who is told."]
+    values, links = _incident_values(incident)
+    values.update(
+        change=label.lower(), by=f" by {by_name}" if by_name else "", detail=detail or "",
+        where=incident.location_path or "",
+        copied_note=(f"Copied to {' and '.join(also_why)}, as Settings → Who is told asks."
+                     if also_why else ""),
+    )
+    subject, body = await email_templates.compose(db, "incident_status", values)
 
     await mail.queue(
         db,
         to=[u.email for u in people],
-        subject=f"Safety incident {incident.incident_no}: {label.lower()}",
-        body="\n".join(lines),
+        subject=subject,
+        body=body,
+        links=links,
         doc_type=task_service.DOC_INCIDENT,
         doc_id=incident.id,
         template_key=f"incident_{event}",
@@ -323,17 +320,19 @@ async def statutory_escalated(db: AsyncSession, deadline, *, overdue: bool) -> N
     if not people:
         return
 
-    what = deadline.kind.replace("_", " ")
-    when = "has passed" if overdue else "is approaching"
+    subject, body = await email_templates.compose(db, "statutory_escalation", {
+        "state": "OVERDUE" if overdue else "Due soon",
+        "what": deadline.kind.replace("_", " "),
+        "record": deadline.source_ref or "a Safety record",
+        "when": "has passed" if overdue else "is approaching",
+        "regulation": deadline.regulation_ref or "Statutory obligation",
+        "due": deadline.due_at.isoformat(timespec="minutes"),
+    })
     await mail.queue(
         db,
         to=[u.email for u in people],
-        subject=(f"{'OVERDUE' if overdue else 'Due soon'}: {what} "
-                 f"— {deadline.source_ref or ''}").strip(),
-        body=(f"The {what} deadline for {deadline.source_ref or 'a Safety record'} "
-              f"{when}.\n\n"
-              f"{deadline.regulation_ref or 'Statutory obligation'}. "
-              f"Due {deadline.due_at.isoformat(timespec='minutes')}."),
+        subject=subject,
+        body=body,
         doc_type=task_service.DOC_INCIDENT,
         doc_id=deadline.source_id,
         template_key="statutory_escalation",
@@ -444,6 +443,24 @@ def _action_values(action, *, owner_name: str | None, incident=None, cause=None)
         links[incident.incident_no] = mail.module_link(f"/incidents/{incident.id}")
     elif source_no and action.source_id and action.source_type in _SOURCE_PATHS:
         links[source_no] = mail.module_link(_SOURCE_PATHS[action.source_type].format(id=action.source_id))
+    return values, links
+
+
+def _incident_values(incident) -> tuple[dict, dict]:
+    """What an incident email can say, and its number as a link (UAT 14)."""
+    from app.services import incident_type, statutory
+    code = (incident.extra or {}).get("incident_type")
+    t = incident_type.BY_CODE.get(code) if code else None
+    at = incident.occurred_at
+    values = {
+        "incident_no": incident.incident_no,
+        "kind": (t.label.split(" — ")[0] if t else (incident.extra or {}).get("incident_type_label")) or "",
+        "title": incident.title or "",
+        "where": (incident.location_path or "the plant"),
+        "occurred_at": (at.astimezone(statutory.ONTARIO).strftime("%-d %B %Y, %H:%M") if at else ""),
+        "reported_by": "Anonymous" if incident.is_anonymous else (incident.reported_by_name or ""),
+    }
+    links = {incident.incident_no: mail.module_link(f"/incidents/{incident.id}")}
     return values, links
 
 
@@ -575,13 +592,16 @@ async def feedback_left(db: AsyncSession, row) -> None:
     people = await by_roles(db, DEFAULT_INCIDENT_ROLES)
     if not people:
         return
-    who = row.submitted_by_name or "Somebody"
-    where = f" (from {row.page_path})" if row.page_path else ""
+    subject, body = await email_templates.compose(db, "feedback_left", {
+        "who": row.submitted_by_name or "Somebody",
+        "page": f" (from {row.page_path})" if row.page_path else "",
+        "comment": row.body,
+    })
     await mail.queue(
         db,
         to=[u.email for u in people],
-        subject=f"Safety feedback from {who}",
-        body=f"{who} left a comment{where}:\n\n{row.body}",
+        subject=subject,
+        body=body,
         doc_type=None,
         doc_id=None,
         template_key="feedback_left",
@@ -648,13 +668,13 @@ async def jhsc_recommendation(db: AsyncSession, meeting, recommendation) -> None
         db, [u.id for u in await by_roles(db, DEFAULT_INCIDENT_ROLES)])
     if not people:
         return
+    subject, body = await email_templates.compose(
+        db, "jhsc_recommendation", _recommendation_values(meeting, recommendation))
     await mail.queue(
         db,
         to=[u.email for u in people],
-        subject=f"JHSC recommendation {meeting.meeting_no} #{recommendation.seq}",
-        body=(f"{_where(recommendation)}{recommendation.recommendation}\n\n"
-              "OHSA s.9(20) requires a written response within twenty-one days "
-              "of the recommendation."),
+        subject=subject,
+        body=body,
         doc_type=task_service.DOC_JHSC,
         doc_id=meeting.id,
         template_key="jhsc_recommendation",
@@ -663,26 +683,24 @@ async def jhsc_recommendation(db: AsyncSession, meeting, recommendation) -> None
     )
 
 
-def _where(recommendation) -> str:
+def _recommendation_values(meeting, recommendation) -> dict:
     """Round 8: "include this info on the email" — where it happened, first."""
     path = getattr(recommendation, "location_path", None)
-    return f"Where: {' › '.join(path.split('/'))}\n\n" if path else ""
+    return {"meeting_no": meeting.meeting_no, "seq": str(recommendation.seq),
+            "where": " › ".join(path.split("/")) if path else "",
+            "recommendation": recommendation.recommendation}
 
 
-def jhsc_recommendation_message(meeting, recommendation) -> tuple[str, str]:
+async def jhsc_recommendation_message(db: AsyncSession, meeting, recommendation) -> tuple[str, str]:
     """The subject and body of the notice, as one function.
 
     ★ The committee asked to see the message before it goes out and to be able
     to change it. A preview that composes the text separately from the send
     drifts from it — silently, and in the direction of showing something nicer
-    than what was sent. Both call this.
+    than what was sent. Both call this. ★ UAT 14: in HSE's wording.
     """
-    subject = (f"JHSC recommendation {meeting.meeting_no} #{recommendation.seq} "
-               "— a written response is owed")
-    body = (f"{_where(recommendation)}{recommendation.recommendation}\n\n"
-            "OHSA s.9(20) requires a written response within twenty-one days "
-            "of the recommendation being made.")
-    return subject, body
+    return await email_templates.compose(
+        db, "jhsc_recommendation_sent", _recommendation_values(meeting, recommendation))
 
 
 async def jhsc_recommendation_sent(
@@ -700,7 +718,7 @@ async def jhsc_recommendation_sent(
     addressable = await mail.recipients(db, [p.id for p in people])
     if not addressable:
         return
-    default_subject, default_body = jhsc_recommendation_message(meeting, recommendation)
+    default_subject, default_body = await jhsc_recommendation_message(db, meeting, recommendation)
     await mail.queue(
         db,
         to=[u.email for u in addressable],
@@ -727,21 +745,25 @@ async def jhsc_recommendation_answered(db: AsyncSession, meeting, recommendation
     people = await mail.recipients(db, list(dict.fromkeys(ids)))
     if not people:
         return
-    lines = [_where(recommendation) + recommendation.recommendation, "",
-             f"Answered by {recommendation.responded_by_name or 'someone'}."]
+    values = _recommendation_values(meeting, recommendation)
+    values["answered_by"] = recommendation.responded_by_name or "someone"
+    links: dict[str, str] = {}
     if action is not None:
-        lines += ["", f"What will be done: {action.title}"]
-        if action.description:
-            lines.append(action.description)
-        lines.append(f"Owner: {action.owner_name or '—'} · due {action.due_date.isoformat()}"
-                     f" · {action.priority} priority · {action.action_no}")
-    elif recommendation.response:
-        lines += ["", recommendation.response]
+        values.update(action_title=action.title, action_detail=action.description or "",
+                      action_owner=action.owner_name or "—",
+                      action_due=action.due_date.isoformat() if action.due_date else "—",
+                      action_priority=action.priority, action_no=action.action_no, response="")
+        links[action.action_no] = mail.module_link(f"/actions/{action.id}")
+    else:
+        values.update(action_title="", action_detail="", action_owner="", action_due="",
+                      action_priority="", action_no="", response=recommendation.response or "")
+    subject, body = await email_templates.compose(db, "jhsc_recommendation_answered", values)
     await mail.queue(
         db,
         to=[u.email for u in people],
-        subject=f"JHSC recommendation {meeting.meeting_no} #{recommendation.seq} answered",
-        body="\n".join(lines),
+        subject=subject,
+        body=body,
+        links=links,
         doc_type=task_service.DOC_JHSC,
         doc_id=recommendation.id,
         template_key="jhsc_recommendation_answered",
@@ -756,11 +778,14 @@ async def jhsc_minutes_published(db: AsyncSession, meeting, member_ids: list[uui
         db, list(member_ids) + [u.id for u in await by_roles(db, DEFAULT_INCIDENT_ROLES)])
     if not people:
         return
+    subject, body = await email_templates.compose(db, "jhsc_minutes", {
+        "held_on": meeting.held_on.isoformat(), "meeting_no": meeting.meeting_no,
+        "minutes": (meeting.minutes or "")[:2000]})
     await mail.queue(
         db,
         to=[u.email for u in people],
-        subject=f"JHSC minutes — {meeting.held_on.isoformat()}",
-        body=(meeting.minutes or "")[:2000],
+        subject=subject,
+        body=body,
         doc_type=task_service.DOC_JHSC,
         doc_id=meeting.id,
         template_key="jhsc_minutes",

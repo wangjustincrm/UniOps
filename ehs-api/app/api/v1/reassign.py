@@ -14,7 +14,7 @@ from app.core.deps import SessionDep
 from app.core.permissions import CanManageSettings
 from app.models.mirrors import User
 from app.models.reassignment import Reassignment
-from app.services import mail, reassign
+from app.services import email_templates, mail, reassign
 
 router = APIRouter(prefix="/reassign")
 
@@ -116,17 +116,16 @@ async def carry_out(user_id: uuid.UUID, payload: PlanIn, db: SessionDep, user: C
         if key == "jhsc":
             for it in v["items"]:
                 due = await _reply_due(db, it.id)
+                # ★ UAT 14: HSE's wording (Settings → Email wording).
+                subject, body = await email_templates.compose(db, "jhsc_reassigned", {
+                    "leaver": leaver.full_name, "reference": it.ref,
+                    "recommendation": it.obj.recommendation,
+                    "due_note": (f"The written reply is due {due.astimezone(statutory.ONTARIO):%-d %b %Y %H:%M} "
+                                 "(OHSA s.9(20), 21 days from when it was sent)." if due else
+                                 "OHSA s.9(20) asks for a written reply within 21 days of it being sent."),
+                    "reason": payload.reason.strip()})
                 await mail.queue(
-                    db, to=[v["to_email"]],
-                    subject=f"JHSC recommendation {it.ref} now awaits your reply",
-                    body="\n".join([
-                        f"{leaver.full_name}'s work has been reallocated, and HSE has asked you to reply to this "
-                        "JHSC recommendation in their place.", "",
-                        it.obj.recommendation, "",
-                        (f"The written reply is due {due.astimezone(statutory.ONTARIO):%-d %b %Y %H:%M} "
-                         "(OHSA s.9(20), 21 days from when it was sent)." if due else
-                         "OHSA s.9(20) asks for a written reply within 21 days of it being sent."),
-                        "", f"Why: {payload.reason.strip()}"]),
+                    db, to=[v["to_email"]], subject=subject, body=body,
                     doc_type="ehs_jhsc", doc_id=it.id, template_key="jhsc_reassigned",
                     link=mail.module_link(it.path), link_label="Open the recommendation")
             continue
@@ -135,16 +134,17 @@ async def carry_out(user_id: uuid.UUID, payload: PlanIn, db: SessionDep, user: C
             continue
         by_person.setdefault(v["to_email"], []).append(v)
     for email, groups in by_person.items():
-        lines = [f"{leaver.full_name}'s work has been reallocated, and HSE ({me.full_name if me else 'Safety'}) "
-                 "has handed you their open work in Safety:", ""]
+        lines: list[str] = []
         for g in groups:
             lines.append(f"{g['label']} — {len(g['items'])}")
             lines += [f"  • {i.ref + ' ' if i.ref else ''}{i.title}" for i in g["items"][:25]]
             if len(g["items"]) > 25:
                 lines.append(f"  … and {len(g['items']) - 25} more")
             lines.append("")
-        lines.append(f"Why: {payload.reason.strip()}")
-        await mail.queue(db, to=[email], subject=f"You now have {leaver.full_name}'s open work in Safety",
-                         body="\n".join(lines), template_key="reassigned",
+        subject, body = await email_templates.compose(db, "work_reassigned", {
+            "leaver": leaver.full_name, "by": me.full_name if me else "Safety",
+            "work": "\n".join(lines).strip(), "reason": payload.reason.strip()})
+        await mail.queue(db, to=[email], subject=subject,
+                         body=body, template_key="reassigned",
                          link=mail.module_link("/actions/mine"), link_label="Open My Actions")
     return DoneOut(id=record.id, summary=summary)

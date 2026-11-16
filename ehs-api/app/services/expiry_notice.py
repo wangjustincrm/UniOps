@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.expiry_notice import CertExpiryNotice, CertExpiryRule
 from app.models.mirrors import User
 from app.models.training import TrainingRecord, WorkerCertification
-from app.services import mail
+from app.services import email_templates, mail
 
 
 @dataclass(frozen=True)
@@ -59,14 +59,12 @@ async def expiring(db: AsyncSession, *, today: date, until: date) -> list[Expiri
     return sorted(out, key=lambda e: (e.expires_on, e.person.lower(), e.what.lower()))
 
 
-def _body(rule: CertExpiryRule, due: list[Expiring], today: date) -> str:
-    lines = [f"These certificates expire within {rule.days_before} days:", ""]
+def _certificates(due: list[Expiring], today: date) -> str:
+    lines = []
     for e in due:
         days = (e.expires_on - today).days
         left = "today" if days == 0 else f"in {days} day{'s' if days != 1 else ''}"
         lines.append(f"• {e.person} — {e.what} — expires {e.expires_on.isoformat()} ({left})")
-    lines += ["", "Each certificate is listed once per rule. Rules are kept under "
-              "Settings → Training notifications."]
     return "\n".join(lines)
 
 
@@ -91,11 +89,12 @@ async def send_due(db: AsyncSession, *, today: date) -> int:
                and (rule.id, e.source_type, e.source_id, e.expires_on) not in told]
         if not due:
             continue
+        # ★ UAT 14: HSE's wording (Settings → Email wording).
+        subject, body = await email_templates.compose(db, "cert_expiry_notice", {
+            "count": f"{len(due)} certificate{'s' if len(due) != 1 else ''}",
+            "days": str(rule.days_before), "certificates": _certificates(due, today)})
         await mail.queue(
-            db, to=[rule.email],
-            subject=(f"{len(due)} certificate{'s' if len(due) != 1 else ''} "
-                     f"expiring within {rule.days_before} days"),
-            body=_body(rule, due, today),
+            db, to=[rule.email], subject=subject, body=body,
             template_key="cert_expiry_notice",
             link=mail.module_link("/training?tab=records"),
             link_label="Open training",

@@ -13,7 +13,7 @@ import { api, ApiError } from '@/lib/api'
 import { Card, ErrorNote, PageHeader, primaryButton, secondaryButton } from '@/components/ui'
 
 interface Template {
-  key: string; name: string; audience: string; when: string
+  key: string; name: string; group: string; audience: string; when: string
   placeholders: Record<string, string>
   default_subject: string; default_body: string
   subject: string; body: string; customised: boolean
@@ -30,14 +30,33 @@ export default function EmailWordingPage() {
   return (
     <div className="p-4">
       <PageHeader title="Email wording"
-                  subtitle="What Safety’s emails to people in the plant say. Words in {braces} are filled in for each email; the record numbers become links." />
+                  subtitle="What every email Safety sends says. Words in {braces} are filled in for each email; the record numbers become links. A line whose {braces} are all empty is left out." />
       {list.isPending && <p className="text-sm text-neutral-500">Loading…</p>}
       <ErrorNote error={list.error} />
-      <div className="flex flex-col gap-3">
-        {(list.data ?? []).map((t) => <TemplateCard key={t.key} t={t} />)}
-      </div>
+      {/* ★ UAT 14: "include all email templates. new incident is missing."
+          Every email Safety sends is here, so they are listed by what they are
+          about, in the order the server gives. */}
+      {groups(list.data ?? []).map(([group, items]) => (
+        <section key={group} className="mb-5" aria-label={group}>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">{group}</h2>
+          <div className="flex flex-col gap-3">
+            {items.map((t) => <TemplateCard key={t.key} t={t} />)}
+          </div>
+        </section>
+      ))}
     </div>
   )
+}
+
+// The order HSE meets them in: an incident, what is done about it, and the rest.
+const ORDER = ['Incidents', 'Corrective actions', 'JHSC', 'Toolbox talks and inspections',
+  'Training', 'Documents', 'Feedback', 'Handing over work']
+
+function groups(all: Template[]): [string, Template[]][] {
+  const out = new Map<string, Template[]>()
+  for (const t of all) out.set(t.group, [...(out.get(t.group) ?? []), t])
+  const rank = (g: string) => (ORDER.indexOf(g) + 1) || ORDER.length + 1
+  return [...out.entries()].sort((a, b) => rank(a[0]) - rank(b[0]))
 }
 
 function TemplateCard({ t }: { t: Template }) {

@@ -565,7 +565,7 @@ async def preview_recommendation(
     # A stand-in with the fields the message needs, so that no half-built row
     # reaches the database on the way to a preview.
     draft = SimpleNamespace(seq=seq, recommendation=wording, location_path=where)
-    subject, default_body = notify.jhsc_recommendation_message(meeting, draft)
+    subject, default_body = await notify.jhsc_recommendation_message(db, meeting, draft)
 
     people = list((await db.execute(
         select(User).where(User.id.in_(payload.user_ids)))).scalars().all()) \
