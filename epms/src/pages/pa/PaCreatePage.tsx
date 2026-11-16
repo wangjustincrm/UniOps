@@ -574,6 +574,13 @@ function PoPaCreate() {
   // once their data has loaded. Matched invoices are the ones ready to pay, so
   // defaulting them in saves the user re-checking what the 3-way match already
   // confirmed. Runs once per PO (guarded by the ref) so manual de-selection sticks.
+  //
+  // `posData` is a dependency because the reset above waits for the PO list and
+  // clears the ref and the ticks. Opened from a PO page or a Create PA task
+  // (?poId=), this PO's invoices / GRs / PAs land long before the whole PO list,
+  // so the ticks were made first, then wiped by the reset, and none of the
+  // inputs below changed again to put them back (ISS-0136). Picking the PO by
+  // hand worked because the list was already there.
   useEffect(() => {
     if (!selectedPoId) return
     if (autoSelectedForPoRef.current === poSelectionKey) return
@@ -589,7 +596,7 @@ function PoPaCreate() {
     // The receipts are NOT chosen here — they follow the invoice selection in
     // the effect below, which covers this first fill and every later change
     // with one rule instead of two.
-  }, [poSelectionKey, invoicesData, grsData, poActivePas]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [poSelectionKey, invoicesData, grsData, poActivePas, posData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Goods receipts follow the invoices. An invoice is matched against the
   // receipts it covers before it can be paid, so "which goods did this payment
