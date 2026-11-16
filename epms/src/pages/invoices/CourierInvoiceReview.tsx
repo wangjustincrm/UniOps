@@ -12,6 +12,7 @@ import {
   CHARGE_TYPE_LABEL, INPUT_SM_CLS, Modal, SELECT_SM_CLS, TH_CLS,
   addDaysISO, cents, errorMessage, isDateOnly, num,
 } from '@/pages/freight/freightUi'
+import { useNoticeDialog } from '@/components/ui/ConfirmDialog'
 
 interface LineDraft {
   key: number
@@ -56,6 +57,8 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
   onCreated: (id: string) => void
 }) {
   const carrierId = carrier.id
+  // "Saved, but the PDF did not attach" — was a browser alert; still waits for OK.
+  const notice = useNoticeDialog()
   const [step, setStep] = useState<Step>(file ? 'reading' : 'review')
   const [ocrError, setOcrError] = useState<{ msg: string; kind: 'file' | 'service' } | null>(null)
   const [ocr, setOcr] = useState<FreightOcrResult | null>(null)
@@ -220,7 +223,10 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
       } catch (e) {
         // The invoice exists; only the PDF is missing. Say so and carry on —
         // the invoice page can attach it again.
-        alert(`The invoice was saved, but the PDF did not attach: ${errorMessage(e)}. Attach it again from the invoice page.`)
+        await notice.show({
+          title: 'PDF not attached',
+          message: `The invoice was saved, but the PDF did not attach: ${errorMessage(e)}. Attach it again from the invoice page.`,
+        })
       }
     }
     onCreated(created.id)
@@ -457,6 +463,7 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
             {createInvoice.isPending ? 'Saving…' : uploadAttachment.isPending ? 'Attaching PDF…' : 'Save and match'}
           </Button>
         </div>
+        {notice.dialog}
       </div>
   )
   if (embedded) return body
