@@ -29,6 +29,14 @@ from app.models.po import PoLineItem
 
 # PaLineItem.unit is NOT NULL; an invoice line often has no unit at all.
 _FALLBACK_UNIT = "ea"
+_UNIT_MAX = 30   # PaLineItem.unit is String(30); an invoice line allows 50
+
+
+def _unit(inv_line: dict | None, po_unit: str | None = None) -> str:
+    """The unit the invoice prints wins (ISS-0232, user decision 16/11): the PA
+    pays what was invoiced. Then the PO line's unit, then "ea"."""
+    inv_unit = str((inv_line or {}).get("unit") or "").strip()[:_UNIT_MAX]
+    return inv_unit or po_unit or _FALLBACK_UNIT
 
 
 def _dec(v) -> Decimal | None:
@@ -117,7 +125,7 @@ async def derive_lines(
                     "po_line_id": a.po_line_id,
                     "description": (pl.description if pl else li.get("description") or "")[:500] or inv.internal_ref,
                     "qty": qty,
-                    "unit": (pl.unit if pl else None) or li.get("unit") or _FALLBACK_UNIT,
+                    "unit": _unit(li, pl.unit if pl else None),
                     "unit_price": price,
                     "line_total": a.allocated_amount,
                     "notes": _note(inv),
@@ -132,7 +140,7 @@ async def derive_lines(
                     "po_line_id": None,
                     "description": desc[:500],
                     "qty": qty,
-                    "unit": li.get("unit") or _FALLBACK_UNIT,
+                    "unit": _unit(li),
                     "unit_price": price,
                     "line_total": amount.quantize(Decimal("0.01")),
                     "notes": _note(inv),
@@ -194,7 +202,7 @@ async def invoice_lines(db: AsyncSession, invoice_ids: list) -> list[dict] | Non
                 "po_line_id": None,
                 "description": (li.get("description") or inv.internal_ref)[:500],
                 "qty": qty,
-                "unit": li.get("unit") or _FALLBACK_UNIT,
+                "unit": _unit(li),
                 "unit_price": price,
                 "line_total": amount,
                 "notes": _note(inv),

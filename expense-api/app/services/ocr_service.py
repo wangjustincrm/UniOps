@@ -97,6 +97,7 @@ Return a JSON object with EXACTLY this structure (no extra keys, no markdown):
     {
       "description": "string",
       "quantity": number,
+      "unit": "string or null",
       "unit_price": number,
       "amount": number,
       "tax_amount": number
@@ -105,6 +106,8 @@ Return a JSON object with EXACTLY this structure (no extra keys, no markdown):
 }
 
 Line item field meaning (READ CAREFULLY):
+- "unit": the line's unit of measure exactly as printed on the invoice (e.g. "box",
+  "pcs", "kg", "ea"). Null when the line prints no unit — never guess one.
 - "unit_price": the PRE-TAX price of one unit.
 - "amount": the line's PRE-TAX extended price = quantity × unit_price, EXCLUDING tax.
 - "tax_amount": the tax charged on this line only (0 if the invoice taxes at the footer).
@@ -359,6 +362,7 @@ def _reconcile_totals(result: dict, lines: list[dict]) -> dict:
                 "line_number": len(lines) + 1,
                 "description": label,
                 "quantity": 1.0,
+                "unit": None,
                 "unit_price": charges / 100,
                 "amount": charges / 100,
                 "tax_amount": 0.0,
@@ -412,6 +416,18 @@ def _mime_to_media_type(mime: str) -> str:
 _VALID_DOCUMENT_TYPES = ("invoice", "credit_note")
 
 
+# EPMS stores an invoice line's unit in 50 chars and a PA line's in 30.
+_UNIT_MAX = 30
+
+
+def _line_unit(value: object) -> str | None:
+    """The unit of measure as printed (ISS-0232), or None when there is none."""
+    if not isinstance(value, str):
+        return None
+    unit = value.strip()[:_UNIT_MAX]
+    return unit or None
+
+
 def _assemble_invoice_result(parsed: dict) -> dict:
     """Flatten the model's {value, confidence} envelope into a flat result.
 
@@ -459,6 +475,7 @@ def _assemble_invoice_result(parsed: dict) -> dict:
             "line_number": i + 1,
             "description": str(li.get("description", "")),
             "quantity": float(li.get("quantity", 1) or 1),
+            "unit": _line_unit(li.get("unit")),
             "unit_price": float(li.get("unit_price", 0) or 0),
             "amount": float(li.get("amount", 0) or 0),
             "tax_amount": float(li.get("tax_amount", 0) or 0),

@@ -63,7 +63,9 @@ values:
         PA takes the invoices' own lines. A PA raised against an agreement
         always takes its invoices' own lines (an invoice whose lines do not
         add up to its pre-tax amount becomes one line), and its PDF names the
-        agreement.
+        agreement. Each such line's unit is the unit on the invoice line; when
+        the invoice line has none, the PO line's unit, otherwise "ea". Lines
+        already saved keep the unit they were saved with.
       - >-
         Courier charges (UPS, FedEx, Purolator…) are not paid this way. Buyers
         register each tracking number on EPMS → Freight → Shipments with the

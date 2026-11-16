@@ -41,7 +41,7 @@ async def _po(client, vendor_id):
     return r.json()
 
 
-async def _seed_invoice(test_engine, po, vendor_id, inv_lines, allocs, *, header_po=None):
+async def _seed_invoice(test_engine, po, vendor_id, inv_lines, allocs, *, header_po=None, units=None):
     """A matched invoice backed by a GR (so the PA receipt gate admits it).
 
     inv_lines: [(qty, unit_price, line_total, non_po_fee)]
@@ -70,7 +70,8 @@ async def _seed_invoice(test_engine, po, vendor_id, inv_lines, allocs, *, header
         await db.flush()
         line_ids = [str(uuid.uuid4()) for _ in inv_lines]
         items = [{
-            "id": lid, "description": f"inv line {i}", "quantity": str(q), "unit": None,
+            "id": lid, "description": f"inv line {i}", "quantity": str(q),
+            "unit": units[i] if units else None,
             "unit_price": str(p), "line_total": str(t), "non_po_fee": fee, "non_po_note": None,
         } for i, (lid, (q, p, t, fee)) in enumerate(zip(line_ids, inv_lines))]
         amount = sum((Decimal(str(t)) for _, _, t, _ in inv_lines), Decimal("0"))
@@ -167,6 +168,38 @@ async def test_unknown_invoice_id_means_no_derivation(admin_client, test_engine)
     po = await _po(admin_client, vid)
     assert await _derive(test_engine, [str(uuid.uuid4())], [po["id"]]) is None
     assert await _derive(test_engine, [], [po["id"]]) is None
+
+
+# ISS-0232 (user decision 16/11): the unit printed on the invoice wins, then the
+# PO line's unit, then "ea". paLinesFromInvoices.test.ts pins the browser half.
+
+@pytest.mark.asyncio
+async def test_unit_from_the_invoice_line_wins_over_the_po_line(admin_client, test_engine):
+    vid = await _vendor(admin_client)
+    po = await _po(admin_client, vid)
+    pl = [l["id"] for l in po["line_items"]]
+    inv_id, _ = await _seed_invoice(test_engine, po, vid,
+                                    [(3, "10", "30", False), (2, "5", "10", False)],
+                                    [(0, po["id"], pl[0], "30"), (1, po["id"], pl[1], "10")],
+                                    units=["box", None])
+    out = await _derive(test_engine, [inv_id], [po["id"]])
+    assert [l["unit"] for l in out] == ["box", "pcs"]
+
+
+@pytest.mark.asyncio
+async def test_unit_falls_back_to_ea_without_an_invoice_or_po_unit(admin_client, test_engine):
+    from app.crud.pa_lines import invoice_lines
+    vid = await _vendor(admin_client)
+    po = await _po(admin_client, vid)
+    inv_id, _ = await _seed_invoice(test_engine, po, vid,
+                                    [(1, "9", "9", True), (1, "4", "4", True)], [],
+                                    units=["  ", "trip"])
+    out = await _derive(test_engine, [inv_id], [po["id"]])
+    assert [l["unit"] for l in out] == ["ea", "trip"]
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        own = await invoice_lines(db, [inv_id])
+    assert [l["unit"] for l in own] == ["ea", "trip"]
 
 
 # ── Through the API ───────────────────────────────────────────────────────────
