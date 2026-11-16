@@ -1663,7 +1663,8 @@ sitting right now.
 - Answer in the language the question was asked in.
 - Lead with the answer to what they asked. If they asked who it is with, name
   that first; do not open with a recap of the whole chain.
-- current_step.approver_name is the person holding it. When that is null the
+- current_step.approver_name is who holds it: the person, or for a step broadcast
+  to a post the post's holder(s) ("+N" = N more holders). When that is null the
   step is broadcast to everyone holding the role — say it is with whoever holds
   that role (current_step.label), not with nobody.
 - An approver_name containing "standing in for" means someone is covering a
