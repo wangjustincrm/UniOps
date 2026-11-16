@@ -11,6 +11,7 @@
  * only statutory clock in this module that is not attached to an injury, and
  * it is the one most easily forgotten.
  */
+import JhscReplyText from '@/components/JhscReplyText'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams, useNavigate } from 'react-router-dom'
@@ -530,12 +531,12 @@ function RecommendationsTab({ mayManage, highlight }: {
               </button>
             </div>
             {r.response && (
-              <p className="mt-2 border-l-2 border-neutral-200 pl-2.5 text-sm text-neutral-700">
-                {r.response}
+              <div className="mt-2 border-l-2 border-neutral-200 pl-2.5 text-sm text-neutral-700">
+                <JhscReplyText text={r.response} fromAction={Boolean(r.action_id)} />
                 <span className="mt-0.5 block text-xs text-neutral-500">
                   {r.responded_by_name} · {r.responded_at && formatDate(r.responded_at)}
                 </span>
-              </p>
+              </div>
             )}
             {!r.responded_at && mayManage && (
               <p className="mt-2 text-xs text-neutral-500">
