@@ -20,6 +20,8 @@ import { BudgetAccountCascade } from '@/components/budget/BudgetAccountCascade'
 import { RecurringFields, EMPTY_RECURRING_FIELDS, type RecurringFieldsValue } from '@/components/agreements/RecurringFields'
 import { MilestoneEditor } from '@/components/agreements/MilestoneEditor'
 import { ATTACHMENT_RULE, partitionUploads } from '@/lib/uploadLimits'
+import { errorMessage } from '@/lib/submitFailure'
+import { useNoticeDialog } from '@/components/ui/ConfirmDialog'
 
 // Matches epms-api/app/crud/agreement.py EDITABLE_STATUSES = ("draft", "returned").
 const EDITABLE_STATUSES = ['draft', 'returned']
@@ -62,6 +64,10 @@ export default function AgreementEditPage() {
   const [notes, setNotes] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // A refused save or submit, shown beside the buttons (the save was a
+  // browser alert).
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const notice = useNoticeDialog()
 
   // Recurring cycle fields — hydrated from the loaded agreement below. Type
   // is locked post-creation, so no "clear the other type's state" gate is
@@ -281,6 +287,7 @@ export default function AgreementEditPage() {
     if (milestonesLoading) return
     if (!validate()) return
     setIsSubmitting(true)
+    setSaveError(null)
     try {
       // Cleared fields must go out as explicit `null`, NOT `undefined`.
       // JSON.stringify drops undefined keys, and the backend uses
@@ -351,7 +358,12 @@ export default function AgreementEditPage() {
           }))
       }
 
-      await updateAgreement.mutateAsync({ id: id!, body })
+      try {
+        await updateAgreement.mutateAsync({ id: id!, body })
+      } catch (err) {
+        setSaveError(errorMessage(err, 'Failed to update agreement'))
+        return
+      }
       if (attachments.length > 0) {
         // The save already succeeded at this point — an upload failure here
         // must not read as "nothing happened". Catch it, tell the user
@@ -361,14 +373,20 @@ export default function AgreementEditPage() {
         try {
           await Promise.all(attachments.map((f) => agreementAttachmentService.upload(id!, f)))
         } catch {
-          alert(
-            `${agreement?.number ?? 'The agreement'} was saved, but one or more attachments failed to upload. ` +
-            'You can add them again from the agreement page.'
-          )
+          await notice.show({
+            title: 'Attachments not uploaded',
+            message: `${agreement?.number ?? 'The agreement'} was saved, but one or more attachments failed to upload. ` +
+              'You can add them again from the agreement page.',
+          })
         }
       }
       if (andSubmit) {
-        await agreementService.action(id!, { action: 'submit' })
+        try {
+          await agreementService.action(id!, { action: 'submit' })
+        } catch (err) {
+          setSaveError(`Saved, but not submitted: ${errorMessage(err, 'the submission was refused')}`)
+          return
+        }
         // The detail tab is kept alive and does not refetch on show, so
         // without this it kept the pre-submit Returned status, buttons and
         // timeline until F5 (ISS-0122). The save's own invalidation above ran
@@ -745,6 +763,7 @@ export default function AgreementEditPage() {
               {milestonesLoading && (
                 <p className="text-xs text-neutral-400">Loading stages before Save can be used…</p>
               )}
+              {saveError && <p role="alert" className="text-sm text-danger-600">{saveError}</p>}
               <Button
                 variant="secondary"
                 onClick={() => handleSave(false)}
@@ -776,6 +795,7 @@ export default function AgreementEditPage() {
           </div>
         </div>
       </div>
+      {notice.dialog}
     </div>
   )
 }

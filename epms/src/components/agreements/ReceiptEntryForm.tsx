@@ -15,6 +15,7 @@ import {
   type ReceiptVendorValue,
 } from '@/components/agreements/ReceiptVendorPicker'
 import { UserCombobox } from '@/components/agreements/UserCombobox'
+import { useNoticeDialog } from '@/components/ui/ConfirmDialog'
 
 interface ReceiptEntryFormProps {
   agreementId: string
@@ -124,6 +125,9 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
   const [refError, setRefError] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false)
+  // "Recorded, but…" messages that were browser alerts: the flow still waits
+  // for OK before the form resets and the page moves on.
+  const notice = useNoticeDialog()
 
   const resetForm = () => {
     setFile(null)
@@ -322,11 +326,13 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
         // leave the receipt alone.
         if (!isSlip) {
           const msg = uploadErr instanceof Error ? uploadErr.message : 'unknown error'
-          alert(
-            `The receipt was recorded, but the attachment failed to upload (${msg}). ` +
-            'The receipt itself is fine — open it from the Agreement Receipts list (/receipts) ' +
-            'to attach the file.'
-          )
+          await notice.show({
+            title: 'Attachment not uploaded',
+            message:
+              `The receipt was recorded, but the attachment failed to upload (${msg}). ` +
+              'The receipt itself is fine — open it from the Agreement Receipts list (/receipts) ' +
+              'to attach the file.',
+          })
           // `finally` below still runs on this return — it owns the
           // isUploadingAttachment reset.
           resetForm()
@@ -368,10 +374,12 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
           // very asymmetry that helper was created to make impossible. It also
           // covers ReceiptDetailPage's own key (Task 12).
           await invalidateReceiptViews(queryClient, agreementId)
-          alert(
-            `${receiptLabel} was recorded, but the photo failed to upload. ` +
-            'It has been sent to AP review so it is not paid without evidence.'
-          )
+          await notice.show({
+            title: 'Photo not uploaded',
+            message:
+              `${receiptLabel} was recorded, but the photo failed to upload. ` +
+              'It has been sent to AP review so it is not paid without evidence.',
+          })
         } catch (patchErr) {
           // Do not swallow this. The compensating PATCH is the only thing
           // standing between "photo failed to upload" and "unreviewed receipt
@@ -379,7 +387,10 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
           // last line of defense and needs the exact receipt identified so
           // they can go fix it by hand.
           const patchErrMessage = patchErr instanceof Error ? patchErr.message : 'unknown error'
-          alert(
+          await notice.show({
+            title: 'Photo not uploaded — receipt needs follow-up',
+            tone: 'error',
+            message:
             `${receiptLabel} was recorded, but the photo failed to upload AND the automatic ` +
             `follow-up to send it to AP review also failed (${patchErrMessage}). ` +
             // Whole-branch review (I3) told the user to Void and re-key,
@@ -394,8 +405,8 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
             'The receipt is now sitting as "open" with no photo and no reason on it — which means it ' +
             'can be claimed by an invoice and paid as if it had evidence. Open the Agreement Receipts ' +
             'list (/receipts), click this receipt to open it, and either attach the photo or write in ' +
-            'why there is none. If it was a mistake, Remove it there instead.'
-          )
+            'why there is none. If it was a mistake, Remove it there instead.',
+          })
         }
       } finally {
         setIsUploadingAttachment(false)
@@ -570,6 +581,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
           {isPending ? 'Recording…' : 'Record Receipt'}
         </Button>
       </div>
+      {notice.dialog}
     </form>
   )
 }

@@ -25,6 +25,7 @@ import { RecurringFields, EMPTY_RECURRING_FIELDS, type RecurringFieldsValue } fr
 import { MilestoneEditor } from '@/components/agreements/MilestoneEditor'
 import { errorMessage, rememberSubmitFailure } from '@/lib/submitFailure'
 import { ATTACHMENT_RULE, partitionUploads } from '@/lib/uploadLimits'
+import { useNoticeDialog } from '@/components/ui/ConfirmDialog'
 
 const TYPE_OPTIONS: { value: AgreementType; label: string; hint: string }[] = [
   // Whole-branch review (M8): a house account is not necessarily a counter
@@ -63,6 +64,9 @@ export default function AgreementCreatePage() {
   const [notes, setNotes] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // A refused save, shown beside the buttons (was a browser alert).
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const notice = useNoticeDialog()
 
   // Recurring / milestone type-specific state. Only one of these is ever sent
   // to the server — switching `agreementType` clears the other, or the
@@ -164,6 +168,7 @@ export default function AgreementCreatePage() {
   const handleSubmit = async (submitForApproval: boolean) => {
     if (!validate()) return
     setIsSubmitting(true)
+    setSaveError(null)
     try {
       const body: CreateAgreementBody = {
         title,
@@ -218,7 +223,13 @@ export default function AgreementCreatePage() {
           }))
       }
 
-      const newAgreement = await createAgreement.mutateAsync(body)
+      let newAgreement
+      try {
+        newAgreement = await createAgreement.mutateAsync(body)
+      } catch (err) {
+        setSaveError(errorMessage(err, 'Failed to create agreement'))
+        return
+      }
       if (attachments.length > 0) {
         // The agreement already exists at this point — an upload failure
         // here must not read as "nothing happened". Catch it, tell the user
@@ -228,10 +239,11 @@ export default function AgreementCreatePage() {
         try {
           await Promise.all(attachments.map((f) => agreementAttachmentService.upload(newAgreement.id, f)))
         } catch {
-          alert(
-            `${newAgreement.number} was created, but one or more attachments failed to upload. ` +
-            'You can add them again from the agreement page.'
-          )
+          await notice.show({
+            title: 'Attachments not uploaded',
+            message: `${newAgreement.number} was created, but one or more attachments failed to upload. ` +
+              'You can add them again from the agreement page.',
+          })
         }
       }
       if (submitForApproval) {
@@ -644,6 +656,7 @@ export default function AgreementCreatePage() {
               <Button variant="ghost">Cancel</Button>
             </Link>
             <div className="flex items-center gap-3">
+              {saveError && <p role="alert" className="text-sm text-danger-600">{saveError}</p>}
               <Button
                 variant="secondary"
                 onClick={() => handleSubmit(false)}
@@ -674,6 +687,7 @@ export default function AgreementCreatePage() {
           </div>
         </div>
       </div>
+      {notice.dialog}
     </div>
   )
 }
