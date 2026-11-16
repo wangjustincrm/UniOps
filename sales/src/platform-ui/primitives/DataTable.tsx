@@ -1,10 +1,12 @@
-import { Fragment, createElement, isValidElement, useMemo, useState, type ComponentType, type ReactNode } from 'react'
+import { Fragment, createElement, isValidElement, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import {
   getCoreRowModel, useReactTable,
   type ColumnDef, type SortingState, type Updater,
 } from '@tanstack/react-table'
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, GripVertical } from 'lucide-react'
-import { Input, Pagination, SkeletonRow } from './shell'
+import { Button, Input, Pagination, Skeleton, SkeletonRow } from './shell'
+import { DropdownMenu } from './DropdownMenu'
+import { useElementWidth } from './useResponsive'
 import { cn } from '../lib/cn'
 import { EmptyState, ErrorState } from './States'
 import { useSynced } from './useSynced'
@@ -101,7 +103,15 @@ export interface DataTableProps<T> {
   rowAttrs?: (row: T) => RowAttrs
   /** A row's detail under it, opened by the ▸ in its first cell; null = nothing to open. */
   expand?: (row: T) => ReactNode | null
+  /** Under this width (px, the table's own box) each row is a card: its title, its badges and
+   *  "label: value" lines (column meta `card`), and a Sort menu instead of the headers. Default
+   *  640; false keeps the table at every width. */
+  cardsBelow?: number | false
+  /** In a card, at most this many lines when a row opens (the rest is in the record); every line otherwise. */
+  cardLines?: number
 }
+
+interface GroupHead { key: string; level: number; id: string; label: string; value: unknown; count?: number; summary?: ReactNode; open: boolean }
 
 export type RowAttrs = { className?: string } & { [data: `data-${string}`]: string | boolean | undefined }
 
@@ -111,8 +121,11 @@ export type RowAttrs = { className?: string } & { [data: `data-${string}`]: stri
 export function DataTable<T>({
   columns, rows, rowKey, onRowClick, loading, fetching, stale, busyNow, highlight, fit, statusBar, errorMessage, onRetry, emptyTitle = 'Nothing here yet',
   sort, sortable = [], onSortChange, headerAddon, leadingHeader, chips, grouping, leading, afterSearch, onColumnMove, search, filters,
-  toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs, expand,
+  toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs, expand, cardsBelow = 640, cardLines = 6,
 }: DataTableProps<T>) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const width = useElementWidth(rootRef)
+  const cards = cardsBelow !== false && width !== null && width > 0 && width < cardsBelow
   const cellPad = density === 'compact' ? 'px-2 py-1' : 'px-3 py-2'
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropOn, setDropOn] = useState<string | null>(null)
@@ -157,6 +170,35 @@ export function DataTable<T>({
     },
   })
 
+  // Group headers that start at row i (each level whose value changes there), and whether
+  // the row itself is under a collapsed group. Rows (and deeper headers) under a collapsed group are left out.
+  const groupsAt = (i: number, all: { original: T }[]): { heads: GroupHead[]; rowHidden: boolean } => {
+    if (!grouping) return { heads: [], rowHidden: false }
+    const values = grouping.levels.map((l) => grouping.value(all[i].original, l.id))
+    const prev = i > 0 ? grouping.levels.map((l) => grouping.value(all[i - 1].original, l.id)) : null
+    const first = prev === null ? 0 : values.findIndex((v, j) => String(v ?? null) !== String(prev[j] ?? null))
+    const heads: GroupHead[] = []
+    if (first !== -1) {
+      for (let level = first; level < values.length; level++) {
+        const key = groupKey(values.slice(0, level + 1))
+        const hiddenByParent = values.slice(0, level).some((_, j) => collapsed.has(groupKey(values.slice(0, j + 1))))
+        if (hiddenByParent) break
+        const { id, label } = grouping.levels[level]
+        heads.push({ key, level, id, label, value: values[level], count: grouping.counts.get(key), summary: grouping.summary?.get(key), open: !collapsed.has(key) })
+      }
+    }
+    return { heads, rowHidden: values.some((_, j) => collapsed.has(groupKey(values.slice(0, j + 1)))) }
+  }
+  const groupButton = (g: GroupHead) => (
+    <button type="button" aria-expanded={g.open} onClick={() => toggle(g.key)}
+      className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-800 hover:text-neutral-950">
+      {g.open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+      <span className="text-xs uppercase tracking-wide text-neutral-500">{g.label}:</span>
+      {grouping?.format ? grouping.format(g.id, g.value) : String(g.value ?? '(empty)')}
+      {g.count !== undefined && <span className="rounded-full bg-neutral-200 px-1.5 text-xs text-neutral-600">{g.count}</span>}
+    </button>
+  )
+
   const pager = pagination && pagination.total > 0 ? (
     <Pagination
       page={pagination.page}
@@ -166,17 +208,133 @@ export function DataTable<T>({
       onPageSizeChange={pagination.onPageSizeChange}
     />
   ) : null
+  const headerById = new Map((table.getHeaderGroups()[0]?.headers ?? []).map((h) => [h.column.id, h]))
+  const headerIds = (table.getHeaderGroups()[0]?.headers ?? []).map((h) => h.column.id)
+  const headerLabel = (id: string) => {
+    const def = headerById.get(id)?.column.columnDef.header
+    return typeof def === 'string' ? def : id
+  }
+  const sortMenu = cards && onSortChange && sortable.some((id) => headerById.has(id)) ? (
+    <DropdownMenu label="Sort by" align="start"
+      items={sortable.filter((id) => headerById.has(id)).map((id) => {
+        const cur = sorting[0]?.id === id ? sorting[0] : null
+        return { label: `${headerLabel(id)}${cur ? (cur.desc ? ' ↓' : ' ↑') : ''}`, onSelect: () => onSortChange({ id, desc: cur ? !cur.desc : false }) }
+      })}
+      trigger={<Button variant="secondary" size="sm" aria-label="Sort by"><ArrowUpDown className="h-3.5 w-3.5" aria-hidden />Sort</Button>} />
+  ) : null
+  const cardLead = cards && leadingHeader !== undefined ? leadingHeader : null
+
+  // The card view: one card per row (title, badges, "label: value" lines), group headers between
+  // them, the totals under them. Same rows, clicks, keys, highlight and details as the table.
+  const renderCards = () => {
+    const label = (id: string) => {
+      const h = headerById.get(id)
+      return h ? <Render def={h.column.columnDef.header} ctx={h.getContext()} /> : id
+    }
+    const all = table.getRowModel().rows
+    return (
+      <>
+        <ul aria-label={ariaLabel} aria-busy={busy || (loading && rows.length === 0) || undefined} data-stale={dim || undefined}
+          className={cn('divide-y divide-neutral-100 transition-opacity', density === 'compact' ? 'text-xs' : 'text-sm', dim && 'opacity-60')}>
+          {loading && rows.length === 0
+            ? Array.from({ length: 4 }, (_, i) => <li key={i} className="px-3 py-3"><Skeleton className="h-12" /></li>)
+            : all.map((r, i) => {
+              const { className: rowClass, ...rowData } = rowAttrs?.(r.original) ?? {}
+              const flash = !!highlight?.has(rowKey(r.original))
+              const detail = expand?.(r.original) ?? null
+              const isOpen = detail !== null && expanded.has(r.id)
+              const cells = r.getVisibleCells()
+              const role = (c: (typeof cells)[number]) => c.column.columnDef.meta?.card
+              const title = cells.find((c) => role(c) === 'title') ?? cells.find((c) => !role(c))
+              const badges = cells.filter((c) => role(c) === 'badge')
+              const lines = cells.filter((c) => c !== title && !role(c))
+              const shownLines = onRowClick ? lines.slice(0, cardLines) : lines
+              const { heads, rowHidden } = groupsAt(i, all)
+              return (
+                <Fragment key={r.id}>
+                  {heads.map((g) => (
+                    <li key={`g:${g.key}`} data-group-head className="bg-neutral-50/70 py-1.5 pr-3" style={{ paddingLeft: `${0.75 + g.level * 1}rem` }}>
+                      {groupButton(g)}
+                      {g.summary && <div data-group-summary className="mt-0.5 text-xs font-medium text-neutral-600">{g.summary}</div>}
+                    </li>
+                  ))}
+                  {!rowHidden && (
+                    <li {...rowData} data-row-card data-highlight={flash || undefined}
+                      onClick={onRowClick ? (e) => { if (clickOpensRow(e)) onRowClick(r.original) } : undefined}
+                      tabIndex={onRowClick ? 0 : undefined}
+                      onKeyDown={onRowClick ? (e) => {
+                        if (e.target === e.currentTarget && e.key === 'Enter') { e.preventDefault(); onRowClick(r.original) }
+                      } : undefined}
+                      className={cn('flex min-w-0 flex-col gap-1.5 px-3 py-2.5',
+                        onRowClick && 'cursor-pointer hover:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary-500',
+                        rowClass, flash && 'bg-primary-50 animate-[platform-flash_2s_ease-out_forwards] motion-reduce:animate-none')}>
+                      <div className="flex min-w-0 items-start justify-between gap-2">
+                        <div data-card-title className="min-w-0 break-words font-medium text-neutral-900">
+                          {title && <Render def={title.column.columnDef.cell} ctx={title.getContext()} />}
+                        </div>
+                        {badges.length > 0 && (
+                          <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                            {badges.map((c) => <Fragment key={c.id}><Render def={c.column.columnDef.cell} ctx={c.getContext()} /></Fragment>)}
+                          </div>
+                        )}
+                      </div>
+                      {shownLines.length > 0 && (
+                        <dl className="grid grid-cols-[minmax(4.5rem,max-content)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
+                          {shownLines.map((c) => (
+                            <div key={c.id} className="contents">
+                              <dt className="text-neutral-500">{label(c.column.id)}</dt>
+                              <dd className="min-w-0 break-words text-neutral-700"><Render def={c.column.columnDef.cell} ctx={c.getContext()} /></dd>
+                            </div>
+                          ))}
+                        </dl>
+                      )}
+                      {detail !== null && (
+                        <div>
+                          <button type="button" aria-expanded={isOpen} onClick={() => toggleRow(r.id)}
+                            className="inline-flex items-center gap-1 rounded py-0.5 text-xs text-neutral-600 hover:text-neutral-900">
+                            {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                            {isOpen ? 'Hide details' : 'Show details'}
+                          </button>
+                          {isOpen && <div data-row-detail className="mt-1 rounded bg-neutral-50 p-2">{detail}</div>}
+                        </div>
+                      )}
+                    </li>
+                  )}
+                </Fragment>
+              )
+            })}
+        </ul>
+        {footer && rows.length > 0 && (
+          <div data-card-totals data-stale={dim || undefined}
+            className={cn('sticky bottom-0 z-[1] border-t border-neutral-200 bg-neutral-50 px-3 py-2 text-xs font-medium text-neutral-800', dim && 'opacity-60')}>
+            {footer[0] && <div className="mb-0.5">{footer[0]}</div>}
+            <dl className="grid grid-cols-[minmax(4.5rem,max-content)_minmax(0,1fr)] gap-x-3 gap-y-0.5">
+              {footer.map((f, i) => (i === 0 || f === null || f === undefined ? null : (
+                <div key={i} className="contents">
+                  <dt className="text-neutral-500">{headerIds[i] ? label(headerIds[i]) : null}</dt>
+                  <dd>{f}</dd>
+                </div>
+              )))}
+            </dl>
+          </div>
+        )}
+      </>
+    )
+  }
+
   return (
-    <div className="flex flex-col gap-3">
-      {(search || toolbar || filters || leading || afterSearch) && (
+    <div ref={rootRef} data-cards={cards || undefined} className="flex min-w-0 flex-col gap-3">
+      {(search || toolbar || filters || leading || afterSearch || cardLead || sortMenu) && (
         <div className="flex flex-wrap items-center gap-2">
           {leading}
+          {cardLead}
+          {sortMenu}
           {search && (
             <Input
               aria-label="Search"
               placeholder="Search…"
               value={searchDraft}
-              className="max-w-xs"
+              className="min-w-0 flex-1 basis-40 sm:max-w-xs"
               onChange={(e) => setSearchDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') search.onSubmit(searchDraft.trim())
@@ -185,7 +343,7 @@ export function DataTable<T>({
           )}
           {afterSearch}
           {filters}
-          <div className="ml-auto flex gap-2">{toolbar}</div>
+          <div className="ml-auto flex flex-wrap gap-2">{toolbar}</div>
         </div>
       )}
 
@@ -195,6 +353,7 @@ export function DataTable<T>({
         <ErrorState message={errorMessage} onRetry={onRetry} />
       ) : (
         <TableCard busy={busy} fit={fit} highlight={highlight} bar={statusBar?.(pager)}>
+          {cards ? renderCards() : (
           <table aria-label={ariaLabel} aria-busy={busy || (loading && rows.length === 0) || undefined} className={cn('w-full', density === 'compact' ? 'text-xs' : 'text-sm')}>
             <thead data-sticky-head className="sticky top-0 z-[1] bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500 shadow-[inset_0_-1px_0_0_var(--color-neutral-200,#e5e7eb)]">
               {table.getHeaderGroups().map((hg) => (
@@ -307,39 +466,16 @@ export function DataTable<T>({
                     </Fragment>
                   )
                   if (!grouping) return row
-                  // A header for each level whose value changes at this row;
-                  // rows (and deeper headers) under a collapsed group are left out.
-                  const values = grouping.levels.map((l) => grouping.value(r.original, l.id))
-                  const prev = i > 0 ? grouping.levels.map((l) => grouping.value(all[i - 1].original, l.id)) : null
-                  const first = prev === null ? 0 : values.findIndex((v, j) => String(v ?? null) !== String(prev[j] ?? null))
+                  const { heads, rowHidden } = groupsAt(i, all)
                   const span = columns.length + (leadCell ? 1 : 0)
-                  const headers: ReactNode[] = []
-                  if (first !== -1) {
-                    for (let level = first; level < values.length; level++) {
-                      const key = groupKey(values.slice(0, level + 1))
-                      const hiddenByParent = values.slice(0, level).some((_, j) => collapsed.has(groupKey(values.slice(0, j + 1))))
-                      if (hiddenByParent) break
-                      const count = grouping.counts.get(key)
-                      const summary = grouping.summary?.get(key)
-                      const open = !collapsed.has(key)
-                      const { id, label } = grouping.levels[level]
-                      headers.push(
-                        <tr key={`g:${key}`} className="border-t border-neutral-200 bg-neutral-50/70">
-                          <td colSpan={span} className="py-1.5 pr-3" style={{ paddingLeft: `${0.75 + level * 1.25}rem` }}>
-                            <button type="button" aria-expanded={open} onClick={() => toggle(key)}
-                              className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-800 hover:text-neutral-950">
-                              {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                              <span className="text-xs uppercase tracking-wide text-neutral-500">{label}:</span>
-                              {grouping.format ? grouping.format(id, values[level]) : String(values[level] ?? '(empty)')}
-                              {count !== undefined && <span className="rounded-full bg-neutral-200 px-1.5 text-xs text-neutral-600">{count}</span>}
-                            </button>
-                            {summary && <span data-group-summary className="ml-3 text-xs font-medium text-neutral-600">{summary}</span>}
-                          </td>
-                        </tr>,
-                      )
-                    }
-                  }
-                  const rowHidden = values.some((_, j) => collapsed.has(groupKey(values.slice(0, j + 1))))
+                  const headers = heads.map((g) => (
+                    <tr key={`g:${g.key}`} className="border-t border-neutral-200 bg-neutral-50/70">
+                      <td colSpan={span} className="py-1.5 pr-3" style={{ paddingLeft: `${0.75 + g.level * 1.25}rem` }}>
+                        {groupButton(g)}
+                        {g.summary && <span data-group-summary className="ml-3 text-xs font-medium text-neutral-600">{g.summary}</span>}
+                      </td>
+                    </tr>
+                  ))
                   return <Fragment key={r.id}>{headers}{!rowHidden && row}</Fragment>
                 })}
             </tbody>
@@ -352,6 +488,7 @@ export function DataTable<T>({
               </tfoot>
             )}
           </table>
+          )}
           {!loading && rows.length === 0 && <EmptyState title={emptyTitle} className="border-0" />}
           {grouping?.truncated && (
             <p className="border-t border-neutral-100 px-3 py-2 text-xs text-neutral-500">

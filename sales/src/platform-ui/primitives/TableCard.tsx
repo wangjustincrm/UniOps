@@ -38,7 +38,7 @@ export function TableCard({ children, busy, fit, highlight, bar }: {
   useEffect(() => {
     const el = ref.current
     if (!el || !highlight?.size || el.scrollTop > 8) return
-    const row = el.querySelector('tr[data-highlight]') as HTMLElement | null
+    const row = el.querySelector('[data-highlight]') as HTMLElement | null
     if (row && typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest' })
   }, [highlight])
   return (

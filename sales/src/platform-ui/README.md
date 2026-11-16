@@ -33,6 +33,20 @@ Features (`src/features/<area>/`) and pages build on `@/platform-ui` only. Enfor
 - **One detail frame (the user's ask, 2026-11-03).** A record's detail is a `RecordSheet`, opened by its list (`ListPage` / `CrudPage` `renderDetail`) — never a hand-made sheet. A settings form that is not a record's detail is a `FormSheet`. ESLint refuses `<Sheet>` and `import { Sheet }` in features and pages (planted proofs in `tools/check-scope.sh`).
 - **Making and editing records (the user's rule, 2026-11-02).** A page never carries a form. "New" is ListPage's `create` slot — the standard New button at the end of the toolbar, the form in the standard Sheet; on save the sheet closes, the list refreshes and the new record's detail opens (CrudPage uses the same slot). A record's own form is `SchemaForm`; a record with lines (an order, a transfer, an invoice) is `MasterDetailForm` (header fields + `EditableTable` lines + an optional preview, one submit). Editing opens the same form inside the record's detail Sheet; a step with its own fields (a return, a bulk confirmation) opens a Dialog. An action that needs a reason is `ConfirmAction` with `reason` — never an ad-hoc bordered section. ESLint refuses a raw `<form>` in features and pages; where a form is rendered is reviewed, not linted.
 
+## Responsive (the user, 2026-11-13 / 2026-11-16)
+
+Most of what the module shows sits in a Sheet, a panel or a card narrower than the window, so layouts follow **their own box's width** (a Tailwind container query, or a measured width), not the window's. A page uses these shapes instead of a hand-made flex / grid that only fits a desktop:
+
+| Export | Use |
+| --- | --- |
+| `Responsive` | a container (`@container`, `name` → `@container/<name>`): `@sm:…` / `@lg:…` inside it follow this box (primitive) |
+| `AutoGrid` | as many columns as fit, each ≥ `min` (default 12rem), one column on a phone — tiles, cards, form fields (primitive) |
+| `Cluster` | a row that wraps (badges, buttons, chips) — never pushes the page sideways (primitive) |
+| `Toolbar` | a row of actions (role=toolbar) that wraps; items marked `collapse` move into a "More" menu when the bar is under `collapseBelow` px (default 480), with `more` always there (primitive) |
+| `ActionBar` | a form's / record's main buttons: on a phone a bar stuck to the bottom of the sheet, full-width buttons; from `sm` a plain row at the end (primitive) |
+| `useBreakpoint()`, `useMediaQuery(q)`, `useElementWidth(ref)` | behaviour only (what to render); a look is a Tailwind class |
+| `DataTable` `cardsBelow` / column meta `card` | under 640 px of its own width (`cardsBelow`; `false` = always a table) each row is a card: the title (meta `card: 'title'`, else the first column), badges at the top right (`'badge'`; `col.status` is one), the rest as "label: value" lines (at most `cardLines`, 6, when the row opens a record), `'hide'` leaves a column out; sorting is a Sort menu, the column chooser sits in the toolbar, groups, totals, the highlight and row details work as in the table |
+
 ## Public interface (`@/platform-ui`)
 
 `index.ts` exports only what features, pages and the app use (trimmed 2026-11-04); a name a feature needs for the first time is added there. The table below describes the library: some of what it names is reached by its direct path (the tests do), not through the barrel.

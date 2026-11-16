@@ -24,7 +24,7 @@ const columns: ColumnDef<DcRoutingRead, unknown>[] = [
   colDcRoutingRead.text('partner_code', 'Partner'),
   colDcRoutingRead.text('ship_to_gln', 'Ship-to GLN'),
   colDcRoutingRead.text('dc_number', 'DC'),
-  { accessorKey: 'active', header: 'Status',
+  { accessorKey: 'active', header: 'Status', meta: { card: 'badge' },
     cell: ({ row }) => <Badge variant={row.original.active ? 'success' : 'neutral'}>{row.original.active ? 'Active' : 'Inactive'}</Badge> },
 ]
 

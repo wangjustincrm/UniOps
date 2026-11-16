@@ -10,7 +10,7 @@ const paymentColumns: ColumnDef<PaymentRead, unknown>[] = [
   colPaymentRead.datetime('processed_at', 'When'),
   { accessorKey: 'kind', header: 'Kind', cell: ({ row }) => <span className="capitalize">{row.original.kind}</span> },
   { accessorKey: 'gateway', header: 'Gateway', cell: ({ row }) => row.original.gateway ?? '—' },
-  { accessorKey: 'status', header: 'Status', cell: ({ row }) => (
+  { accessorKey: 'status', header: 'Status', meta: { card: 'badge' }, cell: ({ row }) => (
     <span className="inline-flex items-center gap-1"><StatusCell value={row.original.status}
       tone={row.original.status === 'success' ? 'success' : row.original.status === 'pending' ? 'warning' : 'danger'} />
       {row.original.error_code && <span className="text-xs text-danger-600">{row.original.error_code.replace(/_/g, ' ')}</span>}</span>) },

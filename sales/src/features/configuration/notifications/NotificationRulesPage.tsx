@@ -30,7 +30,7 @@ const columns: ColumnDef<NotificationRuleRead, unknown>[] = [
     [r.users.length && `${r.users.length} user${r.users.length > 1 ? 's' : ''}`, r.emails.length && r.emails.join(', ')]
       .filter(Boolean).join(' · ') || 'the operator' },
   { accessorKey: 'tested_at', header: 'Last test', cell: ({ row }) => (row.original.tested_at ? formatDateTime(row.original.tested_at) : '—') },
-  { accessorKey: 'active', header: 'Status',
+  { accessorKey: 'active', header: 'Status', meta: { card: 'badge' },
     cell: ({ row }) => <Badge variant={row.original.active ? 'success' : 'neutral'}>{row.original.active ? 'Active' : 'Inactive'}</Badge> },
 ]
 

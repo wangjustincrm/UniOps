@@ -16,7 +16,7 @@ const orderColumns: ColumnDef<OrderRead, unknown>[] = [
   { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
   col.text('source_order_number', 'Customer PO / ref.'),
   col.date('order_date', 'Ordered'),
-  { accessorKey: 'order_status', header: 'Status', cell: ({ row }) => <OrderStatusBadge o={row.original} /> },
+  { accessorKey: 'order_status', header: 'Status', meta: { card: 'badge' }, cell: ({ row }) => <OrderStatusBadge o={row.original} /> },
   { id: 'status_detail', header: 'Detail', cell: ({ row }) => <StatusDetail o={row.original} /> },
   { id: 'shopify', header: 'Shopify', cell: ({ row }) => <ShopifyCell o={row.original} /> },
   col.money('total_amount', 'Total', { currency: 'currency' }),

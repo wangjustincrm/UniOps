@@ -6,6 +6,7 @@ import {
 } from './cells'
 import type { BadgeVariant } from './StatusBadge'
 import type { RecordRef } from './cells'
+import { onCard } from './columnMeta'
 
 type Key<T> = Extract<keyof T, string>
 type Value = string | number | null | undefined
@@ -27,11 +28,12 @@ export function columnsOf<T>() {
     datetime: (key: Key<T>, header: string) => cell(key, header, (r) => <StackedDateTimeCell value={read(r, key) as string | null} />),
     relative: (key: Key<T>, header: string) => cell(key, header, (r) => <RelativeCell value={read(r, key) as string | null} />),
     countdown: (key: Key<T>, header: string) => cell(key, header, (r) => <CountdownCell value={read(r, key) as string | null} />),
+    /** A status: in the card view, the badge at the card's top right. */
     status: (key: Key<T>, header: string, opts?: { tone?: (value: string) => BadgeVariant; colour?: (value: string) => string }) =>
-      cell(key, header, (r) => {
+      onCard(cell(key, header, (r) => {
         const v = read(r, key) as string | null
         return <StatusCell value={v} tone={v && opts?.tone ? opts.tone(v) : undefined} className={v && opts?.colour ? opts.colour(v) : undefined} />
-      }),
+      }), 'badge'),
     reference: (key: Key<T>, header: string) => cell(key, header, (r) => <ReferenceCell value={read(r, key) as Value} />),
     /** Another record, by its label (sorted by it), opening that record: e.g. a payment's Order ref. */
     record: (key: Key<T>, header: string, opts: { id: (row: T) => number | null | undefined; onOpen: (id: number, row: T) => void }) =>

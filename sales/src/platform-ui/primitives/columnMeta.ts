@@ -7,6 +7,10 @@ declare module '@tanstack/react-table' {
   interface ColumnMeta<TData extends RowData, TValue> {
     /** Starts hidden: the eye in the header shows it (a saved view can too). */
     hidden?: boolean
+    /** In the card view (a narrow table: a phone, a narrow sheet): the card's title, a badge
+     *  at its top right, or left out. Unset: a "label: value" line (the first such column is
+     *  the title when no column claims it). */
+    card?: 'title' | 'badge' | 'hide'
   }
 }
 
@@ -19,3 +23,6 @@ export const startHidden = <T,>(c: ColumnDef<T, unknown>): ColumnDef<T, unknown>
 /** The ids that start hidden: the columns that say so, and `extra` (a page's choice that depends on its data). */
 export const startsHidden = <T,>(columns: ColumnDef<T, unknown>[], extra: readonly string[] = []): string[] =>
   [...new Set([...columns.filter((c) => c.meta?.hidden).map(columnId), ...extra])]
+
+/** The column, in the card view as `card` (title / badge / hide): `onCard(col.text('ref', 'Ref'), 'title')`. */
+export const onCard = <T,>(c: ColumnDef<T, unknown>, card: 'title' | 'badge' | 'hide'): ColumnDef<T, unknown> => ({ ...c, meta: { ...c.meta, card } })

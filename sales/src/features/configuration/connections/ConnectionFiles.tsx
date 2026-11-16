@@ -11,7 +11,7 @@ const columns: ColumnDef<DocumentRead, unknown>[] = [
   colDocumentRead.datetime('created_at', 'Received'),
   colDocumentRead.text('kind', 'Kind'),
   { accessorKey: 'remote_name', header: 'File', cell: ({ row }) => <span className="break-all">{row.original.remote_name ?? '—'}</span> },
-  { id: 'status', header: 'Status', cell: ({ row: { original: d } }) => <StatusCell value={d.processing_status ?? d.file_status} /> },
+  { id: 'status', header: 'Status', meta: { card: 'badge' }, cell: ({ row: { original: d } }) => <StatusCell value={d.processing_status ?? d.file_status} /> },
   { accessorKey: 'error', header: 'Problem', cell: ({ row }) => <span className="text-danger-600">{row.original.error ?? ''}</span> },
 ]
 

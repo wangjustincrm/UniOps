@@ -14,7 +14,7 @@ const columns: ColumnDef<PartnerRead, unknown>[] = [
   colPartnerRead.text('settlement_mode', 'Settlement'),
   colPartnerRead.text('invoice_method', 'Invoice'),
   {
-    accessorKey: 'active', header: 'Status',
+    accessorKey: 'active', header: 'Status', meta: { card: 'badge' },
     cell: ({ row }) => <Badge variant={row.original.active ? 'success' : 'neutral'}>{row.original.active ? 'Active' : 'Inactive'}</Badge>,
   },
 ]

@@ -25,7 +25,7 @@ const columns: ColumnDef<CarrierRead, unknown>[] = [
   colCarrierRead.text('scac', 'SCAC'),
   colCarrierRead.text('name', 'Name'),
   { accessorKey: 'tracking_url', header: 'Tracking link', cell: ({ row }) => row.original.tracking_url ?? '—' },
-  { accessorKey: 'active', header: 'Status',
+  { accessorKey: 'active', header: 'Status', meta: { card: 'badge' },
     cell: ({ row }) => <Badge variant={row.original.active ? 'success' : 'neutral'}>{row.original.active ? 'Active' : 'Inactive'}</Badge> },
 ]
 const empty = { scac: '', name: '', tracking_url: '', active: true }

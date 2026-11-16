@@ -36,7 +36,7 @@ const columns: ColumnDef<WarehouseRead, unknown>[] = [
   colWarehouseRead.text('role', 'Role'),
   colWarehouseRead.text('edi_id', 'EDI id'),
   colWarehouseRead.text('city', 'City'),
-  { accessorKey: 'active', header: 'Status',
+  { accessorKey: 'active', header: 'Status', meta: { card: 'badge' },
     cell: ({ row }) => <Badge variant={row.original.active ? 'success' : 'neutral'}>{row.original.active ? 'Active' : 'Inactive'}</Badge> },
 ]
 const empty = { code: '', name: '', role: 'WAREHOUSE', edi_id_qualifier: '94', edi_id: '', address1: '', city: '', province: '',

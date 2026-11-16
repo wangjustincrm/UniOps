@@ -28,7 +28,7 @@ function useColumns(): ColumnDef<DocumentRead, unknown>[] {
     colDocumentRead.datetime('created_at', 'Received'),
     colDocumentRead.text('remote_name', 'File'),
     colDocumentRead.text('kind', 'Kind'),
-    { id: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={status(row.original)} /> },
+    { id: 'status', header: 'Status', meta: { card: 'badge' }, cell: ({ row }) => <StatusCell value={status(row.original)} /> },
     colDocumentRead.refs('orders', 'Orders', {
       refs: belongsTo, total: (d) => (d.orders_total || d.transfers.length), noun: (d) => (d.orders_total || !d.transfers.length ? 'order' : 'transfer'),
       onOpen: (r, d) => (d.orders_total ? open.order(r) : open.transfer(r)), empty: (d) => d.no_order_reason }),

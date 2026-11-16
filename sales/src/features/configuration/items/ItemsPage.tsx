@@ -11,7 +11,7 @@ const columns: ColumnDef<ItemRead, unknown>[] = [
   colItemRead.text('sku', 'SKU'),
   colItemRead.text('gtin', 'GTIN'),
   { id: 'units', header: 'Units', cell: ({ row }) => unitsText(row.original.units) },
-  { accessorKey: 'active', header: 'Status',
+  { accessorKey: 'active', header: 'Status', meta: { card: 'badge' },
     cell: ({ row }) => <Badge variant={row.original.active ? 'success' : 'neutral'}>{row.original.active ? 'Active' : 'Inactive'}</Badge> },
 ]
 
