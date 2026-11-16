@@ -92,6 +92,9 @@ function PoPaEditPage() {
   const [paType, setPaType]                         = useState<'regular' | 'prepayment'>('regular')
   const [prepaymentPct, setPrepaymentPct]           = useState('50')
   const [expectedSettlement, setExpectedSettlement] = useState('')
+  // The date box lets a 5-digit year through (03/01/22026); the server then
+  // answered with its parser's text and the field name (ISS-0251).
+  const settlementDateInvalid = expectedSettlement !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(expectedSettlement)
 
   // ── Step 3 — Charge breakdown & details ───────────────────────────────────
   const [title, setTitle]               = useState('')
@@ -331,6 +334,8 @@ function PoPaEditPage() {
       errors.push('Prepayment percentage must be between 1 and 100')
     if (paType === 'prepayment' && !expectedSettlement)
       errors.push('Expected settlement date is required for prepayment')
+    if (paType === 'prepayment' && settlementDateInvalid)
+      errors.push('Expected Settlement Date is not a valid date')
     if (paymentTotal <= 0)
       errors.push('Total payment amount must be greater than zero')
   }
@@ -360,7 +365,7 @@ function PoPaEditPage() {
     if (!title.trim() || subtotalNum <= 0 || taxNum < 0 || taxMissing || paymentTotal <= 0) return
     // Same bounds as the on-page message above (ISS-0115: 120% reached the
     // server and came back as a raw pop-up).
-    if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement || prepayPctNum <= 0 || prepayPctNum > 100)) return
+    if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement || settlementDateInvalid || prepayPctNum <= 0 || prepayPctNum > 100)) return
     // PO route only — agreement PAs are exempt. The notice under the invoice
     // list already names the two ends.
     if (!isAgreementMode && dueWindowViolation(poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id)))) return
@@ -855,13 +860,17 @@ function PoPaEditPage() {
                       </label>
                       <input
                         type="date"
+                        max="9999-12-31"
                         value={expectedSettlement}
                         onChange={(e) => setExpectedSettlement(e.target.value)}
                         className={cn(
                           'h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                          submitted && !expectedSettlement ? 'border-danger-400' : 'border-neutral-300'
+                          submitted && (!expectedSettlement || settlementDateInvalid) ? 'border-danger-400' : 'border-neutral-300'
                         )}
                       />
+                      {submitted && settlementDateInvalid && (
+                        <p className="text-xs text-danger-600">Expected Settlement Date is not a valid date</p>
+                      )}
                     </div>
                   </div>
                 </div>

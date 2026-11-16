@@ -216,6 +216,9 @@ function PoPaCreate() {
   const [paType, setPaType]                         = useState<'regular' | 'prepayment' | 'settlement' | 'balance'>('regular')
   const [prepaymentPct, setPrepaymentPct]           = useState('50')
   const [expectedSettlement, setExpectedSettlement] = useState('')
+  // The date box lets a 5-digit year through (03/01/22026); the server then
+  // answered with its parser's text and the field name (ISS-0251).
+  const settlementDateInvalid = expectedSettlement !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(expectedSettlement)
   const [prepaymentPaId, setPrepaymentPaId]         = useState('')
 
   // ── Step 3 — Charge breakdown & details ───────────────────────────────────
@@ -757,7 +760,9 @@ function PoPaCreate() {
       else if (paType === 'prepayment' && priorPrepaidPct + parseFloat(prepaymentPct) > 100)
         errors.push(`Prepayment percentage cannot exceed ${100 - priorPrepaidPct}% — ${priorPrepaidPct}% of this PO is already prepaid`)
       if (paType === 'prepayment' && !expectedSettlement)
-        errors.push('Expected settlement date is required for prepayment')
+          errors.push('Expected settlement date is required for prepayment')
+      if (paType === 'prepayment' && settlementDateInvalid)
+        errors.push('Expected Settlement Date is not a valid date')
       if (isSettlementType && !prepaymentPaId)
         errors.push('Original Prepayment PA is required')
       if (isSettlementType && unpaidStages.length > 0)
@@ -899,7 +904,7 @@ function PoPaCreate() {
     if (isSettlementType && (appliedNum > grossTotal + 0.01)) return
     // Same bounds as the on-page message above — sending 120% only bought a
     // second, raw copy of it in a browser pop-up (ISS-0115).
-    if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement || prepayPctNum <= 0 || prepayPctNum > 100
+    if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement || settlementDateInvalid || prepayPctNum <= 0 || prepayPctNum > 100
       || priorPrepaidPct + prepayPctNum > 100)) return
     if (isSettlementType && !prepaymentPaId) return
     if (receiptOverrideMissing) return
@@ -1505,13 +1510,17 @@ function PoPaCreate() {
                         </label>
                         <input
                           type="date"
+                          max="9999-12-31"
                           value={expectedSettlement}
                           onChange={(e) => setExpectedSettlement(e.target.value)}
                           className={cn(
                             'h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                            submitted && !expectedSettlement ? 'border-danger-400' : 'border-neutral-300'
+                            submitted && (!expectedSettlement || settlementDateInvalid) ? 'border-danger-400' : 'border-neutral-300'
                           )}
                         />
+                        {submitted && settlementDateInvalid && (
+                          <p className="text-xs text-danger-600">Expected Settlement Date is not a valid date</p>
+                        )}
                       </div>
                     </div>
                     <p className="text-[11px] text-info-700">
