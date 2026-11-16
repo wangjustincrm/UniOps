@@ -263,6 +263,11 @@ export default function PrDetailPage() {
   // (REJ-004 / REJ-005); the engine refuses everyone else, so don't offer them.
   // (The approver currently holding the PR acts from the approval bar instead.)
   const isRequesterOrAdmin = !!pr && (isAdmin || pr.created_by === user?.id)
+  // "The current approver" (PRD 3.2.4) is whoever holds the step — not a
+  // System Admin seeing the approval bar through the bypass: admins are never
+  // step holders (3.3.5), so gating on canApprove hid Recall from them on
+  // every submitted / in-review PR (ISS-0156).
+  const isCurrentApprover = hasApproveTask || (!tasksLoaded && !isAdmin && roleMatchesStep)
   // A refused action used to leave the page silent (ISS-0156).
   const [actionError, setActionError] = useState<string | null>(null)
   const onActionError = (e: unknown) =>
@@ -337,7 +342,7 @@ export default function PrDetailPage() {
             <p className="mt-0.5 text-sm text-neutral-400">Submitted {formatDate(pr.submitted_at ?? '')}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {['draft', 'returned', 'submitted', 'in_review'].includes(pr.status) && !canApprove && isRequesterOrAdmin && (
+            {['draft', 'returned', 'submitted', 'in_review'].includes(pr.status) && !isCurrentApprover && isRequesterOrAdmin && (
               <>
                 {['draft', 'returned'].includes(pr.status) ? (
                   <Link to={`/pr/${pr.id}/edit`}>
