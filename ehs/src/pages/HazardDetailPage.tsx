@@ -123,6 +123,10 @@ export default function HazardDetailPage() {
             </Row>
           )}
           <Row label="Owner">{h.owner_name ?? '—'}</Row>
+          {/* UAT 14: who else took part in the assessment. */}
+          {(h.helpers ?? []).length > 0 && (
+            <Row label="Also took part">{h.helpers!.map((p) => p.name).join(', ')}</Row>
+          )}
           <Row label="Kind">{kinds.length ? kinds.join(', ') : '—'}</Row>
           <Row label="Where">{h.location_path ?? '—'}{h.department_name && ` · ${h.department_name}`}</Row>
           <Row label="Equipment">{equipment ?? '—'}</Row>

@@ -57,6 +57,8 @@ class HazardIn(BaseModel):
     # differently beside "we removed the pinch point", and an auditor asks.
     control_level: str | None = Field(default=None, pattern=_CONTROL_LEVELS)
     owner_id: uuid.UUID | None = None
+    # ★ UAT 14: staff who helped with the assessment, besides the owner.
+    helper_ids: list[uuid.UUID] | None = Field(default=None, max_length=30)
     identified_on: date | None = None
     review_due_on: date | None = None
     source_type: str | None = Field(default=None, max_length=20)
@@ -99,6 +101,7 @@ class HazardOut(BaseModel):
     control_level: str | None
     owner_id: uuid.UUID | None
     owner_name: str | None
+    helpers: list = Field(default_factory=list)
     identified_on: date | None
     review_due_on: date | None
     status: str

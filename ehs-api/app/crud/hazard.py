@@ -115,6 +115,29 @@ async def _apply_lists(db: AsyncSession, fields: dict, hazard: Hazard | None = N
     if controls is not None:
         fields["hazard_controls"] = await _picked(db, "hazard_control", controls,
                                                   hazard.hazard_controls if hazard else None)
+    helper_ids = fields.pop("helper_ids", None)
+    if helper_ids is not None:
+        fields["helpers"] = await _helpers(db, helper_ids, hazard.helpers if hazard else None)
+
+
+async def _helpers(db: AsyncSession, ids: list[uuid.UUID], kept: list[dict] | None) -> list[dict]:
+    """★ UAT 14: [{id, name}] for the staff who helped — a name kept as it was
+    recorded when the person stays on the list, as it reads now when added.
+    Somebody not on the staff list is refused rather than stored."""
+    from fastapi import HTTPException, status as http
+    from app.models.mirrors import User
+    known = {str(h.get("id")): h.get("name") for h in (kept or [])}
+    out: list[dict] = []
+    for uid in dict.fromkeys(ids):
+        if str(uid) in known:
+            out.append({"id": str(uid), "name": known[str(uid)]})
+            continue
+        person = await db.get(User, uid)
+        if person is None or not person.is_active:
+            raise HTTPException(http.HTTP_422_UNPROCESSABLE_ENTITY,
+                                "Somebody picked as having helped is not on the staff list")
+        out.append({"id": str(uid), "name": person.full_name})
+    return out
 
 
 def _rank_expr():
@@ -218,6 +241,7 @@ async def create_hazard(db: AsyncSession, payload: dict, *, creator_id: uuid.UUI
             [{"id": str(payload["hazard_type_id"]), "label": type_label or ""}]
             if payload.get("hazard_type_id") else []),
         hazard_controls=payload.get("hazard_controls") or [],
+        helpers=payload.get("helpers") or [],
         location_id=payload.get("location_id"),
         location_path=path, department_id=dept_id, department_name=dept_name,
         equipment_id=payload.get("equipment_id"),

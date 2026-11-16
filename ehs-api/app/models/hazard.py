@@ -107,6 +107,10 @@ class Hazard(UUIDPrimaryKey, TimestampMixin, Base):
     # Kirk, round 12: "last revised on". An edit, not an assessment.
     revised_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revised_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # ★ UAT 14: staff who helped with the assessment, besides its owner —
+    # [{id, name}], the name as it read when picked (migration 0112).
+    helpers: Mapped[list] = mapped_column(JSONB, nullable=False, default=list,
+                                          server_default="[]")
 
 
 class Jsa(UUIDPrimaryKey, TimestampMixin, Base):
