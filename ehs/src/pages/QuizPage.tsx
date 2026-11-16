@@ -65,7 +65,15 @@ export default function QuizPage() {
   const { can } = usePermissions()
   const mayWrite = can('ehs.training.write')
   const [creating, setCreating] = useState(false)
+  // ★ UAT 14: "Create a way to copy quizzes and rename them."
+  const [copying, setCopying] = useState<Quiz | null>(null)
+  const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null)
   const queryClient = useQueryClient()
+  const rename = useMutation({
+    mutationFn: (r: { id: string; title: string }) =>
+      api.patch<Quiz>(`/api/v1/quizzes/${r.id}`, { title: r.title.trim() }),
+    onSuccess: () => { setRenaming(null); queryClient.invalidateQueries({ queryKey: ['quizzes'] }) },
+  })
   // ★ Round-6 review: a quiz could not be taken out of use, so one put on a
   // document by mistake held its signing. Pressed twice, because it stops the
   // document or course asking for it.
@@ -94,6 +102,7 @@ export default function QuizPage() {
       </PageHeader>
 
       {creating && <NewQuizForm onClose={() => setCreating(false)} />}
+      {copying && <NewQuizForm key={copying.id} copyOf={copying} onClose={() => setCopying(null)} />}
 
 
       <SearchBox value={list.query} onChange={list.setQuery}
@@ -114,7 +123,26 @@ export default function QuizPage() {
                 <div className="flex flex-wrap items-start gap-3">
                   <ClipboardList className="mt-0.5 h-5 w-5 shrink-0 text-primary-600" aria-hidden />
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-neutral-900">{q.title}</span>
+                    {renaming?.id === q.id ? (
+                      <span className="flex flex-wrap items-center gap-2">
+                        <input className={`${inputClass} min-w-0 flex-1`} value={renaming.title} autoFocus
+                               aria-label="New title" maxLength={200}
+                               onChange={(e) => setRenaming({ id: q.id, title: e.target.value })}
+                               onKeyDown={(e) => {
+                                 if (e.key === 'Enter' && renaming.title.trim() && !rename.isPending) rename.mutate(renaming)
+                                 if (e.key === 'Escape') setRenaming(null)
+                               }} />
+                        <button type="button" className={primaryButton}
+                                disabled={!renaming.title.trim() || rename.isPending}
+                                onClick={() => { if (renaming.title.trim() && !rename.isPending) rename.mutate(renaming) }}>
+                          {rename.isPending ? 'Saving…' : 'Save'}
+                        </button>
+                        <button type="button" className={secondaryButton} onClick={() => setRenaming(null)}>Cancel</button>
+                      </span>
+                    ) : (
+                      <span className="block text-sm font-semibold text-neutral-900">{q.title}</span>
+                    )}
+                    {renaming?.id === q.id && <ErrorNote error={rename.error} />}
                     <span className="mt-0.5 block text-xs text-neutral-500">
                       {q.question_count} question{q.question_count === 1 ? '' : 's'} ·
                       pass at {q.pass_mark_percent}%
@@ -130,6 +158,18 @@ export default function QuizPage() {
                       <button type="button" className={secondaryButton}
                               onClick={() => navigate(`/quizzes/${q.id}/edit`)}>
                         Edit
+                      </button>
+                    )}
+                    {mayWrite && renaming?.id !== q.id && (
+                      <button type="button" className={secondaryButton}
+                              onClick={() => { rename.reset(); setRenaming({ id: q.id, title: q.title }) }}>
+                        Rename
+                      </button>
+                    )}
+                    {mayWrite && (
+                      <button type="button" className={secondaryButton}
+                              onClick={() => { setCreating(false); setCopying(q); window.scrollTo({ top: 0 }) }}>
+                        Copy
                       </button>
                     )}
                     {mayWrite && (
@@ -166,15 +206,21 @@ export default function QuizPage() {
   )
 }
 
-function NewQuizForm({ onClose }: { onClose: () => void }) {
+/**
+ * A new quiz, or — ★ UAT 14 — a copy of one: its questions, answers, intro,
+ * pass mark and attempts, under a new title and for whichever course or
+ * document it is to test. The original and its attempts are untouched, which
+ * is also how a quiz somebody has already taken gets new questions.
+ */
+function NewQuizForm({ onClose, copyOf }: { onClose: () => void; copyOf?: Quiz }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const [title, setTitle] = useState('')
-  const [courseId, setCourseId] = useState('')
+  const [title, setTitle] = useState(copyOf ? `Copy of ${copyOf.title}`.slice(0, 200) : '')
+  const [courseId, setCourseId] = useState(copyOf?.course_id ?? '')
   const [documentId, setDocumentId] = useState('')
   // Round 6: a quiz tests a course or a document, not both.
-  const [tests, setTests] = useState<'course' | 'document'>('course')
-  const [passMark, setPassMark] = useState('80')
+  const [tests, setTests] = useState<'course' | 'document'>(copyOf?.document_id ? 'document' : 'course')
+  const [passMark, setPassMark] = useState(String(copyOf?.pass_mark_percent ?? 80))
 
   const courses = useQuery({
     queryKey: ['courses'],
@@ -188,8 +234,8 @@ function NewQuizForm({ onClose }: { onClose: () => void }) {
   })
 
   const create = useMutation({
-    mutationFn: () => api.post<Quiz>('/api/v1/quizzes', {
-      title, pass_mark_percent: Number(passMark),
+    mutationFn: () => api.post<Quiz>(copyOf ? `/api/v1/quizzes/${copyOf.id}/copy` : '/api/v1/quizzes', {
+      title: title.trim(), pass_mark_percent: Number(passMark),
       course_id: tests === 'course' ? (courseId || null) : null,
       document_id: tests === 'document' ? (documentId || null) : null,
     }),
@@ -203,7 +249,9 @@ function NewQuizForm({ onClose }: { onClose: () => void }) {
   return (
     <Card className="mb-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-neutral-900">New quiz</h2>
+        <h2 className="text-sm font-semibold text-neutral-900">
+          {copyOf ? `Copy “${copyOf.title}”` : 'New quiz'}
+        </h2>
         <button type="button" onClick={onClose} aria-label="Close"
                 className="rounded p-1 text-neutral-400 hover:bg-neutral-50">
           <X className="h-4 w-4" />
@@ -268,7 +316,9 @@ function NewQuizForm({ onClose }: { onClose: () => void }) {
         <button type="button" className={primaryButton}
                 disabled={!title.trim() || create.isPending || (tests === 'document' && !documentId)}
                 onClick={() => { if (!create.isPending) create.mutate() }}>
-          {create.isPending ? 'Creating…' : 'Create and add questions'}
+          {create.isPending ? (copyOf ? 'Copying…' : 'Creating…')
+            : copyOf ? `Copy it with its ${copyOf.question_count} question${copyOf.question_count === 1 ? '' : 's'}`
+            : 'Create and add questions'}
         </button>
       </div>
     </Card>

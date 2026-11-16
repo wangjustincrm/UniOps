@@ -19,7 +19,7 @@ import uuid
 from datetime import date, datetime, time
 from decimal import Decimal
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.incidents import _user_id
@@ -201,6 +201,48 @@ async def create_quiz(payload: QuizIn, db: SessionDep, user: CanWriteTraining):
 @router.get("/quizzes/{quiz_id}", response_model=QuizOut)
 async def get_quiz(quiz_id: uuid.UUID, db: SessionDep, user: CanReportIncident):  # noqa: ARG001
     return await _quiz_out(db, await crud.get_quiz(db, quiz_id))
+
+
+class QuizRename(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+
+
+@router.patch("/quizzes/{quiz_id}", response_model=QuizOut)
+async def rename_quiz(quiz_id: uuid.UUID, payload: QuizRename, db: SessionDep,
+                      user: CanWriteTraining):  # noqa: ARG001
+    """★ UAT 14: "Create a way to copy quizzes and rename them." The title only:
+    the pass mark and the questions are what past attempts were marked
+    against, and stay as they were."""
+    quiz = await crud.get_quiz(db, quiz_id)
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "A quiz needs a title")
+    quiz.title = title
+    await db.flush()
+    return await _quiz_out(db, quiz)
+
+
+@router.post("/quizzes/{quiz_id}/copy", response_model=QuizOut, status_code=status.HTTP_201_CREATED)
+async def copy_quiz(quiz_id: uuid.UUID, payload: QuizIn, db: SessionDep, user: CanWriteTraining):
+    """★ UAT 14: a new quiz with the original's questions, answers and intro,
+    under the title and for the course or document given. Nothing of the
+    original changes and no attempt comes with it — which is also how a quiz
+    somebody has already taken gets new questions."""
+    original = await crud.get_quiz(db, quiz_id)
+    data = payload.model_dump()
+    if data.get("intro") is None:
+        data["intro"] = original.intro
+    if data.get("max_attempts") is None:
+        data["max_attempts"] = original.max_attempts
+    data["title"] = data["title"].strip()
+    quiz = await crud.create_quiz(db, data, creator_id=_user_id(user))
+    questions = await crud.questions_for(db, original.id)
+    if questions:
+        await crud.replace_questions(db, quiz, [
+            {"prompt": q.prompt, "kind": q.kind, "options": list(q.options),
+             "correct": list(q.correct), "explanation": q.explanation, "points": q.points}
+            for q in questions])
+    return await _quiz_out(db, quiz)
 
 
 @router.post("/quizzes/{quiz_id}/retire", response_model=QuizOut)

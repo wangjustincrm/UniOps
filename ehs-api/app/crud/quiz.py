@@ -191,7 +191,7 @@ async def replace_questions(
             f"This quiz has already been answered {taken} "
             f"time{'s' if taken != 1 else ''}. Changing the questions now would "
             "leave those scores meaning something different from everyone "
-            "else's — make a new quiz instead.")
+            "else's — copy it (Quizzes → Copy) and change the copy instead.")
 
     for existing in await questions_for(db, quiz.id):
         await db.delete(existing)
