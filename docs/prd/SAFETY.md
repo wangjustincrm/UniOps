@@ -1,12 +1,15 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.24
-**Date**: 2026-11-11
+**Version**: 0.25
+**Date**: 2026-11-16
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.23 → 0.24)**
+**What changed in this version (0.24 → 0.25)**
+- §1.6 "UAT 14": Reports read a typed incident with no injury class as No injury and tell the two near-miss types apart; Where did this happen comes before the equipment picker; hazards and PPE side by side on the investigation; both risk assessment buttons on one line and green on a food-safety near miss; every email Safety sends in Settings → Email wording; quizzes renamed and copied; this month against last on the dashboard's figures; the Food Safety dashboard.
+
+**What changed in version 0.24 (0.23 → 0.24)**
 - §1.6 "UAT 13, emails, equipment, toolbox talks": the wording of eight emails to people in the plant, editable by HSE, and the corrective action email giving priority, numbers (linked), what will be done, detail and due date; the equipment picker offering only the Systems of the area chosen; a past toolbox talk held again with a new attendance sheet.
 
 **What changed in version 0.23 (0.22 → 0.23)**
@@ -417,6 +420,17 @@ UAT 13, emails, equipment, toolbox talks (built)
 - The equipment picker, once the area is chosen, offers only the Systems of the machines in that area and below it (UAT 13: "I should not see an agitator system"), not those of machines with no area; Show all areas brings every System back.
 - A past toolbox talk can be held again (Toolbox talks → Hold a past talk again) by supervisors, HSE, and anybody a talk was handed to before: it opens a new attendance sheet, and the new delivery names the one it repeats (migration 0111). It counts in the monthly tracker like any delivery.
 
+UAT 14 (built; no migration)
+
+- Reports, Incidents by Injury classification: First Aid, Medical Aid, Lost Time, and No injury for an incident whose type is recorded but no class — how the form stores "nobody was hurt" (a near miss is never asked; a damaged machine or report-only case left blank). Not recorded is kept for an incident with no type at all. Where two incident types shorten to the same name, the one whose tail names something keeps its whole name ("Near Miss" and "Near Miss — Food Safety").
+- The report forms: the line with What kind of incident and Where did this happen comes before the line with Who was hurt and Which equipment, on all three forms.
+- The investigation: Hazards identified and PPE that could have prevented this side by side (a near miss has no PPE question).
+- A food-safety near miss: Assess the risk and Assess the food safety risk on one line, both green; each assessment's results stay in its own section.
+- Settings → Email wording lists every email Safety sends, under Incidents, Corrective actions, JHSC, Toolbox talks and inspections, Training, Documents, Feedback and Handing over work: added are a new incident reported, an incident's status change, a legal deadline close or passed, feedback left, the JHSC recommendation (raised, sent for a reply — the sender's preview opens on this wording and may still change it —, answered, minutes published, its reply handed over), a leaver's work handed over, and the certificate expiry list. Each default is the wording the email already had. A line whose placeholders are all empty is left out of the email, so a sentence that applies only sometimes (the Ministry's 48 hours, Where:) is an ordinary line. The subject is never left out.
+- Quizzes: Rename (the title only), and Copy — a new quiz with the original's questions, answer key, intro and attempts limit, under a new title, for the course or document chosen, with its own code and no attempts. The original is unchanged; copying is also how a quiz already answered gets new questions.
+- The HSE dashboard: on the four injury boxes and on Injuries by month, Near misses, Corrective actions raised and Hazard assessments, a small count for this month (December, when looking back at a past year) with an arrow — up dark green, down dark red, a dash for the same — against the month before, each counted as its own figure is. The words are on hover and for screen readers.
+- The Food Safety dashboard (beside the HSE dashboard's title): food-safety near misses this year; this month's with last month's and the change in per cent; the risk ratings by each near miss's latest Food Safety Risk Assessment, each opening the Food Safety Risk register at that band; the investigations open (reported or being investigated), pending (waiting to be closed) and closed; the corrective actions raised on food-safety near misses — created, completed, outstanding, each opening the near misses they were raised on; the near misses by month; and the average days to resolve, worked out as for all incidents (report sent to last close, over the closed ones). A food-safety near miss is the Near Miss — Food Safety type or any near miss in the Food Safety category; drafts are not counted. The incident register takes the same rule as a filter, so every figure opens exactly what it counted.
+
 ## 2. Functional Requirements — 57 Items
 
 Priority: **P0** legally required or the loop breaks without it · **P1** needed day to day · **P2** strengthens the system · **P3** needed for COR. **Phase** is as stated in v0.2–v0.4; "—" means the source did not assign one.
@@ -606,6 +620,7 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | 0.22 | 2026-11-13 | UAT 13 first fixes: the five failed cases, a stuck JHSC reply task, the Section B rule, report form layout, near-miss default, coordinators recording filings, categories in Reports (§1.6). |
 | 0.23 | 2026-11-15 | UAT 13 food safety: the Food Safety Risk Assessment and register, immediate causes with department and date, the Production Chronology (§1.6). |
 | 0.24 | 2026-11-16 | UAT 13: email wording HSE can change, the corrective action email, Systems by area in the equipment picker, a toolbox talk held again (§1.6). |
+| 0.25 | 2026-11-16 | UAT 14: injury classification in Reports, form and investigation layout, the two assessment buttons, every email in Email wording, quiz copy and rename, this month's arrows on the dashboard, the Food Safety dashboard (§1.6). |
 
 ---
 
