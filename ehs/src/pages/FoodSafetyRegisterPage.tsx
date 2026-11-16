@@ -42,6 +42,10 @@ export default function FoodSafetyRegisterPage() {
   const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize), ...sortParams(sort) })
   if (search.trim()) qs.set('q', search.trim())
   if (band) qs.set('band', band)
+  // ★ Review R14: opened from the Food Safety dashboard, the same year it counted.
+  const from = params.get('occurred_from'), to = params.get('occurred_to')
+  const [period, setPeriod] = useState(Boolean(from && to))
+  if (period && from && to) { qs.set('occurred_from', from); qs.set('occurred_to', to) }
   const list = useQuery({
     queryKey: ['food-safety-register', qs.toString()],
     queryFn: () => api.get<{ items: Row[]; total: number }>(`/api/v1/food-safety/register?${qs}`),
@@ -58,6 +62,14 @@ export default function FoodSafetyRegisterPage() {
                   subtitle="Every food safety near miss that has been assessed, by its latest Food Safety Risk Assessment. RPN = Severity × Probability × Detectability; a Critical Control Point failure is 46." />
       <SearchBox value={search} onChange={(v) => { setSearch(v); setPage(1) }}
                  placeholder="Search by incident number or title" />
+      {period && from && to && (
+        <p className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-primary-50 px-3 py-1.5 text-xs text-primary-800">
+          Near misses that happened {formatDate(from)} – {formatDate(to)}, as on the Food Safety dashboard.
+          <button type="button" className="font-semibold underline" onClick={() => { setPeriod(false); setPage(1) }}>
+            Show all
+          </button>
+        </p>
+      )}
       <div className="mb-3 flex flex-wrap gap-2">
         <button type="button" className={chip(band === '')} aria-pressed={band === ''}
                 onClick={() => { setBand(''); setPage(1) }}>All</button>

@@ -6,14 +6,14 @@ Risk Assessment'." Read by whoever may read the incident; made by whoever may
 investigate one (the same people who score an incident's risk).
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from uniops_authz import has_permission
 
-from app.api.v1.incidents import _may_read, _user_id
+from app.api.v1.incidents import _may_read, _user_id, hidden_reporters
 from app.core.deps import SessionDep
 from app.core.permissions import CanReadIncident, CanReportIncident
 from app.crud import incident as incident_crud
@@ -101,9 +101,17 @@ async def _incident_for(db, user, incident_id) -> Incident:
 @router.get("/incidents/{incident_id}/food-safety-assessments", response_model=list[AssessmentOut])
 async def list_for_incident(incident_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
     await _incident_for(db, user, incident_id)
-    return list((await db.execute(select(FoodSafetyAssessment).where(
+    rows = list((await db.execute(select(FoodSafetyAssessment).where(
         FoodSafetyAssessment.incident_id == incident_id).order_by(
         FoodSafetyAssessment.assessed_at.desc()))).scalars())
+    # ★ Review R7: on an anonymous report, an assessment its reporter made is
+    # not signed with their name to anybody but HSE — as risk.py does.
+    hidden = await hidden_reporters(db, user, [incident_id])
+    out = [AssessmentOut.model_validate(r) for r in rows]
+    for o, r in zip(out, rows):
+        if r.incident_id in hidden and r.assessed_by == hidden[r.incident_id]:
+            o.assessed_by_name = None
+    return out
 
 
 @router.post("/incidents/{incident_id}/food-safety-assessments", response_model=AssessmentOut,
@@ -154,13 +162,15 @@ class RegisterPage(BaseModel):
 
 @router.get("/food-safety/register", response_model=RegisterPage)
 async def register(
-    db: SessionDep, user: CanReadIncident,  # noqa: ARG001
+    db: SessionDep, user: CanReadIncident,
     q: str | None = Query(default=None, max_length=100),
     band: str | None = Query(default=None, pattern="^(critical|high|medium|low)$"),
     sort: str | None = None,
     dir: str = Query(default="desc", pattern="^(asc|desc)$"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=200),
+    occurred_from: date | None = None,
+    occurred_to: date | None = None,
 ):
     """Each assessed food-safety near miss, by its latest assessment: "a separate
     risk register on all food safety near misses". Searched, sorted and paged on
@@ -170,7 +180,15 @@ async def register(
                                             order_by=FoodSafetyAssessment.assessed_at.desc())
                      .label("n")).subquery())
     a = latest.c
-    where = [a.n == 1]
+    # ★ Review R14: drafts are not near misses yet, and the dashboard's year
+    # comes with its figures, so a band opens exactly what it counted.
+    where = [a.n == 1, Incident.status != "draft"]
+    from app.services.day_range import day_bounds
+    start, end = day_bounds(occurred_from, occurred_to)
+    if start is not None:
+        where.append(Incident.occurred_at >= start)
+    if end is not None:
+        where.append(Incident.occurred_at < end)
     if q and q.strip():
         term = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         like = f"%{term}%"
@@ -186,9 +204,11 @@ async def register(
     }, [Incident.id]) or [a.rpn.desc(), a.assessed_at.desc(), Incident.id]
     rows = (await db.execute(base.order_by(*order).offset((page - 1) * page_size)
                              .limit(page_size))).all()
+    hidden = await hidden_reporters(db, user, [r.Incident.id for r in rows])
     return RegisterPage(total=total, items=[RegisterRow(
         incident_id=r.Incident.id, incident_no=r.Incident.incident_no, title=r.Incident.title,
         occurred_at=r.Incident.occurred_at, location_path=r.Incident.location_path,
         status=r.Incident.status, ccp_failure=r.ccp_failure, probability=r.probability,
         severity=r.severity, detectability=r.detectability, rpn=r.rpn, band=r.band,
-        assessed_by_name=r.assessed_by_name, assessed_at=r.assessed_at) for r in rows])
+        assessed_by_name=(None if hidden.get(r.Incident.id) == r.assessed_by else r.assessed_by_name),
+        assessed_at=r.assessed_at) for r in rows])

@@ -128,10 +128,11 @@ export default function FoodSafetyDashboardPage() {
 
       <div className="grid gap-3 lg:grid-cols-2">
         <Section title="Risk rating"
-                 note={`By each near miss's latest Food Safety Risk Assessment. ${data.not_assessed} not assessed yet.`}>
+                 note={`By each near miss's latest Food Safety Risk Assessment. ${data.not_assessed} not assessed yet. This month's figures are the month so far.`}>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {order.map((code) => (
-              <TabLink key={code} to={`/food-safety?band=${code}`} className={tileCls}
+              <TabLink key={code} to={`/food-safety?band=${code}&occurred_from=${yearFrom}&occurred_to=${yearTo}`}
+                       className={tileCls}
                        title="Open these in the Food Safety Risk Register">
                 <span className="text-3xl font-bold tabular-nums leading-none text-neutral-900">{data.bands[code] ?? 0}</span>
                 <span className="mt-2"><BandBadge band={code} bands={bands} /></span>
