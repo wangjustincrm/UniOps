@@ -177,6 +177,30 @@ def _short(label: str) -> str:
     return label.split(" — ")[0]
 
 
+def _type_labels() -> dict[str, str]:
+    """Each incident type's short name, unless two would read the same.
+
+    ★ UAT 14, TC-10: "near miss is on the list twice." "Near Miss — no injury
+    but…" and "Near Miss — Food Safety" both shortened to "Near Miss".
+    """
+    # BY_CODE answers get/[]/in/iter, not items() — it is a view, not a store.
+    full = {code: incident_type.BY_CODE[code].label for code in incident_type.BY_CODE}
+    short = {code: _short(label) for code, label in full.items()}
+    seen: dict[str, int] = {}
+    for label in short.values():
+        seen[label] = seen.get(label, 0) + 1
+
+    def name(code: str) -> str:
+        if seen[short[code]] == 1:
+            return short[code]
+        # Of two alike, the one whose tail only describes it ("— no injury but
+        # has the potential…") keeps the short name; the one whose tail names
+        # something ("— Food Safety") keeps it.
+        tail = full[code].partition(" — ")[2]
+        return short[code] if tail[:1].islower() else full[code]
+    return {code: name(code) for code in full}
+
+
 DIMENSIONS: dict[str, Dimension] = {
     # Snapshot columns are grouped on directly: they are what the record said at
     # the time, which is the honest thing to report.
@@ -194,7 +218,19 @@ DIMENSIONS: dict[str, Dimension] = {
     "category": Dimension("category", "Category",
                           "coalesce(category_label, extra->>'incident_type')",
                           labels=incident_type.BY_CODE),
-    "injury_class": Dimension("injury_class", "Injury classification", "injury_class"),
+    # ★ UAT 14, TC-10: "There are 75 'not recorded' injury classifications …
+    # why is INC-2026-0137 labeled … not recorded, when it is a food safety
+    # near miss." Blank is how the form stores "nobody was hurt": a near miss
+    # is never asked (round 12, Q4), and on a damaged machine or a report-only
+    # case the question is left blank when nobody was. So an incident with a
+    # type and no class reads "No injury"; only one with no type at all — which
+    # nothing told us about — is "Not recorded". And the classes read as HSE
+    # names them, not as codes.
+    "injury_class": Dimension(
+        "injury_class", "Injury classification",
+        "coalesce(injury_class, case when extra->>'incident_type' is not null then 'none' end)",
+        labels={"first_aid": "First Aid", "medical_aid": "Medical Aid",
+                "lost_time": "Lost Time", "none": "No injury"}),
     # The twelve types on HSE's form. Held in `extra`, which is where the form
     # writes it (crud/incident.py), so this reads it from there.
     "incident_type": Dimension(
@@ -313,7 +349,7 @@ async def group_by(
     rows = (await db.execute(text(sql), params)).all()
     labels = dim.labels or {}
     if labels is incident_type.BY_CODE:
-        labels = {code: _short(incident_type.BY_CODE[code].label) for code in incident_type.BY_CODE}
+        labels = _type_labels()
     return [
         {"value": v,
          "label": labels.get(v) or lbl or (v if v is not None else "Not recorded"),
