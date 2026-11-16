@@ -7,7 +7,7 @@ import {
 } from '@/platform-ui'
 import { SOURCE_LABEL, downloadPacket, fetchOrder, poPdf, ordersClient, type OrderRead } from './ordersApi'
 import { OrderHoldActions } from './OrderHoldActions'
-import { DetailHelp, OrderStatusBadge, StatusGuide } from './OrderStatusCells'
+import { DetailHelp, NextStep, OrderStatusBadge } from './OrderStatusCells'
 import { statusDetailText } from './orderStatus'
 import { PaymentsAndRefunds } from './PaymentsAndRefunds'
 import { InvoicePricesForm } from './InvoicePrices'
@@ -158,7 +158,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
           <span className="flex flex-col gap-0.5">
             <OrderStatusBadge o={live} />
             {statusDetailText(live) && <span className="inline-flex items-center gap-0.5"><Hint>Detail: {statusDetailText(live)}</Hint><DetailHelp o={live} /></span>}
-            <StatusGuide o={live} />
+            <NextStep o={live} />
           </span>
           {live.historical && <Badge variant="neutral">Historical</Badge>}
         </>}

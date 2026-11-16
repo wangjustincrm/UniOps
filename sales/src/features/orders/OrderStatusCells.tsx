@@ -1,4 +1,4 @@
-import { Badge, CountdownCell, HelpTip, Hint, RelativeCell, StatusCell, dateAndTime, useHelp } from '@/platform-ui'
+import { Badge, CountdownCell, HelpTip, Hint, RelativeCell, StatusCell, dateAndTime } from '@/platform-ui'
 import type { OrderRead } from './ordersApi'
 import { orderStatusColour, shopifyBadges, statusDetailText } from './orderStatus'
 
@@ -17,11 +17,24 @@ export function OrderStatusBadge({ o }: { o: Pick<OrderRead, 'order_status' | 'o
   )
 }
 
-/** What to do about the order now, in one line under its status (the record sheet): its On Hold
- *  reason's text, else its Status's (the same text the badge opens). */
-export function StatusGuide({ o }: { o: Pick<OrderRead, 'order_status' | 'on_hold_reason'> }) {
-  const help = useHelp(o.on_hold_reason ? `hold:${o.on_hold_reason}` : `status:${o.order_status}`)
-  return help ? <Hint className="max-w-prose">{help.body}</Hint> : null
+const TURN: Record<string, { label: string; className: string }> = {
+  you: { label: 'Your turn', className: 'border-primary-200 bg-primary-50 text-primary-800' },
+  warehouse: { label: 'Waiting on warehouse', className: 'border-neutral-200 bg-neutral-50 text-neutral-700' },
+  shopify: { label: 'Waiting on Shopify', className: 'border-neutral-200 bg-neutral-50 text-neutral-700' },
+  nobody: { label: 'Nothing to do', className: 'border-neutral-200 bg-neutral-50 text-neutral-600' },
+}
+
+/** What to do about this order now and whose turn it is, under its status (the record sheet): built
+ *  by the server from the order's own facts (the user's approved table, 2026-11-16). */
+export function NextStep({ o }: { o: Pick<OrderRead, 'next_step' | 'next_step_who'> }) {
+  if (!o.next_step) return null
+  const turn = TURN[o.next_step_who ?? 'nobody'] ?? TURN.nobody
+  return (
+    <span data-next-step className="inline-flex max-w-prose flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs">
+      <span className={`rounded-full border px-1.5 font-medium ${turn.className}`}>{turn.label}</span>
+      <span className="text-neutral-700">{o.next_step}</span>
+    </span>
+  )
 }
 
 /** The Detail's countdown words (Sends, Delivery due) have a ? that says what the date is. */

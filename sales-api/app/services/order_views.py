@@ -40,6 +40,8 @@ from app.domain.row_matching import identifiers, line_identifiers
 from app.domain.status import FULFILLMENT
 from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
+from app.domain.schedule import TORONTO
+from app.domain.status_help import next_step
 from app.models.config import Connection, DcRouting, Item, ItemUnit, Partner
 from app.models.documents import Document, DocumentLink
 from app.models.invoices import Invoice, InvoiceLine
@@ -90,7 +92,7 @@ from app.services.order_status_sql import (
     TO_CONFIRM_SQL,
 )
 from app.services.orders import BarcodeLookup, OrderSync, order_ref
-from app.services.settings import SETTINGS, SHADOW_MODE
+from app.services.settings import SCHEDULER_PAUSED, SETTINGS, SHADOW_MODE
 
 READ = "sales.read"
 _DOC_COLUMNS = (Document.id, Document.kind, Document.direction, Document.remote_name, Document.created_at,
@@ -143,7 +145,7 @@ class OrderRepository(Repository[Order]):
              "order_state": ORDER_STATES, "order_status": ORDER_STATUSES, "on_hold_reason": ON_HOLD_REASONS}
     # The internal lines stay filterable and sortable, so a saved view on them still lists,
     # but no list offers them any more: they show on the order page, for diagnosis.
-    meta_hidden = ("order_status_label", "short_shipped", "status_detail", "status_detail_at", "shadow", "to_confirm",
+    meta_hidden = ("order_status_label", "short_shipped", "status_detail", "status_detail_at", "next_step", "next_step_who", "shadow", "to_confirm",
                    "fulfillment_status", "invoice_status", "order_state", "hold_reason",
                    # what the 945 left unshipped: no column any more (user 2026-11-12), only the Short shipped mark
                    "backordered_ea")
@@ -254,6 +256,19 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
     read_schema = OrderRead
     read_permission = READ
 
+    # Whether automatic runs happen (the server allows them and the switch is on): what "by itself" and
+    # "the next run" in an order's next step depend on. Read once per request, before the rows.
+    _runs_on: bool = True
+
+    async def _load_runs_on(self) -> None:
+        from app.core.config import settings as app_settings
+        enabled = bool(getattr(app_settings, "SALES_SCHEDULER_ENABLED", False))
+        self._runs_on = enabled and not await SETTINGS.get(self.uow.session, SCHEDULER_PAUSED)
+
+    async def _read_all(self, entities: list[Order]) -> list[OrderRead]:
+        await self._load_runs_on()
+        return await super()._read_all(entities)
+
     def to_read(self, o: Order) -> OrderRead:
         out = OrderRead.model_validate(o, from_attributes=True)
         out.order_state = order_state(o.fulfillment_status, o.invoice_status)
@@ -261,14 +276,18 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         d = display(facts)
         out.order_status, out.on_hold_reason, out.order_status_label = d.order_status, d.on_hold_reason, d.label
         out.short_shipped = d.short_shipped
-        out.status_detail, out.status_detail_at = status_detail(d, facts, detail_facts(o))
+        details = detail_facts(o)
+        out.status_detail, out.status_detail_at = status_detail(d, facts, details)
         out.status_detail_kind = detail_kind(out.status_detail)
+        step = next_step(d, facts, details, datetime.now(TORONTO).date(), runs_on=self._runs_on)  # the invoice side's day
+        out.next_step, out.next_step_who = (step.text, step.who) if step else (None, None)
         return out
 
     @requires(READ)
     async def detail(self, id: int) -> OrderDetail:
         s = self.uow.session
         o = await self.repo.get(id)
+        await self._load_runs_on()
         lines = list((await s.execute(select(OrderLine).where(OrderLine.order_id == id).order_by(OrderLine.line_no))).scalars())
         has_invoice = (await s.execute(select(Invoice.id).where(Invoice.order_id == id))).first() is not None
         docs = (await s.execute(select(*_DOC_COLUMNS)

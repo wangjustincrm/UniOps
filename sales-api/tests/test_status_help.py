@@ -58,3 +58,93 @@ async def test_the_endpoint_needs_sales_read_and_serves_the_texts(api):  # noqa:
     r = await api.get("/api/v1/help/order-statuses", headers=READER)
     assert r.status_code == 200 and r.json() == payload()
     assert r.json()["holds"]["997 Timeout"]["body"].startswith("No 997")
+
+
+# ── the next step (approved table, 2026-11-16) ───────────────────────────────────────────────────
+from datetime import date, datetime, timedelta, timezone  # noqa: E402
+
+from app.domain.order_status import (  # noqa: E402
+    COMPLETED, DRAFT, ON_HOLD, WAITING_945, WAITING_997, WAITING_DELIVERY, WAITING_INVOICE, WAITING_TO_SEND, Display, DetailFacts,
+    StatusFacts,
+)
+from app.domain.status import Fulfillment as F, Invoice as Inv  # noqa: E402
+from app.domain.status_help import NOBODY as NOBODY_TURN  # noqa: E402 — not tests' NOBODY (a user with no grants)
+from app.domain.status_help import HOLD_STEPS, SHOPIFY, STEPS, WAREHOUSE, YOU, next_step, next_step_key  # noqa: E402
+
+TODAY = date(2026, 11, 16)
+NOW = datetime(2026, 11, 16, 12, tzinfo=timezone.utc)
+
+
+def step(status, fulfillment=F.PENDING.value, reason=None, invoice=Inv.PENDING.value, delay_over=True, runs_on=True, shadow=False,
+         **detail):
+    d = Display(status, reason, False)
+    f = StatusFacts(fulfillment=fulfillment, invoice=invoice, delay_over=delay_over, shadow=shadow)
+    return next_step_key(d, f, DetailFacts(**detail), TODAY, runs_on=runs_on)
+
+
+WAITING = Inv.WAITING_FOR_DELIVERY_CONFIRMATION.value
+
+
+def test_every_hold_reason_has_a_step_and_every_step_text_is_short_with_real_buttons():
+    assert set(HOLD_STEPS) == set(HOLD_REASONS)
+    src = _front_labels()
+    for key, st in {**STEPS, **HOLD_STEPS}.items():
+        assert st.who in (YOU, WAREHOUSE, SHOPIFY, NOBODY_TURN) and 10 <= len(st.text) <= 120, key
+        for b in st.buttons:
+            assert b in st.text and is_button(b, src), (key, b)
+
+
+def test_the_step_follows_the_orders_own_facts():
+    assert step(DRAFT, F.DRAFT.value) == "draft"
+    assert step(WAITING_TO_SEND, delay_over=False, send_at=NOW + timedelta(hours=1)) == "send.delay"
+    assert step(WAITING_TO_SEND, manual_sending=True, send_at=NOW) == "send.manual"
+    assert step(WAITING_TO_SEND, delay_over=True, send_at=NOW - timedelta(hours=1)) == "send.next_run"
+    assert step(WAITING_997, F.SENT_940.value) == "sent"
+    assert step(WAITING_945, F.ACCEPTED_940.value) == "fulfilling"
+    assert step(WAITING_945, F.SHIPPED.value) == "fulfilling.tracking"
+    # Shipped: only "waiting for delivery confirmation" takes Confirm delivery
+    assert step(WAITING_DELIVERY, F.SHIPPED.value, invoice=WAITING, delivery_due=TODAY) == "shipped"
+    assert step(WAITING_DELIVERY, F.SHIPPED.value, invoice=WAITING) == "shipped"
+    assert step(WAITING_DELIVERY, F.SHIPPED.value, invoice=WAITING, delivery_due=TODAY - timedelta(days=1)) == "shipped.late"
+    assert step(WAITING_DELIVERY, F.SHIPPED.value, invoice=Inv.AWAITING_REQUESTED_DATE.value,
+                delivery_due=TODAY + timedelta(days=2)) == "shipped.awaiting"
+    assert step(WAITING_DELIVERY, F.SHIPPED.value, invoice=Inv.PENDING.value) == "shipped.pending"
+    # automatic runs off: nothing goes "by itself" or "on the next run"
+    assert step(WAITING_TO_SEND, delay_over=False, send_at=NOW + timedelta(hours=1), runs_on=False) == "send.runs_off"
+    assert step(WAITING_TO_SEND, runs_on=False) == "send.runs_off"
+    assert step(WAITING_TO_SEND, manual_sending=True, runs_on=False) == "send.manual"
+    assert step(WAITING_DELIVERY, F.SHIPPED.value, invoice=Inv.PENDING.value, runs_on=False) == "shipped.runs_off"
+    assert step(WAITING_DELIVERY, F.SHIPPED.value, invoice=WAITING, runs_on=False) == "shipped"
+    assert step(WAITING_INVOICE, F.SHIPPED.value, invoice=Inv.QUEUED.value, runs_on=False) == "invoice.runs_off"
+    # the test run: Zoho sends it, so no step
+    assert step(WAITING_TO_SEND, shadow=True) is None and step(WAITING_945, F.ACCEPTED_940.value, shadow=True) is None
+    assert step(WAITING_INVOICE, F.SHIPPED.value, invoice=Inv.READY.value) == "invoice.ready"
+    assert step(WAITING_INVOICE, F.SHIPPED.value, invoice=Inv.QUEUED.value) == "invoice.queued"
+    assert step(COMPLETED, F.SHIPPED.value) is None
+    for reason in HOLD_REASONS:
+        assert step(ON_HOLD, F.ON_HOLD.value, reason=reason) == reason
+
+
+def test_every_step_is_reachable():
+    seen = set()
+    for status in (DRAFT, WAITING_TO_SEND, WAITING_997, WAITING_945, WAITING_DELIVERY, WAITING_INVOICE, COMPLETED):
+        for fulfillment in (F.DRAFT, F.PENDING, F.GENERATED_940, F.SENT_940, F.ACCEPTED_940, F.SHIPPED):
+            for invoice in Inv:
+                for runs_on in (True, False):
+                    for delay_over in (True, False):
+                        for detail in ({}, {"manual_sending": True}, {"send_at": NOW},
+                                       {"delivery_due": TODAY - timedelta(days=1)}, {"delivery_due": TODAY + timedelta(days=1)}):
+                            seen.add(step(status, fulfillment.value, invoice=invoice.value, runs_on=runs_on, delay_over=delay_over, **detail))
+    assert set(STEPS) <= seen, set(STEPS) - seen
+    st = next_step(Display(ON_HOLD, "997 Timeout", False), StatusFacts(fulfillment=F.TIMEOUT_940.value), DetailFacts(), TODAY)
+    assert (st.who, st.text) == (YOU, "Check with the warehouse, then Send 940 now.")
+
+
+async def test_the_order_carries_its_next_step(api):  # noqa: F811
+    from tests.test_orders import shopify_order
+    api.env.shop.orders = [shopify_order(1, 9301)]
+    await api.env.pull()
+    o = (await api.get("/api/v1/orders", headers=READER)).json()["items"][0]
+    assert o["order_status"] == "To Fulfill"
+    # the test server runs no automatic runs (SALES_SCHEDULER_ENABLED off, the switch paused by default): the step says so
+    assert (o["next_step_who"], o["next_step"]) == (YOU, STEPS["send.runs_off"].text)

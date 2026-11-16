@@ -131,6 +131,7 @@ async function run(name, viewport) {
     const box = await tip.boundingBox()
     check(!!box && box.x >= 0 && box.x + box.width <= viewport.width, `${name} status help: opens inside the screen`)
     await shot('status-help')
+    check(await page.locator('[role="dialog"] [data-next-step]').count() === 1, `${name} order sheet: the next step is shown`)
     await page.keyboard.press('Escape')
     await page.getByRole('tab', { name: /Lines/ }).click()
     await page.getByRole('dialog').getByRole('button', { name: /Show details/ }).first().click()

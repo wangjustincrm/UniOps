@@ -10,12 +10,15 @@ real label in the front end, and that every status and reason has a text.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 from app.domain.order_status import (
     ARCHIVED, CANCELLED, CANCELLED_AT_SOURCE, COMPLETED, CONFLICT_945, DELIVERY_DUE, DRAFT, FAILED_940, INVOICE_BLOCKED,
     INVOICE_FAILED, NEEDS_REVIEW, ON_HOLD, PAYMENT_REQUIRED, REJECTED_940, SENDS, SHOPIFY_FAILED, TIMEOUT_997, WAITING_945,
-    WAITING_997, WAITING_DELIVERY, WAITING_INVOICE, WAITING_TO_SEND,
+    WAITING_997, WAITING_DELIVERY, WAITING_INVOICE, WAITING_TO_SEND, DetailFacts, Display, StatusFacts,
 )
+from app.domain.status import Fulfillment as F
+from app.domain.status import Invoice as Inv
 
 MAX_BODY = 320  # a popover, read on a phone: a few lines, never an article
 SHORT_SHIPPED = "Short shipped"
@@ -85,3 +88,89 @@ def payload() -> dict[str, dict[str, dict[str, str]]]:
     def part(d: dict[str, Help]) -> dict[str, dict[str, str]]:
         return {k: {"body": h.body} for k, h in d.items()}
     return {"statuses": part(STATUS_HELP), "holds": part(HOLD_HELP), "details": part(DETAIL_HELP)}
+
+
+# ── the next step of one order (the user, 2026-11-16: approved table) ─────────────────────────────
+# Under the Status on the order: whose turn it is and what to do, from this order's own facts. The
+# dates are on the Detail line beside it, so these texts carry none.
+YOU, WAREHOUSE, SHOPIFY, NOBODY = "you", "warehouse", "shopify", "nobody"
+
+
+@dataclass(frozen=True)
+class Step:
+    who: str
+    text: str
+    buttons: tuple[str, ...] = ()
+
+
+STEPS: dict[str, Step] = {
+    "draft": Step(YOU, "Check it, then Submit.", ("Submit",)),
+    "send.delay": Step(NOBODY, "It goes to the warehouse by itself when the delay ends."),
+    "send.manual": Step(YOU, "Send 940 now when it should go.", ("Send 940 now",)),
+    "send.next_run": Step(NOBODY, "It goes to the warehouse on the next run."),
+    "sent": Step(WAREHOUSE, "Waiting for the warehouse's 997."),
+    "fulfilling": Step(WAREHOUSE, "Waiting for the warehouse's 945."),
+    "fulfilling.tracking": Step(NOBODY, "The tracking is being written to Shopify."),
+    "send.runs_off": Step(YOU, "Automatic runs are off: Send 940 now, or turn them on in Connections.", ("Send 940 now",)),
+    "shipped": Step(YOU, "Confirm delivery once it has been delivered.", ("Confirm delivery",)),
+    "shipped.late": Step(YOU, "Delivery was due: confirm it if it has been delivered."),
+    "shipped.awaiting": Step(NOBODY, "Nothing to do until the requested delivery date; then confirm delivery."),
+    "shipped.pending": Step(NOBODY, "Delivery confirmation opens on the next run."),
+    "shipped.runs_off": Step(YOU, "Automatic runs are off: delivery confirmation opens once they are turned on in Connections."),
+    "invoice.ready": Step(YOU, "Open the invoice and Send it.", ("Send",)),
+    "invoice.queued": Step(NOBODY, "The invoice goes out on the next run."),
+    "invoice.runs_off": Step(YOU, "Automatic runs are off: the invoice goes out once they are turned on in Connections."),
+}
+HOLD_STEPS: dict[str, Step] = {
+    NEEDS_REVIEW: Step(YOU, "Fix it in the Item Master, then Re-check.", ("Re-check",)),
+    PAYMENT_REQUIRED: Step(SHOPIFY, "Nothing to do until Shopify reports it paid."),
+    ARCHIVED: Step(YOU, "Un-archive it in Shopify to send it, or leave it."),
+    REJECTED_940: Step(YOU, "Fix the cause shown, then Send 940 now.", ("Send 940 now",)),
+    FAILED_940: Step(YOU, "Send 940 now once the connection works.", ("Send 940 now",)),
+    TIMEOUT_997: Step(YOU, "Check with the warehouse, then Send 940 now.", ("Send 940 now",)),
+    CANCELLED_AT_SOURCE: Step(YOU, "Check with the warehouse, then Release hold.", ("Release hold",)),
+    CONFLICT_945: Step(YOU, "Compare the 945s and choose.", ("Compare the 945s",)),
+    SHOPIFY_FAILED: Step(YOU, "Retry in Shopify on the shipment.", ("Retry in Shopify",)),
+    INVOICE_FAILED: Step(YOU, "Open the invoice, fix it if needed, then Send.", ("Send",)),
+    INVOICE_BLOCKED: Step(YOU, "Open the invoice: its task says why; then Release.", ("Release",)),
+}
+
+
+def next_step_key(d: Display, f: StatusFacts, n: DetailFacts, today: date, *, runs_on: bool = True) -> str | None:
+    """Which step applies to this order (a STEPS key, or the hold reason); None when nothing is left
+    (Completed, Cancelled) or for the test run. `today` is Toronto's (invoicing.today); `runs_on`:
+    automatic runs happen (the 940s, the invoice's advance and the queued invoices all run in the
+    system job, under the master switch)."""
+    s = d.order_status
+    if s == ON_HOLD:
+        return d.on_hold_reason if d.on_hold_reason in HOLD_STEPS else None
+    if f.shadow:  # the test run: Zoho sends and fulfils it, so no step here is true for it
+        return None
+    if s == DRAFT:
+        return "draft"
+    if s == WAITING_TO_SEND:
+        if f.fulfillment == F.PENDING and n.manual_sending:
+            return "send.manual"
+        if not runs_on:
+            return "send.runs_off"
+        return "send.delay" if f.fulfillment == F.PENDING and n.send_at and not f.delay_over else "send.next_run"
+    if s == WAITING_997:
+        return "sent"
+    if s == WAITING_945:
+        return "fulfilling.tracking" if f.fulfillment == F.SHIPPED and not f.shadow else "fulfilling"
+    if s == WAITING_DELIVERY:  # only this invoice state takes Confirm delivery (invoicing.confirm)
+        if f.invoice == Inv.WAITING_FOR_DELIVERY_CONFIRMATION.value:
+            return "shipped.late" if n.delivery_due and n.delivery_due < today else "shipped"
+        if f.invoice == Inv.AWAITING_REQUESTED_DATE.value:
+            return "shipped.awaiting"
+        return "shipped.pending" if runs_on else "shipped.runs_off"
+    if s == WAITING_INVOICE:
+        if f.invoice == Inv.QUEUED.value:
+            return "invoice.queued" if runs_on else "invoice.runs_off"
+        return "invoice.ready"
+    return None
+
+
+def next_step(d: Display, f: StatusFacts, n: DetailFacts, today: date, *, runs_on: bool = True) -> Step | None:
+    key = next_step_key(d, f, n, today, runs_on=runs_on)
+    return None if key is None else HOLD_STEPS.get(key) or STEPS[key]

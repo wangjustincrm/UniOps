@@ -47,6 +47,9 @@ export interface OrderRead {
   status_detail: string | null
   status_detail_at: string | null
   status_detail_kind: string | null
+  /** What to do next, and whose turn it is (sales-api app/domain/status_help.py). */
+  next_step?: string | null
+  next_step_who?: 'you' | 'warehouse' | 'shopify' | 'nobody' | null
   shopify_fulfillment_status: string | null
   /** The Shopify fulfillment made at the 997 (or Zoho's): its 945 adds the tracking to it. */
   shopify_fulfillment_id?: string | null

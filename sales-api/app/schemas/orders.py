@@ -51,6 +51,9 @@ class OrderRead(BaseModel):
     status_detail: str | None = None
     status_detail_at: datetime | date | None = None
     status_detail_kind: str | None = None  # "countdown": a time that is coming, late once it passes
+    # What to do next and whose turn it is (app/domain/status_help.py): you / warehouse / shopify / nobody
+    next_step: str | None = None
+    next_step_who: str | None = None
     hold_reason: str | None
     review_reason: str | None
     historical: bool
