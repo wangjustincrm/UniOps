@@ -210,11 +210,33 @@ async def _unmatch(db, scope: dict, number: str, lang: str) -> dict:
                 f"No. {ref} is a courier invoice, matched to shipments: it is not unmatched "
                 f"here but handled in the freight panel of its invoice page.")
     elif blocker is not None and blocker.code == "agreement":
-        text = (f"不能从 PO 上取消匹配：{ref} 匹配的是协议 {inv.agreement_number or ''}，不是 PO；"
-                f"要在协议的收货/账期面板里解除。" if zh else
-                f"Not from a PO: {ref} is matched to agreement {inv.agreement_number or ''}, "
-                f"not to a PO; it is unlinked from the agreement's own receipt / billing-period "
-                f"panel instead.")
+        # Unmatch Agreement runs payment_blocker (the two payment checks) and
+        # refuses a match still in review — the same three, in the same order.
+        agr_no = inv.agreement_number or ""
+        pay = await invoice_crud.payment_blocker(db, inv)
+        if pay is not None and pay.code == "in_payment":
+            text = (f"不能。{ref}（匹配到协议 {agr_no}）的状态是 {label}，已经进入付款；"
+                    f"发票一旦是 Approved 或 Paid，Unmatch Agreement 会被拒绝。" if zh else
+                    f"No. {ref} (matched to agreement {agr_no}) is {label} — it has entered "
+                    f"payment; Unmatch Agreement is refused once an invoice is Approved or Paid.")
+        elif pay is not None:
+            text = (f"不能。{pa_text}还包含 {ref}，要先取消那张付款申请才能取消协议匹配。" if zh else
+                    f"No. {pa_text[0].upper() + pa_text[1:]} still includes {ref}; that payment "
+                    f"application has to be cancelled first.")
+        elif inv.status == "match_review":
+            text = (f"{ref} 匹配到协议 {agr_no} 的结果还在等 AP 复核；在复核里驳回即可，发票会回到 Unmatched。"
+                    if zh else
+                    f"{ref}'s match to agreement {agr_no} is still waiting for AP review; "
+                    f"rejecting it there returns the invoice to Unmatched.")
+        else:
+            text = (f"可以。{ref}（{label}，匹配到协议 {agr_no}）还没有进入付款，也没有付款申请包含它。"
+                    f"有发票匹配权限（epms.invoice.match）的人在发票 3-Way Match 页点 Unmatch Agreement 并填写原因；"
+                    f"发票回到 Unmatched，它占用的账期/里程碑/收货凭证退回协议，协议已消耗金额同步扣减。" if zh else
+                    f"Yes. {ref} ({label}, matched to agreement {agr_no}) has not entered payment "
+                    f"and no payment application includes it. Someone with invoice matching "
+                    f"permission (epms.invoice.match) presses Unmatch Agreement on the invoice's "
+                    f"3-Way Match tab and gives a reason; the invoice goes back to Unmatched and "
+                    f"the billing period / milestone / receipts it claimed go back to the agreement.")
     elif blocker is not None and blocker.code == "in_payment":
         text = (f"不能。{ref} 的状态是 {label}，已经进入付款" + (f"，并且在{pa_text}上" if pa_text else "")
                 + "；发票一旦是 Approved 或 Paid，Unmatch 会被拒绝。" if zh else

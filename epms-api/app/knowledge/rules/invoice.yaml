@@ -304,13 +304,16 @@ rules:
         The rule: Unmatch is refused once the invoice has entered payment
         (status Approved or Paid), and while any payment application that is
         not cancelled still includes it — the message names that PA, which has
-        to be cancelled first. An invoice matched to an agreement cannot be
-        unmatched from a PO. A reason is required, and it is kept in the
-        invoice's History.
+        to be cancelled first. An invoice matched to an agreement is unmatched
+        with Unmatch Agreement (not Unmatch PO): it goes back to Unmatched and
+        the billing period, milestone stage or receipts it claimed go back to
+        the agreement. A reason is required, and it is kept in the invoice's
+        History.
       zh: >
         规则：发票一旦进入付款（状态 Approved 或 Paid）就不能取消匹配；只要还有未取消的付款申请包含
-        这张发票，也不能取消匹配——提示里会写出是哪张付款申请，需要先取消它。匹配到协议的发票不能从 PO
-        上取消匹配。取消匹配必须填写原因，原因记入发票的 History。
+        这张发票，也不能取消匹配——提示里会写出是哪张付款申请，需要先取消它。匹配到协议的发票用
+        Unmatch Agreement（不是 Unmatch PO）取消：发票回到 Unmatched，它占用的账期、里程碑或收货凭证
+        退回协议。取消匹配必须填写原因，原因记入发票的 History。
     asked_as:
       - 这张发票能取消匹配吗？
       - can this invoice be unmatched
@@ -318,16 +321,20 @@ rules:
       Unmatch is refused once the invoice has entered payment (status
       approved or paid), and while any payment application that is not
       cancelled still includes it — the message names that PA, which has to
-      be cancelled first. An invoice matched to an agreement cannot be
-      unmatched from a PO. A reason is required, and it is kept in the
-      invoice's History.
-    enforced_in: "epms-api app/crud/invoice.py gr_unlink_blocker / _invoice_referenced_by_active_pa; app/api/v1/invoices.py _guard_unmatch"
+      be cancelled first. An invoice matched to an agreement is unmatched
+      with Unmatch Agreement (not Unmatch PO): it goes back to Unmatched and
+      the billing period, milestone stage or receipts it claimed go back to
+      the agreement. A reason is required, and it is kept in the invoice's
+      History.
+    enforced_in: "epms-api app/crud/invoice.py gr_unlink_blocker / payment_blocker / unmatch_agreement; app/api/v1/invoices.py _guard_unmatch, unmatch_invoice_agreement"
     provenance: pinned
     test:
       - "tests/test_invoice_unmatch.py::test_unmatch_is_refused_while_an_active_pa_references_the_invoice"
       - "tests/test_invoice_unmatch.py::test_unmatch_refused_once_the_invoice_has_entered_payment"
       - "tests/test_invoice_unmatch.py::test_unmatch_po_refused_on_the_agreement_route"
       - "tests/test_invoice_unmatch.py::test_unmatch_requires_a_reason"
+      - "tests/test_invoice_unmatch_agreement.py::test_unmatch_agreement_returns_invoice_and_releases_the_period"
+      - "tests/test_invoice_unmatch_agreement.py::test_unmatch_agreement_refused_while_a_live_pa_lists_the_invoice"
   - id: invoice_history_keeps_every_step
     asked_as:
       - 发票的 History 记录哪些操作？
@@ -339,8 +346,8 @@ rules:
       their note), each match and what it was matched to, AP confirming or
       rejecting a match sent for review (with the note), an exception being
       accepted or a credit note requested (with the note), an edit that
-      changed the match result, and each Unmatch PO / Unmatch GR / removal from
-      the Direct PA route (with the reason). A later unmatch or re-match does
+      changed the match result, and each Unmatch PO / Unmatch GR / Unmatch
+      Agreement / removal from the Direct PA route (with the reason). A later unmatch or re-match does
       not remove earlier entries. Invoices matched before these steps were
       recorded show only their upload and their current match.
     enforced_in: "epms-api app/api/v1/invoices.py _audit_invoice / _audit_unmatch writers, GET /invoices/{id}/history; epms/src/pages/invoices/InvoiceDetailPage.tsx History tab"

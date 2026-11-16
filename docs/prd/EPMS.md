@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.54
-**Date:** 2026-11-12
+**Version:** 2.55
+**Date:** 2026-11-16
 **Status:** In Production
+
+> **v2.55 (2026-11-16)** — **Unmatch Agreement** on Invoice Detail (§3.14.6, INV-UNM-003). An invoice matched to an agreement could not be unmatched: Unmatch PO refused it and the agreement's period/receipt panels only move it within the agreement. The new action returns it to Unmatched and gives back what the match claimed — the billing period or milestone stage, house-account receipts, the period's confirmation — and the agreement's consumed amount drops by it.
 
 > **v2.54 (2026-11-12)** — The 3-Way Match tab shows the PO, receipt and invoice on one basis, pre-tax, the basis the variance is measured on (INV-3WM-001); each document's tax-inclusive amount is shown under it. INV-2026-0243 read PO CA$492.80 (pre-tax) against GR and Invoice CA$556.86 (tax-inclusive) with a variance of 0. A PO mirrored from NC keeps NC's tax-inclusive line amounts, so a receipt priced from those lines is brought back to pre-tax with that PO's own pre-tax share (subtotal ÷ (subtotal + tax)).
 
@@ -2027,12 +2029,13 @@ Invoices in editable statuses (`unmatched`, `exception`, `matched`) can be corre
 
 #### 3.14.6 Unmatch
 
-AP staff (holders of *Match Invoice*) and admins can reverse a match from Invoice Detail — **Unmatch PO** (invoice returns to `unmatched`, allocations removed, open exception task closed) or **Unmatch GR** (only the goods-receipt link is removed). A reason is mandatory and recorded in the audit log.
+AP staff (holders of *Match Invoice*) and admins can reverse a match from Invoice Detail — **Unmatch PO** (invoice returns to `unmatched`, allocations removed, open exception task closed), **Unmatch GR** (only the goods-receipt link is removed) or **Unmatch Agreement** (agreement route, INV-UNM-003). A reason is mandatory and recorded in the audit log and the invoice's History.
 
 | FR ID | Requirement |
 |-------|-------------|
-| **INV-UNM-001** | Unmatch is refused when the invoice is matched to an agreement (use the agreement's receipt/period panels), is `approved`/`paid`, or is listed on any non-cancelled PA (the PA number and status are named). |
+| **INV-UNM-001** | Unmatch is refused when the invoice is `approved`/`paid`, or is listed on any non-cancelled PA (the PA number and status are named). Unmatch PO / GR are refused on an agreement-matched invoice (use Unmatch Agreement). |
 | **INV-UNM-002** | After unmatch, *create_pa* / *confirm_receipt* tasks on the affected POs are closed only if the PO no longer has any invoice that justifies them. |
+| **INV-UNM-003** | **Unmatch Agreement** (`POST /invoices/{id}/unmatch-agreement`, button in the agreement card of the 3-Way Match tab) returns an agreement-matched invoice to `unmatched`: the agreement link is cleared; the claimed billing period goes back to *pending* with its confirmation cleared and its open *confirm_period* task closed (unless another invoice still sits in that period, which then keeps it); a claimed milestone stage goes back to *pending*; claimed house-account receipts go back to *open*; a "settled without receipt" declaration is cleared; the open *attach_receipts* / *resolve_exception* tasks close; the agreement's consumed amount is recomputed without the invoice; Finance AP drops back to draft. Same gates as INV-UNM-001. Not offered while the match is in *Pending Review* — rejecting it there does the same. |
 
 #### 3.14.7 Invoice Delete, List & Detail
 
