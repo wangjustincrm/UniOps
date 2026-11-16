@@ -56,7 +56,7 @@ function Cursor({ c, onDone }: { c: ConnectionRead; onDone: () => void }) {
       <p>Next pull from: <span className="font-medium">{c.cursor_updated_at ? formatDateTime(c.cursor_updated_at) : 'not set: nothing is pulled'}</span></p>
       <div className="flex flex-wrap items-center gap-2">
         <DateTimeInput aria-label="New cursor" value={value} onChange={setValue} className="h-8 max-w-[14rem] text-xs" />
-        <ActionButton size="sm" variant="secondary" permission={CONFIG} disabled={!value}
+        <ActionButton size="sm" variant="secondary" permission={CONFIG} disabled={!value} disabledReason="Choose the new date and time first."
           done="Cursor reset: the next pass reads from there" onAction={() => reset.mutateAsync(value)}>Reset cursor</ActionButton>
       </div>
     </div>

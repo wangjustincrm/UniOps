@@ -50,13 +50,13 @@ describe('HelpTip', () => {
 })
 
 describe('DisabledReason', () => {
-  it('a disabled button says why: focusable, by tap / click / Enter, and as its description', async () => {
-    const { container } = render(<DisabledReason reason="Only a Draft can be submitted."><button disabled>Submit</button></DisabledReason>)
-    const wrap = container.querySelector('[data-disabled-reason]') as HTMLElement
-    expect(wrap).toHaveAccessibleDescription('Unavailable: Only a Draft can be submitted.')
-    expect(wrap).toHaveAttribute('tabindex', '0')
-    expect(wrap).toHaveAttribute('aria-disabled', 'true')
-    fireEvent.keyDown(wrap, { key: 'Enter' })
+  it('a disabled control says why: still focusable and tappable, aria-disabled, the reason as its description', async () => {
+    render(<DisabledReason reason="Only a Draft can be submitted."><button type="button">Submit</button></DisabledReason>)
+    const btn = screen.getByRole('button', { name: 'Submit' })
+    expect(btn).not.toBeDisabled()
+    expect(btn).toHaveAttribute('aria-disabled', 'true')
+    expect(btn).toHaveAccessibleDescription('Unavailable: Only a Draft can be submitted.')
+    fireEvent.click(btn)
     expect(within(await screen.findByRole('dialog')).getByText('Only a Draft can be submitted.')).toBeInTheDocument()
   })
   it('no reason: the control alone', () => {

@@ -11,7 +11,7 @@ export function RunNowButton({ connection: c, variant }: { connection: Connectio
   const follower = useRunFollower()
   const runs = [...queryKeys.list(runsClient), 'connection', c.id]
   return (
-    <ActionButton size="sm" variant={variant} permission="sales.file.retry" disabled={!c.active}
+    <ActionButton size="sm" variant={variant} permission="sales.file.retry" disabled={!c.active} disabledReason="This connection is inactive: activate it to run it."
       errorMessages={{ 'run.already_running': `${c.name} is running; wait for it to finish.` }}
       onAction={async () => {
         await follower.run(async () => {

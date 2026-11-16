@@ -53,7 +53,7 @@ function TestRule({ rule }: { rule: NotificationRuleRead }) {
         ['Result', m.data?.result ?? rule.test_result],
       ]} />
       <span>
-        <ActionButton size="sm" variant="secondary" permission="sales.config" disabled={!rule.active}
+        <ActionButton size="sm" variant="secondary" permission="sales.config" disabled={!rule.active} disabledReason="The rule is inactive: activate it to test it."
           onAction={() => m.mutateAsync().catch(() => {})}>Send test notification</ActionButton>
       </span>
       <ErrorMessage error={m.error} messages={errorMessages} />

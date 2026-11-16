@@ -54,6 +54,7 @@ export function AutomaticRunsPanel() {
         <p>{on ? 'Each connection runs on its own schedule.' : 'No connection is read by itself. Run now still works.'}</p>
         <span>
           <ActionButton size="sm" variant={on ? 'secondary' : 'primary'} permission="sales.config" disabled={!on && !active.data}
+            disabledReason="Reading which connections are active…"
             done={on ? 'Automatic runs are off' : undefined}
             onAction={() => (on ? save({ paused: true }) : setConfirming(true))}>
             {on ? 'Turn automatic runs off' : 'Turn automatic runs on'}

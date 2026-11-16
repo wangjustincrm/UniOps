@@ -43,7 +43,10 @@ describe('PermissionGate / ActionButton', () => {
     rerender(
       <PermissionProvider can={allow([])}><ActionButton permission="x.op" whenDenied="disable" onAction={() => {}}>Go</ActionButton></PermissionProvider>,
     )
-    expect(screen.getByText('Go').closest('button')).toBeDisabled()
+    // shown, but aria-disabled (still tappable) with why as its description
+    const go = screen.getByRole('button', { name: 'Go' })
+    expect(go).toHaveAttribute('aria-disabled', 'true')
+    expect(go).toHaveAccessibleDescription("Unavailable: You don't have permission for this action.")
   })
 
   it('cannot fire twice while pending', async () => {

@@ -1,4 +1,5 @@
 import { DisabledReason } from '../help'
+import { cn } from '../lib/cn'
 import { Button, type ButtonProps } from '../primitives/shell'
 import { useCan } from './permissions'
 import { useAction } from './useAction'
@@ -36,17 +37,23 @@ export function ActionButton({
   if (!allowed && whenDenied === 'hide') return null
 
   const reason = !allowed ? "You don't have permission for this action." : disabled && !pending ? disabledReason : null
+  if (reason) {
+    // Not natively disabled: a disabled button can't be tapped or focused, so its reason couldn't be read.
+    return (
+      <DisabledReason reason={reason}>
+        <Button type="button" {...rest} className={cn(rest.className, 'cursor-not-allowed opacity-50')}>{children}</Button>
+      </DisabledReason>
+    )
+  }
   return (
-    <DisabledReason reason={reason}>
-      <Button
-        type="button"
-        {...rest}
-        disabled={disabled || pending || !allowed}
-        aria-busy={pending || undefined}
-        onClick={() => { void run(onAction) }}
-      >
-        {pending && pendingLabel ? pendingLabel : children}
-      </Button>
-    </DisabledReason>
+    <Button
+      type="button"
+      {...rest}
+      disabled={disabled || pending || !allowed}
+      aria-busy={pending || undefined}
+      onClick={() => { void run(onAction) }}
+    >
+      {pending && pendingLabel ? pendingLabel : children}
+    </Button>
   )
 }

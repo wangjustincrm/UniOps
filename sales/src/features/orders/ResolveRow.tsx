@@ -49,7 +49,7 @@ export function ResolveRow({ r, shipmentId, orderId, lines }: { r: ShipmentRowRe
               </label>
               <Hint as="p">Linked: its quantity counts on that line and on the invoice.</Hint>
               <div>
-                <ActionButton size="sm" permission={OPERATE} disabled={!line} errorMessages={errorMessages}
+                <ActionButton size="sm" permission={OPERATE} disabled={!line} disabledReason="Choose the order line first." errorMessages={errorMessages}
                   onAction={() => m.mutateAsync({ lineId: Number(line), why: null })}>Link to this line</ActionButton>
               </div>
             </>

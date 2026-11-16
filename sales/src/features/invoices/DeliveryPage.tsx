@@ -86,7 +86,7 @@ function ConfirmShown({ rows, refresh }: { rows: OrderRead[]; refresh: () => Pro
   })
   return (
     <>
-      <ActionButton size="sm" permission={OPERATE} disabled={rows.length === 0} onAction={() => setOpen(true)}>
+      <ActionButton size="sm" permission={OPERATE} disabled={rows.length === 0} disabledReason="No order is shown to confirm." onAction={() => setOpen(true)}>
         Confirm all shown ({rows.length})…
       </ActionButton>
       <Dialog open={open} onOpenChange={setOpen} title={`Confirm ${rows.length} deliveries`}

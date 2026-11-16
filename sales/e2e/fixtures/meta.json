@@ -2872,7 +2872,7 @@
     "body": "No 997 from the warehouse in time. Check with the warehouse; Send 940 now sends it again."
    },
    "Cancelled at Source": {
-    "body": "Cancelled by the customer or in Shopify after the 940 reached the warehouse. Check with the warehouse, then Release hold: Cancel the order, Mark as shipped, or go back."
+    "body": "Cancelled by the customer or in Shopify after the 940 reached the warehouse. Check with the warehouse, then Release hold: Cancel the order, Mark as shipped (if a 945 came), or Back to the status it held."
    },
    "945 Conflict": {
     "body": "Two 945s for this order. Compare the 945s: Keep the applied 945, or Cancel the order."
@@ -2895,7 +2895,7 @@
     "body": "The requested delivery date (for DC-routed partners, the do-not-deliver-after date). Confirm delivery once it has been delivered; past this date it shows as late."
    },
    "Short shipped": {
-    "body": "The 945 shipped less than ordered. Backordered = ordered \u2212 shipped (EA); the rest is not sent later. Refund or adjust the short lines (in Shopify for a Shopify order)."
+    "body": "The 945 shipped less than ordered. Backordered = ordered \u2212 shipped (EA); the rest is not sent later (one 945 per order)."
    }
   }
  }

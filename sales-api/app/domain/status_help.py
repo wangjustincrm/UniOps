@@ -2,8 +2,9 @@
 2026-11-16: one source for help, kept next to the rules it explains). Keyed by the constants in
 order_status.py; the texts name the labels users see ("To Fulfill", not WAITING_TO_SEND).
 
-The front end shows these on the status badge (GET /help/order-statuses); the AI guide layer reads
-the same dict. `buttons` lists every button a text names: tests/test_status_help.py checks each is a
+The front end shows these on the status badge (GET /help/order-statuses). Meant to be the source the
+AI guide layer reads for Sales too, when Sales joins it (not wired yet: epms-api/app/knowledge has no
+Sales). `buttons` lists every button a text names: tests/test_status_help.py checks each is a
 real label in the front end, and that every status and reason has a text.
 """
 from __future__ import annotations
@@ -58,7 +59,8 @@ HOLD_HELP: dict[str, Help] = {
                       ("Send 940 now",)),
     CANCELLED_AT_SOURCE: Help(
         "Cancelled by the customer or in Shopify after the 940 reached the warehouse. Check with the warehouse, then "
-        "Release hold: Cancel the order, Mark as shipped, or go back.", ("Release hold", "Cancel the order", "Mark as shipped")),
+        "Release hold: Cancel the order, Mark as shipped (if a 945 came), or Back to the status it held.",
+        ("Release hold", "Cancel the order", "Mark as shipped", "Back to")),
     CONFLICT_945: Help("Two 945s for this order. Compare the 945s: Keep the applied 945, or Cancel the order.",
                        ("Compare the 945s", "Keep the applied 945", "Cancel the order")),
     SHOPIFY_FAILED: Help("Writing to Shopify failed. Retry it on the shipment: Shipments & lots → Retry in Shopify.",
@@ -74,7 +76,7 @@ DETAIL_HELP: dict[str, Help] = {
     DELIVERY_DUE: Help("The requested delivery date (for DC-routed partners, the do-not-deliver-after date). Confirm "
                        "delivery once it has been delivered; past this date it shows as late.", ("Confirm delivery",)),
     SHORT_SHIPPED: Help("The 945 shipped less than ordered. Backordered = ordered − shipped (EA); the rest is not sent "
-                        "later. Refund or adjust the short lines (in Shopify for a Shopify order)."),
+                        "later (one 945 per order)."),
 }
 
 

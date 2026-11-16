@@ -179,7 +179,7 @@ function ChangeDialog({ count, open, onOpenChange }: { count: StockCountRead; op
     <Dialog open={open} onOpenChange={onOpenChange} title="Change the count"
       footer={<>
         <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-        <ActionButton permission={ADJUST} errorMessages={errorMessages} done="Saved" disabled={!when}
+        <ActionButton permission={ADJUST} errorMessages={errorMessages} done="Saved" disabled={!when} disabledReason="Set when the report was taken."
           onAction={async () => {
             await updateCount(count.id, count.version, count.applied_at ? null : when, note.trim() || null)
             await qc.invalidateQueries({ queryKey: queryKeys.list(stockCountsClient) })
@@ -271,7 +271,8 @@ function UploadForm({ done, cancel }: { done: (c?: StockCountRead) => void; canc
       <FormField label="Note"><Textarea rows={2} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note" /></FormField>
       <ActionBar>
         <Button variant="secondary" onClick={cancel}>Cancel</Button>
-        <ActionButton permission={ADJUST} disabled={!file || !when || tooLarge} errorMessages={errorMessages} done="Uploaded"
+        <ActionButton permission={ADJUST} disabled={!file || !when || tooLarge}
+          disabledReason={!file ? 'Choose the report file first.' : tooLarge ? 'The file is too large.' : 'Set when the report was taken.'} errorMessages={errorMessages} done="Uploaded"
           onAction={async () => done(await uploadCount(file!, when!, note.trim() || null))}>Upload</ActionButton>
       </ActionBar>
     </div>

@@ -196,3 +196,18 @@ describe('review fixes', () => {
     expect(screen.queryByRole('button', { name: 'Export' })).toBeNull()
   })
 })
+
+describe('ActionButton with a disabled reason', () => {
+  it('is one focusable button, aria-disabled, does not run, opens its reason; in an ActionBar it is the bar\'s own child (full width on a phone)', async () => {
+    const { ActionButton } = await import('./index')
+    const run = vi.fn()
+    render(<ActionBar><ActionButton disabled disabledReason="Choose a file first." onAction={run}>Upload</ActionButton></ActionBar>)
+    const btns = screen.getAllByRole('button', { name: 'Upload' })
+    expect(btns).toHaveLength(1)
+    expect(btns[0]).toHaveAttribute('aria-disabled', 'true')
+    expect(btns[0].parentElement).toHaveAttribute('data-action-bar')
+    fireEvent.click(btns[0])
+    expect(run).not.toHaveBeenCalled()
+    expect(await screen.findByText('Choose a file first.')).toBeInTheDocument()
+  })
+})

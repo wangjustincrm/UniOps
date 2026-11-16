@@ -25,7 +25,16 @@ def test_texts_are_short_and_plain():
 
 
 def _front_labels() -> str:
-    return "\n".join(p.read_text(encoding="utf-8") for p in FRONT.rglob("*.tsx") if ".test." not in p.name)
+    """The screens' code (features/**, not tests): where a button's words are written."""
+    return "\n".join(p.read_text(encoding="utf-8") for p in (FRONT / "features").rglob("*.tsx") if ".test." not in p.name)
+
+
+def is_button(label: str, src: str) -> bool:
+    """`label` is written as a button's or menu item's words: its text (>Label<), a label prop or key
+    (label="Label" / label: 'Label'), a branch of a ternary that picks the words (? 'Label' : / : 'Label'}),
+    or the fixed start of a template (`Back to ${to}`)."""
+    q = re.escape(label)
+    return bool(re.search(rf">\s*{q}\s*<|label[=:]\s*['\"]{q}['\"]|\?\s*['\"]{q}['\"]\s*:|:\s*['\"]{q}['\"]\s*\}}|`{q}\s*\$\{{", src))
 
 
 def test_every_named_button_is_a_real_label():
@@ -33,13 +42,15 @@ def test_every_named_button_is_a_real_label():
     for key, h in {**STATUS_HELP, **HOLD_HELP, **DETAIL_HELP}.items():
         for b in h.buttons:
             assert b in h.body, (key, b)  # declared because the text names it
-            # as a button's text (>Label<), a label: 'Label' / label="Label", or a ternary's branch ('Label' :)
-            pattern = rf"(>\s*{re.escape(b)}\s*<|label[=:]\s*['\"]{re.escape(b)}['\"]|['\"]{re.escape(b)}['\"]\s*[:)}}])"
-            assert re.search(pattern, src), f"{key}: the button {b!r} is not a label in sales/src"
+            assert is_button(b, src), f"{key}: the button {b!r} is not a button's words in sales/src/features"
 
 
-def test_a_made_up_button_is_caught():
-    assert not re.search(r">\s*Send it to the moon\s*<", _front_labels())
+def test_the_button_check_is_strict():
+    src = _front_labels()
+    assert not is_button("Send it to the moon", src)
+    assert not is_button("Shipped", src)       # a status value compared in code, not a button
+    assert not is_button("go back", src)       # the words the Cancelled at Source text once used
+    assert is_button("Back to", src) and is_button("Release hold", src) and is_button("Send", src)
 
 
 async def test_the_endpoint_needs_sales_read_and_serves_the_texts(api):  # noqa: F811

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useCallback, type ReactNode } from 'react'
+import { useCallback, useRef, type ReactNode } from 'react'
 import { HelpProvider, type HelpEntry } from '@/platform-ui'
 import { hasSession } from '@/lib/api'
 import { fetchStatusHelp } from './statusHelpApi'
@@ -35,6 +35,11 @@ export function SalesHelpProvider({ children }: { children: ReactNode }) {
     return t ? { title: name, body: t.body } : undefined
   }, [data])
   // A missing text shows no help; while developing, say which (the API's texts are checked by its tests).
-  const onMissing = useCallback((id: string) => { if (import.meta.env.DEV && data) console.warn(`[help] no text for "${id}"`) }, [data])
+  const warned = useRef(new Set<string>())  // once per id, not once per row and render
+  const onMissing = useCallback((id: string) => {
+    if (!import.meta.env.DEV || !data || warned.current.has(id)) return
+    warned.current.add(id)
+    console.warn(`[help] no text for "${id}"`)
+  }, [data])
   return <HelpProvider source={source} onMissing={onMissing}>{children}</HelpProvider>
 }

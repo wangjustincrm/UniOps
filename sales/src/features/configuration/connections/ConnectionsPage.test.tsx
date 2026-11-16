@@ -147,7 +147,8 @@ describe('a Shopify connection', () => {
     renderAs(['sales.read', 'sales.config'])
     fireEvent.click(await screen.findByText('example.myshopify.com'))
     status = await within(await screen.findByRole('dialog')).findByRole('region', { name: 'Connection status' })
-    expect(within(status).getByText('Reset cursor')).toBeDisabled()  // until a date is chosen
+    expect(within(status).getByRole('button', { name: 'Reset cursor' })).toHaveAttribute('aria-disabled', 'true')  // until a date is chosen, saying why
+    expect(within(status).getByRole('button', { name: 'Reset cursor' })).toHaveAccessibleDescription('Unavailable: Choose the new date and time first.')
     expect(within(status).getByText(/reads the store's name/)).toBeInTheDocument()
   })
 })
@@ -384,8 +385,9 @@ describe('the Automatic runs switch', () => {
     api.list.mockResolvedValue({ items: [conn, { ...conn, id: 8, name: 'held', schedule_paused: true }], total: 2 })
     renderAs(['sales.read', 'sales.config'])
     const sheet = await sheetOf('Off')
-    const go = await within(sheet).findByRole('button', { name: 'Turn automatic runs on' })
-    await waitFor(() => expect(go).toBeEnabled())
+    // disabled (saying why) while the active connections are read, then a plain button
+    await waitFor(() => expect(within(sheet).getByRole('button', { name: 'Turn automatic runs on' })).not.toHaveAttribute('aria-disabled'))
+    const go = within(sheet).getByRole('button', { name: 'Turn automatic runs on' })
     fireEvent.click(go)
     const confirm = await screen.findByRole('dialog', { name: 'Turn automatic runs on?' })
     expect(confirm).toHaveTextContent('These connections start reading now: radiant (every 5 min)')

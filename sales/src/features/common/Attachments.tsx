@@ -31,7 +31,7 @@ function AttachDialog({ type, id, open, onOpenChange }: { type: RecordType; id: 
       description={`A delivery note, a signed BOL, a photo, an email… up to ${MAX_MB} MB. It stays with this record; everyone who can see the record can open it.`}
       footer={<>
         <Button variant="secondary" onClick={close}>Cancel</Button>
-        <ActionButton disabled={!file || tooLarge} errorMessages={errorMessages} done="Attached"
+        <ActionButton disabled={!file || tooLarge} disabledReason={tooLarge ? 'The file is too large.' : 'Choose a file first.'} errorMessages={errorMessages} done="Attached"
           onAction={async () => { await attachFile(type, id, file!, note.trim() || null); close() }}>Attach</ActionButton>
       </>}>
       <div className="space-y-3">
