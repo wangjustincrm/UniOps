@@ -670,7 +670,7 @@ export default function PoCreatePage() {
               <li>• Line items are pre-filled from the PR when linked — adjust quantities or prices if negotiated differently.</li>
               <li>• Delivery address defaults from the PR. Leave blank if the vendor will confirm separately.</li>
               <li>• Attach vendor quotes, SOWs, or contracts before submitting for approval.</li>
-              <li>• After approval, use <strong>Issue PO</strong> to send the official order to the vendor.</li>
+              <li>• After approval, use <strong>Place Order</strong> to send the official order to the vendor.</li>
             </ul>
 
             {linkedPr && (
