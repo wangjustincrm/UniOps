@@ -1337,7 +1337,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                             value={item.unit ?? ''}
                             onChange={(e) => setLineItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit: e.target.value || null } : it))}
                             className="w-full h-7 px-2 rounded border border-neutral-200 text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
-                            placeholder="pcs"
+                            placeholder="unit"
                           />
                         </td>
                         <td className="px-2 py-1.5">
