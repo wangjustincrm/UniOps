@@ -273,3 +273,21 @@ describe('card help shows once', () => {
     expect(within(second).queryAllByRole('button', { name: 'Help' })).toHaveLength(0)
   })
 })
+
+describe('card help reaches hidden lines', () => {
+  type Row = { id: number; a: number; b: number; c: number; d: number }
+  const col = columnsOf<Row>()
+  it('a ? on a line past cardLines shows on the first card that shows that line (opened)', async () => {
+    const { HelpProvider, withHelp } = await import('./index')
+    const columns = [col.text('id', 'Id'), col.number('a', 'A'), col.number('b', 'B'), col.number('c', 'C'), withHelp(col.number('d', 'D'), 'term:D')]
+    stubWidth(360)
+    render(<HelpProvider source={() => ({ body: 'About D.' })}>
+      <DataTable columns={columns} rows={[{ id: 1, a: 1, b: 1, c: 1, d: 1 }, { id: 2, a: 2, b: 2, c: 2, d: 2 }]} rowKey={(r) => r.id}
+        ariaLabel="L" onRowClick={() => {}} cardLines={2} />
+    </HelpProvider>)
+    expect(screen.queryAllByRole('button', { name: 'Help' })).toHaveLength(0)  // D is hidden on both cards
+    const [, second] = within(screen.getByRole('list', { name: 'L' })).getAllByRole('listitem')
+    fireEvent.click(within(second).getByRole('button', { name: '2 more fields' }))
+    expect(within(second).getAllByRole('button', { name: 'Help' })).toHaveLength(1)
+  })
+})

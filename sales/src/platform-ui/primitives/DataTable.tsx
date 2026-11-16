@@ -230,8 +230,9 @@ export function DataTable<T>({
   // The card view: one card per row (title, badges, "label: value" lines), group headers between
   // them, the totals under them. Same rows, clicks, keys, highlight and details as the table.
   const renderCards = () => {
-    // A column's ? shows once per list in the cards (on the first card, once per help id even when
-    // several columns share it), not on every card's every label; the totals block has its own.
+    // A column's ? shows once per list in the cards: on the first card where a label with that help id
+    // is shown (a collapsed card's hidden lines don't count; an opened one picks them up), once per id
+    // even when several columns share it, never on every card. The totals block has its own.
     const label = (id: string, help: Set<string> | null) => {
       const h = headerById.get(id)
       if (!h) return id
@@ -242,6 +243,7 @@ export function DataTable<T>({
     }
     const all = table.getRowModel().rows
     const totalsHelp = new Set<string>()
+    const listHelp = new Set<string>()  // each help id once in the list, on the first card that shows its label
     return (
       <>
         <ul aria-label={ariaLabel} aria-busy={busy || (loading && rows.length === 0) || undefined} data-stale={dim || undefined}
@@ -260,7 +262,6 @@ export function DataTable<T>({
               const lines = cells.filter((c) => c !== title && !role(c))
               const showAll = !onRowClick || lines.length <= cardLines + 1 || allLines.has(r.id)
               const shownLines = showAll ? lines : lines.slice(0, cardLines)
-              const cardHelp = i === 0 ? new Set<string>() : null
               const { heads, rowHidden } = groupsAt(i, all)
               return (
                 <Fragment key={r.id}>
@@ -294,7 +295,7 @@ export function DataTable<T>({
                         <dl className="grid grid-cols-[fit-content(45%)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
                           {shownLines.map((c) => (
                             <div key={c.id} className="contents">
-                              <dt className="text-neutral-500 wrap-anywhere">{label(c.column.id, cardHelp)}</dt>
+                              <dt className="text-neutral-500 wrap-anywhere">{label(c.column.id, listHelp)}</dt>
                               <dd className="min-w-0 break-words text-neutral-700"><Render def={c.column.columnDef.cell} ctx={c.getContext()} /></dd>
                             </div>
                           ))}
