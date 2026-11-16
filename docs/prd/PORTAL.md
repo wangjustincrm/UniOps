@@ -1,9 +1,14 @@
 # UniOps Portal — Product Requirements Document
 
-**Version:** 2.9
-**Date:** 2026-11-12
+**Version:** 2.10
+**Date:** 2026-11-16
 **Status:** In Production
 **Scope:** Portal web app (sign-in, launcher, Task Inbox, platform administration) and the platform services it administers: identity service (sign-in, MFA, password policy, users, roles, access control), approval engine (workflows, routing, delegation, re-sync), task-notification outbox, master-data service (MDM), file service, Data Maintenance and the AI Assistant panel.
+
+**What changed in version 2.10** (2026-11-16)
+
+- Editing an approval workflow moves the documents already in approval onto the new steps, instead of leaving each one at the same step *number* — which, after a reorder, named a different step. On 2026-11-16 the PA (Direct) chain had its Finance Manager and Finance BP steps swapped: 27 PAs waiting on the Finance Manager were left "at" the Finance BP step with their task still on the Finance Manager, who could no longer approve it, and every Direct PA's approval line showed each approver under the other's step. Approvals already given stand wherever their step moved; an added step a document already passed is not sent back for; a document with every step given is approved. The editor lists the documents that move before saving, and every workflow edit is audited (WF-P-002, WF-P-007 to WF-P-011, RSY-005).
+- A step already approved in the current approval run is not asked again when the document reaches it (§6.2).
 
 **What changed in version 2.9** (2026-11-12)
 
@@ -486,7 +491,7 @@ Saving keeps settings written by other screens.
 
 ### 5.8 Approval Workflows
 
-This is the central configuration of approval chains for every module. Changes apply to the **next submission**; documents already in flight keep their current step, but see §6.4 for re-sync.
+This is the central configuration of approval chains for every module. Saving a change applies it to new submissions **and** moves the documents already in approval onto the new steps (WF-P-009).
 
 **Action keys and shipped defaults:**
 
@@ -510,12 +515,16 @@ This is the central configuration of approval chains for every module. Changes a
 | FR ID | Requirement |
 |---|---|
 | **WF-P-001** | System Admin can add, remove, relabel and reorder steps for any action key without a code change or restart. |
-| **WF-P-002** | Changes apply to new submissions. A document returned and resubmitted resumes at the step that returned it (§6.3). |
+| **WF-P-002** | Changes apply to new submissions and to documents already in approval (submitted, in review or returned — PO sign-offs included), which are moved onto the new steps when the change is saved (WF-P-009). A document returned and resubmitted resumes at the step that returned it (§6.3). |
 | **WF-P-003** | A key with no configured workflow uses its shipped default. A named custom form without its own workflow uses `cfm`. |
 | **WF-P-004** | The editor refuses to save an action key with zero steps. |
 | **WF-P-005** | Missing keys are seeded with the shipped defaults when the approval engine starts; existing workflows are never overwritten. *A brand-new installation is first seeded by the EPMS API, whose PO default (procurement_manager → finance_manager) differs from the engine's* (**Defect**, §14). |
 | **WF-P-006** | **PO sign-off** steps may use only company-wide posts. Each step chooses a signature slot (Not on PDF / Initials / Signature), and two steps cannot use the same slot. *Both rules are enforced only in the editor. Vendor Manager is allowed but cannot be picked* (**Defect**, §14). |
-| **WF-P-007** | Saving writes the whole workflow set at once. *A failed save shows no error* (**Defect**, §14). *Workflow definitions are not validated on the server, and saving does not re-sync in-flight documents* (**Open**, §14). |
+| **WF-P-007** | Saving writes the whole workflow set at once. *A failed save shows no error* (**Defect**, §14). *Workflow definitions are not validated on the server* (**Open**, §14). |
+| **WF-P-008** | Before saving, the editor asks the approval engine what the save would do to documents already in approval (nothing is saved for this). If it touches any, a dialog lists each one — document, workflow, the step it waits on now and after saving, whether it becomes fully approved — and the ones that cannot be moved, and the admin confirms with **Save and move documents** or cancels. If the check cannot run, the dialog says so and saving still moves the documents. After saving, the outcome is shown under the Save button. |
+| **WF-P-009** | **Moving documents onto edited steps.** Each step of the old chain is paired with its step in the new one (a step keeps its identity when it is moved; a step whose role was changed is a different step). Then: (a) steps the document had already passed, and steps already approved in the current run, stay given wherever they moved and are not asked again; (b) a step **added** at a point the document had already passed — some given step comes after it — is not sent back for: it is recorded as *"Auto-skipped (step added to the approval workflow after this document had already passed it)"*; (c) a step that already existed but has not been given yet is still required, even if it moved in front of steps already given; (d) the document lands on the first step still owed and its approval task goes to whoever that step needs (a task already with the right approver is kept, so nobody is notified twice); (e) when every step of the new chain is given, the document is **approved**, and the follow-up work of an approval runs (PDF, requester e-mail, payment task, settlement, agreement schedule, signed PO PDF). A returned document resumes at the first step still owed when resubmitted. The approval history of the current run is renumbered onto the new chain, so approval lines and PDFs show each approval under the step it was given at; an approval for a step that no longer exists stays in the history on no step. Each document is moved independently; one that cannot be routed (e.g. its department has no manager) stays where it was and is reported — fix it in Data Maintenance → Edit approval state. |
+| **WF-P-010** | The approval engine keeps the chains documents are aligned to. If the engine is unreachable during a save, the save stands, the result says the documents were not moved, and the next save (of any workflow) moves them. |
+| **WF-P-011** | Every save that changes a chain is recorded in the Data Maintenance audit log (entity `workflow_defs`) with the chains before and after, who saved, and what moved. Changing a step's role in the editor makes it a new step. |
 
 The over-budget steps for PRs (Finance Manager, plus GM/OPM by default) are added by the engine at run time according to the Over-Budget Approval Mode in Finance → Budget Config (fm_gm_opm / fm_only / allow / hard_block; BUDGET.md, EPMS.md §3.2.6). They do not appear in this editor.
 
@@ -624,13 +633,13 @@ The engine runs approvals for EPMS, OA, Finance and VMS. The full specification 
 
 The actions are Submit, Approve, Return, Reject (PA: cancelled), Recall (creator or System Admin) and Cancel (creator, System Admin, or the current approver). Approve, Return and Reject need the authority for the current step: the resolved person, any holder of the post, today's delegate, or System Admin. A post with no holder at all may be acted on by a user whose primary role is that post. Actions taken under delegation record "on behalf of <delegator>" on Approve and Reject.
 
-Auto-skips are recorded as separate history entries. They are: conditional skips (no Supervisor or Director, no zone managers on a VMS visit, cross-department PA), and the same-approver cascade after an approval (never at submit, never through delegation, never through System Admin's bypass).
+Auto-skips are recorded as separate history entries. They are: conditional skips (no Supervisor or Director, no zone managers on a VMS visit, cross-department PA), and the same-approver cascade after an approval (never at submit, never through delegation, never through System Admin's bypass). A step already approved in the current approval run — for that step's own role — is passed over when the document reaches it (after a workflow edit, WF-P-009, or after Data Maintenance moved the document back); its existing approval is not repeated. A run starts at a first submission or at the first submission after a recall, cancel or reject; a return does not start a new run.
 
 *Submit and Cancel rely on the calling service to check who is acting. The engine itself accepts Submit from any signed-in user, and Cancel of a draft or returned document from whoever holds the first step* (**Defect**, §14).
 
 ### 6.3 Resubmission
 
-A document that was **returned** resumes, on resubmission, at the step that returned it. A recalled document starts again from the first step. *The step is stored as a position in the list, so it lands on a different step if the workflow changed shape in between (for example, a PR that crossed the over-budget threshold, or an edited workflow)* (**Defect**, §14). *A returned PO sign-off clears all signatures but resumes mid-chain, so the earlier signature is lost* (**Defect**, §14).
+A document that was **returned** resumes, on resubmission, at the step that returned it. A recalled document starts again from the first step. *The step is stored as a position in the list, so it lands on a different step if the over-budget steps in front of a PR changed in between* (**Defect**, §14). An edited workflow is handled by WF-P-009. *A returned PO sign-off clears all signatures but resumes mid-chain, so the earlier signature is lost* (**Defect**, §14).
 
 ### 6.4 Re-sync of in-flight approvals
 
@@ -639,6 +648,7 @@ A document that was **returned** resumes, on resubmission, at the step that retu
 | **RSY-001** | In-flight approvals are re-synced automatically after: an Approval Routing save; a user edit that changes primary role, department, Supervisor or active status; a user deactivation; and a primary-role change in Access Control. A re-sync closes leftover tasks on finished documents, skips steps that no longer apply, re-points tasks pinned to a person who is no longer the approver, and re-broadcasts post tasks. Each document is handled independently; one failure does not stop the rest. |
 | **RSY-002** | System Admin can re-sync all documents or one document. Data Maintenance re-syncs a document after its requester or step is changed. |
 | **RSY-003** | Re-issued tasks are notified again under the task-notification policy. |
+| **RSY-005** | Saving Approval Workflows moves documents already in approval onto the new steps (WF-P-009). This is separate from re-sync, which re-points documents within an unchanged chain. |
 | **RSY-004** | *Re-sync moves an over-budget PR that is waiting at its final GM/OPM step back to the earlier over-budget GM/OPM step* (**Defect**, §14). *Documents whose waiting step is a plain GM or OPM step (Travel Application, PO sign-off) are not realigned, and PO sign-offs get a duplicate task on each re-sync* (**Defect**, §14). *Skipped steps are recorded with the requester as the actor* (**Defect**, §14). |
 
 ### 6.5 Submit preflight and workflow read-out
@@ -799,7 +809,7 @@ EPMS Admin keeps Email Settings (PO-to-vendor SMTP and template), PDF Templates,
 | PO-25 | Role list on Users / Role Shared Mailboxes omits Finance Director, Payment Officer, ERP PA Officer, so no shared mailbox can be set for them (USR-006) | Defect |
 | PO-26 | Workflow save failure shows no error; workflows not validated on the server; PO sign-off rules only in the editor; Vendor Manager cannot be picked for sign-off (WF-P-006, WF-P-007) | Defect |
 | PO-27 | First-install PO default differs between the EPMS seed and the engine (WF-P-005) | Defect |
-| PO-28 | Saving workflows or changing additional roles does not re-sync in-flight approvals (ROLE-004, WF-P-007) | Open |
+| PO-28 | Changing additional roles does not re-sync in-flight approvals (ROLE-004). (Saving workflows now moves in-flight documents — WF-P-009.) | Open |
 | PO-29 | GM/OPM backups stored but unused (ROUT-003; EPMS.md §11 OI-L) | Not implemented |
 | PO-30 | Approval Routing does not validate the Director and backup users on save (ROUT-002) | Defect |
 | PO-31 | A delegate can perform a PO sign-off by calling the action directly (DLG-003) | Defect |

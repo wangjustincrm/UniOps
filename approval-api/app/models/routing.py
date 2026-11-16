@@ -7,8 +7,8 @@ fields of role_management. One row per active department.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, DateTime, Integer, String, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -63,3 +63,24 @@ class ApprovalSetting(Base):
 
 # Which post approves a payment application that spans several departments.
 CROSS_DEPT_GM_OR_OPM = "cross_department_gm_or_opm"
+
+
+class WorkflowSnapshot(Base):
+    """The approval workflows (company_config.workflow_defs) that in-flight
+    documents are aligned to — one row, id = 1.
+
+    A document stores only an index into its chain, so when an admin edits a
+    chain the documents have to be carried over to the new one, and that needs
+    the chain as it was BEFORE the edit (app/crud/workflow_realign.py). It is
+    kept here, server-side, rather than taken from the caller: the realignment
+    then takes no input (nobody can move documents by sending a made-up "old"
+    chain), and a realignment that failed (approval-api down during the save)
+    still knows the old chains the next time it runs.
+    """
+    __tablename__ = "approval_workflow_snapshot"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workflow_defs: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now())

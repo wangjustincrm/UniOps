@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
 from app.crud.engine import _resync_document, resync_inflight_approvals
+from app.crud.workflow_realign import realign_after_workflow_change
 from app.db.base import get_db
 from app.models.routing import CROSS_DEPT_GM_OR_OPM
 
@@ -196,6 +197,43 @@ async def resync_inflight(db: AsyncSession = Depends(get_db), user: CurrentUser 
     # `result` always overwrote the counts that used to be computed here, so
     # callers have only ever seen the lists. Say so instead of pretending.
     return result
+
+
+@router.post("/realign-workflows")
+async def realign_workflows(body: dict | None = None, db: AsyncSession = Depends(get_db),
+                            user: CurrentUser = ...):
+    """Carry in-flight documents over to edited approval workflows.
+
+    Moves every in-flight document from the chains it is aligned to (kept by
+    approval-api, see WorkflowSnapshot) onto the chains configured now. Called
+    by epms-api right after an Approval Workflows save; idempotent, so calling
+    it again after an outage is how a missed realignment is caught up.
+
+    `{"dry_run": true, "new_defs": {...}}` previews a save: the proposed
+    workflows are applied in this transaction only and everything is rolled
+    back. See app/crud/workflow_realign.py for the rules.
+
+    Not system_admin-gated, same as resync-over-budget: the workflows are saved
+    by whoever holds `admin_panel` — checked by epms-api — and the JWT carries
+    only the primary role. It takes no "old chain" from the caller, so it can
+    only bring documents in line with workflows an authorised user saved.
+    """
+    body = body or {}
+    dry_run = bool(body.get("dry_run"))
+    new_defs = body.get("new_defs") if dry_run else None
+    if dry_run and not isinstance(new_defs, dict):
+        raise HTTPException(status_code=422, detail="new_defs (object) required for dry_run")
+    try:
+        result = await realign_after_workflow_change(
+            db, uuid.UUID(str(user["sub"])), new_defs=new_defs)
+    except Exception:
+        await db.rollback()
+        raise
+    if dry_run:
+        await db.rollback()
+    else:
+        await db.commit()
+    return {**result, "dry_run": dry_run}
 
 
 @router.post("/resync-over-budget")

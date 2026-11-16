@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.55
+**Version:** 2.56
 **Date:** 2026-11-16
 **Status:** In Production
+
+> **v2.56 (2026-11-16)** — Editing an approval workflow moves the documents already in approval onto the new steps (PORTAL.md WF-P-009). A document stores only its step *number*, so after the PA (Direct) chain's Finance Manager and Finance BP steps were swapped, 27 Direct PAs sat "at" the Finance BP step with their task still on the Finance Manager, and every Direct PA's approval line was mislabelled. Approvals already given stand; a document with every new step given is approved and gets EPMS's approval follow-up (PDF, requester e-mail, settlement, agreement schedule, signed PO PDF).
 
 > **v2.55 (2026-11-16)** — **Unmatch Agreement** on Invoice Detail (§3.14.6, INV-UNM-003). An invoice matched to an agreement could not be unmatched: Unmatch PO refused it and the agreement's period/receipt panels only move it within the agreement. The new action returns it to Unmatched and gives back what the match claimed — the billing period or milestone stage, house-account receipts, the period's confirmation — and the agreement's consumed amount drops by it.
 
@@ -570,7 +572,7 @@ The engine is designed around two concepts:
 - **Workflow** — an ordered list of named approval steps, each specifying a role token.
 - **Action Key** — a string identifier that binds a document/form type to a workflow. Every submission event carries an action key; the engine looks up the bound workflow and executes it.
 
-Workflows and their bindings are configured in **Portal Admin Panel → Approval Workflows** (PORTAL.md §5.8) and stored in `CompanyConfig.workflow_defs[action_key]`. Department-level routing (GM or OPM, Director, Supervisor layer) is configured separately in **Portal → Admin → Approval Routing** (§3.3.8).
+Workflows and their bindings are configured in **Portal Admin Panel → Approval Workflows** (PORTAL.md §5.8) and stored in `CompanyConfig.workflow_defs[action_key]`. Saving an edited workflow moves documents already in approval onto the new steps — approvals given stand, an added step a document already passed is not sent back for, a document with every step given is approved (PORTAL.md WF-P-009). Department-level routing (GM or OPM, Director, Supervisor layer) is configured separately in **Portal → Admin → Approval Routing** (§3.3.8).
 
 #### 3.3.1 Action Keys
 

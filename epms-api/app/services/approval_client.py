@@ -91,6 +91,25 @@ async def resync_over_budget(bearer_token: str) -> dict:
     return resp.json()
 
 
+async def realign_workflows(bearer_token: str, *, new_defs: dict | None = None) -> dict:
+    """Call POST /routing/realign-workflows on the Approval Engine.
+
+    Without `new_defs`: after an Approval Workflows save, carry every in-flight
+    document over to the chains as saved (the engine keeps the chains they were
+    aligned to). With `new_defs`: a preview of saving those — nothing changes.
+    Returns {"changed_workflows", "realigned": [...], "errors": [...]}. Raises
+    RuntimeError on unreachable / error; a save is already committed by then.
+    """
+    url = f"{settings.APPROVAL_ENGINE_URL}/routing/realign-workflows"
+    body = {"dry_run": True, "new_defs": new_defs} if new_defs is not None else {}
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(url, json=body,
+                                 headers={"Authorization": f"Bearer {bearer_token}"})
+    if not resp.is_success:
+        raise RuntimeError(f"realign-workflows {resp.status_code}: {resp.text[:200]}")
+    return resp.json()
+
+
 async def resync_inflight(bearer_token: str) -> dict:
     """Call POST /routing/resync-inflight on the Approval Engine: re-point every
     in-flight document at whoever the CURRENT config resolves to.

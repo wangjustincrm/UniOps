@@ -81,6 +81,28 @@ ENGINE_RULES: list[dict] = [
         ],
     },
     {
+        "id": "workflow_edit_moves_in_flight_documents",
+        "area": "approval_engine",
+        "answer": (
+            "When a System Admin edits an approval workflow (Portal → Admin → Approval "
+            "Workflows), documents already in approval — submitted, in review or "
+            "returned — move onto the new steps when it is saved; they do not keep "
+            "the old chain. Approvals already given stand wherever their step moved "
+            "and are not asked again. A step added at a point a document has already "
+            "passed is not sent back for. A step that already existed but has not "
+            "been given yet is still required, even if it moved in front of steps "
+            "already given. A document whose every step is already given is "
+            "approved. The approval task goes to whoever the new step needs, and "
+            "the screen lists the documents that move before the change is saved."),
+        "pinned_by": [
+            "tests/test_workflow_realign.py::test_waiting_on_fm_moves_to_bp_and_the_task_follows",
+            "tests/test_workflow_realign.py::test_steps_already_given_are_not_asked_again",
+            "tests/test_workflow_realign.py::test_added_step_behind_is_waived_added_step_ahead_is_required",
+            "tests/test_workflow_realign.py::test_every_step_satisfied_approves_the_document",
+            "tests/test_workflow_realign.py::test_returned_document_resumes_at_the_first_step_still_owed",
+        ],
+    },
+    {
         "id": "same_approver_on_consecutive_steps",
         "area": "approval_engine",
         "answer": (

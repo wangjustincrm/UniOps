@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import case, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.delegation import active_delegator_ids
@@ -999,6 +999,47 @@ async def resume_step(db: AsyncSession, doc_type: str, doc: Any, status: str,
     return step
 
 
+# Event actions that close an approval run; the next submit starts a fresh one.
+# `return` is deliberately absent: a resubmission after a return continues the
+# same run (resume_step — approvals already given stand).
+RUN_ENDING_ACTIONS = ("recall", "cancel", "reject")
+
+
+def _event_role_fits(event_role: str | None, step_role: str) -> bool:
+    """An approve event records the role of the step it was given at; gm_or_opm
+    steps may carry the concrete post (gm / opm) instead."""
+    if event_role == step_role:
+        return True
+    return step_role == "gm_or_opm" and event_role in ("gm", "opm")
+
+
+async def current_run_events(db: AsyncSession, doc_type: str,
+                             doc_id: uuid.UUID) -> list[ApprovalEvent]:
+    """The events of the document's current approval run, oldest first: from
+    the submit that started it (a first submission, or the first one after a
+    recall / cancel / reject) to now. A return does not end a run."""
+    events = (await db.execute(
+        select(ApprovalEvent)
+        .where(ApprovalEvent.document_type == doc_type,
+               ApprovalEvent.document_id == doc_id)
+        # Events written in one transaction share created_at (now() is the
+        # transaction time): a submit and the auto-skips it records. The submit
+        # goes first so the run it opens includes them.
+        .order_by(ApprovalEvent.created_at,
+                  case((ApprovalEvent.action == "submit", 0), else_=1),
+                  ApprovalEvent.id)
+    )).scalars().all()
+    start, ended = 0, True
+    for i, e in enumerate(events):
+        if e.action == "submit":
+            if ended:
+                start = i
+            ended = False
+        elif e.action in RUN_ENDING_ACTIONS:
+            ended = True
+    return list(events[start:])
+
+
 async def submission_start(db: AsyncSession, doc_type: str, ctx: "ActionContext",
                            status: str) -> int:
     """resume_step against the list a submission walks. If the over-budget steps
@@ -1868,8 +1909,25 @@ async def execute_action(
         # on PO). routing_dept_id was computed once at the top of
         # execute_action via _routing_department_id.
 
+        # Steps already approved earlier in this approval run are not asked
+        # again (company rule 2026-11-16). They exist ahead of the current step
+        # only after the workflow was edited mid-run — workflow_realign
+        # renumbers the run's approvals onto the new chain — or after an admin
+        # moved the document back to an earlier step.
+        # An approval only counts for the step it names AND whose role it was
+        # given in: a returned PR whose over-budget steps changed restarts on a
+        # different list while its run goes on, and its old approvals must not
+        # land on whatever step now has their number.
+        given_ahead = {e.step_idx for e in await current_run_events(db, doc_type, doc.id)
+                       if e.action == "approve" and step < e.step_idx < len(workflow)
+                       and _event_role_fits(e.actor_role, workflow[e.step_idx]["role"])}
+
         next_step = step + 1
         while next_step < len(workflow):
+            if next_step in given_ahead:
+                auto_skipped.append(next_step)
+                next_step += 1
+                continue
             next_role = workflow[next_step]["role"]
             # Conditional skip (per-document) — fires before the same-approver
             # check so a visit to a zone without managers doesn't even check

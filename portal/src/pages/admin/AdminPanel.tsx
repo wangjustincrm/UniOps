@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -1624,6 +1625,33 @@ const WORKFLOW_DEFAULTS: Record<ActionKey, WorkflowNodeDef[]> = {
   vms_visit: [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }],
 }
 
+// What saving the workflows does to documents already in approval — computed by
+// the Approval Engine (POST /config/workflow-defs/preview, nothing saved) and
+// returned again by the save itself (workflow_realign).
+interface RealignItem {
+  doc_type: string
+  doc_id: string
+  number: string
+  workflow_key: string
+  status: string
+  from: string
+  to: string
+  completed: boolean
+}
+interface RealignError { doc_type: string; doc_id: string; error: string }
+interface RealignPreview {
+  changed_workflows: string[]
+  realigned: RealignItem[]
+  errors: RealignError[]
+  // Set when the preview itself could not be computed (engine unreachable).
+  unavailable?: string
+}
+interface RealignOutcome { summary: string; realigned: RealignItem[]; errors: RealignError[] }
+
+function workflowLabel(key: string): string {
+  return (ACTION_KEY_LABELS as Record<string, string>)[key] ?? key
+}
+
 function ApprovalWorkflows() {
   const { data: cfg } = useConfig()
   const qc = useQueryClient()
@@ -1631,6 +1659,8 @@ function ApprovalWorkflows() {
   const [defs, setDefs] = useState<Record<string, WorkflowNodeDef[]>>({})
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [preview, setPreview] = useState<RealignPreview | null>(null)
+  const [outcome, setOutcome] = useState<RealignOutcome | null>(null)
 
   // Initialise local state from fetched config (fill gaps with defaults)
   const [initialised, setInitialised] = useState(false)
@@ -1688,20 +1718,49 @@ function ApprovalWorkflows() {
       ))
     : []
 
+  // A step whose role changes is a different approver: give it a new id, so
+  // documents already in approval are not treated as having passed it.
   const updateStep = (i: number, patch: Partial<WorkflowNodeDef>) =>
-    setSteps(steps.map((s, idx) => idx === i ? { ...s, ...patch } : s))
+    setSteps(steps.map((s, idx) => idx !== i ? s
+      : { ...s, ...patch, ...(patch.role && patch.role !== s.role ? { id: crypto.randomUUID() } : {}) }))
 
-  const handleSave = async () => {
-    if (saving) return
+  const save = async () => {
     setSaving(true)
     try {
-      await epmsApi.patch('/config', { workflow_defs: defs })
+      const res = await epmsApi.patch<{ workflow_realign?: RealignOutcome | null }>(
+        '/config', { workflow_defs: defs })
       qc.invalidateQueries({ queryKey: ['portal-config'] })
+      setPreview(null)
+      const o = res.workflow_realign ?? null
+      setOutcome(o && (o.realigned.length > 0 || o.errors.length > 0 || o.summary.startsWith('failed'))
+        ? o : null)
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     } finally {
       setSaving(false)
     }
+  }
+
+  // Ask the engine first what the save would do to documents already in
+  // approval; only when it touches some is the admin asked to confirm.
+  const handleSave = async () => {
+    if (saving) return
+    setSaving(true)
+    setOutcome(null)
+    let p: RealignPreview
+    try {
+      p = await epmsApi.post<RealignPreview>('/config/workflow-defs/preview', { workflow_defs: defs })
+    } catch (e) {
+      p = { changed_workflows: [], realigned: [], errors: [],
+            unavailable: e instanceof Error ? e.message : String(e) }
+    } finally {
+      setSaving(false)
+    }
+    if (p.unavailable || p.realigned.length > 0 || p.errors.length > 0) {
+      setPreview(p)
+      return
+    }
+    await save()
   }
 
   return (
@@ -1710,7 +1769,8 @@ function ApprovalWorkflows() {
         <h2 className="text-base font-semibold text-neutral-900">Approval Workflows</h2>
         <p className="mt-1 text-sm text-neutral-500">
           Configure the approval steps for each document type across all UniOps modules.
-          Changes take effect on the next submission — in-flight documents are unaffected.
+          Documents already in approval follow the new steps: approvals already given stand,
+          and you will see which documents move before the change is saved.
         </p>
       </div>
 
@@ -1858,10 +1918,104 @@ function ApprovalWorkflows() {
         )}
       </div>
 
+      {outcome && (
+        <div className={cn('rounded-lg border px-4 py-3 text-xs',
+          outcome.summary.startsWith('failed') || outcome.errors.length > 0
+            ? 'border-amber-200 bg-amber-50 text-amber-800'
+            : 'border-green-200 bg-green-50 text-green-800')}>
+          <p className="font-medium">{outcome.summary}</p>
+          {outcome.errors.length > 0 && (
+            <ul className="mt-1 list-disc pl-5">
+              {outcome.errors.map(e => <li key={e.doc_id}>{e.doc_type.toUpperCase()} {e.doc_id}: {e.error}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
+
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-600">
-        <strong>Note:</strong> Changes apply to new submissions only.
-        Documents already in-flight continue on the workflow active at time of submission.
+        <strong>Documents already in approval</strong> are moved onto the new steps when you save:
+        approvals already given stand wherever their step moved; a step added at a point a document
+        has already passed is not sent back for; a step not yet given is still required; a document
+        whose every step is already given is approved.
       </div>
+
+      {preview && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-neutral-200 bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
+              <h3 className="font-semibold text-neutral-900">Documents already in approval</h3>
+              <button onClick={() => setPreview(null)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex flex-col gap-3 overflow-y-auto px-5 py-4 text-sm">
+              {preview.unavailable ? (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                  Could not check which documents this change moves ({preview.unavailable}).
+                  Saving will still move them; the result is shown after saving.
+                </p>
+              ) : (
+                <p className="text-neutral-600">
+                  Saving moves {preview.realigned.length} document{preview.realigned.length === 1 ? '' : 's'} onto
+                  the new steps{preview.realigned.some(r => r.completed)
+                    ? `; ${preview.realigned.filter(r => r.completed).length} will be fully approved because every step is already given` : ''}.
+                </p>
+              )}
+              {preview.realigned.length > 0 && (
+                <div className="max-h-80 overflow-y-auto rounded-lg border border-neutral-200">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-neutral-50 text-left text-neutral-500">
+                      <tr>
+                        <th className="px-3 py-2 font-medium">Document</th>
+                        <th className="px-3 py-2 font-medium">Workflow</th>
+                        <th className="px-3 py-2 font-medium">Waiting on now</th>
+                        <th className="px-3 py-2 font-medium">After saving</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.realigned.map((r, i) => (
+                        <tr key={r.doc_id} className={i % 2 ? 'bg-neutral-50/60' : ''}>
+                          <td className="px-3 py-1.5 font-mono text-neutral-800">
+                            {r.number}{r.status === 'returned' && <span className="ml-1 text-neutral-400">(returned)</span>}
+                          </td>
+                          <td className="px-3 py-1.5 text-neutral-600">{workflowLabel(r.workflow_key)}</td>
+                          <td className="px-3 py-1.5 text-neutral-600">{r.from}</td>
+                          <td className={cn('px-3 py-1.5', r.completed ? 'font-medium text-green-700' : 'text-neutral-800')}>
+                            {r.status === 'returned' ? `${r.to} (on resubmission)` : r.to}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {preview.errors.length > 0 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <p className="font-medium">
+                    {preview.errors.length} document{preview.errors.length === 1 ? '' : 's'} cannot be moved
+                    and will stay where they are (fix them in Data Maintenance → Edit approval state):
+                  </p>
+                  <ul className="mt-1 list-disc pl-5">
+                    {preview.errors.map(e => <li key={e.doc_id}>{e.doc_type.toUpperCase()} {e.doc_id}: {e.error}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-3">
+              <button onClick={() => setPreview(null)}
+                className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+                Cancel
+              </button>
+              <button onClick={save} disabled={saving}
+                className="flex items-center gap-2 rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                Save and move documents
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }
