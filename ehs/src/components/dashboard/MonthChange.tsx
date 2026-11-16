@@ -26,8 +26,12 @@ export function MonthChange({ now, before, month, previous, percent }: {
 }) {
   const up = now > before
   const down = now < before
-  const words = `${now} in ${monthName(month)}, ${
-    up ? 'up' : down ? 'down' : 'the same'} from ${before} in ${monthName(previous)}`
+  // ★ Review R16: this month is usually not over, and last month is whole —
+  // said, so an arrow down on the 3rd is not read as an improvement.
+  const today = new Date()
+  const current = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}` === month
+  const words = `${now} in ${monthName(month)}${current ? ' so far' : ''}, ${
+    up ? 'up' : down ? 'down' : 'the same'} from ${before} in all of ${monthName(previous)}`
   return (
     <span className="inline-flex items-center gap-0.5 text-xs font-semibold tabular-nums text-neutral-700"
           title={words}>
