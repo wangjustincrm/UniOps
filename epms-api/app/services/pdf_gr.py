@@ -72,8 +72,8 @@ def generate_gr_pdf(
     # 18pt company name overflowed its line box by 9.6pt and sat on the subtitle.
     co_style = _s("co", fontSize=15, leading=18, textColor=_DARK, fontName="Helvetica-Bold")
     sub_style = _s("sub", fontSize=10, leading=13, textColor=_GRAY, fontName="Helvetica")
-    num_style = _s("num", fontSize=14, textColor=_PRIMARY, fontName="Helvetica-Bold", alignment=2)
-    tag_style = _s("tag", fontSize=8, textColor=_PRIMARY, fontName="Helvetica-Bold", alignment=2)
+    num_style = _s("num", fontSize=14, leading=17, textColor=_PRIMARY, fontName="Helvetica-Bold", alignment=2)
+    tag_style = _s("tag", fontSize=8, leading=10, textColor=_PRIMARY, fontName="Helvetica-Bold", alignment=2)
     lbl_style = _s("lbl", fontSize=8, textColor=_GRAY, fontName="Helvetica")
     val_style = _s("val", fontSize=9, textColor=_DARK, fontName="Helvetica")
     sec_style = _s("sec", fontSize=10, textColor=_PRIMARY, fontName="Helvetica-Bold", spaceAfter=4)

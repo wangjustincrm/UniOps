@@ -255,3 +255,35 @@ def test_header_company_name_reserves_enough_vertical_space(module_name):
         f"{module_name}: company name is {font_size}pt needing {needed:.2f}pt but "
         f"leading is only {leading}pt — it will overlap the subtitle"
     )
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    ["app.services.pdf_pr", "app.services.pdf_pa", "app.services.pdf_gr"],
+)
+def test_header_number_does_not_overlap_the_label_beneath_it(module_name):
+    """ISS-0252: the document number (top right) and the label under it
+    ("PAYMENT APPLICATION" / "GOODS RECEIPT" / "PURCHASE REQUEST") were drawn on
+    top of each other. Same cause as the company name above: the 14pt number
+    kept ReportLab's default 12pt leading, so its glyphs reached into the
+    label's line. The number's leading must cover its glyph height.
+    """
+    import importlib
+    import re
+
+    from reportlab.pdfbase.pdfmetrics import getAscentDescent
+
+    mod = importlib.import_module(module_name)
+    source = open(mod.__file__, encoding="utf-8").read()
+    match = re.search(
+        r'num_style = _s\(\s*"num",\s*fontSize=(\d+),\s*leading=(\d+)', source
+    )
+    assert match, f"{module_name}: header num_style must set both fontSize and leading"
+
+    font_size, leading = int(match.group(1)), int(match.group(2))
+    ascent, descent = getAscentDescent("Helvetica-Bold", font_size)
+    needed = ascent - descent
+    assert leading >= needed, (
+        f"{module_name}: document number is {font_size}pt needing {needed:.2f}pt but "
+        f"leading is only {leading}pt — it will overlap the label beneath it"
+    )
