@@ -205,8 +205,8 @@ async def _pa_preview(db: AsyncSession, pa) -> dict[str, int]:
 
 def _blocker_sentence(b) -> str:
     if b.code == "agreement":
-        return (f"invoice {b.invoice_ref} is matched to an agreement — unlink it from the "
-                "agreement's own receipt panel first")
+        return (f"invoice {b.invoice_ref} is matched to an agreement — use Unmatch "
+                "Agreement on that invoice first")
     if b.code == "in_payment":
         return (f"invoice {b.invoice_ref} has already entered payment (status "
                 f"'{b.invoice_status}')")

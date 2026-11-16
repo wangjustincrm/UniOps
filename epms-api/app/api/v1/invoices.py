@@ -753,11 +753,15 @@ async def _guard_unmatch(db, inv) -> None:
     if blocker.code == "agreement":
         raise HTTPException(
             status_code=422,
-            detail=("This invoice is matched to an agreement, not a PO. Unlink it from "
-                    "the agreement's own receipt/billing-period panel instead — that "
-                    "route holds claimed receipts and schedule rows this action would "
-                    "leave stranded."),
+            detail=("This invoice is matched to an agreement, not a PO. Use Unmatch "
+                    "Agreement instead — that route also releases the claimed receipts "
+                    "and schedule rows this action would leave stranded."),
         )
+    _raise_payment_blocker(blocker)
+
+
+def _raise_payment_blocker(blocker) -> None:
+    """The 422 for gr_unlink_blocker / payment_blocker's two payment codes."""
     if blocker.code == "in_payment":
         raise HTTPException(
             status_code=422,
@@ -1011,6 +1015,41 @@ async def unmatch_invoice_direct(
     await _guard_unmatch(db, inv)
     before = await invoice_crud.unmatch_direct(db, inv)
     await _audit_unmatch(db, inv, user, "direct", before, body.reason, {})
+    await db.commit()
+    await db.refresh(inv)
+    await finance_sync.sync_ap_invoice(db, inv, token)
+    await _attach_match_assignees(db, [inv])
+    await invoice_crud.attach_claimed_receipts(db, [inv])
+    return inv
+
+
+@router.post("/{invoice_id}/unmatch-agreement", response_model=InvoiceResponse)
+async def unmatch_invoice_agreement(
+    invoice_id: uuid.UUID, body: UnmatchRequest, db: SessionDep,
+    user: ApDep, token: BearerToken,
+):
+    """Reverse an agreement-route match entirely — the invoice returns to
+    `unmatched`, and the billing period / milestone stage / house-account
+    receipts it claimed go back to the agreement. AP only, as for unmatch-po;
+    refused while the invoice is in payment or a live PA lists it."""
+    if await _lock_invoice(db, invoice_id) is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    _refuse_freight(inv)
+    if inv.match_route != "agreement" and inv.agreement_id is None:
+        raise HTTPException(status_code=422, detail="This invoice is not matched to an agreement")
+    blocker = await invoice_crud.payment_blocker(db, inv)
+    if blocker is not None:
+        _raise_payment_blocker(blocker)
+    try:
+        before = await invoice_crud.unmatch_agreement(db, inv)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    # unmatched: closes any resolve_exception task, and the house-account
+    # attach_receipts task (needs_receipt_evidence is None off the agreement).
+    await _sync_exception_task(db, inv, inv, uuid.UUID(user["sub"]))
+    await attach_receipts_task.sync_for_invoice(db, inv)
+    await _audit_unmatch(db, inv, user, "agreement", before, body.reason, {})
     await db.commit()
     await db.refresh(inv)
     await finance_sync.sync_ap_invoice(db, inv, token)

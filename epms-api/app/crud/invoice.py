@@ -1055,6 +1055,13 @@ async def gr_unlink_blocker(db: AsyncSession, invoice: Invoice) -> UnlinkBlocker
     """
     if invoice.match_route == "agreement" or invoice.agreement_id is not None:
         return UnlinkBlocker("agreement", invoice.internal_ref, invoice.status)
+    return await payment_blocker(db, invoice)
+
+
+async def payment_blocker(db: AsyncSession, invoice: Invoice) -> UnlinkBlocker | None:
+    """The two payment-side conditions of gr_unlink_blocker, on their own: the
+    invoice has entered payment, or a live PA lists it. Unmatch Agreement needs
+    exactly these (the agreement check is what it exists to get past)."""
     if invoice.status in ("approved", "paid"):
         return UnlinkBlocker("in_payment", invoice.internal_ref, invoice.status)
     # The invoice's own status is NOT a substitute: it only flips to
@@ -1542,6 +1549,75 @@ async def unmatch_po(db: AsyncSession, invoice: Invoice) -> tuple[list[uuid.UUID
     await db.flush()
     await db.refresh(invoice)
     return po_ids, before
+
+
+async def unmatch_agreement(db: AsyncSession, invoice: Invoice) -> dict:
+    """Reverse an agreement-route match completely, returning the invoice to
+    `unmatched`. The caller has already checked the invoice is not in payment
+    and no live PA lists it (payment_blocker). Returns the `before` snapshot
+    for the audit row.
+
+    Same teardown review_match()'s reject path performs on an agreement match
+    — the claimed billing period / milestone stage and any claimed house-account
+    receipts go back to the agreement through _release_agreement_evidence (the
+    one release path; it also clears the period's confirmation and closes its
+    confirm_period task), the agreement triple is cleared through
+    _set_agreement_link, and the agreement sheds this invoice from its
+    consumed_amount. A "settled without receipt" declaration was made about
+    this invoice ON this agreement, so it goes too.
+    """
+    if invoice.match_route != "agreement" and invoice.agreement_id is None:
+        raise ValueError("This invoice is not matched to an agreement")
+    if invoice.status == "match_review":
+        raise ValueError(
+            "This agreement match is still waiting for AP review — reject it in the "
+            "review instead, which returns the invoice to Unmatched the same way.")
+
+    schedule_row = None
+    if invoice.schedule_id is not None:
+        schedule_row = (await db.execute(
+            select(AgreementPaymentSchedule).where(
+                AgreementPaymentSchedule.id == invoice.schedule_id)
+        )).scalar_one_or_none()
+    before = {
+        "status": invoice.status,
+        "match_route": invoice.match_route,
+        "agreement_id": str(invoice.agreement_id) if invoice.agreement_id else None,
+        "agreement_number": invoice.agreement_number,
+        "agreement_type": invoice.agreement_type,
+        "schedule_id": str(invoice.schedule_id) if invoice.schedule_id else None,
+        "schedule_label": (schedule_row.period_label or schedule_row.milestone_name)
+                          if schedule_row is not None else None,
+        "receipt_ids": [str(r) for r in (invoice.receipt_ids or [])],
+        "legacy_settlement": bool(invoice.legacy_settlement),
+        "legacy_settlement_reason": invoice.legacy_settlement_reason,
+        "matched_at": invoice.matched_at.isoformat() if invoice.matched_at else None,
+        "matched_by_name": invoice.matched_by_name,
+    }
+    agreement_id = invoice.agreement_id
+
+    await _release_agreement_evidence(db, invoice)
+    _set_agreement_link(invoice, None)
+    invoice.match_route = None
+    invoice.match_route_auto = False
+    invoice.legacy_settlement = False
+    invoice.legacy_settlement_reason = None
+    # _match_to_agreement zeroes these (there is no PO to compare against);
+    # an unmatched invoice carries none of them.
+    invoice.po_total = None
+    invoice.variance = None
+    invoice.variance_pct = None
+    invoice.exception_reason = None
+    invoice.matched_at = None
+    invoice.matched_by = None
+    invoice.matched_by_name = None
+    invoice.status = "unmatched"
+    await db.flush()
+    if agreement_id is not None:
+        await _recompute_consumed(db, agreement_id)
+        await db.flush()
+    await db.refresh(invoice)
+    return before
 
 
 class DirectRouteInvalid(ValueError):
