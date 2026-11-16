@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  Search, Plus, Pencil, Trash2, X, Check, Filter,
+  Search, Plus, Pencil, X, Check, Filter,
   Building2, ToggleLeft, ToggleRight, Download, Upload, Database,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -438,7 +438,6 @@ export default function VendorsPage() {
   // refused — VND-001 refuses only a repeated POID.
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null)
   const [editOriginal, setEditOriginal] = useState<ApiVendor | null>(null)
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [importResult, setImportResult] = useState<VendorImportResult | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [showErpImport, setShowErpImport] = useState(false)
@@ -512,7 +511,6 @@ export default function VendorsPage() {
     setDuplicateWarning(null)
     setEditOriginal(null)
     setMode('add')
-    setDeleteConfirm(null)
   }
 
   const openEdit = (vendor: ApiVendor) => {
@@ -522,7 +520,6 @@ export default function VendorsPage() {
     setDuplicateWarning(null)
     setEditOriginal(vendor)
     setMode({ edit: vendor.id })
-    setDeleteConfirm(null)
   }
 
   const asMessage = (err: unknown) =>
@@ -884,71 +881,37 @@ export default function VendorsPage() {
                   {canWrite && (
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
-                        {deleteConfirm === vendor.id ? (
-                          <>
-                            <button
-                              onClick={() => {
-                                // No delete endpoint available — dismiss confirmation
-                                setDeleteConfirm(null)
-                              }}
-                              className="flex h-7 w-7 items-center justify-center rounded text-danger-600 hover:bg-danger-50"
-                              title="Confirm delete"
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={() => setDeleteConfirm(null)}
-                              className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100"
-                              title="Cancel"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => {
-                                openEdit(vendor)
-                                setDeleteConfirm(null)
-                              }}
-                              className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-primary-50 hover:text-primary-600"
-                              title="Edit vendor"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                updateVendor.mutate({
-                                  id: vendor.id,
-                                  body: { is_active: !vendor.is_active },
-                                })
-                              }}
-                              className={cn(
-                                'flex h-7 w-7 items-center justify-center rounded text-neutral-400',
-                                vendor.is_active
-                                  ? 'hover:bg-warning-50 hover:text-warning-600'
-                                  : 'hover:bg-success-50 hover:text-success-600'
-                              )}
-                              title={vendor.is_active ? 'Deactivate vendor' : 'Activate vendor'}
-                            >
-                              {vendor.is_active ? (
-                                <ToggleRight className="h-3.5 w-3.5" />
-                              ) : (
-                                <ToggleLeft className="h-3.5 w-3.5" />
-                              )}
-                            </button>
-                            <button
-                              onClick={() => {
-                                setDeleteConfirm(vendor.id)
-                                setMode('none')
-                              }}
-                              className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-danger-50 hover:text-danger-500"
-                              title="Delete vendor"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </>
-                        )}
+                        {/* No delete (ISS-0268): vendors have no delete in the PRD
+                            (EPMS §3.10, Portal "There is no delete"); deactivate
+                            retires a vendor. */}
+                        <button
+                          onClick={() => openEdit(vendor)}
+                          className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-primary-50 hover:text-primary-600"
+                          title="Edit vendor"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            updateVendor.mutate({
+                              id: vendor.id,
+                              body: { is_active: !vendor.is_active },
+                            })
+                          }}
+                          className={cn(
+                            'flex h-7 w-7 items-center justify-center rounded text-neutral-400',
+                            vendor.is_active
+                              ? 'hover:bg-warning-50 hover:text-warning-600'
+                              : 'hover:bg-success-50 hover:text-success-600'
+                          )}
+                          title={vendor.is_active ? 'Deactivate vendor' : 'Activate vendor'}
+                        >
+                          {vendor.is_active ? (
+                            <ToggleRight className="h-3.5 w-3.5" />
+                          ) : (
+                            <ToggleLeft className="h-3.5 w-3.5" />
+                          )}
+                        </button>
                       </div>
                     </td>
                   )}

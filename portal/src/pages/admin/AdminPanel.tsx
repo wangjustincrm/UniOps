@@ -2540,8 +2540,10 @@ export default function AdminPanel() {
           </a>
         </div>
 
-        {/* Section nav */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+        {/* Section nav. No scrollbar of its own (ISS-0182): Chrome on Windows
+            gives it ~15px, narrowing the menu out of line with "Back to Portal"
+            above; it still scrolls with wheel, touchpad and keyboard. */}
+        <div className="flex-1 overflow-y-auto p-2 space-y-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {SECTIONS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}

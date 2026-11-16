@@ -117,6 +117,11 @@ async def test_budget_is_judged_per_cost_center_and_account(test_engine, monkeyp
     assert set(groups) == {"OPEX", "CAPEX"}
     assert groups["OPEX"].annual_budget == Decimal("2000") and groups["OPEX"].actual_spent == Decimal("1300")
     assert groups["OPEX"].utilisation_pct == 65.0
+    # ISS-0168: the widget must not show these groups as fine. OPEX is 65%
+    # overall but holds cc1's overrun; CAPEX has spend and no budget (0%).
+    assert groups["OPEX"].over_accounts == 1
+    assert groups["CAPEX"].annual_budget == 0 and groups["CAPEX"].actual_spent == Decimal("50")
+    assert groups["CAPEX"].over_accounts == 1
 
 
 async def test_budget_overview_is_empty_when_budget_api_is_down(test_engine, monkeypatch):

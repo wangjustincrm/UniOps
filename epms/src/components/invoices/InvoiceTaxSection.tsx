@@ -128,16 +128,20 @@ export function InvoiceTaxSection({ invoiceId, currency, pretaxAmount, headerTax
           </p>
         ) : (
           <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-neutral-400">
+            {/* Column labels line up with the inputs only on the one-row (sm+)
+                layout; below that each input carries its own label (MOB-001,
+                ISS-0178: the row was ~640 px wide and pushed a 360 px page sideways). */}
+            <div className="hidden sm:flex items-center gap-2 text-xs uppercase tracking-wide text-neutral-400">
               <span className="w-64">Tax code</span>
               <span className="w-32 text-right">Taxable base</span>
               <span className="w-28 text-right">Tax</span>
             </div>
             {rows.map((row, i) => (
-              <div key={row.id ?? `new-${i}`} className="flex items-center gap-2 text-sm">
+              <div key={row.id ?? `new-${i}`} className="flex flex-wrap sm:flex-nowrap items-end sm:items-center gap-2 text-sm border-b border-neutral-100 pb-2 sm:border-0 sm:pb-0">
                 <select value={row.tax_code} disabled={!editable}
                         onChange={(e) => pickCode(i, e.target.value)}
-                        className="w-64 rounded-md border border-neutral-200 px-2 py-1.5 disabled:bg-neutral-50">
+                        aria-label="Tax code"
+                        className="w-full sm:w-64 rounded-md border border-neutral-200 px-2 py-1.5 disabled:bg-neutral-50">
                   <option value="">— Tax code —</option>
                   {codes.map((c) => (
                     <option key={`${c.code}-${c.rate}`} value={c.code}>
@@ -146,30 +150,36 @@ export function InvoiceTaxSection({ invoiceId, currency, pretaxAmount, headerTax
                     </option>
                   ))}
                 </select>
-                <input type="number" step="0.01" min="0"
-                       value={row.taxable_amount ?? ''} disabled={!editable}
-                       onChange={(e) => setBase(i, e.target.value)}
-                       className="w-32 rounded-md border border-neutral-200 px-2 py-1.5 text-right disabled:bg-neutral-50" />
-                <input type="number" step="0.01" min="0"
-                       value={row.tax_amount} disabled={!editable}
-                       title="Computed from base × rate — editable for rounding"
-                       onChange={(e) => update(i, { tax_amount: e.target.value })}
-                       className="w-28 rounded-md border border-neutral-200 px-2 py-1.5 text-right text-neutral-600 disabled:bg-neutral-50" />
-                <label className={cn('flex items-center gap-1.5 text-xs',
+                <label className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-none">
+                  <span className="text-[11px] uppercase tracking-wide text-neutral-400 sm:hidden">Taxable base</span>
+                  <input type="number" step="0.01" min="0"
+                         value={row.taxable_amount ?? ''} disabled={!editable}
+                         onChange={(e) => setBase(i, e.target.value)}
+                         className="w-full sm:w-32 rounded-md border border-neutral-200 px-2 py-1.5 text-right disabled:bg-neutral-50" />
+                </label>
+                <label className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-none">
+                  <span className="text-[11px] uppercase tracking-wide text-neutral-400 sm:hidden">Tax</span>
+                  <input type="number" step="0.01" min="0"
+                         value={row.tax_amount} disabled={!editable}
+                         title="Computed from base × rate — editable for rounding"
+                         onChange={(e) => update(i, { tax_amount: e.target.value })}
+                         className="w-full sm:w-28 rounded-md border border-neutral-200 px-2 py-1.5 text-right text-neutral-600 disabled:bg-neutral-50" />
+                </label>
+                <label className={cn('flex items-center gap-1.5 py-1.5 text-xs sm:py-0',
                                      row.recoverable ? 'text-emerald-600' : 'text-neutral-400')}>
                   <input type="checkbox" checked={row.recoverable} disabled={!editable}
                          onChange={(e) => update(i, { recoverable: e.target.checked })} />
                   ITC recoverable
                 </label>
                 {editable && (
-                  <button onClick={() => removeRow(i)}
-                          className="text-neutral-300 hover:text-red-500">
+                  <button onClick={() => removeRow(i)} aria-label="Remove tax line"
+                          className="py-1.5 text-neutral-300 hover:text-red-500 sm:py-0">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 )}
               </div>
             ))}
-            <div className="mt-1 flex items-center gap-4 border-t border-neutral-100 pt-2 text-sm">
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-neutral-100 pt-2 text-sm">
               <span className="text-neutral-500">Base total</span>
               <span className={cn('font-medium', baseMismatch && 'text-amber-600')}>
                 {formatAmount(baseTotal, currency)}
@@ -180,7 +190,7 @@ export function InvoiceTaxSection({ invoiceId, currency, pretaxAmount, headerTax
                   pre-tax amount is {formatAmount(pretaxAmount, currency)} — allocate the difference
                 </span>
               )}
-              <span className="ml-4 text-neutral-500">Tax total</span>
+              <span className="sm:ml-4 text-neutral-500">Tax total</span>
               <span className="font-medium">{formatAmount(taxTotal, currency)}</span>
             </div>
           </div>
