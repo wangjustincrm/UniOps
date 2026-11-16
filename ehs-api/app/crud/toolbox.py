@@ -384,17 +384,28 @@ async def hold_again(db: AsyncSession, talk: ToolboxTalk, *, person: User) -> Tb
     new 'Who was at the talk' form. Ensure the data is recorded for tracking."
 
     A delivery of its own, with its own attendance sheet, naming the delivery
-    it repeats (this person's first of the talk, if they had one). No task:
-    whoever asks for it is about to hold it."""
+    it repeats: this person's first of the talk, or — when they had none —
+    the talk's first delivery (review R10: it was left empty, and then took
+    the one-first-delivery-per-person slot, so two tabs gave a 500). No task.
+
+    ★ Review R6: called with the signatures, when the sheet is finished — never
+    on opening it — so a sheet closed unsigned leaves nothing to chase."""
     first = (await db.execute(select(TbtDelivery).where(
         TbtDelivery.talk_id == talk.id, TbtDelivery.supervisor_id == person.id,
         TbtDelivery.rerun_of.is_(None)))).scalars().first()
+    if first is None:
+        first = (await db.execute(select(TbtDelivery).where(
+            TbtDelivery.talk_id == talk.id, TbtDelivery.rerun_of.is_(None))
+            .order_by(TbtDelivery.created_at, TbtDelivery.id))).scalars().first()
+    if first is None:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "This talk has not been handed to anybody yet, so there is nothing to hold again")
     dept_name = (await db.execute(
         select(Department.name).where(Department.id == person.department_id))).scalar()
     delivery = TbtDelivery(
         id=uuid.uuid4(), talk_id=talk.id, supervisor_id=person.id,
         supervisor_name=person.full_name, department_id=person.department_id,
-        department_name=dept_name, rerun_of=first.id if first else None)
+        department_name=dept_name, rerun_of=first.id)
     db.add(delivery)
     await db.flush()
     return delivery

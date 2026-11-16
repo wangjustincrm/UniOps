@@ -37,6 +37,9 @@ interface Delivery {
   expected_attendees: number; signed_count: number
   /** UAT 13: a talk held again names the delivery it repeats. */
   rerun_of?: string | null
+  /** ★ Review R6: a talk being held again, not yet saved. Nothing exists on
+   *  the server until the sheet is finished with signatures. */
+  holdingAgain?: boolean
 }
 interface Signer { user_id: string | null; person_name: string; person_role: string | null; signature: string }
 
@@ -160,6 +163,7 @@ export default function ToolboxTalksPage() {
                     </span>
                     <span className="mt-0.5 block text-xs text-neutral-500">
                       {d.department_name ?? d.supervisor_name}
+                      {d.rerun_of && ' · held again'}
                       {d.signed_count > 0 && ` · ${d.signed_count} signed so far`}
                     </span>
                   </span>
@@ -334,7 +338,9 @@ function SignRoomDialog({ delivery, talk, onClose, onDone }: {
   }
 
   const finish = useMutation({
-    mutationFn: () => api.post(`/api/v1/toolbox-talks/deliveries/${delivery.id}/sign`, {
+    mutationFn: () => api.post(delivery.holdingAgain
+      ? `/api/v1/toolbox-talks/${delivery.talk_id}/hold-again`
+      : `/api/v1/toolbox-talks/deliveries/${delivery.id}/sign`, {
       signatures: signers,
       held_at: new Date().toISOString(),
       expected_attendees: expected ? Number(expected) : null,
@@ -740,10 +746,18 @@ function SendDialog({ talk, onClose }: { talk: Talk; onClose: () => void }) {
 
 function HoldAgain({ talks, onStarted }: { talks: Talk[]; onStarted: (d: Delivery) => void }) {
   const [talkId, setTalkId] = useState('')
-  const start = useMutation({
-    mutationFn: () => api.post<Delivery>(`/api/v1/toolbox-talks/${talkId}/hold-again`, {}),
-    onSuccess: (d) => { setTalkId(''); onStarted(d) },
-  })
+  // ★ Review R6: opening the sheet saves nothing. It was saved on opening, so
+  // a sheet closed unsigned left a talk to deliver that nobody could remove,
+  // chased every fortnight. Now the talk held again is saved, with its
+  // signatures, when the sheet is finished.
+  const open = () => {
+    onStarted({
+      id: '', talk_id: talkId, supervisor_name: null, department_name: null, status: 'pending',
+      created_at: new Date().toISOString(), held_at: null, expected_attendees: 0, signed_count: 0,
+      holdingAgain: true,
+    })
+    setTalkId('')
+  }
   if (talks.length === 0) return null
   const sorted = [...talks].sort((a, b) => b.period_month.localeCompare(a.period_month))
   return (
@@ -751,7 +765,7 @@ function HoldAgain({ talks, onStarted }: { talks: Talk[]; onStarted: (d: Deliver
       <SectionTitle className="mb-1">Hold a past talk again</SectionTitle>
       <p className="mb-2 text-xs text-neutral-500">
         Pick any talk already handed out and hold it with your crew again. It opens a new
-        attendance sheet, and is kept with the talk as held again.
+        attendance sheet, and once signed is kept with the talk as held again.
       </p>
       <div className="flex flex-col gap-2 sm:flex-row">
         <select className={`${inputClass} sm:flex-1`} value={talkId} aria-label="Which talk"
@@ -761,15 +775,14 @@ function HoldAgain({ talks, onStarted }: { talks: Talk[]; onStarted: (d: Deliver
             <option key={t.id} value={t.id}>{t.talk_no} · {t.title} ({t.period_month.slice(0, 7)})</option>
           ))}
         </select>
-        <button type="button" disabled={!talkId || start.isPending}
-                onClick={() => { if (talkId && !start.isPending) start.mutate() }}
+        <button type="button" disabled={!talkId} onClick={() => { if (talkId) open() }}
                 className="min-h-[44px] rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white disabled:opacity-50">
-          {start.isPending ? 'Opening…' : 'Hold it again'}
+          Hold it again
         </button>
       </div>
-      {start.isError && (
-        <p className="mt-2 text-xs text-danger-700">{start.error instanceof ApiError ? start.error.message : 'It could not be started.'}</p>
-      )}
+      <p className="mt-2 text-xs text-neutral-500">
+        Nothing is saved until the sheet is finished with signatures; closed unsigned, it leaves nothing behind.
+      </p>
     </section>
   )
 }

@@ -1,6 +1,6 @@
 """Toolbox talks: the monthly topic and the meetings that deliver it."""
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -122,7 +122,7 @@ async def publish(
 
 
 @router.post("/{talk_id}/hold-again", response_model=DeliveryOut, status_code=201)
-async def hold_again(talk_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
+async def hold_again(talk_id: uuid.UUID, payload: SignOffIn, db: SessionDep, user: CanReportIncident):
     """★ UAT 13: run a past talk again, with a new attendance sheet.
 
     For those who hold talks: a supervisor (any of the supervisory roles), HSE,
@@ -146,8 +146,18 @@ async def hold_again(talk_id: uuid.UUID, db: SessionDep, user: CanReportIncident
     if not may:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             "Holding a toolbox talk is for those who run a crew")
+    # ★ Review R6: the talk held again is saved with its signatures, as the
+    # sheet is finished; nothing is saved on opening it.
+    if not payload.signatures:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Collect at least one signature before finishing the sheet")
     person = await db.get(User, me)
-    return await crud.hold_again(db, talk, person=person)
+    delivery = await crud.hold_again(db, talk, person=person)
+    if payload.expected_attendees is not None:
+        delivery.expected_attendees = payload.expected_attendees
+    return await crud.add_signatures(
+        db, delivery, [s.model_dump() for s in payload.signatures],
+        held_at=payload.held_at or datetime.now(timezone.utc))
 
 
 @router.get("/supervisors", response_model=list[SupervisorOut])
