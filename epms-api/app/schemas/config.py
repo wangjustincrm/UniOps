@@ -297,3 +297,6 @@ class ConfigResponse(BaseModel):
     # PATCH only: outcome of re-aligning in-flight over-budget PRs after a
     # Budget Config save ("ok: N …" / "failed: …"); None when not attempted.
     over_budget_resync: str | None = None
+    # PATCH only, when workflow_defs was saved: in-flight documents carried over
+    # to the saved chains — {"summary", "realigned": [...], "errors": [...]}.
+    workflow_realign: dict[str, Any] | None = None

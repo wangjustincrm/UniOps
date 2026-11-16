@@ -1145,6 +1145,62 @@ def _assert_invoice_link_on_submit(pa) -> None:
     )
 
 
+async def on_pa_approved(db, pa, actor_id: uuid.UUID, token: str) -> None:
+    """What EPMS does once a PA is fully approved: tell the requester, close the
+    prepayment a settlement PA settles, file the PA PDF. Called by the approve
+    action, and by an Approval Workflows save that left a PA with every step of
+    its new chain already given (approval-api approves it in the realignment)."""
+    # ISS-0137: email the requester, if Notification Settings say so.
+    from app.services import notification as notification_service
+    notification_service.fire_and_forget_pa_approved(pa.id)
+    # 统一 settlement：settlement PA 一旦 approved，回填来源预付为 settled
+    if pa.pa_type == "settlement":
+        await pa_crud.mark_prepayment_settled(
+            db, pa, actor_id=actor_id
+        )
+    from app.services.pdf_pa import generate_pa_pdf
+    from app.models.pa_attachment import PaAttachment
+    from app.models.config import CompanyConfig
+    from app.services.attachment_helper import upload_to_file_server
+    from sqlalchemy import select as sa_select
+    import asyncio
+    cfg_r = await db.execute(sa_select(CompanyConfig).limit(1))
+    cfg = cfg_r.scalar_one_or_none()
+    company_name = cfg.name if cfg else "EPMS"
+    from app.crud.signatories import approval_signatories
+    requester_name, approvals = await approval_signatories(
+        db, "pa", pa.id, pa.created_by, token=token
+    )
+    if getattr(pa, "source", None) == "freight":
+        from app.crud.freight import cost_allocations as _cost_allocations
+        pa.cost_allocations = await _cost_allocations(db, pa.id)
+    await pa_crud.attach_direct_labels(db, [pa])
+    loop = asyncio.get_event_loop()
+    pdf_bytes = await loop.run_in_executor(
+        None, generate_pa_pdf, pa, company_name,
+        cfg.pdf_templates if cfg else None,
+        cfg.logo_data_url if cfg else None,
+        requester_name, approvals,
+    )
+    existing = await db.execute(
+        sa_select(PaAttachment).where(
+            PaAttachment.pa_id == pa.id,
+            PaAttachment.filename == f"{pa.pa_number}.pdf",
+        )
+    )
+    if not existing.scalar_one_or_none():
+        filename = f"{pa.pa_number}.pdf"
+        storage_key = await upload_to_file_server(
+            pdf_bytes, filename, "application/pdf", "pa", pa.id, token,
+        )
+        db.add(PaAttachment(
+            pa_id=pa.id, filename=filename,
+            content_type="application/pdf",
+            file_size=len(pdf_bytes), storage_key=storage_key,
+        ))
+        await db.flush()
+
+
 @router.post("/{pa_id}/action", response_model=PaResponse)
 async def pa_action(
     pa_id: uuid.UUID,
@@ -1207,55 +1263,7 @@ async def pa_action(
                 await pa_crud.reopen_create_pa_tasks_if_unpaid(db, pid)
     # Generate PDF when PA transitions to approved
     if result.get("new_status") == "approved":
-        # ISS-0137: email the requester, if Notification Settings say so.
-        from app.services import notification as notification_service
-        notification_service.fire_and_forget_pa_approved(pa.id)
-        # 统一 settlement：settlement PA 一旦 approved，回填来源预付为 settled
-        if pa.pa_type == "settlement":
-            await pa_crud.mark_prepayment_settled(
-                db, pa, actor_id=uuid.UUID(user["sub"])
-            )
-        from app.services.pdf_pa import generate_pa_pdf
-        from app.models.pa_attachment import PaAttachment
-        from app.models.config import CompanyConfig
-        from app.services.attachment_helper import upload_to_file_server
-        from sqlalchemy import select as sa_select
-        import asyncio
-        cfg_r = await db.execute(sa_select(CompanyConfig).limit(1))
-        cfg = cfg_r.scalar_one_or_none()
-        company_name = cfg.name if cfg else "EPMS"
-        from app.crud.signatories import approval_signatories
-        requester_name, approvals = await approval_signatories(
-            db, "pa", pa_id, pa.created_by, token=token
-        )
-        if getattr(pa, "source", None) == "freight":
-            from app.crud.freight import cost_allocations as _cost_allocations
-            pa.cost_allocations = await _cost_allocations(db, pa.id)
-        await pa_crud.attach_direct_labels(db, [pa])
-        loop = asyncio.get_event_loop()
-        pdf_bytes = await loop.run_in_executor(
-            None, generate_pa_pdf, pa, company_name,
-            cfg.pdf_templates if cfg else None,
-            cfg.logo_data_url if cfg else None,
-            requester_name, approvals,
-        )
-        existing = await db.execute(
-            sa_select(PaAttachment).where(
-                PaAttachment.pa_id == pa_id,
-                PaAttachment.filename == f"{pa.pa_number}.pdf",
-            )
-        )
-        if not existing.scalar_one_or_none():
-            filename = f"{pa.pa_number}.pdf"
-            storage_key = await upload_to_file_server(
-                pdf_bytes, filename, "application/pdf", "pa", pa_id, token,
-            )
-            db.add(PaAttachment(
-                pa_id=pa_id, filename=filename,
-                content_type="application/pdf",
-                file_size=len(pdf_bytes), storage_key=storage_key,
-            ))
-            await db.flush()
+        await on_pa_approved(db, pa, uuid.UUID(user["sub"]), token)
 
     return pa
 

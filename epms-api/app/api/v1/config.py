@@ -1,4 +1,5 @@
 """Company / Workflow Config endpoints."""
+import copy
 import logging
 import uuid
 from typing import Annotated
@@ -15,6 +16,7 @@ from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_p
 from app.crud import config as config_crud
 from app.crud import po_fee as po_fee_crud
 from app.services import approval_client
+from app.services.workflow_realign import realign_after_save
 from app.schemas.config import ConfigResponse, ConfigUpdate
 from app.crud.config import BUILT_IN_ROLES, LOCKED_PERMISSIONS, PERMISSION_KEYS
 from app.services.email import send_email
@@ -175,15 +177,46 @@ async def update_config(body: ConfigUpdate, db: SessionDep, user: AdminDep, toke
                 detail=f"Incoterms {', '.join(gone)} cannot be removed — deactivate them "
                        "instead, so purchase orders that use them keep their meaning.")
         body.incoterms_terms = new_terms
+    workflows_before = (copy.deepcopy(cfg.workflow_defs or {})
+                        if body.workflow_defs is not None else None)
     await config_crud.update(db, cfg, body, uuid.UUID(user["sub"]))
     await db.commit()
+    if body.workflow_defs is not None:
+        # In-flight documents follow the saved chains (approval-api realigns
+        # them; committed above because it reads on its own connection).
+        workflow_realign = await realign_after_save(
+            db, before=workflows_before, after=cfg.workflow_defs, config_id=cfg.id,
+            user=user, token=token)
     if body.timezone is not None:
         # This process at once; the other services pick it up within a minute.
         set_plant_tz(body.timezone)
     resp = await _full_response(db, user)
     if body.budget_admin_config is not None:
         resp.over_budget_resync = await _resync_over_budget(token)
+    if body.workflow_defs is not None:
+        resp.workflow_realign = workflow_realign
     return resp
+
+
+class WorkflowPreviewRequest(BaseModel):
+    workflow_defs: dict
+
+
+@router.post("/workflow-defs/preview")
+async def preview_workflow_defs(body: WorkflowPreviewRequest, user: AdminDep,
+                                token: BearerToken):
+    """What saving these approval workflows would do to in-flight documents —
+    which move to which step, which become fully approved, which cannot be
+    routed. Nothing is saved: the Approval Engine applies them in a transaction
+    it rolls back. Shown by Admin → Approval Workflows before it saves."""
+    try:
+        result = await approval_client.realign_workflows(token, new_defs=body.workflow_defs)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502,
+                            detail=f"Could not preview the effect on in-flight documents: {exc}")
+    return {"changed_workflows": result.get("changed_workflows") or [],
+            "realigned": result.get("realigned") or [],
+            "errors": result.get("errors") or []}
 
 
 async def _resync_over_budget(token: str) -> str:
