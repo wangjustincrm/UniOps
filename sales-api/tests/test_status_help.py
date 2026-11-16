@@ -116,6 +116,9 @@ def test_the_step_follows_the_orders_own_facts():
     assert step(WAITING_DELIVERY, F.SHIPPED.value, invoice=Inv.PENDING.value, runs_on=False) == "shipped.runs_off"
     assert step(WAITING_DELIVERY, F.SHIPPED.value, invoice=WAITING, runs_on=False) == "shipped"
     assert step(WAITING_INVOICE, F.SHIPPED.value, invoice=Inv.QUEUED.value, runs_on=False) == "invoice.runs_off"
+    # a made 940 (GENERATED) can't be sent by hand: with runs off no step names Send 940 now
+    assert step(WAITING_TO_SEND, F.GENERATED_940.value, runs_on=False) is None
+    assert step(WAITING_TO_SEND, F.GENERATED_940.value) == "send.next_run"
     # the test run: Zoho sends it, so no step
     assert step(WAITING_TO_SEND, shadow=True) is None and step(WAITING_945, F.ACCEPTED_940.value, shadow=True) is None
     assert step(WAITING_INVOICE, F.SHIPPED.value, invoice=Inv.READY.value) == "invoice.ready"
@@ -148,3 +151,20 @@ async def test_the_order_carries_its_next_step(api):  # noqa: F811
     assert o["order_status"] == "To Fulfill"
     # the test server runs no automatic runs (SALES_SCHEDULER_ENABLED off, the switch paused by default): the step says so
     assert (o["next_step_who"], o["next_step"]) == (YOU, STEPS["send.runs_off"].text)
+
+
+async def test_a_post_answers_with_the_same_next_step_as_a_get(api):  # noqa: F811
+    from tests.test_orders import shopify_order
+    from tests.test_orders_api import OPERATOR
+    api.env.shop.orders = [shopify_order(2, 9302, lines=[
+        {"id": 5, "sku": "NOPE", "variant_title": "Case", "quantity": 1, "price": "1", "requires_shipping": True}])]
+    await api.env.pull()
+    o = (await api.get("/api/v1/orders", headers=READER)).json()["items"][0]
+    posted = (await api.post(f"/api/v1/orders/{o['id']}/resolve-review", headers=OPERATOR)).json()["order"]
+    got = (await api.get(f"/api/v1/orders/{o['id']}", headers=READER)).json()
+    assert posted["next_step"] == got["next_step"] == "Fix it in the Item Master, then Re-check."
+
+
+def test_a_read_that_never_learned_whether_runs_happen_shows_no_step():
+    from app.services.order_views import OrderService
+    assert OrderService._runs_on is None  # the class default: a path that forgets shows nothing, never a false promise

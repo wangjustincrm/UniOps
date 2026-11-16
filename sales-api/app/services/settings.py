@@ -100,3 +100,9 @@ MANUAL_EXPRESS_OFFERED = SETTINGS.declare(Setting(
 MANUAL_LTL_FROM_LB = SETTINGS.declare(Setting(
     "manual.ltl_from_lb", 150, int, validate=minimum(1), safe=150,
     description="Suggest LTL for a manual order above this weight (lb)"))
+
+
+async def automatic_runs_on(session, app_settings) -> bool:
+    """Automatic runs happen: the server allows them (SALES_SCHEDULER_ENABLED) and the master switch is
+    on (not SCHEDULER_PAUSED). The one answer for Connections, Health and an order's next step."""
+    return bool(getattr(app_settings, "SALES_SCHEDULER_ENABLED", False)) and not await SETTINGS.get(session, SCHEDULER_PAUSED)

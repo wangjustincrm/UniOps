@@ -33,7 +33,7 @@ from app.services.intake import ConnectionSnapshot
 from app.services.problems import SFTP_AUTH_FAILED
 from app.services.settings import (
     ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, INVOICE_CONNECTION_ID, INVOICE_INTERNAL_EMAILS, MANUAL_EXPRESS_OFFERED, MANUAL_LTL_FROM_LB,
-    OPERATOR_USER_ID, SCHEDULER_PAUSED, SETTINGS,
+    OPERATOR_USER_ID, SCHEDULER_PAUSED, SETTINGS, automatic_runs_on,
     SHADOW_MODE, SYSTEM_MINUTES,
 )
 
@@ -111,7 +111,7 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
     async def enrich(self, rows: list[ConnectionRead], entities) -> None:
         """Each row says whether its next run is overdue: only when the scheduler
         runs and is not paused as a whole (Health, Scheduler)."""
-        if self.scheduler_enabled() and not await SETTINGS.get(self.uow.session, SCHEDULER_PAUSED):
+        if await automatic_runs_on(self.uow.session, self.settings):
             now = self.clock()
             for c in rows:
                 c.overdue = is_overdue(now, next_run_at=c.next_run_at, minutes=c.schedule_minutes, active=c.active,

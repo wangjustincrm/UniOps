@@ -44,7 +44,7 @@ from app.services.order_views import OrderRepository
 from app.services.problems import DOCUMENT_TYPE
 from app.services.settings import (
     EDI_CONNECTION_ID, OPERATOR_USER_ID, OUTBOX_BACKLOG_MINUTES,
-    SCHEDULER_PAUSED, SETTINGS, SHADOW_MODE, SYSTEM_MINUTES, TASK_AGE_HOURS,
+    SCHEDULER_PAUSED, SETTINGS, SHADOW_MODE, SYSTEM_MINUTES, TASK_AGE_HOURS, automatic_runs_on,
 )
 from app.services.transfer_views import TransferRepository
 
@@ -244,7 +244,7 @@ class Health:
         """Every job with its last and next run. Overdue: more than 3 intervals
         past its next run while it should run (automatic runs On here, not
         paused, inside its window)."""
-        master = (await SETTINGS.get(self.s, SCHEDULER_PAUSED)) or not getattr(self.settings, "SALES_SCHEDULER_ENABLED", False)
+        master = not await automatic_runs_on(self.s, self.settings)
         minutes = await SETTINGS.get(self.s, SYSTEM_MINUTES)
         last = (await self.s.execute(select(Run).where(Run.scope == SYSTEM_SCOPE).order_by(Run.started_at.desc())
                                      .limit(1))).scalar_one_or_none()

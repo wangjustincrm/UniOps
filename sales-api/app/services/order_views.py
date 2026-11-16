@@ -6,9 +6,11 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Any, ClassVar
 
 from sqlalchemy import and_, case, or_, select
 
+from app.core.config import settings as app_settings
 from app.domain.address import address_flags
 from app.domain.carriers import tracking_url
 from app.domain.invoicing import CASE_UNIT, amount
@@ -92,7 +94,7 @@ from app.services.order_status_sql import (
     TO_CONFIRM_SQL,
 )
 from app.services.orders import BarcodeLookup, OrderSync, order_ref
-from app.services.settings import SCHEDULER_PAUSED, SETTINGS, SHADOW_MODE
+from app.services.settings import SETTINGS, SHADOW_MODE, automatic_runs_on
 
 READ = "sales.read"
 _DOC_COLUMNS = (Document.id, Document.kind, Document.direction, Document.remote_name, Document.created_at,
@@ -256,14 +258,13 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
     read_schema = OrderRead
     read_permission = READ
 
-    # Whether automatic runs happen (the server allows them and the switch is on): what "by itself" and
-    # "the next run" in an order's next step depend on. Read once per request, before the rows.
-    _runs_on: bool = True
+    # Whether automatic runs happen: what "by itself" and "the next run" in an order's next step depend on.
+    # Read once per request, before the rows; never read (a path that forgot): no step, never a false promise.
+    settings: ClassVar[Any] = app_settings
+    _runs_on: bool | None = None
 
     async def _load_runs_on(self) -> None:
-        from app.core.config import settings as app_settings
-        enabled = bool(getattr(app_settings, "SALES_SCHEDULER_ENABLED", False))
-        self._runs_on = enabled and not await SETTINGS.get(self.uow.session, SCHEDULER_PAUSED)
+        self._runs_on = await automatic_runs_on(self.uow.session, self.settings)
 
     async def _read_all(self, entities: list[Order]) -> list[OrderRead]:
         await self._load_runs_on()
@@ -279,7 +280,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         details = detail_facts(o)
         out.status_detail, out.status_detail_at = status_detail(d, facts, details)
         out.status_detail_kind = detail_kind(out.status_detail)
-        step = next_step(d, facts, details, datetime.now(TORONTO).date(), runs_on=self._runs_on)  # the invoice side's day
+        step = None if self._runs_on is None else next_step(d, facts, details, datetime.now(TORONTO).date(), runs_on=self._runs_on)
         out.next_step, out.next_step_who = (step.text, step.who) if step else (None, None)
         return out
 
@@ -437,6 +438,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                                 {"status": o.fulfillment_status})
         self.uow.set_reason("re-check review")
         remaining = await OrderSync(self.uow, tasks).recheck(o, barcodes)
+        await self._load_runs_on()  # the next step needs it (else none is shown)
         return ReviewResult(order=self.to_read(await self.repo.get(id)), remaining=remaining)  # read again: facts expire on flush
 
 
@@ -448,6 +450,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         self.uow.set_reason("Send 940 now (replacement)" if replace else "Send 940 now")
         doc = await outbound.send_now(self.uow, id, replace=replace)
         order = await self.repo.get(id)
+        await self._load_runs_on()  # the next step needs it (else none is shown)
         return {"order": self.to_read(order).model_dump(mode="json"), "document_id": doc.id,
                 "file_status": doc.file_status, "control": doc.st02, "errors": (doc.body_json or {}).get("errors", [])}
 
@@ -461,6 +464,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                 raise BusinessError("order.amend_line", f"line {x['id']}: an item and a quantity, or take it off")
         out = await amend_order(self.uow, outbound, id, lines, body.reason, carrier=body.carrier)
         order = await self.repo.get(id)
+        await self._load_runs_on()  # the next step needs it (else none is shown)
         return {"order": self.to_read(order).model_dump(mode="json"), **out}
 
     async def _dc_number(self, o: Order) -> str | None:

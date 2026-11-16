@@ -151,13 +151,13 @@ def next_step_key(d: Display, f: StatusFacts, n: DetailFacts, today: date, *, ru
     if s == WAITING_TO_SEND:
         if f.fulfillment == F.PENDING and n.manual_sending:
             return "send.manual"
-        if not runs_on:
-            return "send.runs_off"
+        if not runs_on:  # a made 940 (GENERATED) can't be sent by hand: no step until its text is approved
+            return "send.runs_off" if f.fulfillment == F.PENDING else None
         return "send.delay" if f.fulfillment == F.PENDING and n.send_at and not f.delay_over else "send.next_run"
     if s == WAITING_997:
         return "sent"
     if s == WAITING_945:
-        return "fulfilling.tracking" if f.fulfillment == F.SHIPPED and not f.shadow else "fulfilling"
+        return "fulfilling.tracking" if f.fulfillment == F.SHIPPED else "fulfilling"
     if s == WAITING_DELIVERY:  # only this invoice state takes Confirm delivery (invoicing.confirm)
         if f.invoice == Inv.WAITING_FOR_DELIVERY_CONFIRMATION.value:
             return "shipped.late" if n.delivery_due and n.delivery_due < today else "shipped"
