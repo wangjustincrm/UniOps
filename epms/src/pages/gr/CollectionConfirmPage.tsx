@@ -10,6 +10,7 @@ import { cn, formatAmount, formatDate, formatQty, todayISO } from '@/lib/utils'
 import { useGr, useGrAction } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig } from '@/hooks/useConfig'
+import { collectionNotesWithLines } from '@/lib/grNotes'
 import { type GrLineCondition, isOverReceiptError } from '@/services/gr'
 
 // ─── Condition options ────────────────────────────────────────────────────────
@@ -110,9 +111,17 @@ export default function CollectionConfirmPage() {
     const hasErrors = lines.some((l) => l.condition !== 'good' && !l.collectionNotes.trim())
     if (!collectionDate || hasErrors) return
     if (needsOverReason && !overReceiptReason.trim()) return
+    // GR-C-002: the line conditions are not stored separately — they go into
+    // the collection notes with the General Notes (ISS-0185).
+    const collectionNotes = collectionNotesWithLines(generalNotes, lines.map((l, i) => ({
+      description: gr.line_items[i].description,
+      condition: l.condition,
+      notes: l.collectionNotes,
+      recordedCondition: gr.line_items[i].condition,
+    })))
     grAction.mutate(
       {
-        action: 'collect', collected_by: user?.name, collection_notes: generalNotes.trim() || undefined,
+        action: 'collect', collected_by: user?.name, collection_notes: collectionNotes,
         over_receipt_reason: overReceiptReason.trim() || undefined,
       },
       { onSuccess: () => replaceTab(`/gr/${id}`) }
@@ -319,9 +328,9 @@ export default function CollectionConfirmPage() {
               {lines.filter((l) => l.condition !== 'good').length} item(s) with issues
             </p>
             <p className="text-sm text-warning-600 mt-0.5">
-              The conditions and line notes marked here are not saved on the GR and do not notify anyone, and
-              invoices for this PO are not blocked. Put what Procurement needs to know in General Notes, which
-              are kept on the GR, and tell them so they can take it up with the vendor.
+              The conditions and line notes marked here are added to the GR's Collection Notes. Nobody is
+              notified and invoices for this PO are not blocked, so tell Procurement if they need to take it
+              up with the vendor.
             </p>
           </div>
         </div>

@@ -43,3 +43,39 @@ async def test_the_service_gr_task_title_is_the_one_the_inbox_looks_for():
 
     src = inspect.getsource(gr_crud._create_ack_task)
     assert 'f"Confirm Service Completion: {gr.number}' in src
+
+
+# ── ISS-0185: line conditions at collection go into the collection notes ────
+
+async def test_collect_keeps_the_line_conditions_in_the_notes_and_raises_no_task(admin_client, test_engine):
+    """GR-C-002: Collect Goods sends the lines' conditions inside
+    collection_notes (epms lib/grNotes collectionNotesWithLines); they are
+    kept as written, the lines stay as recorded, and no task is raised."""
+    import uuid as _uuid
+    from sqlalchemy import select as _select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from app.models.task import Task
+
+    po, _ = await _make_issued_po(admin_client, test_engine, "VND-B19-02")
+    pl = await _po_line_id(admin_client, po["id"])
+    r = await admin_client.post(GR_URL, json=_gr_payload(po["id"], line_items=[_line(pl, 2)]))
+    assert r.status_code == 201, r.text
+    gr_id = r.json()["id"]
+    r = await admin_client.post(f"{GR_URL}/{gr_id}/action", json={"action": "acknowledge"})
+    assert r.status_code == 200, r.text
+
+    notes = ("Picked up at dock 3 · Line conditions at collection: "
+             "Hydraulic Pump: Discrepancy — 包装破损（测试）")
+    r = await admin_client.post(f"{GR_URL}/{gr_id}/action",
+                                json={"action": "collect", "collection_notes": notes})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "collected"
+    assert body["collection_notes"] == notes
+    assert body["line_items"][0]["condition"] == "good"
+
+    async with async_sessionmaker(test_engine, class_=AsyncSession)() as db:
+        open_tasks = (await db.execute(_select(Task).where(
+            Task.document_id == _uuid.UUID(gr_id),
+            Task.is_completed.is_(False)))).scalars().all()
+    assert open_tasks == []
