@@ -392,19 +392,25 @@ export default function InvestigationPage() {
       </Section>
 
       <Section title="What was found">
-        <Field label="Hazards identified"
-               help="From your hazard list. These are what trend reports group by.">
-          <VocabularyMultiSelect vocabulary="hazard" value={hazards} onChange={setHazards}
-                                 placeholder="Search hazards…" />
-        </Field>
-        {/* Round 12, INC-05: not on a near miss — nobody was hurt. What an
-            older near miss recorded is kept and still saved. */}
-        {incident.data?.form_kind !== 'near_miss' && (
-          <Field label="PPE that could have prevented this">
-            <VocabularyMultiSelect vocabulary="ppe" value={ppe} onChange={setPpe}
-                                   placeholder="Search PPE…" />
+        {/* ★ UAT 14: "on all investigation forms place the 'hazards
+            identified' and the 'ppe that could have prevented this' side by
+            side." On a near miss there is no PPE question, so hazards keep the
+            whole line. */}
+        <div className={incident.data?.form_kind !== 'near_miss' ? 'grid gap-x-3 sm:grid-cols-2' : ''}>
+          <Field label="Hazards identified"
+                 help="From your hazard list. These are what trend reports group by.">
+            <VocabularyMultiSelect vocabulary="hazard" value={hazards} onChange={setHazards}
+                                   placeholder="Search hazards…" />
           </Field>
-        )}
+          {/* Round 12, INC-05: not on a near miss — nobody was hurt. What an
+              older near miss recorded is kept and still saved. */}
+          {incident.data?.form_kind !== 'near_miss' && (
+            <Field label="PPE that could have prevented this">
+              <VocabularyMultiSelect vocabulary="ppe" value={ppe} onChange={setPpe}
+                                     placeholder="Search PPE…" />
+            </Field>
+          )}
+        </div>
         <Field
           label="What happened"
           help="Before, during and after — including equipment, materials and environmental conditions."
