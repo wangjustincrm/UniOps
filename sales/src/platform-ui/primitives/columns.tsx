@@ -33,6 +33,14 @@ export function columnsOf<T>() {
         return <StatusCell value={v} tone={v && opts?.tone ? opts.tone(v) : undefined} className={v && opts?.colour ? opts.colour(v) : undefined} />
       }),
     reference: (key: Key<T>, header: string) => cell(key, header, (r) => <ReferenceCell value={read(r, key) as Value} />),
+    /** Another record, by its label (sorted by it), opening that record: e.g. a payment's Order ref. */
+    record: (key: Key<T>, header: string, opts: { id: (row: T) => number | null | undefined; onOpen: (id: number, row: T) => void }) =>
+      cell(key, header, (r) => {
+        const id = opts.id(r)
+        const label = read(r, key) as Value
+        return id == null || label == null || label === '' ? <span className="text-xs text-neutral-500">—</span>
+          : <RefsCell refs={[{ id, label: String(label) }]} onOpen={() => opts.onOpen(id, r)} max={1} />
+      }),
     tracking: (key: Key<T>, header: string, opts?: { url?: Key<T> }) =>
       cell(key, header, (r) => <TrackingCell value={read(r, key) as string | null} url={opts?.url ? read(r, opts.url) as string | null : undefined} />),
     duration: (id: string, header: string, from: Key<T>, to: Key<T>): ColumnDef<T, unknown> => (

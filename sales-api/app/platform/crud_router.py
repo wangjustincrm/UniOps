@@ -42,13 +42,17 @@ def read_router(
     *,
     uow: Callable[..., Any],
     tags: list[str] | None = None,
+    export: bool = False,
 ) -> APIRouter:
     """The read half of `crud_router` (list · get) for a ReadOnlyService:
-    registers, logs, runs. The service checks its read permission."""
+    registers, logs, runs. The service checks its read permission. `export`:
+    also `export.csv` (every row the query selects, as `crud_router`'s)."""
     r = APIRouter(prefix=prefix, tags=tags or [prefix.strip("/")])
     Read = service_cls.read_schema
     UoW = Annotated[Any, Depends(uow)]
     Spec = Annotated[QuerySpec, Depends(query_spec)]
+    if export:
+        _export_route(r, prefix, service_cls, UoW, Spec)
 
     @r.get("")
     async def list_(u: UoW, spec: Spec) -> dict:
@@ -124,13 +128,17 @@ def crud_router(
     return r
 
 
-def _csv_routes(r: APIRouter, prefix: str, service_cls: type[CrudService], UoW: Any, Spec: Any) -> None:
+def _export_route(r: APIRouter, prefix: str, service_cls: type[ReadOnlyService], UoW: Any, Spec: Any) -> None:
     @r.get("/export.csv")
     async def export(u: UoW, spec: Spec) -> Response:
         data = await service_cls(u).export_csv(spec)
         name = prefix.strip("/").replace("/", "-") or "export"
         return Response(data, media_type="text/csv",
                         headers={"Content-Disposition": f'attachment; filename="{name}.csv"'})
+
+
+def _csv_routes(r: APIRouter, prefix: str, service_cls: type[CrudService], UoW: Any, Spec: Any) -> None:
+    _export_route(r, prefix, service_cls, UoW, Spec)
 
     @r.post("/import.csv")
     async def import_(u: UoW, file: Annotated[UploadFile, File()], dry_run: bool = True) -> dict:

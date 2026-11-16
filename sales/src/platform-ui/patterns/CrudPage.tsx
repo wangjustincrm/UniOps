@@ -4,10 +4,8 @@ import type { z } from 'zod'
 import type { ColumnDef } from '../primitives/DataTable'
 import { Dialog } from '../primitives/Dialog'
 import { FilePicker } from '../primitives/FilePicker'
-import { IconButton } from '../primitives/IconButton'
-import { Download, Upload } from 'lucide-react'
+import { Upload } from 'lucide-react'
 
-const TOOL = 'h-8 w-8 rounded-lg border border-neutral-200 bg-white'
 import { ActionButton } from './ActionButton'
 import { ConfirmAction } from './ConfirmAction'
 import { ListPage } from './ListPage'
@@ -92,14 +90,6 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
       failed('Import', e)
     }
   }
-  const exportCsv = async (path: string) => {
-    try {
-      await props.onExport?.(path)
-      notices.notify({ key: 'csv', tone: 'success', text: 'CSV exported' })
-    } catch (e) {
-      failed('Export', e)
-    }
-  }
 
   return (
     <ListPage<T>
@@ -111,18 +101,15 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
       errorMessages={props.errorMessages}
       notice={props.notice}
       notices={notices}
+      onExport={props.onExport}
       detailSize={props.detailSize ?? 'md'}
       renderDetail={(row, close) => (
         <RecordForm row={row} close={close} canWrite={canWrite} props={props}
           save={(values, version) => update.mutateAsync({ id: row.id, data: values as Partial<TUpdate>, version })}
           deactivate={() => deactivate.mutateAsync(row.id)} />
       )}
-      toolbar={({ spec }) => (
+      toolbar={() => (
         <>
-          {props.onExport && (
-            <IconButton label="Export CSV" icon={<Download className="h-4 w-4" />} className={TOOL}
-              onClick={() => { void exportCsv(client.exportPath(spec)) }} />
-          )}
           {props.csvImport && canWrite && (
             <FilePicker accept=".csv,text/csv" label="CSV file" onFile={pickFile} icon={<Upload className="h-4 w-4" />}>Import CSV</FilePicker>
           )}

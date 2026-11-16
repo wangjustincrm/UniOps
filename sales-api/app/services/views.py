@@ -10,6 +10,7 @@ from app.services.items import DcRoutingService, ItemService, PartnerCodeService
 from app.services.operations import DocumentService, LogService, RunService
 from app.services.order_views import OrderService
 from app.services.partners import PartnerService
+from app.services.payment_list import PaymentRowService
 from app.services.invoice_views import InvoiceService
 from app.services.shadow import ShadowMatchService
 from app.services.transfer_views import TransferService
@@ -19,7 +20,7 @@ LISTS = {
     "config/partners": PartnerService, "config/items": ItemService, "config/partner-codes": PartnerCodeService,
     "config/dc-routing": DcRoutingService, "config/connections": ConnectionService, "orders": OrderService,
     "documents": DocumentService, "runs": RunService, "log": LogService, "shadow-matches": ShadowMatchService,
-    "invoices": InvoiceService, "config/warehouses": WarehouseService, "transfers": TransferService,
+    "invoices": InvoiceService, "config/warehouses": WarehouseService, "transfers": TransferService, "payments": PaymentRowService,
 }
 
 

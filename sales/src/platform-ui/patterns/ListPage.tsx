@@ -8,6 +8,8 @@ import type { ListMeta } from '../resource/listMeta'
 import { queryKeys } from '../resource/queryKeys'
 import { takeOpenRequest, useOpenRequest } from '../resource/viewRequests'
 import type { Filter, Page, QuerySpec } from '../resource/querySpec'
+import { Download } from 'lucide-react'
+import { IconButton } from '../primitives/IconButton'
 import { ActionButton } from './ActionButton'
 import { RefreshControl } from './RefreshControl'
 import { compareRows, useRefresh } from './useRefresh'
@@ -26,6 +28,8 @@ export interface ListResource<T> {
   meta: () => Promise<ListMeta>
   /** One record by id: a record asked for from elsewhere opens with its data. */
   get?: (id: number) => Promise<T>
+  /** The CSV of every row a query selects (the server's export.csv): needed for `onExport`. */
+  exportPath?: (spec: QuerySpec) => string
 }
 
 export interface ListContext<T> {
@@ -64,6 +68,9 @@ export interface ListPageProps<T extends { id: number }> {
   searchable?: boolean
   errorMessages?: Record<string, string>
   toolbar?: (ctx: ListContext<T>) => ReactNode
+  /** Export CSV in the toolbar: every row of the list as it is filtered and sorted now (not only
+   *  this page). Gets the resource's export path; downloads it (the page names the file). */
+  onExport?: (path: string) => Promise<unknown> | void
   /** Between the header and the table (e.g. a page-level error). */
   notice?: ReactNode
   /** Poll while something is running, e.g. rows => rows.some(running) ? 3000 : false. */
@@ -191,6 +198,13 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   const toolbar = (
     <>
       <RefreshControl state={refresh} />
+      {props.onExport && resource.exportPath && (
+        <IconButton label="Export CSV" icon={<Download className="h-4 w-4" />} className="h-8 w-8 rounded-lg border border-neutral-200 bg-white"
+          onClick={() => {
+            Promise.resolve(props.onExport!(resource.exportPath!(spec))).then(() => notices.notify({ key: 'csv', tone: 'success', text: 'CSV exported' }),
+              (e: unknown) => notices.notify({ key: 'csv', tone: 'error', text: `Export failed: ${errorText(e, props.errorMessages)}` }))
+          }} />
+      )}
       {props.toolbar?.(ctx)}
       {create && <ActionButton size="sm" permission={create.permission} onAction={() => setCreating(true)}>{create.label}</ActionButton>}
     </>

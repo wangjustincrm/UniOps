@@ -8,6 +8,7 @@ import InventoryPage from '@/features/inventory/InventoryPage'
 import RunsPage from '@/features/operations/RunsPage'
 import DeliveryPage from '@/features/invoices/DeliveryPage'
 import InvoicesPage from '@/features/invoices/InvoicesPage'
+import PaymentsPage from '@/features/payments/PaymentsPage'
 import TransfersPage from '@/features/transfers/TransfersPage'
 import WarehousesPage from '@/features/configuration/warehouses/WarehousesPage'
 import CarriersPage from '@/features/configuration/carriers/CarriersPage'
@@ -55,6 +56,7 @@ export const moduleRoutes: RouteDef[] = [
   { path: '/inventory', element: <InventoryPage />, tab: { title: 'Inventory', icon: 'Warehouse', keyStrategy: 'static' } },
   { path: '/deliveries', element: <DeliveryPage />, tab: { title: 'Delivery confirmation', icon: 'Truck', keyStrategy: 'static' } },
   { path: '/invoices', element: <InvoicesPage />, tab: { title: 'Invoices', icon: 'Receipt', keyStrategy: 'static' } },
+  { path: '/payments', element: <PaymentsPage />, tab: { title: 'Payments', icon: 'CreditCard', keyStrategy: 'static' } },
   { path: '/transfers', element: <TransfersPage />, tab: { title: 'Transfers', icon: 'ArrowLeftRight', keyStrategy: 'static' } },
   { path: '/config/warehouses', element: <WarehousesPage />, tab: { title: 'Warehouses', icon: 'Warehouse', keyStrategy: 'static' } },
   { path: '/config/carriers', element: <CarriersPage />, tab: { title: 'Carriers', icon: 'Truck', keyStrategy: 'static' } },
