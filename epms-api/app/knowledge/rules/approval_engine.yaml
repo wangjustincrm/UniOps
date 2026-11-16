@@ -1,7 +1,7 @@
 area: approval_engine
 label: How approval chains behave
 covers: >
-  Resuming after a return, recalling, the same person on consecutive steps, a vacant post, the System Admin, who may approve/return/reject/cancel, cross-department payments, approving only inside UniOps, approval buttons.
+  Resuming after a return, recalling, editing a workflow while documents are in approval, the same person on consecutive steps, a vacant post, the System Admin, who may approve/return/reject/cancel, cross-department payments, approving only inside UniOps, approval buttons.
 remote: approval-api
 rules:
   - id: approve_only_in_the_system

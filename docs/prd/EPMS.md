@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.54
-**Date:** 2026-11-12
+**Version:** 2.55
+**Date:** 2026-11-16
 **Status:** In Production
+
+> **v2.55 (2026-11-16)** — Editing an approval workflow moves the documents already in approval onto the new steps (PORTAL.md WF-P-009). A document stores only its step *number*, so after the PA (Direct) chain's Finance Manager and Finance BP steps were swapped, 27 Direct PAs sat "at" the Finance BP step with their task still on the Finance Manager, and every Direct PA's approval line was mislabelled. Approvals already given stand; a document with every new step given is approved and gets EPMS's approval follow-up (PDF, requester e-mail, settlement, agreement schedule, signed PO PDF).
 
 > **v2.54 (2026-11-12)** — The 3-Way Match tab shows the PO, receipt and invoice on one basis, pre-tax, the basis the variance is measured on (INV-3WM-001); each document's tax-inclusive amount is shown under it. INV-2026-0243 read PO CA$492.80 (pre-tax) against GR and Invoice CA$556.86 (tax-inclusive) with a variance of 0. A PO mirrored from NC keeps NC's tax-inclusive line amounts, so a receipt priced from those lines is brought back to pre-tax with that PO's own pre-tax share (subtotal ÷ (subtotal + tax)).
 
@@ -568,7 +570,7 @@ The engine is designed around two concepts:
 - **Workflow** — an ordered list of named approval steps, each specifying a role token.
 - **Action Key** — a string identifier that binds a document/form type to a workflow. Every submission event carries an action key; the engine looks up the bound workflow and executes it.
 
-Workflows and their bindings are configured in **Portal Admin Panel → Approval Workflows** (PORTAL.md §5.8) and stored in `CompanyConfig.workflow_defs[action_key]`. Department-level routing (GM or OPM, Director, Supervisor layer) is configured separately in **Portal → Admin → Approval Routing** (§3.3.8).
+Workflows and their bindings are configured in **Portal Admin Panel → Approval Workflows** (PORTAL.md §5.8) and stored in `CompanyConfig.workflow_defs[action_key]`. Saving an edited workflow moves documents already in approval onto the new steps — approvals given stand, an added step a document already passed is not sent back for, a document with every step given is approved (PORTAL.md WF-P-009). Department-level routing (GM or OPM, Director, Supervisor layer) is configured separately in **Portal → Admin → Approval Routing** (§3.3.8).
 
 #### 3.3.1 Action Keys
 
