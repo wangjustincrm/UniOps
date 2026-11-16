@@ -117,7 +117,7 @@ def test_the_step_follows_the_orders_own_facts():
     assert step(WAITING_DELIVERY, F.SHIPPED.value, invoice=WAITING, runs_on=False) == "shipped"
     assert step(WAITING_INVOICE, F.SHIPPED.value, invoice=Inv.QUEUED.value, runs_on=False) == "invoice.runs_off"
     # a made 940 (GENERATED) can't be sent by hand: with runs off no step names Send 940 now
-    assert step(WAITING_TO_SEND, F.GENERATED_940.value, runs_on=False) is None
+    assert step(WAITING_TO_SEND, F.GENERATED_940.value, runs_on=False) == "send.made_runs_off"  # names no button
     assert step(WAITING_TO_SEND, F.GENERATED_940.value) == "send.next_run"
     # the test run: Zoho sends it, so no step
     assert step(WAITING_TO_SEND, shadow=True) is None and step(WAITING_945, F.ACCEPTED_940.value, shadow=True) is None

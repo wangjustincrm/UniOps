@@ -112,6 +112,7 @@ STEPS: dict[str, Step] = {
     "fulfilling": Step(WAREHOUSE, "Waiting for the warehouse's 945."),
     "fulfilling.tracking": Step(NOBODY, "The tracking is being written to Shopify."),
     "send.runs_off": Step(YOU, "Automatic runs are off: Send 940 now, or turn them on in Connections.", ("Send 940 now",)),
+    "send.made_runs_off": Step(YOU, "Automatic runs are off: the 940 is made and goes out once they are turned on in Connections."),
     "shipped": Step(YOU, "Confirm delivery once it has been delivered.", ("Confirm delivery",)),
     "shipped.late": Step(YOU, "Delivery was due: confirm it if it has been delivered."),
     "shipped.awaiting": Step(NOBODY, "Nothing to do until the requested delivery date; then confirm delivery."),
@@ -151,8 +152,8 @@ def next_step_key(d: Display, f: StatusFacts, n: DetailFacts, today: date, *, ru
     if s == WAITING_TO_SEND:
         if f.fulfillment == F.PENDING and n.manual_sending:
             return "send.manual"
-        if not runs_on:  # a made 940 (GENERATED) can't be sent by hand: no step until its text is approved
-            return "send.runs_off" if f.fulfillment == F.PENDING else None
+        if not runs_on:  # a made 940 (GENERATED) can't be sent by hand: it waits for the runs
+            return "send.runs_off" if f.fulfillment == F.PENDING else "send.made_runs_off"
         return "send.delay" if f.fulfillment == F.PENDING and n.send_at and not f.delay_over else "send.next_run"
     if s == WAITING_997:
         return "sent"
