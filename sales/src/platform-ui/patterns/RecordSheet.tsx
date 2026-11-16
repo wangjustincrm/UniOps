@@ -6,6 +6,7 @@ import { IconButton } from '../primitives/IconButton'
 import { Sheet, SheetClose, SheetTitle, type SheetSize } from '../primitives/Sheet'
 import { Button, Skeleton } from '../primitives/shell'
 import { EmptyState } from '../primitives/States'
+import { AutoGrid } from '../primitives/Layout'
 import { Tabs } from '../primitives/Tabs'
 import { UnsavedBoundary, useUnsavedScope, whenDiscarded } from '../primitives/unsaved'
 import { BusyBar } from '../primitives/BusyBar'
@@ -114,7 +115,7 @@ const FACT_TONE: Record<FactTone, string> = {
 /** The record's key numbers, as tiles under the header. */
 function Facts({ facts }: { facts: RecordFact[] }) {
   return (
-    <dl aria-label="Key facts" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fit,minmax(8rem,1fr))]">
+    <AutoGrid as="dl" aria-label="Key facts" min="8.5rem" gap={2}>
       {facts.map((f) => (
         <div key={f.label} data-tone={f.tone ?? 'neutral'} className={cn('flex min-w-0 flex-col gap-0.5 rounded-lg border px-3 py-2', FACT_TONE[f.tone ?? 'neutral'])}>
           <dt className="truncate text-xs font-medium text-neutral-500">{f.label}</dt>
@@ -122,7 +123,7 @@ function Facts({ facts }: { facts: RecordFact[] }) {
           {f.hint && <dd className="truncate text-xs text-neutral-500">{f.hint}</dd>}
         </div>
       ))}
-    </dl>
+    </AutoGrid>
   )
 }
 

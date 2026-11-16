@@ -84,7 +84,7 @@ function ItemSheet({ row }: { row: StockItemRead }) {
     ) },
     { id: 'moves', label: 'Stock card', count: movesQ.data?.total, render: () => (
       <Section title="Every move, newest first" plain>
-        <div className="flex items-center gap-2 text-xs text-neutral-500">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
           {(movesQ.data?.total ?? 0) > moves.length ? `The latest ${moves.length} of ${movesQ.data?.total}; the CSV has every one.` : 'Every move of this item.'}
           <ExportButton client={stockMovesClient} spec={{ ...spec, pageSize: 50 }} name={`stock-card-${row.item_code}.csv`} />
         </div>

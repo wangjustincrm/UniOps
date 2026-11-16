@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { cn } from '../lib/cn'
 import { BusyBar } from './BusyBar'
+import { useMediaQuery } from './useResponsive'
 
 /** The table's card (the user, 2026-11-03: "the footer always needs scrolling
  *  to reach"): the rows scroll inside it — sideways too — under a sticky header
@@ -77,8 +78,11 @@ export function TableCard({ children, busy, fit, highlight, bar }: {
 function useFitHeight(card: React.RefObject<HTMLDivElement | null>, scroll: React.RefObject<HTMLDivElement | null>,
   fit: 'viewport' | number | undefined): number | undefined {
   const [h, setH] = useState<number | undefined>(undefined)
+  // A phone: no scroll inside the page's scroll (two scrolls under one thumb, and a header, a
+  // notice and the chips leave the rows a sliver): the rows flow with the page, the bar sticks.
+  const phone = useMediaQuery('(max-width: 639px)')
   useEffect(() => {
-    if (fit !== 'viewport') return
+    if (fit !== 'viewport' || phone) return
     const el = card.current
     if (!el) return
     const parent = scrollParent(el)
@@ -96,7 +100,8 @@ function useFitHeight(card: React.RefObject<HTMLDivElement | null>, scroll: Reac
     if (el.parentElement) ro?.observe(el.parentElement)
     window.addEventListener('resize', measure)
     return () => { cancelAnimationFrame(first); ro?.disconnect(); window.removeEventListener('resize', measure) }
-  }, [fit, card, scroll])
+  }, [fit, card, scroll, phone])
+  if (phone && fit === 'viewport') return undefined
   return typeof fit === 'number' ? fit : fit === 'viewport' ? h : undefined
 }
 

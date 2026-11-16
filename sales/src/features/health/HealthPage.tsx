@@ -82,7 +82,7 @@ export default function HealthPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Health" description="Checks of the settings, connections, scheduler, files, ACKs and sends. Each one opens the records behind it." />
-      <div className="flex items-center gap-3 text-sm">
+      <div className="flex flex-wrap items-center gap-3 text-sm">
         <HealthBadge result={h.result} /><span>checked {formatDateTime(h.checked_at)}</span>
       </div>
       <section aria-label="Counts" className="grid grid-cols-2 gap-3 md:grid-cols-5">

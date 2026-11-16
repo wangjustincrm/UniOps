@@ -75,7 +75,7 @@ function Body({ source, onReady }: { source: FileSource; onReady: (v: Ready | nu
   return (
     <div className="space-y-2">
       {v.pretty && (
-        <div className="flex items-center gap-2 text-xs text-neutral-500">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
           <span>{asReceived ? 'As the file is.' : 'Laid out to read (one segment or field per line); the file itself is unchanged.'}</span>
           <Button size="sm" variant="secondary" onClick={() => setAsReceived(!asReceived)}>{asReceived ? 'Laid out' : 'As the file is'}</Button>
         </div>

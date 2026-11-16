@@ -35,7 +35,7 @@ function AttachDialog({ type, id, open, onOpenChange }: { type: RecordType; id: 
           onAction={async () => { await attachFile(type, id, file!, note.trim() || null); close() }}>Attach</ActionButton>
       </>}>
       <div className="space-y-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <FilePicker label="File to attach" accept={ACCEPT} onFile={setFile}>{file ? 'Choose another file' : 'Choose a file'}</FilePicker>
           <span className="min-w-0 break-all text-sm text-neutral-700">{file ? `${file.name} · ${size(file.size)}` : 'No file chosen'}</span>
         </div>

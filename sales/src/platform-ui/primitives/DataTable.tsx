@@ -3,7 +3,7 @@ import {
   getCoreRowModel, useReactTable,
   type ColumnDef, type SortingState, type Updater,
 } from '@tanstack/react-table'
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, GripVertical } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react'
 import { Button, Input, Pagination, Skeleton, SkeletonRow } from './shell'
 import { DropdownMenu } from './DropdownMenu'
 import { useElementWidth } from './useResponsive'
@@ -199,7 +199,7 @@ export function DataTable<T>({
     </button>
   )
 
-  const pager = pagination && pagination.total > 0 ? (
+  const pager = pagination && pagination.total > 0 ? (cards ? <CompactPager {...pagination} /> : (
     <Pagination
       page={pagination.page}
       pageSize={pagination.pageSize}
@@ -207,7 +207,7 @@ export function DataTable<T>({
       onPageChange={pagination.onPageChange}
       onPageSizeChange={pagination.onPageSizeChange}
     />
-  ) : null
+  )) : null
   const headerById = new Map((table.getHeaderGroups()[0]?.headers ?? []).map((h) => [h.column.id, h]))
   const headerIds = (table.getHeaderGroups()[0]?.headers ?? []).map((h) => h.column.id)
   const headerLabel = (id: string) => {
@@ -500,6 +500,25 @@ export function DataTable<T>({
 
       {!statusBar && pager}
     </div>
+  )
+}
+
+/** The pages in a narrow (card) view: ‹ 1–50 of 116 › on one short line; the page size stays as chosen. */
+function CompactPager({ page, pageSize, total, onPageChange }: { page: number; pageSize: number; total: number; onPageChange: (page: number) => void }) {
+  const last = Math.max(1, Math.ceil(total / pageSize))
+  const from = (page - 1) * pageSize + 1
+  const to = Math.min(page * pageSize, total)
+  const btn = 'inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-100 disabled:opacity-30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600'
+  return (
+    <nav aria-label="Pages" data-compact-pager className="flex items-center gap-1 text-xs tabular-nums text-neutral-600">
+      <button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => onPageChange(page - 1)} className={btn}>
+        <ChevronLeft className="h-4 w-4" aria-hidden />
+      </button>
+      <span>{from}–{to} of {total}</span>
+      <button type="button" aria-label="Next page" disabled={page >= last} onClick={() => onPageChange(page + 1)} className={btn}>
+        <ChevronRight className="h-4 w-4" aria-hidden />
+      </button>
+    </nav>
   )
 }
 

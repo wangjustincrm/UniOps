@@ -260,7 +260,7 @@ function UploadForm({ done, cancel }: { done: (c?: StockCountRead) => void; canc
       <p className="text-sm text-neutral-600">
         The inventory report from Radiant's portal (CSV or Excel), by pallet or by lot. Nothing changes until you apply it.
       </p>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <FilePicker label="Report file" accept=".csv,.xlsx,.txt" onFile={setFile}>{file ? 'Choose another file' : 'Choose the file'}</FilePicker>
         <span className="min-w-0 break-all text-sm text-neutral-700">{file ? file.name : 'No file chosen'}</span>
       </div>

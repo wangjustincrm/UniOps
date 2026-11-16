@@ -152,7 +152,7 @@ function ValueInput({ field, draft, set, autoFocus, suggest }: {
         : <NumberInput aria-label={aria} value={value} autoFocus={focus} onChange={(e) => onValue(e.target.value)} />
   if (draft.op === 'between') {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {one(`${field.label}: from`, draft.low, (low) => set({ low }), autoFocus)}
         <span className="text-neutral-400">and</span>
         {one(`${field.label}: to`, draft.high, (high) => set({ high }), false)}

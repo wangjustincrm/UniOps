@@ -1,6 +1,6 @@
 import { act, fireEvent, render, renderHook, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ActionBar, AutoGrid, Cluster, Responsive, Toolbar, columnsOf, useBreakpoint } from './index'
+import { ActionBar, AutoGrid, Cluster, DetailList, Responsive, Toolbar, columnsOf, useBreakpoint } from './index'
 import { DataTable } from './primitives/DataTable'
 
 // The responsive layout primitives (2026-11-16).
@@ -133,5 +133,29 @@ describe('DataTable card view (narrow)', () => {
     stubWidth(360)
     render(<DataTable columns={columns} rows={rows} rowKey={(r) => r.id} ariaLabel="Orders" cardsBelow={false} />)
     expect(screen.getByRole('table', { name: 'Orders' })).toBeInTheDocument()
+  })
+})
+
+describe('step 3: pages, details, facts', () => {
+  type Row = { id: number; ref: string }
+  const rows: Row[] = [{ id: 1, ref: 'A' }]
+  const columns = [columnsOf<Row>().text('ref', 'Ref')]
+  it('a narrow table pages with one short line (‹ 51–100 of 116 ›), the wide one with the full pager', () => {
+    stubWidth(360)
+    const onPage = vi.fn()
+    render(<DataTable columns={columns} rows={rows} rowKey={(r) => r.id} ariaLabel="T"
+      pagination={{ page: 2, pageSize: 50, total: 116, onPageChange: onPage, onPageSizeChange: () => {} }} />)
+    const nav = screen.getByRole('navigation', { name: 'Pages' })
+    expect(nav).toHaveTextContent('51–100 of 116')
+    fireEvent.click(within(nav).getByRole('button', { name: 'Next page' }))
+    fireEvent.click(within(nav).getByRole('button', { name: 'Previous page' }))
+    expect(onPage.mock.calls).toEqual([[3], [1]])
+    expect(screen.queryByText('Per page:')).toBeNull()
+  })
+  it('DetailList follows its own box: stacked when very narrow, a label column from @xs', () => {
+    render(<DetailList items={[['Partner', 'Acme']]} />)
+    const dl = screen.getByText('Partner').closest('dl')!
+    expect(dl.parentElement).toHaveClass('@container')
+    expect(dl).toHaveClass('grid-cols-1', '@xs:grid-cols-[minmax(6rem,40%)_minmax(0,1fr)]', '@md:grid-cols-[10rem_minmax(0,1fr)]')
   })
 })

@@ -54,7 +54,7 @@ const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<
     </span>) },
   { accessorKey: 'invoice_amount', header: 'Invoice amount', cell: ({ row }) => row.original.invoice_amount == null ? '—'
     : <MoneyCell amount={row.original.invoice_amount} currency={currency} /> },
-  { accessorKey: 'state', header: 'Line status', cell: ({ row }) => row.original.state
+  { accessorKey: 'state', header: 'Line status', meta: { card: 'badge' }, cell: ({ row }) => row.original.state
     ? <StatusCell value={row.original.state} tone={stateTones[row.original.state]} /> : '' },
   { accessorKey: 'problem', header: 'Note', cell: ({ row }) => (
     <span className={row.original.problem && !row.original.removed ? 'text-danger-600' : ''}>{row.original.problem ?? ''}</span>
