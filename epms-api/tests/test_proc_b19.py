@@ -79,3 +79,29 @@ async def test_collect_keeps_the_line_conditions_in_the_notes_and_raises_no_task
             Task.document_id == _uuid.UUID(gr_id),
             Task.is_completed.is_(False)))).scalars().all()
     assert open_tasks == []
+
+
+# ── ISS-0226: a cancelled GR is no longer pending ───────────────────────────
+
+async def test_a_cancelled_gr_no_longer_counts_as_pending(admin_client, test_engine):
+    po, _ = await _make_issued_po(admin_client, test_engine, "VND-B19-01")
+    pl = await _po_line_id(admin_client, po["id"])
+
+    r = await admin_client.post(GR_URL, json=_gr_payload(po["id"], line_items=[_line(pl, 2)]))
+    assert r.status_code == 201, r.text
+    gr_id = r.json()["id"]
+
+    async def open_row():
+        r = await admin_client.get(f"{GR_URL}/open-quantities", params={"po_id": po["id"]})
+        assert r.status_code == 200, r.text
+        row = r.json()[0]
+        return float(row["pending"]), float(row["open"])
+
+    assert await open_row() == (2.0, 0.0)
+    r = await admin_client.post(f"{GR_URL}/{gr_id}/action", json={"action": "cancel"})
+    assert r.status_code == 200, r.text
+    assert await open_row() == (0.0, 2.0)
+    # And a new GR for the full quantity needs no over-receipt reason.
+    r = await admin_client.post(GR_URL, json=_gr_payload(po["id"], line_items=[_line(pl, 2)]))
+    assert r.status_code == 201, r.text
+    assert r.json()["over_receipt_reason"] is None

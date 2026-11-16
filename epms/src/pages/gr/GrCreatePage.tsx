@@ -142,7 +142,10 @@ export default function GrCreatePage() {
   useEffect(() => {
     if (!selectedPoId) { appliedForPoRef.current = null; setLineItems([]); return }
     if (!selectedPo) return
-    if (!openQtyQuery.isFetched) return
+    // Fetched for this page, not just cached: the cache can still hold the
+    // figures from before a GR was created or cancelled elsewhere in the
+    // session (Pending 5 after Cancel GR, until a reload — ISS-0226).
+    if (!openQtyQuery.isFetchedAfterMount) return
     if (appliedForPoRef.current === selectedPoId) return
     appliedForPoRef.current = selectedPoId
     const openByLine = new Map((openQtyQuery.data ?? []).map((o) => [o.po_line_id, o]))
@@ -175,7 +178,7 @@ export default function GrCreatePage() {
     // Pre-filled from the PO's delivery address and editable. Whether the
     // warehouse should fill in the bay instead (ISS-0132) is an open question.
     if (selectedPo.delivery_address) setStorageLocation(selectedPo.delivery_address)
-  }, [selectedPoId, selectedPo, openQtyQuery.isFetched, openQtyQuery.data])
+  }, [selectedPoId, selectedPo, openQtyQuery.isFetchedAfterMount, openQtyQuery.data])
 
   const updateLine = (idx: number, patch: Partial<FormGrLineItem>) => {
     setLineItems((prev) => {
