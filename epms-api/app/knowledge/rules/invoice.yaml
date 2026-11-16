@@ -132,7 +132,9 @@ rules:
       match tolerance (5% unless changed). It cannot be changed in any
       screen. Billing less than the PO line always passes (partial
       invoicing); over-billing beyond the tolerance puts the invoice in
-      Exception.
+      Exception. Every invoice on the PO line counts, not just this one; an
+      invoice matched to the PO as a whole (not to a line) is compared with
+      everything billed on the PO against its pre-tax subtotal.
     provenance: derived
     derive: invoice_match_tolerance
     enforced_in: "epms-api app/crud/invoice.py _match_tolerance_pct / within_tolerance / match(); app/models/config.py invoice_match_tolerance_pct server_default 5; app/schemas/config.py ConfigUpdate has no such field"

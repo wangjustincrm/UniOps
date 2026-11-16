@@ -42,6 +42,50 @@ logger = logging.getLogger(__name__)
 
 # ── Claimed receipts (Task 5) ───────────────────────────────────────────────────
 
+async def _cumulative_figures(
+    db: AsyncSession, keys: list[tuple[uuid.UUID, uuid.UUID | None]],
+) -> list[tuple[Decimal, Decimal]] | None:
+    """(pre-tax invoiced by all invoices, PO pre-tax reference) per allocated
+    (po_id, po_line_id) — the figures INV-3WM-001 measures variance on.
+
+    A PO line is measured against what every invoice allocated to that line.
+    A header-level allocation compares against the PO pre-tax subtotal, so it
+    is measured against everything billed on the PO — line-level allocations
+    of other invoices included (ISS-0229: a header match on a PO already
+    billed in full line by line used to see only the header allocations and
+    pass as "partially invoiced"). None when a reference no longer exists."""
+    out: list[tuple[Decimal, Decimal]] = []
+    for po_id, po_line_id in keys:
+        if po_line_id is not None:
+            reference = (await db.execute(
+                select(PoLineItem.line_total).where(PoLineItem.id == po_line_id)
+            )).scalar_one_or_none()
+        else:
+            reference = (await db.execute(
+                select(PurchaseOrder.subtotal).where(PurchaseOrder.id == po_id)
+            )).scalar_one_or_none()
+        if reference is None:
+            return None
+        # Pre-tax on both sides: sum allocated_amount, not allocated_total.
+        q = select(func.coalesce(func.sum(InvoicePoAllocation.allocated_amount), Decimal("0"))) \
+            .where(InvoicePoAllocation.po_id == po_id)
+        if po_line_id is not None:
+            q = q.where(InvoicePoAllocation.po_line_id == po_line_id)
+        invoiced = (await db.execute(q)).scalar_one() or Decimal("0")
+        out.append((invoiced, reference))
+    return out
+
+
+def _out_of_tolerance_reason(prefix: str, figures: list[tuple[Decimal, Decimal]]) -> str:
+    """Exception reason quoting the cumulative pre-tax figures that decided it
+    (ISS-0129): the over-billed lines only when any is over, else all."""
+    over = [(i, r) for i, r in figures if i > r] or figures
+    invoiced = sum((i for i, _ in over), Decimal("0"))
+    reference = sum((r for _, r in over), Decimal("0"))
+    return (f"{prefix} (all invoices pre-tax {invoiced:.2f} "
+            f"vs PO pre-tax {reference:.2f})")
+
+
 async def attach_cumulative_variance(db: AsyncSession, invoice: Invoice) -> None:
     """Put the variance that decides Matched / Exception on the invoice for its
     detail page (ISS-0129). match() measures each allocated PO line against the
@@ -57,24 +101,10 @@ async def attach_cumulative_variance(db: AsyncSession, invoice: Invoice) -> None
     if not rows:
         return
     keys = list(dict.fromkeys((a.po_id, a.po_line_id) for a in rows))
-    per_key: list[tuple[Decimal, Decimal]] = []
-    for po_id, po_line_id in keys:
-        if po_line_id is not None:
-            reference = (await db.execute(
-                select(PoLineItem.line_total).where(PoLineItem.id == po_line_id)
-            )).scalar_one_or_none()
-        else:
-            reference = (await db.execute(
-                select(PurchaseOrder.subtotal).where(PurchaseOrder.id == po_id)
-            )).scalar_one_or_none()
-        if reference is None:
-            return
-        q = select(func.coalesce(func.sum(InvoicePoAllocation.allocated_amount), Decimal("0"))) \
-            .where(InvoicePoAllocation.po_id == po_id)
-        q = q.where(InvoicePoAllocation.po_line_id == po_line_id) if po_line_id is not None \
-            else q.where(InvoicePoAllocation.po_line_id.is_(None))
-        invoiced = (await db.execute(q)).scalar_one() or Decimal("0")
-        per_key.append((invoiced - reference, reference))
+    figures = await _cumulative_figures(db, keys)
+    if figures is None:
+        return
+    per_key = [(invoiced - reference, reference) for invoiced, reference in figures]
     over = [(v, r) for v, r in per_key if v > Decimal("0")]
     chosen = over or per_key
     variance = sum((v for v, _ in chosen), Decimal("0"))
@@ -84,9 +114,11 @@ async def attach_cumulative_variance(db: AsyncSession, invoice: Invoice) -> None
         (variance / reference * 100).quantize(Decimal("0.0001"))
         if reference != Decimal("0") else Decimal("0"))
 
+    # A header-level key is measured against everything billed on the PO
+    # (ISS-0229), so its "other invoices" are every invoice on that PO.
     conds = [and_(InvoicePoAllocation.po_id == po_id,
-                  InvoicePoAllocation.po_line_id == po_line_id if po_line_id is not None
-                  else InvoicePoAllocation.po_line_id.is_(None))
+                  InvoicePoAllocation.po_line_id == po_line_id) if po_line_id is not None
+             else InvoicePoAllocation.po_id == po_id
              for po_id, po_line_id in keys]
     invoice.cumulative_other_invoices = list((await db.execute(
         select(Invoice.internal_ref).distinct()
@@ -1275,27 +1307,10 @@ async def match(
     await db.flush()
 
     # 4. per (po_id, po_line_id) variance vs reference, across ALL invoices
-    for row in new_rows:
-        po = po_cache[row.po_id]
-        if row.po_line_id is not None:
-            reference = (await db.execute(
-                select(PoLineItem.line_total).where(PoLineItem.id == row.po_line_id)
-            )).scalar_one()
-        else:
-            reference = po.subtotal   # pre-tax PO total (header-level fallback)
-
-        # Reference (PoLineItem.line_total / po.subtotal) is PRE-TAX, so the
-        # invoiced side must be pre-tax too — sum allocated_amount (pre-tax),
-        # NOT allocated_total (tax-inclusive). Mirrors the header integrity
-        # check above which also compares pre-tax allocated_amount.
-        q = select(func.coalesce(func.sum(InvoicePoAllocation.allocated_amount), Decimal("0"))) \
-            .where(InvoicePoAllocation.po_id == row.po_id)
-        if row.po_line_id is not None:
-            q = q.where(InvoicePoAllocation.po_line_id == row.po_line_id)
-        else:
-            q = q.where(InvoicePoAllocation.po_line_id.is_(None))
-        invoiced = (await db.execute(q)).scalar_one() or Decimal("0")
-
+    # (references validated in step 2, so the figures are never None here)
+    row_figures = await _cumulative_figures(
+        db, [(row.po_id, row.po_line_id) for row in new_rows]) or []
+    for row, (invoiced, reference) in zip(new_rows, row_figures):
         variance = invoiced - reference
         variance_pct = (
             (variance / reference * 100).quantize(Decimal("0.0001"))
@@ -1391,11 +1406,11 @@ async def match(
         invoice.status = "exception"
         # Pre-tax on both sides, the figures the variance is measured on
         # (INV-3WM-001) — total_amount includes tax, the PO reference does not.
-        invoice.exception_reason = (
-            "One or more PO lines are outside tolerance "
-            f"(invoice pre-tax {summary_reference + invoice.variance:.2f} "
-            f"vs PO pre-tax {summary_reference:.2f})"
-        )
+        # The cumulative figures that decided it (ISS-0129), one per PO line.
+        invoice.exception_reason = _out_of_tolerance_reason(
+            "One or more PO lines are outside tolerance",
+            list(dict(zip([(r.po_id, r.po_line_id) for r in new_rows],
+                          row_figures)).values()))
     else:
         invoice.status = "matched"
         if invoice.variance is not None and invoice.variance < Decimal("0"):
@@ -1613,13 +1628,19 @@ async def review_match(
         )
         if any_exception:
             invoice.status = "exception"
-            # Pre-tax on both sides, as in match() (INV-3WM-001).
-            po_pre_tax = invoice.po_total or Decimal("0")
-            invoice.exception_reason = (
-                "Reviewed: variance outside tolerance "
-                f"(invoice pre-tax {po_pre_tax + (invoice.variance or Decimal('0')):.2f} "
-                f"vs PO pre-tax {po_pre_tax:.2f})"
-            )
+            # Pre-tax cumulative figures, as in match() (INV-3WM-001, ISS-0129).
+            figures = await _cumulative_figures(
+                db, list(dict.fromkeys((r.po_id, r.po_line_id) for r in rows)))
+            if figures:
+                invoice.exception_reason = _out_of_tolerance_reason(
+                    "Reviewed: variance outside tolerance", figures)
+            else:
+                po_pre_tax = invoice.po_total or Decimal("0")
+                invoice.exception_reason = (
+                    "Reviewed: variance outside tolerance "
+                    f"(invoice pre-tax {po_pre_tax + (invoice.variance or Decimal('0')):.2f} "
+                    f"vs PO pre-tax {po_pre_tax:.2f})"
+                )
         else:
             invoice.status = "matched"
             invoice.exception_reason = (
