@@ -1087,6 +1087,10 @@ def test_report_types_are_the_routers():
 def test_vendor_pickers_list_active_vendors_only():
     for page in ("pr/PrCreatePage.tsx", "po/PoCreatePage.tsx", "agreements/AgreementCreatePage.tsx"):
         assert "active_only: true" in _src(f"epms/src/pages/{page}"), page
+    # PO-006 / VND-002 on the server for POs (ISS-0267).
+    from app.api.v1 import po
+    for fn in (po.create_po, po.update_po, po.po_action):
+        assert "_refuse_inactive_vendor(" in inspect.getsource(fn), fn.__name__
 
 
 def test_vendor_edits_leave_no_history():
