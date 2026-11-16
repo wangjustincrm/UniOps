@@ -257,3 +257,19 @@ describe('column help (withHelp)', () => {
     expect(await screen.findByText('At the warehouse now.')).toBeInTheDocument()
   })
 })
+
+describe('card help shows once', () => {
+  type Row = { id: number; s: number; r: number }
+  const col = columnsOf<Row>()
+  it('only on the first card, and once per help id within it', async () => {
+    const { HelpProvider, withHelp } = await import('./index')
+    const columns = [col.text('id', 'Id'), withHelp(col.number('s', 'In'), 'term:In, Out'), withHelp(col.number('r', 'Out'), 'term:In, Out')]
+    stubWidth(360)
+    render(<HelpProvider source={() => ({ body: 'What came in and went out.' })}>
+      <DataTable columns={columns} rows={[{ id: 1, s: 1, r: 0 }, { id: 2, s: 2, r: 0 }]} rowKey={(r) => r.id} ariaLabel="P" />
+    </HelpProvider>)
+    const [first, second] = within(screen.getByRole('list', { name: 'P' })).getAllByRole('listitem')
+    expect(within(first).getAllByRole('button', { name: 'Help' })).toHaveLength(1)
+    expect(within(second).queryAllByRole('button', { name: 'Help' })).toHaveLength(0)
+  })
+})
