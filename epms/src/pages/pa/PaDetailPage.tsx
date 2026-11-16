@@ -391,6 +391,66 @@ function ProcessModal({ paId, paNumber, currency, amount, busy, error, onConfirm
   )
 }
 
+// ─── Recall / Withdraw confirmation ──────────────────────────────────────────
+
+/** In-page confirmation for the header's Recall and Withdraw, in the same
+ *  shape as the PA / agreement Reject dialogs, instead of the browser's
+ *  native confirm() (ISS-0115, ISS-0188). Neither asks a reason: the engine's
+ *  recall and cancel take none. */
+function HeaderActionConfirm({ action, paNumber, onConfirm, onClose }: {
+  action: 'recall' | 'cancel'
+  paNumber: string
+  onConfirm: () => void
+  onClose: () => void
+}) {
+  useCloseOnEscape(true, onClose)
+  const recall = action === 'recall'
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true">
+        <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', recall ? 'bg-warning-50' : 'bg-danger-50')}>
+              {recall
+                ? <RotateCcw className="h-5 w-5 text-warning-600" />
+                : <XCircle className="h-5 w-5 text-danger-600" />}
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-neutral-900">{recall ? 'Recall PA' : 'Withdraw PA'}</h2>
+              <p className="text-xs text-neutral-500">{paNumber}</p>
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="px-6 py-5 flex flex-col gap-4">
+          <p className="text-sm text-neutral-700">
+            {recall
+              ? 'It will be moved back to Draft; the next submit starts from the first approval step.'
+              : 'This will cancel the PA.'}
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+            <button
+              onClick={onConfirm}
+              autoFocus
+              className={cn(
+                'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-white transition-colors',
+                recall ? 'bg-primary-600 hover:bg-primary-700' : 'bg-danger-600 hover:bg-danger-700',
+              )}
+            >
+              {recall ? <RotateCcw className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+              {recall ? 'Recall' : 'Withdraw'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PaDetailPage() {
@@ -456,6 +516,7 @@ export default function PaDetailPage() {
   const [activeTab, setActiveTab] = useState<'details' | 'attachments' | 'history'>('details')
   const [pendingAction, setPendingAction] = useState<ApprovalAction | null>(null)
   const [processOpen, setProcessOpen] = useState(false)
+  const [confirmHeader, setConfirmHeader] = useState<'recall' | 'cancel' | null>(null)
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement>(null)
   useCloseOnEscape(moreOpen, () => setMoreOpen(false))
@@ -702,11 +763,7 @@ export default function PaDetailPage() {
               variant="secondary"
               className="gap-2"
               disabled={paHeaderAction.isPending}
-              onClick={() => {
-                if (confirm(`Recall ${pa.pa_number}? It will be moved back to Draft; the next submit starts from the first approval step.`)) {
-                  paHeaderAction.mutate({ action: 'recall' })
-                }
-              }}
+              onClick={() => setConfirmHeader('recall')}
             >
               <RotateCcw className="h-4 w-4" />
               Recall
@@ -717,11 +774,7 @@ export default function PaDetailPage() {
               variant="secondary"
               className="border-danger-200 text-danger-600 hover:bg-danger-50"
               disabled={paHeaderAction.isPending}
-              onClick={() => {
-                if (confirm(`Withdraw ${pa.pa_number}? This will cancel the PA.`)) {
-                  paHeaderAction.mutate({ action: 'cancel' })
-                }
-              }}
+              onClick={() => setConfirmHeader('cancel')}
             >
               Withdraw
             </Button>
@@ -1182,6 +1235,15 @@ export default function PaDetailPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {confirmHeader && (
+        <HeaderActionConfirm
+          action={confirmHeader}
+          paNumber={pa.pa_number}
+          onClose={() => setConfirmHeader(null)}
+          onConfirm={() => { setConfirmHeader(null); paHeaderAction.mutate({ action: confirmHeader }) }}
+        />
       )}
 
       {/* Approval modal */}
