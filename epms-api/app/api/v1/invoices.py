@@ -405,10 +405,12 @@ async def _create_or_renotify_create_pa(db, po, pr, invoice) -> None:
     is_nc_orphan = pr is None and po.source == "nc"
     if pr is None and not is_nc_orphan:   # non-NC PO with no PR → don't build create_pa
         return
+    # .first(): a PO that already carries duplicates (ISS-0172 follow-up) must
+    # re-notify on one of them, not 500 on MultipleResultsFound.
     existing = (await db.execute(select(Task).where(
         Task.type == "create_pa", Task.document_type == "po",
         Task.document_id == po.id, Task.is_completed.is_(False),
-    ))).scalar_one_or_none()
+    ).order_by(Task.created_at.desc()))).scalars().first()
     if existing is not None:
         queue_task_notification(existing, extra_vars={"invoice_number": invoice.internal_ref})
         return
