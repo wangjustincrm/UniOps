@@ -9,7 +9,7 @@ import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
 import { formatAmount, formatDate, formatQty, cn } from '@/lib/utils'
 import type { ApprovalStep, CurrentStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
-import { useConfig } from '@/hooks/useConfig'
+import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import { usePr, usePrAction, usePrEvents, usePrWorkflowSteps } from '@/hooks/usePrs'
 import { useApprovalReminder } from '@/hooks/useApprovalReminder'
 import { prService } from '@/services/pr'
@@ -17,6 +17,7 @@ import type { ApiEvent } from '@/services/pr'
 import { historyLine } from '@/lib/approvalHistory'
 import { buildApprovalNodes } from '@/lib/approvalTimeline'
 import { useTasks } from '@/hooks/useTasks'
+import { holdsApproveTask } from '@/lib/stepHolder'
 import { useCloseOnEscape } from '@/hooks/useCloseOnEscape'
 import { useBudgetOverview, useFactors } from '@/hooks/useBudget'
 import { usePrAttachments, useUploadAttachment, useDeleteAttachment, useRegeneratePrPdf } from '@/hooks/usePrAttachments'
@@ -245,8 +246,11 @@ export default function PrDetailPage() {
   // is the only reliable way to determine canApprove — role string comparison
   // alone breaks for routing tokens (gm_or_opm) and multi-role users (PRD §1.2, §3.3.6).
   const { data: myTasks } = useTasks({ is_completed: false })
-  const hasApproveTask = !!pr && !!(myTasks?.items ?? []).some(
-    (t) => t.document_id === pr.id && t.type === 'approve_pr'
+  // Only the viewer's own task counts — an admin's list holds everyone's
+  // (ISS-0156; lib/stepHolder.ts).
+  const myRoles = useRolePermissions().data?.roles
+  const hasApproveTask = !!pr && !!user && holdsApproveTask(
+    myTasks?.items ?? [], pr.id, 'approve_pr', user, myRoles,
   )
   // system_admin bypass per PRD §3.3.6 — admin can act on any submitted/in_review doc.
   const isAdmin = user?.role === 'system_admin'
