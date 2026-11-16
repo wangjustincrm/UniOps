@@ -39,6 +39,7 @@ import { CourierInvoiceReview } from './CourierInvoiceReview'
 import { DirectRouteBadge, FreightRouteBadge } from '@/pages/freight/freightUi'
 import { useFreightAccess, useFreightCarriers } from '@/hooks/useFreight'
 import { InvoiceChainDrawer } from './InvoiceChainDrawer'
+import { useNoticeDialog } from '@/components/ui/ConfirmDialog'
 
 // Roles allowed to run the 3-way match (mirrors epms-api invoices.py _AP_ROLES,
 // which gates POST /invoices/{id}/match). Users without one of these must not be
@@ -171,6 +172,8 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
   const createVendorCredit = useCreateVendorCredit()
   const matchInvoiceMutation = useMatchInvoice()
   const markDirect = useMarkInvoiceDirect()
+  // "Saved, but…" that was a browser alert; the queue still waits for OK.
+  const notice = useNoticeDialog()
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [dragging, setDragging] = useState(false)
@@ -691,9 +694,12 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
         try {
           await markDirect.mutateAsync(inv.id)
         } catch (e) {
-          alert(`Invoice ${inv.vendor_invoice_number} was saved but could not be matched for a Direct PA: `
-            + (e instanceof Error ? e.message : 'unknown error')
-            + '. Open it on the Invoices page and use Match → Direct PA.')
+          await notice.show({
+            title: 'Not matched for a Direct PA',
+            message: `Invoice ${inv.vendor_invoice_number} was saved but could not be matched for a Direct PA: `
+              + (e instanceof Error ? e.message : 'unknown error')
+              + '. Open it on the Invoices page and use Match → Direct PA.',
+          })
         }
         finishOne(inv.id)
         return
@@ -1416,6 +1422,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
           </div>
         </div>
       </div>
+      {notice.dialog}
     </div>,
     document.body
   )

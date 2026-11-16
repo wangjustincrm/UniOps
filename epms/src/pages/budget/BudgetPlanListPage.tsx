@@ -8,6 +8,7 @@ import { cn, formatDate, todayISO } from '@/lib/utils'
 import { usePlans, useCreatePlan, useDeletePlan, useAvailableFiscalYears } from '@/hooks/useBudget'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import { useAuthStore } from '@/stores/auth.store'
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 import type { DocumentStatus } from '@/types'
 
 const STATUS_FILTER = [
@@ -39,12 +40,18 @@ export default function BudgetPlanListPage() {
   const costCenters = ccData ?? []
   const yearOptions = useAvailableFiscalYears()
   const deleteMut = useDeletePlan()
+  const confirmDlg = useConfirmDialog()
 
   const handleDelete = (e: React.MouseEvent, planId: string, label: string) => {
     e.stopPropagation()
-    if (!confirm(`Delete draft plan "${label}"? This cannot be undone.`)) return
-    deleteMut.mutate(planId, {
-      onError: (err) => alert(err instanceof Error ? err.message : 'Delete failed'),
+    // Asked in-page; a refusal shows in the dialog (both were browser pop-ups).
+    confirmDlg.ask({
+      title: 'Delete Draft Plan',
+      subtitle: label,
+      message: `Delete draft plan "${label}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      failureFallback: 'Delete failed',
+      onConfirm: () => deleteMut.mutateAsync(planId),
     })
   }
 
@@ -217,6 +224,7 @@ export default function BudgetPlanListPage() {
         </table>
       </div>
 
+      {confirmDlg.dialog}
       {showCreate && canCreate && (
         <CreatePlanModal onClose={() => setShowCreate(false)} />
       )}

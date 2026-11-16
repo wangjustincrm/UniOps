@@ -12,6 +12,8 @@ import { useAllReceipts, useVoidReceiptAny, useApReviewReceiptAny } from '@/hook
 import { useUserDirectory } from '@/hooks/useUsers'
 import { VOIDABLE_STATUSES } from '@/components/agreements/ReceiptTable'
 import { RejectReceiptDialog } from '@/components/agreements/RejectReceiptDialog'
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { errorMessage } from '@/lib/submitFailure'
 import { receiptTotal, RECEIPT_TYPE_LABELS } from '@/services/agreementReceipts'
 import type { ApiReceiptWithAgreement, ReceiptStatus, ReceiptType } from '@/services/agreementReceipts'
 import type { DocumentStatus } from '@/types'
@@ -103,10 +105,20 @@ export default function ReceiptListPage() {
   const [pendingVoidId, setPendingVoidId] = useState<string | null>(null)
   const [pendingReviewKey, setPendingReviewKey] = useState<string | null>(null)
 
+  const confirmDlg = useConfirmDialog()
   const handleVoid = (agreementId: string, receiptId: string, receiptRef: string | null) => {
-    if (!confirm(`Remove receipt ${receiptRef ?? '(no reference #)'}? This cannot be undone.`)) return
-    setPendingVoidId(receiptId)
-    voidReceipt.mutate({ agreementId, receiptId }, { onSettled: () => setPendingVoidId(null) })
+    // Asked in-page; a refusal shows in the dialog (both were browser pop-ups).
+    confirmDlg.ask({
+      title: 'Remove Receipt',
+      subtitle: receiptRef ?? '(no reference #)',
+      message: `Remove receipt ${receiptRef ?? '(no reference #)'}? This cannot be undone.`,
+      confirmLabel: 'Remove',
+      failureFallback: 'Failed to remove receipt',
+      onConfirm: async () => {
+        setPendingVoidId(receiptId)
+        try { await voidReceipt.mutateAsync({ agreementId, receiptId }) } finally { setPendingVoidId(null) }
+      },
+    })
   }
 
   // Reject has no way back: crud/agreement_receipt.py writes status =
@@ -120,6 +132,7 @@ export default function ReceiptListPage() {
 
   const handleReview = (agreementId: string, receiptId: string, action: 'approve' | 'reject') => {
     setPendingReviewKey(`${receiptId}:${action}`)
+    apReview.reset()
     apReview.mutate({ agreementId, receiptId, action }, { onSettled: () => setPendingReviewKey(null) })
   }
 
@@ -142,6 +155,13 @@ export default function ReceiptListPage() {
           </Link>
         )}
       </div>
+
+      {/* A refused Approve / Reject (was a browser alert). */}
+      {apReview.isError && (
+        <p role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+          {errorMessage(apReview.error, 'Failed to record AP review')}
+        </p>
+      )}
 
       {/* Filters */}
       <div className="rounded-xl border border-neutral-200 bg-white p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
@@ -257,6 +277,7 @@ export default function ReceiptListPage() {
         <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
       </div>
 
+      {confirmDlg.dialog}
       {rejectTarget && (
         <RejectReceiptDialog
           receiptLabel={rejectTarget.label}

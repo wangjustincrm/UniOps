@@ -15,6 +15,7 @@ import type { ApiBudgetL1, ApiBudgetAccount } from '@/services/budget'
 import { useAuthStore } from '@/stores/auth.store'
 import { BUDGET_BASE } from '@/lib/api'
 import { FactorConfigPanel } from './FactorConfigPanel'
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const WRITE_ROLES = new Set(['system_admin', 'finance_manager', 'finance_bp'])
 
@@ -35,13 +36,20 @@ export default function BudgetCatalogPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const importBudget = useImportBudget()
   const deleteL1Mut = useDeleteBudgetL1()
+  const confirmDlg = useConfirmDialog()
+  // Asked in-page; a refusal shows in the dialog (both were browser pop-ups).
   const handleDeleteL1 = (l1: ApiBudgetL1) => {
-    if (confirm(`Permanently delete L1 category "${l1.code} — ${l1.name}" and ALL its accounts?\nThis cannot be undone. Only allowed if no account under it is used in a budget plan or actuals.`)) {
-      deleteL1Mut.mutate(l1.id, {
-        onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Delete failed'),
-        onSuccess: () => setSelectedL1Id(null),
-      })
-    }
+    confirmDlg.ask({
+      title: 'Delete L1 Category',
+      subtitle: `${l1.code} — ${l1.name}`,
+      message: `Permanently delete L1 category "${l1.code} — ${l1.name}" and ALL its accounts?\nThis cannot be undone. Only allowed if no account under it is used in a budget plan or actuals.`,
+      confirmLabel: 'Delete',
+      failureFallback: 'Delete failed',
+      onConfirm: async () => {
+        await deleteL1Mut.mutateAsync(l1.id)
+        setSelectedL1Id(null)
+      },
+    })
   }
 
   const selectedL1 = useMemo(
@@ -264,6 +272,7 @@ export default function BudgetCatalogPage() {
           onClose={() => { setShowAccountForm(false); setEditingAccount(null) }}
         />
       )}
+      {confirmDlg.dialog}
     </div>
   )
 }
@@ -284,12 +293,16 @@ function AccountListRow({
   const toggleActive = () => {
     updateMut.mutate({ id: account.id, body: { is_active: !account.is_active } })
   }
+  const confirmDlg = useConfirmDialog()
   const handleDelete = () => {
-    if (confirm(`Permanently delete account "${account.code} — ${account.name}"?\nThis cannot be undone. Only accounts never used in a budget plan or actuals can be deleted.`)) {
-      deleteMut.mutate(account.id, {
-        onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Delete failed'),
-      })
-    }
+    confirmDlg.ask({
+      title: 'Delete Account',
+      subtitle: `${account.code} — ${account.name}`,
+      message: `Permanently delete account "${account.code} — ${account.name}"?\nThis cannot be undone. Only accounts never used in a budget plan or actuals can be deleted.`,
+      confirmLabel: 'Delete',
+      failureFallback: 'Delete failed',
+      onConfirm: () => deleteMut.mutateAsync(account.id),
+    })
   }
   return (
     <li className={cn(!account.is_active && 'opacity-50')}>
@@ -346,6 +359,7 @@ function AccountListRow({
           <FactorConfigPanel accountId={account.id} canEdit={canEdit} />
         </div>
       )}
+      {confirmDlg.dialog}
     </li>
   )
 }

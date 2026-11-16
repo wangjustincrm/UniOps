@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { formatAmount, formatDate, formatDateTime } from '@/lib/utils'
 import { useConfirmPeriod } from '@/hooks/useAgreements'
+import { errorMessage } from '@/lib/submitFailure'
 import type { ApiScheduleRow } from '@/services/agreement'
 import type { ApiTask } from '@/services/tasks'
 import type { ApiUserBrief } from '@/services/users'
@@ -80,6 +81,7 @@ export function ScheduleTable({
 
   const handleConfirm = (rowId: string) => {
     setPendingRowId(rowId)
+    confirmPeriod.reset()
     confirmPeriod.mutate(rowId, { onSettled: () => setPendingRowId(null) })
   }
 
@@ -93,6 +95,12 @@ export function ScheduleTable({
 
   return (
     <div className="rounded-lg border border-neutral-200 overflow-hidden">
+      {/* A refused Confirm, shown above the table (was a browser alert). */}
+      {confirmPeriod.isError && (
+        <p role="alert" className="border-b border-danger-200 bg-danger-50 px-4 py-2 text-sm text-danger-700">
+          {errorMessage(confirmPeriod.error, 'Failed to confirm the period')}
+        </p>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>

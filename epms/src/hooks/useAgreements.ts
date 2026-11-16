@@ -47,7 +47,6 @@ export function useCreateAgreement() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agreements'] })
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to create agreement'),
   })
 }
 
@@ -61,7 +60,6 @@ export function useUpdateAgreement() {
       queryClient.invalidateQueries({ queryKey: ['agreements'] })
       queryClient.invalidateQueries({ queryKey: ['agreements', id] })
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to update agreement'),
   })
 }
 
@@ -90,14 +88,12 @@ export function useConfirmPeriod(agreementId: string) {
         queryClient.invalidateQueries({ queryKey: ['tasks'] }),
       ])
     },
-    onError: (err: unknown) =>
-      alert(err instanceof Error ? err.message : 'Failed to confirm the period'),
   })
 }
 
-// alertOnError: false leaves the refusal to the caller, which shows it on the
-// page (mutation.error) instead of in a browser alert.
-export function useAgreementAction(id: string, { alertOnError = true }: { alertOnError?: boolean } = {}) {
+// The caller shows a refusal on the page (mutation.error), never in a
+// browser alert.
+export function useAgreementAction(id: string) {
   const queryClient = useQueryClient()
 
   return useMutation({
@@ -127,9 +123,6 @@ export function useAgreementAction(id: string, { alertOnError = true }: { alertO
       ])
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
-    onError: alertOnError
-      ? (err: unknown) => alert(err instanceof Error ? err.message : 'Agreement action failed')
-      : undefined,
   })
 }
 

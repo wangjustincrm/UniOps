@@ -24,6 +24,8 @@ import { BudgetAccountCascade } from '@/components/budget/BudgetAccountCascade'
 import { RecurringFields, EMPTY_RECURRING_FIELDS, type RecurringFieldsValue } from '@/components/agreements/RecurringFields'
 import { MilestoneEditor } from '@/components/agreements/MilestoneEditor'
 import { errorMessage, rememberSubmitFailure } from '@/lib/submitFailure'
+import { ATTACHMENT_RULE, partitionUploads } from '@/lib/uploadLimits'
+import { useNoticeDialog } from '@/components/ui/ConfirmDialog'
 
 const TYPE_OPTIONS: { value: AgreementType; label: string; hint: string }[] = [
   // Whole-branch review (M8): a house account is not necessarily a counter
@@ -62,6 +64,9 @@ export default function AgreementCreatePage() {
   const [notes, setNotes] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // A refused save, shown beside the buttons (was a browser alert).
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const notice = useNoticeDialog()
 
   // Recurring / milestone type-specific state. Only one of these is ever sent
   // to the server — switching `agreementType` clears the other, or the
@@ -79,9 +84,14 @@ export default function AgreementCreatePage() {
 
   // Attachments — same shape/upload sequencing as PrCreatePage.tsx:97,335.
   const [attachments, setAttachments] = useState<File[]>([])
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-    setAttachments((prev) => [...prev, ...files])
+    // Same rule as New PR / PO / GR (ISS-0093), checked when picked: the
+    // agreement is saved before its files are sent, so a refused file would
+    // otherwise only be found missing afterwards.
+    const { ok, problems } = partitionUploads(Array.from(e.target.files ?? []), ATTACHMENT_RULE)
+    setAttachmentError(problems.length ? problems.join(' ') : null)
+    setAttachments((prev) => [...prev, ...ok])
     e.target.value = ''
   }
 
@@ -158,6 +168,7 @@ export default function AgreementCreatePage() {
   const handleSubmit = async (submitForApproval: boolean) => {
     if (!validate()) return
     setIsSubmitting(true)
+    setSaveError(null)
     try {
       const body: CreateAgreementBody = {
         title,
@@ -212,7 +223,13 @@ export default function AgreementCreatePage() {
           }))
       }
 
-      const newAgreement = await createAgreement.mutateAsync(body)
+      let newAgreement
+      try {
+        newAgreement = await createAgreement.mutateAsync(body)
+      } catch (err) {
+        setSaveError(errorMessage(err, 'Failed to create agreement'))
+        return
+      }
       if (attachments.length > 0) {
         // The agreement already exists at this point — an upload failure
         // here must not read as "nothing happened". Catch it, tell the user
@@ -222,10 +239,11 @@ export default function AgreementCreatePage() {
         try {
           await Promise.all(attachments.map((f) => agreementAttachmentService.upload(newAgreement.id, f)))
         } catch {
-          alert(
-            `${newAgreement.number} was created, but one or more attachments failed to upload. ` +
-            'You can add them again from the agreement page.'
-          )
+          await notice.show({
+            title: 'Attachments not uploaded',
+            message: `${newAgreement.number} was created, but one or more attachments failed to upload. ` +
+              'You can add them again from the agreement page.',
+          })
         }
       }
       if (submitForApproval) {
@@ -611,9 +629,11 @@ export default function AgreementCreatePage() {
               <div>
                 <p className="text-sm font-medium text-neutral-700">Drag &amp; drop or click to upload</p>
                 <p className="text-xs text-neutral-400 mt-1">Contract copies, signed schedules, etc.</p>
+                <p className="text-xs text-neutral-400 mt-1">{ATTACHMENT_RULE.hint}</p>
               </div>
-              <input id="agreement-file-upload" type="file" multiple className="sr-only" onChange={handleFileInput} />
+              <input id="agreement-file-upload" type="file" multiple accept={ATTACHMENT_RULE.accept} className="sr-only" onChange={handleFileInput} />
             </label>
+            {attachmentError && <p role="alert" className="text-xs text-danger-600">{attachmentError}</p>}
             {attachments.map((f, i) => (
               <div key={i} className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
                 <span className="flex-1 truncate text-neutral-700">📎 {f.name}</span>
@@ -636,6 +656,7 @@ export default function AgreementCreatePage() {
               <Button variant="ghost">Cancel</Button>
             </Link>
             <div className="flex items-center gap-3">
+              {saveError && <p role="alert" className="text-sm text-danger-600">{saveError}</p>}
               <Button
                 variant="secondary"
                 onClick={() => handleSubmit(false)}
@@ -666,6 +687,7 @@ export default function AgreementCreatePage() {
           </div>
         </div>
       </div>
+      {notice.dialog}
     </div>
   )
 }

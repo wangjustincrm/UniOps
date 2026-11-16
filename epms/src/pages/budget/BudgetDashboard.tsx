@@ -65,11 +65,14 @@ export default function BudgetDashboard() {
   const [includeUnposted, setIncludeUnposted] = useState(true)
   const ncLabel = includeUnposted ? 'NC incl. unposted' : 'NC posted'
   const [exporting, setExporting] = useState(false)
+  // A failed export, shown under the grid's header (was a browser alert).
+  const [exportError, setExportError] = useState<string | null>(null)
   // Export only: follow each budget account with its vendor rows (the inline
   // drill, for every account at once). Does not change what the grid shows.
   const [exportByVendor, setExportByVendor] = useState(false)
   const handleExport = async () => {
     setExporting(true)
+    setExportError(null)
     try {
       await downloadFinanceFile(
         '/gl/budget-actual/partner-export',
@@ -82,7 +85,7 @@ export default function BudgetDashboard() {
         `budget-actual-FY${fiscalYear}${exportByVendor ? '-by-vendor' : ''}.xlsx`,
       )
     } catch {
-      alert('Export failed. Please try again.')
+      setExportError('Export failed. Please try again.')
     } finally {
       setExporting(false)
     }
@@ -347,6 +350,7 @@ export default function BudgetDashboard() {
             <span className="text-emerald-700 font-medium">{ncLabel} actual</span> · over budget in red
             {ccId === 'all' && <span className="ml-2 text-neutral-400">· Aggregated across cost centers</span>}
           </p>
+          {exportError && <p role="alert" className="mt-1 text-xs text-danger-600">{exportError}</p>}
         </CardHeader>
 
         {monthlyLoading ? (

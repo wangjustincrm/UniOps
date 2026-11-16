@@ -9,6 +9,8 @@ import { useVoidReceipt, useApReviewReceipt } from '@/hooks/useAgreementReceipts
 import { agreementReceiptAttachmentService, receiptAttachmentsQueryKey } from '@/services/agreementReceiptAttachments'
 import { receiptTotal, type ApiReceipt } from '@/services/agreementReceipts'
 import { RejectReceiptDialog } from '@/components/agreements/RejectReceiptDialog'
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { errorMessage } from '@/lib/submitFailure'
 import type { ApiUserBrief } from '@/services/users'
 import type { DocumentStatus } from '@/types'
 
@@ -48,6 +50,8 @@ function ReceiptAttachmentsCell({ agreementId, receiptId }: { agreementId: strin
     staleTime: 5 * 60_000,
   })
   const attachments = data ?? []
+  // A failed download, shown in the cell (was a browser alert).
+  const [downloadError, setDownloadError] = useState<string | null>(null)
   if (attachments.length === 0) return <span className="text-neutral-300">—</span>
   return (
     <div className="flex flex-col gap-0.5">
@@ -55,10 +59,10 @@ function ReceiptAttachmentsCell({ agreementId, receiptId }: { agreementId: strin
         <button
           key={att.id}
           type="button"
-          onClick={() => agreementReceiptAttachmentService.download(agreementId, receiptId, att.id, att.filename)
+          onClick={() => { setDownloadError(null); agreementReceiptAttachmentService.download(agreementId, receiptId, att.id, att.filename)
             // download() rejects on a failed fetch (it used to swallow it silently);
             // an unreported failure here reads as "the Download link does nothing".
-            .catch((err: unknown) => alert(err instanceof Error ? err.message : 'Download failed'))}
+            .catch((err: unknown) => setDownloadError(errorMessage(err, 'Download failed'))) }}
           className="inline-flex max-w-[9rem] items-center gap-1 truncate text-xs text-primary-600 hover:underline"
           title={att.filename}
         >
@@ -66,6 +70,7 @@ function ReceiptAttachmentsCell({ agreementId, receiptId }: { agreementId: strin
           <span className="truncate">{att.filename}</span>
         </button>
       ))}
+      {downloadError && <span role="alert" className="max-w-[9rem] text-xs text-danger-600">{downloadError}</span>}
     </div>
   )
 }
@@ -95,6 +100,7 @@ interface ReceiptTableProps {
 export function ReceiptTable({ agreementId, receipts, users, currency, canWrite, canApReview, readOnly = false }: ReceiptTableProps) {
   const voidReceipt = useVoidReceipt(agreementId)
   const apReview = useApReviewReceipt(agreementId)
+  const confirmDlg = useConfirmDialog()
   // Mirrors ScheduleTable's pendingRowId convention: the hooks below are
   // single mutation objects shared by every row's button, so isPending alone
   // can't tell you WHICH row is mid-flight without this. pendingReviewKey
@@ -118,12 +124,19 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
 
   const handleVoid = (receiptId: string, receiptRef: string | null) => {
     // Voiding is terminal — 'voided' isn't in crud/agreement_receipt.py's
-    // VOIDABLE set, so there is no undo. Same confirm() convention as the
-    // other destructive actions in this app (PrDetailPage withdraw/recall,
-    // BudgetCatalogPage delete, etc.).
-    if (!confirm(`Remove receipt ${receiptRef ?? '(no reference #)'}? This cannot be undone.`)) return
-    setPendingVoidId(receiptId)
-    voidReceipt.mutate(receiptId, { onSettled: () => setPendingVoidId(null) })
+    // VOIDABLE set, so there is no undo. Asked in-page, like the other
+    // destructive actions; a refusal shows in the dialog.
+    confirmDlg.ask({
+      title: 'Remove Receipt',
+      subtitle: receiptRef ?? '(no reference #)',
+      message: `Remove receipt ${receiptRef ?? '(no reference #)'}? This cannot be undone.`,
+      confirmLabel: 'Remove',
+      failureFallback: 'Failed to remove receipt',
+      onConfirm: async () => {
+        setPendingVoidId(receiptId)
+        try { await voidReceipt.mutateAsync(receiptId) } finally { setPendingVoidId(null) }
+      },
+    })
   }
 
   // Reject is final (status "rejected" is RETIRED) — ask first, in-page, as
@@ -132,6 +145,7 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
 
   const handleReview = (receiptId: string, action: 'approve' | 'reject') => {
     setPendingReviewKey(`${receiptId}:${action}`)
+    apReview.reset()
     apReview.mutate({ receiptId, action }, { onSettled: () => setPendingReviewKey(null) })
   }
 
@@ -150,6 +164,12 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
           <AlertTriangle className="h-3.5 w-3.5" />
           {agedCount} receipt{agedCount === 1 ? '' : 's'} over {RECEIPT_AGING_DAYS} days unreconciled
         </div>
+      )}
+      {/* A refused Approve / Reject (was a browser alert). */}
+      {apReview.isError && (
+        <p role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+          {errorMessage(apReview.error, 'Failed to record AP review')}
+        </p>
       )}
       <div className="rounded-lg border border-neutral-200 overflow-hidden">
         <div className="overflow-x-auto">
@@ -268,6 +288,7 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
           </table>
         </div>
       </div>
+      {confirmDlg.dialog}
       {rejectTarget && (
         <RejectReceiptDialog
           receiptLabel={rejectTarget.receipt_ref ?? '(no reference #)'}

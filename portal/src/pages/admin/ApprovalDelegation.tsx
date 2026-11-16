@@ -8,6 +8,7 @@ import { epmsApi } from '@/lib/api'
 import { adminApi, type DelegationCreate, type DelegationOut, type DelegationUpdate } from '@/services/adminApi'
 import { cn, formatDate, todayISO } from '@/lib/utils'
 import { PortalPageLayout } from '@/components/layout/PortalPageLayout'
+import { useConfirmDialog } from '@/components/ConfirmDialog'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -234,6 +235,7 @@ function ApprovalDelegationBody() {
   const [mode, setMode] = useState<FormMode>({ kind: 'closed' })
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [formError, setFormError] = useState('')
+  const dlg = useConfirmDialog()
 
   const activeUsers = useMemo(
     () => [...(usersQ.data ?? [])].filter((u) => u.is_active)
@@ -299,9 +301,14 @@ function ApprovalDelegationBody() {
     onSuccess: invalidate,
   })
 
-  const handleRevoke = (row: DelegationOut) => {
+  const handleRevoke = async (row: DelegationOut) => {
     const delegateName = row.delegate_name ?? usersById.get(row.delegate_user_id)?.full_name ?? 'the delegate'
-    if (!confirm(`Revoke this delegation? It takes effect immediately — ${delegateName} loses stand-in access right away.`)) return
+    // Asked in-page (was the browser's confirm).
+    if (!(await dlg.confirm({
+      title: 'Revoke delegation',
+      message: `Revoke this delegation? It takes effect immediately — ${delegateName} loses stand-in access right away.`,
+      confirmLabel: 'Revoke',
+    }))) return
     revoke.mutate(row.id)
   }
 
@@ -426,6 +433,7 @@ function ApprovalDelegationBody() {
           </tbody>
         </table>
       </div>
+      {dlg.dialog}
     </div>
   )
 }

@@ -4,6 +4,7 @@ import { Plus, Pencil, Trash2, X } from 'lucide-react'
 import { SortTh, useSortableRows } from '@uniops/shell'
 import { mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { useConfirmDialog } from '@/components/ConfirmDialog'
 
 type Dimension = 'count' | 'mass' | 'volume' | 'length' | 'area' | 'time' | 'other'
 const DIMENSIONS: Dimension[] = ['count', 'mass', 'volume', 'length', 'area', 'time', 'other']
@@ -41,6 +42,8 @@ export function UnitsOfMeasure() {
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [listError, setListError] = useState('')
+  const dlg = useConfirmDialog()
 
   const openCreate = () => { setForm({ code: '', name: '', dimension: 'count', is_active: true }); setError(''); setModal({ mode: 'create' }) }
   const openEdit = (u: ApiUom) => { setForm({ code: u.code, name: u.name, dimension: u.dimension, is_active: u.is_active }); setError(''); setModal({ mode: 'edit', uom: u }) }
@@ -58,12 +61,14 @@ export function UnitsOfMeasure() {
     } catch (err: any) { setError(err.message) } finally { setSaving(false) }
   }
 
+  // Asked in-page; a refusal shows above the table (both were browser pop-ups).
   const handleDelete = async (u: ApiUom) => {
-    if (!confirm(`Delete unit "${u.code}"?`)) return
+    if (!(await dlg.confirm({ title: 'Delete unit', message: `Delete unit "${u.code}"?`, confirmLabel: 'Delete' }))) return
+    setListError('')
     try {
       await mdmApi.delete(`/uom/${u.id}`)
       qc.invalidateQueries({ queryKey: ['portal-uoms'] })
-    } catch (err: any) { alert(err.message) }
+    } catch (err: any) { setListError(err.message) }
   }
 
   return (
@@ -75,6 +80,8 @@ export function UnitsOfMeasure() {
           <Plus className="h-4 w-4" />Add Unit
         </button>
       </div>
+      {listError && <p role="alert" className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{listError}</p>}
+      {dlg.dialog}
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
         {isLoading ? (
           <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
