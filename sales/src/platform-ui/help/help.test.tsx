@@ -59,6 +59,17 @@ describe('DisabledReason', () => {
     fireEvent.click(btn)
     expect(within(await screen.findByRole('dialog')).getByText('Only a Draft can be submitted.')).toBeInTheDocument()
   })
+  it("the child's own action never runs while a reason is shown, and it can't submit", async () => {
+    const act = vi.fn()
+    const submit = vi.fn((e: { preventDefault: () => void }) => e.preventDefault())
+    render(<form onSubmit={submit}><DisabledReason reason="Not now."><button type="submit" onClick={act}>Save</button></DisabledReason></form>)
+    const btn = screen.getByRole('button', { name: 'Save' })
+    expect(btn).toHaveAttribute('type', 'button')
+    fireEvent.click(btn)
+    expect(act).not.toHaveBeenCalled()
+    expect(submit).not.toHaveBeenCalled()
+    expect(await screen.findByText('Not now.')).toBeInTheDocument()
+  })
   it('no reason: the control alone', () => {
     const { container } = render(<DisabledReason reason={null}><button>Go</button></DisabledReason>)
     expect(container.querySelector('[data-disabled-reason]')).toBeNull()
