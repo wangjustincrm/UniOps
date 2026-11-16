@@ -6,6 +6,7 @@ import { ReferencePicker } from './ReferencePicker'
 import { ReferenceListPicker, type RefListItem } from './ReferenceListPicker'
 import { LineItemsEditor, type LineRow } from './LineItemsEditor'
 import { ApprovalStatePanel } from './ApprovalStatePanel'
+import { useConfirmDialog } from '@/components/ConfirmDialog'
 
 interface Props { schema: EntitySchema; record: Record<string, unknown>; onClose: () => void }
 
@@ -30,6 +31,8 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
   const [acceptLineTotal, setAcceptLineTotal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // In-page confirm / notices where this form used the browser's pop-ups.
+  const dlg = useConfirmDialog()
 
   useEffect(() => {
     if (!full) return
@@ -73,7 +76,12 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
   const save = async () => {
     setError('')
     if (schema.key === 'po' && vendorChanged && regenPo &&
-        !window.confirm('Regenerate the PO number for the new vendor? This rewrites the number across PR/PA/GR/invoice/tasks/approval records.'))
+        !(await dlg.confirm({
+          title: 'Regenerate PO number',
+          message: 'Regenerate the PO number for the new vendor? This rewrites the number across PR/PA/GR/invoice/tasks/approval records.',
+          confirmLabel: 'Regenerate',
+          tone: 'primary',
+        })))
       return
     const editable = schema.fields.filter((f) => f.editable)
     const patch: Record<string, unknown> = {}
@@ -107,7 +115,10 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
       // no sign anything beyond the field itself changed.
       const moved = Number(res?.confirm_tasks_reassigned ?? 0)
       if (moved > 0) {
-        alert(`Owner updated. ${moved} open service-confirmation task(s) moved to the new owner.`)
+        await dlg.notify({
+          title: 'Owner updated',
+          message: `Owner updated. ${moved} open service-confirmation task(s) moved to the new owner.`,
+        })
       }
       // An invoice edit is re-sent to Finance's AP record (epms-api admin.py
       // _resync_invoice_ap). Surface a failed re-send, and a bill already in NC
@@ -117,7 +128,7 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
       if (typeof apSync === 'string' && apSync !== 'ok') apNotes.push(apSync)
       const apNc = res?.ap_nc_warning
       if (typeof apNc === 'string') apNotes.push(apNc)
-      if (apNotes.length) alert(`Saved.\n\n${apNotes.join('\n\n')}`)
+      if (apNotes.length) await dlg.notify({ title: 'Saved', message: `Saved.\n\n${apNotes.join('\n\n')}` })
       // editWithOptions bypasses useAdminEdit's mutation, so mirror its invalidation
       // key here (see useAdminEdit in hooks/useAdmin.ts) plus the full-record query.
       await qc.invalidateQueries({ queryKey: ['admin', schema.system, schema.key] })
@@ -216,6 +227,7 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
           </button>
         </div>
       </div>
+      {dlg.dialog}
     </div>
   )
 }

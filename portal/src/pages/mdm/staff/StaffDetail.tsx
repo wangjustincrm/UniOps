@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft } from 'lucide-react'
 import { epmsApi, mdmApi } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
+import { useConfirmDialog } from '@/components/ConfirmDialog'
 import {
   INPUT, NcPill, PRIMARY_BTN, SECONDARY_BTN, SOURCE_LABEL, StaffShell, StatusPill, TD, TH, TODO_LABEL,
   targetText, useStaffPerm, type Department, type NcTodoRow, type StaffRow,
@@ -37,6 +38,7 @@ export default function StaffDetail() {
   const navigate = useNavigate()
   const { admin, can } = useStaffPerm()
   const [error, setError] = useState('')
+  const dlg = useConfirmDialog()
   const [busy, setBusy] = useState(false)
   const [leaving, setLeaving] = useState(false)
   const [leftOn, setLeftOn] = useState('')
@@ -70,8 +72,14 @@ export default function StaffDetail() {
   if (departmentId !== null && departmentId !== (e.department_id ?? '')) pending.department_id = departmentId || null
   if (notes !== null && notes !== (e.notes ?? '')) pending.notes = notes
   const changes = Object.keys(pending).length ? pending : null
-  const applyDifference = (d: Difference) => {
-    if (d.field === 'email' && !confirm(`This changes ${e.display_name}'s sign-in to ${d.employee}. Continue?`)) return
+  const applyDifference = async (d: Difference) => {
+    // Asked in-page (was the browser's confirm).
+    if (d.field === 'email' && !(await dlg.confirm({
+      title: 'Change sign-in',
+      message: `This changes ${e.display_name}'s sign-in to ${d.employee}. Continue?`,
+      confirmLabel: 'Continue',
+      tone: 'primary',
+    }))) return
     run(() => epmsApi.patch(`/users/${e.user!.id}`, { [d.field]: d.value }))
   }
   const markLeft = () => run(async () => {
@@ -240,6 +248,7 @@ export default function StaffDetail() {
           </table>
         </div>
       </section>
+      {dlg.dialog}
     </StaffShell>
   )
 }
