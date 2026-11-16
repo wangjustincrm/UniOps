@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { createPortal } from 'react-dom'
@@ -268,8 +268,27 @@ export default function AgreementDetailPage() {
   const [pendingAction, setPendingAction] = useState<ApprovalAction | null>(null)
   // Why New Agreement's Submit for Approval was refused, when it brought the
   // saved draft here instead (ISS-0090).
-  const [createSubmitError] = useState<string | null>(() => peekSubmitFailure(id))
+  const [createSubmitError, setCreateSubmitError] = useState<string | null>(() => peekSubmitFailure(id))
   useEffect(() => { clearSubmitFailure(id) }, [id])
+  // A refusal describes the agreement as it was when it was refused. This
+  // page stays mounted while the user fixes it on Edit (Save & Submit) or
+  // acts on it elsewhere, so once the agreement itself changes — status or
+  // any saved edit — the old red banner no longer applies and is cleared
+  // (ISS-0090 retest: "Add at least one milestone stage…" stayed after a
+  // successful Save & Submit, and after Recall).
+  const changeKey = agreement ? `${agreement.status}|${agreement.updated_at}` : ''
+  const lastChangeKey = useRef(changeKey)
+  const resetAction = agreementAction.reset
+  const resetRecall = agreementRecall.reset
+  useEffect(() => {
+    if (!changeKey) return
+    if (lastChangeKey.current && lastChangeKey.current !== changeKey) {
+      resetAction()
+      resetRecall()
+      setCreateSubmitError(null)
+    }
+    lastChangeKey.current = changeKey
+  }, [changeKey, resetAction, resetRecall])
 
   const { data: invoicesData, isLoading: invoicesLoading } = useInvoices(
     agreement ? { agreement_id: agreement.id } : undefined,
