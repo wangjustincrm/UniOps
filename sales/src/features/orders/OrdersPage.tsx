@@ -1,4 +1,4 @@
-import { ListPage, MoneyCell, columnsOf, startHidden, type ColumnDef, type ListCreate, type QuerySpec, type RecordTab } from '@/platform-ui'
+import { ListPage, MoneyCell, columnsOf, startHidden, withHelp, type ColumnDef, type ListCreate, type QuerySpec, type RecordTab } from '@/platform-ui'
 import { OrderSheet } from './OrderDetailView'
 import { OrderStatusBadge, ShopifyCell, StatusDetail } from './OrderStatusCells'
 import { ReturnAfterShipment } from '@/features/invoices/ReturnAfterShipment'
@@ -11,10 +11,10 @@ import { PartnerCell } from '@/features/common/PartnerCell'
 const col = columnsOf<OrderRead>()
 
 const orderColumns: ColumnDef<OrderRead, unknown>[] = [
-  { accessorKey: 'source_reference', header: 'Order ref', cell: ({ row }) => <span className="font-medium">{row.original.source_reference ?? ''}</span> },
-  col.text('order_number', 'Internal no.'),
+  { accessorKey: 'source_reference', header: 'Order ref', meta: { help: 'term:Order ref' }, cell: ({ row }) => <span className="font-medium">{row.original.source_reference ?? ''}</span> },
+  withHelp(col.text('order_number', 'Internal no.'), 'term:Internal no.'),
   { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
-  col.text('source_order_number', 'Customer PO / ref.'),
+  withHelp(col.text('source_order_number', 'Customer PO / ref.'), 'term:Customer PO / reference'),
   col.date('order_date', 'Ordered'),
   { accessorKey: 'order_status', header: 'Status', meta: { card: 'badge' }, cell: ({ row }) => <OrderStatusBadge o={row.original} /> },
   { id: 'status_detail', header: 'Detail', cell: ({ row }) => <StatusDetail o={row.original} /> },

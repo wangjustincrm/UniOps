@@ -2,7 +2,7 @@
 2026-11-16: one source for help, kept next to the rules it explains). Keyed by the constants in
 order_status.py; the texts name the labels users see ("To Fulfill", not WAITING_TO_SEND).
 
-The front end shows these on the status badge (GET /help/order-statuses). Meant to be the source the
+The front end shows these on the status badge (GET /help/texts). Meant to be the source the
 AI guide layer reads for Sales too, when Sales joins it (not wired yet: epms-api/app/knowledge has no
 Sales). `buttons` lists every button a text names: tests/test_status_help.py checks each is a
 real label in the front end, and that every status and reason has a text.
@@ -84,10 +84,12 @@ DETAIL_HELP: dict[str, Help] = {
 
 
 def payload() -> dict[str, dict[str, dict[str, str]]]:
-    """GET /help/order-statuses: {statuses | holds | details: {label: {body}}}."""
+    """GET /help/texts: {statuses | holds | details | terms: {label: {body}}} (terms: glossary.py)."""
+    from app.domain.glossary import TERMS  # glossary imports Help from here
+
     def part(d: dict[str, Help]) -> dict[str, dict[str, str]]:
         return {k: {"body": h.body} for k, h in d.items()}
-    return {"statuses": part(STATUS_HELP), "holds": part(HOLD_HELP), "details": part(DETAIL_HELP)}
+    return {"statuses": part(STATUS_HELP), "holds": part(HOLD_HELP), "details": part(DETAIL_HELP), "terms": part(TERMS)}
 
 
 # ── the next step of one order (the user, 2026-11-16: approved table) ─────────────────────────────

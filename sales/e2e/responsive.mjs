@@ -41,7 +41,7 @@ function answer(url) {
   if (p === 'config/me/permissions') return { permissions: Object.fromEntries(PERMS.map((k) => [k, true])), roles: [] }
   if (p === 'config/public/branding') return { name: 'UniOps' }
   if (p === 'views' || p === 'config/notification-events' || p === 'config/notification-users') return []
-  if (p === 'help/order-statuses') return META['help/order-statuses']
+  if (p === 'help/texts') return META['help/texts']
   if (p.endsWith('/meta')) return META[p.slice(0, -5)] ?? { version: 1, fields: [], views: [] }
   if (p === 'orders') return { items: F.orders, total: F.orders.length }
   const order = p.match(/^orders\/(\d+)$/)
@@ -155,6 +155,7 @@ async function run(name, viewport) {
     await page.getByRole('button', { name: /Show details/ }).first().click()
     await page.waitForTimeout(600)
     check(await page.locator('[data-row-detail]').count() > 0, `${name} inventory: a row opens to its lots`)
+    check(await page.getByRole('button', { name: 'What "On hand" means' }).count() > 0, `${name} inventory: the On hand column says what it holds`)
     await listChecks('inventory-lots')
   })
   // Every page of the module (data or not): nothing scrolls the page sideways.

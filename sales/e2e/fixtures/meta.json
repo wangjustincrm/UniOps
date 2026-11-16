@@ -2822,7 +2822,7 @@
    }
   ]
  },
- "help/order-statuses": {
+ "help/texts": {
   "statuses": {
    "Draft": {
     "body": "A manual order not submitted yet. Nothing is sent until you Submit."
@@ -2896,6 +2896,86 @@
    },
    "Short shipped": {
     "body": "The 945 shipped less than ordered. Backordered = ordered \u2212 shipped (EA); the rest is not sent later (one 945 per order)."
+   }
+  },
+  "terms": {
+   "850": {
+    "body": "A retailer's purchase order, received through TrueCommerce. It becomes an order here."
+   },
+   "940": {
+    "body": "Our shipping order to the warehouse (Radiant): what to pick and where to send it."
+   },
+   "997": {
+    "body": "The warehouse's receipt for a 940 or a 943: accepted or rejected."
+   },
+   "945": {
+    "body": "The warehouse's shipping report (the packing list): what left, which lots, pallets and tracking."
+   },
+   "943": {
+    "body": "Our notice to the warehouse that stock is on its way to it (a transfer)."
+   },
+   "944": {
+    "body": "The warehouse's receipt of a transfer, or of goods a customer sent back (an RA 944)."
+   },
+   "810": {
+    "body": "The invoice sent to a retailer through TrueCommerce."
+   },
+   "Order ref": {
+    "body": "The partner's short code, \"-\", and its order number (a manual order: Sales' internal number). Set when the order is made; never changes."
+   },
+   "Internal no.": {
+    "body": "Sales' own running number for the order."
+   },
+   "Customer PO / reference": {
+    "body": "The customer's own number for the order."
+   },
+   "EA": {
+    "body": "Each: the unit everything is counted in. Every other unit (CS\u2026) has its EA factor per item in the Item Master."
+   },
+   "Delay": {
+    "body": "How long a partner's orders wait before the 940 goes: from receipt (invoiced partners) or from payment (prepaid). No delay: on the next run."
+   },
+   "Invoice price": {
+    "body": "The invoice uses the PO price unless you set an invoice price: on the order (Invoice prices) before the invoice is drafted, then on the invoice (Edit invoice)."
+   },
+   "SSCC": {
+    "body": "The pallet's 18-digit label, from the 945."
+   },
+   "Lot / Expiry": {
+    "body": "The production lot and its expiry date, from the 945."
+   },
+   "Backordered": {
+    "body": "Ordered \u2212 shipped (EA). The rest is not sent later (one 945 per order)."
+   },
+   "On hand": {
+    "body": "At the warehouse now: received + returned \u2212 shipped \u00b1 adjustments."
+   },
+   "On hold": {
+    "body": "Held by the warehouse, as its latest stock report says."
+   },
+   "In process": {
+    "body": "By item: EA on 940s that went out with no 945 yet. By lot: what the warehouse's latest report shows picked for orders not shipped yet."
+   },
+   "Available": {
+    "body": "On hand \u2212 on hold \u2212 in process."
+   },
+   "In transit to Radiant": {
+    "body": "Sent on 943s and not received yet. Below zero: received but never sent (check it)."
+   },
+   "Returns on the way": {
+    "body": "Sent back by customers, not at the warehouse yet. Below zero: received with no return recorded."
+   },
+   "In transit to customers": {
+    "body": "Shipped on a 945, delivery not final yet. It leaves this figure once the invoice is queued or sent, or straight away for an order with no invoice."
+   },
+   "Report difference": {
+    "body": "Sales \u2212 the warehouse, at its latest applied stock report."
+   },
+   "Sales, Refunds, Net": {
+    "body": "Successful transactions only: payments, refunds, and payments \u2212 refunds."
+   },
+   "Gateway transaction ID": {
+    "body": "The payment provider's own ID. Authorize.Net payments since Sep 18, 2025 have none in Shopify: use the Shopify payment ID."
    }
   }
  }

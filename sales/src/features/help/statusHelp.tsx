@@ -6,13 +6,14 @@ import { fetchStatusHelp } from './statusHelpApi'
 
 // The Sales help (the user, 2026-11-16). What a Status, an On Hold reason or a Detail means comes
 // from the API (sales-api app/domain/status_help.py, beside the rules); texts only the screens need
-// live in UI_HELP below. Ids: status:<Status>, hold:<reason>, detail:<Detail>, and UI_HELP's keys.
+// live in UI_HELP below. Ids: status:<Status>, hold:<reason>, detail:<Detail>, term:<glossary term>, and UI_HELP's keys.
 
 declare module '@/platform-ui/help/types' {
   interface HelpRegistry {
     [status: `status:${string}`]: true
     [hold: `hold:${string}`]: true
     [detail: `detail:${string}`]: true
+    [term: `term:${string}`]: true
   }
 }
 
@@ -20,10 +21,10 @@ declare module '@/platform-ui/help/types' {
 /** Texts that belong to a screen, not to the business rules (none yet: page panels come in round 3). */
 const UI_HELP: Record<string, HelpEntry> = {}
 
-const PART = { status: 'statuses', hold: 'holds', detail: 'details' } as const
+const PART = { status: 'statuses', hold: 'holds', detail: 'details', term: 'terms' } as const
 
 export function SalesHelpProvider({ children }: { children: ReactNode }) {
-  const q = useQuery({ queryKey: ['sales', 'help', 'order-statuses'], queryFn: fetchStatusHelp, staleTime: Infinity, gcTime: Infinity,
+  const q = useQuery({ queryKey: ['sales', 'help', 'texts'], queryFn: fetchStatusHelp, staleTime: Infinity, gcTime: Infinity,
     enabled: hasSession(), retry: 1 })
   const data = q.data
   const source = useCallback((id: string): HelpEntry | undefined => {

@@ -1,4 +1,4 @@
-import { columnsOf, startHidden, type ColumnDef } from '@/platform-ui'
+import { columnsOf, startHidden, withHelp, type ColumnDef } from '@/platform-ui'
 import type { StockItemRead, StockLotRead } from './inventoryApi'
 
 const colItem = columnsOf<StockItemRead>()
@@ -13,17 +13,17 @@ export const itemColumns: ColumnDef<StockItemRead, unknown>[] = [
   colItem.text('description', 'Description'),
   colItem.number('received_ea', 'Received'),
   colItem.number('shipped_ea', 'Shipped'),
-  colItem.number('on_hand_ea', 'On hand'),
-  colItem.number('allocated_ea', 'In process'),
-  colItem.number('hold_ea', 'On hold'),
-  colItem.number('available_ea', 'Available'),
+  withHelp(colItem.number('on_hand_ea', 'On hand'), 'term:On hand'),
+  withHelp(colItem.number('allocated_ea', 'In process'), 'term:In process'),
+  withHelp(colItem.number('hold_ea', 'On hold'), 'term:On hold'),
+  withHelp(colItem.number('available_ea', 'Available'), 'term:Available'),
   startHidden(colItem.number('returned_ea', 'Returned (in Shipped)')),
   startHidden(colItem.number('adjusted_ea', 'Adjusted')),
   colItem.date('first_expiry', 'First expiry'),
   startHidden(colItem.number('lots', 'Lots on hand')),
-  startHidden(colItem.number('to_radiant_ea', 'In transit to Radiant')),
-  startHidden(colItem.number('to_customer_ea', 'In transit to customers')),
-  startHidden(colItem.number('returning_ea', 'Returns on the way')),
+  startHidden(withHelp(colItem.number('to_radiant_ea', 'In transit to Radiant'), 'term:In transit to Radiant')),
+  startHidden(withHelp(colItem.number('to_customer_ea', 'In transit to customers'), 'term:In transit to customers')),
+  startHidden(withHelp(colItem.number('returning_ea', 'Returns on the way'), 'term:Returns on the way')),
   startHidden(colItem.datetime('last_move_at', 'Last move')),
 ]
 
@@ -34,13 +34,13 @@ export const lotColumns: ColumnDef<StockLotRead, unknown>[] = [
   colLot.number('days_to_expiry', 'Days to expiry'),
   colLot.number('received_ea', 'Received'),
   colLot.number('shipped_ea', 'Shipped'),
-  colLot.number('on_hand_ea', 'On hand'),
-  colLot.number('in_process_ea', 'In process'),
-  colLot.number('hold_ea', 'On hold'),
-  colLot.number('available_ea', 'Available'),
+  withHelp(colLot.number('on_hand_ea', 'On hand'), 'term:On hand'),
+  withHelp(colLot.number('in_process_ea', 'In process'), 'term:In process'),
+  withHelp(colLot.number('hold_ea', 'On hold'), 'term:On hold'),
+  withHelp(colLot.number('available_ea', 'Available'), 'term:Available'),
   startHidden(colLot.number('returned_ea', 'Returned (in Shipped)')),
   startHidden(colLot.number('adjusted_ea', 'Adjusted')),
-  startHidden(colLot.number('to_customer_ea', 'In transit to customers')),
-  startHidden(colLot.number('returning_ea', 'Returns on the way')),
+  startHidden(withHelp(colLot.number('to_customer_ea', 'In transit to customers'), 'term:In transit to customers')),
+  startHidden(withHelp(colLot.number('returning_ea', 'Returns on the way'), 'term:Returns on the way')),
   startHidden(colLot.datetime('last_move_at', 'Last move')),
 ]

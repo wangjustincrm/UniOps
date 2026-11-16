@@ -1,4 +1,4 @@
-import { Badge, LocalTable, Section, TrackingLink, columnsOf, type ColumnDef } from '@/platform-ui'
+import { Badge, LocalTable, Section, TrackingLink, columnsOf, withHelp, type ColumnDef } from '@/platform-ui'
 import { lineNumbers, type OrderDetail, type PackingRead } from '../ordersApi'
 import { Shipments } from '../Shipments'
 
@@ -9,10 +9,10 @@ const col = columnsOf<LotRow>()
 
 const lotColumns: ColumnDef<LotRow, unknown>[] = [
   { accessorKey: 'item', header: 'Item' },
-  col.reference('lot', 'Lot'),
+  withHelp(col.reference('lot', 'Lot'), 'term:Lot / Expiry'),
   col.date('expiry', 'Expiry'),
   { accessorKey: 'qty_shipped_ea', header: 'Qty EA', cell: ({ row }) => <span className="tabular-nums">{row.original.qty_shipped_ea}</span> },
-  { accessorKey: 'sscc', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? '—' },
+  { accessorKey: 'sscc', header: 'Pallet (SSCC)', meta: { help: 'term:SSCC' }, cell: ({ row }) => row.original.sscc ?? '—' },
   { accessorKey: 'tracking', header: 'Tracking', cell: ({ row: { original: p } }) => p.tracking
     ? <span className="flex flex-wrap gap-1">{p.tracking.split(', ').map((t) => <TrackingLink key={t} number={t} url={p.links.get(t)} />)}</span> : '—' },
   col.date('ship_date', 'Ship date'),

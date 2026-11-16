@@ -18,10 +18,11 @@ class HelpService:
         self.uow = uow
 
     @requires("sales.read")
-    async def order_statuses(self) -> dict:
+    async def texts(self) -> dict:
         return payload()
 
 
-@router.get("/order-statuses")
-async def order_status_help(u: UoW) -> dict:
-    return await HelpService(u).order_statuses()
+@router.get("/texts")
+async def help_texts(u: UoW) -> dict:
+    """Every help text: the order statuses, hold reasons and details, and the glossary's terms."""
+    return await HelpService(u).texts()

@@ -7,6 +7,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight
 import { Button, Input, Pagination, Skeleton, SkeletonRow } from './shell'
 import { DropdownMenu } from './DropdownMenu'
 import { useElementWidth } from './useResponsive'
+import { HelpTip } from '../help'
 import { cn } from '../lib/cn'
 import { EmptyState, ErrorState } from './States'
 import { useSynced } from './useSynced'
@@ -231,7 +232,9 @@ export function DataTable<T>({
   const renderCards = () => {
     const label = (id: string) => {
       const h = headerById.get(id)
-      return h ? <Render def={h.column.columnDef.header} ctx={h.getContext()} /> : id
+      if (!h) return id
+      const help = h.column.columnDef.meta?.help
+      return <><Render def={h.column.columnDef.header} ctx={h.getContext()} />{help && <HelpTip id={help} className="ml-0.5 h-4 w-4" />}</>
     }
     const all = table.getRowModel().rows
     return (
@@ -421,6 +424,7 @@ export function DataTable<T>({
                           ) : (
                             <Render def={h.column.columnDef.header} ctx={h.getContext()} />
                           )}
+                          {h.column.columnDef.meta?.help && <HelpTip id={h.column.columnDef.meta.help} />}
                           {headerAddon?.(h.column.id)}
                         </span>
                       </th>

@@ -54,8 +54,8 @@ def test_the_button_check_is_strict():
 
 
 async def test_the_endpoint_needs_sales_read_and_serves_the_texts(api):  # noqa: F811
-    assert (await api.get("/api/v1/help/order-statuses", headers=NOBODY)).status_code == 403
-    r = await api.get("/api/v1/help/order-statuses", headers=READER)
+    assert (await api.get("/api/v1/help/texts", headers=NOBODY)).status_code == 403
+    r = await api.get("/api/v1/help/texts", headers=READER)
     assert r.status_code == 200 and r.json() == payload()
     assert r.json()["holds"]["997 Timeout"]["body"].startswith("No 997")
 
@@ -168,3 +168,18 @@ async def test_a_post_answers_with_the_same_next_step_as_a_get(api):  # noqa: F8
 def test_a_read_that_never_learned_whether_runs_happen_shows_no_step():
     from app.services.order_views import OrderService
     assert OrderService._runs_on is None  # the class default: a path that forgets shows nothing, never a false promise
+
+
+# ── the glossary (round 2) ───────────────────────────────────────────────────────────────────────
+from app.domain.glossary import TERMS  # noqa: E402
+
+
+def test_every_term_a_screen_names_is_in_the_glossary_and_short():
+    src = _front_labels()
+    used = set(re.findall(r"['\"]term:([^'\"`$]+)['\"]", src))  # a quoted id ('term:On hand'), not the type `term:${string}`
+    assert {"Order ref", "On hand", "SSCC", "Sales, Refunds, Net"} <= used, used  # the scan really finds them
+    assert used <= set(TERMS), used - set(TERMS)
+    for key, h in TERMS.items():
+        assert 20 <= len(h.body) <= MAX_BODY, key
+        for b in h.buttons:
+            assert b in h.body and is_button(b, src), (key, b)

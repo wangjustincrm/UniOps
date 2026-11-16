@@ -22,6 +22,6 @@ Help shown where it is needed (the user, 2026-11-16): a **?** beside what it exp
 
 ## Rules
 
-- One text, one place. Texts about business rules live beside the rules (Sales: `sales-api/app/domain/status_help.py`, served at `GET /help/order-statuses`, tested for coverage, length and real button names); texts only a screen needs live in the module's front end (`features/help`).
+- One text, one place. Texts about business rules live beside the rules (Sales: `sales-api/app/domain/status_help.py`, served at `GET /help/texts`, tested for coverage, length and real button names); texts only a screen needs live in the module's front end (`features/help`).
 - Short: a popover is read on a phone (Sales caps a body at 320 characters).
 - `data-help` only on one-of-a-kind elements (a header, a field, a button), never on every row.

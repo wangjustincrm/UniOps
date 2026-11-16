@@ -29,9 +29,9 @@ export function OverviewTab({ o }: { o: OrderDetail }) {
       )}
       <Section title="Order">
         <DetailList items={[
-          ['Order ref', o.source_reference], ['Internal no.', String(o.order_number)],
-          ['Partner', partnerLabel(o.partner_name, o.partner_code)], ['Customer PO / reference', o.source_order_number],
-          ['Source', SOURCE_LABEL[o.source_type] ?? o.source_type], ['Received', formatDateTime(o.first_received_at)], ['Paid (delay start)', formatDateTime(o.paid_at)],
+          ['Order ref', o.source_reference, 'term:Order ref'], ['Internal no.', String(o.order_number), 'term:Internal no.'],
+          ['Partner', partnerLabel(o.partner_name, o.partner_code)], ['Customer PO / reference', o.source_order_number, 'term:Customer PO / reference'],
+          ['Source', SOURCE_LABEL[o.source_type] ?? o.source_type], ['Received', formatDateTime(o.first_received_at)], ['Paid (delay start)', formatDateTime(o.paid_at), 'term:Delay'],
           ['Requested delivery', o.requested_delivery_date ? formatDate(o.requested_delivery_date) : null],
           ...(o.source_type === 'EDI_850' ? [['EDI mailbox', o.edi_mailbox] as [string, string | null | undefined]] : []),
           ['Total', formatMoney(o.total_amount ?? o.total, o.currency)],

@@ -15,4 +15,4 @@ for k, cls in (("orders", OrderService), ("payments", PaymentRowService), ("inve
     out[k] = {"meta": {"version": cls.META_VERSION, "fields": repo.field_meta(cls.read_schema), "searchable": bool(repo.search_fields),
               "default_sort": list(repo.default_sort), "client_columns": list(repo.client_columns), "views": [p.as_dict() for p in repo.presets]},
               }
-print(json.dumps({**{k: v["meta"] for k, v in out.items()}, "help/order-statuses": status_help()}, default=str, indent=1))
+print(json.dumps({**{k: v["meta"] for k, v in out.items()}, "help/texts": status_help()}, default=str, indent=1))

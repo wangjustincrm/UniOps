@@ -1,4 +1,4 @@
-import { columnsOf, type ColumnDef } from '@/platform-ui'
+import { columnsOf, withHelp, type ColumnDef } from '@/platform-ui'
 
 type Tone = 'success' | 'warning' | 'danger'
 import type { PaymentRowRead } from './paymentsApi'
@@ -22,10 +22,10 @@ export function paymentColumns(openOrder: (orderId: number) => void): ColumnDef<
     col.text('kind', 'Kind'),
     col.status('status', 'Status', { tone: statusTone }),
     col.money('amount', 'Amount', { currency: 'currency' }),
-    col.money('sales_amount', 'Sales', { currency: 'currency' }),
-    col.money('refund_amount', 'Refunds', { currency: 'currency' }),
-    col.money('net_amount', 'Net', { currency: 'currency' }),
-    col.reference('gateway_ref', 'Gateway transaction ID'),
+    withHelp(col.money('sales_amount', 'Sales', { currency: 'currency' }), 'term:Sales, Refunds, Net'),
+    withHelp(col.money('refund_amount', 'Refunds', { currency: 'currency' }), 'term:Sales, Refunds, Net'),
+    withHelp(col.money('net_amount', 'Net', { currency: 'currency' }), 'term:Sales, Refunds, Net'),
+    withHelp(col.reference('gateway_ref', 'Gateway transaction ID'), 'term:Gateway transaction ID'),
     col.text('order_source', 'Order source'),
     col.text('financial_status', 'Order financial status'),
     col.status('issue', 'Issue', { tone: issueTone }),

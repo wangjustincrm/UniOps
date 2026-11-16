@@ -7,6 +7,7 @@ import { Sheet, SheetClose, SheetTitle, type SheetSize } from '../primitives/She
 import { Button, Skeleton } from '../primitives/shell'
 import { EmptyState } from '../primitives/States'
 import { AutoGrid } from '../primitives/Layout'
+import { HelpTip, type HelpId } from '../help'
 import { Tabs } from '../primitives/Tabs'
 import { UnsavedBoundary, useUnsavedScope, whenDiscarded } from '../primitives/unsaved'
 import { BusyBar } from '../primitives/BusyBar'
@@ -34,6 +35,8 @@ export interface RecordFact {
   tone?: FactTone
   /** A second, smaller line (e.g. the currency, "of 480 ordered"). */
   hint?: ReactNode
+  /** A help id: a ? beside the label. */
+  help?: HelpId
 }
 
 export interface RecordTab {
@@ -118,7 +121,7 @@ function Facts({ facts }: { facts: RecordFact[] }) {
     <AutoGrid as="dl" aria-label="Key facts" min="8.5rem" gap={2}>
       {facts.map((f) => (
         <div key={f.label} data-tone={f.tone ?? 'neutral'} className={cn('flex min-w-0 flex-col gap-0.5 rounded-lg border px-3 py-2', FACT_TONE[f.tone ?? 'neutral'])}>
-          <dt className="truncate text-xs font-medium text-neutral-500">{f.label}</dt>
+          <dt className="flex min-w-0 items-center gap-0.5 text-xs font-medium text-neutral-500"><span className="truncate">{f.label}</span>{f.help && <HelpTip id={f.help} className="h-4 w-4" />}</dt>
           <dd className="truncate text-base font-semibold tabular-nums text-neutral-900">{f.value}</dd>
           {f.hint && <dd className="truncate text-xs text-neutral-500">{f.hint}</dd>}
         </div>

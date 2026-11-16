@@ -114,7 +114,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
     ...(d.source_type === 'SHOPIFY' && d.net_amount != null ? [{
       label: 'Net', value: formatMoney(d.net_amount, d.currency), tone: Number(d.total_refunded ?? 0) > 0 ? 'warning' as const : 'neutral' as const,
       hint: Number(d.total_refunded ?? 0) > 0 ? `${formatMoney(d.total_refunded!, d.currency)} refunded` : 'nothing refunded' }] : []),
-    { label: 'Ordered EA', value: orderedEa },
+    { label: 'Ordered EA', value: orderedEa, help: 'term:EA' },
     { label: 'Shipped EA', value: shippedEa == null ? '—' : shippedEa, hint: shippedEa == null ? 'no 945 yet' : `of ${orderedEa} ordered` },
     ...(returned ? [{ label: 'Returned EA', value: returned, tone: 'warning' as const, hint: 'by the customer: not invoiced' }] : []),
     { label: 'Requested delivery', value: d.requested_delivery_date ? formatDate(d.requested_delivery_date) : '—' },

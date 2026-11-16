@@ -237,3 +237,23 @@ describe('disabled reasons beyond ActionButton', () => {
     expect(run).not.toHaveBeenCalled()
   })
 })
+
+describe('column help (withHelp)', () => {
+  type Row = { id: number; ref: string; qty: number }
+  const col = columnsOf<Row>()
+  it('a ? beside the header in a table, and beside the label in a card', async () => {
+    const { HelpProvider, withHelp } = await import('./index')
+    const columns = [col.text('ref', 'Ref'), withHelp(col.number('qty', 'On hand'), 'term:On hand')]
+    const source = (id: string) => (id === 'term:On hand' ? { title: 'On hand', body: 'At the warehouse now.' } : undefined)
+    const ui = <HelpProvider source={source}><DataTable columns={columns} rows={[{ id: 1, ref: 'A', qty: 3 }]} rowKey={(r) => r.id} ariaLabel="T" /></HelpProvider>
+    const w = stubWidth(1000)
+    const { unmount } = render(ui)
+    expect(within(screen.getByRole('table')).getByRole('button', { name: 'What "On hand" means' })).toHaveAttribute('data-help', 'term:On hand')
+    unmount(); w.mockRestore()
+    stubWidth(360)
+    render(ui)
+    const card = within(screen.getByRole('list', { name: 'T' })).getByRole('listitem')
+    fireEvent.click(within(card).getByRole('button', { name: 'What "On hand" means' }))
+    expect(await screen.findByText('At the warehouse now.')).toBeInTheDocument()
+  })
+})

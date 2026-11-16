@@ -38,7 +38,7 @@ const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<
     : <MoneyCell amount={row.original.discount_amount} currency={currency} />, meta: { hidden: true } },
   { accessorKey: 'tax_amount', header: 'Tax', cell: ({ row }) => row.original.tax_amount == null ? '—'
     : <MoneyCell amount={row.original.tax_amount} currency={currency} />, meta: { hidden: true } },
-  { accessorKey: 'qty_ea', header: 'EA', cell: ({ row }) => ea(row.original.qty_ea) },
+  { accessorKey: 'qty_ea', header: 'EA', meta: { help: 'term:EA' }, cell: ({ row }) => ea(row.original.qty_ea) },
   { accessorKey: 'shipped_ea', header: 'Shipped EA', cell: ({ row: { original: ln } }) => ea(ln.shipped_ea ?? ln.shipped_shadow_ea) },
   // Returned: entered by a person before the invoice goes (Edit returned); delivered = shipped − returned.
   { accessorKey: 'returned_ea', header: 'Returned EA', cell: ({ row: { original: ln } }) => ln.returned_ea
@@ -47,7 +47,7 @@ const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<
   { id: 'invoiced', header: 'Invoiced', cell: ({ row }) => row.original.invoiced_qty == null ? '—'
     : `${row.original.invoiced_qty} ${row.original.invoice_unit ?? ''}` },
   // Invoiced: the invoice's price per its unit (CA). Before: what the draft will take, per order unit.
-  { accessorKey: 'invoice_price', header: 'Invoice price', cell: ({ row: { original: ln } }) => ln.invoice_price == null ? '—' : (
+  { accessorKey: 'invoice_price', header: 'Invoice price', meta: { help: 'term:Invoice price' }, cell: ({ row: { original: ln } }) => ln.invoice_price == null ? '—' : (
     <span className="whitespace-nowrap"><MoneyCell amount={ln.invoice_price} currency={currency} />
       <Hint> /{ln.invoiced_qty != null ? ln.invoice_unit : (ln.order_unit ?? '?')}</Hint>
       {ln.invoiced_qty == null && <VsPo price={ln.invoice_price} po={ln.unit_price} currency={currency} />}
@@ -62,8 +62,8 @@ const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<
 ]
 
 const packingColumns: ColumnDef<PackingRead, unknown>[] = [
-  { accessorKey: 'sscc', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? '—' },
-  { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => row.original.lot ?? '—' },
+  { accessorKey: 'sscc', header: 'Pallet (SSCC)', meta: { help: 'term:SSCC' }, cell: ({ row }) => row.original.sscc ?? '—' },
+  { accessorKey: 'lot', header: 'Lot', meta: { help: 'term:Lot / Expiry' }, cell: ({ row }) => row.original.lot ?? '—' },
   colPackingRead.date('expiry', 'Expiry'),
   colPackingRead.text('qty_shipped_ea', 'Qty EA'),
   { accessorKey: 'tracking', header: 'Tracking', cell: ({ row }) => row.original.tracking ?? '—' },
