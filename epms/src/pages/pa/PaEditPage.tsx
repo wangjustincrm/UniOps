@@ -22,6 +22,7 @@ import { DerivedPaLinesTable } from './DerivedPaLinesTable'
 import { FreightPaEditForm } from './FreightPaEditForm'
 import { DirectPaEditForm } from './DirectPaEditForm'
 import { derivePaLines, derivedLinesTotal, invoiceOwnLines } from '@/lib/paLinesFromInvoices'
+import { paEditAutoAmounts } from './paEditAmounts'
 import { dueWindowViolation } from './invoiceDueWindow'
 import { invoiceClaims, poLinesSubtotal } from './invoiceClaims'
 
@@ -104,6 +105,9 @@ function PoPaEditPage() {
   // Set once the user ticks or unticks an invoice. Until then the saved
   // amounts stand; from then on they follow the selection (ISS-0113).
   const [invoicesTouched, setInvoicesTouched] = useState(false)
+  // Same for the PO lines: once one is ticked or unticked, a PA with no
+  // invoice ticked takes its Pre-tax from the ticked lines (ISS-0261).
+  const [linesTouched, setLinesTouched] = useState(false)
   // Same for the prepayment %: the saved tax stands until the % is changed.
   const [pctTouched, setPctTouched] = useState(false)
   const [shippingAmount, setShipping]   = useState('')
@@ -302,24 +306,26 @@ function PoPaEditPage() {
 
   useEffect(() => {
     // A prepayment's amount follows its %, not the invoices (ISS-0133).
-    if (!invoicesTouched || isPrepayment) return
-    const linked = selectedInvoices.length > 0
-    const auto = linked ? (derivedTotal ?? invoiceSubtotal) : (isAgreementMode ? 0 : autoSubtotal)
-    const pretax = auto > 0 ? Number(auto.toFixed(2)) : 0
-    setSubtotal(pretax > 0 ? String(pretax) : '')
-    // With no invoice left, Tax follows the pre-tax at the PO's rate (CAD
-    // only), as on New PA — the last invoice's tax used to stay behind with an
-    // empty Pre-tax, a total of tax only (ISS-0261).
-    if (taxManuallyEdited) return
-    if (linked) setTaxAmount(invoiceTax.toFixed(2))
-    else if (!isAgreementMode && po?.currency === 'CAD' && pretax > 0) setTaxAmount((pretax * paTaxRate).toFixed(2))
-    else setTaxAmount('')
-  }, [invoicesTouched, invoiceSubtotal, invoiceTax, derivedTotal, selectedInvoices.length]) // eslint-disable-line react-hooks/exhaustive-deps
+    // A line ticked beside ticked invoices changes nothing: they set the amount.
+    const linesDecide = linesTouched && selectedInvoices.length === 0
+    if (!(invoicesTouched || linesDecide) || isPrepayment) return
+    // With no invoice ticked, Pre-tax follows the ticked PO lines and Tax the
+    // pre-tax at the PO's rate (CAD only), as on New PA; with no line either,
+    // both are empty. Unticking a line used to change nothing (ISS-0261).
+    const auto = paEditAutoAmounts({
+      invoiceCount: selectedInvoices.length, derivedTotal, invoiceSubtotal, invoiceTax,
+      poLinesSubtotal: autoSubtotal, isAgreementMode, currency: po?.currency, taxRate: paTaxRate,
+    })
+    setSubtotal(auto.subtotal)
+    if (!taxManuallyEdited) setTaxAmount(auto.tax)
+  }, [invoicesTouched, linesTouched, invoiceSubtotal, invoiceTax, derivedTotal, selectedInvoices.length, autoSubtotal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (isPrepayment || taxManuallyEdited || (invoicesTouched && selectedInvoices.length > 0)) return
     if (po?.currency === 'CAD' && subtotalNum > 0) {
       setTaxAmount((subtotalNum * paTaxRate).toFixed(2))
+    } else if (invoicesTouched || linesTouched) {
+      setTaxAmount('')   // Pre-tax cleared → no tax left on its own (ISS-0261)
     }
   }, [subtotalNum, po?.currency, paTaxRate, taxManuallyEdited])  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -344,7 +350,7 @@ function PoPaEditPage() {
     setSelectedInvoiceIds((prev) => { const n = new Set(prev); if (n.has(invId)) n.delete(invId); else n.add(invId); return n })
     if (!invoicesTouched) {
       setInvoicesTouched(true)
-      setTaxManuallyEdited(false)   // the saved tax was for the old selection
+      if (!linesTouched) setTaxManuallyEdited(false)   // the saved tax was for the old selection
     }
   }
   const toggleGr = (grId: string) => {
@@ -352,6 +358,10 @@ function PoPaEditPage() {
   }
   const toggleLine = (lineId: string) => {
     setSelectedLineIds((prev) => { const n = new Set(prev); if (n.has(lineId)) n.delete(lineId); else n.add(lineId); return n })
+    if (!linesTouched && selectedInvoices.length === 0) {
+      setLinesTouched(true)
+      if (!invoicesTouched) setTaxManuallyEdited(false)   // the saved tax was for the old selection
+    }
   }
 
   const handleSave = async (andSubmit: boolean) => {
