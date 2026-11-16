@@ -122,6 +122,8 @@ export interface ApiPa {
   // Freight PA only, on the detail endpoint (null/absent otherwise).
   cost_allocations?: ApiPaCostAllocation[] | null
   invoice_ids: string[]
+  // Goods receipts linked to the PA ([] on the agreement route).
+  gr_ids?: string[]
   prepayment_pct?: number
   expected_settlement_date?: string
   settlement_status?: SettlementStatus
