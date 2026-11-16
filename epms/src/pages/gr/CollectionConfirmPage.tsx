@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { cn, formatAmount, formatDate, formatQty, todayISO } from '@/lib/utils'
 import { useGr, useGrAction } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
+import { useConfig } from '@/hooks/useConfig'
 import { type GrLineCondition, isOverReceiptError } from '@/services/gr'
 
 // ─── Condition options ────────────────────────────────────────────────────────
@@ -36,6 +37,7 @@ export default function CollectionConfirmPage() {
   useDocTabTitle(gr?.number && `Collect ${gr.number}`)
   const grAction = useGrAction(id ?? '')
   const { user } = useAuthStore()
+  const collectionGateOn = !!useConfig().data?.collection_config?.collection_gate_enabled
 
   const [collectionDate, setCollectionDate] = useState(
     todayISO()
@@ -118,6 +120,12 @@ export default function CollectionConfirmPage() {
   }
 
   const allGood = lines.every((l) => l.condition === 'good')
+  // PA creation follows the 3-way match (GR-P-008); only with Collection
+  // Confirmation Required on does it also wait for this collection (PA-013).
+  // It is not unlocked by collecting (ISS-0191, ISS-0233).
+  const paFollows = collectionGateOn
+    ? "The Payment Application follows once the vendor's invoice is matched to this PO and its goods are collected."
+    : "The Payment Application follows once the vendor's invoice is matched to this PO."
   const totalValue = gr.line_items.reduce((s, l) => s + Number(l.line_total), 0)
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -298,7 +306,8 @@ export default function CollectionConfirmPage() {
           <div>
             <p className="text-sm font-semibold text-success-700">All items verified as Good condition</p>
             <p className="text-sm text-success-600 mt-0.5">
-              Confirming collection will mark this GR as Collected and unlock Payment Application creation.
+              Confirming collection will mark this GR as <strong>Collected</strong> and record the goods as
+              received on the PO. {paFollows}
             </p>
           </div>
         </div>
