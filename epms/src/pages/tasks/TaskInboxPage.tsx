@@ -6,7 +6,7 @@ import { cn, formatCAD, formatDate, formatDateTime, isoDateInZone, todayISO } fr
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useTasks } from '@/hooks/useTasks'
-import { TASK_TYPE_LABELS, isEpmsInboxTask, isRetitledTask, overBudgetJustification, taskCardLabel, taskHref } from '@/lib/taskTypes'
+import { TASK_TYPE_LABELS, isEpmsInboxTask, isRetitledTask, overBudgetJustification, taskCardLabel, taskGroupType, taskHref } from '@/lib/taskTypes'
 import type { TaskType } from '@/lib/taskTypes'
 import type { ApiTask } from '@/services/tasks'
 import { groupTasks } from '@/lib/groupTasks'
@@ -299,17 +299,17 @@ export default function TaskInboxPage() {
 
   const labelOf = (k: string) => TASK_TYPE_LABELS[k as TaskType] ?? k
   // Type filter options: the types present on this tab, in group order.
-  const typeOptions = groupTasks(tabFiltered, (t) => t.type, labelOf, GROUP_ORDER)
+  const typeOptions = groupTasks(tabFiltered, taskGroupType, labelOf, GROUP_ORDER)
     .map((g) => ({ value: g.key, label: g.label }))
   const needle = search.trim().toLowerCase()
   const visible = tabFiltered.filter((t) =>
-    (!typeFilter || t.type === typeFilter) &&
+    (!typeFilter || taskGroupType(t) === typeFilter) &&
     (!needle || [t.document_number, t.vendor, t.title].some((v) => v?.toLowerCase().includes(needle)))
   )
 
   const groups = groupTasks(
     visible,
-    (t) => t.type,
+    taskGroupType,
     labelOf,
     GROUP_ORDER,
   )

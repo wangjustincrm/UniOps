@@ -10,6 +10,7 @@ import { cn, formatAmount, formatDate, formatQty, todayISO } from '@/lib/utils'
 import { useGr, useGrAction } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
 import { isOverReceiptError } from '@/services/gr'
+import { serviceAcceptanceNotes } from '@/lib/grNotes'
 
 type QualityRating = 'satisfactory' | 'issues' | 'rejected'
 
@@ -111,10 +112,9 @@ export default function ServiceGrConfirmPage() {
     if (qualityRating !== 'satisfactory' && !issueDetails.trim()) return
     if (needsOverReason && !overReceiptReason.trim()) return
 
-    const combinedNotes = [
-      acceptanceNotes.trim(),
-      qualityRating !== 'satisfactory' ? `Issues noted: ${issueDetails.trim()}` : '',
-    ].filter(Boolean).join(' — ')
+    // GR Detail reads the "Issues noted" part back (lib/grNotes, ISS-0179).
+    const combinedNotes = serviceAcceptanceNotes(
+      acceptanceNotes, qualityRating !== 'satisfactory' ? issueDetails : null)
 
     const apiAction = qualityRating === 'rejected' ? 'reject' : 'confirm'
     grAction.mutate(

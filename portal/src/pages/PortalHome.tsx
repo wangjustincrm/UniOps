@@ -353,6 +353,16 @@ const GROUP_ORDER = [
   'vms_visit', 'vms_train', 'vms_ppe',
 ]
 
+// A service GR's first task is raised as acknowledge_gr but is a service
+// confirmation, titled "Confirm Service Completion: GR-…" (epms-api
+// crud/gr.py _create_ack_task); it is grouped with confirm_service_gr, not
+// under Acknowledge Goods Receipt (ISS-0179).
+function epmsGroupType(t: { type: string; title?: string | null }): string {
+  return t.type === 'acknowledge_gr' && (t.title ?? '').startsWith('Confirm Service Completion')
+    ? 'confirm_service_gr'
+    : t.type
+}
+
 function humanize(s: string): string {
   return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
@@ -671,9 +681,10 @@ export default function PortalHome() {
           groupLabel = oaTaskLabel(t.type, t.document_type)
         }
       } else {
-        // EPMS-owned: bucket by engine task type.
-        groupKey = t.type
-        groupLabel = EPMS_TYPE_LABELS[t.type] ?? humanize(t.type)
+        // EPMS-owned: bucket by engine task type, as the EPMS Task Inbox does
+        // (epms/src/lib/taskTypes.ts taskGroupType).
+        groupKey = epmsGroupType(t)
+        groupLabel = EPMS_TYPE_LABELS[groupKey] ?? humanize(groupKey)
       }
       return {
         id: `epms-${t.id}`,

@@ -67,8 +67,9 @@ values:
       the warehouse to check in.
     notes:
       - When someone else records the service receipt, the owner's task reads
-        "Confirm Service Completion" and is done with that button on the GR
-        page (Satisfactory or Has Issues).
+        "Confirm Service Completion" (listed under Confirm Service Receipt in
+        the Task Inbox) and is done with that button on the GR page
+        (Satisfactory or Has Issues).
       - The PR's expected completion date is what triggers the reminder; once
         it passes you are nudged to confirm.
       - A purchase order whose PR never carried a completion date is outside
