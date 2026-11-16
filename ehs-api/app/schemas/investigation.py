@@ -11,7 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class ChronologyRow(BaseModel):
     """One line of the Production Chronology (UAT 13)."""
-    at: str | None = Field(default=None, max_length=25)   # a local date and time, as typed
+    # A local date and time as the browser's picker writes it — 2026-11-16T09:40,
+    # seconds optional (review R11: it was any text up to 25 characters).
+    at: str | None = Field(default=None, max_length=25,
+                           pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$")
     stage: str = Field(default="other",
                        pattern="^(start|deviation|containment|inspection|end|other)$")
     detail: str = Field(default="", max_length=2000)
