@@ -271,6 +271,15 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
       // (agreement_receipts.py _receipt_integrity_error).
       if ((err as { status?: number }).status === 409 && ref && msg.includes(`Reference # ${ref} `)) {
         setRefError(msg)
+        // Record Receipt sits at the bottom of a long form: on a short window
+        // the field's message was off-screen and the click looked like it did
+        // nothing (ISS-0115 retest). Bring the field into view; the message is
+        // repeated beside the button too.
+        requestAnimationFrame(() => {
+          const field = document.getElementById('receipt-ref')
+          field?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+          field?.focus({ preventScroll: true })
+        })
       } else {
         setSubmitError(msg)
       }
@@ -556,6 +565,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
 
       <div className="flex items-center justify-end gap-3">
         {submitError && <p className="text-sm text-danger-600" role="alert">{submitError}</p>}
+        {!submitError && refError && <p className="text-sm text-danger-600">{refError}</p>}
         <Button type="submit" size="sm" disabled={isPending} className={cn(isPending && 'cursor-not-allowed')}>
           {isPending ? 'Recording…' : 'Record Receipt'}
         </Button>
