@@ -352,7 +352,10 @@ function PoPaCreate() {
         && !grsData.items.some((g) => g.po_id === p.id && ['collected', 'confirmed', 'discrepancy'].includes(g.status))
         && !p.line_items.some((l) => Number(l.received_qty) > 0))
     : []
-  const receiptBlocked = !isAgreementMode && !isPrepayment && (!hasThreeWay || uncollectedPos.length > 0)
+  // Only once a PO is chosen and its invoices have loaded: with nothing picked
+  // yet the warning and its override showed on an empty form (ISS-0241).
+  const receiptBlocked = !isAgreementMode && !isPrepayment && selectedPos.length > 0 && invoicesData !== undefined
+    && (!hasThreeWay || uncollectedPos.length > 0)
   // Which of the two the warning names — the server reports "no receipt" first.
   const blockedByCollection = receiptBlocked && hasThreeWay
   const receiptOverrideMissing = receiptBlocked && (!canOverride || !receiptOverride || !receiptOverrideReason.trim())
