@@ -55,13 +55,30 @@ function bandFor(rpn: number, bands: Band[]): Band | undefined {
   return [...bands].sort((a, b) => b.floor - a.floor).find((b) => rpn >= b.floor)
 }
 
-export function FoodSafetyRisk({ incidentId, mayAssess }: { incidentId: string; mayAssess: boolean }) {
-  const [assessing, setAssessing] = useState(false)
-  const scales = useFoodSafetyScales()
-  const list = useQuery({
+export function useFoodSafetyAssessments(incidentId: string, enabled = true) {
+  return useQuery({
     queryKey: ['food-safety-assessments', incidentId],
+    enabled: enabled && Boolean(incidentId),
     queryFn: () => api.get<FoodSafetyAssessment[]>(`/api/v1/incidents/${incidentId}/food-safety-assessments`),
   })
+}
+
+/** The green button, as both assessments have it (UAT 14). */
+export const assessButton =
+  'flex min-h-[40px] w-full items-center justify-center rounded-lg bg-success-600 px-4 text-sm font-semibold text-white hover:bg-success-700'
+
+/**
+ * ★ UAT 14: "On food safety near misses, place the button to 'assess the risk'
+ * and 'Assess the food safety risk' on the same line, and make the buttons
+ * green." So the button lives on the page, beside the other one, and this
+ * section shows what was assessed and opens the dialog when told to.
+ */
+export function FoodSafetyRisk({ incidentId, assessing, onAssessing }: {
+  incidentId: string; assessing: boolean; onAssessing: (open: boolean) => void
+}) {
+  const setAssessing = onAssessing
+  const scales = useFoodSafetyScales()
+  const list = useFoodSafetyAssessments(incidentId)
   const rows = list.data ?? []
   const latest = rows[0]
   const bands = scales.data?.bands ?? []
@@ -96,14 +113,8 @@ export function FoodSafetyRisk({ incidentId, mayAssess }: { incidentId: string; 
           </p>
         </div>
       )}
-      {mayAssess && (
-        <button type="button" onClick={() => setAssessing(true)}
-                className="flex min-h-[40px] w-full items-center justify-center rounded-lg border border-neutral-300 px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
-          {latest ? 'Assess the food safety risk again' : 'Assess the food safety risk'}
-        </button>
-      )}
       {!latest && !list.isPending && (
-        <p className="mt-2 text-sm text-neutral-500">Not assessed yet.</p>
+        <p className="text-sm text-neutral-500">Not assessed yet.</p>
       )}
       {rows.length > 1 && (
         <details className="mt-2">

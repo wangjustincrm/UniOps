@@ -29,7 +29,7 @@ import { CommunicationLog } from '@/components/CommunicationLog'
 import { ReturnToWorkPanel } from '@/components/ReturnToWorkPanel'
 import { NewActionDialog } from '@/components/NewActionDialog'
 import { RiskAssessmentDialog } from '@/components/RiskAssessmentDialog'
-import { FoodSafetyRisk } from '@/components/FoodSafetyRisk'
+import { FoodSafetyRisk, assessButton, useFoodSafetyAssessments } from '@/components/FoodSafetyRisk'
 import { RatingBadge, RiskScoringHistory, useScorings } from '@/components/RiskScoring'
 import { LocationSelect } from '@/components/LocationSelect'
 import { useTabTitle } from '@uniops/shell'
@@ -238,6 +238,9 @@ export default function IncidentDetailPage() {
   // is the answer to "how bad is this one" without reading it.
   const scorings = useScorings('incident', id ?? '')
   const latestRating = scorings.data?.[0]?.rating ?? null
+  const [assessingFood, setAssessingFood] = useState(false)
+  const foodAssessed = (useFoodSafetyAssessments(id ?? '', Boolean(incident.data?.food_safety_near_miss))
+    .data ?? []).length > 0
   const hasInvestigation = Boolean(
     tree.data && (tree.data.immediate.length > 0 || tree.data.root.length > 0))
 
@@ -418,14 +421,19 @@ export default function IncidentDetailPage() {
             <SectionTitle className="mb-0">Risk assessment</SectionTitle>
             {latestRating && <RatingBadge rating={latestRating} />}
           </div>
+          {/* ★ UAT 14: on a food-safety near miss both assessments' buttons
+              sit on this one line, and both are green. */}
           {canInvestigate && (
-            <button
-              type="button"
-              onClick={() => setAssessing(true)}
-              className="flex min-h-[40px] w-full items-center justify-center rounded-lg border border-neutral-300 px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-            >
-              {latestRating ? 'Assess it again' : 'Assess the risk'}
-            </button>
+            <div className={inc.food_safety_near_miss ? 'grid gap-2 sm:grid-cols-2' : ''}>
+              <button type="button" onClick={() => setAssessing(true)} className={assessButton}>
+                {latestRating ? 'Assess the risk again' : 'Assess the risk'}
+              </button>
+              {inc.food_safety_near_miss && (
+                <button type="button" onClick={() => setAssessingFood(true)} className={assessButton}>
+                  {foodAssessed ? 'Assess the food safety risk again' : 'Assess the food safety risk'}
+                </button>
+              )}
+            </div>
           )}
           {assessing && (
             <RiskAssessmentDialog sourceType="incident" sourceId={id}
@@ -439,7 +447,9 @@ export default function IncidentDetailPage() {
 
         {/* ★ UAT 13: "add this new one just under it and title it 'Food Safety
             Risk Assessment'" — on a food-safety near miss only. */}
-        {inc.food_safety_near_miss && <FoodSafetyRisk incidentId={id} mayAssess={canInvestigate} />}
+        {inc.food_safety_near_miss && (
+          <FoodSafetyRisk incidentId={id} assessing={assessingFood} onAssessing={setAssessingFood} />
+        )}
 
         {/* ── Causes and what is being done ─────────────────────────────── */}
         <section className="p-4">
