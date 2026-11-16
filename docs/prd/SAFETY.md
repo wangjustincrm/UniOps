@@ -1,12 +1,15 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.26
+**Version**: 0.27
 **Date**: 2026-11-16
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.25 → 0.26)**
+**What changed in this version (0.26 → 0.27)**
+- §1.6 "UAT 14, hazards": the hazard form with the owner and review date at the top, the staff who helped, the equipment under Where, no immediate causes, and its risk assessment on the form; hazard corrective actions closed on the hazard assessments chart.
+
+**What changed in version 0.26 (0.25 → 0.26)**
 - §1.6 "Review of UAT 13 and 14": a toolbox talk held again is saved with its signatures; the Section B rule reaches only incidents the supervisor can open; an answered JHSC recommendation sent again asks for no reply; who recorded a filing is kept; an anonymous reporter's own food safety assessment is unsigned; causes keep their department's recorded name; a quiz copy starts as practice only; the risk register takes the dashboard's year; placeholders are names only and subjects one line.
 
 **What changed in version 0.25 (0.24 → 0.25)**
@@ -434,6 +437,13 @@ UAT 14 (built; no migration)
 - The HSE dashboard: on the four injury boxes and on Injuries by month, Near misses, Corrective actions raised and Hazard assessments, a small count for this month (December, when looking back at a past year) with an arrow — up dark green, down dark red, a dash for the same — against the month before, each counted as its own figure is. The words are on hover and for screen readers.
 - The Food Safety dashboard (beside the HSE dashboard's title): food-safety near misses this year; this month's with last month's and the change in per cent; the risk ratings by each near miss's latest Food Safety Risk Assessment, each opening the Food Safety Risk register at that band; the investigations open (reported or being investigated), pending (waiting to be closed) and closed; the corrective actions raised on food-safety near misses — created, completed, outstanding, each opening the near misses they were raised on; the near misses by month; and the average days to resolve, worked out as for all incidents (report sent to last close, over the closed ones). A food-safety near miss is the Near Miss — Food Safety type or any near miss in the Food Safety category; drafts are not counted. The incident register takes the same rule as a filter, so every figure opens exactly what it counted.
 
+UAT 14, hazards (built; migration 0112)
+
+- The hazard form opens with the Owner (defaulting to whoever records it) and Review due side by side, then Also took part: staff who helped with the assessment, picked one at a time from the staff list and kept with the names they had when picked (ehs_hazards.helpers, migration 0112). They are shown on the hazard.
+- Equipment is under Where. The immediate causes are no longer on the form; any recorded before are kept, unchanged by a save. Root causes and their corrective actions stay.
+- The form has a Risk assessment section, as an incident has: the assessments made so far and a green button to assess (again). On a new hazard the button reads Record and assess the risk: it records the hazard, then opens the assessment, and the form stays open to finish.
+- The dashboard's Hazard assessments completed chart has a second bar: corrective actions raised on hazards and closed in the month.
+
 Review of UAT 13 and 14 (built; no migration)
 
 - A past toolbox talk held again is saved, with its signatures, when its sheet is finished; nothing is saved on opening the sheet, so one closed unsigned leaves no talk to deliver and nothing is chased. It always names the delivery it repeats — the person's own first delivery of the talk, or the talk's first — and is marked "held again" in To deliver. A talk handed to nobody yet cannot be held again.
@@ -638,6 +648,7 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | 0.24 | 2026-11-16 | UAT 13: email wording HSE can change, the corrective action email, Systems by area in the equipment picker, a toolbox talk held again (§1.6). |
 | 0.25 | 2026-11-16 | UAT 14: injury classification in Reports, form and investigation layout, the two assessment buttons, every email in Email wording, quiz copy and rename, this month's arrows on the dashboard, the Food Safety dashboard (§1.6). |
 | 0.26 | 2026-11-16 | Review of UAT 13 and 14: toolbox talks held again, the Section B rule, JHSC sent again, filings, anonymous assessments, causes' departments, quiz copies, the register's year, email placeholders (§1.6). |
+| 0.27 | 2026-11-16 | UAT 14, hazards: owner and review date at the top, staff who helped, equipment under Where, no immediate causes, the risk assessment on the form; hazard corrective actions closed on the dashboard (§1.6). |
 
 ---
 
