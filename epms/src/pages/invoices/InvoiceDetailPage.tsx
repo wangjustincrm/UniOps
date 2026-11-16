@@ -880,7 +880,7 @@ export default function InvoiceDetailPage() {
                         <tr className="border-b border-neutral-100">
                           <th className="pb-2 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide">Description</th>
                           <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-16">Qty</th>
-                          <th className="pb-2 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide w-16">Unit</th>
+                          <th className="pb-2 pl-3 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide w-16">Unit</th>
                           <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-28">Unit Price</th>
                           <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-28">Line Total</th>
                         </tr>
@@ -1145,7 +1145,7 @@ export default function InvoiceDetailPage() {
                         <tr className="border-b border-neutral-100">
                           <th className="pb-2 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide">Description</th>
                           <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-20">Qty</th>
-                          <th className="pb-2 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide w-20">Unit</th>
+                          <th className="pb-2 pl-2 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide w-20">Unit</th>
                           <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-28">Unit Price</th>
                           <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-28">Total</th>
                           <th className="pb-2 w-8" />
