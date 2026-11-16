@@ -80,6 +80,12 @@ async def _may_read(db, payload: dict, incident) -> bool:
     return involved is not None
 
 
+async def _resolve_filer(db, user: dict) -> str | None:
+    """★ Review R5: who recorded a filing, kept on the clock it stops."""
+    from app.crud.incident import _resolve_name
+    return await _resolve_name(db, _user_id(user))
+
+
 def _user_id(payload: dict) -> uuid.UUID:
     try:
         return uuid.UUID(payload["sub"])
@@ -757,7 +763,7 @@ async def mol_report_filed(
     await deadline_service.satisfy(
         db, deadline,
         user_id=_user_id(user),
-        user_name=None,
+        user_name=await _resolve_filer(db, user),
         evidence_file_id=payload.evidence_file_id,
         evidence_note=payload.reference,
         when=payload.filed_at or datetime.now(timezone.utc),
@@ -823,7 +829,7 @@ async def wsib_form7_filed(
     await deadline_service.satisfy(
         db, deadline,
         user_id=_user_id(user),
-        user_name=None,
+        user_name=await _resolve_filer(db, user),
         evidence_file_id=payload.evidence_file_id,
         evidence_note=payload.confirmation_number,
         when=payload.filed_at or datetime.now(timezone.utc),
