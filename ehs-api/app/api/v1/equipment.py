@@ -231,13 +231,28 @@ async def list_equipment(
 
 
 @router.get("/summary", response_model=EquipmentSummary)
-async def summary(db: SessionDep, user: CanReportIncident):  # noqa: ARG001
+async def summary(
+    db: SessionDep, user: CanReportIncident,  # noqa: ARG001
+    near_location_id: uuid.UUID | None = Query(
+        default=None, description="Only the Systems with machines in this area"),
+):
     """In-service machines counted by System — the boxes across the register
-    (EQ-01, EQ-05, EQ-06). Largest first; machines with no System last."""
+    (EQ-01, EQ-05, EQ-06). Largest first; machines with no System last.
+
+    ★ UAT 13: "once the 'where did it happen' is selected, only show the
+    systems that are in that area … I should not see an agitator system as
+    that system only exists in the pretreatment department." Given an area,
+    the Systems of the machines a record filed there could name — the same
+    area, and below it, that the picker's list uses — and not those of the few
+    machines with no area, which would bring every System back."""
+    conds = [Equipment.is_active.is_(True)]
+    if near_location_id:
+        scope = await _scope_for(db, near_location_id)
+        conds.append(_in_subtree(scope) if scope else text("false"))
     rows = (await db.execute(
         select(Equipment.system_id, VocabularyItem.label, VocabularyItem.is_active, func.count())
         .outerjoin(VocabularyItem, VocabularyItem.id == Equipment.system_id)
-        .where(Equipment.is_active.is_(True))
+        .where(*conds)
         .group_by(Equipment.system_id, VocabularyItem.label, VocabularyItem.is_active)
     )).all()
     systems = [SystemCount(system_id=sid, label=label, count=n, is_active=bool(active))

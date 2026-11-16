@@ -102,3 +102,4 @@ def test_every_default_uses_only_its_own_placeholders():
         assert et.problems(key, t.subject, t.body) == [], key
         # and its example values fill every one of them
         assert set(et.placeholders_in(t.subject + t.body)) <= set(t.sample), key
+

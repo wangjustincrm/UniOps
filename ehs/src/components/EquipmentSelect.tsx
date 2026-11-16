@@ -106,11 +106,13 @@ function lastPart(path: string | null): string | null {
 
 interface SystemCount { system_id: string | null; label: string | null; count: number; is_active: boolean }
 
-/** The Systems that have machines, for narrowing a pick. */
-function useSystems(enabled: boolean) {
+/** The Systems that have machines, for narrowing a pick — ★ UAT 13: only
+ *  those in the area chosen, while the picker is narrowed to it. */
+function useSystems(enabled: boolean, near: string | null) {
   return useQuery({
-    queryKey: ['equipment', 'summary'],
-    queryFn: () => api.get<{ systems: SystemCount[] }>('/api/v1/equipment/summary'),
+    queryKey: ['equipment', 'summary', near],
+    queryFn: () => api.get<{ systems: SystemCount[] }>(
+      `/api/v1/equipment/summary${near ? `?near_location_id=${near}` : ''}`),
     enabled,
     staleTime: 10 * 60_000,
   })
@@ -137,9 +139,14 @@ export default function EquipmentSelect({
   const [ownSystem, setOwnSystem] = useState('')
   const fixedSystem = systemId !== undefined
   const system = fixedSystem ? systemId ?? null : ownSystem || null
-  const systems = useSystems(!fixedSystem)
   const search = useDebounced(term.trim())
   const near = everywhere ? null : locationId ?? null
+  const systems = useSystems(!fixedSystem, near)
+  // A System this area does not have is not kept when the area changes.
+  useEffect(() => {
+    if (ownSystem && systems.data
+        && !systems.data.systems.some((s) => s.system_id === ownSystem)) setOwnSystem('')
+  }, [systems.data, ownSystem])
   // A new area is a new question: narrow again.
   useEffect(() => { setEverywhere(false) }, [locationId])
 
