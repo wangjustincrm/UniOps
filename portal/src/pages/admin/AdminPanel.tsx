@@ -936,6 +936,16 @@ function CurrencySettings() {
 
   const currDefault = defaultCurrency || cfg?.default_currency || 'CAD'
   const currEnabled = enabled ?? cfg?.enabled_currencies ?? ['CAD']
+  // Every currency the forms may offer must be on this page, so an admin can
+  // see it and switch it off: a code enabled outside the presets (e.g. HKD,
+  // added as a custom currency on the old EPMS settings page) was stored as
+  // enabled, offered on New PO / New PR, but never shown here (ISS-0118).
+  const allCurrencies = [...new Set([
+    ...PRESET_CURRENCIES,
+    ...(cfg?.custom_currencies ?? []).map((c) => c.value),
+    ...(cfg?.enabled_currencies ?? []),
+    currDefault,
+  ])]
 
   const toggleEnabled = (code: string) => {
     const next = currEnabled.includes(code) ? currEnabled.filter((c) => c !== code) : [...currEnabled, code]
@@ -958,12 +968,12 @@ function CurrencySettings() {
       <Field label="Default Currency">
         <select value={currDefault} onChange={(e) => setDefaultCurrency(e.target.value)}
           className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
-          {PRESET_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          {allCurrencies.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       </Field>
       <Field label="Enabled Currencies" hint="Only enabled currencies appear in transaction forms.">
         <div className="grid grid-cols-4 gap-2 mt-1">
-          {PRESET_CURRENCIES.map((c) => {
+          {allCurrencies.map((c) => {
             const on = currEnabled.includes(c)
             return (
               <button key={c} type="button" onClick={() => toggleEnabled(c)}
