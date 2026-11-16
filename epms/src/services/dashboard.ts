@@ -31,6 +31,8 @@ export interface BudgetGroupRow {
   actual_spent: number
   available: number
   utilisation_pct: number
+  /** Over-budget cost center × account lines in this group (BDASH-003). */
+  over_accounts?: number
 }
 
 export interface BudgetOverview {

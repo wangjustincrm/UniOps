@@ -199,16 +199,21 @@ async def _approver_budget(
 
     red = Decimal(str(red_threshold))
     sums: dict[str, list[Decimal]] = {}
+    # Over accounts per L1 group: a group whose total is under budget can still
+    # hold over-budget accounts, and must not read as fine (ISS-0168).
+    over_by_l1: dict[str, int] = {}
     over_accounts = 0
     over_depts: set[str] = set()
     for cc, accounts in zip(ccs, per_cc):
         for a in accounts:
             budget, committed, spent = _d(a.get("annual_budget")), _d(a.get("committed")), _d(a.get("actual_spent"))
             used = committed + spent
+            l1 = a.get("l1_code") or "—"
             if (budget > 0 and used * 100 >= budget * red) or (budget <= 0 and used > 0):
                 over_accounts += 1
                 over_depts.add(str(cc.get("department_id") or cc["id"]))
-            s = sums.setdefault(a.get("l1_code") or "—", [_ZERO, _ZERO, _ZERO])
+                over_by_l1[l1] = over_by_l1.get(l1, 0) + 1
+            s = sums.setdefault(l1, [_ZERO, _ZERO, _ZERO])
             s[0] += budget
             s[1] += committed
             s[2] += spent
@@ -219,7 +224,8 @@ async def _approver_budget(
     groups = [
         BudgetGroupRow(l1_code=code, l1_name=l1_names.get(code) or code,
                        annual_budget=b, committed=c, actual_spent=s,
-                       available=b - c - s, utilisation_pct=_pct(b, c + s))
+                       available=b - c - s, utilisation_pct=_pct(b, c + s),
+                       over_accounts=over_by_l1.get(code, 0))
         for code, (b, c, s) in sorted(sums.items())
         if b > 0 or c > 0 or s > 0
     ]
