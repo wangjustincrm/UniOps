@@ -19,7 +19,7 @@ from app.models.pa import PaymentApplication
 from app.models.po import PurchaseOrder
 from app.models.posting import PostingEvent, PostingLine
 from app.models.pr import PurchaseRequest
-from app.models.routing import ApprovalBackup, ApprovalSetting, DeptRouting
+from app.models.routing import ApprovalBackup, ApprovalSetting, DeptRouting, WorkflowSnapshot
 from app.models.agreement import PurchaseAgreement
 from app.models.task import Task
 from app.models.user import User
@@ -83,6 +83,8 @@ _ENGINE_TABLES = [
     ApprovalBackup.__table__,
     ApprovalSetting.__table__,
     ApprovalDelegation.__table__,
+    # Workflow realignment's "aligned to" snapshot — test_workflow_realign.py
+    WorkflowSnapshot.__table__,
     # VMS visits + zones (thin mirrors) — test_engine_vms_visit.py
     VmsZone.__table__,
     VmsVisit.__table__,
