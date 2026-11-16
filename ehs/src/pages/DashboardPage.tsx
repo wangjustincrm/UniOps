@@ -57,7 +57,7 @@ interface ResolutionRow {
   month: string; reported: number; closed: number; average_days: number | null; still_open: number
 }
 interface CapaRow { month: string; created: number; resolved: number }
-interface AssessmentRow { month: string; count: number }
+interface AssessmentRow { month: string; count: number; capa_resolved: number }
 type Tone = 'good' | 'warn' | 'bad' | null
 interface MonthChangeData {
   month: string; previous: string
@@ -427,7 +427,10 @@ export default function DashboardPage() {
              aside={change('assessments')}>
         <MonthColumns
           rows={data.assessments}
-          series={[{ key: 'count', label: 'Assessments', cls: 'bg-primary-500' }]} />
+          // ★ UAT 14: "add an additional bar for the number of hazard capa's
+          // resolved just like the corrective actions."
+          series={[{ key: 'count', label: 'Assessments', cls: 'bg-primary-500' },
+                   { key: 'capa_resolved', label: 'Hazard corrective actions closed', cls: 'bg-success-500' }]} />
       </Panel>
     ),
     supervisor_activity: isHse ? <SupervisorPanel /> : null,

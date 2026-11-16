@@ -359,7 +359,7 @@ async def assessments_by_month(db: AsyncSession, *, year: int) -> list[dict]:
     month it was saved. Until round 12 this counted risk scorings, incidents'
     included, by when they were scored."""
     start, end = _year_bounds(year)
-    out = {m: {**r, "count": 0} for m, r in _months(year).items()}
+    out = {m: {**r, "count": 0, "capa_resolved": 0} for m, r in _months(year).items()}
     for m, n in (await db.execute(text("""
         select to_char(timezone('America/Toronto', created_at), 'MM'), count(*)
           from ehs_hazards
@@ -367,6 +367,17 @@ async def assessments_by_month(db: AsyncSession, *, year: int) -> list[dict]:
       group by 1
     """), {"start": start, "end": end})).all():
         out[m]["count"] = n
+    # ★ UAT 14: "add an additional bar for the number of hazard capa's resolved
+    # just like the corrective actions" — corrective actions raised on a hazard,
+    # closed in the month, counted as the corrective actions chart counts closed.
+    for m, n in (await db.execute(text("""
+        select to_char(timezone('America/Toronto', closed_at), 'MM'), count(*)
+          from ehs_actions
+         where source_type = 'hazard' and status = 'closed'
+           and closed_at >= :start and closed_at < :end
+      group by 1
+    """), {"start": start, "end": end})).all():
+        out[m]["capa_resolved"] = n
     return list(out.values())
 
 

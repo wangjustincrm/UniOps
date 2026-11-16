@@ -85,6 +85,8 @@ class CapaMonth(BaseModel):
 class AssessmentMonth(BaseModel):
     month: str
     count: int
+    # UAT 14: corrective actions raised on hazards, closed in the month.
+    capa_resolved: int = 0
 
 
 class BodyRow(CountRow):
