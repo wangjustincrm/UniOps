@@ -170,22 +170,25 @@ export function useNoticeDialog() {
  * where the pages used to call the browser's alert().
  */
 export function ActionMessage({ tone = 'error', children, onDismiss, className }: {
-  tone?: 'error' | 'success'
+  /** error: it failed; warning: done in part; success: done. */
+  tone?: 'error' | 'warning' | 'success'
   children: ReactNode
   onDismiss?: () => void
   className?: string
 }) {
-  const error = tone === 'error'
+  const ok = tone === 'success'
   return (
     <div
-      role={error ? 'alert' : 'status'}
+      role={tone === 'error' ? 'alert' : 'status'}
       className={cn(
         'flex items-start gap-2 rounded-lg border px-3 py-2 text-sm whitespace-pre-line',
-        error ? 'border-danger-200 bg-danger-50 text-danger-700' : 'border-success-200 bg-success-50 text-success-700',
+        tone === 'error' && 'border-danger-200 bg-danger-50 text-danger-700',
+        tone === 'warning' && 'border-warning-200 bg-warning-50 text-warning-700',
+        ok && 'border-success-200 bg-success-50 text-success-700',
         className,
       )}
     >
-      {error ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
+      {ok ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
       <div className="flex-1">{children}</div>
       {onDismiss && (
         <button onClick={onDismiss} aria-label="Dismiss" className="rounded p-0.5 opacity-70 hover:opacity-100">

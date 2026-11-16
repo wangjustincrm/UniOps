@@ -7,6 +7,7 @@ import { Plus, Trash2, X, Save, Pencil, RotateCcw, Check, Library } from 'lucide
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 import {
   useFactors, useCreateFactor, useUpdateFactor, useDeleteFactor,
   useCreateFactorValue, useUpdateFactorValue, useDeleteFactorValue,
@@ -131,6 +132,7 @@ function FactorCard({
 }) {
   const updateMut = useUpdateFactor()
   const deleteMut = useDeleteFactor()
+  const confirmDlg = useConfirmDialog()
   const createValMut = useCreateFactorValue()
   const [newValueCode, setNewValueCode] = useState('')
   const [newValueName, setNewValueName] = useState('')
@@ -165,9 +167,15 @@ function FactorCard({
   }
 
   const handleDeleteFactor = () => {
-    if (confirm(`Delete factor "${factor.factor_name}"? This is blocked if any plan breakdowns reference it.`)) {
-      deleteMut.mutate(factor.id)
-    }
+    // Asked in-page (was the browser's confirm); a refusal shows in the dialog.
+    confirmDlg.ask({
+      title: 'Delete Factor',
+      subtitle: factor.factor_name,
+      message: `Delete factor "${factor.factor_name}"? This is blocked if any plan breakdowns reference it.`,
+      confirmLabel: 'Delete',
+      failureFallback: 'Delete failed',
+      onConfirm: () => deleteMut.mutateAsync(factor.id),
+    })
   }
 
   return (
@@ -239,6 +247,7 @@ function FactorCard({
         </div>
       )}
       {valueError && <p className="text-xs text-danger-600 mt-1">{valueError}</p>}
+      {confirmDlg.dialog}
     </div>
   )
 }
