@@ -18,6 +18,7 @@ import { useGrAttachments, useDeleteGrAttachment, useRegenerateGrPdf } from '@/h
 import { grAttachmentService } from '@/services/grAttachments'
 import { canCancelGr } from '@/lib/documentActions'
 import { serviceHasIssues } from '@/lib/grNotes'
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 // Statuses the backend accepts for POST /gr/{id}/attachments/regenerate-pdf
 // (anything from the acknowledge step onward, excluding cancelled).
@@ -190,6 +191,7 @@ export default function GrDetailPage() {
   const grAction = useGrAction(id ?? '')
   // Cancel has its own mutation so its refusal shows next to the button.
   const grCancel = useGrAction(id ?? '')
+  const confirmDlg = useConfirmDialog()
   const grPerms = useRolePermissions().data?.permissions
   const { data: po } = usePo(gr?.po_id ?? '')
   const { data: attachments = [] } = useGrAttachments(id ?? '')
@@ -287,11 +289,15 @@ export default function GrDetailPage() {
               variant="secondary"
               className="gap-2 border-danger-200 text-danger-600 hover:bg-danger-50"
               disabled={grCancel.isPending}
-              onClick={() => {
-                if (confirm(`Cancel ${gr.number}? Nothing will be recorded as received and its open tasks will be closed.`)) {
-                  grCancel.mutate({ action: 'cancel' })
-                }
-              }}
+              onClick={() => confirmDlg.ask({
+                title: 'Cancel GR',
+                subtitle: gr.number,
+                message: `Cancel ${gr.number}? Nothing will be recorded as received and its open tasks will be closed.`,
+                confirmLabel: 'Cancel GR',
+                cancelLabel: 'Back',
+                // Closes at once; a refusal shows beside the buttons.
+                onConfirm: () => grCancel.mutate({ action: 'cancel' }),
+              })}
             >
               <X className="h-4 w-4" />
               Cancel GR
@@ -302,11 +308,13 @@ export default function GrDetailPage() {
               variant="secondary"
               className="gap-2 border-danger-200 text-danger-600 hover:bg-danger-50"
               disabled={grCancel.isPending}
-              onClick={() => {
-                if (confirm(`Flag ${gr.number} as Discrepancy? Its open tasks will be closed; nothing else changes.`)) {
-                  grCancel.mutate({ action: 'discrepancy' })
-                }
-              }}
+              onClick={() => confirmDlg.ask({
+                title: 'Flag Discrepancy',
+                subtitle: gr.number,
+                message: `Flag ${gr.number} as Discrepancy? Its open tasks will be closed; nothing else changes.`,
+                confirmLabel: 'Flag Discrepancy',
+                onConfirm: () => grCancel.mutate({ action: 'discrepancy' }),
+              })}
             >
               <AlertTriangle className="h-4 w-4" />
               Flag Discrepancy
@@ -556,6 +564,8 @@ export default function GrDetailPage() {
           <GrTimeline gr={gr} />
         </div>
       </div>
+
+      {confirmDlg.dialog}
 
       {/* Acknowledge modal */}
       {showAckModal && (

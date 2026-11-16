@@ -27,6 +27,8 @@ import { useGrs } from '@/hooks/useGrs'
 
 import { useTasks } from '@/hooks/useTasks'
 import { useCloseOnEscape } from '@/hooks/useCloseOnEscape'
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { errorMessage } from '@/lib/submitFailure'
 import { poService } from '@/services/po'
 import type { ApiPo, ApiPoLineItem } from '@/services/po'
 import { useApprovalReminder } from '@/hooks/useApprovalReminder'
@@ -405,9 +407,11 @@ interface ApprovalModalProps {
   // it can silently consume the NEXT step's task when the same person approves
   // two consecutive steps — two levels passed on one intended click.
   isPending: boolean
+  /** The server's refusal, shown in the modal (was a browser alert). */
+  error?: string | null
 }
 
-function ApprovalModal({ action, poNumber, onConfirm, onClose, isPending }: ApprovalModalProps) {
+function ApprovalModal({ action, poNumber, onConfirm, onClose, isPending, error }: ApprovalModalProps) {
   const [comment, setComment] = useState('')
   const needsComment = action !== 'approve'
   const canSubmit = !needsComment || comment.trim().length > 0
@@ -474,6 +478,7 @@ function ApprovalModal({ action, poNumber, onConfirm, onClose, isPending }: Appr
               />
             </div>
           </div>
+          {error && <p role="alert" className="text-xs text-danger-600">{error}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
             <button
@@ -513,7 +518,8 @@ export default function PoDetailPage() {
   const linkedGrs = (grsData?.items ?? []).filter((g) => g.status !== 'cancelled')
   const poAction = usePoAction(id ?? '')
   // Withdraw shows its refusal in the header rather than in an alert().
-  const poWithdraw = usePoAction(id ?? '', { alertOnError: false })
+  const poWithdraw = usePoAction(id ?? '')
+  const confirmDlg = useConfirmDialog()
   const { reminder, sendReminder } = useApprovalReminder(() => poService.remind(id ?? ''))
   const { user } = useAuthStore()
   const { data: config } = useConfig()
@@ -635,6 +641,7 @@ export default function PoDetailPage() {
   const handleConfirm = (action: ApprovalAction, comment: string) => {
     if (!po) return
     const apiAction = action === 'approve' ? 'approve' : action === 'return' ? 'return' : 'reject'
+    poAction.reset()
     poAction.mutate(
       { action: apiAction, comment: comment || undefined },
       { onSuccess: () => setPendingAction(null) }
@@ -739,11 +746,14 @@ export default function PoDetailPage() {
                 variant="secondary"
                 size="sm"
                 className="border-danger-200 text-danger-600 hover:bg-danger-50"
-                onClick={() => {
-                  if (confirm(`Withdraw ${po.number}? This will cancel the PO.`)) {
-                    poWithdraw.mutate({ action: 'cancel' })
-                  }
-                }}
+                onClick={() => confirmDlg.ask({
+                  title: 'Withdraw PO',
+                  subtitle: po.number,
+                  message: `Withdraw ${po.number}? This will cancel the PO.`,
+                  confirmLabel: 'Withdraw',
+                  // Closes at once; a refusal shows beside the button.
+                  onConfirm: () => poWithdraw.mutate({ action: 'cancel' }),
+                })}
                 disabled={poWithdraw.isPending}
               >
                 Withdraw
@@ -1203,14 +1213,17 @@ export default function PoDetailPage() {
         </div>
       )}
 
+      {confirmDlg.dialog}
+
       {/* Approval modal */}
       {pendingAction && (
         <ApprovalModal
           action={pendingAction}
           poNumber={po.number}
           onConfirm={(comment) => handleConfirm(pendingAction, comment)}
-          onClose={() => setPendingAction(null)}
+          onClose={() => { setPendingAction(null); poAction.reset() }}
           isPending={poAction.isPending}
+          error={poAction.isError ? errorMessage(poAction.error, 'Purchase order action failed') : null}
         />
       )}
 

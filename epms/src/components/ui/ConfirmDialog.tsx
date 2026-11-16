@@ -14,6 +14,8 @@ export interface ConfirmOptions {
   /** The question the browser's confirm() used to ask, word for word. */
   message: ReactNode
   confirmLabel: string
+  /** The dismiss button; "Cancel" unless the action itself is a cancel. */
+  cancelLabel?: string
   /** danger for destructive actions (delete / cancel / void), primary otherwise. */
   tone?: 'danger' | 'primary'
   /** What the confirm button does. While a returned promise is pending the
@@ -30,7 +32,7 @@ export interface ConfirmOptions {
  * Escape, Cancel and the close button close it without doing anything.
  */
 export function ConfirmDialog({
-  title, subtitle, message, confirmLabel, tone = 'danger', onConfirm, failureFallback, onClose,
+  title, subtitle, message, confirmLabel, cancelLabel = 'Cancel', tone = 'danger', onConfirm, failureFallback, onClose,
 }: ConfirmOptions & { onClose: () => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -70,7 +72,7 @@ export function ConfirmDialog({
             <p role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700 whitespace-pre-line">{error}</p>
           )}
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={close} disabled={busy}>Cancel</Button>
+            <Button variant="secondary" size="sm" onClick={close} disabled={busy}>{cancelLabel}</Button>
             <button
               onClick={confirm}
               disabled={busy}
