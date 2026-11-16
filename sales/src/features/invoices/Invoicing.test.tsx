@@ -143,10 +143,9 @@ describe('Invoices', () => {
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Release' }))
     expect(within(dialog).queryByRole('button', { name: 'Send' })).toBeNull()
     const rel = await screen.findByRole('dialog', { name: 'Release invoice IN-107?' })
-    const button = within(rel).getByRole('button', { name: 'Release' })
-    expect(button).toBeDisabled()  // a reason first
+    expect(within(rel).getByRole('button', { name: 'Release' })).toHaveAttribute('aria-disabled', 'true')  // a reason first, saying so
     fireEvent.change(within(rel).getByLabelText(/Why it can go ahead/), { target: { value: 'customer accepts 9 cases' } })
-    fireEvent.click(button)
+    fireEvent.click(within(rel).getByRole('button', { name: 'Release' }))
     await waitFor(() => expect(api.release).toHaveBeenCalledWith(7, 'customer accepts 9 cases'))
   })
 

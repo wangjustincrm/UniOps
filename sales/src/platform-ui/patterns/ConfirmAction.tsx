@@ -3,6 +3,7 @@ import { Button, FormField } from '../primitives/shell'
 import { Textarea } from '../primitives/FieldInputs'
 import { Dialog } from '../primitives/Dialog'
 import { errorText } from '../resource/businessError'
+import { DisabledReason } from '../help'
 
 export interface ConfirmActionProps {
   open: boolean
@@ -57,9 +58,15 @@ export function ConfirmAction({
       footer={
         <>
           <Button type="button" variant="secondary" disabled={pending} onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button type="button" variant={destructive ? 'destructive' : 'primary'} disabled={pending || missing} onClick={confirm}>
-            {pending ? 'Working…' : confirmLabel}
-          </Button>
+          {missing && !pending ? (
+            <DisabledReason reason={`Fill in "${reason!.label}" first (at least ${reason!.minLength ?? 3} characters).`}>
+              <Button type="button" variant={destructive ? 'destructive' : 'primary'} className="cursor-not-allowed opacity-50">{confirmLabel}</Button>
+            </DisabledReason>
+          ) : (
+            <Button type="button" variant={destructive ? 'destructive' : 'primary'} disabled={pending} onClick={confirm}>
+              {pending ? 'Working…' : confirmLabel}
+            </Button>
+          )}
         </>
       }
     >

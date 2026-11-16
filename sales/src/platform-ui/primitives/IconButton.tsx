@@ -1,14 +1,26 @@
 import * as RT from '@radix-ui/react-tooltip'
 import { Loader2 } from 'lucide-react'
 import type { MouseEvent, ReactNode } from 'react'
+import { DisabledReason } from '../help'
 import { cn } from '../lib/cn'
 
 /** A compact icon-only button: its label is the tooltip and the accessible
  *  name; `pending` shows a spinner and blocks it (an action in flight). */
-export function IconButton({ label, icon, onClick, disabled, pending, className }: {
+export function IconButton({ label, icon, onClick, disabled, pending, className, disabledReason }: {
   label: string; icon: ReactNode; onClick: (e: MouseEvent<HTMLButtonElement>) => void; disabled?: boolean; pending?: boolean
   className?: string
+  /** Why it is disabled (with `disabled`): a tap / click / Enter opens it, read as its description. */
+  disabledReason?: string | null
 }) {
+  const base = cn('inline-flex h-7 w-7 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900',
+    'focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600 disabled:cursor-not-allowed disabled:opacity-40', className)
+  if (disabled && !pending && disabledReason) {
+    return (
+      <DisabledReason reason={`${label}: ${disabledReason}`}>
+        <button type="button" aria-label={label} className={cn(base, 'cursor-not-allowed opacity-40')}>{icon}</button>
+      </DisabledReason>
+    )
+  }
   return (
     <RT.Provider delayDuration={300}>
       <RT.Root>
@@ -16,9 +28,7 @@ export function IconButton({ label, icon, onClick, disabled, pending, className 
           {/* a disabled button fires no pointer events: the span keeps the tooltip */}
           <span className="inline-flex">
             <button type="button" aria-label={label} aria-busy={pending || undefined} disabled={disabled || pending} onClick={onClick}
-              className={cn('inline-flex h-7 w-7 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900',
-                'focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600 disabled:cursor-not-allowed disabled:opacity-40',
-                className)}>
+              className={base}>
               {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : icon}
             </button>
           </span>

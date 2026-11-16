@@ -51,7 +51,7 @@ Guards: ESLint refuses, in features and pages, a fixed wide width (`min-w-[16rem
 
 ## Help (the user, 2026-11-16)
 
-`help/` is a self-contained module (its own README; `importRule.test.ts` keeps it importing only itself, React, the Radix popover and the icons), to take to another project as one folder: `HelpProvider` (the module's texts), `HelpTip` (a ? or a tappable badge), `DisabledReason` (why a disabled control can't be used), `useHelp`, typed ids (`HelpRegistry`). `ActionButton` takes `disabledReason` (a missing permission gives its own); a `DropdownMenu` item shows its `disabledReason` under its label. Sales' texts: order statuses, On Hold reasons and Details from `sales-api/app/domain/status_help.py` (`GET /help/order-statuses`), screen-only texts in `features/help`.
+`help/` is a self-contained module (its own README; `importRule.test.ts` keeps it importing only itself, React, the Radix popover and the icons), to take to another project as one folder: `HelpProvider` (the module's texts), `HelpTip` (a ? or a tappable badge), `DisabledReason` (why a disabled control can't be used), `useHelp`, typed ids (`HelpRegistry`). `ActionButton`, `IconButton` and `RowActions` take `disabledReason` (a missing permission gives its own); `ConfirmAction` says what its required reason needs while Confirm is unavailable; a `DropdownMenu` item shows its `disabledReason` under its label. Sales' texts: order statuses, On Hold reasons and Details from `sales-api/app/domain/status_help.py` (`GET /help/order-statuses`), screen-only texts in `features/help`.
 
 ## Public interface (`@/platform-ui`)
 

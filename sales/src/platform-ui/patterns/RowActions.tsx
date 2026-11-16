@@ -13,6 +13,8 @@ export interface RowAction extends Pick<ActionOptions, 'done' | 'errorMessages'>
   permission?: string
   hidden?: boolean
   disabled?: boolean
+  /** Why it is disabled: a tap / click / Enter on the icon says it. */
+  disabledReason?: string
   /** The icon spins and is blocked until the returned promise settles. */
   onAction: () => unknown | Promise<unknown>
   /** Asked first when given — or decided at the click (e.g. a resume outside the active hours, which depends on the time). */
@@ -35,7 +37,7 @@ function One({ a }: { a: RowAction }) {
   }
   return (
     <>
-      <IconButton label={a.label} icon={a.icon} onClick={click} disabled={a.disabled} pending={pending} />
+      <IconButton label={a.label} icon={a.icon} onClick={click} disabled={a.disabled} disabledReason={a.disabledReason} pending={pending} />
       {asking && (
         <ConfirmAction open onOpenChange={(o) => { if (!o) setAsking(null) }} title={asking.title} description={asking.description}
           confirmLabel={asking.confirmLabel ?? a.label} onConfirm={a.onAction} />

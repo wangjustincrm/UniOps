@@ -197,7 +197,7 @@ describe('Transfers', () => {
     fireEvent.keyDown(await within(dialog).findByRole('button', { name: 'More actions' }), { key: 'Enter' })
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Cancel transfer' }))
     const ask = await screen.findByRole('dialog', { name: 'Cancel transfer 00105?' })
-    expect(within(ask).getByRole('button', { name: 'Cancel transfer' })).toBeDisabled()  // a reason first
+    expect(within(ask).getByRole('button', { name: 'Cancel transfer' })).toHaveAttribute('aria-disabled', 'true')  // a reason first, saying so
     fireEvent.change(within(ask).getByLabelText(/Why/), { target: { value: 'not needed' } })
     fireEvent.click(within(ask).getByRole('button', { name: 'Cancel transfer' }))
     await waitFor(() => expect(api.cancel).toHaveBeenCalledWith(2, 1, 'not needed'))
