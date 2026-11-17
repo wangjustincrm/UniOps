@@ -1,6 +1,7 @@
 import { ArrowDown, ArrowUp, Eye } from 'lucide-react'
 import { Checkbox } from './Checkbox'
 import { Popover } from './Popover'
+import { TourMark } from '../help'
 
 export interface ColumnChoice {
   id: string
@@ -19,11 +20,12 @@ export function ColumnChooser({ columns, hidden, onChange, onMove }: {
 }) {
   const visibleCount = columns.filter((c) => !hidden.includes(c.id)).length
   return (
+    <TourMark help="list.columns" slot="list.columns" className="inline-flex">
     <Popover
       align="start"
       className="max-h-96 w-72 overflow-y-auto"
       trigger={
-        <button type="button" aria-label="Show, hide or move columns" data-help="list.columns" className="rounded p-0.5 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700">
+        <button type="button" aria-label="Show, hide or move columns" className="rounded p-0.5 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700">
           <Eye className="h-3.5 w-3.5" />
         </button>
       }
@@ -58,5 +60,6 @@ export function ColumnChooser({ columns, hidden, onChange, onMove }: {
         })}
       </ul>
     </Popover>
+    </TourMark>
   )
 }

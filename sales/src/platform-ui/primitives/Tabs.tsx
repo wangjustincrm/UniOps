@@ -1,6 +1,7 @@
 import * as RTabs from '@radix-ui/react-tabs'
 import { useRef, type ReactNode } from 'react'
 import { cn } from '../lib/cn'
+import { useTourStop } from '../help'
 
 export interface TabItem {
   value: string
@@ -19,7 +20,7 @@ const DOT = { warning: 'bg-warning-500', danger: 'bg-danger-600' } as const
  *  the shell's tab host. Only the selected tab's content is rendered (lazy);
  *  ←/→, Home and End move between tabs (Radix). */
 export function Tabs({
-  items, value, defaultValue, onValueChange, className, listClassName, ariaLabel, beforeLeave,
+  items, value, defaultValue, onValueChange, className, listClassName, ariaLabel, beforeLeave, listTour,
 }: {
   items: TabItem[]
   value?: string
@@ -28,12 +29,15 @@ export function Tabs({
   className?: string
   /** E.g. sticky under a sheet's header. */
   listClassName?: string
+  /** The tab list as a tour stop (a record's sections): its help id and slot. */
+  listTour?: { help: string; slot: string }
   ariaLabel?: string
   /** Before the shown tab is left (e.g. unsaved input in it): call `leave` to go on, or don't to
    *  stay (it may ask first). Once per click: Radix changes the tab on mouse-down and again on the
    *  focus that follows. */
   beforeLeave?: (leave: () => void) => void
 }) {
+  const stop = useTourStop({ help: listTour?.help ?? '', slot: listTour?.slot ?? '' })
   const asked = useRef<string | null>(null)
   const change = (v: string) => {
     if (beforeLeave && v !== value) {
@@ -52,7 +56,7 @@ export function Tabs({
       onValueChange={change}
       className={className}
     >
-      <RTabs.List aria-label={ariaLabel} className={cn('mb-4 flex gap-1 overflow-x-auto border-b border-neutral-200', listClassName)}>
+      <RTabs.List aria-label={ariaLabel} ref={listTour ? stop.attach : undefined} data-help={listTour?.help} className={cn('mb-4 flex gap-1 overflow-x-auto border-b border-neutral-200', listClassName)}>
         {items.map((t) => (
           <RTabs.Trigger
             key={t.value}

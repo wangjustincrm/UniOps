@@ -7,7 +7,7 @@ import { Sheet, SheetClose, SheetTitle, type SheetSize } from '../primitives/She
 import { Button, Skeleton } from '../primitives/shell'
 import { EmptyState } from '../primitives/States'
 import { AutoGrid } from '../primitives/Layout'
-import { HelpTip, type HelpId } from '../help'
+import { HelpTip, ShowMeAround, TourMark, TourScope, type HelpId } from '../help'
 import { Tabs } from '../primitives/Tabs'
 import { UnsavedBoundary, useUnsavedScope, whenDiscarded } from '../primitives/unsaved'
 import { BusyBar } from '../primitives/BusyBar'
@@ -184,12 +184,13 @@ export function RecordSheet(props: RecordSheetProps) {
   const header = (
     <div className="relative flex flex-col gap-1 border-b border-neutral-200 bg-white px-4 py-3 sm:px-6">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <TourMark as="div" help="record.header" slot="record.header" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <SheetTitle className="truncate text-lg">{props.title}</SheetTitle>
           {props.copyTitle !== false && props.title && <CopyButton text={props.title} label={`Copy ${props.title}`} />}
           {props.badges}
-        </div>
+        </TourMark>
         <div className="flex shrink-0 items-center gap-0.5">
+          <ShowMeAround />
           {r && <RefreshControl state={{ ...r, setAuto: undefined }} />}
           {host && (host.prev || host.next) && (
             <>
@@ -228,15 +229,15 @@ export function RecordSheet(props: RecordSheetProps) {
   } else {
     body = (
       <div className="flex flex-col gap-4">
-        {props.facts && props.facts.length > 0 && <Facts facts={props.facts} />}
+        {props.facts && props.facts.length > 0 && <TourMark as="div" help="record.facts" slot="record.facts"><Facts facts={props.facts} /></TourMark>}
         {(props.actions || more.length > 0) && (
-          <div role="toolbar" aria-label="Actions" className="flex flex-wrap items-center gap-2">
+          <TourMark as="div" role="toolbar" aria-label="Actions" help="record.actions" slot="record.actions" className="flex flex-wrap items-center gap-2">
             {props.actions}
             {more.length > 0 && <MoreMenu items={more} />}
-          </div>
+          </TourMark>
         )}
         {visible.length > 0 && (
-          <Tabs ariaLabel="Sections" value={tab} onValueChange={choose} beforeLeave={(leave) => whenDiscarded(tabScope, leave)}
+          <Tabs ariaLabel="Sections" listTour={{ help: 'record.tabs', slot: 'record.tabs' }} value={tab} onValueChange={choose} beforeLeave={(leave) => whenDiscarded(tabScope, leave)}
             listClassName="sticky top-0 z-10 -mx-4 bg-white px-4 sm:-mx-6 sm:px-6"
             items={visible.map((t) => ({
               value: t.id, label: t.label, count: t.count, attention: t.tone,
@@ -249,12 +250,15 @@ export function RecordSheet(props: RecordSheetProps) {
     )
   }
 
+  // Its own tour scope: the record's parts register here, not in the page's tour ("Show me around").
   return (
+    <TourScope id={`record:${props.title ?? ''}`} kind="record">
     <Sheet open={open} onOpenChange={(o) => { if (!o) close() }} title={props.title || 'Record'} size={size} unsaved={sheetScope}
       header={header} onKeyDown={onKeyDown} bodyClassName="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4 sm:px-6"
       statusBar={<TableStatusBar store={notices} className="shrink-0 px-4 sm:px-6" />}>
       <NoticesContext.Provider value={notices}>{body}</NoticesContext.Provider>
     </Sheet>
+    </TourScope>
   )
 }
 

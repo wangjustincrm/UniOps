@@ -8,3 +8,4 @@ export function findAnchor(anchor: string, root: ParentNode = document): HTMLEle
   return els.find((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 }) ?? null
 }
 
+

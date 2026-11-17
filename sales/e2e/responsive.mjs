@@ -131,8 +131,19 @@ async function run(name, viewport) {
     const box = await tip.boundingBox()
     check(!!box && box.x >= 0 && box.x + box.width <= viewport.width, `${name} status help: opens inside the screen`)
     await shot('status-help')
-    check(await page.locator('[role="dialog"] [data-next-step]').count() === 1, `${name} order sheet: the next step is shown`)
+    check(await page.locator('[role="dialog"] [data-help="record.next"]').count() === 1, `${name} order sheet: the next step is shown`)
     await page.keyboard.press('Escape')
+    // the record's own tour: "Show me around", drawn inside the sheet; Esc ends it and the sheet stays
+    const around = page.getByRole('dialog').getByRole('button', { name: 'Show me around' })
+    await around.waitFor({ timeout: 5000 })
+    await around.click()
+    const step = page.locator('[data-tour-step]')
+    await step.waitFor({ timeout: 5000 })
+    check((await step.textContent()).includes('The record'), `${name} order: "Show me around" starts at the record's header`)
+    await shot('record-tour')
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(200)
+    check(await step.count() === 0 && await page.getByRole('dialog').count() >= 1, `${name} order: Esc ends the record tour, the sheet stays open`)
     await page.getByRole('tab', { name: /Lines/ }).click()
     await page.getByRole('dialog').getByRole('button', { name: /Show details/ }).first().click()
     await page.waitForTimeout(300)
@@ -157,7 +168,7 @@ async function run(name, viewport) {
     await page.getByRole('button', { name: 'Help: Orders' }).click()
     await page.getByRole('button', { name: 'Show me' }).click()
     let stops = 0
-    for (let n = 0; n < 8; n++) {
+    for (let n = 0; n < 12; n++) {
       const box = page.locator('[data-tour-step]')
       await box.waitFor({ timeout: 5000 })
       stops++
@@ -170,8 +181,12 @@ async function run(name, viewport) {
       if (await done.count()) { await done.click(); break }
       await box.getByRole('button', { name: 'Next' }).click()
     }
-    check(stops === 5, `${name} orders tour: all 5 stops shown (${stops})`)
+    check(stops >= 5, `${name} orders tour: built from the page's own stops (${stops})`)
     check(await page.locator('[data-tour-step]').count() === 0, `${name} orders tour: Done ends it`)
+    // "?" opens the page's help; Esc closes it
+    await page.locator('body').press('?')
+    check(await page.getByRole('dialog', { name: 'Help: Orders' }).count() === 1, `${name} "?" opens the page help`)
+    await page.keyboard.press('Escape')
     // every list tool marks itself (a tour can point at it)
     for (const id of ['list.search', 'list.searchPanel', 'list.views', 'list.columns', 'list.refresh', ...(phone ? ['list.phone'] : [])]) {
       check(await page.locator(`[data-help="${id}"]`).count() >= 1, `${name} orders: ${id} is marked`)

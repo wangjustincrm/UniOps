@@ -7,7 +7,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight
 import { Button, Input, Pagination, Skeleton, SkeletonRow } from './shell'
 import { DropdownMenu } from './DropdownMenu'
 import { useElementWidth } from './useResponsive'
-import { HelpTip } from '../help'
+import { HelpTip, useTourStop } from '../help'
 import { cn } from '../lib/cn'
 import { EmptyState, ErrorState } from './States'
 import { useSynced } from './useSynced'
@@ -129,6 +129,8 @@ export function DataTable<T>({
   toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs, expand, cardsBelow = 640, cardLines = 6,
 }: DataTableProps<T>) {
   const rootRef = useRef<HTMLDivElement>(null)
+  const searchStop = useTourStop({ help: 'list.search', slot: 'list.search' })
+  const phoneStop = useTourStop({ help: 'list.phone', slot: 'list.phone' })
   const width = useElementWidth(rootRef)
   const cards = cardsBelow !== false && width !== null && width > 0 && width < cardsBelow
   const cellPad = density === 'compact' ? 'px-2 py-1' : 'px-3 py-2'
@@ -227,7 +229,7 @@ export function DataTable<T>({
         const cur = sorting[0]?.id === id ? sorting[0] : null
         return { label: `${headerLabel(id)}${cur ? (cur.desc ? ' ↓' : ' ↑') : ''}`, onSelect: () => onSortChange({ id, desc: cur ? !cur.desc : false }) }
       })}
-      trigger={<Button variant="secondary" size="sm" aria-label="Sort by" data-help="list.phone"><ArrowUpDown className="h-3.5 w-3.5" aria-hidden />Sort</Button>} />
+      trigger={<Button variant="secondary" size="sm" aria-label="Sort by" ref={phoneStop.attach} data-help="list.phone"><ArrowUpDown className="h-3.5 w-3.5" aria-hidden />Sort</Button>} />
   ) : null
   const cardLead = cards && leadingHeader !== undefined ? leadingHeader : null
 
@@ -355,6 +357,7 @@ export function DataTable<T>({
           {sortMenu}
           {search && (
             <Input
+              ref={searchStop.attach}
               data-help="list.search"
               aria-label="Search"
               placeholder="Search…"

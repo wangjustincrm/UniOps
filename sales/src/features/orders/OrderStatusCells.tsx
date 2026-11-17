@@ -1,4 +1,4 @@
-import { Badge, CountdownCell, HelpTip, Hint, RelativeCell, StatusCell, dateAndTime } from '@/platform-ui'
+import { Badge, CountdownCell, HelpTip, Hint, RelativeCell, StatusCell, TourMark, dateAndTime } from '@/platform-ui'
 import type { OrderRead } from './ordersApi'
 import { orderStatusColour, shopifyBadges, statusDetailText } from './orderStatus'
 
@@ -7,7 +7,7 @@ import { orderStatusColour, shopifyBadges, statusDetailText } from './orderStatu
 export function OrderStatusBadge({ o }: { o: Pick<OrderRead, 'order_status' | 'order_status_label' | 'short_shipped' | 'on_hold_reason'> }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-1">
-      <HelpTip id={o.on_hold_reason ? `hold:${o.on_hold_reason}` : `status:${o.order_status}`} label={`What "${o.order_status_label}" means`}>
+      <HelpTip id={o.on_hold_reason ? `hold:${o.on_hold_reason}` : `status:${o.order_status}`} tourSlot="row.status" tourKey="status" label={`What "${o.order_status_label}" means`}>
         <StatusCell value={o.order_status_label} className={orderStatusColour(o.order_status)} />
       </HelpTip>
       {o.short_shipped && (
@@ -30,10 +30,10 @@ export function NextStep({ o }: { o: Pick<OrderRead, 'next_step' | 'next_step_wh
   if (!o.next_step) return null
   const turn = TURN[o.next_step_who ?? 'nobody'] ?? TURN.nobody
   return (
-    <span data-next-step className="inline-flex max-w-prose flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs">
+    <TourMark help="record.next" slot="record.next" className="inline-flex max-w-prose flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs">
       <span className={`rounded-full border px-1.5 font-medium ${turn.className}`}>{turn.label}</span>
       <span className="text-neutral-700">{o.next_step}</span>
-    </span>
+    </TourMark>
   )
 }
 

@@ -2,7 +2,7 @@
 
 Help shown where it is needed (the user, 2026-11-16): a **?** beside what it explains, a badge you tap to read what a status means, and **why a disabled button can't be used**. Contextual help, not tours first (NN/g: tutorials shown up front did not help people finish tasks; help at the moment of need does).
 
-**Self-contained, to take to another project as this folder.** It imports only its own files, `react`, `@radix-ui/react-popover`, `@radix-ui/react-dialog` and `lucide-react` (Tailwind classes for the look). `importRule.test.ts` fails if a file here imports anything else. The library around it uses it (ActionButton's `disabledReason`); it never uses the library.
+**Self-contained, to take to another project as this folder.** It imports only its own files, `react`, `react-dom`, `@radix-ui/react-popover`, `@radix-ui/react-dialog` and `lucide-react` (Tailwind classes for the look). `importRule.test.ts` fails if a file here imports anything else. The library around it uses it (ActionButton's `disabledReason`); it never uses the library.
 
 ## What it gives
 
@@ -19,6 +19,15 @@ Help shown where it is needed (the user, 2026-11-16): a **?** beside what it exp
 ## Layers and the list tools
 
 `HelpProvider layers={[library texts, module texts]}`: a later layer overrides an earlier one by id, an API-backed `source` overrides both, and the search lists them all. The component library's list tools own their texts (`patterns/listHelp.ts`, `PLATFORM_HELP`, ids `list.*`) and mark themselves with `data-help`; `ListPage` adds a "Using lists" section to its page's panel with only the tools that list has (`listTools`). A module writes none of it.
+
+## Tours: one manager, parts declare their place
+
+- `TourManager` (mounted once at the app's root) owns the slot order (`DEFAULT_SLOTS`, overridable by name through `slots`), the one tour on screen (Esc ends it first; a sheet it runs in stays open), and the "?" key (the help of the page in view).
+- `TourScope` is a tour's boundary: ListPage, a page shell (Health) and RecordSheet wrap their content in one; the nearest wins, so a record's sheet keeps its parts out of its page's tour.
+- A part becomes a stop by declaring itself: `useTourStop({ help, slot, key })` (put `attach` as its ref) or `<TourMark help slot>`, or `HelpTip tourSlot`. `slot` is a name in the slot table (like a z-index, but named), never a number; `key` makes many parts one stop (a list's status badges: the first shown).
+- A page's "Show me" walks its scope's shown stops in slot order (`planStops`); a record's "Show me around" (`ShowMeAround`) its own; a search result on the page has Show. No stops: no button. A first visit shows "New here? Show me" (per viewer, in this browser).
+- In development the help panel's **Tour inspector** lists the page's stops: order, slot, help id, hidden now, no text.
+- Guards (`help.test.tsx`): every slot a component names is in the table; no raw tour numbers anywhere.
 
 ## What a project gives it
 

@@ -205,3 +205,114 @@ describe('the tour', () => {
     expect(ended).toHaveBeenCalled()
   })
 })
+
+describe('the tour manager', () => {
+  afterEach(() => { vi.restoreAllMocks(); try { localStorage.clear() } catch { /* none */ } })
+  const boxes = () => vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const w = this.getAttribute('data-hidden') ? 0 : 40
+    return { width: w, height: w ? 20 : 0, top: 10, left: 10, right: 10 + w, bottom: 30, x: 10, y: 10, toJSON: () => ({}) } as DOMRect
+  })
+  it('stops register in their nearest scope; planned by slot (named, like a z-index), one per key, hidden ones marked', async () => {
+    const { TourScope, TourMark, planStops } = await import('./index')
+    const { ScopeContext } = await import('./tourContext')
+    const { useContext } = await import('react')
+    boxes()
+    let scope: import('./tourContext').ScopeValue | null = null
+    function Grab() { scope = useContext(ScopeContext); return null }
+    render(<TourScope id="p"><Grab />
+      <TourMark help="list.refresh" slot="list.refresh">r</TourMark>
+      <TourMark help="status:Sent" slot="row.status" tourKey="status">s1</TourMark>
+      <TourMark help="status:Shipped" slot="row.status" tourKey="status">s2</TourMark>
+      <TourMark help="list.views" slot="list.views">v</TourMark>
+      <TourScope id="r" kind="record"><TourMark help="record.facts" slot="record.facts">inner scope</TourMark></TourScope>
+    </TourScope>)
+    const plan = planStops(scope!.stops())
+    expect(plan.map((p) => [p.slot, p.help])).toEqual([['list.views', 'list.views'], ['row.status', 'status:Sent'], ['list.refresh', 'list.refresh']])
+  })
+  it('"?" opens the help of the page in view (not while typing); a first visit shows "New here? Show me" while it has stops', async () => {
+    const { PageHelp, TourManager, TourScope, TourMark } = await import('./index')
+    boxes()
+    render(<HelpProvider layers={[{ 'page:x': { body: 'The page.' }, 'list.views': { body: 'Views.' } }]}><TourManager><TourScope id="x">
+      <input aria-label="Field" /><PageHelp id="page:x" page="X" /><TourMark help="list.views" slot="list.views">v</TourMark>
+    </TourScope></TourManager></HelpProvider>)
+    expect(await screen.findByRole('button', { name: 'New here? Show me' }, { timeout: 2000 })).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByLabelText('Field'), { key: '?' })
+    expect(screen.queryByRole('dialog', { name: 'Help: X' })).toBeNull()
+    fireEvent.keyDown(document.body, { key: '?' })
+    expect(await screen.findByRole('dialog', { name: 'Help: X' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'New here? Show me' })).toBeNull()  // seen
+  })
+  it('"Show me" walks the page\'s registered stops; no stops: no "Show me"', async () => {
+    const { PageHelp, TourManager, TourScope, TourMark } = await import('./index')
+    boxes()
+    const texts = { 'page:x': { body: 'The page.' }, 'page:y': { body: 'Empty.' }, 'list.views': { title: 'Views', body: 'Views text.' } }
+    render(<HelpProvider layers={[texts]}><TourManager>
+      <TourScope id="x"><PageHelp id="page:x" page="X" /><TourMark help="list.views" slot="list.views">v</TourMark></TourScope>
+      <TourScope id="y"><PageHelp id="page:y" page="Y" /></TourScope>
+    </TourManager></HelpProvider>)
+    await new Promise((r) => setTimeout(r, 350))
+    fireEvent.click(screen.getByRole('button', { name: 'Help: Y' }))
+    const empty = await screen.findByRole('dialog', { name: 'Help: Y' })
+    await new Promise((r) => setTimeout(r, 350))
+    expect(within(empty).queryByRole('button', { name: 'Show me' })).toBeNull()
+    fireEvent.keyDown(empty, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: 'Help: X' }))
+    const panel = await screen.findByRole('dialog', { name: 'Help: X' })
+    await waitFor(() => expect(within(panel).getByRole('button', { name: 'Show me' })).toBeInTheDocument())
+    fireEvent.click(within(panel).getByRole('button', { name: 'Show me' }))
+    await waitFor(() => expect(document.querySelector('[data-tour-step]')?.textContent).toContain('Views text.'))
+  })
+  it('the inspector lists the page\'s stops in order, and says which are hidden or have no text', async () => {
+    const { Inspector } = await import('./index')
+    const el = document.createElement('span')
+    render(<Inspector plan={[{ key: 'a', slot: 'list.views', order: 10, help: 'list.views', el, shown: true },
+      { key: 'b', slot: 'list.export', order: 70, help: 'list.export', el, shown: false }]} text={(h) => h === 'list.views'} />)
+    fireEvent.click(screen.getByText('Tour inspector (2 stops)'))
+    expect(screen.getByText('hidden now')).toBeInTheDocument()
+    expect(screen.getByText('no text')).toBeInTheDocument()
+  })
+  it('Esc during a tour inside a sheet ends the tour only: the sheet stays open', async () => {
+    const { Tour } = await import('./index')
+    boxes()
+    const closed = vi.fn()
+    const ended = vi.fn()
+    function Sheet() {
+      return <div role="dialog" aria-label="Sheet" onKeyDown={(e) => { if (e.key === 'Escape') closed() }}>
+        <span data-help="list.a">a</span>
+        <Tour steps={[{ anchor: 'list.a' }]} onEnd={ended} />
+      </div>
+    }
+    render(<HelpProvider layers={[{ 'list.a': { body: 'First.' } }]}><Sheet /></HelpProvider>)
+    await screen.findByText('First.')
+    fireEvent.keyDown(screen.getByText('a'), { key: 'Escape' })
+    expect(ended).toHaveBeenCalled()
+    expect(closed).not.toHaveBeenCalled()
+  })
+  it('a search result that is on the page has Show, which lights it', async () => {
+    const { PageHelp, TourManager, TourScope } = await import('./index')
+    boxes()
+    const texts = { 'page:x': { body: 'The page.' }, 'list.refresh': { title: 'Refresh', body: 'Reads the list again.' }, 'list.export': { title: 'Export CSV', body: 'Exports every row of the list.' } }
+    render(<HelpProvider layers={[texts]}><TourManager><TourScope id="x"><span data-help="list.refresh">r</span><PageHelp id="page:x" page="X" /></TourScope></TourManager></HelpProvider>)
+    fireEvent.click(screen.getByRole('button', { name: 'Help: X' }))
+    const panel = await screen.findByRole('dialog', { name: 'Help: X' })
+    fireEvent.change(within(panel).getByRole('searchbox', { name: 'Search help' }), { target: { value: 'list' } })
+    const results = within(panel).getByRole('region', { name: 'Search results' })
+    const refresh = within(results).getByText('Refresh').closest('article')!
+    const exp = within(results).getByText('Export CSV').closest('article')!
+    expect(within(exp).queryByRole('button', { name: 'Show' })).toBeNull()  // not on this page
+    fireEvent.click(within(refresh).getByRole('button', { name: 'Show' }))
+    await waitFor(() => expect(document.querySelector('[data-tour-step]')?.textContent).toContain('Reads the list again.'))
+  })
+})
+
+describe('the slot table is the one place for order', () => {
+  it('every slot a component names is in the table; no raw tour numbers anywhere', async () => {
+    const { DEFAULT_SLOTS } = await import('./index')
+    const files = import.meta.glob<string>('../../**/*.tsx', { query: '?raw', import: 'default', eager: true })
+    const code = Object.entries(files).filter(([f]) => !f.includes('.test.')).map(([, t]) => t).join('\n')
+    const named = new Set([...code.matchAll(/(?:slot|tourSlot)[=:]\s*["'{ ]*['"]([a-z]+\.[a-zA-Z]+)['"]/g)].map((m) => m[1]))
+    expect(named.size).toBeGreaterThan(8)
+    for (const slot of named) expect(DEFAULT_SLOTS[slot], slot).toBeDefined()
+    expect(code).not.toMatch(/data-tour=\{\d|data-tour="\d|tour=\{\d/)
+  })
+})

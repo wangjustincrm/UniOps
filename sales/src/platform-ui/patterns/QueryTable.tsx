@@ -1,6 +1,7 @@
 import { BooleanCell, DateCell, NumberCell, StackedDateTimeCell } from '../primitives/cells'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button } from '../primitives/shell'
+import { TourMark } from '../help'
 import { DataTable, type ColumnDef, type Grouping } from '../primitives/DataTable'
 import { groupKey } from '../primitives/groupKey'
 import { formatMoney } from '../primitives/format'
@@ -279,7 +280,7 @@ function QueryTableView<T>({
         sortable={sortableIds}
         onSortChange={(s) => change(specFromSorting(spec, [s]))}
         onColumnMove={meta ? (id, beforeId) => move(id, beforeId === null ? order.length : order.filter((x) => x !== id).indexOf(beforeId)) : undefined}
-        leading={picker ? <span data-help="list.views" className="inline-flex"><ViewPicker model={picker} /></span> : undefined}
+        leading={picker ? <TourMark help="list.views" slot="list.views" className="inline-flex"><ViewPicker model={picker} /></TourMark> : undefined}
         headerAddon={(id) => {
           const f = fields.get(id)
           return f ? (

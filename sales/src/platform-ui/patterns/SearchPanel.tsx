@@ -11,6 +11,7 @@ import type { FieldMeta } from '../resource/listMeta'
 import type { Filter, FilterOp } from '../resource/querySpec'
 import { opLabel, panelOps } from './listView'
 import { ToolbarPopover } from './ToolbarPopover'
+import { TourMark } from '../help'
 
 interface Draft {
   on: boolean
@@ -75,12 +76,12 @@ export function SearchPanel({ open, onOpenChange, ...rest }: SearchPanelProps) {
   // The toolbar's Search icon; its badge counts the conditions set here.
   const active = new Set(rest.filters.map((f) => f.field)).size
   return (
-    <span data-help="list.searchPanel" className="inline-flex"><ToolbarPopover label="Search on any field" icon={<SlidersHorizontal className="h-4 w-4" />} badge={active || undefined}
+    <TourMark help="list.searchPanel" slot="list.searchPanel" className="inline-flex"><ToolbarPopover label="Search on any field" icon={<SlidersHorizontal className="h-4 w-4" />} badge={active || undefined}
       title="Search" open={open} onOpenChange={onOpenChange} width="w-[26rem]">
       <p className="text-xs text-neutral-500">Values of one field: any of them. Different fields: all of them.</p>
       {/* Remounted on every open, so the drafts start from the current filters. */}
       {open && <SearchForm {...rest} close={() => onOpenChange(false)} />}
-    </ToolbarPopover></span>
+    </ToolbarPopover></TourMark>
   )
 }
 

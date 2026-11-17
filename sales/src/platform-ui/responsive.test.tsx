@@ -343,7 +343,7 @@ describe('list tools own their help', () => {
     const { PLATFORM_HELP, listTools } = await import('./index')
     const all = listTools({ search: true, panel: true, views: true, export: true })
     for (const id of all) expect(PLATFORM_HELP[id]?.body, id).toBeTruthy()
-    expect(Object.keys(PLATFORM_HELP).sort()).toEqual([...all].sort())  // and no text without a tool
+    expect(Object.keys(PLATFORM_HELP).filter((k) => k.startsWith('list.')).sort()).toEqual([...all].sort())  // and no tool text without a tool
     const bare = listTools({ search: false, panel: false, views: false, export: false })
     expect(bare).not.toContain('list.searchPanel')
     expect(bare).not.toContain('list.export')

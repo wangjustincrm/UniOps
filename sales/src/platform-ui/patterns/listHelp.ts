@@ -7,6 +7,7 @@ import type { HelpEntry } from '../help'
 declare module '../help/types' {
   interface HelpRegistry {
     [tool: `list.${string}`]: true
+    [part: `record.${string}`]: true
   }
 }
 
@@ -22,6 +23,12 @@ export const PLATFORM_HELP: Record<string, HelpEntry> = {
     buttons: ['Sort ascending', 'Group ascending', 'Hide column'] },
   'list.refresh': { title: 'Refresh', body: 'The refresh button reads the list again; its arrow sets Auto-refresh (30s, 1m, 5m).', buttons: ['Auto-refresh'] },
   'list.export': { title: 'Export CSV', body: 'Export CSV exports every row the current filters select, not only this page.', buttons: ['Export CSV'] },
+  // A record's parts (RecordSheet marks them): its own tour, "Show me around" in its header.
+  'record.header': { title: 'The record', body: "Its name, its status and what it is. The arrows go to the list's previous or next record; Refresh reads it again." },
+  'record.next': { title: 'Next step', body: 'What to do now, and whose turn it is.' },
+  'record.facts': { title: 'Key figures', body: 'The figures that matter for this record, at a glance.' },
+  'record.actions': { title: 'Actions', body: 'What you can do with it now; More holds the rest. A greyed button says why when you tap it.' },
+  'record.tabs': { title: 'Sections', body: 'Its details, one tab each; a dot marks a tab that needs a look.' },
   'list.phone': { title: 'On a phone', body: 'Each row is a card: Sort is a menu, "N more fields" shows the rest of a card, the arrows at the bottom change page.',
     buttons: ['more fields'] },
 }

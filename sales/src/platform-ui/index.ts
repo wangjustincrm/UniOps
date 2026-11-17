@@ -47,7 +47,7 @@ export { IconButton } from './primitives/IconButton'
 export { Tooltip } from './primitives/Tooltip'
 export { EmptyState } from './primitives/States'
 export { PLATFORM_HELP, listTools } from './patterns/listHelp'
-export { DisabledReason, HelpProvider, HelpTip, PageHelp, useHelp, type HelpCatalog, type HelpEntry, type HelpId, type HelpSource } from './help'
+export { DisabledReason, HelpProvider, HelpTip, PageHelp, ShowMeAround, TourManager, TourMark, TourScope, useHelp, useTourStop, type HelpCatalog, type HelpEntry, type HelpId, type HelpSource } from './help'
 export { ActionBar, AutoGrid, Cluster, Responsive, Toolbar, type ToolbarItem } from './primitives/Layout'
 export { useBreakpoint, useElementWidth, useMediaQuery, type Breakpoint } from './primitives/useResponsive'
 

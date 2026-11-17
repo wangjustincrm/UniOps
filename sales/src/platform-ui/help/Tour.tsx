@@ -15,7 +15,11 @@ interface At { i: number; id: string; shown: number[] }
  *  there is skipped; one that goes away mid-tour (a sheet opened, the list re-rendered) is found again, or
  *  after ~300 ms still gone, the tour moves on. A step on something hidden (a tab, a menu) is skipped: there is no "open it first"
  *  yet. Esc, End or Done ends it. */
-export function Tour({ steps, onEnd }: { steps: TourStep[]; onEnd: () => void }) {
+export function Tour({ steps, onEnd, container }: {
+  steps: TourStep[]; onEnd: () => void
+  /** Where it is drawn: inside a modal (a sheet) that keeps clicks and focus inside itself; default the body. */
+  container?: Element | null
+}) {
   const ctx = useContext(HelpContext)
   const textOf = useCallback((step: TourStep, id: string) => ctx?.source(step.text ?? id), [ctx])
   // A step that can be shown now: its element (shown, with a box) and a text; its help id.
@@ -72,10 +76,12 @@ export function Tour({ steps, onEnd }: { steps: TourStep[]; onEnd: () => void })
     loop()
     return () => cancelAnimationFrame(frame)
   }, [at, steps, arrive])
+  // Esc ends the tour and only the tour: caught first (capture, on the window) and stopped, so the
+  // sheet or dialog the tour runs in stays open.
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onEnd() }
-    window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); onEnd() } }
+    window.addEventListener('keydown', key, true)
+    return () => window.removeEventListener('keydown', key, true)
   }, [onEnd])
 
   const go = (d: 1 | -1) => {
@@ -97,7 +103,7 @@ export function Tour({ steps, onEnd }: { steps: TourStep[]; onEnd: () => void })
         style={{ ...box, boxShadow: '0 0 0 9999px rgb(0 0 0 / 0.35)' }} />
       <RP.Root open>
         <RP.Anchor asChild><div className="pointer-events-none fixed z-[60]" style={box} /></RP.Anchor>
-        <RP.Portal>
+        <RP.Portal container={container ?? undefined}>
           <RP.Content data-tour-step role="dialog" aria-label={entry.title ?? 'Tour'} side="bottom" align="start" sideOffset={10} collisionPadding={12}
             onOpenAutoFocus={(e) => { e.preventDefault(); (e.currentTarget as HTMLElement).focus() }} tabIndex={-1}
             onInteractOutside={(e) => e.preventDefault()}
@@ -119,6 +125,6 @@ export function Tour({ steps, onEnd }: { steps: TourStep[]; onEnd: () => void })
         </RP.Portal>
       </RP.Root>
     </>,
-    document.body,
+    container ?? document.body,
   )
 }

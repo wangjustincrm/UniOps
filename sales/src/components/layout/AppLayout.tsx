@@ -22,6 +22,7 @@ import { InboxRedirect } from '@/app/InboxRedirect'
 const views = createViewsClient(api)
 import { useRecoverFailedQueries } from '@/app/recoverFailedQueries'
 import { SalesHelpProvider } from '@/features/help/statusHelp'
+import { TourManager } from '@/platform-ui'
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 
@@ -367,7 +368,7 @@ export default function AppLayout() {
   if (IS_EMBEDDED) {
     return (
       <PermissionProvider can={perms.can}>
-      <SalesHelpProvider>
+      <SalesHelpProvider><TourManager>
       <ViewsProvider client={views}>
       <RouterOpenRecord>
       <div className="h-screen overflow-y-auto bg-[#FAFBFC]">
@@ -381,14 +382,14 @@ export default function AppLayout() {
       </div>
       </RouterOpenRecord>
       </ViewsProvider>
-      </SalesHelpProvider>
+      </TourManager></SalesHelpProvider>
       </PermissionProvider>
     )
   }
 
   return (
     <PermissionProvider can={perms.can}>
-    <SalesHelpProvider>
+    <SalesHelpProvider><TourManager>
     <ViewsProvider client={views}>
       <RouterOpenRecord>
     <TabStoreProvider options={{ initialTabs: [{
@@ -424,7 +425,7 @@ export default function AppLayout() {
     </TabStoreProvider>
     </RouterOpenRecord>
       </ViewsProvider>
-    </SalesHelpProvider>
+    </TourManager></SalesHelpProvider>
     </PermissionProvider>
   )
 }

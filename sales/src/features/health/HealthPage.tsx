@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  ActionButton, Badge, Button, DetailList, ErrorMessage, ErrorView, LocalTable, PageHeader, Section, Skeleton, StatCard, formatDateTime,
+  ActionButton, Badge, Button, DetailList, ErrorMessage, ErrorView, LocalTable, PageHeader, Section, Skeleton, StatCard, TourScope, formatDateTime,
   useOpenRecord, type ColumnDef,
   useRefresh, columnsOf
  } from '@/platform-ui'
@@ -80,6 +80,7 @@ export default function HealthPage() {
     { accessorKey: 'problem', header: 'Missing', cell: ({ row }) => row.original.problem ?? '' },
   ]
   return (
+    <TourScope id="health">
     <div className="flex flex-col gap-6">
       <PageHeader title="Health" description="Checks of the settings, connections, scheduler, files, ACKs and sends. Each one opens the records behind it." help="page:health" />
       <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -113,5 +114,6 @@ export default function HealthPage() {
         <span><Button size="sm" variant="secondary" onClick={() => navigate('/config/notifications')}>Open the notification rules</Button></span>
       </Section>
     </div>
+    </TourScope>
   )
 }
