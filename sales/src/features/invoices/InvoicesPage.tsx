@@ -11,6 +11,7 @@ import {
 import { editInvoice, fetchInvoice, invoicesClient, releaseInvoice, sendInvoice, type InvoiceDetail, type InvoiceRead } from './invoicesApi'
 import { PartnerCell } from '@/features/common/PartnerCell'
 import { partnerLabel } from '@/features/common/labels'
+import { EMPTY_TEXT } from '@/features/help/pageHelp'
 
 const colInvoiceRead = columnsOf<InvoiceRead>()
 
@@ -208,6 +209,8 @@ export default function InvoicesPage() {
       description="One per confirmed order, priced per case at the 850 price. Edit before sending; send by the partner's method (810 or email with PDFs)."
       columns={columns}
       emptyTitle="No invoices yet"
+      emptyText={EMPTY_TEXT.invoices}
+      help="page:invoices"
       renderDetail={(i) => <Detail row={i} />}
     />
   )

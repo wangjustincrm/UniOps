@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { Callout, ListPage, useOpenRecord } from '@/platform-ui'
 import { downloadPayments, paymentsClient, type PaymentRowRead } from './paymentsApi'
 import { hiddenPaymentColumns, paymentColumns } from './paymentsColumns'
+import { EMPTY_TEXT } from '@/features/help/pageHelp'
 
 const NOTE = (
   <Callout label="Where these come from">
@@ -20,7 +21,7 @@ export default function PaymentsPage() {
     <ListPage<PaymentRowRead>
       resource={paymentsClient} title="Payments"
       description="Shopify payments and refunds, one row per transaction. Use the views for each method, by week or month, and the exceptions."
-      columns={columns} defaultHidden={hiddenPaymentColumns} notice={NOTE} emptyTitle="No payments"
+      columns={columns} defaultHidden={hiddenPaymentColumns} notice={NOTE} emptyTitle="No payments yet" emptyText={EMPTY_TEXT.payments}
       onExport={downloadPayments}
     />
   )

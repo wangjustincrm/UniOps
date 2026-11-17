@@ -5,6 +5,7 @@ import {
   useOpenRecord, type ColumnDef, type RecordRef, Muted, ViewFileButton, columnsOf,
 } from '@/platform-ui'
 import { documentFile, documentsClient, downloadOriginal, ignoreDocument, readAgain, sendAgain, type DocumentRead } from './operationsApi'
+import { EMPTY_TEXT } from '@/features/help/pageHelp'
 
 const colDocumentRead = columnsOf<DocumentRead>()
 
@@ -137,6 +138,7 @@ export default function DocumentsPage() {
       description="Every file read from or sent to a partner, with its original bytes and the orders it belongs to. Search by an order's ref to find its files. Nothing is ever deleted."
       columns={columns}
       emptyTitle="No documents yet"
+      emptyText={EMPTY_TEXT.documents}
       renderDetail={(d) => <Detail d={d} />}
     />
   )

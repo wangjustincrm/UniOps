@@ -9,6 +9,7 @@ import { useTestRunRefusal } from '@/features/common/testRun'
 import { OrderList } from '@/features/orders/OrdersPage'
 import { fetchOrder, ordersClient, type LineRead, type OrderRead } from '@/features/orders/ordersApi'
 import { confirmBulk, confirmDelivery, invoicesClient, type ConfirmResult } from './invoicesApi'
+import { EMPTY_TEXT } from '@/features/help/pageHelp'
 
 const OPERATE = 'sales.order.operate'
 const MANAGE = 'sales.invoice.manage'  // sending is invoice work: Confirm and send needs both
@@ -114,6 +115,8 @@ export default function DeliveryPage() {
       description="Shipped orders whose delivery is due: the requested date, or do-not-deliver-after for Walmart. No carrier reports the delivery, so it defaults to the due date. Change it if you know better: it becomes the invoice date."
       showDue
       emptyTitle="Nothing waits for a delivery confirmation"
+      emptyText={EMPTY_TEXT.delivery}
+      help="page:delivery"
       toolbar={(ctx) => <ConfirmShown rows={ctx.rows} refresh={ctx.refresh} />}
       detailTabs={(o, close) => [{ id: 'confirm', label: 'Confirm delivery', render: () => <ConfirmOne o={o} close={close} /> }]}
     />

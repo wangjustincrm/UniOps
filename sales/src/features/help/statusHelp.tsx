@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useCallback, useRef, type ReactNode } from 'react'
 import { HelpProvider, type HelpEntry } from '@/platform-ui'
 import { hasSession } from '@/lib/api'
+import { PAGE_HELP } from './pageHelp'
 import { fetchStatusHelp } from './statusHelpApi'
 
 // The Sales help (the user, 2026-11-16). What a Status, an On Hold reason or a Detail means comes
@@ -19,8 +20,8 @@ declare module '@/platform-ui/help/types' {
 }
 
 
-/** Texts that belong to a screen, not to the business rules (none yet: page panels come in round 3). */
-const UI_HELP: Record<string, HelpEntry> = {}
+/** Texts that belong to a screen, not to the business rules: the pages' help panels. */
+const UI_HELP: Record<string, HelpEntry> = PAGE_HELP
 
 const PART = { status: 'statuses', hold: 'holds', detail: 'details', term: 'terms' } as const
 /** What a search result says it is. */

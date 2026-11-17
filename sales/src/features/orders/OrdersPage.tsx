@@ -1,4 +1,4 @@
-import { ListPage, MoneyCell, columnsOf, startHidden, withHelp, type ColumnDef, type ListCreate, type QuerySpec, type RecordTab } from '@/platform-ui'
+import { ListPage, MoneyCell, columnsOf, startHidden, withHelp, type ColumnDef, type HelpId, type ListCreate, type QuerySpec, type RecordTab } from '@/platform-ui'
 import { OrderSheet } from './OrderDetailView'
 import { OrderStatusBadge, ShopifyCell, StatusDetail } from './OrderStatusCells'
 import { ReturnAfterShipment } from '@/features/invoices/ReturnAfterShipment'
@@ -7,6 +7,7 @@ import { ManualOrderForm } from './ManualOrderForm'
 import { Recheck } from './Recheck'
 import { ordersClient, type OrderRead } from './ordersApi'
 import { PartnerCell } from '@/features/common/PartnerCell'
+import { EMPTY_TEXT } from '@/features/help/pageHelp'
 
 const col = columnsOf<OrderRead>()
 
@@ -44,8 +45,10 @@ const dueColumn = orderColumns[dueColumnIndex]
 const dueOrderColumns = [...orderColumns.slice(0, 5), { ...dueColumn, meta: { ...dueColumn.meta, hidden: false } },
   ...orderColumns.slice(5).filter((_, i) => i + 5 !== dueColumnIndex)]
 
-export function OrderList({ fixed, title, description, emptyTitle, detailActions, detailTabs, toolbar, create, showDue }: {
+export function OrderList({ fixed, title, description, emptyTitle, emptyText, help, detailActions, detailTabs, toolbar, create, showDue }: {
   fixed?: QuerySpec['filters']; title: string; description: string; emptyTitle: string
+  emptyText?: string
+  help?: HelpId
   /** More buttons in the order sheet's action bar. */
   detailActions?: (o: OrderRead, close: () => void) => React.ReactNode
   /** Tabs before the order's own (e.g. Confirm delivery). */
@@ -61,6 +64,8 @@ export function OrderList({ fixed, title, description, emptyTitle, detailActions
       title={title}
       description={description}
       emptyTitle={emptyTitle}
+      emptyText={emptyText}
+      help={help}
       fixed={fixed}
       columns={showDue ? dueOrderColumns : orderColumns}
       toolbar={toolbar ? (ctx) => (typeof toolbar === 'function' ? toolbar(ctx) : toolbar) : undefined}
@@ -78,11 +83,12 @@ export function OrderList({ fixed, title, description, emptyTitle, detailActions
 const isDraft = (o: OrderRead) => o.source_type === 'MANUAL' && o.fulfillment_status === 'Draft'
 
 /** Orders: every order from Shopify, retailer 850s and manual entry. Its
- *  system views include Needs review (the old Review worklist) and Manual
+ *  system views include On hold (Needs Review is a hold reason) and Manual
  *  drafts (the old Manual orders page, 2026-11-02); New manual order opens the
  *  standard sheet. */
 export default function OrdersPage() {
-  return <OrderList title="Orders" description="Orders from the Shopify store, retailer 850s and manual entry. Choose a view (e.g. Needs review, Manual drafts), or search, sort and group the list yourself." emptyTitle="No orders here"
+  return <OrderList title="Orders" description="Orders from the Shopify store, retailer 850s and manual entry. Choose a view (e.g. Open, On hold, Manual drafts), or search, sort and group the list yourself." emptyTitle="No orders yet"
+    emptyText={EMPTY_TEXT.orders} help="page:orders"
     create={{ label: 'New manual order', permission: 'sales.order.operate', className: 'max-w-3xl',
       render: (done, cancel) => <ManualOrderForm onSaved={done} onCancel={cancel} /> }}
     detailActions={(o) => <ReturnAfterShipment o={o} />} />

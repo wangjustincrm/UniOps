@@ -141,6 +141,18 @@ async function run(name, viewport) {
     await shot('order-lines')
     await page.keyboard.press('Escape')
   })
+  await step('page help', async () => {
+    await open('/orders')
+    await page.getByRole('button', { name: 'Help: Orders' }).click()
+    const panel = page.getByRole('dialog', { name: 'Help: Orders' })
+    await panel.waitFor({ timeout: 5000 })
+    const box = await panel.boundingBox()
+    check(!!box && box.x >= 0 && box.x + box.width <= viewport.width + 1, `${name} page help: the panel fits the screen`)
+    await panel.getByRole('searchbox', { name: 'Search help' }).fill('pallet')
+    check(await panel.getByText('SSCC — term').count() === 1, `${name} page help: search finds a glossary term`)
+    await shot('page-help')
+    await page.keyboard.press('Escape')
+  })
   await step('payments', async () => {
     await open('/payments')
     await page.getByRole('button', { name: /^View:/ }).first().click()

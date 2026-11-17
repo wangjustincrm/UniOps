@@ -4,6 +4,7 @@ import {
   type ColumnDef, type QuerySpec, Callout, Muted, columnsOf
  } from '@/platform-ui'
 import { logClient, runFor, runNow, runsClient, type LogRead, type PassReport, type RunRead } from './operationsApi'
+import { EMPTY_TEXT } from '@/features/help/pageHelp'
 
 const colLogRead = columnsOf<LogRead>()
 const colPass = columnsOf<Pass>()
@@ -94,6 +95,7 @@ function Runs() {
       columns={runColumns}
       searchable={false}
       emptyTitle="No runs yet"
+      emptyText={EMPTY_TEXT.runs}
       refetchInterval={(rows) => (rows.some((r) => r.status === 'RUNNING') ? 3000 : false)}
       renderDetail={(r) => <RunDetail run={r} />}
       toolbar={({ refresh }) => (

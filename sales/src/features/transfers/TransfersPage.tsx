@@ -16,6 +16,7 @@ import {
   amendTransfer, cancelTransfer, createTransfer, fetchTransfer, readyTransfer, releaseTransfer, resolveTransfer, resendTransfer, transfersClient, updateTransfer,
   transferPdf, type ReceiptRowRead, type TransferDetail, type TransferLineRead, type TransferRead,
 } from './transfersApi'
+import { EMPTY_TEXT } from '@/features/help/pageHelp'
 
 const colReceiptRowRead = columnsOf<ReceiptRowRead>()
 const colTransferLineRead = columnsOf<TransferLineRead>()
@@ -331,9 +332,11 @@ export default function TransfersPage() {
     <ListPage<TransferRead>
       resource={transfersClient}
       title="Transfers"
-      description="Stock moved between warehouses: a 943 goes to the warehouse, its 944 says what arrived."
+      description="Stock sent from the plant to the warehouse (Radiant): a 943 says what is coming, its 944 says what arrived."
       columns={columns}
       emptyTitle="No transfers yet"
+      emptyText={EMPTY_TEXT.transfers}
+      help="page:transfers"
       create={{ label: 'New transfer', permission: MANAGE, className: 'max-w-3xl',
         render: (done, cancel) => <TransferForm onSaved={(d) => done(d)} onCancel={cancel} /> }}
       renderDetail={(t) => <Detail row={t} />}
