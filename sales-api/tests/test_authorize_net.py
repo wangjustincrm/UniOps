@@ -485,3 +485,73 @@ async def test_one_transaction_whose_details_are_refused_never_blocks_the_others
     assert r2.details_read == 0 and len([c for c in anet2.calls if c[0] == "transaction_details"]) == 1
     assert (await env.q("SELECT count(*) n FROM sales_gateway_transactions WHERE external_id LIKE '83%' "
                         "AND raw ? 'details_failed'"))[0]["n"] == 0
+
+
+async def test_the_statement_names_the_order_of_a_refund_made_in_the_gateway(env):  # noqa: F811
+    """A refund done in Authorize.Net itself is no Shopify payment: the statement says so and names
+    the order of its original sale (refTransId)."""
+    from tests.test_order_ref import pdf_text
+    env.shop.orders = [shopify_order(11, 9311)]
+    env.shop.transactions_by_order |= {"11": [{
+        "id": 1101, "kind": "sale", "status": "success", "currency": "CAD", "test": False, "gateway": "authorize_net",
+        "amount": "100.00", "authorization": "61001#1#purchase", "payment_id": "r11", "processed_at": "2026-10-01T11:00:00-04:00"}]}
+    await env.pull()
+    anet = FakeAuthorizeNet()
+    anet.batches = [
+        batch("940", "2026-10-02T06:00:00Z", [gtx("61001", "settledSuccessfully", 100.0, "2026-10-01T15:00:00Z")],
+              {"chargeAmount": 100.0, "chargeCount": 1}),
+        batch("941", "2026-10-06T06:00:00Z", [gtx("61002", "refundSettledSuccessfully", 30.0, "2026-10-05T15:00:00Z")],
+              {"refundAmount": 30.0, "refundCount": 1}),
+    ]
+    anet.details = {"61002": {"transId": "61002", "refTransId": "61001", "order": {}}}
+    cid = await anet_connection(env, datetime(2026, 9, 30, tzinfo=timezone.utc))
+    await AuthorizeNetIntake(uow_factory=env.factory, gateway=anet,
+                             clock=lambda: datetime(2026, 10, 10, tzinfo=timezone.utc)).run_pass(await snap(env, cid))
+    async with env.factory(OP) as u:
+        [b] = [x for x in (await SettlementRowRepository(u).list(QuerySpec(page_size=50))).items if x.batch_id == "941"]
+        _, pdf = await SettlementRowService(u).statement_pdf(b.id)
+    st = pdf_text(pdf).decode("latin-1")
+    assert (b.difference, b.unmatched_count) == (Decimal("-30.00"), 1)
+    assert "61002" in st and "SHOP-9311" in st and "not in Shopify" in st and "-30.00" in st
+    assert "are no Shopify payment" in st  # the note above the table
+
+
+def _row(i, cur, net, issue=None):
+    from app.schemas.settlement_list import SettlementRowRead
+    from datetime import date
+    d = date(2026, 10, 1) + timedelta(days=i)
+    n = Decimal(net)
+    return SettlementRowRead(id=i, connection_id=1, gateway="Authorize.Net", batch_id=f"B{i}", settled_at=datetime(2026, 10, 1 + i, 6, tzinfo=timezone.utc),
+                             settled_date=d, settled_week=d, settled_month=d.replace(day=1), currency=cur, sales_amount=n, sales_count=1,
+                             refund_amount=Decimal("0"), refund_count=0, net_amount=n, declined_count=0, voided_count=0,
+                             chargeback_amount=Decimal("0"), chargeback_count=0, returned_amount=Decimal("0"), returned_count=0,
+                             other_count=0, pending_count=0, transaction_count=1, matched_net=n, difference=Decimal("0"),
+                             unmatched_count=0, probable_count=0, issue=issue)
+
+
+def test_the_report_in_two_currencies_has_a_box_per_currency_and_no_single_total():
+    from app.services.pdf_layout import Company
+    from app.services.print_docs import settlements_report_pdf_from
+    from tests.test_order_ref import pdf_text
+    rows = [_row(0, "CAD", "100.00"), _row(1, "USD", "40.00"), _row(2, "CAD", "50.00", issue="Differs from Shopify")]
+    t = pdf_text(settlements_report_pdf_from(rows, company=Company("Co", []), period="October 2026", truncated=False)).decode("latin-1")
+    assert "NET DEPOSITS \\(CAD\\)" in t and "150.00" in t and "NET DEPOSITS \\(USD\\)" in t and "40.00" in t
+    assert "Total \\(" not in t and "B0" in t and "B1" in t and "Differs from Shopify" in t  # no one-currency footer
+    assert "Only the first rows" not in t
+    one = pdf_text(settlements_report_pdf_from(rows[:1], company=Company("Co", []), period="x", truncated=True)).decode("latin-1")
+    assert "Total \\(CAD\\)" in one and "Only the first rows are listed" in one
+
+
+async def test_the_report_stops_at_its_limit_and_says_so(env, monkeypatch):  # noqa: F811
+    import app.services.settlement_list as sl
+    from tests.test_order_ref import pdf_text
+    monkeypatch.setattr(sl, "REPORT_MAX", 2)
+    anet = FakeAuthorizeNet()
+    anet.batches = [batch(str(950 + i), f"2026-10-0{2 + i}T06:00:00Z", [], {}) for i in range(3)]
+    cid = await anet_connection(env, datetime(2026, 9, 30, tzinfo=timezone.utc))
+    await AuthorizeNetIntake(uow_factory=env.factory, gateway=anet,
+                             clock=lambda: datetime(2026, 10, 10, tzinfo=timezone.utc)).run_pass(await snap(env, cid))
+    async with env.factory(OP) as u:
+        name, pdf = await SettlementRowService(u).report_pdf(QuerySpec(page_size=50))
+    t = pdf_text(pdf).decode("latin-1")
+    assert "Only the first rows are listed" in t and "952" in t and "951" in t and "950" not in t  # newest first, 2 of 3

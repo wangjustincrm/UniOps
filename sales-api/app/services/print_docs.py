@@ -400,7 +400,8 @@ def settlements_report_pdf_from(rows, *, company: Company, period: str, truncate
         L.gap(4), L.section("Deposits", "One row per deposit the payment provider paid to the bank · refunds negative", th), L.gap(2.5),
     ]
     if truncated:
-        story += [L.note("Only the first rows are listed: narrow the list (a month, a view) for a complete report.", th), L.gap(2)]
+        story += [L.note("Only the first rows are listed. The report follows the list's filters and sort: filter it to a month "
+                         "(or another view) for a complete report.", th), L.gap(2)]
     story += [
         L.items([Col("Date", 1.15), Col("Gateway", 1.35), Col("Batch", 1.15), Col("Sales", 1.1, "RIGHT"), Col("Refunds", 1.0, "RIGHT"),
                  Col("Net", 1.1, "RIGHT", strong=True), Col("Matched in Shopify", 1.15, "RIGHT"), Col("Difference", 1.05, "RIGHT"),
@@ -410,7 +411,8 @@ def settlements_report_pdf_from(rows, *, company: Company, period: str, truncate
     box = [(f"{label} ({c})", L.money(v)) for c, t in sums.items()
            for label, v in (("Sales", t["sales_amount"]), ("Refunds", -t["refund_amount"]), ("Difference", t["difference"]),
                             ("Net deposits", t["net_amount"]))]
-    story.append(L.closing("Notes", ["Net and the batch figures are the payment provider's own; Matched in Shopify adds up the "
+    story.append(L.closing("Notes", ["This report lists the deposits as the Settlements list was filtered and sorted when it was made.",
+                                     "Net and the batch figures are the payment provider's own; Matched in Shopify adds up the "
                                      "Shopify payments matched to each deposit's transactions.",
                                      "A difference is money in a deposit that is no Shopify payment (e.g. a refund made in the "
                                      "gateway), or a transaction not matched yet."], box or [("Batches", "0")], th))

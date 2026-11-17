@@ -46,7 +46,9 @@ export interface ResourceClient<TRead, TCreate, TUpdate> {
   /** `data` holds only the fields to change; a field set to null is cleared. */
   update: (id: number, data: Partial<TUpdate>, version?: number) => Promise<TRead>
   deactivate: (id: number) => Promise<TRead>
-  exportPath: (spec: QuerySpec) => string
+  /** Every row the query selects, as a file the back end serves under the resource (default its
+   *  CSV export; e.g. "report/settlements.pdf"): the list's filters and sort, no paging. */
+  exportPath: (spec: QuerySpec, file?: string) => string
   importCsv: (file: File, dryRun: boolean) => Promise<ImportReport>
 }
 
@@ -67,12 +69,13 @@ export function createResourceClient<TRead, TCreate, TUpdate = TCreate>(
     update: (id, data, version) =>
       http.put<TRead>(version === undefined ? `${base}/${id}` : `${base}/${id}?version=${version}`, data),
     deactivate: (id) => http.post<TRead>(`${base}/${id}/deactivate`),
-    exportPath: (spec) => {
+    exportPath: (spec, file = 'export.csv') => {
       const p = toSearchParams(spec)
       p.delete('page')
       p.delete('page_size')
       const qs = p.toString()
-      return qs ? `${base}/export.csv?${qs}` : `${base}/export.csv`
+      const path = `${base}/${file.replace(/^\/+/, '')}`
+      return qs ? `${path}?${qs}` : path
     },
     importCsv: (file, dryRun) => {
       if (!http.upload) throw new Error('this API client cannot upload files')

@@ -58,6 +58,7 @@ describe('createResourceClient', () => {
     await c.deactivate(3)
     expect(http.post).toHaveBeenCalledWith('/config/things/3/deactivate')
     expect(c.exportPath({ page: 4, pageSize: 20, search: 'x' })).toBe('/config/things/export.csv?search=x')
+    expect(c.exportPath({ page: 2, pageSize: 20, search: 'x' }, 'report/things.pdf')).toBe('/config/things/report/things.pdf?search=x')
     await c.importCsv(new File(['code\n'], 'a.csv'), true)
     expect(http.upload).toHaveBeenCalledWith('/config/things/import.csv?dry_run=true', expect.any(FormData))
   })

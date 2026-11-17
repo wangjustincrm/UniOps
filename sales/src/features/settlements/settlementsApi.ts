@@ -56,6 +56,6 @@ export const settlementPdf = (s: Pick<SettlementRowRead, 'id' | 'batch_id'>): Fi
 
 /** The list as it is filtered and sorted now, as one PDF report (the CSV export's query). */
 export const settlementsReportPdf = (spec: QuerySpec): FileSource => {
-  const path = settlementsClient.exportPath!(spec).replace('/export.csv', '/report/settlements.pdf')
+  const path = settlementsClient.exportPath(spec, 'report/settlements.pdf')
   return { key: `settlements-report-${path}`, title: 'Settlements report', load: () => api.file(path, 'settlements-report.pdf') }
 }
