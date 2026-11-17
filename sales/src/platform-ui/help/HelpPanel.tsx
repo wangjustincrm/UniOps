@@ -4,6 +4,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'r
 import { findAnchor } from './anchor'
 import { ManagerContext, ScopeContext } from './tourContext'
 import { planStops, type PlannedStop } from './tourStops'
+import { useScopePlan } from './useScopePlan'
 import { catalogRows, pageRows, seenKey, type HelpRow } from './rows'
 import { NewHint, StopRows, TipsCatalog, TourButtons } from './HelpRows'
 import { seenStore, useSeen } from './seen'
@@ -35,7 +36,7 @@ export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sec
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<'page' | 'catalog'>('page')
   const [local, setLocal] = useState<TourStep[] | null>(null)  // without a TourManager (a test, another app)
-  const [plan, setPlan] = useState<PlannedStop[]>([])
+  const plan = useScopePlan(open)  // current: re-planned as stops come and go, and when the drawer opens
   const trigger = useRef<HTMLButtonElement>(null)
   const all = useMemo(() => (ctx?.catalog ? ctx.catalog() : []), [ctx])
   const hits = useMemo(() => searchHelp(all, q), [all, q])
@@ -70,11 +71,6 @@ export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sec
     .filter((p) => p.shown && inTour(p.slot) && !seenStore.isSeen(keyOf(p.slot), sources.slot(p.slot)?.v))))
   const showOne = (r: HelpRow) => { if (r.anchor) run([{ anchor: r.anchor, text: r.slot, slot: r.slot, seen: r.key }]) }
 
-  // The page's stops as they are now (once it is on screen, and on each open).
-  useEffect(() => {
-    const t = setTimeout(() => setPlan(planStops(scope?.stops() ?? [], manager?.order)), 300)
-    return () => clearTimeout(t)
-  }, [scope, manager, open])
   // A tip with no place on the page (e.g. how to sort) is seen by being read: shown in the open drawer
   // (its group is open while it is new) or in the catalog for a second.
   const unreadText = (view === 'catalog' ? catalog : rows).filter((r) => (!r.anchor || !inTour(r.slot)) && !r.seen)
@@ -189,11 +185,7 @@ export function ShowMeAround({ className }: { className?: string }) {
   const manager = useContext(ManagerContext)
   const seen = useSeen()
   const me = useRef<HTMLButtonElement>(null)
-  const [plan, setPlan] = useState<PlannedStop[]>([])
-  useEffect(() => {
-    const t = setTimeout(() => setPlan(planStops(scope?.stops() ?? [], manager?.order).filter((p) => p.shown && manager?.slot(p.slot)?.tour !== false)), 300)
-    return () => clearTimeout(t)
-  }, [scope, manager])
+  const plan = useScopePlan().filter((p) => p.shown && manager?.slot(p.slot)?.tour !== false)
   if (!manager || plan.length === 0) return null
   const keyOf = (sl: string) => seenKey(sl, manager.slot(sl)?.group, scope?.id ?? 'record')
   const fresh = plan.some((p) => (seen[keyOf(p.slot)] ?? 0) < (manager.slot(p.slot)?.v ?? 1))

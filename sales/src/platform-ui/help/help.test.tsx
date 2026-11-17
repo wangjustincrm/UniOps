@@ -430,3 +430,29 @@ describe('what is seen where', () => {
     await waitFor(() => expect(seenStore.isSeen('list.sortGroup')).toBe(true), { timeout: 2500 })
   })
 })
+
+describe('the plan follows the stops as they come', () => {
+  afterEach(async () => { vi.restoreAllMocks(); (await import('./index')).seenStore.reset() })
+  it('a stop that registers late (rows loaded after 500 ms) is in the hint and in the open drawer at once', async () => {
+    const { HelpProvider, PageHelp, TourManager, TourScope, TourMark } = await import('./index')
+    const { useEffect, useState } = await import('react')
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      return { width: 40, height: 20, top: 10, left: 10, right: 50, bottom: 30, x: 10, y: 10, toJSON: () => ({}) } as DOMRect
+    })
+    function Late() {
+      const [ready, setReady] = useState(false)
+      useEffect(() => { const t = setTimeout(() => setReady(true), 500); return () => clearTimeout(t) }, [])
+      return ready ? <TourMark help="list.rowOpen" slot="list.rowOpen">first row</TourMark> : null
+    }
+    render(<HelpProvider layers={[{ 'page:x': { body: 'Page.' }, 'list.rowOpen': { title: 'Open a row', body: 'Click a row.' } }]}>
+      <TourManager><TourScope id="x"><PageHelp id="page:x" page="X" /><Late /></TourScope></TourManager></HelpProvider>)
+    expect(document.querySelector('[data-help-new]')).toBeNull()  // nothing yet
+    fireEvent.click(screen.getByRole('button', { name: 'Help: X' }))
+    const panel = await screen.findByRole('dialog', { name: 'Help: X' })
+    expect(panel.querySelector('[data-help-row="list.rowOpen"]')).toBeNull()
+    await waitFor(() => expect(panel.querySelector('[data-help-row="list.rowOpen"]')).not.toBeNull(), { timeout: 1500 })
+    expect(within(panel).getByRole('group', { name: 'Tours' }).textContent).toContain('Show me around this page1')
+    fireEvent.keyDown(panel, { key: 'Escape' })
+    expect(await screen.findByRole('button', { name: 'New here? Show me' })).toBeInTheDocument()
+  })
+})

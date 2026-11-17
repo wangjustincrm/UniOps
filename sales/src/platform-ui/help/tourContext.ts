@@ -12,6 +12,9 @@ export interface ScopeValue {
   kind: 'page' | 'record'
   add: (stop: Stop) => () => void
   stops: () => Stop[]
+  /** Told (once per frame) when a stop comes or goes; `version` counts the changes. */
+  subscribe: (listener: () => void) => () => void
+  version: () => number
 }
 export const ScopeContext = createContext<ScopeValue | null>(null)
 
