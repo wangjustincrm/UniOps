@@ -236,6 +236,11 @@ async def replace_questions(
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 f"Question {index} needs at least two options.")
+        if int(q.get("points", 1) or 0) < 1:
+            # Review U3: only feedback questions are worth nothing.
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"Question {index} has a right answer, so it is worth at least one point.")
         if not correct:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -339,7 +344,9 @@ async def score(
             "explanation": q.explanation,
         })
 
-    percent = Decimal(scored * 100) / Decimal(possible) if possible else Decimal(0)
+    # ★ Review U3: a quiz of course feedback only has nothing to mark, so
+    # handing it in passes it — rather than failing everybody at 0%.
+    percent = Decimal(scored * 100) / Decimal(possible) if possible else Decimal(100)
     passed = float(percent) >= quiz.pass_mark_percent
 
     attempt = QuizAttempt(
@@ -613,25 +620,38 @@ async def results(db: AsyncSession, quiz_id: uuid.UUID) -> dict:
                           if taken else None),
         "total_attempts": len(attempts),
         "by_question": hardest,
-        "feedback": _feedback(questions, taken),
+        "feedback": _feedback(questions, taken, attempts),
     }
 
 
-def _feedback(questions: list[QuizQuestion], taken: list[QuizAttempt]) -> list[dict]:
+def _feedback(questions: list[QuizQuestion], taken: list[QuizAttempt],
+              attempts: list[QuizAttempt]) -> list[dict]:
     """★ UAT 15: what people said, per feedback question — how many chose
     each answer, the average star rating, and the comments. No names: it is
-    the course's feedback, not a mark against anybody."""
+    the course's feedback, not a mark against anybody.
+
+    ★ Review U6: each person's most recent answer to the question, from
+    whichever attempt gave one — feedback given first time and skipped on a
+    retake still counts. And the comments are in alphabetical order, not in
+    the order people answered: beside the list of attempts, with names and
+    times, that order would say who wrote what."""
+    newest_first = sorted((a for a in attempts if a.user_id),
+                          key=lambda a: a.submitted_at, reverse=True)
     out = []
     for q in questions:
         if q.kind not in FEEDBACK_KINDS:
             continue
-        given = [(a.answers.get(str(q.id)) or []) for a in taken]
-        given = [g[0] for g in given if g]
+        by_person: dict = {}
+        for a in newest_first:
+            g = a.answers.get(str(q.id)) or []
+            if g and a.user_id not in by_person:
+                by_person[a.user_id] = g[0]
+        given = list(by_person.values())
         row = {"question_id": str(q.id), "prompt": q.prompt, "kind": q.kind,
                "answered": len(given), "of": len(taken), "counts": [], "average": None,
                "comments": []}
         if q.kind == "comment":
-            row["comments"] = [str(g).strip() for g in given if str(g).strip()]
+            row["comments"] = sorted((str(g).strip() for g in given if str(g).strip()), key=str.lower)
         else:
             row["counts"] = [{"key": o["key"], "label": o["label"],
                               "count": sum(1 for g in given if g == o["key"])}
