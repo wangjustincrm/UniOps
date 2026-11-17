@@ -21,13 +21,15 @@ interface FoodSafety {
   year: number; total: number
   month: { month: string; count: number; previous: string; previous_count: number; change_percent: number | null }
   bands: Record<string, number>; not_assessed: number
-  investigations: { open: number; pending: number; closed: number }
+  investigations: { open: number; under_investigation: number; closed: number }
   capa: { created: number; completed: number; outstanding: number }
   by_month: { month: string; count: number }[]
   average_days: number | null; resolved: number
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
+/** Every status but closed (and draft, which the register's food-safety filter leaves out). */
+const NOT_CLOSED = ['submitted', 'under_investigation', 'pending_closure']
 
 /** The register, narrowed to food safety near misses and a period — the same
  *  rule and the same period the figure was counted with. */
@@ -119,7 +121,7 @@ export default function FoodSafetyDashboardPage() {
               to={incidents(`food safety near misses in ${monthName} ${y}`, mFrom, mTo)}
               aside={<MonthChange now={data.month.count} before={data.month.previous_count}
                                   month={data.month.month} previous={data.month.previous}
-                                  percent={data.month.change_percent} />}
+                                  percent={data.month.change_percent} size="tile" upIsGood />}
               sub={`${data.month.previous_count} last month`} />
         <Tile value={data.average_days ?? '—'} label="Average days to resolve"
               to={incidents(`food safety near misses closed in ${y}`, yearFrom, yearTo, { status: 'closed' })}
@@ -142,14 +144,14 @@ export default function FoodSafetyDashboardPage() {
         </Section>
 
         <Section title="Investigations"
-                 note="Open: reported or being investigated. Pending: waiting to be closed. Closed: closed.">
+                 note="Open: reported, the investigation not yet signed. Under investigation: signed, and not closed while its corrective actions are completed and verified. Closed: closed.">
           <div className="grid grid-cols-3 gap-2">
             <Tile value={data.investigations.open} label="Open"
-                  to={incidents(`food safety investigations open in ${y}`, yearFrom, yearTo,
-                                { status: ['submitted', 'under_investigation'] })} />
-            <Tile value={data.investigations.pending} label="Pending"
-                  to={incidents(`food safety investigations pending closure in ${y}`, yearFrom, yearTo,
-                                { status: 'pending_closure' })} />
+                  to={incidents(`food safety near misses open in ${y}`, yearFrom, yearTo,
+                                { status: NOT_CLOSED, investigation_signed: 'false' })} />
+            <Tile value={data.investigations.under_investigation} label="Under investigation"
+                  to={incidents(`food safety near misses under investigation in ${y}`, yearFrom, yearTo,
+                                { status: NOT_CLOSED, investigation_signed: 'true' })} />
             <Tile value={data.investigations.closed} label="Closed"
                   to={incidents(`food safety investigations closed in ${y}`, yearFrom, yearTo, { status: 'closed' })} />
           </div>

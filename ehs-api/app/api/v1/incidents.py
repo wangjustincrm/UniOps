@@ -234,6 +234,8 @@ async def list_incidents(
         default=False, description="Round 12: only those whose investigation is not signed off"),
     food_safety: bool = Query(
         default=False, description="UAT 14: only food-safety near misses"),
+    investigation_signed: bool | None = Query(
+        default=None, description="UAT 15: only those whose investigation is (or is not) signed"),
 ):
     # Without ehs.incident.read the register is not browsable, but a person's
     # own reports are: the list narrows rather than refusing outright.
@@ -251,6 +253,7 @@ async def list_incidents(
         actions_state=actions_state,
         investigation_outstanding_only=investigation_outstanding,
         food_safety_only=food_safety,
+        investigation_signed=investigation_signed,
     )
     return [IncidentListItem.model_validate(r) for r in rows]
 
@@ -458,9 +461,12 @@ async def edit_incident(
     if "equipment_id" in fields:
         from app.services import equipment_ref
         await equipment_ref.check(db, fields["equipment_id"], incident.equipment_id)
+    # ★ UAT 15, question M: "adding or changing only the batch code keeps the
+    # HSE review." Anything else that actually changes still withdraws it.
+    changed = {k for k, v in fields.items() if getattr(incident, k) != v}
     for key, value in fields.items():
         setattr(incident, key, value)
-    if fields:
+    if changed - {"batch_code"}:
         crud.withdraw_review(incident)
     await db.flush()
     if recount:
@@ -609,9 +615,32 @@ async def upsert_investigation(
 ):
     incident = await crud.get(db, incident_id)
     crud.assert_open(incident, "the investigation")
-    crud.withdraw_review(incident)
+    # ★ UAT 15, M: the investigation page saves everything on every save, so a
+    # save that changed only the batch code must not read as a change here.
+    before = await _investigation_state(db, incident)
     inv = await inv_crud.upsert_investigation(db, incident, payload)
+    if await _investigation_state(db, incident) != before:
+        crud.withdraw_review(incident)
     return InvestigationOut.model_validate(inv)
+
+
+async def _investigation_state(db, incident) -> dict | None:
+    """What the investigation says, without its bookkeeping — to tell a save
+    that changed it from one that did not."""
+    inv = await inv_crud.get_investigation(db, incident.id)
+    if inv is None:
+        return None
+    skip = {"id", "incident_id", "created_at", "updated_at"}
+    import copy   # a list changed in place would otherwise compare equal to itself
+    return {c.key: copy.deepcopy(getattr(inv, c.key)) for c in inv.__table__.columns if c.key not in skip}
+
+
+async def _causes_state(db, incident) -> list[tuple]:
+    """The causes as recorded — not their row ids, which a save may renew."""
+    skip = {"id", "incident_id", "hazard_id", "created_at", "updated_at"}
+    return sorted(
+        tuple((c.key, str(getattr(cause, c.key))) for c in cause.__table__.columns if c.key not in skip)
+        for cause in await inv_crud.list_causes(db, incident.id))
 
 
 @router.post("/{incident_id}/investigation/sign", response_model=InvestigationOut)
@@ -632,8 +661,10 @@ async def replace_causes(
 ):
     incident = await crud.get(db, incident_id)
     crud.assert_open(incident, "the causes")
-    crud.withdraw_review(incident)
+    before = await _causes_state(db, incident)
     await inv_crud.replace_causes(db, incident, payload)
+    if await _causes_state(db, incident) != before:   # UAT 15, M
+        crud.withdraw_review(incident)
     return await _cause_tree(db, incident)
 
 

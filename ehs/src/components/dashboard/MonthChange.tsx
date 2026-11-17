@@ -17,12 +17,24 @@ function monthName(ym: string): string {
   return `${MONTH_NAMES[m - 1]} ${y}`
 }
 
-export function MonthChange({ now, before, month, previous, percent }: {
+/**
+ * ★ UAT 15, question I: "a increasing number which is bad … should have an up
+ * arrow in red. a decreasing number is good and should be green. Make the
+ * number and the arrows bigger, 1/2 the size of the overall number." So the
+ * colour says better or worse: red when it got worse, green when better.
+ * Most figures here count harm, where more is worse; a few count reporting
+ * (near misses, hazard assessments), where more is better — those pass
+ * `upIsGood`. TC-13: the size is half the figure it sits beside.
+ */
+export function MonthChange({ now, before, month, previous, percent, upIsGood = false, size = 'box' }: {
   now: number; before: number
   /** "2026-11" */
   month: string; previous: string
   /** Shown beside the arrow when given (the Food Safety dashboard). */
   percent?: number | null
+  upIsGood?: boolean
+  /** Half of a box's 36px number, or of a panel's or tile's 30px. */
+  size?: 'box' | 'tile'
 }) {
   const up = now > before
   const down = now < before
@@ -32,16 +44,21 @@ export function MonthChange({ now, before, month, previous, percent }: {
   const current = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}` === month
   const words = `${now} in ${monthName(month)}${current ? ' so far' : ''}, ${
     up ? 'up' : down ? 'down' : 'the same'} from ${before} in all of ${monthName(previous)}`
+  const better = upIsGood ? up : down
+  const worse = upIsGood ? down : up
+  const tone = better ? 'text-success-700' : worse ? 'text-danger-700' : 'text-neutral-500'
+  const text = size === 'box' ? 'text-lg' : 'text-[15px]'
+  const icon = size === 'box' ? 'h-5 w-5' : 'h-4 w-4'
   return (
-    <span className="inline-flex items-center gap-0.5 text-xs font-semibold tabular-nums text-neutral-700"
-          title={words}>
-      <span className="sr-only">{words}</span>
+    <span className={`inline-flex items-center gap-0.5 font-bold leading-none tabular-nums text-neutral-800 ${text}`}
+          title={`${words}${better ? ' — better' : worse ? ' — worse' : ''}`}>
+      <span className="sr-only">{words}{better ? ', better' : worse ? ', worse' : ''}</span>
       <span aria-hidden>{now}</span>
-      {up && <ArrowUp className="h-3.5 w-3.5 text-success-800" strokeWidth={3} aria-hidden />}
-      {down && <ArrowDown className="h-3.5 w-3.5 text-danger-800" strokeWidth={3} aria-hidden />}
-      {!up && !down && <Minus className="h-3.5 w-3.5 text-neutral-400" aria-hidden />}
+      {up && <ArrowUp className={`${icon} ${tone}`} strokeWidth={3} aria-hidden />}
+      {down && <ArrowDown className={`${icon} ${tone}`} strokeWidth={3} aria-hidden />}
+      {!up && !down && <Minus className={`${icon} text-neutral-400`} aria-hidden />}
       {percent !== undefined && percent !== null && (
-        <span aria-hidden className={up ? 'text-success-800' : down ? 'text-danger-800' : 'text-neutral-500'}>
+        <span aria-hidden className={`ml-0.5 ${tone}`}>
           {percent > 0 ? '+' : ''}{percent}%
         </span>
       )}

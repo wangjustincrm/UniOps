@@ -591,11 +591,18 @@ async def food_safety(db: AsyncSession, *, year: int) -> dict:
         else:
             bands[band] = n
 
+    # ★ UAT 15, question J: "rename it from pending to under investigation …
+    # it is still under investigation when the related capa's are not
+    # completed and verified yet." Open: reported, its investigation not signed.
+    # Under investigation: signed, not closed — which is where it waits while
+    # its corrective actions are completed and verified. Closed: closed.
     st = (await db.execute(text(f"""
-        select count(*) filter (where i.status in ('submitted', 'under_investigation')),
-               count(*) filter (where i.status = 'pending_closure'),
+        select count(*) filter (where i.status <> 'closed' and not signed),
+               count(*) filter (where i.status <> 'closed' and signed),
                count(*) filter (where i.status = 'closed')
-          from ehs_incidents i where {in_year}
+          from (select i.*, exists (select 1 from ehs_incident_investigations v
+                                     where v.incident_id = i.id and v.completed_at is not null) as signed
+                  from ehs_incidents i where {in_year}) i
     """), p)).one()
 
     capa = (await db.execute(text(f"""
@@ -627,7 +634,7 @@ async def food_safety(db: AsyncSession, *, year: int) -> dict:
         "month": {"month": f"{y}-{m:02d}", "count": now, "previous": f"{py}-{pm:02d}",
                   "previous_count": before, "change_percent": _pct(now, before)},
         "bands": bands, "not_assessed": not_assessed,
-        "investigations": {"open": st[0], "pending": st[1], "closed": st[2]},
+        "investigations": {"open": st[0], "under_investigation": st[1], "closed": st[2]},
         "capa": {"created": capa[0], "completed": capa[1], "outstanding": capa[2]},
         "by_month": [{"month": k, "count": v} for k, v in by_month.items()],
         "average_days": round(max(float(days), 0) / closed, 1) if closed else None,

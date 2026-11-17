@@ -344,8 +344,12 @@ export default function DashboardPage() {
   const year = h.year
   // ★ UAT 14: this month's count against last month's, on each figure.
   const mc = data.month_change
-  const change = (key: string) => (
-    <MonthChange now={mc.this[key] ?? 0} before={mc.last[key] ?? 0} month={mc.month} previous={mc.previous} />)
+  // UAT 15, I: more near misses and more assessments are better; more of
+  // anything else counted here is worse.
+  const UP_IS_GOOD = new Set(['near_misses', 'assessments'])
+  const change = (key: string, size: 'box' | 'tile' = 'box') => (
+    <MonthChange now={mc.this[key] ?? 0} before={mc.last[key] ?? 0} month={mc.month} previous={mc.previous}
+                 upIsGood={UP_IS_GOOD.has(key)} size={size} />)
   const nearThis = data.near_misses.reduce((n, r) => n + r.this_year, 0)
   const nearLast = data.near_misses.reduce((n, r) => n + r.last_year, 0)
   const thisMonth = new Date().getFullYear() === year ? new Date().getMonth() : 11
@@ -361,7 +365,7 @@ export default function DashboardPage() {
 
   const panels: Record<string, React.ReactNode> = {
     injuries_by_month: (
-      <Panel title="Injuries by month" className="lg:col-span-2" aside={change('injuries')}>
+      <Panel title="Injuries by month" className="lg:col-span-2" aside={change('injuries', 'tile')}>
         <MonthColumns
           rows={data.medical_events.map((r) => ({ ...r }))}
           series={[{ key: 'first_aid', label: 'First aid', cls: 'bg-primary-300' },
@@ -375,7 +379,7 @@ export default function DashboardPage() {
       <Panel title={`Near misses recorded — ${nearThis}`}
              aside={<span className="flex items-baseline gap-3">
                {nearLast > 0 && <span className="text-xs text-neutral-500">{nearLast} last year</span>}
-               {change('near_misses')}
+               {change('near_misses', 'tile')}
              </span>}
              note="A rising line here is good — it means people are reporting what nearly happened.">
         <MonthColumns
@@ -414,7 +418,7 @@ export default function DashboardPage() {
       </Panel>
     ),
     capa: (
-      <Panel title="Corrective actions raised and closed" aside={change('capa_raised')}
+      <Panel title="Corrective actions raised and closed" aside={change('capa_raised', 'tile')}
              note="Raised in the month, and closed in the month — closed means closed, not just marked done.">
         <MonthColumns
           rows={data.capa}
@@ -424,7 +428,7 @@ export default function DashboardPage() {
     ),
     assessments: (
       <Panel title={`Hazard assessments completed — ${data.assessments.reduce((n, r) => n + r.count, 0)}`}
-             aside={change('assessments')}>
+             aside={change('assessments', 'tile')}>
         <MonthColumns
           rows={data.assessments}
           // ★ UAT 14: "add an additional bar for the number of hazard capa's

@@ -222,8 +222,16 @@ async def list_(
     actions_state: str | None = None,
     investigation_outstanding_only: bool = False,
     food_safety_only: bool = False,
+    investigation_signed: bool | None = None,
 ) -> list[Incident]:
     stmt = select(Incident)
+    if investigation_signed is not None:
+        # ★ UAT 15, J: the Food Safety dashboard's Open (not signed) and Under
+        # investigation (signed, not yet closed).
+        from sqlalchemy import exists
+        from app.models.incident import IncidentInvestigation as Inv
+        signed = exists().where(Inv.incident_id == Incident.id, Inv.completed_at.is_not(None))
+        stmt = stmt.where(signed if investigation_signed else ~signed)
     if food_safety_only:
         # ★ UAT 14: the Food Safety dashboard's figures open these.
         from sqlalchemy import text as sql_text

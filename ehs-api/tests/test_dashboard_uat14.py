@@ -81,6 +81,9 @@ async def test_the_food_safety_dashboard_counts_what_its_lists_hold(hse_manager,
     db_session.add(FoodSafetyAssessment(
         id=uuid.uuid4(), incident_id=a.id, ccp_failure=True, probability=1, severity=1,
         detectability=1, rpn=46, band="critical", assessed_at=_at(y, 12, 5)))   # the latest wins
+    # b's investigation is signed: under investigation until it is closed.
+    from app.models.incident import IncidentInvestigation
+    db_session.add(IncidentInvestigation(id=uuid.uuid4(), incident_id=b.id, completed_at=_at(y, 12, 6)))
     for status in ("closed", "open", "cancelled"):
         db_session.add(Action(id=uuid.uuid4(), action_no=f"ACT-T-{uuid.uuid4().hex[:8]}",
                               source_type="incident", source_id=b.id, title="x", status=status,
@@ -95,7 +98,7 @@ async def test_the_food_safety_dashboard_counts_what_its_lists_hold(hse_manager,
                           "previous_count": 1, "change_percent": 100.0}
     assert d["bands"] == {"critical": 1, "high": 0, "medium": 0, "low": 0}
     assert d["not_assessed"] == 3
-    assert d["investigations"] == {"open": 1, "pending": 1, "closed": 2}
+    assert d["investigations"] == {"open": 1, "under_investigation": 1, "closed": 2}
     assert d["capa"] == {"created": 2, "completed": 1, "outstanding": 1}
     assert [r["count"] for r in d["by_month"]][9:] == [1, 1, 2]
     assert (d["average_days"], d["resolved"]) == (3.0, 2)
@@ -108,6 +111,12 @@ async def test_the_food_safety_dashboard_counts_what_its_lists_hold(hse_manager,
         ("food_safety", "true"), ("status", "closed"),
         ("occurred_from", f"{y}-01-01"), ("occurred_to", f"{y}-12-31")])).json()
     assert len(closed) == d["investigations"]["closed"]
+    not_closed = [("food_safety", "true"), ("status", "submitted"), ("status", "under_investigation"),
+                  ("status", "pending_closure"), ("occurred_from", f"{y}-01-01"), ("occurred_to", f"{y}-12-31")]
+    under = (await hse.get("/api/v1/incidents", params=not_closed + [("investigation_signed", "true")])).json()
+    opened = (await hse.get("/api/v1/incidents", params=not_closed + [("investigation_signed", "false")])).json()
+    assert (len(opened), len(under)) == (d["investigations"]["open"], d["investigations"]["under_investigation"])
+    assert [i["id"] for i in under] == [str(b.id)]
 
 
 async def test_the_food_safety_dashboard_needs_incident_read(worker):
