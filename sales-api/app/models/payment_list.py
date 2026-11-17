@@ -30,12 +30,14 @@ from sqlalchemy import Date, DateTime, Integer, Numeric, String, case, cast, fun
 from sqlalchemy.orm import aliased
 
 from app.db.base import Base
-from app.models.gateways import GatewaySettlement, GatewayTransaction
+from app.models.gateways import GatewaySettlement, GatewayTransaction, details_attempts
 from app.models.orders import Order
 from app.models.payments import OrderPayment
 
 ISSUES = ("Pending over 7 days", "Cancelled, not fully refunded", "Partially paid", "Failed on an open order",
-          "Paid, no payment", "Not settled in the gateway", "In the gateway, not in Shopify")
+          "Paid, no payment", "Not settled in the gateway", "In the gateway, not in Shopify",
+          "Details not available from the gateway")
+DETAILS_ATTEMPTS = 3  # services/gateway_intake.py: then its details are given up on
 # How the gateway transaction was matched, in words (domain/gateway_match.py's methods).
 MATCH_WORDS = {"TRANSACTION_ID": "Transaction ID", "SHOPIFY_PAYMENT_ID": "Shopify payment ID", "ORDER_NUMBER": "Order number",
                "AMOUNT_TIME": "Amount and time (probable)"}
@@ -179,14 +181,16 @@ _GATEWAY_ONLY = (
         cast(null(), String).label("order_source"), cast(null(), String).label("financial_status"),
         literal(False).label("order_cancelled"), cast(null(), Numeric(14, 2)).label("discount"),
         cast(null(), Numeric(14, 2)).label("shipping"), cast(null(), Numeric(14, 2)).label("order_total"),
-        literal(False).label("test"), literal("In the gateway, not in Shopify").label("issue"),
+        literal(False).label("test"),
+        case((_T.details_read_at.is_(None), "Details not available from the gateway"),
+             else_="In the gateway, not in Shopify").label("issue"),
         *_gateway_columns(_T, _S), literal(False).label("voided"),
     )
     .select_from(_T).outerjoin(_S, _S.id == _T.settlement_id)
     # Only once nothing better can come (its details were read and matching ran again): a first
     # history read shows no transaction here that a later pass will match.
     .where(_T.payment_row_id.is_(None), _T.settled.is_(True), _T.kind.in_(("sale", "refund")),
-           _T.details_read_at.is_not(None))
+           or_(_T.details_read_at.is_not(None), details_attempts(_T) >= DETAILS_ATTEMPTS))
 )
 
 _ROWS = union_all(_PAYMENTS, _NO_PAYMENT, _GATEWAY_ONLY).subquery("sales_payment_rows")

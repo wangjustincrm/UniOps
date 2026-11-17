@@ -67,6 +67,11 @@ class AuthorizeNetAuthFailed(AuthorizeNetError):
     """The login or key was refused, or the reporting API is off. Latches the connection."""
 
 
+class AuthorizeNetRequestRefused(AuthorizeNetError):
+    """Authorize.Net answered and refused this request with its own error code (not a login or
+    transport problem): about this request only, e.g. one transaction's details."""
+
+
 class AuthorizeNetRefused(AuthorizeNetError):
     """Refused before any request: not an Authorize.Net host, no login id or no key."""
 
@@ -182,7 +187,7 @@ class HttpAuthorizeNet:
                                              "Turn it on under Account → Security Settings → Transaction Details API.")
             if code == "E00040" and request == "getTransactionDetailsRequest":
                 return {}  # the record cannot be found: nothing to add
-            raise AuthorizeNetError(f"Authorize.Net refused {request} ({code}: {text})")
+            raise AuthorizeNetRequestRefused(f"Authorize.Net refused {request} ({code}: {text})")
         return data
 
     async def test(self, conn: Any) -> dict[str, Any]:
@@ -234,6 +239,7 @@ class FakeAuthorizeNet:
     details: dict[str, dict[str, Any]] = field(default_factory=dict)
     calls: list[tuple[str, Any]] = field(default_factory=list)
     fail: dict[str, BaseException] = field(default_factory=dict)
+    fail_ids: dict[str, BaseException] = field(default_factory=dict)  # transaction_details per id
     page_limit: int = PAGE_LIMIT
 
     def _maybe_fail(self, method: str) -> None:
@@ -266,5 +272,7 @@ class FakeAuthorizeNet:
     async def transaction_details(self, conn: Any, trans_id: str) -> dict[str, Any]:
         self.calls.append(("transaction_details", trans_id))
         self._maybe_fail("transaction_details")
+        if str(trans_id) in self.fail_ids:
+            raise self.fail_ids[str(trans_id)]
         t = self.details.get(str(trans_id))
         return slim_details(t) if t else {}

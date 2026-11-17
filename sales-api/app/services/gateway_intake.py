@@ -36,10 +36,10 @@ from sqlalchemy import func, or_, select, update
 from app.domain import gateway_match as gm
 from app.domain.gateways import kind_of, settled_of
 from app.domain.status import InboundFile
-from app.integrations.authorize_net import MAX_DAYS, AuthorizeNetAuthFailed, readable
+from app.integrations.authorize_net import MAX_DAYS, AuthorizeNetAuthFailed, AuthorizeNetError, readable
 from app.models.config import Connection
 from app.models.documents import Document
-from app.models.gateways import GatewaySettlement, GatewayTransaction
+from app.models.gateways import GatewaySettlement, GatewayTransaction, details_attempts, details_failed_at
 from app.models.orders import Order
 from app.models.payments import OrderPayment
 from app.platform.actors import SYSTEM_ACTOR
@@ -61,6 +61,10 @@ DETAILS_PER_PASS = 200     # transaction details read per round, for the unmatch
 # A pass keeps reading rounds (matching after each) until none is left or this budget is spent, so
 # a first history read (~4,000 details) drains in a pass or two, never by hand (review 2026-11-17).
 DETAILS_BUDGET_SECONDS = 600
+# One transaction whose details Authorize.Net refuses is marked and skipped (review 2026-11-17): tried
+# again after DETAILS_RETRY, at most DETAILS_ATTEMPTS times; then "Details not available".
+DETAILS_ATTEMPTS = 3
+DETAILS_RETRY = timedelta(hours=24)
 
 
 @dataclass
@@ -116,6 +120,12 @@ def batch_totals(b: dict[str, Any]) -> dict[str, Any]:
 # What is matched to Shopify: money that moved (settled sales and refunds), and voids (the sale they undid).
 MATCHABLE = or_(GatewayTransaction.settled.is_(True) & GatewayTransaction.kind.in_(("sale", "refund")),
                 GatewayTransaction.kind == "void")
+
+
+def _about_this_one(e: BaseException) -> bool:
+    """Authorize.Net answered and refused this request with its own code (not transport, not login)."""
+    from app.integrations.authorize_net import AuthorizeNetRequestRefused
+    return isinstance(e, AuthorizeNetRequestRefused)
 
 
 def old_gateway_id(p: OrderPayment) -> str | None:
@@ -206,11 +216,11 @@ class AuthorizeNetIntake:
             report.matched += await self.match(conn.id)
             started = self.timer()
             while self.timer() - started < self.budget_seconds:
-                n = await self._read_details(conn, run_id)
-                report.details_read += n
-                if n:
+                read, tried, stopped = await self._read_details(conn, run_id)
+                report.details_read += read
+                if read:
                     report.matched += await self.match(conn.id)
-                if n < DETAILS_PER_PASS:  # none left (or a refusal stopped the round): the next pass carries on
+                if stopped or tried < DETAILS_PER_PASS:  # none left, or Authorize.Net is unreachable: next pass
                     break
         return report
 
@@ -287,26 +297,40 @@ class AuthorizeNetIntake:
         row.submitted_at = _when(t.get("submitTimeUTC")) or row.submitted_at
         row.card_type = t.get("accountType") or row.card_type
         row.invoice_number = (t.get("invoiceNumber") or row.invoice_number or None)
-        row.raw = {**(row.raw or {}), **t} if row.details_read_at else t
+        keep = {k: row.raw[k] for k in ("details", "details_failed") if isinstance(row.raw, dict) and k in row.raw}
+        row.raw = {**t, **keep}
         return row
 
-    async def _read_details(self, conn: ConnectionSnapshot, run_id, limit: int | None = None) -> int:
-        """The details of settled (or voided) transactions still unmatched (their order fields), a few per pass."""
+    async def _read_details(self, conn: ConnectionSnapshot, run_id, limit: int | None = None) -> tuple[int, int, bool]:
+        """The details of settled (or voided) transactions still unmatched (their order fields), one round.
+        Returns (read, tried, stopped): stopped when Authorize.Net was unreachable or refused the login.
+        A refusal for one transaction is recorded on it and the round goes on."""
+        G = GatewayTransaction
+        now = self.clock()
+        due = or_(G.raw["details_failed"].is_(None) | (func.jsonb_typeof(G.raw["details_failed"]) != "object"),
+                  (details_failed_at() < now - DETAILS_RETRY) & (details_attempts() < DETAILS_ATTEMPTS))
         async with self.uow_factory(SYSTEM_ACTOR) as uow:
             todo = list((await uow.session.execute(select(GatewayTransaction.id, GatewayTransaction.external_id).where(
-                GatewayTransaction.connection_id == conn.id, MATCHABLE,
+                GatewayTransaction.connection_id == conn.id, MATCHABLE, due,
                 GatewayTransaction.payment_row_id.is_(None), GatewayTransaction.details_read_at.is_(None))
                 .order_by(GatewayTransaction.submitted_at.desc()).limit(limit or DETAILS_PER_PASS))).all())
-        read = 0
+        read = tried = 0
         for row_id, ext in todo:
+            tried += 1
             try:
                 d = await self.gateway.transaction_details(conn, ext)
             except AuthorizeNetAuthFailed as e:
                 await self._latch(conn, str(e), run_id)
-                break
-            except Exception as e:  # noqa: BLE001 — the next pass tries again
-                await self._log("WARNING", f"{conn.name}: details of transaction {ext} not read: {readable(e)}", conn, run_id)
-                break
+                return read, tried, True
+            except AuthorizeNetError as e:
+                if not _about_this_one(e):  # unreachable, 5xx, not JSON: the round stops, the next pass carries on
+                    await self._log("WARNING", f"{conn.name}: details of transaction {ext} not read: {readable(e)}", conn, run_id)
+                    return read, tried, True
+                await self._details_failed(conn, row_id, ext, readable(e), run_id)
+                continue
+            except Exception as e:  # noqa: BLE001 — a shape this client cannot read: about this transaction only
+                await self._details_failed(conn, row_id, ext, f"{type(e).__name__}: {e}", run_id)
+                continue
 
             async def write(uow, row_id=row_id, d=d) -> None:
                 row = await uow.session.get(GatewayTransaction, row_id)
@@ -322,7 +346,22 @@ class AuthorizeNetIntake:
             if (await isolated(f"{conn.name}:details {ext}", write, uow_factory=self.uow_factory,
                                log=self._failed(conn, f"storing details of {ext}", run_id))).ok:
                 read += 1
-        return read
+            else:
+                await self._details_failed(conn, row_id, ext, "its details could not be stored", run_id)
+        return read, tried, False
+
+    async def _details_failed(self, conn, row_id: int, ext: str, why: str, run_id) -> None:
+        """Recorded on the transaction's raw.details_failed (Core UPDATE: bookkeeping, not an audited change);
+        skipped until retried."""
+        G = GatewayTransaction.__table__
+        async with self.uow_factory(SYSTEM_ACTOR) as uow:
+            raw = (await uow.session.execute(select(G.c.raw).where(G.c.id == row_id))).scalar_one()
+            prev = raw.get("details_failed") if isinstance(raw.get("details_failed"), dict) else {}
+            failed = {"at": self.clock().isoformat(), "attempts": int(prev.get("attempts") or 0) + 1, "error": why[:300]}
+            await uow.session.execute(update(G).where(G.c.id == row_id).values(raw={**raw, "details_failed": failed}))
+            await oplog.write(uow.session, "WARNING", STEP, f"{conn.name}: details of transaction {ext} refused: {why}"[:1000],
+                              run_id=run_id, connection_id=conn.id)
+            await uow.commit()
 
     async def match(self, connection_id: int) -> int:
         """Link the connection's unmatched settled (or voided) transactions to the unmatched Shopify payments."""

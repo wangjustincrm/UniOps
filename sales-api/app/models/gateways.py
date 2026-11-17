@@ -22,6 +22,7 @@ from typing import Any
 from sqlalchemy import (
     Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, false, text,
 )
+from sqlalchemy import cast, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -99,3 +100,13 @@ class GatewayTransaction(Audited, Base):
     match_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
     matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     raw: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+# A details read Authorize.Net refused for this transaction (review 2026-11-17), kept in `raw` (no
+# schema change): raw.details_failed = {"at": ISO time, "attempts": n, "error": text}.
+def details_attempts(t=GatewayTransaction):
+    return func.coalesce(cast(t.raw["details_failed"]["attempts"].astext, Integer), 0)
+
+
+def details_failed_at(t=GatewayTransaction):
+    return cast(t.raw["details_failed"]["at"].astext, DateTime(timezone=True))

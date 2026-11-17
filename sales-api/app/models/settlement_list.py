@@ -17,7 +17,7 @@ from __future__ import annotations
 from sqlalchemy import Date, Integer, Numeric, case, cast, func, select
 
 from app.db.base import Base
-from app.models.gateways import GatewaySettlement, GatewayTransaction
+from app.models.gateways import GatewaySettlement, GatewayTransaction, details_attempts
 from app.models.payments import OrderPayment
 
 ISSUES = ("Transactions not read yet", "Chargebacks or returns", "Unmatched transactions", "Differs from Shopify",
@@ -31,9 +31,9 @@ _per_batch = (
     select(
         _T.settlement_id.label("settlement_id"),
         func.count().filter(_T.settled.is_(True) & _T.payment_row_id.is_(None) & _T.kind.in_(("sale", "refund"))
-                            & _T.details_read_at.is_not(None)).label("unmatched_count"),
+                            & (_T.details_read_at.is_not(None) | (details_attempts(_T) >= 3))).label("unmatched_count"),
         func.count().filter(_T.settled.is_(True) & _T.payment_row_id.is_(None) & _T.kind.in_(("sale", "refund"))
-                            & _T.details_read_at.is_(None)).label("pending_count"),
+                            & _T.details_read_at.is_(None) & (details_attempts(_T) < 3)).label("pending_count"),
         func.count().filter(_T.kind == "other").label("other_count"),
         func.count().filter(_T.match_method == "AMOUNT_TIME").label("probable_count"),
         func.count().filter(_T.settled.is_(True)).label("transaction_count"),

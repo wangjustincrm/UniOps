@@ -15,7 +15,7 @@ from app.domain import gateway_match as gm
 from app.domain.connections import check_connection
 from app.domain.gateways import kind_of, settled_of
 from app.integrations.authorize_net import (
-    AuthorizeNetAuthFailed, AuthorizeNetError, AuthorizeNetRefused, FakeAuthorizeNet, HttpAuthorizeNet,
+    AuthorizeNetAuthFailed, AuthorizeNetError, AuthorizeNetRefused, AuthorizeNetRequestRefused, FakeAuthorizeNet, HttpAuthorizeNet,
 )
 from app.models.config import Connection
 from app.platform.actors import SYSTEM_ACTOR
@@ -430,3 +430,45 @@ async def test_a_first_history_read_drains_its_details_in_one_pass_within_the_bu
     r2 = await AuthorizeNetIntake(uow_factory=env.factory, gateway=anet2, clock=clock, timer=lambda: next(ticks, 10_000.0),
                                   budget_seconds=60).run_pass(await snap(env, cid2))
     assert r2.details_read == 2
+
+
+async def test_one_transaction_whose_details_are_refused_never_blocks_the_others(env):  # noqa: F811
+    """Review 2026-11-17: a refusal about one id is recorded on it and skipped; a transport problem stops the round."""
+    t0 = datetime(2026, 10, 10, tzinfo=timezone.utc)
+    now = {"t": t0}
+    txs = [gtx(str(82000 + i), "settledSuccessfully", 10.0 + i, f"2026-10-01T15:0{i}:00Z") for i in range(4)]
+    anet = FakeAuthorizeNet(fail_ids={"82003": AuthorizeNetRequestRefused("Authorize.Net refused getTransactionDetailsRequest (E00099: x)")})
+    anet.batches = [batch("930", "2026-10-02T06:00:00Z", txs, {"chargeAmount": 46.0, "chargeCount": 4})]
+    cid = await anet_connection(env, datetime(2026, 9, 30, tzinfo=timezone.utc))
+    intake = AuthorizeNetIntake(uow_factory=env.factory, gateway=anet, clock=lambda: now["t"])
+    r = await intake.run_pass(await snap(env, cid))
+    assert r.details_read == 3  # 82003 is the newest, so asked first: the three older ones are still read
+    [bad] = await env.q("SELECT raw->'details_failed' f, details_read_at FROM sales_gateway_transactions WHERE external_id = '82003'")
+    assert bad["details_read_at"] is None and bad["f"]["attempts"] == 1 and "E00099" in bad["f"]["error"]
+    anet.calls.clear()
+    await intake.run_pass(await snap(env, cid))  # within a day: not asked again
+    assert not [c for c in anet.calls if c[0] == "transaction_details"]
+    for day in (2, 4):  # retried once more than a day has passed, up to three attempts in all
+        now["t"] = t0 + timedelta(days=day)
+        await intake.run_pass(await snap(env, cid))
+    [bad] = await env.q("SELECT (raw->'details_failed'->>'attempts')::int n FROM sales_gateway_transactions WHERE external_id = '82003'")
+    assert bad["n"] == 3
+    now["t"] = t0 + timedelta(days=9)
+    anet.calls.clear()
+    await intake.run_pass(await snap(env, cid))
+    assert not [c for c in anet.calls if c[0] == "transaction_details"]  # given up on
+    async with env.factory(OP) as u:
+        pays = (await PaymentRowRepository(u).list(QuerySpec(page_size=200))).items
+        [b] = [x for x in (await SettlementRowRepository(u).list(QuerySpec(page_size=50))).items if x.batch_id == "930"]
+    assert {x.issue for x in pays if x.gateway_ref == "82003"} == {"Details not available from the gateway"}
+    assert (b.unmatched_count, b.pending_count) == (4, 0)
+
+    # a transport problem (no Authorize.Net code) stops the round: nothing is marked
+    txs2 = [gtx(str(83000 + i), "settledSuccessfully", 5.0, "2026-10-04T15:00:00Z") for i in range(2)]
+    anet2 = FakeAuthorizeNet(fail={"transaction_details": AuthorizeNetError("Authorize.Net did not answer in time.")})
+    anet2.batches = [batch("931", "2026-10-05T06:00:00Z", txs2, {})]
+    cid2 = await anet_connection_named(env, "authorize.net 3", datetime(2026, 10, 4, tzinfo=timezone.utc))
+    r2 = await AuthorizeNetIntake(uow_factory=env.factory, gateway=anet2, clock=lambda: t0).run_pass(await snap(env, cid2))
+    assert r2.details_read == 0 and len([c for c in anet2.calls if c[0] == "transaction_details"]) == 1
+    assert (await env.q("SELECT count(*) n FROM sales_gateway_transactions WHERE external_id LIKE '83%' "
+                        "AND raw ? 'details_failed'"))[0]["n"] == 0
