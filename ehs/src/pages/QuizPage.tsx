@@ -55,7 +55,21 @@ interface Results {
   people: number; passed: number; pass_rate: number | null
   average_score: number | null; total_attempts: number
   by_question: { question_id: string; prompt: string; got_it_wrong: number; of: number }[]
+  feedback?: FeedbackStat[]
 }
+interface FeedbackStat {
+  question_id: string; prompt: string; kind: string; answered: number; of: number
+  counts: { key: string; label: string; count: number }[]; average: number | null; comments: string[]
+}
+
+/**
+ * ★ UAT 15: "a training course feedback form … add these questions to the
+ * quiz" — a 1–4 star rating, Excellent / Good / Average / Poor / N/A with no
+ * right answer, and a comment box. Asked, never marked, and they may be
+ * skipped; their choices are the server's, the same on every quiz.
+ */
+const FEEDBACK_KINDS = ['rating', 'likert', 'comment']
+const isFeedback = (kind: string) => FEEDBACK_KINDS.includes(kind)
 interface Course { id: string; code: string; name: string }
 
 // ── List ─────────────────────────────────────────────────────────────────────
@@ -430,8 +444,17 @@ export function TakeQuizPage() {
   const q = rows[index]
   const chosen = answers[q.id] ?? []
   const multi = q.kind === 'multi'
+  const feedback = isFeedback(q.kind)
   const last = index === rows.length - 1
-  const answeredAll = rows.every((r) => (answers[r.id] ?? []).length > 0)
+  // Feedback may be skipped; every marked question needs an answer.
+  const answeredAll = rows.every((r) => isFeedback(r.kind) || (answers[r.id] ?? []).length > 0)
+  const setText = (text: string) =>
+    setAnswers((a) => {
+      const next = { ...a }
+      if (text.trim()) next[q.id] = [text]
+      else delete next[q.id]
+      return next
+    })
 
   const toggle = (key: string) => {
     setAnswers((a) => {
@@ -469,7 +492,36 @@ export function TakeQuizPage() {
           Pick every one that applies — a partly right answer scores nothing here.
         </p>
       )}
+      {feedback && (
+        <p className="mb-3 text-sm text-neutral-500">
+          Your opinion of the training — there is no right answer, and you may skip it.
+        </p>
+      )}
 
+      {q.kind === 'comment' ? (
+        <textarea rows={5} value={chosen[0] ?? ''} maxLength={2000} aria-label={q.prompt}
+                  onChange={(e) => setText(e.target.value)}
+                  className="mt-3 w-full rounded-xl border border-neutral-300 px-4 py-3 text-base focus:border-primary-400 focus:outline-none" />
+      ) : q.kind === 'rating' ? (
+        <div className="mt-3 grid grid-cols-4 gap-2" role="radiogroup" aria-label={q.prompt}>
+          {q.options.map((o) => {
+            const stars = Number(o.key)
+            const lit = chosen.length > 0 && Number(chosen[0]) >= stars
+            return (
+              <button key={o.key} type="button" role="radio" aria-checked={chosen[0] === o.key}
+                      onClick={() => toggle(o.key)}
+                      className={`flex min-h-[76px] flex-col items-center justify-center gap-1 rounded-xl border px-1 text-center text-xs font-medium ${
+                        chosen[0] === o.key ? 'border-primary-500 bg-primary-50 text-primary-900'
+                          : 'border-neutral-300 bg-white text-neutral-700'}`}>
+                <span aria-hidden className={`text-lg leading-none ${lit ? 'text-warning-500' : 'text-neutral-300'}`}>
+                  {'★'.repeat(stars)}
+                </span>
+                {o.label}
+              </button>
+            )
+          })}
+        </div>
+      ) : (
       <ul className="mt-3 flex flex-col gap-2">
         {q.options.map((o) => {
           const picked = chosen.includes(o.key)
@@ -497,6 +549,7 @@ export function TakeQuizPage() {
           )
         })}
       </ul>
+      )}
 
       <ErrorNote error={submit.error} />
 
@@ -513,15 +566,15 @@ export function TakeQuizPage() {
           </button>
         ) : (
           <button type="button" className={`${primaryButton} min-h-[48px] px-6 text-base`}
-                  disabled={chosen.length === 0}
+                  disabled={chosen.length === 0 && !feedback}
                   onClick={() => setIndex((i) => i + 1)}>
-            Next
+            {chosen.length === 0 && feedback ? 'Skip' : 'Next'}
           </button>
         )}
       </div>
       {last && !answeredAll && (
         <p className="mt-2 text-right text-sm text-neutral-500">
-          Every question needs an answer before you can finish.
+          Every question with a right answer needs an answer before you can finish.
         </p>
       )}
     </div>
@@ -789,6 +842,36 @@ export function EditQuizPage() {
         </Card>
       )}
 
+      {(results.data?.feedback ?? []).length > 0 && (results.data?.people ?? 0) > 0 && (
+        <Card className="mb-4">
+          <SectionTitle className="mb-2">Course feedback</SectionTitle>
+          <ul className="flex flex-col gap-3">
+            {results.data!.feedback!.map((f) => (
+              <li key={f.question_id} className="text-sm">
+                <p className="font-medium text-neutral-900">{f.prompt}</p>
+                <p className="text-xs text-neutral-500">
+                  {f.answered} of {f.of} answered{f.average !== null && ` · average ${f.average} stars`}
+                </p>
+                {f.counts.length > 0 && (
+                  <ul className="mt-1 flex flex-wrap gap-1.5">
+                    {f.counts.map((c) => (
+                      <li key={c.key} className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
+                        {c.label} <b className="tabular-nums">{c.count}</b>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {f.comments.length > 0 && (
+                  <ul className="mt-1 flex flex-col gap-1 border-l-2 border-neutral-200 pl-2.5 text-neutral-700">
+                    {f.comments.map((c, k) => <li key={k} className="whitespace-pre-wrap">{c}</li>)}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
       <WhoTookIt quizId={id} />
 
       <SectionTitle className="mb-2">Questions</SectionTitle>
@@ -810,12 +893,34 @@ export function EditQuizPage() {
                   </Field>
                   <Field label="Type">
                     <select className={inputClass} value={q.kind}
-                            onChange={(e) => set(i, { kind: e.target.value, correct: [] })}>
-                      <option value="single">One right answer</option>
-                      <option value="multi">Several right answers</option>
-                      <option value="true_false">True or false</option>
+                            onChange={(e) => {
+                              const kind = e.target.value
+                              set(i, isFeedback(kind)
+                                ? { kind, correct: [], options: [], points: 0, explanation: null }
+                                : { kind, correct: [], points: q.points || 1,
+                                    options: q.options.length >= 2 ? q.options
+                                      : [{ key: 'a', label: '' }, { key: 'b', label: '' }] })
+                            }}>
+                      <optgroup label="Marked">
+                        <option value="single">One right answer</option>
+                        <option value="multi">Several right answers</option>
+                        <option value="true_false">True or false</option>
+                      </optgroup>
+                      <optgroup label="Course feedback — not marked">
+                        <option value="rating">Rating, 1 to 4 stars</option>
+                        <option value="likert">Excellent / Good / Average / Poor / N/A</option>
+                        <option value="comment">Comment box</option>
+                      </optgroup>
                     </select>
                   </Field>
+                  {isFeedback(q.kind) ? (
+                    <p className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+                      {q.kind === 'rating' && '1 star Below Average · 2 stars Average · 3 stars Good · 4 stars Excellent. '}
+                      {q.kind === 'likert' && 'Excellent · Good · Average · Poor · N/A. '}
+                      {q.kind === 'comment' && 'A box for them to write in. '}
+                      Not marked, no right answer, and it may be skipped; the answers are summed up above.
+                    </p>
+                  ) : (<>
                   <div>
                     <p className="mb-1 text-xs font-medium text-neutral-700">
                       Options — tick the right one{q.kind === 'multi' ? 's' : ''}
@@ -864,6 +969,7 @@ export function EditQuizPage() {
                     <input className={inputClass} value={q.explanation ?? ''}
                            onChange={(e) => set(i, { explanation: e.target.value })} />
                   </Field>
+                  </>)}
                 </div>
                 <button type="button" aria-label="Remove question"
                         onClick={() => setDraft(rows.filter((_, k) => k !== i))}

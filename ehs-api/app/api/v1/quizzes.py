@@ -37,11 +37,13 @@ class Option(BaseModel):
 
 class QuestionIn(BaseModel):
     prompt: str = Field(min_length=1)
-    kind: str = Field(default="single", pattern="^(single|multi|true_false)$")
-    options: list[Option] = Field(min_length=2, max_length=8)
-    correct: list[str] = Field(min_length=1)
+    # UAT 15: rating, likert and comment are feedback — no options or answer
+    # key from the author; the server sets their choices (crud.FIXED_OPTIONS).
+    kind: str = Field(default="single", pattern="^(single|multi|true_false|rating|likert|comment)$")
+    options: list[Option] = Field(default_factory=list, max_length=8)
+    correct: list[str] = Field(default_factory=list)
     explanation: str | None = None
-    points: int = Field(default=1, ge=1, le=10)
+    points: int = Field(default=1, ge=0, le=10)
 
 
 class QuestionsIn(BaseModel):
@@ -169,6 +171,23 @@ class QuestionStat(BaseModel):
     of: int
 
 
+class FeedbackCount(BaseModel):
+    key: str
+    label: str
+    count: int
+
+
+class FeedbackStat(BaseModel):
+    question_id: str
+    prompt: str
+    kind: str
+    answered: int
+    of: int
+    counts: list[FeedbackCount]
+    average: float | None
+    comments: list[str]
+
+
 class ResultsOut(BaseModel):
     people: int
     passed: int
@@ -176,6 +195,7 @@ class ResultsOut(BaseModel):
     average_score: float | None
     total_attempts: int
     by_question: list[QuestionStat]
+    feedback: list[FeedbackStat] = []
 
 
 async def _quiz_out(db, quiz) -> QuizOut:

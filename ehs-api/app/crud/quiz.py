@@ -28,7 +28,24 @@ from app.models.training import Course
 from app.models.quiz import Quiz, QuizAttempt, QuizQuestion
 from app.services import statutory
 
-QUESTION_KINDS = ("single", "multi", "true_false")
+QUESTION_KINDS = ("single", "multi", "true_false", "rating", "likert", "comment")
+
+# ★ UAT 15: "create a way to add a training course feedback form on some
+# training courses … add these questions to the quiz": a 1–4 star rating, an
+# Excellent / Good / Average / Poor / N/A choice "with no right answer", and a
+# comment box. They ask for an opinion, so they are never marked: no answer
+# key, no points, nothing towards the pass mark, and they may be skipped.
+FEEDBACK_KINDS = ("rating", "likert", "comment")
+# The choices are the server's, the same on every quiz, so the results add up.
+FIXED_OPTIONS = {
+    "rating": [{"key": "1", "label": "Below Average"}, {"key": "2", "label": "Average"},
+               {"key": "3", "label": "Good"}, {"key": "4", "label": "Excellent"}],
+    "likert": [{"key": "excellent", "label": "Excellent"}, {"key": "good", "label": "Good"},
+               {"key": "average", "label": "Average"}, {"key": "poor", "label": "Poor"},
+               {"key": "na", "label": "N/A"}],
+    "comment": [],
+}
+COMMENT_MAX = 2000
 
 
 def _new_qr_token() -> str:
@@ -204,10 +221,21 @@ async def replace_questions(
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 f"Unknown question type '{kind}'")
+        if kind in FEEDBACK_KINDS:
+            row = QuizQuestion(
+                id=uuid.uuid4(), quiz_id=quiz.id, seq=index, prompt=q["prompt"], kind=kind,
+                options=FIXED_OPTIONS[kind], correct=[], explanation=None, points=0)
+            db.add(row)
+            rows.append(row)
+            continue
         options = q.get("options") or []
         correct = [str(c) for c in (q.get("correct") or [])]
         keys = {str(o.get("key")) for o in options}
 
+        if len(options) < 2:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"Question {index} needs at least two options.")
         if not correct:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -293,6 +321,9 @@ async def score(
     scored = 0
     possible = 0
     for q in questions:
+        if q.kind in FEEDBACK_KINDS:
+            _check_feedback(q, answers.get(str(q.id)) or [])
+            continue
         possible += q.points
         given = {str(a) for a in (answers.get(str(q.id)) or [])}
         expected = {str(c) for c in (q.correct or [])}
@@ -338,6 +369,22 @@ async def score(
         await _quiz_mark(db, enrolment)
 
     return attempt, breakdown
+
+
+def _check_feedback(q: QuizQuestion, given: list[str]) -> None:
+    """A feedback answer is optional, but one given must be one of its
+    choices — or, for a comment, one piece of text of a sensible length."""
+    if not given:
+        return
+    if q.kind == "comment":
+        if len(given) != 1 or len(str(given[0])) > COMMENT_MAX:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                f"A comment is one piece of text of at most {COMMENT_MAX} characters.")
+        return
+    keys = {o["key"] for o in FIXED_OPTIONS[q.kind]}
+    if len(given) != 1 or str(given[0]) not in keys:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"“{q.prompt}” takes one of its choices.")
 
 
 QUIZ_MARKER = "Online quiz"
@@ -543,8 +590,9 @@ async def results(db: AsyncSession, quiz_id: uuid.UUID) -> dict:
     passed = [a for a in taken if a.passed]
 
     wrong_counts: dict[str, int] = {}
+    marked = [q for q in questions if q.kind not in FEEDBACK_KINDS]
     for a in taken:
-        for q in questions:
+        for q in marked:
             given = {str(x) for x in (a.answers.get(str(q.id)) or [])}
             if given != {str(c) for c in (q.correct or [])}:
                 wrong_counts[str(q.id)] = wrong_counts.get(str(q.id), 0) + 1
@@ -554,7 +602,7 @@ async def results(db: AsyncSession, quiz_id: uuid.UUID) -> dict:
         "prompt": q.prompt,
         "got_it_wrong": wrong_counts.get(str(q.id), 0),
         "of": len(taken),
-    } for q in questions]
+    } for q in marked]
     hardest.sort(key=lambda r: -r["got_it_wrong"])
 
     return {
@@ -565,4 +613,30 @@ async def results(db: AsyncSession, quiz_id: uuid.UUID) -> dict:
                           if taken else None),
         "total_attempts": len(attempts),
         "by_question": hardest,
+        "feedback": _feedback(questions, taken),
     }
+
+
+def _feedback(questions: list[QuizQuestion], taken: list[QuizAttempt]) -> list[dict]:
+    """★ UAT 15: what people said, per feedback question — how many chose
+    each answer, the average star rating, and the comments. No names: it is
+    the course's feedback, not a mark against anybody."""
+    out = []
+    for q in questions:
+        if q.kind not in FEEDBACK_KINDS:
+            continue
+        given = [(a.answers.get(str(q.id)) or []) for a in taken]
+        given = [g[0] for g in given if g]
+        row = {"question_id": str(q.id), "prompt": q.prompt, "kind": q.kind,
+               "answered": len(given), "of": len(taken), "counts": [], "average": None,
+               "comments": []}
+        if q.kind == "comment":
+            row["comments"] = [str(g).strip() for g in given if str(g).strip()]
+        else:
+            row["counts"] = [{"key": o["key"], "label": o["label"],
+                              "count": sum(1 for g in given if g == o["key"])}
+                             for o in FIXED_OPTIONS[q.kind]]
+            if q.kind == "rating" and given:
+                row["average"] = round(sum(int(g) for g in given) / len(given), 1)
+        out.append(row)
+    return out
