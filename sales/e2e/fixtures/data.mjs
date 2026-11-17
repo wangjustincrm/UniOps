@@ -11,6 +11,7 @@ const orderRow = (n) => ({
   source_updated_at: '2026-11-05T12:00:00Z', paid_at: '2026-11-05T12:00:00Z', requested_delivery_date: null,
   order_state: 'open', order_status: STATUSES[n % STATUSES.length], order_status_label: STATUSES[n % STATUSES.length],
   next_step: 'Confirm delivery once it has been delivered.', next_step_who: 'you',
+  delay_starts_at: '2026-11-05T12:00:00Z', delay_minutes: 30, settlement_mode: 'PREPAID',
   status_detail: 'Since Nov 5, 2026', status_detail_at: '2026-11-05T12:00:00Z', fulfillment_status: null, invoice_status: null,
   shopify_financial_status: 'paid', shopify_fulfillment_status: null, hold_reason: null, on_hold_reason: null, review_reason: null,
   currency: 'CAD', total: '120.00', total_amount: '120.00', original_total: '120.00', net_amount: '120.00', total_refunded: '0.00',

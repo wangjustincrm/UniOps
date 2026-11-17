@@ -32,6 +32,7 @@ from app.domain.order_status import (
     ORDER_STATUSES,
     DetailFacts,
     StatusFacts,
+    delay_start,
     detail_kind,
     display,
     send_time,
@@ -147,7 +148,7 @@ class OrderRepository(Repository[Order]):
              "order_state": ORDER_STATES, "order_status": ORDER_STATUSES, "on_hold_reason": ON_HOLD_REASONS}
     # The internal lines stay filterable and sortable, so a saved view on them still lists,
     # but no list offers them any more: they show on the order page, for diagnosis.
-    meta_hidden = ("order_status_label", "short_shipped", "status_detail", "status_detail_at", "next_step", "next_step_who", "shadow", "to_confirm",
+    meta_hidden = ("order_status_label", "short_shipped", "status_detail", "status_detail_at", "next_step", "next_step_who", "delay_starts_at", "delay_minutes", "settlement_mode", "shadow", "to_confirm",
                    "fulfillment_status", "invoice_status", "order_state", "hold_reason",
                    # what the 945 left unshipped: no column any more (user 2026-11-12), only the Short shipped mark
                    "backordered_ea")
@@ -205,6 +206,14 @@ class OrderRepository(Repository[Order]):
         Preset("all", "All", {"hidden": ["review_reason"]}),
     )
     historical_column = "historical"
+
+
+def _delay_start(o: Order) -> datetime | None:
+    """When the partner's delay starts; None with no delay (the 940 goes on the next run) or not paid yet."""
+    if not o.fact("partner_delay_minutes_sql"):  # 0 (the partner has no delay) or no partner
+        return None
+    return delay_start(from_receipt=o.fact("partner_settlement_mode_sql") == "INVOICE", received_at=o.first_received_at,
+                       paid_at=o.paid_at)
 
 
 def _send_at(o: Order) -> datetime | None:
@@ -280,6 +289,8 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         details = detail_facts(o)
         out.status_detail, out.status_detail_at = status_detail(d, facts, details)
         out.status_detail_kind = detail_kind(out.status_detail)
+        out.delay_starts_at = _delay_start(o)
+        out.delay_minutes, out.settlement_mode = o.fact("partner_delay_minutes_sql"), o.fact("partner_settlement_mode_sql")
         step = None if self._runs_on is None else next_step(d, facts, details, datetime.now(TORONTO).date(), runs_on=self._runs_on)
         out.next_step, out.next_step_who = (step.text, step.who) if step else (None, None)
         return out

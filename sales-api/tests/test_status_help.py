@@ -183,3 +183,48 @@ def test_every_term_a_screen_names_is_in_the_glossary_and_short():
         assert 20 <= len(h.body) <= MAX_BODY, key
         for b in h.buttons:
             assert b in h.body and is_button(b, src), (key, b)
+
+
+
+def test_the_delay_starts_at_receipt_for_an_invoiced_partner_and_at_payment_for_a_prepaid_one():
+    from app.domain.order_status import delay_start
+    rec, paid = NOW - timedelta(days=1), NOW
+    assert delay_start(from_receipt=True, received_at=rec, paid_at=paid) == rec
+    assert delay_start(from_receipt=False, received_at=rec, paid_at=paid) == paid
+    assert delay_start(from_receipt=False, received_at=rec, paid_at=None) is None  # not paid yet
+
+
+async def test_the_order_says_when_its_delay_starts_and_sql_agrees(api):  # noqa: F811
+    """Prepaid: at payment; invoiced: at receipt; no delay: none. The SQL (delay_over's) gives the same start."""
+    from sqlalchemy import select, update
+
+    from app.models.config import Partner
+    from app.models.orders import Order
+    from app.platform.actors import SYSTEM_ACTOR
+    from app.services.order_status_sql import DELAY_START_SQL
+    from tests.test_orders import shopify_order
+    api.env.shop.orders = [shopify_order(1, 9301)]
+    await api.env.pull()
+
+    async def read():
+        o = (await api.get("/api/v1/orders", headers=READER)).json()["items"][0]
+        async with api.env.factory(SYSTEM_ACTOR) as u:
+            sql = (await u.session.execute(select(DELAY_START_SQL).select_from(Order).where(Order.id == o["id"]))).scalar()
+        return o, sql
+
+    async def partner(**values):
+        async with api.env.factory(SYSTEM_ACTOR) as u:
+            await u.session.execute(update(Partner).where(Partner.code == "SHOP").values(**values))
+            await u.commit()
+
+    await partner(settlement_mode="PREPAID", delay_minutes=30)
+    o, sql = await read()
+    assert o["settlement_mode"] == "PREPAID" and o["delay_minutes"] == 30
+    assert o["delay_starts_at"] is not None and datetime.fromisoformat(o["delay_starts_at"]) == sql
+    assert o["delay_starts_at"] == o["paid_at"]
+    await partner(settlement_mode="INVOICE")
+    o, sql = await read()
+    assert o["delay_starts_at"] == o["first_received_at"] and datetime.fromisoformat(o["delay_starts_at"]) == sql
+    await partner(delay_minutes=0)
+    o, _ = await read()
+    assert o["delay_starts_at"] is None and o["delay_minutes"] == 0  # no delay: no start to show

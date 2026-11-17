@@ -23,6 +23,9 @@ class Sql:
     not_ = staticmethod(not_)
 
 
+# When the partner's delay starts: the SQL of order_status.delay_start (tests/test_status_help.py holds them equal).
+DELAY_START_SQL = case((Order.partner_settlement_mode_sql == "INVOICE", Order.first_received_at), else_=Order.paid_at)
+
 FACTS = SimpleNamespace(
     fulfillment=Order.fulfillment_status, invoice=Order.invoice_status, source_type=Order.source_type, shadow=Order.shadow,
     archived=Order.archived_in_shopify_at.is_not(None),
@@ -30,8 +33,7 @@ FACTS = SimpleNamespace(
     cancelled_at_source=Order.source_cancelled_at.is_not(None),
     has_945=Order.has_945_sql, shopify_failed=Order.shopify_failed_sql, shopify_pending=Order.shopify_pending_sql,
     invoicing=func.coalesce(Order.partner_invoice_method_sql, "NONE") != "NONE",
-    delay_over=func.coalesce(case((Order.partner_settlement_mode_sql == "INVOICE", Order.first_received_at), else_=Order.paid_at)
-                             + Order.partner_delay_minutes_sql * text("interval '1 minute'") <= func.now(), False),
+    delay_over=func.coalesce(DELAY_START_SQL + Order.partner_delay_minutes_sql * text("interval '1 minute'") <= func.now(), False),
 )
 _B = Sql()
 ORDER_STATUS_SQL = case(*status_rules(FACTS, _B), else_=WAITING_TO_SEND)

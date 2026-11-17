@@ -50,6 +50,11 @@ export interface OrderRead {
   /** What to do next, and whose turn it is (sales-api app/domain/status_help.py). */
   next_step?: string | null
   next_step_who?: 'you' | 'warehouse' | 'shopify' | 'nobody' | null
+  /** When the partner's delay starts: at receipt (invoiced partners) or at payment (prepaid). */
+  delay_starts_at?: string | null
+  /** The partner's delay in minutes (0: none) and settlement (INVOICE: billed after delivery). */
+  delay_minutes?: number | null
+  settlement_mode?: string | null
   shopify_fulfillment_status: string | null
   /** The Shopify fulfillment made at the 997 (or Zoho's): its 945 adds the tracking to it. */
   shopify_fulfillment_id?: string | null

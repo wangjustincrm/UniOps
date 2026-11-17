@@ -53,6 +53,11 @@ class OrderRead(BaseModel):
     status_detail_kind: str | None = None  # "countdown": a time that is coming, late once it passes
     # What to do next and whose turn it is (app/domain/status_help.py): you / warehouse / shopify / nobody
     next_step: str | None = None
+    # When the partner's delay starts (D20): at receipt for an invoiced partner, at payment for a prepaid one
+    delay_starts_at: datetime | None = None
+    # The partner's delay (minutes; 0: no delay) and settlement (INVOICE: billed after delivery, so never "paid")
+    delay_minutes: int | None = None
+    settlement_mode: str | None = None
     next_step_who: str | None = None
     hold_reason: str | None
     review_reason: str | None

@@ -229,7 +229,12 @@ def detail_kind(text: str | None) -> str | None:
     return "countdown" if text in (SENDS, DELIVERY_DUE) else None
 
 
+def delay_start(*, from_receipt: bool, received_at: datetime, paid_at: datetime | None) -> datetime | None:
+    """D20: when the delay starts: an INVOICE partner's at receipt, a PREPAID one's at payment (None: not paid)."""
+    return received_at if from_receipt else paid_at
+
+
 def send_time(*, from_receipt: bool, received_at: datetime, paid_at: datetime | None, delay_minutes: int | None) -> datetime | None:
     """D20: when the delay ends (an INVOICE partner's from receipt, a PREPAID one's from payment)."""
-    start = received_at if from_receipt else paid_at
+    start = delay_start(from_receipt=from_receipt, received_at=received_at, paid_at=paid_at)
     return None if start is None or delay_minutes is None else start + timedelta(minutes=delay_minutes)
