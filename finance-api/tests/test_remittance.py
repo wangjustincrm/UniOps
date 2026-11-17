@@ -378,6 +378,24 @@ async def test_prepayment_without_po_uses_bare_label(db_session):
     assert g.lines[0].vendor_ref == "Prepayment"
 
 
+async def test_deposit_prepayment_uses_agreement_number(db_session):
+    """A OneTime (Deposit) agreement's deposit PA: no PO, no invoice."""
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    pa = _pa(bp.id, "400000.00", invoice_ids=[])
+    pa.pa_type = "prepayment"
+    pa.agreement_id = uuid.uuid4()
+    pa.agreement_number = "AGR-202611-0007"
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, [rec]))[0]
+    assert g.block_reasons == []
+    assert g.lines[0].vendor_ref == "Deposit - AGR-202611-0007"
+
+
 async def test_prepayment_with_invoice_keeps_invoice_number(db_session):
     bp = await _vendor(db_session, remit="remit@acme.test")
     inv = await _invoice(db_session, "PI-77")

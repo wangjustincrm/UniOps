@@ -107,7 +107,13 @@ def _prepayment_reference(pa: PaymentApplication) -> str:
     (never shown to a vendor), so it falls back to the bare label."""
     if pa.pa_type != "prepayment":
         return ""
-    return f"Prepayment - PO {pa.po_number}" if pa.po_number else "Prepayment"
+    if pa.po_number:
+        return f"Prepayment - PO {pa.po_number}"
+    # The only prepayment an agreement takes is a OneTime (Deposit)
+    # agreement's deposit (epms-api _apply_deposit_pa_rules, 2026-11-17).
+    if pa.agreement_number:
+        return f"Deposit - {pa.agreement_number}"
+    return "Prepayment"
 
 
 @dataclass
