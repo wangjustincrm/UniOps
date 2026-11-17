@@ -7,6 +7,7 @@ import {
   type UpdatePaBody,
   type PaActionBody,
   type ApiPa,
+  type DepositRefundBody,
 } from '@/services/pa'
 
 // Without explicit page/page_size the caller wants the complete list, so we
@@ -134,6 +135,30 @@ export function useConfirmSettlement(id: string) {
       queryClient.invalidateQueries({ queryKey: ['pas', id] })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}
+
+// OneTime (Deposit) agreement — see paService.recordDepositRefund.
+export function useRecordDepositRefund(depositPaId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: DepositRefundBody) => paService.recordDepositRefund(depositPaId, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pas'] })
+      queryClient.invalidateQueries({ queryKey: ['tasks'] })
+    },
+  })
+}
+
+export function useReturnDepositRefund(id: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (comment: string) => paService.returnDepositRefund(id, comment),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pas'] })
+      queryClient.invalidateQueries({ queryKey: ['pas', id] })
+      queryClient.invalidateQueries({ queryKey: ['tasks'] })
     },
   })
 }

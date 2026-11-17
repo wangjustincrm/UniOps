@@ -1,4 +1,5 @@
 import { api, fetchAllPages } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth.store'
 import type { ApiEvent } from './pr'
 import type { ApiInvoice } from './invoices'
 import type { WorkflowNodeDef, CurrentStep } from '@/types'
@@ -63,6 +64,13 @@ export interface ApiPaCostAllocation {
   // Decimals arrive as strings — Number() at use sites.
   amount: number | string
   tax_amount: number | string
+}
+
+export interface DepositRefundBody {
+  refund_amount: string
+  retained_reason?: string
+  notes?: string
+  files: File[]
 }
 
 export interface ApiPa {
@@ -132,6 +140,11 @@ export interface ApiPa {
   settled_by_name?: string
   settlement_note?: string
   settlement_variance?: number
+  /** ag10 — set only on the refund (settlement) of a OneTime (Deposit)
+   *  agreement's deposit: what the vendor actually returned (0 .. deposit). */
+  deposit_refund_amount?: string | number | null
+  /** Why part of the deposit was retained (required when refund < deposit). */
+  deposit_retained_reason?: string | null
   line_items: ApiPaLineItem[]
   notes?: string
   approval_step_idx: number
@@ -299,6 +312,37 @@ export const paService = {
   // reconciles the prepayment + closes the invoice, no payment made.
   confirmSettlement: (id: string) =>
     api.post<ApiPa>(`/pa/${id}/confirm-settlement`, {}),
+
+  // OneTime (Deposit) agreement — record the refund of a paid deposit PA
+  // (multipart: amount, reason when less came back, evidence files). Creates
+  // the zero-cash settlement PA that Finance then confirms or returns.
+  recordDepositRefund: async (depositPaId: string, body: DepositRefundBody): Promise<ApiPa> => {
+    const form = new FormData()
+    form.append('refund_amount', body.refund_amount)
+    if (body.retained_reason) form.append('retained_reason', body.retained_reason)
+    if (body.notes) form.append('notes', body.notes)
+    body.files.forEach((f) => form.append('files', f))
+    const base = (import.meta.env.VITE_API_URL as string | undefined) || '/api/v1'
+    const token = useAuthStore.getState().token
+    const res = await fetch(`${base}/pa/${depositPaId}/deposit-refund`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    })
+    if (!res.ok) {
+      let detail = `Recording the refund failed (${res.status})`
+      try {
+        const j = await res.json()
+        if (typeof j?.detail === 'string') detail = j.detail
+      } catch { /* keep the generic message */ }
+      throw new Error(detail)
+    }
+    return res.json()
+  },
+
+  // Finance sends a recorded deposit refund back (not received / wrong).
+  returnDepositRefund: (id: string, comment: string) =>
+    api.post<ApiPa>(`/pa/${id}/return-deposit-refund`, { comment }),
 
   events: (id: string) =>
     api.get<ApiEvent[]>(`/pa/${id}/events`),
