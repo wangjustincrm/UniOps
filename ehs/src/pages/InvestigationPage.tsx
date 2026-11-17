@@ -347,7 +347,7 @@ export default function InvestigationPage() {
     <Section title="Immediate causes">
       {causeRows('immediate', 'immediate_cause',
                  foodSafety
-                   ? 'The conditions present at the time — what you could see — and, for each, the department that completed the work and when.'
+                   ? 'The conditions present at the time — what you could see — and, for each, the area that completed the work and when.'
                    : 'The conditions present at the time — what you could see.',
                  foodSafety)}
     </Section>
