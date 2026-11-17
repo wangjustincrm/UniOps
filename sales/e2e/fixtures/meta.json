@@ -2936,7 +2936,7 @@
     "body": "How long a partner's orders wait before the 940 goes: from receipt (invoiced partners) or from payment (prepaid). No delay: on the next run."
    },
    "Invoice price": {
-    "body": "The invoice uses the PO price unless you set an invoice price: on the order (Invoice prices) before the invoice is drafted, then on the invoice (Edit invoice)."
+    "body": "The invoice uses the PO price unless you set an invoice price: on the order (Edit invoice prices) before the invoice is drafted, then on the invoice (Edit invoice)."
    },
    "SSCC": {
     "body": "The pallet's 18-digit label, from the 945."

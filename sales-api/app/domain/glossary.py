@@ -28,8 +28,9 @@ TERMS: dict[str, Help] = {
                "Item Master."),
     "Delay": Help("How long a partner's orders wait before the 940 goes: from receipt (invoiced partners) or from "
                   "payment (prepaid). No delay: on the next run."),
-    "Invoice price": Help("The invoice uses the PO price unless you set an invoice price: on the order (Invoice prices) "
-                          "before the invoice is drafted, then on the invoice (Edit invoice).", ("Edit invoice",)),
+    "Invoice price": Help("The invoice uses the PO price unless you set an invoice price: on the order (Edit invoice "
+                          "prices) before the invoice is drafted, then on the invoice (Edit invoice).",
+                          ("Edit invoice prices", "Edit invoice")),
     "SSCC": Help("The pallet's 18-digit label, from the 945."),
     "Lot / Expiry": Help("The production lot and its expiry date, from the 945."),
     "Backordered": Help("Ordered − shipped (EA). The rest is not sent later (one 945 per order)."),
