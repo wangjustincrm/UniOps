@@ -253,10 +253,13 @@ async def chase_outstanding(db: AsyncSession, *, today: date | None = None) -> l
 
 
 async def completion(db: AsyncSession, talk_id: uuid.UUID) -> dict:
-    """The number the management dashboard shows."""
+    """The number the management dashboard shows: of those the talk was handed
+    to, how many have held it. ★ UAT 15, K: a talk held again is counted in the
+    month it was held (the tracker), not as a second hand-out of this talk."""
     rows = (await db.execute(
         select(TbtDelivery.status, func.count())
-        .where(TbtDelivery.talk_id == talk_id).group_by(TbtDelivery.status)
+        .where(TbtDelivery.talk_id == talk_id, TbtDelivery.rerun_of.is_(None))
+        .group_by(TbtDelivery.status)
     )).all()
     counts = {s: n for s, n in rows}
     total = sum(counts.values())
@@ -275,6 +278,17 @@ def month_start(day: date) -> date:
     return day.replace(day=1)
 
 
+def _in_month(month: date):
+    """★ UAT 15, question K: "count it in the month it was held." A talk handed
+    out counts in the talk's month; a talk held again, in the month it was held
+    (at the plant)."""
+    from sqlalchemy import and_, cast, Date, or_
+    d, t = TbtDelivery, ToolboxTalk
+    held_month = cast(func.date_trunc("month", func.timezone("America/Toronto", d.held_at)), Date)
+    return or_(and_(d.rerun_of.is_(None), t.period_month == month),
+               and_(d.rerun_of.is_not(None), held_month == month))
+
+
 def _tracker_people(month: date):
     """One row per person a talk of that month was handed to. ★ Round 12, Q15:
     "each person is the person the talk has been assigned to, not every
@@ -290,7 +304,7 @@ def _tracker_people(month: date):
                outstanding.label("outstanding"),
                func.max(d.last_reminded_on).label("last_reminded_on"))
         .join(t, t.id == d.talk_id)
-        .where(t.period_month == month)
+        .where(_in_month(month))
         .group_by(d.supervisor_id)
     )
 
@@ -328,7 +342,7 @@ async def tracker(db: AsyncSession, *, month: date, q: str | None, sort: str | N
             select(TbtDelivery, ToolboxTalk.talk_no, ToolboxTalk.title)
             .join(ToolboxTalk, ToolboxTalk.id == TbtDelivery.talk_id)
             # A month's handful of deliveries; grouped onto this page's people below.
-            .where(ToolboxTalk.period_month == month_start(month))
+            .where(_in_month(month_start(month)))
             .order_by(ToolboxTalk.talk_no, TbtDelivery.created_at))).all()
         for delivery, talk_no, title in detail:
             if delivery.supervisor_id in talks:
