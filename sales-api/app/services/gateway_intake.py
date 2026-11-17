@@ -51,7 +51,7 @@ GATEWAY = "AUTHORIZE_NET"
 SHOPIFY_GATEWAYS = ("authorize_net", "authorize.net")  # the old gateway and the new app
 CURRENCY = "CAD"           # the merchant account's currency (its batches carry none); said on the Connections form
 OVERLAP = timedelta(days=1)  # each pass reads the last day again: a batch is never missed
-MAX_BATCHES = 120          # per pass
+MAX_BATCHES = 400          # per pass (~3–4 minutes; user 2026-11-17)
 # The batch list answers nothing before Jan 1 of two years back (E00013, seen 2026-11-17: "First
 # Settlement Date can not be older than the year of 2024"): a start before it is moved up to it.
 HISTORY_YEARS = 2
