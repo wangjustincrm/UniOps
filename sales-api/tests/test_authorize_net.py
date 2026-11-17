@@ -396,3 +396,12 @@ def test_a_void_never_takes_a_sale_by_order_number_or_amount_and_time():
     # by an exact id a void still matches: the old gateway's id, or Shopify's payment id in its text
     assert [m.method for m in gm.match([gm.GatewayTx(1, "sale", Decimal("50.00"), AT, ("", ""), "5001", void=True)],
                                        [P(1, amount="50.00", gid="5001")])] == ["TRANSACTION_ID"]
+
+
+async def test_a_start_older_than_authorize_net_keeps_is_moved_up_to_jan_1_two_years_back(env):  # noqa: F811
+    anet = FakeAuthorizeNet()
+    cid = await anet_connection(env, datetime(2024, 1, 1, 5, tzinfo=timezone.utc))  # the overlap would ask for 2023
+    intake = AuthorizeNetIntake(uow_factory=env.factory, gateway=anet, clock=lambda: datetime(2026, 11, 17, tzinfo=timezone.utc))
+    r = await intake.run_pass(await snap(env, cid))
+    first = [a for m, a in anet.calls if m == "settled_batches"][0]
+    assert first[0] == datetime(2024, 1, 1, tzinfo=timezone.utc) and r.status == "ok"

@@ -52,6 +52,9 @@ SHOPIFY_GATEWAYS = ("authorize_net", "authorize.net")  # the old gateway and the
 CURRENCY = "CAD"           # the merchant account's currency (its batches carry none); said on the Connections form
 OVERLAP = timedelta(days=1)  # each pass reads the last day again: a batch is never missed
 MAX_BATCHES = 120          # per pass
+# The batch list answers nothing before Jan 1 of two years back (E00013, seen 2026-11-17: "First
+# Settlement Date can not be older than the year of 2024"): a start before it is moved up to it.
+HISTORY_YEARS = 2
 DETAILS_PER_PASS = 200     # transaction details read per pass, for the unmatched only
 
 
@@ -146,7 +149,11 @@ class AuthorizeNetIntake:
             return report
         now = self.clock()
         cursor = conn.cursor_updated_at
-        start = cursor - OVERLAP
+        earliest = datetime(now.year - HISTORY_YEARS, 1, 1, tzinfo=timezone.utc)
+        start = max(cursor - OVERLAP, earliest)
+        if cursor - OVERLAP < earliest:
+            await self._log("INFO", f"{conn.name}: Authorize.Net keeps batches from {earliest.date()}; reading from there",
+                            conn, run_id)
         while start < now:
             end = min(start + timedelta(days=MAX_DAYS - 1), now)
             report.windows += 1
