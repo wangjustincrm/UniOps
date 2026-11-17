@@ -194,8 +194,12 @@ def gtx(tid, status, amount, at, invoice=None, **more):
 
 
 async def anet_connection(env, cursor):  # noqa: F811
+    return await anet_connection_named(env, "authorize.net", cursor)
+
+
+async def anet_connection_named(env, name, cursor):  # noqa: F811
     async with env.factory(SYSTEM_ACTOR) as u:
-        c = Connection(name="authorize.net", kind="AUTHORIZE_NET", host="api.authorize.net", username="login",
+        c = Connection(name=name, kind="AUTHORIZE_NET", host="api.authorize.net", username="login",
                        secret_name="SALES_SECRET_AUTHNET", after_read="LEAVE", can_write=False, cursor_updated_at=cursor,
                        schedule_minutes=60, version=1)
         u.session.add(c)
@@ -405,3 +409,24 @@ async def test_a_start_older_than_authorize_net_keeps_is_moved_up_to_jan_1_two_y
     r = await intake.run_pass(await snap(env, cid))
     first = [a for m, a in anet.calls if m == "settled_batches"][0]
     assert first[0] == datetime(2024, 1, 1, tzinfo=timezone.utc) and r.status == "ok"
+
+
+async def test_a_first_history_read_drains_its_details_in_one_pass_within_the_budget(env, monkeypatch):  # noqa: F811
+    import app.services.gateway_intake as gi
+    monkeypatch.setattr(gi, "DETAILS_PER_PASS", 2)
+    txs = [gtx(str(80000 + i), "settledSuccessfully", 10.0 + i, "2026-10-01T15:00:00Z") for i in range(5)]
+    anet = FakeAuthorizeNet()
+    anet.batches = [batch("920", "2026-10-02T06:00:00Z", txs, {"chargeAmount": 60.0, "chargeCount": 5})]
+    cid = await anet_connection(env, datetime(2026, 9, 30, tzinfo=timezone.utc))
+    clock = lambda: datetime(2026, 10, 10, tzinfo=timezone.utc)  # noqa: E731
+    r = await AuthorizeNetIntake(uow_factory=env.factory, gateway=anet, clock=clock).run_pass(await snap(env, cid))
+    assert r.details_read == 5  # three rounds of 2, 2, 1 in one pass
+    # with no budget left after the first round, the rest waits for the next pass
+    ticks = iter([0.0, 0.0, 10_000.0])
+    anet2 = FakeAuthorizeNet()
+    anet2.batches = [batch("921", "2026-10-03T06:00:00Z", [gtx(str(81000 + i), "settledSuccessfully", 5.0, "2026-10-02T15:00:00Z")
+                                                             for i in range(5)], {})]
+    cid2 = await anet_connection_named(env, "authorize.net 2", datetime(2026, 10, 2, tzinfo=timezone.utc))
+    r2 = await AuthorizeNetIntake(uow_factory=env.factory, gateway=anet2, clock=clock, timer=lambda: next(ticks, 10_000.0),
+                                  budget_seconds=60).run_pass(await snap(env, cid2))
+    assert r2.details_read == 2

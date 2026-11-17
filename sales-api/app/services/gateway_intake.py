@@ -14,7 +14,8 @@ most 31 days, oldest first:
    Each pass reads at most MAX_BATCHES batches, so a long history arrives over a few passes.
 4. Matching (domain/gateway_match.py) links settled transactions to the Shopify payments they
    are. A transaction still unmatched after that has its details read (invoice number,
-   description; at most DETAILS_PER_PASS per pass) and matching runs again.
+   description) in rounds of DETAILS_PER_PASS, matching again after each, until none is left or
+   DETAILS_BUDGET_SECONDS is spent — a first history read drains in a pass or two.
 
 A refused login, or the Transaction Details API being off, latches the connection like a refused
 SFTP login: it is skipped until someone clears it on the Connections page.
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
@@ -55,7 +57,10 @@ MAX_BATCHES = 400          # per pass (~3–4 minutes; user 2026-11-17)
 # The batch list answers nothing before Jan 1 of two years back (E00013, seen 2026-11-17: "First
 # Settlement Date can not be older than the year of 2024"): a start before it is moved up to it.
 HISTORY_YEARS = 2
-DETAILS_PER_PASS = 200     # transaction details read per pass, for the unmatched only
+DETAILS_PER_PASS = 200     # transaction details read per round, for the unmatched only
+# A pass keeps reading rounds (matching after each) until none is left or this budget is spent, so
+# a first history read (~4,000 details) drains in a pass or two, never by hand (review 2026-11-17).
+DETAILS_BUDGET_SECONDS = 600
 
 
 @dataclass
@@ -126,10 +131,12 @@ def _bytes(value: Any) -> bytes:
 
 
 class AuthorizeNetIntake:
-    def __init__(self, *, uow_factory, gateway, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
+    def __init__(self, *, uow_factory, gateway, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+                 timer: Callable[[], float] = time.monotonic, budget_seconds: float = DETAILS_BUDGET_SECONDS):
         self.uow_factory = uow_factory
         self.gateway = gateway
         self.clock = clock
+        self.timer, self.budget_seconds = timer, budget_seconds
 
     async def _log(self, level: str, message: str, conn, run_id, **context) -> None:
         await oplog.write_alone(self.uow_factory, level, STEP, message, run_id=run_id, connection_id=conn.id,
@@ -197,9 +204,14 @@ class AuthorizeNetIntake:
             report.cursor_after = cursor.isoformat()
         if report.status != "latched":
             report.matched += await self.match(conn.id)
-            report.details_read = await self._read_details(conn, run_id)
-            if report.details_read:
-                report.matched += await self.match(conn.id)
+            started = self.timer()
+            while self.timer() - started < self.budget_seconds:
+                n = await self._read_details(conn, run_id)
+                report.details_read += n
+                if n:
+                    report.matched += await self.match(conn.id)
+                if n < DETAILS_PER_PASS:  # none left (or a refusal stopped the round): the next pass carries on
+                    break
         return report
 
     async def _batch(self, conn: ConnectionSnapshot, b: dict[str, Any], report: GatewayReport, run_id) -> bool | None:
@@ -278,13 +290,13 @@ class AuthorizeNetIntake:
         row.raw = {**(row.raw or {}), **t} if row.details_read_at else t
         return row
 
-    async def _read_details(self, conn: ConnectionSnapshot, run_id, limit: int = DETAILS_PER_PASS) -> int:
+    async def _read_details(self, conn: ConnectionSnapshot, run_id, limit: int | None = None) -> int:
         """The details of settled (or voided) transactions still unmatched (their order fields), a few per pass."""
         async with self.uow_factory(SYSTEM_ACTOR) as uow:
             todo = list((await uow.session.execute(select(GatewayTransaction.id, GatewayTransaction.external_id).where(
                 GatewayTransaction.connection_id == conn.id, MATCHABLE,
                 GatewayTransaction.payment_row_id.is_(None), GatewayTransaction.details_read_at.is_(None))
-                .order_by(GatewayTransaction.submitted_at.desc()).limit(limit))).all())
+                .order_by(GatewayTransaction.submitted_at.desc()).limit(limit or DETAILS_PER_PASS))).all())
         read = 0
         for row_id, ext in todo:
             try:
