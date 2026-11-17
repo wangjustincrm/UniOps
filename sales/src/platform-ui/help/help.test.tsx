@@ -169,7 +169,7 @@ describe('the tour', () => {
     </HelpProvider>)
     const step = async () => (await screen.findByRole('dialog')).textContent
     await waitFor(async () => expect(await step()).toContain('First.'))
-    expect(await step()).toContain('1 of 4')
+    expect(await step()).toContain('1 of 3')  // counts only the steps shown (b is not)
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
     await waitFor(async () => expect(await step()).toContain('Third.'))  // b skipped
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
@@ -180,6 +180,20 @@ describe('the tour', () => {
     await waitFor(async () => expect(await step()).toContain('Badge.'))  // "status:*": the first status badge
     fireEvent.click(screen.getByRole('button', { name: 'Done' }))
     expect(ended).toHaveBeenCalledOnce()
+  })
+  it('a step whose element goes away mid-tour moves on (never lights a box at the corner)', async () => {
+    const { Tour } = await import('./index')
+    boxes()
+    function Page({ gone }: { gone: boolean }) {
+      return <HelpProvider layers={[{ 'list.a': { body: 'First.' }, 'list.c': { body: 'Third.' } }]}>
+        {!gone && <span data-help="list.a">a</span>}<span data-help="list.c">c</span>
+        <Tour steps={[{ anchor: 'list.a' }, { anchor: 'list.c' }]} onEnd={() => {}} />
+      </HelpProvider>
+    }
+    const { rerender } = render(<Page gone={false} />)
+    await waitFor(async () => expect((await screen.findByRole('dialog')).textContent).toContain('First.'))
+    rerender(<Page gone />)
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('Third.'))
   })
   it('Esc ends it', async () => {
     const { Tour } = await import('./index')

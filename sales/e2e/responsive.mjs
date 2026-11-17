@@ -164,6 +164,8 @@ async function run(name, viewport) {
       const r = await box.boundingBox()
       check(!!r && r.x >= 0 && r.x + r.width <= viewport.width + 1, `${name} orders tour: stop ${stops} fits the screen`)
       if (stops === 4) await shot('tour-stop')
+      const ring = await page.locator('[data-tour-light]').boundingBox()
+      check(!!ring && ring.x > 1 && ring.y > 1, `${name} orders tour: stop ${stops} lights its element, not the corner`)
       const done = box.getByRole('button', { name: 'Done' })
       if (await done.count()) { await done.click(); break }
       await box.getByRole('button', { name: 'Next' }).click()

@@ -1,6 +1,6 @@
 import * as RD from '@radix-ui/react-dialog'
 import { CircleHelp, Search, X } from 'lucide-react'
-import { useContext, useMemo, useState } from 'react'
+import { useCallback, useContext, useMemo, useRef, useState } from 'react'
 import { Tour } from './Tour'
 import { HelpContext } from './context'
 import { searchHelp } from './search'
@@ -17,15 +17,18 @@ export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sec
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
   const [touring, setTouring] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  // The tour ends where it started: focus back on the page's ?.
+  const endTour = useCallback(() => { setTouring(false); trigger.current?.focus() }, [])
   const all = useMemo(() => (ctx?.catalog ? ctx.catalog() : []), [ctx])
   const hits = useMemo(() => searchHelp(all, q), [all, q])
   if (!entry) return null
   return (
     <>
-    {touring && entry.tour && <Tour steps={entry.tour} onEnd={() => setTouring(false)} />}
+    {touring && entry.tour && <Tour steps={entry.tour} onEnd={endTour} />}
     <RD.Root open={open} onOpenChange={(o) => { setOpen(o); if (!o) setQ('') }}>
       <RD.Trigger asChild>
-        <button type="button" data-help={id} aria-label={`Help: ${page}`}
+        <button ref={trigger} type="button" data-help={id} aria-label={`Help: ${page}`}
           className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
           <CircleHelp className="h-4 w-4" aria-hidden />
         </button>
