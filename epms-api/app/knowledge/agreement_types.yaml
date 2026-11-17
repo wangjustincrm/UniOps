@@ -1,4 +1,4 @@
-# Purchase Agreements — three kinds, and each one exists because a different
+# Purchase Agreements — four kinds, and each one exists because a different
 # shape of spend does not fit a PR-per-purchase.
 #
 # Derived: AgreementCreate's required fields. Agreements have no doc_preflight
@@ -19,6 +19,8 @@ question_hints:
   - what types of purchase agreement are there
   - what is a house account
   - what is the difference between recurring and milestone
+  - how do I pay a deposit
+  - how is a deposit refunded
   - how do I set up a standing arrangement with a vendor
 
 values:
@@ -89,5 +91,44 @@ values:
     notes:
       - Milestones can only be attached to this type; supplying them on any
         other kind is rejected.
+
+  - value: deposit
+    label: OneTime (Deposit)
+    covers: >
+      A one-time deposit paid to the vendor and returned when the agreement
+      ends — a lease or equipment deposit, a security deposit.
+    when: >
+      When money goes out with no invoice behind it and is expected to come
+      back. A lease that also bills monthly rent is two agreements: this one for
+      the deposit and a recurring one for the rent.
+    notes:
+      - >-
+        The deposit amount is required on the agreement. Its deposit PA is a
+        Prepayment whose amount is that deposit — it cannot be typed or edited,
+        and carries no tax or freight.
+      - >-
+        No invoice is needed, and none can be matched to this type. The
+        agreement's attachments are the deposit PA's evidence, so at least one
+        (the signed agreement or the deposit request) must be uploaded before
+        the deposit PA can be raised. The agreement must be active (or in its
+        grace window), and it pays its deposit once — a second deposit PA is
+        refused unless the first was cancelled or rejected.
+      - >-
+        The deposit PA goes through the normal PA approval and Finance pays it.
+      - >-
+        When the vendor returns the money, Record Refund on the paid deposit PA
+        records the amount actually refunded — anything from 0 up to the
+        deposit, never more — with the refund evidence (at least one file). If
+        less than the deposit came back, the reason the rest was retained is
+        required. This works even long after the agreement has ended.
+      - >-
+        The refund creates a settlement PA that pays nothing and waits for
+        Finance, who confirms the money has arrived (even for a full refund) or
+        returns it with a reason. On confirmation the deposit PA is marked
+        settled, with the variance = refunded − deposit (negative = the amount
+        retained). A returned refund can be recorded again.
+      - >-
+        The refund itself is booked in NC / bank reconciliation by Finance;
+        EPMS records it and closes the deposit, and pushes nothing to NC.
 
 # The rules people ask about live in rules/agreement.yaml (app/services/rule_registry.py).

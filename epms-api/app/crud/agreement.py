@@ -13,6 +13,7 @@ from app.models.agreement import PurchaseAgreement
 from app.schemas.agreement import (
     AgreementCreate,
     AgreementUpdate,
+    validate_deposit,
     validate_milestones,
     validate_recurrence,
     validate_validity_window,
@@ -153,6 +154,7 @@ async def update(
     # Finding 3 of the re-review: valid_to pushed before valid_from). Raises
     # plain ValueError, which the endpoint maps to 409.
     validate_validity_window(valid_from=agr.valid_from, valid_to=agr.valid_to)
+    validate_deposit(agreement_type=agr.agreement_type, deposit_amount=agr.deposit_amount)
     validate_recurrence(
         agreement_type=agr.agreement_type,
         recurring_type=agr.recurring_type,
@@ -271,6 +273,9 @@ async def candidates_for_vendor(
     today = on_date or plant_today()
     q = select(PurchaseAgreement).where(
         PurchaseAgreement.vendor_id == vendor_id,
+        # A deposit agreement takes no invoices — its one payment is the
+        # deposit PA, raised on its attachments (user decision 2026-11-17).
+        PurchaseAgreement.agreement_type != "deposit",
         _admissible_predicate(today),
     ).order_by(PurchaseAgreement.number)
     return list((await db.execute(q)).scalars().all())

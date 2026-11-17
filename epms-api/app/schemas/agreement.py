@@ -15,7 +15,7 @@ AGR_WORKFLOW = [
     {"step": 2, "role": "finance_manager",     "label": "Finance Manager"},
 ]
 
-AGREEMENT_TYPES = ("house_account", "recurring", "milestone")
+AGREEMENT_TYPES = ("house_account", "recurring", "milestone", "deposit")
 RECURRING_TYPES = ("weekly", "monthly", "quarterly", "yearly", "special_monthly")
 ANCHORED_TYPES = ("quarterly", "yearly")
 
@@ -141,6 +141,27 @@ def validate_recurrence(
             raise ValueError(f"{', '.join(bad)} only apply to a recurring agreement")
 
 
+def validate_deposit(
+    *,
+    agreement_type: str,
+    deposit_amount: Decimal | None,
+) -> None:
+    """OneTime (Deposit) coherence — shared by AgreementCreate and
+    crud.agreement.update() for the same reason as validate_recurrence.
+
+    A deposit agreement's only payment is the deposit itself, and its amount is
+    what the deposit PA pays (locked there), so it must be stated up front; on
+    every other type the column means nothing and must stay empty, or a later
+    type change would leave a stale figure that looks authoritative.
+    """
+    if agreement_type == "deposit":
+        if deposit_amount is None or deposit_amount <= 0:
+            raise ValueError("deposit_amount is required for a deposit agreement "
+                             "and must be greater than 0")
+    elif deposit_amount is not None:
+        raise ValueError("deposit_amount only applies to a deposit agreement")
+
+
 class MilestoneRowIn(BaseModel):
     milestone_name: str = Field(min_length=1, max_length=255)
     # 纯文本时间(决策 8):"Within 1 week after contract signing"。阶段时间几乎
@@ -208,7 +229,7 @@ class ScheduleListResponse(BaseModel):
 
 class AgreementCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
-    agreement_type: str = Field(pattern="^(house_account|recurring|milestone)$")
+    agreement_type: str = Field(pattern="^(house_account|recurring|milestone|deposit)$")
     vendor_id: uuid.UUID
     contract_no: str | None = Field(default=None, max_length=100)
     contact_email: str | None = Field(default=None, max_length=255)
@@ -217,6 +238,8 @@ class AgreementCreate(BaseModel):
     valid_to: date
     grace_days: int = Field(default=30, ge=0, le=365)
     not_to_exceed: Decimal | None = Field(default=None, ge=0)
+    # deposit 专用,见 validate_deposit。
+    deposit_amount: Decimal | None = Field(default=None, gt=0)
     currency: str = Field(default="CAD", min_length=1, max_length=10)
     tax_code: str | None = Field(default=None, max_length=20)
     tax_rate: Decimal | None = Field(default=None, ge=0, le=1)
@@ -266,6 +289,12 @@ class AgreementCreate(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _deposit_is_coherent(self):
+        validate_deposit(agreement_type=self.agreement_type,
+                         deposit_amount=self.deposit_amount)
+        return self
+
+    @model_validator(mode="after")
     def _milestones_are_coherent(self):
         validate_milestones(
             agreement_type=self.agreement_type,
@@ -284,6 +313,7 @@ class AgreementUpdate(BaseModel):
     valid_to: date | None = None
     grace_days: int | None = Field(default=None, ge=0, le=365)
     not_to_exceed: Decimal | None = Field(default=None, ge=0)
+    deposit_amount: Decimal | None = Field(default=None, gt=0)
     tax_code: str | None = Field(default=None, max_length=20)
     tax_rate: Decimal | None = Field(default=None, ge=0, le=1)
     department_id: uuid.UUID | None = None
@@ -328,6 +358,7 @@ class AgreementResponse(BaseModel):
     valid_to: date
     grace_days: int
     not_to_exceed: Decimal | None
+    deposit_amount: Decimal | None = None
     consumed_amount: Decimal
     currency: str
     tax_code: str | None

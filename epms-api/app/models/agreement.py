@@ -22,7 +22,9 @@ class PurchaseAgreement(UUIDPrimaryKey, TimestampMixin, Base):
 
     number: Mapped[str] = mapped_column(String(40), unique=True, index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    # house_account | recurring | milestone — only house_account is wired in 1A.
+    # house_account | recurring | milestone | deposit
+    # deposit = OneTime (Deposit):一次性押金。无发票,凭协议附件直接起一张押金
+    # Prepayment PA;协议结束对方退还(全额或部分),退还登记为 Settlement。
     agreement_type: Mapped[str] = mapped_column(String(20), nullable=False)
 
     contract_no: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -46,6 +48,10 @@ class PurchaseAgreement(UUIDPrimaryKey, TimestampMixin, Base):
     not_to_exceed: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
     consumed_amount: Mapped[Decimal] = mapped_column(
         Numeric(15, 2), nullable=False, server_default="0")
+
+    # deposit 专用(ag10):押金额,即押金 PA 的金额(锁定,不可在 PA 上改)。
+    # 其余类型必须为 NULL。
+    deposit_amount: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
 
     currency: Mapped[str] = mapped_column(String(10), nullable=False, server_default="CAD")
     tax_code: Mapped[str | None] = mapped_column(String(20), nullable=True)

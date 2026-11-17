@@ -2,8 +2,9 @@
 import uuid
 from decimal import Decimal
 from typing import Annotated, Literal
+from pydantic import BaseModel, Field
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from sqlalchemy import func, select
 
@@ -644,6 +645,93 @@ async def create_direct_pa(body: DirectPaCreate, db: SessionDep, user: PaWriteDe
     return pa
 
 
+# PA statuses that no longer hold an agreement's one deposit: a deposit PA that
+# was cancelled or rejected frees the agreement for a fresh one.
+_DEAD_PA_STATUSES = ("cancelled", "rejected")
+
+
+async def _agreement_has_attachment(db, agreement_id: uuid.UUID) -> bool:
+    from app.models.agreement_attachment import AgreementAttachment
+    return (await db.execute(
+        select(AgreementAttachment.id)
+        .where(AgreementAttachment.agreement_id == agreement_id).limit(1)
+    )).scalar_one_or_none() is not None
+
+
+async def live_deposit_pa_number(
+    db, agreement_id: uuid.UUID, exclude_id: uuid.UUID | None = None,
+) -> str | None:
+    """The agreement's deposit PA, if one is alive (anything but cancelled /
+    rejected). A deposit agreement pays its deposit exactly once."""
+    q = select(PaymentApplication.pa_number).where(
+        PaymentApplication.agreement_id == agreement_id,
+        PaymentApplication.pa_type == "prepayment",
+        PaymentApplication.status.not_in(_DEAD_PA_STATUSES),
+    )
+    if exclude_id is not None:
+        q = q.where(PaymentApplication.id != exclude_id)
+    return (await db.execute(q.limit(1))).scalar_one_or_none()
+
+
+async def _apply_deposit_pa_rules(db, agr, body: PaCreate) -> None:
+    """Gates and amounts for the deposit PA of a OneTime (Deposit) agreement
+    (user decisions 2026-11-17):
+
+    * only a prepayment — the refund is recorded through
+      POST /pa/{deposit}/deposit-refund, never as a hand-made settlement;
+    * no invoice: the agreement's attachments are the evidence, so at least one
+      must exist;
+    * the agreement must be admissible (approved, inside its window + grace);
+    * one deposit per agreement;
+    * the amount is the agreement's deposit_amount, whatever the client sent —
+      no tax, freight or other charges, in the agreement's currency.
+    """
+    if body.pa_type != "prepayment":
+        raise HTTPException(
+            status_code=422,
+            detail=f"Agreement {agr.number} is a deposit agreement — only its deposit "
+                   "(pa_type='prepayment') can be raised against it. Record the refund "
+                   "from the deposit PA.")
+    if body.invoice_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="A deposit PA takes no invoices — the agreement's attachments are its evidence.")
+    if not await agr_crud.is_admissible(db, agr):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Agreement {agr.number} is not active (status={agr.status}) "
+                   "or is past its grace window — a PA cannot be raised against it.")
+    if not await _agreement_has_attachment(db, agr.id):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Agreement {agr.number} has no attachment. Upload the signed "
+                   "agreement (or the deposit request) on the agreement first — it is "
+                   "the deposit PA's only evidence.")
+    existing = await live_deposit_pa_number(db, agr.id)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Deposit PA {existing} already exists for agreement {agr.number}. "
+                   "A deposit agreement pays its deposit once.")
+    if agr.deposit_amount is None or agr.deposit_amount <= 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Agreement {agr.number} has no deposit amount.")
+    body.subtotal = agr.deposit_amount
+    body.tax_amount = Decimal("0")
+    body.tax_code = None
+    body.tax_rate = None
+    body.shipping_amount = Decimal("0")
+    body.other_charges = Decimal("0")
+    body.other_charges_note = None
+    body.currency = agr.currency
+    body.prepayment_pct = None
+    body.prepayment_pa_id = None
+    body.prepayment_applied = None
+    body.line_items = []
+    body.gr_ids = []
+
+
 @router.post("", response_model=PaResponse, status_code=201)
 async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: BearerToken):
     # ── Agreement route: no PO, no GR, no receipt gate ─────────────────────────
@@ -660,6 +748,18 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         # whether you can see it decides whether you can spend it.
         if not await is_agreement_visible(db, agr.id, await build_scope(db, user)):
             raise HTTPException(status_code=404, detail="Agreement not found")
+        # ── OneTime (Deposit) agreement: one deposit PA, no invoice ──────────
+        if agr.agreement_type == "deposit":
+            await _apply_deposit_pa_rules(db, agr, body)
+            return await pa_crud.create(
+                db, body,
+                po_number=None,
+                agreement_number=agr.number,
+                vendor_id=agr.vendor_id,
+                vendor_name=agr.vendor_name,
+                created_by=uuid.UUID(user["sub"]),
+            )
+
         # No PO on this route means none of the PO-scoped prepayment/settlement/
         # balance guards below (vendor cap, ownership-of-prepayment-PA, applied ≤
         # prepaid) ever run — allowing pa_type through here would let a caller
@@ -670,7 +770,8 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
             raise HTTPException(
                 status_code=422,
                 detail="Only pa_type='regular' can be raised against an agreement "
-                       "(prepayment/settlement/balance require a PO).",
+                       "(prepayment/settlement/balance require a PO; a deposit "
+                       "agreement takes a prepayment).",
             )
         # The agreement itself is the PA's authorisation — it must actually be
         # approved (or still inside its post-expiry grace window) before it can
@@ -970,6 +1071,16 @@ async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: Curr
                 status_code=422,
                 detail="A Freight PA takes its amounts and invoices from the Freight page; "
                        "only the title and notes can be edited here.")
+    if pa.agreement_id is not None and pa.pa_type in ("prepayment", "settlement"):
+        # Deposit agreement: the deposit PA's amount is the agreement's deposit,
+        # and a refund settlement's figures are fixed when it is recorded (and
+        # it is never a draft). Only the wording may change.
+        changed = body.model_fields_set - {"title", "notes", "expected_settlement_date"}
+        if changed:
+            raise HTTPException(
+                status_code=422,
+                detail="A deposit PA takes its amount from the agreement's deposit; "
+                       "only the title, notes and expected refund date can be edited.")
     if pa.source == "direct":
         # Amounts and invoices come from the invoices it pays (crud.pa.
         # create_direct) — to change them, cancel and raise a new one. What it
@@ -1287,9 +1398,171 @@ async def confirm_settlement(
         )
     if pa.status == "processed":
         return pa  # idempotent
+    if pa.deposit_refund_amount is not None:
+        # Deposit refund: Finance confirms the money is back (2026-11-17).
+        await _require_finance_role(db, user)
+        if pa.status != "submitted":
+            raise HTTPException(
+                status_code=409,
+                detail=f"This deposit refund is {pa.status} — only a submitted one can be confirmed.")
     await pa_crud.finalize_settlement_reconciliation(db, pa, uuid.UUID(user["sub"]))
     inv_ids = [uuid.UUID(i) for i in pa.invoice_ids]
     await finance_client.mark_ap_settled(invoice_ids=inv_ids, bearer_token=token)
+    return pa
+
+
+# ── OneTime (Deposit) agreement: recording and confirming the refund ─────────
+# Who signs off a deposit refund. The confirm task goes to finance_bp; any
+# finance role (or an admin) may act on it, nobody else — the confirmation is
+# the statement that the money has actually come back.
+_DEPOSIT_REFUND_CONFIRMERS = {"finance_bp", "finance_manager", "finance_director", "system_admin"}
+_MAX_REFUND_FILE = 25 * 1024 * 1024
+
+
+async def _require_finance_role(db, user: dict) -> None:
+    roles = await _effective_role_codes(db, user.get("role") or "", uuid.UUID(user["sub"]))
+    if not roles & _DEPOSIT_REFUND_CONFIRMERS:
+        raise HTTPException(
+            status_code=403,
+            detail="Only Finance can confirm or return a deposit refund.")
+
+
+@router.post("/{pa_id}/deposit-refund", response_model=PaResponse, status_code=201)
+async def record_deposit_refund(
+    pa_id: uuid.UUID,
+    db: SessionDep,
+    user: PaWriteDep,
+    token: BearerToken,
+    refund_amount: Annotated[Decimal, Form(ge=0)],
+    files: Annotated[list[UploadFile], File()],
+    retained_reason: Annotated[str | None, Form()] = None,
+    notes: Annotated[str | None, Form()] = None,
+):
+    """Record the refund of a paid deposit (OneTime (Deposit) agreement).
+
+    `pa_id` is the DEPOSIT PA. Creates its settlement PA in one step —
+    amount refunded (0 .. deposit), the reason when less than the deposit came
+    back, and the refund evidence (at least one file) — and hands it to Finance
+    to confirm. No payment is made (payment_amount 0); on confirmation the
+    deposit PA is marked settled with variance = refunded − deposit.
+
+    Deliberately NOT gated on the agreement being admissible: a deposit is
+    refunded after the agreement has ended, usually well past its grace window.
+    """
+    from app.core.access_scope import is_pa_visible
+    from app.models.pa_attachment import PaAttachment
+    from app.services.attachment_helper import upload_to_file_server
+
+    deposit = await pa_crud.get_by_id(db, pa_id)
+    if _not_epms_pa(deposit) or not await is_pa_visible(db, deposit, await build_scope(db, user)):
+        raise HTTPException(status_code=404, detail="PA not found")
+    agr = (await agr_crud.get_by_id(db, deposit.agreement_id)
+           if deposit.agreement_id is not None else None)
+    if agr is None or agr.agreement_type != "deposit" or deposit.pa_type != "prepayment":
+        raise HTTPException(
+            status_code=409, detail="Only the deposit PA of a deposit agreement takes a refund.")
+    if deposit.status != "processed":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Deposit PA {deposit.pa_number} has not been paid yet (status={deposit.status}) "
+                   "— there is nothing to refund.")
+    if deposit.settlement_status == "settled":
+        raise HTTPException(
+            status_code=409, detail=f"The refund of {deposit.pa_number} has already been confirmed.")
+    live = (await db.execute(
+        select(PaymentApplication.pa_number).where(
+            PaymentApplication.prepayment_pa_id == deposit.id,
+            PaymentApplication.status.not_in(_RELEASED_PA_STATUSES),
+        ).limit(1)
+    )).scalar_one_or_none()
+    if live:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A refund is already recorded for {deposit.pa_number} ({live}).")
+
+    refund = refund_amount.quantize(Decimal("0.01"))
+    if refund > deposit.payment_amount:
+        raise HTTPException(
+            status_code=422,
+            detail=f"The refund ({refund}) cannot exceed the deposit paid "
+                   f"({deposit.payment_amount} {deposit.currency}).")
+    reason = (retained_reason or "").strip() or None
+    if refund < deposit.payment_amount and not reason:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{deposit.payment_amount - refund} {deposit.currency} of the deposit was "
+                   "not refunded — give the reason it was retained.")
+    blobs: list[tuple[UploadFile, bytes]] = []
+    for f in files:
+        data = await f.read()
+        if not data:
+            continue
+        if len(data) > _MAX_REFUND_FILE:
+            raise HTTPException(status_code=413, detail=f"{f.filename} exceeds 25 MB")
+        blobs.append((f, data))
+    if not blobs:
+        raise HTTPException(
+            status_code=422,
+            detail="Attach the refund evidence (bank receipt, vendor's refund letter, …).")
+
+    payload = PaCreate(
+        agreement_id=agr.id,
+        title=f"Deposit refund — {agr.number} {agr.title}"[:255],
+        pa_type="settlement",
+        prepayment_pa_id=deposit.id,
+        subtotal=Decimal("0"),
+        currency=deposit.currency,
+        notes=notes,
+    )
+    created = await pa_crud.create(
+        db, payload,
+        po_number=None,
+        agreement_number=agr.number,
+        vendor_id=deposit.vendor_id,
+        vendor_name=deposit.vendor_name,
+        created_by=uuid.UUID(user["sub"]),
+    )
+    created.deposit_refund_amount = refund
+    created.deposit_retained_reason = reason
+    created.status = "submitted"
+    for f, data in blobs:
+        name = f.filename or "refund-evidence"
+        ctype = f.content_type or "application/octet-stream"
+        key = await upload_to_file_server(data, name, ctype, "pa", created.id, token)
+        db.add(PaAttachment(pa_id=created.id, filename=name, content_type=ctype,
+                            file_size=len(data), storage_key=key))
+    await db.flush()
+    await pa_crud.create_deposit_refund_confirm_task(db, created, deposit)
+    await db.refresh(created)
+    return created
+
+
+class _ReturnDepositRefund(BaseModel):
+    comment: str = Field(min_length=1, max_length=1000)
+
+
+@router.post("/{pa_id}/return-deposit-refund", response_model=PaResponse)
+async def return_deposit_refund(
+    pa_id: uuid.UUID, body: _ReturnDepositRefund, db: SessionDep, user: PaWriteDep,
+):
+    """Finance sends a recorded deposit refund back — the money has not
+    arrived, or the amount / evidence is wrong. The refund PA is closed as
+    rejected (with the reason in its notes); the deposit stays pending and the
+    refund can be recorded again from the deposit PA."""
+    pa = await pa_crud.get_by_id(db, pa_id)
+    if _not_epms_pa(pa) or pa.deposit_refund_amount is None:
+        raise HTTPException(status_code=404, detail="Deposit refund not found")
+    await _require_finance_role(db, user)
+    if pa.status != "submitted":
+        raise HTTPException(
+            status_code=409,
+            detail=f"This deposit refund is {pa.status} — only a submitted one can be returned.")
+    pa.status = "rejected"
+    stamp = f"Returned by Finance: {body.comment.strip()}"
+    pa.notes = f"{pa.notes}\n{stamp}" if pa.notes else stamp
+    await pa_crud._complete_tasks(db, "pa", pa.id)
+    await db.flush()
+    await db.refresh(pa)
     return pa
 
 

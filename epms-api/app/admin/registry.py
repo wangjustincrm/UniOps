@@ -729,6 +729,11 @@ _PA_SCHEMA = EntitySchema(
         FieldSpec("other_charges", "decimal", True),
         FieldSpec("other_charges_note", "string", True),
         FieldSpec("payment_amount", "decimal", False),
+        # Deposit refund (ag10): set when the refund is recorded, read by the
+        # Finance confirmation — kept read-only so the confirmed figure and the
+        # deposit's variance cannot drift apart.
+        FieldSpec("deposit_refund_amount", "decimal", False),
+        FieldSpec("deposit_retained_reason", "string", True),
         FieldSpec("created_by", "reference", True, label="PA Creator (AP Clerk)", ref_source="users"),
         FieldSpec("source_requester_id", "reference", True, label="Source Requester (PR creator)", ref_source="users"),
         FieldSpec("vendor_id", "reference", True, label="Vendor", ref_source="vendors", ref_name_field="vendor_name"),
@@ -761,7 +766,7 @@ _AGREEMENT_SCHEMA = EntitySchema(
         FieldSpec("number", "string", False),
         FieldSpec("title", "string", True),
         FieldSpec("agreement_type", "enum", True,
-                  options=["house_account", "recurring", "milestone"]),
+                  options=["house_account", "recurring", "milestone", "deposit"]),
         # Terminal state is "active", NOT "approved" (the agr workflow differs from
         # pr/po/pa here); "returned" is produced by the engine's return action.
         FieldSpec("status", "enum", True,
@@ -777,6 +782,8 @@ _AGREEMENT_SCHEMA = EntitySchema(
         FieldSpec("valid_to", "date", True),
         FieldSpec("grace_days", "number", True),
         FieldSpec("not_to_exceed", "decimal", True),
+        # deposit agreements only (ag10) — the deposit PA's locked amount.
+        FieldSpec("deposit_amount", "decimal", True),
         # Derived from the invoice set by crud.invoice._recompute_consumed — a typed
         # value here is overwritten by the next invoice write.
         FieldSpec("consumed_amount", "decimal", False),

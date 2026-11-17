@@ -754,11 +754,12 @@ entities:
       agreement_type:
         kind: enum
         label: "Kind of agreement"
-        values: [house_account, recurring, milestone]
+        values: [house_account, recurring, milestone, deposit]
         value_labels:
           house_account: "House account — open account the department buys against as needed"
           recurring: "Recurring — a service billed on a schedule"
           milestone: "Milestone — paid in agreed stages"
+          deposit: "OneTime (Deposit) — a one-time deposit, refunded when the agreement ends"
       vendor_name: {kind: text, label: "Vendor name"}
       contract_no: {kind: text, label: "Vendor's contract number"}
       # Nothing in the system ever moves an agreement to `expired` or `closed`

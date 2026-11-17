@@ -735,6 +735,10 @@ async def _match_to_agreement(
     # _admissible_predicate) their date sources genuinely differ: SQL
     # `literal(today)` evaluated server-side vs a process-local date.today().
     # Call the predicate instead of restating it.
+    if agr.agreement_type == "deposit":
+        raise AgreementMatchInvalid(
+            f"Agreement {agr.number} is a deposit agreement — it takes no invoices. "
+            "Its deposit is paid from the agreement's attachments.")
     if not await agreement_crud.is_admissible(db, agr):
         raise AgreementMatchInvalid(
             f"Agreement {agr.number} is not open for new spend "
