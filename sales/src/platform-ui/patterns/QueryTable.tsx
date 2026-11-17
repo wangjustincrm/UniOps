@@ -244,8 +244,17 @@ function QueryTableView<T>({
 
   // Empty because of a filter, a search or a view's filters (the page's own fixed ones don't count): the
   // list's "why it is empty" would mislead; say what narrows it and offer to clear it.
-  const narrowed = !!spec.search || (spec.filters ?? []).some((f) => !locked.includes(f.field))
-  const empty = narrowed ? {
+  const own = (spec.filters ?? []).filter((f) => !locked.includes(f.field))
+  const narrowed = !!spec.search || own.length > 0
+  // ...unless all that narrows it is the active view's own filters and search (e.g. Open, On hold): then
+  // the view is simply empty, and "Clear filters" would only mean leaving it (the user's choice, 2026-11-17).
+  const viewState = picker?.current
+    ? (picker.current.kind === 'system' ? picker.system.find((v) => v.key === (picker.current as { key: string }).key)
+      : picker.mine.find((v) => v.id === (picker.current as { id: number }).id))?.state
+    : undefined
+  const sameAsView = !!viewState && JSON.stringify(own) === JSON.stringify((viewState.filters ?? []).filter((f) => !locked.includes(f.field)))
+    && (spec.search ?? '') === (viewState.search ?? '')
+  const empty = narrowed && sameAsView ? { emptyTitle: 'Nothing in this view', emptyText: undefined, emptyAction: undefined } : narrowed ? {
     emptyTitle: 'No rows match the current filters',
     emptyText: undefined,
     emptyAction: (

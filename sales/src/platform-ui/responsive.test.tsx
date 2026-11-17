@@ -315,3 +315,23 @@ describe('an empty list says why only when nothing narrows it', () => {
     expect(screen.getByText('Orders arrive on each run.')).toBeInTheDocument()
   })
 })
+
+describe('an empty view', () => {
+  type Row = { id: number; code: string }
+  it('narrowed only by the active view\'s own filters: "Nothing in this view", no Clear; one more filter: "No rows match"', async () => {
+    const { QueryTable } = await import('./patterns/QueryTable')
+    const hold = [{ field: 'status', op: 'eq' as const, value: 'On Hold' }]
+    const picker = { system: [{ key: 'hold', name: 'On hold', state: { version: 1, filters: hold } }], mine: [], current: { kind: 'system' as const, key: 'hold', name: 'On hold' },
+      dirty: false, stale: false, busy: false, error: null, select: () => {}, save: async () => {}, saveAs: async () => {}, reset: () => {},
+      rename: async () => {}, remove: async () => {}, setDefault: async () => {} } as unknown as import('./patterns/views').ViewPickerModel
+    const cols = [columnsOf<Row>().text('code', 'Code')]
+    const { unmount } = render(<QueryTable<Row> columns={cols} rows={[]} total={0} spec={{ page: 1, pageSize: 20, filters: hold }} picker={picker}
+      onSpecChange={() => {}} rowKey={(r) => r.id} emptyTitle="No orders yet" />)
+    expect(screen.getByText('Nothing in this view')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull()
+    unmount()
+    render(<QueryTable<Row> columns={cols} rows={[]} total={0} spec={{ page: 1, pageSize: 20, filters: [...hold, { field: 'code', op: 'eq', value: 'X' }] }} picker={picker}
+      onSpecChange={() => {}} rowKey={(r) => r.id} emptyTitle="No orders yet" />)
+    expect(screen.getByText('No rows match the current filters')).toBeInTheDocument()
+  })
+})
