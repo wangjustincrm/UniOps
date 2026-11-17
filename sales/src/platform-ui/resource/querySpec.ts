@@ -26,6 +26,9 @@ export interface Filter {
   field: string
   op: FilterOp
   value: FilterValue
+  /** How a page's own (fixed) filter reads on its chip, when the exact key means nothing to a
+   *  person — e.g. settlement_id 866 shown as "Batch ID 1079550860". Never sent to the server. */
+  label?: string
 }
 
 export interface QuerySpec {

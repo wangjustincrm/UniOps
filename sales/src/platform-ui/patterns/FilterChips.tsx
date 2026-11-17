@@ -71,7 +71,7 @@ export function FilterChips({ spec, onSpecChange, fields, locked = [], labelOf }
             </Chip>
           )}
           {filters.map(({ f, i }) => {
-            const text = filterText(f, fields.get(f.field) ?? { name: f.field, label: label(f.field), type: 'text', enum_values: [], filterable: true, sortable: false, groupable: false, operators: [] })
+            const text = f.label ?? filterText(f, fields.get(f.field) ?? { name: f.field, label: label(f.field), type: 'text', enum_values: [], filterable: true, sortable: false, groupable: false, operators: [] })
             return locked.includes(f.field)
               ? <Chip key={i}>{text}</Chip>
               : <Chip key={i} onRemove={() => onSpecChange(removeFilterAt(spec, i))} removeLabel={`Remove ${text}`}>{text}</Chip>

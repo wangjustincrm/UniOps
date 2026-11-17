@@ -39,7 +39,7 @@ function SettlementDetail({ s }: { s: SettlementRowRead }) {
       tabs={[
         { id: 'payments', label: 'Payments', render: () => (
           <ListPage<PaymentRowRead> resource={paymentsClient} columns={columns} defaultHidden={hiddenPaymentColumns}
-            fixed={[{ field: 'settlement_ref', op: 'eq', value: s.batch_id }]} searchable={false}
+            fixed={[{ field: 'settlement_id', op: 'eq', value: String(s.id), label: `Batch ID ${s.batch_id}` }]} searchable={false}
             emptyTitle="No settled transactions read for this batch" />
         ) },
       ]}

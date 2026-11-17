@@ -120,6 +120,15 @@ describe('QueryTable with /meta', () => {
     expect(t.last().search).toBeUndefined()
   })
 
+  it("a page's own filter reads by its label, and only the exact key is sent", async () => {
+    const spec: QuerySpec = { page: 1, pageSize: 50, filters: [{ field: 'status', op: 'eq', value: '866', label: 'Batch ID 1079550860' }] }
+    renderTable({ locked: ['status'], initial: spec })
+    const chips = await screen.findByRole('group', { name: 'Active sort, grouping and search' })
+    expect(within(chips).getByText('Batch ID 1079550860')).toBeInTheDocument()
+    expect(within(chips).queryByText(/866/)).toBeNull()
+    expect(toSearchParams(spec).getAll('filter')).toEqual(['status:eq:866'])
+  })
+
   it('the search panel builds the query: values of a field OR, fields AND', async () => {
     const t = renderTable({ locked: ['status'] })
     fireEvent.click(within(await openMenu('Item code')).getByText('Search'))  // opens on that field, ticked
