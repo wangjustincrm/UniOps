@@ -110,54 +110,66 @@ async def sweep_statutory(db: AsyncSession, now: datetime) -> int:
     for deadline in rows:
         level = statutory_level(deadline.due_at, now)
         if level <= deadline.escalation_level:
+            # ★ Review U4: a deadline escalated before coordinators were tasked
+            # (UAT 15, L) crosses no new threshold, so it would never get its
+            # coordinator task. Any role without one gets it now — quietly: no
+            # new email, and it does not count as an escalation.
+            if deadline.escalation_level > 0:
+                await _task_each_role(db, deadline, now, deadline.escalation_level, only_missing=True)
             continue
         deadline.escalation_level = level
-        overdue = level >= 3
-        doc_type = deadline_service.DEADLINE_DOC_TYPE.get(
-            deadline.source_type, task_service.DOC_INCIDENT)
-        # The obligation's own name leads the title, and is how its task is
-        # found again — here, and by `satisfy()` when it closes it. Derived in
-        # one place so the two cannot drift: one record can owe two of these,
-        # and matching on the document alone would fold them into one prompt.
-        lead = deadline_service.task_lead(deadline.kind)
-        title, description = deadline_service.task_text(deadline, now)
-        priority = "high" if level >= 2 else "normal"
+        await _task_each_role(db, deadline, now, level)
+        # HSE gets this by email as well as by inbox. It is the one category
+        # where a list somebody has not opened today is not good enough.
+        await notify.statutory_escalated(db, deadline, overdue=level >= 3)
+        raised += 1
+    return raised
 
-        # ★ One obligation, one prompt. Escalating used to add a task rather
-        # than change the one already there, so a single deadline that crossed
-        # all three thresholds left three open tasks saying the same thing in
-        # three tones — and on the test database one incident had six. They
-        # were invisible while nothing read role-assigned tasks; the moment
-        # that was fixed they became most of what the HSE Manager could see.
-        # ★ UAT 15, question L: "coordinators get them too, so whichever of you
-        # is in that day files it." One task for each role, found again by its
-        # role; recording the filing closes every one of them (satisfy()).
-        open_now = [t for t in await task_service.open_tasks_for(
-            db, doc_type=doc_type, doc_id=deadline.source_id)
-            if t.type == task_service.TASK_STATUTORY and (t.title or "").startswith(lead)]
-        for role in STATUTORY_TASK_ROLES:
-            existing = next((t for t in open_now if t.assigned_role == role), None)
-            if existing is not None:
+
+async def _task_each_role(db: AsyncSession, deadline, now: datetime, level: int, *,
+                          only_missing: bool = False) -> None:
+    """One open task for each of STATUTORY_TASK_ROLES, worded for this level."""
+    doc_type = deadline_service.DEADLINE_DOC_TYPE.get(
+        deadline.source_type, task_service.DOC_INCIDENT)
+    # The obligation's own name leads the title, and is how its task is
+    # found again — here, and by `satisfy()` when it closes it. Derived in
+    # one place so the two cannot drift: one record can owe two of these,
+    # and matching on the document alone would fold them into one prompt.
+    lead = deadline_service.task_lead(deadline.kind)
+    title, description = deadline_service.task_text(deadline, now)
+    priority = "high" if level >= 2 else "normal"
+
+    # ★ One obligation, one prompt. Escalating used to add a task rather
+    # than change the one already there, so a single deadline that crossed
+    # all three thresholds left three open tasks saying the same thing in
+    # three tones — and on the test database one incident had six. They
+    # were invisible while nothing read role-assigned tasks; the moment
+    # that was fixed they became most of what the HSE Manager could see.
+    # ★ UAT 15, question L: "coordinators get them too, so whichever of you
+    # is in that day files it." One task for each role, found again by its
+    # role; recording the filing closes every one of them (satisfy()).
+    open_now = [t for t in await task_service.open_tasks_for(
+        db, doc_type=doc_type, doc_id=deadline.source_id)
+        if t.type == task_service.TASK_STATUTORY and (t.title or "").startswith(lead)]
+    for role in STATUTORY_TASK_ROLES:
+        existing = next((t for t in open_now if t.assigned_role == role), None)
+        if existing is not None:
+            if not only_missing:
                 existing.title = title
                 existing.description = description
                 existing.priority = priority
-            else:
-                await task_service.open_task(
-                    db,
-                    task_type=task_service.TASK_STATUTORY,
-                    doc_type=doc_type,
-                    doc_id=deadline.source_id,
-                    doc_number=deadline.source_ref or str(deadline.source_id)[:8],
-                    title=title,
-                    assigned_role=role,
-                    description=description,
-                    priority=priority,
-                )
-        # HSE gets this by email as well as by inbox. It is the one category
-        # where a list somebody has not opened today is not good enough.
-        await notify.statutory_escalated(db, deadline, overdue=overdue)
-        raised += 1
-    return raised
+            continue
+        await task_service.open_task(
+            db,
+            task_type=task_service.TASK_STATUTORY,
+            doc_type=doc_type,
+            doc_id=deadline.source_id,
+            doc_number=deadline.source_ref or str(deadline.source_id)[:8],
+            title=title,
+            assigned_role=role,
+            description=description,
+            priority=priority,
+        )
 
 
 async def sweep_actions(db: AsyncSession, now: datetime, ladder: CapaLadder) -> int:
