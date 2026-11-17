@@ -279,7 +279,7 @@ function QueryTableView<T>({
         sortable={sortableIds}
         onSortChange={(s) => change(specFromSorting(spec, [s]))}
         onColumnMove={meta ? (id, beforeId) => move(id, beforeId === null ? order.length : order.filter((x) => x !== id).indexOf(beforeId)) : undefined}
-        leading={picker ? <ViewPicker model={picker} /> : undefined}
+        leading={picker ? <span data-help="list.views" className="inline-flex"><ViewPicker model={picker} /></span> : undefined}
         headerAddon={(id) => {
           const f = fields.get(id)
           return f ? (
@@ -325,7 +325,7 @@ function QueryTableView<T>({
                 }}
               />
             )}
-            {picker && <ViewActions model={picker} />}
+            {picker && <span data-help="list.saveView" className="inline-flex empty:hidden"><ViewActions model={picker} /></span>}
           </>
         ) : undefined}
         toolbar={toolbar}

@@ -9,7 +9,8 @@ import type { HelpEntry, HelpId } from './types'
 /** A page's help: a ? beside its title opening a side panel (full width on a phone) with what the page
  *  is for, its common tasks, and a search over every help text the module has. No text for the page:
  *  nothing is shown. `data-help` marks the button (for a tour). */
-export function PageHelp({ id, page }: { id: HelpId; page: string }) {
+/** `sections`: more help under the page's own (e.g. "Using lists": the ids of the tools the list has). */
+export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sections?: { title: string; ids: string[] }[] }) {
   const entry = useHelp(id)
   const ctx = useContext(HelpContext)
   const [q, setQ] = useState('')
@@ -54,12 +55,32 @@ export function PageHelp({ id, page }: { id: HelpId; page: string }) {
                     <ul className="list-disc space-y-1 pl-5">{entry.tasks.map((t) => <li key={t}>{t}</li>)}</ul>
                   </div>
                 )}
+                {sections?.map((s) => <Section key={s.title} title={s.title} ids={s.ids} />)}
               </section>
             )}
           </div>
         </RD.Content>
       </RD.Portal>
     </RD.Root>
+  )
+}
+
+function Section({ title, ids }: { title: string; ids: string[] }) {
+  const ctx = useContext(HelpContext)
+  const items = ids.map((i) => ({ id: i, entry: ctx?.source(i) })).filter((x): x is { id: string; entry: HelpEntry } => !!x.entry)
+  if (items.length === 0) return null
+  return (
+    <section aria-label={title}>
+      <p className="mb-1 font-medium text-neutral-900">{title}</p>
+      <dl className="flex flex-col gap-1.5">
+        {items.map(({ id, entry }) => (
+          <div key={id}>
+            {entry.title && <dt className="font-medium text-neutral-800">{entry.title}</dt>}
+            <dd className="leading-snug">{entry.body}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   )
 }
 

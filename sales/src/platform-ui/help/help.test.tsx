@@ -120,3 +120,33 @@ describe('search ignores one-letter words', () => {
     expect(searchHelp(all, 'a pallet').map((h) => h.id)).toEqual(['term:SSCC'])
   })
 })
+
+describe('layers', () => {
+  it('a later layer overrides an earlier one, the source overrides both; the catalog merges without duplicates', async () => {
+    const { useHelp } = await import('./index')
+    const base = { 'list.search': { title: 'Search', body: 'Base text.' }, 'list.views': { title: 'Views', body: 'Views text.' } }
+    const mine = { 'list.search': { title: 'Search', body: 'My text.' } }
+    let cat: { id: string }[] = []
+    function Probe() {
+      const ctx = useHelp('list.search'); const v = useHelp('list.views'); const s = useHelp('status:Sent')
+      return <p>{ctx?.body}|{v?.body}|{s?.body}</p>
+    }
+    function Cat() { const c = (useContextCatalog()); cat = c; return null }
+    const { HelpContext } = await import('./context')
+    const { useContext } = await import('react')
+    function useContextCatalog() { return useContext(HelpContext)!.catalog!() }
+    render(<HelpProvider layers={[base, mine]} source={(id) => (id === 'status:Sent' ? { body: 'From the API.' } : undefined)}
+      catalog={() => [{ id: 'status:Sent', entry: { body: 'From the API.' } }]}><Probe /><Cat /></HelpProvider>)
+    expect(screen.getByText('My text.|Views text.|From the API.')).toBeInTheDocument()
+    expect(cat.map((h) => h.id).sort()).toEqual(['list.search', 'list.views', 'status:Sent'])
+  })
+  it('the page panel shows a section of other texts (e.g. Using lists) under the page\'s own', async () => {
+    const { PageHelp } = await import('./index')
+    const texts = { 'page:x': { body: 'The page.' }, 'list.search': { title: 'Search', body: 'Type and press Enter.' } }
+    render(<HelpProvider layers={[texts]}><PageHelp id="page:x" page="X" sections={[{ title: 'Using lists', ids: ['list.search', 'list.none'] }]} /></HelpProvider>)
+    fireEvent.click(screen.getByRole('button', { name: 'Help: X' }))
+    const sec = await screen.findByRole('region', { name: 'Using lists' })
+    expect(within(sec).getByText('Search')).toBeInTheDocument()
+    expect(within(sec).getByText('Type and press Enter.')).toBeInTheDocument()
+  })
+})

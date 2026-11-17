@@ -4,6 +4,7 @@ import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-quer
 import type { ColumnDef } from '../primitives/DataTable'
 import { PageHeader } from '../primitives/PageHeader'
 import type { HelpId } from '../help'
+import { listTools } from './listHelp'
 import { Sheet } from '../primitives/Sheet'
 import type { ListMeta } from '../resource/listMeta'
 import { queryKeys } from '../resource/queryKeys'
@@ -202,13 +203,13 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   const create = props.create
   const toolbar = (
     <>
-      <RefreshControl state={refresh} />
+      <span data-help="list.refresh" className="inline-flex"><RefreshControl state={refresh} /></span>
       {props.onExport && resource.exportPath && (
-        <IconButton label="Export CSV" icon={<Download className="h-4 w-4" />} className="h-8 w-8 rounded-lg border border-neutral-200 bg-white"
+        <span data-help="list.export" className="inline-flex"><IconButton label="Export CSV" icon={<Download className="h-4 w-4" />} className="h-8 w-8 rounded-lg border border-neutral-200 bg-white"
           onClick={() => {
             Promise.resolve(props.onExport!(resource.exportPath!(spec))).then(() => notices.notify({ key: 'csv', tone: 'success', text: 'CSV exported' }),
               (e: unknown) => notices.notify({ key: 'csv', tone: 'error', text: `Export failed: ${errorText(e, props.errorMessages)}` }))
-          }} />
+          }} /></span>
       )}
       {props.toolbar?.(ctx)}
       {create && <ActionButton size="sm" permission={create.permission} onAction={() => setCreating(true)}>{create.label}</ActionButton>}
@@ -218,7 +219,8 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   return (
     <NoticesContext.Provider value={notices}>
     <div className="flex flex-col gap-4">
-      {props.title && <PageHeader title={props.title} description={props.description} help={props.help} />}
+      {props.title && <PageHeader title={props.title} description={props.description} help={props.help}
+        helpSections={[{ title: 'Using lists', ids: listTools({ search: props.searchable ?? true, views: !!view.tableProps.picker, export: !!(props.onExport && resource.exportPath) }) }]} />}
       {props.notice}
       <QueryTable<T>
         ariaLabel={props.title}

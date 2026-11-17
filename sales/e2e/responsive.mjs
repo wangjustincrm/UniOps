@@ -148,10 +148,15 @@ async function run(name, viewport) {
     await panel.waitFor({ timeout: 5000 })
     const box = await panel.boundingBox()
     check(!!box && box.x >= 0 && box.x + box.width <= viewport.width + 1, `${name} page help: the panel fits the screen`)
+    check(await panel.getByRole('region', { name: 'Using lists' }).count() === 1, `${name} page help: "Using lists" is built from the list's tools`)
     await panel.getByRole('searchbox', { name: 'Search help' }).fill('pallet')
     check(await panel.getByText('SSCC — term').count() === 1, `${name} page help: search finds a glossary term`)
     await shot('page-help')
     await page.keyboard.press('Escape')
+    // every list tool marks itself (a tour can point at it)
+    for (const id of ['list.search', 'list.searchPanel', 'list.views', 'list.columns', 'list.refresh', ...(phone ? ['list.phone'] : [])]) {
+      check(await page.locator(`[data-help="${id}"]`).count() >= 1, `${name} orders: ${id} is marked`)
+    }
   })
   await step('payments', async () => {
     await open('/payments')

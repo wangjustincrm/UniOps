@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useRef, type ReactNode } from 'react'
-import { HelpProvider, type HelpEntry } from '@/platform-ui'
+import { HelpProvider, PLATFORM_HELP, type HelpEntry } from '@/platform-ui'
 import { hasSession } from '@/lib/api'
 import { PAGE_HELP } from './pageHelp'
 import { fetchStatusHelp } from './statusHelpApi'
@@ -22,6 +22,9 @@ declare module '@/platform-ui/help/types' {
 
 /** Texts that belong to a screen, not to the business rules: the pages' help panels. */
 const UI_HELP: Record<string, HelpEntry> = PAGE_HELP
+
+/** The component library's own texts (the list tools); Sales' texts above override them by id. */
+const LAYERS = [PLATFORM_HELP]
 
 const PART = { status: 'statuses', hold: 'holds', detail: 'details', term: 'terms' } as const
 /** What a search result says it is. */
@@ -52,5 +55,5 @@ export function SalesHelpProvider({ children }: { children: ReactNode }) {
     ...(Object.keys(PART) as (keyof typeof PART)[]).flatMap((kind) =>
       Object.entries(data?.[PART[kind]] ?? {}).map(([name, t]) => ({ id: `${kind}:${name}`, entry: { title: `${name} — ${KIND[kind]}`, body: t.body } }))),
   ], [data])
-  return <HelpProvider source={source} onMissing={onMissing} catalog={catalog}>{children}</HelpProvider>
+  return <HelpProvider layers={LAYERS} source={source} onMissing={onMissing} catalog={catalog}>{children}</HelpProvider>
 }

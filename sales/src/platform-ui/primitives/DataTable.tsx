@@ -227,7 +227,7 @@ export function DataTable<T>({
         const cur = sorting[0]?.id === id ? sorting[0] : null
         return { label: `${headerLabel(id)}${cur ? (cur.desc ? ' ↓' : ' ↑') : ''}`, onSelect: () => onSortChange({ id, desc: cur ? !cur.desc : false }) }
       })}
-      trigger={<Button variant="secondary" size="sm" aria-label="Sort by"><ArrowUpDown className="h-3.5 w-3.5" aria-hidden />Sort</Button>} />
+      trigger={<Button variant="secondary" size="sm" aria-label="Sort by" data-help="list.phone"><ArrowUpDown className="h-3.5 w-3.5" aria-hidden />Sort</Button>} />
   ) : null
   const cardLead = cards && leadingHeader !== undefined ? leadingHeader : null
 
@@ -355,6 +355,7 @@ export function DataTable<T>({
           {sortMenu}
           {search && (
             <Input
+              data-help="list.search"
               aria-label="Search"
               placeholder="Search…"
               value={searchDraft}

@@ -337,3 +337,16 @@ describe('an empty view', () => {
     expect(screen.getByText('No rows match the current filters')).toBeInTheDocument()
   })
 })
+
+describe('list tools own their help', () => {
+  it('every tool a list can have has its text; "Using lists" lists only the tools it has', async () => {
+    const { PLATFORM_HELP, listTools } = await import('./index')
+    const all = listTools({ search: true, views: true, export: true })
+    for (const id of all) expect(PLATFORM_HELP[id]?.body, id).toBeTruthy()
+    expect(Object.keys(PLATFORM_HELP).sort()).toEqual([...all].sort())  // and no text without a tool
+    const bare = listTools({ search: false, views: false, export: false })
+    expect(bare).not.toContain('list.export')
+    expect(bare).not.toContain('list.views')
+    expect(bare).not.toContain('list.search')
+  })
+})

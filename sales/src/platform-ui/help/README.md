@@ -16,6 +16,10 @@ Help shown where it is needed (the user, 2026-11-16): a **?** beside what it exp
 | `searchHelp(all, q)` | the search itself: texts holding every word (title, text, next, tasks), title matches first, case and accents ignored |
 | `HelpRegistry`, `HelpId` | typed ids: the module adds its own (`declare module '<path>/help/types' { interface HelpRegistry { 'orders.export': true; [k: \`status:${string}\`]: true } }`) and gets autocomplete and typo errors |
 
+## Layers and the list tools
+
+`HelpProvider layers={[library texts, module texts]}`: a later layer overrides an earlier one by id, an API-backed `source` overrides both, and the search lists them all. The component library's list tools own their texts (`patterns/listHelp.ts`, `PLATFORM_HELP`, ids `list.*`) and mark themselves with `data-help`; `ListPage` adds a "Using lists" section to its page's panel with only the tools that list has (`listTools`). A module writes none of it.
+
 ## What a project gives it
 
 1. The texts: a `source` function over its own texts (and/or texts from its API), and a `catalog` of them all for the search.
