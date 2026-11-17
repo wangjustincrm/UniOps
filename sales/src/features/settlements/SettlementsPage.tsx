@@ -22,8 +22,8 @@ function SettlementDetail({ s }: { s: SettlementRowRead }) {
   const money = (v: string | null) => (v == null ? '—' : formatMoney(v, s.currency))
   return (
     <RecordSheet
-      title={`Batch ID ${s.batch_id}`}
-      subtitle={`${s.gateway} · settled ${formatDateTime(s.settled_at)}`}
+      title={`Settlement ${s.id}`}
+      subtitle={`${s.gateway} · Batch ID ${s.batch_id} · settled ${formatDateTime(s.settled_at)}`}
       badges={<StatusCell value={s.issue} />}
       actions={<ViewFileButton source={settlementPdf(s)}>Settlement statement (PDF)</ViewFileButton>}
       facts={[
@@ -39,7 +39,7 @@ function SettlementDetail({ s }: { s: SettlementRowRead }) {
       tabs={[
         { id: 'payments', label: 'Payments', render: () => (
           <ListPage<PaymentRowRead> resource={paymentsClient} columns={columns} defaultHidden={hiddenPaymentColumns}
-            fixed={[{ field: 'settlement_id', op: 'eq', value: String(s.id), label: `Batch ID ${s.batch_id}` }]} searchable={false}
+            fixed={[{ field: 'settlement_id', op: 'eq', value: String(s.id), label: `Settlement ${s.id}` }]} searchable={false}
             emptyTitle="No settled transactions read for this batch" />
         ) },
       ]}

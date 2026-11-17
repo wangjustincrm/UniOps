@@ -300,8 +300,8 @@ async def test_a_pass_reads_batches_matches_payments_and_feeds_both_lists(env): 
         sname, spdf = await SettlementRowService(u).statement_pdf(b.id)
         rname, rpdf = await SettlementRowService(u).report_pdf(QuerySpec(page_size=50))
     st, rp = pdf_text(spdf).decode("latin-1"), pdf_text(rpdf).decode("latin-1")
-    assert sname == "settlement-901.pdf" and spdf.startswith(b"%PDF")
-    assert "SETTLEMENT" in st and "STATEMENT" in st and "Batch 901" in st and "60001" in st and "not in Shopify" in st
+    assert sname == f"settlement-{b.id}.pdf" and spdf.startswith(b"%PDF")
+    assert "SETTLEMENT" in st and "STATEMENT" in st and f"Settlement {b.id}" in st and "901" in st and "60001" in st and "not in Shopify" in st
     assert "Shopify payment ID" in st and "340.00" in st and "300.00" in st and "40.00" in st
     assert rname == "settlements-2026-09-19-2026-10-04.pdf" and rpdf.startswith(b"%PDF")
     assert "SETTLEMENTS" in rp and "REPORT" in rp and "901" in rp and "902" in rp and "Authorize.Net" in rp and "Unmatched" in rp
@@ -536,7 +536,8 @@ def test_the_report_in_two_currencies_has_a_box_per_currency_and_no_single_total
     rows = [_row(0, "CAD", "100.00"), _row(1, "USD", "40.00"), _row(2, "CAD", "50.00", issue="Differs from Shopify")]
     t = pdf_text(settlements_report_pdf_from(rows, company=Company("Co", []), period="October 2026", truncated=False)).decode("latin-1")
     assert "NET DEPOSITS \\(CAD\\)" in t and "150.00" in t and "NET DEPOSITS \\(USD\\)" in t and "40.00" in t
-    assert "Total \\(" not in t and "B0" in t and "B1" in t and "Differs from Shopify" in t  # no one-currency footer
+    assert "Total \\(" not in t  # no one-currency footer
+    assert "Batch B0" in t and "Batch B1" in t and "Differs from" in t
     assert "Only the first rows" not in t
     one = pdf_text(settlements_report_pdf_from(rows[:1], company=Company("Co", []), period="x", truncated=True)).decode("latin-1")
     assert "Total \\(CAD\\)" in one and "Only the first rows are listed" in one

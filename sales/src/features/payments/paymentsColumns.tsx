@@ -7,7 +7,7 @@ const col = columnsOf<PaymentRowRead>()
 
 /** Shown where a view names them (or from the column menu). */
 export const hiddenPaymentColumns = ['processed_week', 'processed_month', 'gateway', 'shopify_payment_id', 'discount', 'shipping',
-  'order_total', 'order_cancelled', 'test', 'gateway_status', 'card_type', 'settled_at', 'voided']
+  'order_total', 'order_cancelled', 'test', 'gateway_status', 'card_type', 'settled_at', 'voided', 'settlement_ref']
 
 const issueTone = (v: string): Tone => (v === 'Pending over 7 days' ? 'warning' : 'danger')
 const matchTone = (v: string): Tone => (v.endsWith('(probable)') ? 'warning' : 'success')
@@ -31,6 +31,7 @@ export function paymentColumns(openOrder: (orderId: number) => void): ColumnDef<
     col.text('financial_status', 'Order financial status'),
     col.status('issue', 'Issue', { tone: issueTone }),
     withHelp(col.date('settled_date', 'Settlement date'), 'term:Settlement'),
+    col.reference('settlement_id', 'Settlement no.'),
     col.reference('settlement_ref', 'Batch ID'),
     withHelp(col.status('match_method', 'Matched by', { tone: matchTone }), 'term:Matched by'),
     col.datetime('settled_at', 'Settled'),

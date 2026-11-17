@@ -343,11 +343,11 @@ async def settlement_pdf(s, row) -> bytes:
     if row.pending_count:
         issues.append(f"{row.pending_count} transaction(s) are still being matched.")
     story = [
-        L.header(company, th, "Settlement statement", f"Batch {row.batch_id}",
-                 [("Settled", _when(row.settled_at)), ("Gateway", row.gateway), ("Currency", cur)]),
+        L.header(company, th, "Settlement statement", f"Settlement {row.id}",
+                 [("Settled", _when(row.settled_at)), ("Gateway", row.gateway), ("Batch ID", row.batch_id), ("Currency", cur)]),
         L.gap(4), L.section("Deposit", "As the payment provider reports it", th), L.gap(2.5),
         L.cards([
-            Card("Deposit", f"{row.gateway} batch {row.batch_id}", facts=[
+            Card("Deposit", f"Settlement {row.id}", facts=[("Gateway", row.gateway), ("Batch ID", row.batch_id),
                 ("Settled", _when(row.settled_at)), ("State", row.state), ("Payment method", row.payment_method)]),
             Card("Gateway figures", None, facts=[
                 ("Sales", f"{L.money(row.sales_amount)} ({row.sales_count})"),
@@ -375,13 +375,13 @@ async def settlement_pdf(s, row) -> bytes:
                   [("Sales", L.money(row.sales_amount)), ("Refunds", L.money(-row.refund_amount)),
                    ("Difference with Shopify", L.money(row.difference)), (f"Net deposit ({cur})", L.money(row.net_amount))], th),
     ]
-    return L.build(story, company=company, title=f"Settlement statement batch {row.batch_id}", theme=th)
+    return L.build(story, company=company, title=f"Settlement statement {row.id}", theme=th)
 
 
 def settlements_report_pdf_from(rows, *, company: Company, period: str, truncated: bool) -> bytes:
     """Every deposit of a list (as it is filtered), with the totals per currency."""
     th = L.SETTLEMENT
-    table = [[L.day(r.settled_date), r.gateway, r.batch_id, L.money(r.sales_amount), L.money(-r.refund_amount),
+    table = [[L.day(r.settled_date), r.gateway, (str(r.id), f"Batch {r.batch_id}"), L.money(r.sales_amount), L.money(-r.refund_amount),
               L.money(r.net_amount), L.money(r.matched_net), L.money(r.difference), r.issue or ""] for r in rows]
     by_cur: dict[str, list] = collections.defaultdict(list)
     for r in rows:
@@ -403,7 +403,7 @@ def settlements_report_pdf_from(rows, *, company: Company, period: str, truncate
         story += [L.note("Only the first rows are listed. The report follows the list's filters and sort: filter it to a month "
                          "(or another view) for a complete report.", th), L.gap(2)]
     story += [
-        L.items([Col("Date", 1.15), Col("Gateway", 1.35), Col("Batch", 1.15), Col("Sales", 1.1, "RIGHT"), Col("Refunds", 1.0, "RIGHT"),
+        L.items([Col("Date", 1.15), Col("Gateway", 1.35), Col("Settlement", 1.25), Col("Sales", 1.1, "RIGHT"), Col("Refunds", 1.0, "RIGHT"),
                  Col("Net", 1.1, "RIGHT", strong=True), Col("Matched in Shopify", 1.15, "RIGHT"), Col("Difference", 1.05, "RIGHT"),
                  Col("Issue", 1.6)], table, th, foot=foot),
         L.gap(5),

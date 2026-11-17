@@ -5,7 +5,7 @@ type Tone = 'success' | 'warning' | 'danger'
 const col = columnsOf<SettlementRowRead>()
 
 /** Shown where a view names them (or from the column menu). */
-export const hiddenSettlementColumns = ['settled_week', 'settled_month', 'settled_at', 'state', 'payment_method', 'fee_amount',
+export const hiddenSettlementColumns = ['batch_id', 'settled_week', 'settled_month', 'settled_at', 'state', 'payment_method', 'fee_amount',
   'sales_count', 'refund_count', 'declined_count', 'voided_count', 'transactions_read_at', 'chargeback_count', 'returned_count',
   'other_count', 'pending_count']
 
@@ -16,6 +16,7 @@ export function settlementColumns(): ColumnDef<SettlementRowRead, unknown>[] {
   return [
     withHelp(col.date('settled_date', 'Date'), 'term:Settlement'),
     col.text('gateway', 'Gateway'),
+    col.reference('id', 'Settlement no.'),
     col.reference('batch_id', 'Batch ID'),
     col.money('sales_amount', 'Sales', { currency: 'currency' }),
     col.money('refund_amount', 'Refunds', { currency: 'currency' }),

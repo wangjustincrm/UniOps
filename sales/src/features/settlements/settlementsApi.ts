@@ -51,8 +51,8 @@ export const downloadSettlements = (path: string) => api.download(path, 'settlem
 
 /** One deposit's settlement statement (PDF), in the viewer (Download / Print there). */
 export const settlementPdf = (s: Pick<SettlementRowRead, 'id' | 'batch_id'>): FileSource => ({
-  key: `settlement-${s.id}`, title: `Settlement statement · batch ${s.batch_id}`,
-  load: () => api.file(`/settlements/${s.id}/statement.pdf`, `settlement-${s.batch_id}.pdf`) })
+  key: `settlement-${s.id}`, title: `Settlement statement · ${s.id}`,
+  load: () => api.file(`/settlements/${s.id}/statement.pdf`, `settlement-${s.id}.pdf`) })
 
 /** The list as it is filtered and sorted now, as one PDF report (the CSV export's query), in the viewer. */
 export const settlementsReportPdf = (spec: QuerySpec): FileSource => {

@@ -23,7 +23,7 @@ class SettlementRowRepository(Repository[SettlementRow]):
                    "net_amount", "declined_count", "voided_count", "chargeback_amount", "chargeback_count", "returned_amount",
                    "returned_count", "other_count", "pending_count", "transaction_count", "matched_net", "difference",
                    "unmatched_count", "probable_count", "transactions_read_at", "issue")
-    labels = {"batch_id": "Batch ID", "settled_at": "Settled", "settled_date": "Date", "settled_week": "Week",
+    labels = {"id": "Settlement no.", "batch_id": "Batch ID", "settled_at": "Settled", "settled_date": "Date", "settled_week": "Week",
               "settled_month": "Month", "state": "State", "payment_method": "Payment method", "sales_amount": "Sales",
               "sales_count": "Sales (count)", "refund_amount": "Refunds", "refund_count": "Refunds (count)",
               "fee_amount": "Fees", "net_amount": "Net", "declined_count": "Declined", "voided_count": "Voided",
@@ -60,7 +60,7 @@ class SettlementRowService(ReadOnlyService[SettlementRow, SettlementRowRead]):
         """One deposit's settlement statement (sales.read)."""
         from app.services import print_docs
         row = await self.get(id)
-        return f"settlement-{row.batch_id}.pdf", await print_docs.settlement_pdf(self.uow.session, row)
+        return f"settlement-{row.id}.pdf", await print_docs.settlement_pdf(self.uow.session, row)
 
     @requires(READ)
     async def report_pdf(self, spec: QuerySpec) -> tuple[str, bytes]:
