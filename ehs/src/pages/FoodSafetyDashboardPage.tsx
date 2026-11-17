@@ -147,10 +147,10 @@ export default function FoodSafetyDashboardPage() {
                  note="Open: reported, the investigation not yet signed. Under investigation: signed, and not closed while its corrective actions are completed and verified. Closed: closed.">
           <div className="grid grid-cols-3 gap-2">
             <Tile value={data.investigations.open} label="Open"
-                  to={incidents(`food safety near misses open in ${y}`, yearFrom, yearTo,
+                  to={incidents(`food safety near misses open in ${y} — investigation not yet signed`, yearFrom, yearTo,
                                 { status: NOT_CLOSED, investigation_signed: 'false' })} />
             <Tile value={data.investigations.under_investigation} label="Under investigation"
-                  to={incidents(`food safety near misses under investigation in ${y}`, yearFrom, yearTo,
+                  to={incidents(`food safety near misses under investigation in ${y} — investigation signed, not yet closed`, yearFrom, yearTo,
                                 { status: NOT_CLOSED, investigation_signed: 'true' })} />
             <Tile value={data.investigations.closed} label="Closed"
                   to={incidents(`food safety investigations closed in ${y}`, yearFrom, yearTo, { status: 'closed' })} />

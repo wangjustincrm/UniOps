@@ -1,12 +1,15 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.28
+**Version**: 0.29
 **Date**: 2026-11-17
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.27 → 0.28)**
+**What changed in this version (0.28 → 0.29)**
+- §1.6 "Review of UAT 15": a signed investigation stays signed through a save that changes nothing it says; the monthly list and the audit pack count a toolbox talk held again in the month held; a quiz of feedback only passes; course feedback from any attempt; legal deadline tasks topped up for coordinators; a corrective action added on the causes keeps the HSE review.
+
+**What changed in version 0.28 (0.27 → 0.28)**
 - §1.6 "UAT 15": the area that completed a cause's work; PPE on a hazard and its review date defaulting to today; every risk assessment shown under its button; month figures larger and coloured better/worse; the food safety investigation states; toolbox talks held again counted when held; legal deadline tasks to coordinators too; the batch code keeping the HSE review; course feedback questions on quizzes.
 
 **What changed in version 0.27 (0.26 → 0.27)**
@@ -440,6 +443,16 @@ UAT 14 (built; no migration)
 - The HSE dashboard: on the four injury boxes and on Injuries by month, Near misses, Corrective actions raised and Hazard assessments, a small count for this month (December, when looking back at a past year) with an arrow — up dark green, down dark red, a dash for the same — against the month before, each counted as its own figure is. The words are on hover and for screen readers.
 - The Food Safety dashboard (beside the HSE dashboard's title): food-safety near misses this year; this month's with last month's and the change in per cent; the risk ratings by each near miss's latest Food Safety Risk Assessment, each opening the Food Safety Risk register at that band; the investigations open (reported or being investigated), pending (waiting to be closed) and closed; the corrective actions raised on food-safety near misses — created, completed, outstanding, each opening the near misses they were raised on; the near misses by month; and the average days to resolve, worked out as for all incidents (report sent to last close, over the closed ones). A food-safety near miss is the Near Miss — Food Safety type or any near miss in the Food Safety category; drafts are not counted. The incident register takes the same rule as a filter, so every figure opens exactly what it counted.
 
+Review of UAT 15 (built; no migration)
+
+- A signed investigation is un-signed only when what it says changes. The investigation page saves everything on every save, so a save that changed only the batch code used to un-sign it and withdraw HSE's review; now both stay. The investigator's name is the one they had when named.
+- A toolbox talk held again counts in the month it was held on the supervisor's monthly list as well as the tracker. The audit pack's completion rate is of the talks handed out; talks held again are shown apart, in the period they were held.
+- A quiz with course feedback questions only passes when handed in (there is nothing to mark); a question with a right answer is worth at least one point.
+- A quiz's course feedback takes each person's most recent answer to each question, from whichever attempt gave it; the comments are listed alphabetically.
+- A legal deadline escalated before coordinators were tasked gets its coordinator task at the next sweep, without a new email.
+- The Food Safety dashboard's lists say what each investigation state means.
+- Before go-live every test email is deleted, with no copy kept (decided 17 November: everything to date is testing).
+
 UAT 15 (built; migration 0113)
 
 - A food-safety investigation's immediate cause records the plant area that completed the work, picked as Where did this happen is, its path kept as it read when picked (ehs_causes.completed_by_location_id/_path). A department recorded before stays on the cause and is shown until an area is picked.
@@ -449,7 +462,7 @@ UAT 15 (built; migration 0113)
 - The Food Safety dashboard's investigations: Open (reported, the investigation not signed), Under investigation (signed, not yet closed — where it waits while its corrective actions are completed and verified), Closed. The incident register takes the same investigation_signed filter, so each opens what it counted.
 - A toolbox talk held again counts in the tracker in the month it was held; a talk's completion counts the people it was handed to.
 - A legal deadline's task goes to the HSE Coordinator as well as the HSE Manager; recording the filing closes both.
-- Adding or changing only the product batch code keeps the HSE review; any other change to the incident, its investigation or its causes still withdraws it (a save that changes nothing does not).
+- Adding or changing only the product batch code keeps the HSE review; any other change to the incident, its investigation or its causes still withdraws it (a save that changes nothing does not). A corrective action raised on a cause is follow-up, not a change to the investigation's findings, and keeps the review (decided 17 November).
 - Quizzes can carry course feedback questions: a 1–4 star rating (Below Average, Average, Good, Excellent), Excellent / Good / Average / Poor / N/A, and a comment box. They have no right answer, are never marked or counted towards the pass mark, may be skipped, and are summed up in the quiz's results — counts, the average rating, and the comments, without names.
 
 UAT 14, hazards (built; migration 0112)
@@ -665,6 +678,7 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | 0.26 | 2026-11-16 | Review of UAT 13 and 14: toolbox talks held again, the Section B rule, JHSC sent again, filings, anonymous assessments, causes' departments, quiz copies, the register's year, email placeholders (§1.6). |
 | 0.27 | 2026-11-16 | UAT 14, hazards: owner and review date at the top, staff who helped, equipment under Where, no immediate causes, the risk assessment on the form; hazard corrective actions closed on the dashboard (§1.6). |
 | 0.28 | 2026-11-17 | UAT 15: area that completed the work, hazard PPE and review date, risk assessments under their button, month figures and colours, food safety investigation states, toolbox month, coordinators' deadline tasks, batch code and HSE review, course feedback questions (§1.6). |
+| 0.29 | 2026-11-17 | Review of UAT 15: signatures kept through unchanged saves, toolbox talks held again on the monthly list and audit pack, feedback-only quizzes, course feedback by person, coordinators' tasks topped up, corrective actions and the HSE review (§1.6). |
 
 ---
 
