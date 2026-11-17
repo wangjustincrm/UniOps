@@ -213,8 +213,10 @@ export function DataTable<T>({
     </button>
   )
 
-  // The first row that has details (its ▸ is the tip's).
-  const firstDetailId = expand ? table.getRowModel().rows.find((r) => expand(r.original) !== null)?.id : undefined
+  // The tips' rows: the first row shown (a folded group's rows are not), the first shown one with details.
+  const shownRows = table.getRowModel().rows.filter((_, i, all) => !groupsAt(i, all).rowHidden)
+  const firstRowId = shownRows[0]?.id
+  const firstDetailId = expand ? shownRows.find((r) => expand(r.original) !== null)?.id : undefined
   const pager = pagination && pagination.total > 0 ? (cards ? <TourMark help="list.pages" slot="list.pages" className="inline-flex"><CompactPager {...pagination} /></TourMark> : (<TourMark help="list.pages" slot="list.pages" className="inline-flex">
     <Pagination
       page={pagination.page}
@@ -285,7 +287,7 @@ export function DataTable<T>({
                     </li>
                   ))}
                   {!rowHidden && (
-                    <li ref={i === 0 && onRowClick ? rowStop.attach : undefined} data-help={i === 0 && onRowClick ? 'list.rowOpen' : undefined} {...rowData} data-row-card data-highlight={flash || undefined}
+                    <li ref={r.id === firstRowId && onRowClick ? rowStop.attach : undefined} data-help={r.id === firstRowId && onRowClick ? 'list.rowOpen' : undefined} {...rowData} data-row-card data-highlight={flash || undefined}
                       onClick={onRowClick ? (e) => { if (clickOpensRow(e)) onRowClick(r.original) } : undefined}
                       tabIndex={onRowClick ? 0 : undefined}
                       onKeyDown={onRowClick ? (e) => {
@@ -467,7 +469,7 @@ export function DataTable<T>({
                     <Fragment key={r.id}>
                     <tr
                       key={r.id}
-                      ref={i === 0 && onRowClick ? rowStop.attach : undefined} data-help={i === 0 && onRowClick ? 'list.rowOpen' : undefined}
+                      ref={r.id === firstRowId && onRowClick ? rowStop.attach : undefined} data-help={r.id === firstRowId && onRowClick ? 'list.rowOpen' : undefined}
                       {...rowData}
                       data-highlight={flash || undefined}
                       onClick={onRowClick ? (e) => { if (clickOpensRow(e)) onRowClick(r.original) } : undefined}
