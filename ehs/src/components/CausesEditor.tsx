@@ -12,9 +12,8 @@
  * `causesPayload` and spend their drafts through `spendActionDrafts`, so the two
  * rules that are easy to get subtly wrong are written once.
  */
+import { LocationSelect } from '@/components/LocationSelect'
 import { Link } from 'react-router-dom'
-import { api } from '@/lib/api'
-import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
 import {
@@ -38,6 +37,9 @@ export interface CauseDraft {
   /** UAT 13, food safety: the department that completed the work, and when. */
   completed_by_department_id?: string | null
   completed_by_department_name?: string | null
+  /** UAT 15, TC-05: the plant area that completed the work. */
+  completed_by_location_id?: string | null
+  completed_by_location_path?: string | null
   completed_on?: string | null
   /** Raised with the cause when it is filled in. Root causes only: an immediate
    *  cause describes what happened, not work to do. */
@@ -58,6 +60,7 @@ export function causesPayload(causes: CauseDraft[]) {
       label: c.label,
       note: c.note || null,
       completed_by_department_id: c.completed_by_department_id || null,
+      completed_by_location_id: c.completed_by_location_id || null,
       completed_on: c.completed_on || null,
       action: c.action && actionIsComplete(c.action)
         ? {
@@ -110,12 +113,6 @@ export function CausesEditor({
    *  department that completed the work and the date it was completed." */
   withCompletion?: boolean
 }) {
-  const departments = useQuery({
-    queryKey: ['settings', 'departments'],
-    queryFn: () => api.get<{ id: string; name: string }[]>('/api/v1/settings/departments'),
-    enabled: withCompletion,
-    staleTime: 10 * 60_000,
-  })
   const update = (i: number, patch: Partial<CauseDraft>) =>
     onChange(causes.map((x, j) => (j === i ? { ...x, ...patch } : x)))
   const remove = (i: number) => onChange(causes.filter((_, j) => j !== i))
@@ -154,25 +151,23 @@ export function CausesEditor({
           />
           {withCompletion && (
             <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_11rem]">
-              <label className="text-xs font-medium text-neutral-700">
-                Department that completed the work
-                <select
-                  className="mt-1 min-h-[38px] w-full rounded-md border border-neutral-200 bg-white px-2 text-sm"
-                  value={c.completed_by_department_id ?? ''}
-                  onChange={(e) => update(i, {
-                    completed_by_department_id: e.target.value || null,
-                    completed_by_department_name:
-                      departments.data?.find((d) => d.id === e.target.value)?.name ?? null,
-                  })}>
-                  <option value="">Not done yet</option>
-                  {/* Kept as it read when it was picked, if that department has since gone. */}
-                  {c.completed_by_department_id
-                    && !departments.data?.some((d) => d.id === c.completed_by_department_id) && (
-                    <option value={c.completed_by_department_id}>{c.completed_by_department_name ?? 'A department no longer listed'}</option>
-                  )}
-                  {(departments.data ?? []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
-              </label>
+              {/* ★ UAT 15, TC-05: "make the 'department that completed the
+                  work' picker the same as 'Where did this happen' picker." The
+                  plant area, picked the same way. A department recorded before
+                  this round is still shown until an area is picked. */}
+              <div className="text-xs font-medium text-neutral-700">
+                Area that completed the work
+                <div className="mt-1">
+                  <LocationSelect value={c.completed_by_location_id ?? null}
+                                  onChange={(id) => update(i, { completed_by_location_id: id ?? null,
+                                                                completed_by_location_path: null })} />
+                </div>
+                {!c.completed_by_location_id && c.completed_by_department_name && (
+                  <p className="mt-1 font-normal text-neutral-500">
+                    Recorded before as: {c.completed_by_department_name}
+                  </p>
+                )}
+              </div>
               <label className="text-xs font-medium text-neutral-700">
                 Date completed
                 <input type="date" value={c.completed_on ?? ''}

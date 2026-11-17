@@ -115,6 +115,9 @@ async def _apply_lists(db: AsyncSession, fields: dict, hazard: Hazard | None = N
     if controls is not None:
         fields["hazard_controls"] = await _picked(db, "hazard_control", controls,
                                                   hazard.hazard_controls if hazard else None)
+    ppe = fields.pop("hazard_ppe_ids", None)
+    if ppe is not None:
+        fields["hazard_ppe"] = await _picked(db, "ppe", ppe, hazard.hazard_ppe if hazard else None)
     helper_ids = fields.pop("helper_ids", None)
     if helper_ids is not None:
         fields["helpers"] = await _helpers(db, helper_ids, hazard.helpers if hazard else None)
@@ -242,6 +245,7 @@ async def create_hazard(db: AsyncSession, payload: dict, *, creator_id: uuid.UUI
             if payload.get("hazard_type_id") else []),
         hazard_controls=payload.get("hazard_controls") or [],
         helpers=payload.get("helpers") or [],
+        hazard_ppe=payload.get("hazard_ppe") or [],
         location_id=payload.get("location_id"),
         location_path=path, department_id=dept_id, department_name=dept_name,
         equipment_id=payload.get("equipment_id"),

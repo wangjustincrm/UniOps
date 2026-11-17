@@ -50,6 +50,8 @@ class HazardIn(BaseModel):
     # When sent, the first kind becomes `hazard_type_id` too.
     hazard_type_ids: list[uuid.UUID] | None = Field(default=None, max_length=30)
     hazard_control_ids: list[uuid.UUID] | None = Field(default=None, max_length=60)
+    # UAT 15, TC-15: PPE from HSE's list.
+    hazard_ppe_ids: list[uuid.UUID] | None = Field(default=None, max_length=40)
     location_id: uuid.UUID | None = None
     equipment_id: uuid.UUID | None = None
     existing_controls: str | None = None
@@ -90,6 +92,7 @@ class HazardOut(BaseModel):
     hazard_type_label: str | None
     hazard_types: list = Field(default_factory=list)
     hazard_controls: list = Field(default_factory=list)
+    hazard_ppe: list = Field(default_factory=list)
     location_id: uuid.UUID | None
     location_path: str | None
     department_name: str | None

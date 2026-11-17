@@ -277,6 +277,10 @@ class Cause(UUIDPrimaryKey, TimestampMixin, Base):
     # name is kept as it read when picked, as every reference on a signed record.
     completed_by_department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     completed_by_department_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # ★ UAT 15, TC-05: the plant area that completed the work, picked as Where
+    # is; its path kept as it read when picked (migration 0113).
+    completed_by_location_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    completed_by_location_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     completed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 

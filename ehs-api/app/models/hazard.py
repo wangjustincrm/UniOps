@@ -111,6 +111,9 @@ class Hazard(UUIDPrimaryKey, TimestampMixin, Base):
     # [{id, name}], the name as it read when picked (migration 0112).
     helpers: Mapped[list] = mapped_column(JSONB, nullable=False, default=list,
                                           server_default="[]")
+    # ★ UAT 15, TC-15: PPE picked from HSE's list, beside the controls (0113).
+    hazard_ppe: Mapped[list] = mapped_column(JSONB, nullable=False, default=list,
+                                             server_default="[]")
 
 
 class Jsa(UUIDPrimaryKey, TimestampMixin, Base):

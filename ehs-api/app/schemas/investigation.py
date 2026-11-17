@@ -115,6 +115,8 @@ class CauseIn(BaseModel):
     note: str | None = None
     # UAT 13: on a food-safety investigation's immediate causes.
     completed_by_department_id: uuid.UUID | None = None
+    # UAT 15, TC-05: the area that completed the work.
+    completed_by_location_id: uuid.UUID | None = None
     completed_on: date | None = None
     # Raised with it. Ignored when this cause already has one of the same title,
     # so saving the investigation a second time does not raise a duplicate.
@@ -183,6 +185,8 @@ class CauseOut(BaseModel):
     sort_order: int
     completed_by_department_id: uuid.UUID | None = None
     completed_by_department_name: str | None = None
+    completed_by_location_id: uuid.UUID | None = None
+    completed_by_location_path: str | None = None
     completed_on: date | None = None
     actions: list[CauseActionOut] = Field(default_factory=list)
     # True when a root cause has nothing being done about it. The detail screen

@@ -104,6 +104,9 @@ async def replace(
     # rewrites the rows; a department not changed keeps the name recorded.
     recorded_dept = {c.completed_by_department_id: c.completed_by_department_name
                      for c in existing if c.completed_by_department_id}
+    # UAT 15, TC-05: and the area, as its path read when picked.
+    recorded_area = {c.completed_by_location_id: c.completed_by_location_path
+                     for c in existing if c.completed_by_location_id}
 
     for cause in existing:
         if cause.id not in attached:
@@ -129,6 +132,9 @@ async def replace(
         dept_id = getattr(item, "completed_by_department_id", None)
         done_by = ((dept_id, recorded_dept[dept_id]) if dept_id in recorded_dept
                    else await _department(db, dept_id))
+        area_id = getattr(item, "completed_by_location_id", None)
+        done_in = ((area_id, recorded_area[area_id]) if area_id in recorded_area
+                   else await _area(db, area_id))
         if kept is not None:
             kept.cause_type = item.cause_type
             kept.vocabulary_item_id = item.vocabulary_item_id
@@ -136,6 +142,7 @@ async def replace(
             kept.note = item.note
             kept.sort_order = order
             kept.completed_by_department_id, kept.completed_by_department_name = done_by
+            kept.completed_by_location_id, kept.completed_by_location_path = done_in
             kept.completed_on = getattr(item, "completed_on", None)
             result.append(kept)
             continue
@@ -150,6 +157,8 @@ async def replace(
             sort_order=order,
             completed_by_department_id=done_by[0],
             completed_by_department_name=done_by[1],
+            completed_by_location_id=done_in[0],
+            completed_by_location_path=done_in[1],
             completed_on=getattr(item, "completed_on", None),
         )
         db.add(cause)
@@ -215,6 +224,19 @@ async def actions_by_cause(
             continue
         grouped.setdefault(action.cause_id, []).append(action)
     return grouped
+
+
+async def _area(db, location_id) -> tuple:
+    """(id, path as it reads now) for the area that completed the work. An id
+    that names no area is refused, not stored."""
+    if location_id is None:
+        return None, None
+    from fastapi import HTTPException, status as http
+    from app.models.mirrors import Location
+    loc = await db.get(Location, location_id)
+    if loc is None:
+        raise HTTPException(http.HTTP_422_UNPROCESSABLE_ENTITY, "That area is not on the list")
+    return loc.id, loc.path
 
 
 async def _department(db, department_id) -> tuple:
