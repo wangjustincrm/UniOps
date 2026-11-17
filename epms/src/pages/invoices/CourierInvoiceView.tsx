@@ -19,7 +19,7 @@ import {
   freightAttachmentService, type FreightInvoice, type FreightLine, type FreightLineUpdateBody,
 } from '@/services/freight'
 import {
-  CHARGE_TYPE_LABEL, CostCenterSelect, FreightInvoiceStatusBadge, INPUT_SM_CLS, MatchBadge, SELECT_SM_CLS,
+  CHARGE_TYPE_LABEL, CostCenterSelect, FreightInvoiceStatusBadge, INPUT_SM_CLS, MatchBadge, ProjectBadge, SELECT_SM_CLS,
   TH_CLS, cents, errorMessage, num,
 } from '@/pages/freight/freightUi'
 import { useStaticTabNav } from '@/hooks/useStaticTabNav'
@@ -241,7 +241,7 @@ export function CourierInvoiceView({ id }: { id: string }) {
                 {pending.map((s) => (
                   <span key={s.id} className="rounded-md border border-neutral-200 bg-neutral-50 px-2 py-1 text-xs">
                     <span className="font-mono text-neutral-700">{s.tracking_no}</span>
-                    <span className="ml-1.5 text-neutral-400">{s.cost_center_code ?? ''} · {formatDate(s.created_at)}</span>
+                    <span className="ml-1.5 text-neutral-400">{s.is_project ? 'Project' : (s.cost_center_code ?? '')} · {formatDate(s.created_at)}</span>
                   </span>
                 ))}
               </div>
@@ -364,7 +364,7 @@ function LineRow({
   busy: boolean
   anchors: FreightLine[]
   lineNo: Map<string, number>
-  pending: { id: string; tracking_no: string; cost_center_code: string | null }[]
+  pending: { id: string; tracking_no: string; cost_center_code: string | null; is_project: boolean }[]
   costCenters: Parameters<typeof CostCenterSelect>[0]['costCenters']
   departments: Parameters<typeof CostCenterSelect>[0]['departments']
   onPatch: (line: FreightLine, body: FreightLineUpdateBody) => void
@@ -390,7 +390,7 @@ function LineRow({
 
   const others = l.package_tracking_nos.filter((p) => p !== l.tracking_no)
   const needsAttention = l.match_status === 'unmatched' || l.match_status === 'duplicate_billing' ||
-    (l.match_status === 'unregistered' && !l.cost_center_id)
+    l.match_status === 'project' || (l.match_status === 'unregistered' && !l.cost_center_id)
   const followable = anchors.filter((a) => a.id !== l.id)
   const canLinkShipment = editable && (l.charge_type === 'shipment' || l.charge_type === 'adjustment') &&
     !l.shipment_id && pending.length > 0
@@ -427,6 +427,19 @@ function LineRow({
       <td className="px-3 py-2.5">
         <MatchBadge status={l.match_status} previouslyBilledOn={l.previously_billed_on} />
         {l.linked_line_id && <div className="mt-1 text-[10px] text-neutral-500">Follows line #{lineNo.get(l.linked_line_id) ?? '?'}</div>}
+        {l.shipment_project_info && (
+          <div className="mt-1 max-w-48 text-[11px] text-neutral-600">
+            <ProjectBadge className="mr-1" />{l.shipment_project_info}
+          </div>
+        )}
+        {editable && l.match_status === 'project' && (
+          <button onClick={() => l.cost_center_id && onPatch(l, { cost_center_id: l.cost_center_id })}
+            disabled={busy || !l.cost_center_id}
+            title={l.cost_center_id ? undefined : 'Choose the cost center first'}
+            className="mt-1 block text-[11px] font-medium text-primary-700 hover:underline disabled:opacity-40">
+            {l.cost_center_code ? `Confirm ${l.cost_center_code}` : 'Confirm cost center'}
+          </button>
+        )}
         {editable && l.match_status === 'duplicate_billing' && (
           <button onClick={() => l.cost_center_id && onPatch(l, { cost_center_id: l.cost_center_id })}
             disabled={busy || !l.cost_center_id}
@@ -464,7 +477,7 @@ function LineRow({
                   className={cn(SELECT_SM_CLS, 'h-7 flex-1 text-[11px]')}>
                   <option value="">Registered under another number…</option>
                   {pending.map((s) => (
-                    <option key={s.id} value={s.id}>{s.tracking_no}{s.cost_center_code ? ` · ${s.cost_center_code}` : ''}</option>
+                    <option key={s.id} value={s.id}>{s.tracking_no}{s.is_project ? ' · Project' : s.cost_center_code ? ` · ${s.cost_center_code}` : ''}</option>
                   ))}
                 </select>
               </label>

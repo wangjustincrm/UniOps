@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import { useVendors } from '@/hooks/useVendors'
-import { useFreightCarriersAll, useSaveCarrier } from '@/hooks/useFreight'
+import { useFreightCarriersAll, useFreightSettings, useSaveCarrier, useSaveFreightSettings } from '@/hooks/useFreight'
 import type { FreightCarrier } from '@/services/freight'
 import { CostCenterSelect, Modal, SELECT_CLS, TH_CLS, errorMessage } from './freightUi'
 import { SortTh, useSortableRows } from '@uniops/shell'
@@ -33,6 +33,7 @@ export function CarriersTab() {
   })
 
   return (
+    <div className="flex flex-col gap-4">
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
       <div className="flex items-center justify-between gap-3 border-b border-neutral-100 px-5 py-4">
         <p className="text-sm text-neutral-500">
@@ -91,6 +92,46 @@ export function CarriersTab() {
           onClose={() => setEditing(null)}
         />
       )}
+    </div>
+    <ProjectFreightSetting costCenters={costCenters} departments={departments} />
+    </div>
+  )
+}
+
+/** The cost center pre-filled on a courier invoice line that bills a
+ *  "Project related" shipment (FRT-019); the matcher confirms or changes it. */
+function ProjectFreightSetting({ costCenters, departments }: {
+  costCenters: Parameters<typeof CostCenterSelect>[0]['costCenters']
+  departments: Parameters<typeof CostCenterSelect>[0]['departments']
+}) {
+  const { data: settings, isPending } = useFreightSettings()
+  const save = useSaveFreightSettings()
+  const [error, setError] = useState<string | null>(null)
+  const change = (id: string) => {
+    if (save.isPending) return
+    setError(null)
+    save.mutate(id || null, { onError: (e) => setError(errorMessage(e, 'Could not save the setting')) })
+  }
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white px-5 py-4 shadow-sm">
+      <h3 className="text-sm font-semibold text-neutral-800">Project freight</h3>
+      <p className="mt-0.5 text-xs text-neutral-500">
+        A shipment registered as <em>Project related</em> has no cost center. When the carrier&apos;s invoice is
+        matched, its line is pre-filled with this cost center and the person matching confirms or changes it.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <label className="text-xs font-medium text-neutral-700">Default cost center</label>
+        {isPending ? <Loader2 className="h-4 w-4 animate-spin text-neutral-300" /> : (
+          <CostCenterSelect
+            value={settings?.project_cost_center_id ?? ''} onChange={change}
+            costCenters={costCenters} departments={departments}
+            disabled={save.isPending} placeholder="None — the matcher picks one"
+            className={`${SELECT_CLS} min-w-72`}
+          />
+        )}
+        {save.isPending && <span className="text-xs text-neutral-400">Saving…</span>}
+      </div>
+      {error && <p className="mt-2 text-xs text-danger-600">{error}</p>}
     </div>
   )
 }

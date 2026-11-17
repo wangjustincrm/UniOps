@@ -6,7 +6,7 @@ import { NotFoundState } from '@/components/shared/NotFoundState'
 import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/utils'
 import { useFreightShipment } from '@/hooks/useFreight'
-import { ShipmentStatusBadge } from './freightUi'
+import { ProjectBadge, ShipmentStatusBadge } from './freightUi'
 import { ShipmentAttachmentsPanel } from './ShipmentAttachments'
 import { ShipmentDialog } from './ShipmentsTab'
 
@@ -74,10 +74,18 @@ export default function ShipmentDetailPage() {
           <Field label="Direction">
             {s.direction === 'outbound' ? 'Outbound (we send)' : 'Inbound (sent to us, we pay)'}
           </Field>
-          <Field label="Department">{s.department_name ?? '—'}</Field>
-          <Field label="Cost Center">
-            {s.cost_center_code ? `${s.cost_center_code} — ${s.cost_center_name ?? ''}` : '—'}
-          </Field>
+          {s.is_project ? (
+            <Field label="Project">
+              <ProjectBadge className="mr-1.5" />
+              <span className="whitespace-pre-wrap">{s.project_info}</span>
+              <div className="mt-0.5 text-xs text-neutral-400">The cost center is set when the carrier's invoice is matched</div>
+            </Field>
+          ) : (<>
+            <Field label="Department">{s.department_name ?? '—'}</Field>
+            <Field label="Cost Center">
+              {s.cost_center_code ? `${s.cost_center_code} — ${s.cost_center_name ?? ''}` : '—'}
+            </Field>
+          </>)}
           <Field label="Recorded">
             {s.source === 'from_invoice' ? 'Added while matching an invoice' : 'Registered at ship time'}
           </Field>

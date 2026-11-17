@@ -17,7 +17,7 @@ import {
   type DefaultCostCenter, type Direction, type FreightShipment, type ShipmentStatus,
 } from '@/services/freight'
 import {
-  CostCenterSelect, Modal, SELECT_CLS, ShipmentStatusBadge, TH_CLS, daysSince, errorMessage,
+  CostCenterSelect, Modal, ProjectBadge, SELECT_CLS, ShipmentStatusBadge, TH_CLS, daysSince, errorMessage,
 } from './freightUi'
 import { SortTh, useSort, sortParams } from '@uniops/shell'
 import { ShipmentAttachmentsPanel, StagedShipmentAttachments } from './ShipmentAttachments'
@@ -153,10 +153,21 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
                       </td>
                       <td className="px-3 py-2.5 text-xs text-neutral-600 capitalize">{s.direction}</td>
                       <td className="px-3 py-2.5 text-xs">
-                        <div className="text-neutral-800">{s.department_name ?? '—'}</div>
-                        <div className="text-neutral-500">
-                          {s.cost_center_code ? `${s.cost_center_code} — ${s.cost_center_name ?? ''}` : '—'}
-                        </div>
+                        {s.is_project ? (
+                          <>
+                            <ProjectBadge />
+                            <div className="mt-0.5 max-w-56 truncate text-neutral-600" title={s.project_info ?? ''}>
+                              {s.project_info}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-neutral-800">{s.department_name ?? '—'}</div>
+                            <div className="text-neutral-500">
+                              {s.cost_center_code ? `${s.cost_center_code} — ${s.cost_center_name ?? ''}` : '—'}
+                            </div>
+                          </>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 text-xs text-neutral-600">{s.created_by_name ?? '—'}</td>
                       <td className="px-3 py-2.5 text-xs text-neutral-500 whitespace-nowrap">
@@ -233,6 +244,10 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
   const [departmentId, setDepartmentId] = useState(shipment?.department_id ?? '')
   const [costCenterId, setCostCenterId] = useState(shipment?.cost_center_id ?? '')
   const [direction, setDirection] = useState<Direction>(shipment?.direction ?? 'outbound')
+  // "Project related": no department / cost center, the project details instead
+  // (FRT-019). The cost center is chosen when the carrier's invoice is matched.
+  const [isProject, setIsProject] = useState(shipment?.is_project ?? false)
+  const [projectInfo, setProjectInfo] = useState(shipment?.project_info ?? '')
   const [note, setNote] = useState(shipment?.note ?? '')
   const [defaultInfo, setDefaultInfo] = useState<DefaultCostCenter | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -328,7 +343,7 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
   }
 
   const ccOutsideBudget =
-    !!costCenterId && !!defaultInfo && defaultInfo.budgeted_cost_center_ids.length > 0 &&
+    !isProject && !!costCenterId && !!defaultInfo && defaultInfo.budgeted_cost_center_ids.length > 0 &&
     !defaultInfo.budgeted_cost_center_ids.includes(costCenterId)
 
   const save = (addAnother: boolean) => {
@@ -336,7 +351,11 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
     setError(null)
     if (!carrierId) return setError('Choose the carrier.')
     if (!tracking.trim()) return setError('Enter the tracking number.')
-    if (!costCenterId) return setError('Choose the cost center that pays for this shipment.')
+    if (isProject) {
+      if (!projectInfo.trim()) return setError('Enter the project details.')
+    } else if (!costCenterId) {
+      return setError('Choose the cost center that pays for this shipment.')
+    }
     if (ccOutsideBudget) {
       // Asked in-page (was the browser's confirm); the dialog closes at once
       // and the save reports on the form as before.
@@ -359,7 +378,10 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
           id: shipment.id,
           body: {
             tracking_no: tracking.trim() !== shipment.tracking_no ? tracking.trim() : undefined,
-            cost_center_id: costCenterId !== shipment.cost_center_id ? costCenterId : undefined,
+            is_project: isProject !== shipment.is_project ? isProject : undefined,
+            project_info: isProject && projectInfo.trim() !== (shipment.project_info ?? '')
+              ? projectInfo.trim() : undefined,
+            cost_center_id: !isProject && costCenterId !== shipment.cost_center_id ? costCenterId : undefined,
             direction: direction !== shipment.direction ? direction : undefined,
             note: (note.trim() || null) !== (shipment.note ?? null) ? (note.trim() || null) : undefined,
           },
@@ -367,10 +389,11 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
         onClose()
         return
       }
-      const created = await createShipment.mutateAsync({
-        carrier_id: carrierId, tracking_no: tracking.trim(), cost_center_id: costCenterId,
-        direction, note: note.trim() || null,
-      })
+      const created = await createShipment.mutateAsync(isProject
+        ? { carrier_id: carrierId, tracking_no: tracking.trim(), is_project: true,
+            project_info: projectInfo.trim(), direction, note: note.trim() || null }
+        : { carrier_id: carrierId, tracking_no: tracking.trim(), cost_center_id: costCenterId,
+            direction, note: note.trim() || null })
       // The shipment is saved; now its files. A failed file does not undo the
       // shipment — the user is told which ones to add again from View.
       const toAttach: { file: File; kind: 'waybill' | 'other' }[] = [
@@ -400,8 +423,8 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
       setLabelFile(null)
       setExtraFiles([])
       if (addAnother) {
-        // Keep carrier / department / cost center / direction — the usual case
-        // is several parcels to the same place at once.
+        // Keep carrier / department / cost center (or project) / direction —
+        // the usual case is several parcels to the same place at once.
         setSavedCount((n) => n + 1)
         setTracking('')
         setNote('')
@@ -462,6 +485,26 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
           {scanMsg && <p className="text-xs text-warning-600">{scanMsg}</p>}
         </div>
 
+        <label className="flex items-start gap-2 text-sm text-neutral-700">
+          <input type="checkbox" className="mt-0.5" checked={isProject}
+            onChange={(e) => setIsProject(e.target.checked)} />
+          <span>
+            Project related
+            <span className="block text-xs text-neutral-400">
+              The freight belongs to a project — no department or cost center; the cost center is set when the carrier's invoice is matched.
+            </span>
+          </span>
+        </label>
+
+        {isProject ? (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-neutral-700">Project *</label>
+            <textarea rows={2} value={projectInfo} onChange={(e) => setProjectInfo(e.target.value)}
+              maxLength={1000}
+              placeholder="Project name / number, and what was sent for it"
+              className="w-full resize-none rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+          </div>
+        ) : (<>
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-neutral-700">Department *</label>
@@ -485,6 +528,7 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
         {ccOutsideBudget && (
           <p className="-mt-2 text-xs text-warning-600">This cost center has no freight budget this year.</p>
         )}
+        </>)}
 
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-neutral-700">Direction</label>

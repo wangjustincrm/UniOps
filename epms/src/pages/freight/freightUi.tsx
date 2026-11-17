@@ -63,6 +63,15 @@ export function DirectRouteBadge({ className }: { className?: string }) {
   )
 }
 
+/** Marks a project-related shipment (FRT-019) wherever its department / cost center would show. */
+export function ProjectBadge({ className }: { className?: string }) {
+  return (
+    <span className={cn('inline-flex items-center rounded-full border border-info-200 bg-info-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-info-700', className)}>
+      Project
+    </span>
+  )
+}
+
 export function MatchBadge({ status, previouslyBilledOn }: { status: MatchStatus | string; previouslyBilledOn?: string | null }) {
   switch (status) {
     case 'auto':
@@ -81,6 +90,8 @@ export function MatchBadge({ status, previouslyBilledOn }: { status: MatchStatus
       )
     case 'unmatched':
       return <Badge variant="warning">Needs a cost center</Badge>
+    case 'project':
+      return <Badge variant="warning">Project — confirm cost center</Badge>
     default:
       return <Badge variant="neutral">{status}</Badge>
   }

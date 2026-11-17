@@ -16,6 +16,8 @@ export type ShipmentStatus = 'pending' | 'billed' | 'void'
 export type FreightInvoiceStatus = 'unmatched' | 'matched' | 'paid' | string
 export type MatchStatus =
   | 'auto' | 'manual' | 'default' | 'unregistered' | 'duplicate_billing' | 'unmatched'
+  /** Matched a project-related shipment: cost center pre-filled, the matcher confirms it. */
+  | 'project'
 
 export interface FreightAccess {
   register: boolean
@@ -49,11 +51,15 @@ export interface FreightShipment {
   tracking_no: string
   direction: Direction
   ship_date: string | null
-  cost_center_id: string
+  /** null for a project-related shipment. */
+  cost_center_id: string | null
   cost_center_code: string | null
   cost_center_name: string | null
-  department_id: string
+  department_id: string | null
   department_name: string | null
+  /** "Project related": no department / cost center, project_info instead. */
+  is_project: boolean
+  project_info: string | null
   note: string | null
   attachment_key: string | null
   source: string
@@ -97,9 +103,12 @@ export interface ShipmentFilters {
 export interface ShipmentCreateBody {
   carrier_id: string
   tracking_no: string
-  cost_center_id: string
+  /** Required unless is_project; omitted when is_project. */
+  cost_center_id?: string
   direction: Direction
   note?: string | null
+  is_project?: boolean
+  project_info?: string | null
 }
 
 export interface ShipmentUpdateBody {
@@ -107,6 +116,16 @@ export interface ShipmentUpdateBody {
   cost_center_id?: string
   direction?: Direction
   note?: string | null
+  is_project?: boolean
+  project_info?: string
+}
+
+/** Freight → Carriers settings (FRT-019). */
+export interface FreightSettings {
+  project_cost_center_id: string | null
+  project_cost_center_code: string | null
+  project_cost_center_name: string | null
+  project_department_name: string | null
 }
 
 export interface DefaultCostCenter {
@@ -134,6 +153,8 @@ export interface FreightLine {
   department_name: string | null
   match_status: MatchStatus
   previously_billed_on: string | null
+  /** The matched shipment's project details when it is project related. */
+  shipment_project_info: string | null
 }
 
 export interface CostCenterTotal {
@@ -265,6 +286,11 @@ export const freightService = {
 
   updateCarrier: (id: string, body: Partial<Omit<CarrierBody, 'vendor_id' | 'code'>> & { is_active?: boolean }) =>
     api.patch<FreightCarrier>(`/freight/carriers/${id}`, body),
+
+  settings: () => api.get<FreightSettings>('/freight/settings'),
+
+  updateSettings: (body: { project_cost_center_id: string | null }) =>
+    api.put<FreightSettings>('/freight/settings', body),
 
   defaultCostCenter: (departmentId: string) =>
     api.get<DefaultCostCenter>('/freight/default-cost-center', { department_id: departmentId }),

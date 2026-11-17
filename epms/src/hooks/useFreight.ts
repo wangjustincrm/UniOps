@@ -19,6 +19,7 @@ import {
 // invalidation can refresh the whole page family when needed.
 const K = {
   me: ['freight', 'me'] as const,
+  settings: ['freight', 'settings'] as const,
   carriers: ['freight', 'carriers'] as const,
   shipments: ['freight', 'shipments'] as const,
   // Under K.shipments so every list/detail invalidation also refreshes these.
@@ -31,6 +32,19 @@ const K = {
 
 export function useFreightAccess() {
   return useQuery({ queryKey: K.me, queryFn: () => freightService.me(), staleTime: 60_000 })
+}
+
+export function useFreightSettings(enabled = true) {
+  return useQuery({ queryKey: K.settings, queryFn: () => freightService.settings(), enabled })
+}
+
+export function useSaveFreightSettings() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (projectCostCenterId: string | null) =>
+      freightService.updateSettings({ project_cost_center_id: projectCostCenterId }),
+    onSuccess: (data) => qc.setQueryData(K.settings, data),
+  })
 }
 
 export function useFreightCarriers(enabled = true) {
