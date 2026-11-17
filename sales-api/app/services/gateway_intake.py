@@ -329,7 +329,7 @@ class AuthorizeNetIntake:
                 await self._details_failed(conn, row_id, ext, readable(e), run_id)
                 continue
             except Exception as e:  # noqa: BLE001 — a shape this client cannot read: about this transaction only
-                await self._details_failed(conn, row_id, ext, f"{type(e).__name__}: {e}", run_id)
+                await self._details_failed(conn, row_id, ext, f"unexpected response shape ({type(e).__name__})", run_id)
                 continue
 
             async def write(uow, row_id=row_id, d=d) -> None:
