@@ -3,7 +3,7 @@ import { NavLink, useLocation, Routes, Route, Navigate } from 'react-router-dom'
 import { TabStoreProvider, TabBar, TabHost, TabRouterSync, useTabStore } from '@uniops/shell'
 import { moduleRoutes } from '@/app/routes'
 import {
-  Home, Building2, Plug, FileText, Activity, ShoppingCart, Package, Tags, Route as RouteIcon, Truck, Receipt, CreditCard, ArrowLeftRight, Warehouse, HeartPulse, Mail, Bell, Boxes,
+  Home, Building2, Plug, FileText, Activity, ShoppingCart, Package, Tags, Route as RouteIcon, Truck, Receipt, CreditCard, Landmark, ArrowLeftRight, Warehouse, HeartPulse, Mail, Bell, Boxes,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -52,6 +52,7 @@ const NAV: NavItem[] = [
   { label: 'Delivery confirmation', href: '/deliveries', icon: Truck, perm: 'sales.read', section: 'Invoicing' },
   { label: 'Invoices', href: '/invoices', icon: Receipt, perm: 'sales.read', section: 'Invoicing' },
   { label: 'Payments', href: '/payments', icon: CreditCard, perm: 'sales.read', section: 'Invoicing' },
+  { label: 'Settlements', href: '/settlements', icon: Landmark, perm: 'sales.read', section: 'Invoicing' },
   { label: 'Documents', href: '/documents', icon: FileText, perm: 'sales.read', section: 'Operations' },
   { label: 'Runs and log', href: '/runs', icon: Activity, perm: 'sales.read', section: 'Operations' },
   { label: 'Inventory', href: '/inventory', icon: Warehouse, perm: 'sales.read', section: 'Operations' },

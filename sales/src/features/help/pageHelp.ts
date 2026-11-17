@@ -53,6 +53,7 @@ export const EMPTY_TEXT = {
   invoices: 'An invoice is made when a delivery is confirmed.',
   transfers: 'Make a New transfer to send stock to the warehouse (Radiant).',
   payments: 'They are read from Shopify with its orders.',
+  settlements: 'They are read from Authorize.Net once its connection has a start date (Configuration → Connections).',
   documents: 'Every file read from or sent to a partner appears here.',
   inventory: 'Stock appears as transfers are received (944) and orders ship (945).',
   runs: 'Run now, or turn on automatic runs in Connections.',

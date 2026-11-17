@@ -13,17 +13,32 @@ sales_order_payments and sales_orders, nothing stored.
   list's totals and group subtotals add them up.
 - Order source: Subscription (Seal: a subscription_contract source or a seal_ tag) or One-off.
 - Issue: why Finance should look at the row (the Exceptions view), else empty.
+- From the gateway (Finance, user 2026-11-17; sales32): the gateway transaction matched to the
+  payment — its id (now also for Shopify's Authorize.Net app), status, card type, how it was matched
+  (AMOUNT_TIME is probable only) and the settlement it was paid out in (batch id and date). A
+  settled gateway transaction that is no Shopify payment is a row of its own (no order), so the
+  Exceptions view shows it; a Shopify Authorize.Net payment the gateway never settled, once the
+  gateway's data covers its date, is an issue too.
 """
 from __future__ import annotations
 
-from sqlalchemy import Date, Integer, Numeric, String, case, cast, func, literal, null, or_, select, union_all
+from sqlalchemy import Date, DateTime, Integer, Numeric, String, case, cast, func, literal, null, or_, select, union_all
 
 from app.db.base import Base
+from app.models.gateways import GatewaySettlement, GatewayTransaction
 from app.models.orders import Order
 from app.models.payments import OrderPayment
 
 ISSUES = ("Pending over 7 days", "Cancelled, not fully refunded", "Partially paid", "Failed on an open order",
-          "Paid, no payment")
+          "Paid, no payment", "Not settled in the gateway", "In the gateway, not in Shopify")
+# How the gateway transaction was matched, in words (domain/gateway_match.py's methods).
+MATCH_WORDS = {"TRANSACTION_ID": "Transaction ID", "SHOPIFY_PAYMENT_ID": "Shopify payment ID", "ORDER_NUMBER": "Order number",
+               "AMOUNT_TIME": "Amount and time (probable)"}
+MATCHES = tuple(MATCH_WORDS.values())
+# A payment this much older than the gateway's last settlement should have been settled by it.
+SETTLE_GRACE_DAYS = 3
+# The id of a gateway-only row: below every order's negative id.
+GATEWAY_ROW_OFFSET = 1_000_000_000
 METHODS = ("Authorize.Net", "PayPal", "AlphaPay", "Manual")
 KINDS = ("sale", "capture", "authorization", "refund", "void", "none")
 STATUSES = ("success", "pending", "failure", "error")
@@ -50,15 +65,35 @@ def _source(o):
                  "Subscription"), else_="One-off")
 
 
+def _gateway_columns(t, s):
+    words = case(*((t.match_method == k, v) for k, v in MATCH_WORDS.items()), else_=t.match_method)
+    return (t.status.label("gateway_status"), t.card_type.label("card_type"), words.label("match_method"),
+            s.id.label("settlement_id"), s.external_id.label("settlement_ref"), s.settled_at.label("settled_at"),
+            _local(s.settled_at, "day").label("settled_date"))
+
+
+def _no_gateway_columns():
+    return (cast(null(), String).label("gateway_status"), cast(null(), String).label("card_type"),
+            cast(null(), String).label("match_method"), cast(null(), Integer).label("settlement_id"),
+            cast(null(), String).label("settlement_ref"), cast(null(), DateTime(timezone=True)).label("settled_at"),
+            cast(null(), Date).label("settled_date"))
+
+
 def _customer(o):
     return func.coalesce(func.nullif(o.bill_to["name"].astext, ""), func.nullif(o.ship_to["name"].astext, ""))
 
 
-_P, _O = OrderPayment, Order
+_P, _O, _T, _S = OrderPayment, Order, GatewayTransaction, GatewaySettlement
 _cancelled = _O.source_cancelled_at.is_not(None)
 _at = func.coalesce(_P.processed_at, _P.created_at)
 _ok_in = _P.kind.in_(_SUCCESS_IN) & (_P.status == "success")
 _ok_refund = (_P.kind == "refund") & (_P.status == "success")
+_is_anet = func.lower(func.coalesce(_P.gateway, "")).in_(("authorize_net", "authorize.net"))
+# The stretch the gateway's settlements cover (none read: no issue is raised).
+_covered_from = select(func.min(_S.settled_at)).where(_S.gateway == "AUTHORIZE_NET").scalar_subquery()
+_covered_to = select(func.max(_S.settled_at)).where(_S.gateway == "AUTHORIZE_NET").scalar_subquery()
+_not_settled = (_is_anet & (_ok_in | _ok_refund) & _T.id.is_(None) & ~_P.test & (_at >= _covered_from)
+                & (_at < _covered_to - func.make_interval(0, 0, 0, SETTLE_GRACE_DAYS)))
 
 _PAYMENTS = (
     select(
@@ -69,8 +104,10 @@ _PAYMENTS = (
         case((_ok_refund, _P.amount), else_=0).label("refund_amount"),
         case((_ok_in, _P.amount), (_ok_refund, -_P.amount), else_=0).label("net_amount"),
         _at.label("processed_at"), _local(_at, "week").label("processed_week"), _local(_at, "month").label("processed_month"),
-        case((func.lower(_P.gateway) == "authorize_net", func.nullif(func.split_part(_P.authorization, "#", 1), "")),
-             (func.lower(_P.gateway) == "paypal", func.nullif(_P.authorization, "")), else_=null()).label("gateway_ref"),
+        func.coalesce(
+            case((func.lower(_P.gateway) == "authorize_net", func.nullif(func.split_part(_P.authorization, "#", 1), "")),
+                 (func.lower(_P.gateway) == "paypal", func.nullif(_P.authorization, "")), else_=null()),
+            _T.external_id).label("gateway_ref"),
         _P.payment_id.label("shopify_payment_id"), _source(_O).label("order_source"),
         _O.shopify_financial_status.label("financial_status"), _cancelled.label("order_cancelled"),
         _O.discount.label("discount"), _O.shipping.label("shipping"), _O.original_total.label("order_total"), _P.test.label("test"),
@@ -79,9 +116,13 @@ _PAYMENTS = (
               "Cancelled, not fully refunded"),
              ((_O.shopify_financial_status == "partially_paid") & _P.kind.in_(_SUCCESS_IN), "Partially paid"),
              (_P.status.in_(("failure", "error")) & ~_cancelled & _O.shopify_financial_status.in_(_OPEN), "Failed on an open order"),
+             (_not_settled, "Not settled in the gateway"),
              else_=null()).label("issue"),
+        *_gateway_columns(_T, _S),
     )
     .join(_O, _O.id == _P.order_id)
+    .outerjoin(_T, _T.payment_row_id == _P.id)
+    .outerjoin(_S, _S.id == _T.settlement_id)
 )
 
 # An order Shopify calls paid (or partly) for more than nothing, with no transaction at all.
@@ -98,12 +139,38 @@ _NO_PAYMENT = (
         _O.shopify_financial_status.label("financial_status"), _cancelled.label("order_cancelled"),
         _O.discount.label("discount"), _O.shipping.label("shipping"), _O.original_total.label("order_total"), literal(False).label("test"),
         case((_O.shopify_financial_status == "partially_paid", "Partially paid"), else_="Paid, no payment").label("issue"),
+        *_no_gateway_columns(),
     )
     .where(_O.source_type == "SHOPIFY", _O.shopify_financial_status.in_(("paid", "partially_paid")),
            func.coalesce(_O.original_total, 0) > 0, ~select(_P.id).where(_P.order_id == _O.id).exists())
 )
 
-_ROWS = union_all(_PAYMENTS, _NO_PAYMENT).subquery("sales_payment_rows")
+# A settled gateway transaction that is no Shopify payment (a sale typed in the gateway, a payment
+# Shopify does not show): a row of its own, so Finance sees all the money that was paid out.
+_GATEWAY_ONLY = (
+    select(
+        (-(_T.id + GATEWAY_ROW_OFFSET)).label("id"), cast(null(), Integer).label("payment_row_id"),
+        cast(null(), Integer).label("order_id"), cast(null(), String).label("order_ref"), cast(null(), String).label("customer"),
+        literal("Authorize.Net").label("method"), cast(null(), String).label("gateway"), _T.kind.label("kind"),
+        literal("success").label("status"), _T.amount.label("amount"), _T.currency.label("currency"),
+        case((_T.kind == "sale", _T.amount), else_=0).label("sales_amount"),
+        case((_T.kind == "refund", _T.amount), else_=0).label("refund_amount"),
+        case((_T.kind == "sale", _T.amount), (_T.kind == "refund", -_T.amount), else_=0).label("net_amount"),
+        func.coalesce(_T.submitted_at, _S.settled_at).label("processed_at"),
+        _local(func.coalesce(_T.submitted_at, _S.settled_at), "week").label("processed_week"),
+        _local(func.coalesce(_T.submitted_at, _S.settled_at), "month").label("processed_month"),
+        _T.external_id.label("gateway_ref"), cast(null(), String).label("shopify_payment_id"),
+        cast(null(), String).label("order_source"), cast(null(), String).label("financial_status"),
+        literal(False).label("order_cancelled"), cast(null(), Numeric(14, 2)).label("discount"),
+        cast(null(), Numeric(14, 2)).label("shipping"), cast(null(), Numeric(14, 2)).label("order_total"),
+        literal(False).label("test"), literal("In the gateway, not in Shopify").label("issue"),
+        *_gateway_columns(_T, _S),
+    )
+    .select_from(_T).outerjoin(_S, _S.id == _T.settlement_id)
+    .where(_T.payment_row_id.is_(None), _T.settled.is_(True), _T.kind.in_(("sale", "refund")))
+)
+
+_ROWS = union_all(_PAYMENTS, _NO_PAYMENT, _GATEWAY_ONLY).subquery("sales_payment_rows")
 
 
 class PaymentRow(Base):

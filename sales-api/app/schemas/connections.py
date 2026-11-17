@@ -11,7 +11,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstra
 
 from app.schemas.common import host_key_line, not_excel_number, secret_name
 
-Kind = Literal["SFTP", "SHOPIFY"]
+Kind = Literal["SFTP", "SHOPIFY", "AUTHORIZE_NET"]
 AfterRead = Literal["LEAVE", "MOVE", "DELETE"]
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
@@ -185,6 +185,7 @@ class ConnectionTestRead(BaseModel):
     folders: list[FolderCheckRead]
     error: str | None = None
     shop: dict | None = None  # Shopify: the store's name, domain and currency
+    gateway: dict | None = None  # Authorize.Net: the host and that the login was accepted
 
 
 class EdiSettings(BaseModel):

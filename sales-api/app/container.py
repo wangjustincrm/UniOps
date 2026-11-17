@@ -19,7 +19,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.integrations import email, sftp, shopify
+from app.integrations import authorize_net, email, sftp, shopify
+from app.integrations.authorize_net import FakeAuthorizeNet
 from app.integrations.email import FakeEmail
 from app.integrations.sftp import FakeSftp
 from app.integrations.shopify import FakeShopify
@@ -75,9 +76,11 @@ class Container:
     # tasks are written as already notified, so the epms notifier never mails
     # them from a dev or test stack.
     notify_tasks: Callable[[], bool]
+    # Finance (user 2026-11-17): Authorize.Net's reporting API. It has no write method at all.
+    authorize_net: Any = None
 
 
-def build_container(settings: Any, *, real_sftp=None, real_email=None, real_shopify=None,
+def build_container(settings: Any, *, real_sftp=None, real_email=None, real_shopify=None, real_authorize_net=None,
                     refusal_sink: RefusalSink | None = None) -> Container:
     if not is_test(settings) and refusal_sink is None:
         raise TypeError("outside tests a refusal_sink is required: refused writes must be logged (§5.5)")
@@ -103,4 +106,9 @@ def build_container(settings: Any, *, real_sftp=None, real_email=None, real_shop
             allow=sftp.write_on, summarise=shopify.summary, on_refused=on_refused,
         ),
         notify_tasks=lambda: getattr(settings, EXTERNAL_EMAIL_SWITCH, False) is True,
+        authorize_net=gateway(
+            settings, real=real_authorize_net or _not_built_yet("Authorize.Net", "Finance"), fake=FakeAuthorizeNet,
+            guarded=authorize_net.guarded(PARTNER_WRITES_SWITCH), reads=authorize_net.READS, name="authorize_net",
+            allow=sftp.write_on, summarise=authorize_net.summary, on_refused=on_refused,
+        ),
     )

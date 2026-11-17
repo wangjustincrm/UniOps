@@ -1,5 +1,5 @@
 import { factTone } from '@/features/common/statusTones'
-import { Server, ShoppingBag } from 'lucide-react'
+import { Landmark, Server, ShoppingBag } from 'lucide-react'
 import { Badge, CrudPage, DateTimeCell, Hint, StatusCell, Tooltip, formatShortMoment, type ColumnDef } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import { ConnectionFiles } from './ConnectionFiles'
@@ -12,7 +12,7 @@ import { HealthBadge } from './HealthBadge'
 import { RunNowButton } from './RunNowButton'
 import { connectionHealth } from './connectionHealth'
 import {
-  connectionsClient, downloadConnections, fetchConnectionAudit, scheduleLabel,
+  KIND_LABEL, connectionsClient, downloadConnections, fetchConnectionAudit, scheduleLabel,
   type ConnectionCreate, type ConnectionRead, type ConnectionUpdate,
 } from './connectionsApi'
 import {
@@ -32,8 +32,10 @@ function FolderHint({ path, off = false }: { path: string; off?: boolean }) {
 const columns: ColumnDef<ConnectionRead, unknown>[] = [
   { accessorKey: 'name', header: 'Connection', cell: ({ row: { original: c } }) => (
     <span className="flex items-center gap-2">
-      <Tooltip tip={c.kind === 'SFTP' ? 'SFTP' : 'Shopify'}>
-        <span>{c.kind === 'SFTP' ? <Server aria-label="SFTP" className="h-4 w-4 text-primary-700" /> : <ShoppingBag aria-label="Shopify" className="h-4 w-4 text-primary-700" />}</span>
+      <Tooltip tip={KIND_LABEL[c.kind]}>
+        <span>{c.kind === 'SFTP' ? <Server aria-label="SFTP" className="h-4 w-4 text-primary-700" />
+          : c.kind === 'AUTHORIZE_NET' ? <Landmark aria-label="Authorize.Net" className="h-4 w-4 text-primary-700" />
+            : <ShoppingBag aria-label="Shopify" className="h-4 w-4 text-primary-700" />}</span>
       </Tooltip>
       <span className="flex min-w-0 flex-col"><span className="font-medium">{c.name}</span>{c.host && <Hint className="break-all">{c.host}</Hint>}</span>
     </span>
@@ -77,7 +79,7 @@ export default function ConnectionsPage() {
     <CrudPage<ConnectionRead, ConnectionCreate, ConnectionUpdate>
       title="Connections"
       singular="connection"
-      description="SFTP and Shopify connections. Passwords stay on the server; only their names are kept here."
+      description="SFTP, Shopify and Authorize.Net connections. Passwords and keys stay on the server; only their names are kept here."
       client={connectionsClient}
       columns={columns}
       rowActions={(c) => <ConnectionRowActions connection={c} />}

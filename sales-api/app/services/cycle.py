@@ -75,12 +75,13 @@ class ConnectionJob(ScheduledJob):
     lock_key = CONNECTION_LOCK_KEY
 
     def __init__(self, conn_id: int, *, intake: Intake, shopify_intake=None, edi_intake=None, outbound=None,
-                 shipments=None, transfers=None, **kw) -> None:
+                 shipments=None, transfers=None, gateway_intake=None, **kw) -> None:
         super().__init__(stale_after=STALE_AFTER, **kw)
         self.conn_id = conn_id
         self.scope = scope_of(conn_id)
         self.intake, self.shopify_intake, self.edi_intake = intake, shopify_intake, edi_intake
         self.outbound, self.shipments, self.transfers = outbound, shipments, transfers
+        self.gateway_intake = gateway_intake
 
     async def due(self, session, now: datetime) -> bool:
         c = await session.get(Connection, self.conn_id)
@@ -103,6 +104,13 @@ class ConnectionJob(ScheduledJob):
         return summary
 
     async def _steps(self, run, snap: ConnectionSnapshot, counts: dict) -> RunSummary:
+        if snap.kind == "AUTHORIZE_NET":  # Finance: settled batches and their transactions (read only)
+            if self.gateway_intake is None:
+                return RunSummary(counts=counts)
+            g = await self.gateway_intake.run_pass(snap, run_id=run.id)
+            counts["authorize_net"] = g.as_dict()
+            counts["text"] = g.text
+            return RunSummary(counts=counts, partial=g.failed > 0 or g.status in ("fetch_failed", "latched"))
         if snap.kind == "SHOPIFY":
             if self.shopify_intake is None:
                 return RunSummary(counts=counts)
@@ -217,8 +225,10 @@ class SalesScheduler:
     job — each through its own single flight."""
 
     def __init__(self, *, uow_factory, run_model, intake: Intake, outbox_worker, shopify_intake=None, edi_intake=None,
-                 outbound=None, shadow=None, shipments=None, invoicing=None, transfers=None, tasks=None) -> None:
+                 outbound=None, shadow=None, shipments=None, invoicing=None, transfers=None, tasks=None,
+                 gateway_intake=None) -> None:
         self.uow_factory, self.run_model = uow_factory, run_model
+        self.gateway_intake = gateway_intake
         self.intake, self.shopify_intake, self.edi_intake = intake, shopify_intake, edi_intake
         self.outbound, self.shadow, self.shipments = outbound, shadow, shipments
         self.invoicing, self.transfers, self.outbox_worker = invoicing, transfers, outbox_worker
@@ -231,7 +241,7 @@ class SalesScheduler:
             return Schedule(timedelta(minutes=5))
         return ConnectionJob(conn_id, intake=self.intake, shopify_intake=self.shopify_intake, edi_intake=self.edi_intake,
                              outbound=self.outbound, shipments=self.shipments, transfers=self.transfers,
-                             run_model=self.run_model, uow_factory=self.uow_factory, schedule=unused)
+                             gateway_intake=self.gateway_intake, run_model=self.run_model, uow_factory=self.uow_factory, schedule=unused)
 
     async def active_connections(self) -> list[int]:
         async with self.uow_factory(SYSTEM_ACTOR) as uow:

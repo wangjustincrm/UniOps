@@ -3,7 +3,10 @@ import { api } from '@/lib/api'
 import type { AuditEntry } from '../AuditHistory'
 
 // Mirrors sales-api app/schemas/connections.py (hand-written, see partnersApi.ts).
-export const KINDS = ['SFTP', 'SHOPIFY'] as const
+export const KINDS = ['SFTP', 'SHOPIFY', 'AUTHORIZE_NET'] as const
+export const KIND_LABEL: Record<(typeof KINDS)[number], string> = { SFTP: 'SFTP', SHOPIFY: 'Shopify', AUTHORIZE_NET: 'Authorize.Net' }
+/** Authorize.Net's reporting API (Finance): production, or the sandbox. */
+export const AUTHORIZE_NET_HOSTS = ['api.authorize.net', 'apitest.authorize.net'] as const
 export const AFTER_READ = ['LEAVE', 'MOVE', 'DELETE'] as const
 // An SFTP connection's folders: reading has its folder, its archive (after-read Move) and its error folder;
 // writing has one folder (user 2026-11-12: no Test / Live mode, no test folders; a Read and a Write tick).
@@ -35,7 +38,7 @@ export interface ConnectionRead {
   auth_failed_at: string | null
   auth_failed_reason: string | null
   api_version: string | null
-  /** Shopify: where the next pull starts (inclusive); written by the system. */
+  /** Shopify: where the next pull starts (inclusive); Authorize.Net: batches settled from then. Written by the system. */
   cursor_updated_at: string | null
   page_size: number | null
   order_number_cutoff: number | null
@@ -73,6 +76,8 @@ export interface ConnectionTest {
   folders: { folder: string; ok: boolean; files: number | null; error: string | null }[]
   error: string | null
   shop?: { name?: string; domain?: string; myshopify_domain?: string; currency?: string; iana_timezone?: string } | null
+  /** Authorize.Net: the host, and that the login was accepted. */
+  gateway?: { host?: string; login?: string } | null
 }
 
 export const CONNECTIONS_PATH = '/config/connections'

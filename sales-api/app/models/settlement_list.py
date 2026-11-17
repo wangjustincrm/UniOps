@@ -1,0 +1,76 @@
+"""The Settlements list (Finance, user 2026-11-17): one row per deposit a gateway paid out — an
+Authorize.Net settled batch — beside what Shopify says of the same money. A read model over
+sales_gateway_settlements, sales_gateway_transactions and sales_order_payments; nothing stored.
+
+- Sales / Refunds / Net: as the gateway counts them (its batch statistics).
+- Matched net: the Shopify payments matched to the batch's settled transactions (sales − refunds).
+- Difference: Net − Matched net. Zero when every settled transaction is a Shopify payment.
+- Unmatched: settled transactions not matched to a Shopify payment; Probable: matched by amount
+  and time only.
+- Issue: why Finance should look at the batch (its transactions not read yet, unmatched, or a
+  difference), else empty.
+"""
+from __future__ import annotations
+
+from sqlalchemy import Date, Integer, Numeric, case, cast, func, select
+
+from app.db.base import Base
+from app.models.gateways import GatewaySettlement, GatewayTransaction
+from app.models.payments import OrderPayment
+
+ISSUES = ("Transactions not read yet", "Unmatched transactions", "Differs from Shopify")
+GATEWAY_NAMES = ("Authorize.Net",)
+
+_TZ = "America/Toronto"
+_S, _T, _P = GatewaySettlement, GatewayTransaction, OrderPayment
+
+_per_batch = (
+    select(
+        _T.settlement_id.label("settlement_id"),
+        func.count().filter(_T.settled.is_(True) & _T.payment_row_id.is_(None) & _T.kind.in_(("sale", "refund")))
+        .label("unmatched_count"),
+        func.count().filter(_T.match_method == "AMOUNT_TIME").label("probable_count"),
+        func.count().filter(_T.settled.is_(True)).label("transaction_count"),
+        func.coalesce(func.sum(case((_T.kind == "sale", _P.amount), (_T.kind == "refund", -_P.amount), else_=0))
+                      .filter(_T.settled.is_(True)), 0).label("matched_net"),
+    )
+    .select_from(_T).outerjoin(_P, _P.id == _T.payment_row_id)
+    .where(_T.settlement_id.is_not(None)).group_by(_T.settlement_id)
+    .subquery("per_batch")
+)
+
+_B = _per_batch.c
+_matched = func.coalesce(_B.matched_net, 0)
+_unmatched = func.coalesce(_B.unmatched_count, 0)
+_diff = _S.net_amount - _matched
+
+_ROWS = (
+    select(
+        _S.id.label("id"), _S.connection_id.label("connection_id"),
+        case((_S.gateway == "AUTHORIZE_NET", "Authorize.Net"), else_=_S.gateway).label("gateway"),
+        _S.external_id.label("batch_id"), _S.settled_at.label("settled_at"),
+        cast(func.date_trunc("day", func.timezone(_TZ, _S.settled_at)), Date).label("settled_date"),
+        cast(func.date_trunc("week", func.timezone(_TZ, _S.settled_at)), Date).label("settled_week"),
+        cast(func.date_trunc("month", func.timezone(_TZ, _S.settled_at)), Date).label("settled_month"),
+        _S.state.label("state"), _S.payment_method.label("payment_method"), _S.currency.label("currency"),
+        _S.sales_amount.label("sales_amount"), _S.sales_count.label("sales_count"),
+        _S.refund_amount.label("refund_amount"), _S.refund_count.label("refund_count"),
+        _S.fee_amount.label("fee_amount"), _S.net_amount.label("net_amount"),
+        _S.declined_count.label("declined_count"), _S.voided_count.label("voided_count"),
+        cast(func.coalesce(_B.transaction_count, 0), Integer).label("transaction_count"),
+        cast(_matched, Numeric(14, 2)).label("matched_net"), cast(_diff, Numeric(14, 2)).label("difference"),
+        cast(_unmatched, Integer).label("unmatched_count"),
+        cast(func.coalesce(_B.probable_count, 0), Integer).label("probable_count"),
+        _S.transactions_read_at.label("transactions_read_at"),
+        case((_S.transactions_read_at.is_(None), "Transactions not read yet"), (_unmatched > 0, "Unmatched transactions"),
+             (_diff != 0, "Differs from Shopify"), else_=None).label("issue"),
+    )
+    .select_from(_S).outerjoin(_per_batch, _B.settlement_id == _S.id)
+    .subquery("sales_settlement_rows")
+)
+
+
+class SettlementRow(Base):
+    """One deposit; columns: _ROWS's labels."""
+    __table__ = _ROWS
+    __mapper_args__ = {"primary_key": [_ROWS.c.id]}

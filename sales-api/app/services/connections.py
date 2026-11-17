@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 READ = "sales.read"
 CONFIG = "sales.config"
 FILE_RETRY = "sales.file.retry"
-DEFAULT_MINUTES = {"SFTP": 5, "SHOPIFY": 10}  # a new connection's schedule (user 2026-11-02)
+DEFAULT_MINUTES = {"SFTP": 5, "SHOPIFY": 10, "AUTHORIZE_NET": 60}  # a new connection's schedule (user 2026-11-02; batches settle daily)
 
 
 _RULE_FIELDS = ("kind", "host", "username", "inbound_folder", "outbound_folder", "error_folder", "secret_name",
@@ -177,10 +177,11 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
     @requires(CONFIG)
     async def reset_cursor(self, id: int, cursor) -> ConnectionRead:
         """FR-OB-10: where the next pull starts (inclusive); null pulls nothing.
-        The only way a person changes the cursor — audited."""
+        The only way a person changes the cursor — audited. Shopify: orders updated from then;
+        Authorize.Net: batches settled from then."""
         entity = await self.repo.get(id, for_update=True)
-        if entity.kind != "SHOPIFY":
-            raise InvalidInput("connection.cursor_shopify_only", "only a SHOPIFY connection has a cursor",
+        if entity.kind not in ("SHOPIFY", "AUTHORIZE_NET"):
+            raise InvalidInput("connection.cursor_shopify_only", "only a Shopify or Authorize.Net connection has a cursor",
                                {"field": "cursor_updated_at"})
         self.uow.set_reason("reset cursor")
         entity.cursor_updated_at = cursor
@@ -188,12 +189,20 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
         return await self._read_one(entity)
 
     @requires(CONFIG)
-    async def test(self, id: int, sftp, shopify=None) -> ConnectionTestRead:
+    async def test(self, id: int, sftp, shopify=None, authorize_net=None) -> ConnectionTestRead:
         """Reads only (FR-OB-74). SFTP: the host key is read without logging
         in; the folders are listed only when the server's key is the pinned
         one. Shopify: the store's shop info, through its own gateway."""
         entity = await self.repo.get(id)
         snap = ConnectionSnapshot.of(entity)
+        if entity.kind == "AUTHORIZE_NET":  # the login only (authenticateTestRequest)
+            from app.integrations import authorize_net as anet
+            try:
+                info = await authorize_net.test(snap)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("connection test %s: authorize.net: %r", entity.name, e)
+                return ConnectionTestRead(host_key=None, folders=[], error=anet.readable(e))
+            return ConnectionTestRead(host_key=None, folders=[], gateway=info)
         if entity.kind == "SHOPIFY":  # never SSH against a Shopify host
             try:
                 info = await shopify.shop(snap)

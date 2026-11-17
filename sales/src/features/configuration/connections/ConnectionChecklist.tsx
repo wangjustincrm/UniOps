@@ -47,13 +47,14 @@ const folderColumns: ColumnDef<FolderRow, unknown>[] = [
   { accessorKey: 'files', header: 'Files', cell: ({ row }) => row.original.files ?? '—' },
 ]
 
-/** Shopify: the pull cursor, read-only; a person resets it (audited). */
+/** Shopify / Authorize.Net: the pull cursor, read-only; a person resets it (audited). */
 function Cursor({ c, onDone }: { c: ConnectionRead; onDone: () => void }) {
   const [value, setValue] = useState<string | null>(null)  // ISO with its zone
   const reset = useMutation({ mutationFn: (v: string | null) => resetCursor(c.id, v), onSuccess: () => { setValue(null); onDone() } })
   return (
     <div className="flex flex-col gap-1">
-      <p>Next pull from: <span className="font-medium">{c.cursor_updated_at ? formatDateTime(c.cursor_updated_at) : 'not set: nothing is pulled'}</span></p>
+      <p>{c.kind === 'AUTHORIZE_NET' ? 'Next read: batches settled from ' : 'Next pull from: '}<span className="font-medium">{c.cursor_updated_at ? formatDateTime(c.cursor_updated_at) : 'not set: nothing is pulled'}</span></p>
+      {c.kind === 'AUTHORIZE_NET' && !c.cursor_updated_at && <Hint>To read the history, set it to the first day you want (e.g. Jun 1, 2024).</Hint>}
       <div className="flex flex-wrap items-center gap-2">
         <DateTimeInput aria-label="New cursor" value={value} onChange={setValue} className="h-8 max-w-[14rem] text-xs" />
         <ActionButton size="sm" variant="secondary" permission={CONFIG} disabled={!value} disabledReason="Choose the new date and time first."
@@ -82,7 +83,7 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
     const turnOn = !c[which]
     const sftpFolder = which === 'can_read' ? c.inbound_folder : c.outbound_folder
     const what = which === 'can_read'
-      ? (sftp ? `Sales will read the files in ${sftpFolder ?? '(no read folder)'}` : "Sales will pull the store's orders")
+      ? (sftp ? `Sales will read the files in ${sftpFolder ?? '(no read folder)'}` : c.kind === 'AUTHORIZE_NET' ? "Sales will read Authorize.Net's settled batches" : "Sales will pull the store's orders")
       : (sftp ? `Sales will put the files it sends (940, 943, 810) in ${sftpFolder ?? '(no write folder)'}`
         + (c.after_read !== 'LEAVE' ? ` and ${c.after_read === 'MOVE' ? `move what it reads to ${c.processed_folder}` : 'delete what it reads'}` : '')
         : 'Sales will send fulfilments and tracking to the store and close orders')
@@ -103,6 +104,7 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
     </ActionButton>
   )
   const sftp = c.kind === 'SFTP'
+  const anet = c.kind === 'AUTHORIZE_NET'
   const key = result?.host_key
   const testButton = (
     <ActionButton size="sm" variant="secondary" permission={CONFIG} onAction={() => test.mutateAsync()}>Test connection</ActionButton>
@@ -143,7 +145,7 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
           {c.auth_failed_at ? `Refused, and skipped since ${formatDateTime(c.auth_failed_at)}: ${c.auth_failed_reason ?? 'no reason given'}. Fix the login, then clear this.`
             : 'No refusal recorded.'}
         </Step>
-        <Step label={sftp ? 'Folders reachable' : 'Store reachable'} status={reached} action={(!sftp || c.host_key) && testButton}>
+        <Step label={sftp ? 'Folders reachable' : anet ? 'Authorize.Net reachable' : 'Store reachable'} status={reached} action={(!sftp || c.host_key) && testButton}>
           {!result ? (sftp && !c.host_key ? 'Pin the key first, then the test lists the folders.' : 'Test the connection to check.')
             : reached === 'done' ? 'The test reached everything.' : (result.error ?? `${failedFolders} folder(s) could not be reached.`)}
         </Step>
@@ -155,14 +157,14 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
                 : <>; after reading, left in place (moving and deleting need Write)</>)
                 : <>; after reading, left in place</>}
               {c.error_folder && c.can_write ? <>; a file that cannot be read goes to <code>{c.error_folder}</code></> : null}.</>
-              : "The store's orders."}
+              : anet ? 'The settled batches and their transactions (Payments, Settlements).' : "The store's orders."}
         </Step>
-        <Step label="Writes" status={c.can_write ? 'done' : usedFor ? 'todo' : 'unknown'} action={tickButton('can_write')}>
+        {!anet && <Step label="Writes" status={c.can_write ? 'done' : usedFor ? 'todo' : 'unknown'} action={tickButton('can_write')}>
           {c.can_write
             ? (sftp ? <>Into <code>{c.outbound_folder}</code>{usedFor ? ` (the ${usedFor})` : ''}. The server must also allow this address.</> : 'Fulfilments and tracking to the store, and closing orders.')
             : usedFor ? <>Write is off: this is the {usedFor}, so what it sends is kept and not sent (Suppressed).</>
               : 'Write is off: nothing is written.'}
-        </Step>
+        </Step>}
         <Step label="Last run" action={<RunNowButton connection={c} variant="secondary" />}
           status={!c.last_run_at ? 'unknown' : c.last_run_status === 'FAILED' ? 'problem' : c.last_run_status === 'PARTIAL' ? 'todo' : 'done'}>
           {!c.last_run_at ? 'Not run yet.'
@@ -171,15 +173,18 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
       </ol>
       {health.state === 'inactive' && <Callout tone="neutral">{health.tip}</Callout>}
       <Hint as="p">
-        {sftp ? 'The test lists the folders. Nothing is created, moved or deleted.' : "The test reads the store's name and currency. Nothing is written."}
+        {sftp ? 'The test lists the folders. Nothing is created, moved or deleted.'
+          : anet ? 'The test only checks the login. Sales never charges, refunds or voids anything.'
+            : "The test reads the store's name and currency. Nothing is written."}
       </Hint>
       {result?.shop && (
         <p>Store: <span className="font-medium">{result.shop.name}</span> · {result.shop.myshopify_domain ?? result.shop.domain} · {result.shop.currency}</p>
       )}
+      {result?.gateway && <p>Authorize.Net: <span className="font-medium">{result.gateway.host}</span> · login {result.gateway.login}</p>}
       {result && result.folders.length > 0 && (
         <LocalTable<FolderRow> ariaLabel="Test result" columns={folderColumns} rows={result.folders} rowKey={(f) => f.folder} />
       )}
-      {c.kind === 'SHOPIFY' && <Cursor c={c} onDone={refresh} />}
+      {(c.kind === 'SHOPIFY' || anet) && <Cursor c={c} onDone={refresh} />}
     </Section>
   )
 }

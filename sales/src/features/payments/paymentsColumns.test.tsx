@@ -13,7 +13,9 @@ describe('payments columns', () => {
   it('shows the asked-for columns and hides the extra ones', () => {
     const shown = cols.map(key).filter((k) => !hiddenPaymentColumns.includes(k!))
     expect(shown).toEqual(['processed_at', 'order_ref', 'customer', 'method', 'kind', 'status', 'amount', 'sales_amount', 'refund_amount',
-      'net_amount', 'gateway_ref', 'order_source', 'financial_status', 'issue'])
+      'net_amount', 'gateway_ref', 'order_source', 'financial_status', 'issue',
+      // from the gateway (user 2026-11-17): the deposit it was paid out in, and how it was matched
+      'settled_date', 'match_method'])
     expect(hiddenPaymentColumns.every((h) => cols.map(key).includes(h))).toBe(true)
   })
 

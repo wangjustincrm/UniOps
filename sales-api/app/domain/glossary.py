@@ -49,5 +49,12 @@ TERMS: dict[str, Help] = {
     # payments
     "Sales, Refunds, Net": Help("Successful transactions only: payments, refunds, and payments − refunds."),
     "Gateway transaction ID": Help("The payment provider's own ID. Authorize.Net payments since Sep 18, 2025 have none in "
-                                   "Shopify: use the Shopify payment ID."),
+                                   "Shopify: it comes from Authorize.Net once the payment is matched there."),
+    # gateways (Finance, 2026-11-17)
+    "Settlement": Help("A deposit the payment provider paid to the bank: for Authorize.Net, one settled batch, about one a "
+                       "day. The payments in it are the money in that deposit."),
+    "Matched by": Help("How the provider's transaction was found to be this Shopify payment: its transaction ID, the "
+                       "Shopify payment ID, the order number, or only the same amount and time (probable: check it)."),
+    "Difference": Help("The deposit's net − the Shopify payments matched to it. Not zero: some money in the deposit is no "
+                       "Shopify payment, or a transaction is not matched yet."),
 }

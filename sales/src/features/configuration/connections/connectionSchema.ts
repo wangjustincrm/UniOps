@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { FieldValues } from 'react-hook-form'
 import type { FieldSpec } from '@/platform-ui'
-import { AFTER_READ, DAYS, KINDS, READ_FOLDERS, WRITE_FOLDERS, scheduleSentence, type ConnectionRead } from './connectionsApi'
+import { AFTER_READ, AUTHORIZE_NET_HOSTS, DAYS, KINDS, READ_FOLDERS, WRITE_FOLDERS, scheduleSentence, type ConnectionRead } from './connectionsApi'
 
 // Mirrors the API's DTO and the connection rules (sales-api domain/connections.py).
 const optional = (max?: number) => {
@@ -82,6 +82,16 @@ function rules(v: Values, ctx: z.RefinementCtx) {
   } else if (String(v.partner_code ?? '').trim()) {
     ctx.addIssue({ code: 'custom', path: ['partner_code'], message: "Only for Shopify: an SFTP connection's partner comes from each file" })
   }
+  if (v.kind === 'AUTHORIZE_NET') {
+    if (!(AUTHORIZE_NET_HOSTS as readonly string[]).includes(String(v.host ?? '').trim().toLowerCase())) {
+      ctx.addIssue({ code: 'custom', path: ['host'], message: 'api.authorize.net (or apitest.authorize.net for the sandbox)' })
+    }
+    for (const f of ['username', 'secret_name'] as const) {
+      if (!String(v[f] ?? '').trim()) ctx.addIssue({ code: 'custom', path: [f], message: 'Required for an Authorize.Net connection' })
+    }
+    if (v.can_write) ctx.addIssue({ code: 'custom', path: ['can_write'], message: 'An Authorize.Net connection only reads' })
+    if (String(v.host_key ?? '').trim()) ctx.addIssue({ code: 'custom', path: ['host_key'], message: 'An Authorize.Net connection has no server key' })
+  }
   scheduleRules(v, ctx)
   if (v.after_read === 'MOVE' && !String(v.processed_folder ?? '').trim()) {
     ctx.addIssue({ code: 'custom', path: ['processed_folder'], message: 'Needed when the file is moved after reading' })
@@ -105,6 +115,7 @@ const folderHint: Record<string, string> = {
 
 const sftp = (v: FieldValues) => v.kind === 'SFTP'
 const shopify = (v: FieldValues) => v.kind === 'SHOPIFY'
+const anet = (v: FieldValues) => v.kind === 'AUTHORIZE_NET'
 const every = [5, 10, 15, 30, 60].map((n) => ({ value: String(n), label: `${n} min` }))
 
 /** A connection's schedule: edited on its Schedule tab, and in the New form (`connectionFields`). */
@@ -121,11 +132,12 @@ export const scheduleFields: FieldSpec[] = scheduleSpecs.map((f) => ({ ...f, sec
 
 export const connectionFields: FieldSpec[] = [
   { name: 'name', label: 'Name', required: true, section: 'Basics', hint: 'Cannot be changed after the connection is created.' },
-  { name: 'kind', label: 'Type', type: 'segmented', required: true, section: 'Basics', options: [{ value: 'SFTP', label: 'SFTP' }, { value: 'SHOPIFY', label: 'Shopify' }] },
+  { name: 'kind', label: 'Type', type: 'segmented', required: true, section: 'Basics', options: [{ value: 'SFTP', label: 'SFTP' }, { value: 'SHOPIFY', label: 'Shopify' }, { value: 'AUTHORIZE_NET', label: 'Authorize.Net' }],
+    hint: (v) => (anet(v) ? 'Authorize.Net: its settled batches and their transactions, for Finance. It only reads.' : '') },
   { name: 'active', label: 'Active', type: 'checkbox', section: 'Basics' },
 
   { name: 'can_read', label: 'Read', type: 'checkbox', section: 'Reading',
-    hint: (v) => (v.kind === 'SHOPIFY' ? 'Sales pulls the store\'s orders.' : 'Sales lists and reads the read folder.') },
+    hint: (v) => (v.kind === 'SHOPIFY' ? 'Sales pulls the store\'s orders.' : anet(v) ? 'Sales reads the settled batches and their transactions.' : 'Sales lists and reads the read folder.') },
   ...READ_FOLDERS.map((f): FieldSpec => ({ name: f, label: folderLabel[f], section: 'Reading', showWhen: sftp, hint: folderHint[f] })),
   { name: 'after_read', label: 'After reading a file', type: 'segmented', required: true, section: 'Reading', showWhen: sftp, alwaysSent: true,
     options: [{ value: 'LEAVE', label: 'Leave the file' }, { value: 'MOVE', label: 'Move it' }, { value: 'DELETE', label: 'Delete it' }],
@@ -133,7 +145,7 @@ export const connectionFields: FieldSpec[] = [
   { name: 'stable_seconds', label: 'Wait before reading (seconds)', type: 'number', required: true, section: 'Reading', showWhen: sftp, alwaysSent: true, advanced: true,
     hint: 'A file is read once its modified time is at least this old.' },
 
-  { name: 'can_write', label: 'Write', type: 'checkbox', section: 'Writing',
+  { name: 'can_write', label: 'Write', type: 'checkbox', section: 'Writing', showWhen: (v) => !anet(v), alwaysSent: true,
     hint: (v) => (v.kind === 'SHOPIFY'
       ? 'Sales sends fulfilments and tracking to the store and closes orders. Turned on only when the go-live notifications are set (Health).'
       : 'Sales puts its files in the write folder and moves or deletes what it read. Turned on only when the go-live notifications are set (Health); the server must also allow writing to this address.') },
@@ -146,12 +158,16 @@ export const connectionFields: FieldSpec[] = [
     hint: 'Orders numbered below it are historical and never sent.' },
 
   // Login comes after what the connection does: it is set once.
-  { name: 'host', label: 'Address', section: 'Login', hint: "The server's address (a Shopify store: <name>.myshopify.com). An SFTP server must also be on the server's allowed list; ask your administrator." },
+  { name: 'host', label: 'Address', section: 'Login',
+    hint: (v) => (anet(v) ? 'api.authorize.net (the sandbox: apitest.authorize.net).'
+      : "The server's address (a Shopify store: <name>.myshopify.com). An SFTP server must also be on the server's allowed list; ask your administrator.") },
   // The server keeps a value for these on either kind: hidden, they go as they are today.
   { name: 'port', label: 'Port', type: 'number', section: 'Login', showWhen: sftp, alwaysSent: true },
-  { name: 'username', label: 'User name', section: 'Login', showWhen: sftp },
+  { name: 'username', label: 'User name', section: 'Login', showWhen: (v) => sftp(v) || anet(v),
+    hint: (v) => (anet(v) ? 'The API Login ID (Account → API Credentials & Keys). It is not a secret.' : '') },
   { name: 'secret_name', label: 'Password name on the server', section: 'Login',
-    hint: 'The name your administrator gave the password on the server. The password itself is never typed here.' },
+    hint: (v) => (anet(v) ? 'The name of the Transaction Key on the server, e.g. SALES_SECRET_AUTHNET. The key itself is never typed here.'
+      : 'The name your administrator gave the password on the server. The password itself is never typed here.') },
   { name: 'host_key', label: "Server's key", type: 'textarea', section: 'Login', showWhen: sftp, advanced: true,
     hint: 'Filled in by "Pin this key" after a test on the Overview.' },
 

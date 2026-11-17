@@ -54,6 +54,25 @@ def check_connection(values: dict[str, Any]) -> None:
         raise InvalidInput("connection.partner_shopify_only",
                            "partner_code is for SHOPIFY connections only; an SFTP channel's partner comes from each file",
                            {"field": "partner_code"})
+    # Authorize.Net (Finance, user 2026-11-17): its reporting API only. The API Login ID is the user
+    # name, the Transaction Key the server secret; it never writes, and has no folder or host key.
+    if values.get("kind") == "AUTHORIZE_NET":
+        from app.integrations.authorize_net import HOSTS
+        if str(values.get("host") or "").strip().lower() not in HOSTS:
+            raise InvalidInput("connection.authorize_net_host", "host must be api.authorize.net (or apitest.authorize.net)",
+                               {"field": "host"})
+        for field in ("username", "secret_name"):
+            if not values.get(field):
+                raise InvalidInput("connection.field_required", f"{field} is required for an Authorize.Net connection",
+                                   {"field": field})
+        if values.get("can_write"):
+            raise InvalidInput("connection.read_only_kind", "an Authorize.Net connection only reads: Write stays off",
+                               {"field": "can_write"})
+        for field in ("host_key", "inbound_folder", "outbound_folder", "processed_folder", "error_folder"):
+            if values.get(field):
+                raise InvalidInput("connection.not_for_kind", f"{field} must be empty for an Authorize.Net connection. "
+                                   "Passwords and keys never go in the CSV; put them in the server environment under "
+                                   "secret_name.", {"field": field})
     # After-read Move needs somewhere to move to (FR-OB-74).
     if values.get("after_read") == "MOVE" and not values.get("processed_folder"):
         raise InvalidInput("connection.field_required", "an archive folder is required when after-read is Move",

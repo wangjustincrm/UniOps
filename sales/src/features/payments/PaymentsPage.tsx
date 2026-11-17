@@ -7,8 +7,9 @@ import { EMPTY_TEXT } from '@/features/help/pageHelp'
 const NOTE = (
   <Callout label="Where these come from">
     Every payment and refund transaction Shopify has for an order, read-only. Sales, Refunds and Net count successful
-    transactions only. Authorize.Net payments since Sep 18, 2025 (Shopify's Authorize.Net app) carry no Authorize.Net
-    transaction ID in Shopify: their reference is the Shopify payment ID (a hidden column).
+    transactions only. With an Authorize.Net connection, each Authorize.Net payment also shows the batch it was settled
+    in and its Authorize.Net transaction ID, read from Authorize.Net and matched to the Shopify payment. A settled
+    Authorize.Net transaction that is no Shopify payment is a row of its own (Exceptions).
   </Callout>
 )
 
