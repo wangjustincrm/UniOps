@@ -16,7 +16,7 @@ export function settlementColumns(): ColumnDef<SettlementRowRead, unknown>[] {
   return [
     withHelp(col.date('settled_date', 'Date'), 'term:Settlement'),
     col.text('gateway', 'Gateway'),
-    col.reference('batch_id', 'Batch'),
+    col.reference('batch_id', 'Batch ID'),
     col.money('sales_amount', 'Sales', { currency: 'currency' }),
     col.money('refund_amount', 'Refunds', { currency: 'currency' }),
     col.money('net_amount', 'Net', { currency: 'currency' }),

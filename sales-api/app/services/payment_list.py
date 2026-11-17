@@ -27,7 +27,7 @@ class PaymentRowRepository(Repository[PaymentRow]):
               "net_amount": "Net", "gateway_ref": "Gateway transaction ID", "shopify_payment_id": "Shopify payment ID",
               "order_source": "Order source", "financial_status": "Order financial status", "order_cancelled": "Order cancelled",
               "issue": "Issue", "order_total": "Order total", "gateway_status": "Gateway status", "card_type": "Card type",
-              "match_method": "Matched by", "settlement_ref": "Settlement (batch)", "settled_at": "Settled",
+              "match_method": "Matched by", "settlement_ref": "Batch ID", "settled_at": "Settled",
               "settled_date": "Settlement date", "voided": "Voided in the gateway"}
     enums = {"method": METHODS, "kind": KINDS, "status": STATUSES, "order_source": SOURCES, "issue": ISSUES, "match_method": MATCHES,
              "financial_status": ("paid", "partially_paid", "partially_refunded", "refunded", "pending", "authorized", "voided")}

@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
-import { ActionButton, Callout, ListPage, RecordSheet, StatusCell, formatDateTime, formatMoney, useOpenRecord } from '@/platform-ui'
+import { Callout, ListPage, RecordSheet, StatusCell, ViewFileButton, formatDateTime, formatMoney, useOpenRecord } from '@/platform-ui'
 import { EMPTY_TEXT } from '@/features/help/pageHelp'
 import { paymentsClient, type PaymentRowRead } from '@/features/payments/paymentsApi'
 import { hiddenPaymentColumns, paymentColumns } from '@/features/payments/paymentsColumns'
-import { downloadSettlementPdf, downloadSettlements, downloadSettlementsReport, settlementsClient, type SettlementRowRead } from './settlementsApi'
+import { downloadSettlements, settlementPdf, settlementsClient, settlementsReportPdf, type SettlementRowRead } from './settlementsApi'
 import { hiddenSettlementColumns, settlementColumns } from './settlementsColumns'
 
 const NOTE = (
@@ -22,14 +22,10 @@ function SettlementDetail({ s }: { s: SettlementRowRead }) {
   const money = (v: string | null) => (v == null ? '—' : formatMoney(v, s.currency))
   return (
     <RecordSheet
-      title={`Batch ${s.batch_id}`}
+      title={`Batch ID ${s.batch_id}`}
       subtitle={`${s.gateway} · settled ${formatDateTime(s.settled_at)}`}
       badges={<StatusCell value={s.issue} />}
-      actions={(
-        <ActionButton size="sm" variant="secondary" done="Statement downloaded" onAction={() => downloadSettlementPdf(s)}>
-          Download statement (PDF)
-        </ActionButton>
-      )}
+      actions={<ViewFileButton source={settlementPdf(s)}>Settlement statement (PDF)</ViewFileButton>}
       facts={[
         { label: 'Net', value: money(s.net_amount) },
         { label: 'Matched in Shopify', value: money(s.matched_net) },
@@ -43,7 +39,7 @@ function SettlementDetail({ s }: { s: SettlementRowRead }) {
       tabs={[
         { id: 'payments', label: 'Payments', render: () => (
           <ListPage<PaymentRowRead> resource={paymentsClient} columns={columns} defaultHidden={hiddenPaymentColumns}
-            fixed={[{ field: 'settlement_id', op: 'eq', value: String(s.id) }]} searchable={false}
+            fixed={[{ field: 'settlement_ref', op: 'eq', value: s.batch_id }]} searchable={false}
             emptyTitle="No settled transactions read for this batch" />
         ) },
       ]}
@@ -61,11 +57,7 @@ export default function SettlementsPage() {
       description="The deposits each payment provider paid to the bank, with the Shopify payments in them. Use the views by month and for what needs a look."
       columns={columns} defaultHidden={hiddenSettlementColumns} notice={NOTE} emptyTitle="No settlements yet"
       emptyText={EMPTY_TEXT.settlements} onExport={downloadSettlements} renderDetail={(s) => <SettlementDetail s={s} />}
-      toolbar={({ spec }) => (
-        <ActionButton size="sm" variant="secondary" done="Report downloaded" onAction={() => downloadSettlementsReport(spec)}>
-          Download report (PDF)
-        </ActionButton>
-      )}
+      toolbar={({ spec }) => <ViewFileButton source={settlementsReportPdf(spec)}>Report (PDF)</ViewFileButton>}
     />
   )
 }

@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import { createResourceClient, type QuerySpec } from '@/platform-ui'
+import { createResourceClient, type FileSource, type QuerySpec } from '@/platform-ui'
 
 /** One deposit a payment gateway paid out — an Authorize.Net settled batch — beside the Shopify
  *  payments matched to it (sales-api /settlements; read-only). */
@@ -49,12 +49,13 @@ export interface SettlementRowRead {
 export const settlementsClient = createResourceClient<SettlementRowRead, never>(api, '/settlements')
 export const downloadSettlements = (path: string) => api.download(path, 'settlements.csv')
 
-/** One deposit's settlement statement (PDF), downloaded like the report (user 2026-11-17: the page's
- *  viewer showed nothing in their browser). */
-export const downloadSettlementPdf = (s: Pick<SettlementRowRead, 'id' | 'batch_id'>) =>
-  api.download(`/settlements/${s.id}/statement.pdf`, `settlement-${s.batch_id}.pdf`)
+/** One deposit's settlement statement (PDF), in the viewer (Download / Print there). */
+export const settlementPdf = (s: Pick<SettlementRowRead, 'id' | 'batch_id'>): FileSource => ({
+  key: `settlement-${s.id}`, title: `Settlement statement · batch ${s.batch_id}`,
+  load: () => api.file(`/settlements/${s.id}/statement.pdf`, `settlement-${s.batch_id}.pdf`) })
 
-/** The list as it is filtered and sorted now, as one PDF report (the CSV export's query), downloaded:
- *  a report of many pages is read in a PDF reader, not in the page (user 2026-11-17). */
-export const downloadSettlementsReport = (spec: QuerySpec) =>
-  api.download(settlementsClient.exportPath(spec, 'report/settlements.pdf'), 'settlements-report.pdf')
+/** The list as it is filtered and sorted now, as one PDF report (the CSV export's query), in the viewer. */
+export const settlementsReportPdf = (spec: QuerySpec): FileSource => {
+  const path = settlementsClient.exportPath(spec, 'report/settlements.pdf')
+  return { key: `settlements-report-${path}`, title: 'Settlements report', load: () => api.file(path, 'settlements-report.pdf') }
+}
