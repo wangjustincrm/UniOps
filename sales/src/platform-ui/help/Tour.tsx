@@ -13,7 +13,7 @@ interface At { i: number; id: string; shown: number[] }
  *  box beside it says what it is, with Back / Next / Done and "2 of 4" (counting the steps shown). Scrolls
  *  the element into view in whatever scrolls it (a table, a sheet, the page). A step whose element isn't
  *  there is skipped; one that goes away mid-tour (a sheet opened, the list re-rendered) is found again, or
- *  the tour moves on. A step on something hidden (a tab, a menu) is skipped: there is no "open it first"
+ *  after ~300 ms still gone, the tour moves on. A step on something hidden (a tab, a menu) is skipped: there is no "open it first"
  *  yet. Esc, End or Done ends it. */
 export function Tour({ steps, onEnd }: { steps: TourStep[]; onEnd: () => void }) {
   const ctx = useContext(HelpContext)
@@ -49,14 +49,19 @@ export function Tour({ steps, onEnd }: { steps: TourStep[]; onEnd: () => void })
     el?.scrollIntoView?.({ block: 'center', inline: 'nearest' })
     let frame = 0
     let last = ''
+    let missingSince = 0  // a refetch can replace the element for a frame or two: wait a moment before moving on
     const loop = () => {
       const r = el?.isConnected ? el.getBoundingClientRect() : null
       if (!r || r.width === 0 || r.height === 0) {
         el = findAnchor(steps[at.i].anchor)
-        if (!el) { setAt(arrive(at.i + 1, 1) ?? arrive(at.i - 1, -1)); return }
+        if (!el) {
+          missingSince ||= performance.now()
+          if (performance.now() - missingSince > 300) { setAt(arrive(at.i + 1, 1) ?? arrive(at.i - 1, -1)); return }
+        }
         frame = requestAnimationFrame(loop)
         return
       }
+      missingSince = 0
       const key = `${r.top}|${r.left}|${r.width}|${r.height}`
       if (key !== last) {
         last = key
