@@ -1,6 +1,7 @@
 import * as RD from '@radix-ui/react-dialog'
 import { CircleHelp, Search, X } from 'lucide-react'
 import { useContext, useMemo, useState } from 'react'
+import { Tour } from './Tour'
 import { HelpContext } from './context'
 import { searchHelp } from './search'
 import { useHelp } from './useHelp'
@@ -14,11 +15,15 @@ export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sec
   const entry = useHelp(id)
   const ctx = useContext(HelpContext)
   const [q, setQ] = useState('')
+  const [open, setOpen] = useState(false)
+  const [touring, setTouring] = useState(false)
   const all = useMemo(() => (ctx?.catalog ? ctx.catalog() : []), [ctx])
   const hits = useMemo(() => searchHelp(all, q), [all, q])
   if (!entry) return null
   return (
-    <RD.Root onOpenChange={(o) => { if (!o) setQ('') }}>
+    <>
+    {touring && entry.tour && <Tour steps={entry.tour} onEnd={() => setTouring(false)} />}
+    <RD.Root open={open} onOpenChange={(o) => { setOpen(o); if (!o) setQ('') }}>
       <RD.Trigger asChild>
         <button type="button" data-help={id} aria-label={`Help: ${page}`}
           className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
@@ -49,6 +54,12 @@ export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sec
             ) : (
               <section aria-label="This page" className="flex flex-col gap-3">
                 <p className="leading-relaxed">{entry.body}</p>
+                {entry.tour && entry.tour.length > 0 && (
+                  <button type="button" onClick={() => { setOpen(false); setTouring(true) }}
+                    className="self-start rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-600/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
+                    Show me
+                  </button>
+                )}
                 {entry.tasks && entry.tasks.length > 0 && (
                   <div>
                     <p className="mb-1 font-medium text-neutral-900">Common tasks</p>
@@ -62,6 +73,7 @@ export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sec
         </RD.Content>
       </RD.Portal>
     </RD.Root>
+    </>
   )
 }
 

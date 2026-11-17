@@ -341,12 +341,30 @@ describe('an empty view', () => {
 describe('list tools own their help', () => {
   it('every tool a list can have has its text; "Using lists" lists only the tools it has', async () => {
     const { PLATFORM_HELP, listTools } = await import('./index')
-    const all = listTools({ search: true, views: true, export: true })
+    const all = listTools({ search: true, panel: true, views: true, export: true })
     for (const id of all) expect(PLATFORM_HELP[id]?.body, id).toBeTruthy()
     expect(Object.keys(PLATFORM_HELP).sort()).toEqual([...all].sort())  // and no text without a tool
-    const bare = listTools({ search: false, views: false, export: false })
+    const bare = listTools({ search: false, panel: false, views: false, export: false })
+    expect(bare).not.toContain('list.searchPanel')
     expect(bare).not.toContain('list.export')
     expect(bare).not.toContain('list.views')
     expect(bare).not.toContain('list.search')
+  })
+})
+
+describe('the list tools\' texts name real buttons', () => {
+  const lib = import.meta.glob<string>('./**/*.tsx', { query: '?raw', import: 'default', eager: true })
+  const code = Object.entries(lib).filter(([f]) => !f.includes('.test.')).map(([, t]) => t).join('\n')
+  // as a label, a title, a menu item, JSX text, or the words after a template's count (`${n} more fields`)
+  const isLabel = (w: string) => new RegExp(`(['"\`>]|\\}\\s)${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(['"\`<])`).test(code)
+  it('every button a list tool\'s text names exists, by its exact words', async () => {
+    const { PLATFORM_HELP } = await import('./index')
+    for (const [id, e] of Object.entries(PLATFORM_HELP)) {
+      for (const b of e.buttons ?? []) {
+        expect(e.body.includes(b), `${id}: names ${b}`).toBe(true)
+        expect(isLabel(b), `${id}: ${b} is a real label`).toBe(true)
+      }
+    }
+    expect(isLabel('Send it to the moon')).toBe(false)
   })
 })

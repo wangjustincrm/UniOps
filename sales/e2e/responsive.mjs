@@ -153,6 +153,23 @@ async function run(name, viewport) {
     check(await panel.getByText('SSCC — term').count() === 1, `${name} page help: search finds a glossary term`)
     await shot('page-help')
     await page.keyboard.press('Escape')
+    // The Orders tour: every stop is on screen and Next walks to Done.
+    await page.getByRole('button', { name: 'Help: Orders' }).click()
+    await page.getByRole('button', { name: 'Show me' }).click()
+    let stops = 0
+    for (let n = 0; n < 8; n++) {
+      const box = page.locator('[data-tour-step]')
+      await box.waitFor({ timeout: 5000 })
+      stops++
+      const r = await box.boundingBox()
+      check(!!r && r.x >= 0 && r.x + r.width <= viewport.width + 1, `${name} orders tour: stop ${stops} fits the screen`)
+      if (stops === 4) await shot('tour-stop')
+      const done = box.getByRole('button', { name: 'Done' })
+      if (await done.count()) { await done.click(); break }
+      await box.getByRole('button', { name: 'Next' }).click()
+    }
+    check(stops === 5, `${name} orders tour: all 5 stops shown (${stops})`)
+    check(await page.locator('[data-tour-step]').count() === 0, `${name} orders tour: Done ends it`)
     // every list tool marks itself (a tour can point at it)
     for (const id of ['list.search', 'list.searchPanel', 'list.views', 'list.columns', 'list.refresh', ...(phone ? ['list.phone'] : [])]) {
       check(await page.locator(`[data-help="${id}"]`).count() >= 1, `${name} orders: ${id} is marked`)

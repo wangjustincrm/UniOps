@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DisabledReason, HelpProvider, HelpTip, useHelp } from './index'
 import type { HelpEntry } from './types'
 
@@ -148,5 +148,46 @@ describe('layers', () => {
     const sec = await screen.findByRole('region', { name: 'Using lists' })
     expect(within(sec).getByText('Search')).toBeInTheDocument()
     expect(within(sec).getByText('Type and press Enter.')).toBeInTheDocument()
+  })
+})
+
+describe('the tour', () => {
+  afterEach(() => vi.restoreAllMocks())
+  // every marked element has a box, except "list.b" (not shown)
+  const boxes = () => vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const w = this.getAttribute('data-help') === 'list.b' ? 0 : 40
+    return { width: w, height: w ? 20 : 0, top: 10, left: 10, right: 10 + w, bottom: 30, x: 10, y: 10, toJSON: () => ({}) } as DOMRect
+  })
+  it('walks its steps (Next / Back / Done), skips a step whose element is not shown, and Esc ends it', async () => {
+    const { Tour } = await import('./index')
+    const texts = { 'list.a': { title: 'A', body: 'First.' }, 'list.c': { title: 'C', body: 'Third.' }, 'status:Sent': { title: 'Sent', body: 'Badge.' } }
+    const ended = vi.fn()
+    boxes()
+    render(<HelpProvider layers={[texts]}>
+      <span data-help="list.a">a</span><span data-help="list.b">b</span><span data-help="list.c">c</span><span data-help="status:Sent">s</span>
+      <Tour steps={[{ anchor: 'list.a' }, { anchor: 'list.b' }, { anchor: 'list.c' }, { anchor: 'status:*' }]} onEnd={ended} />
+    </HelpProvider>)
+    const step = async () => (await screen.findByRole('dialog')).textContent
+    await waitFor(async () => expect(await step()).toContain('First.'))
+    expect(await step()).toContain('1 of 4')
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await waitFor(async () => expect(await step()).toContain('Third.'))  // b skipped
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    await waitFor(async () => expect(await step()).toContain('First.'))  // b skipped going back too
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await waitFor(async () => expect(await step()).toContain('Third.'))
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await waitFor(async () => expect(await step()).toContain('Badge.'))  // "status:*": the first status badge
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(ended).toHaveBeenCalledOnce()
+  })
+  it('Esc ends it', async () => {
+    const { Tour } = await import('./index')
+    const ended = vi.fn()
+    boxes()
+    render(<HelpProvider layers={[{ 'list.a': { body: 'First.' } }]}><span data-help="list.a">a</span><Tour steps={[{ anchor: 'list.a' }]} onEnd={ended} /></HelpProvider>)
+    await screen.findByRole('dialog')
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(ended).toHaveBeenCalled()
   })
 })

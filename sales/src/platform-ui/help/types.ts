@@ -14,6 +14,18 @@ export interface HelpEntry {
   next?: string
   /** A page's common tasks (its help panel lists them). */
   tasks?: string[]
+  /** The buttons and menu items the text names, by their exact words (a test checks they exist). */
+  buttons?: string[]
+  /** A page's tour: "Show me" in its panel walks these steps. */
+  tour?: TourStep[]
+}
+
+/** One stop of a tour: the element marked `data-help="<anchor>"` (an anchor ending in "*": the first
+ *  shown element whose id starts so, e.g. "status:*" = the first status badge), with that element's own
+ *  help text unless `text` names another. A stop whose element isn't on screen is skipped. */
+export interface TourStep {
+  anchor: string
+  text?: string
 }
 
 /** Every text the module has, for the help panel's search: its id and text. */

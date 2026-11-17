@@ -5,6 +5,7 @@ import type { ColumnDef } from '../primitives/DataTable'
 import { PageHeader } from '../primitives/PageHeader'
 import type { HelpId } from '../help'
 import { listTools } from './listHelp'
+import { useListMeta } from '../resource/listMeta'
 import { Sheet } from '../primitives/Sheet'
 import type { ListMeta } from '../resource/listMeta'
 import { queryKeys } from '../resource/queryKeys'
@@ -113,6 +114,8 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   const qc = useQueryClient()
   const detailScope = useUnsavedScope()  // the open record's unsaved input: prev / next asks about it
   const view = useListView(resource, { fixed })
+  // Search on any field shows when the list has a filterable field the page didn't fix (as QueryTable decides).
+  const hasPanel = (useListMeta(resource).data?.fields ?? []).some((f) => f.filterable && !fixed.some((x) => x.field === f.name))
   const { spec } = view
   const [open, setOpenRaw] = useState<T | null>(null)
   // The detail's tab: kept from record to record; a linked one replaces it.
@@ -220,7 +223,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
     <NoticesContext.Provider value={notices}>
     <div className="flex flex-col gap-4">
       {props.title && <PageHeader title={props.title} description={props.description} help={props.help}
-        helpSections={[{ title: 'Using lists', ids: listTools({ search: props.searchable ?? true, views: !!view.tableProps.picker, export: !!(props.onExport && resource.exportPath) }) }]} />}
+        helpSections={[{ title: 'Using lists', ids: listTools({ search: props.searchable ?? true, panel: hasPanel, views: !!view.tableProps.picker, export: !!(props.onExport && resource.exportPath) }) }]} />}
       {props.notice}
       <QueryTable<T>
         ariaLabel={props.title}

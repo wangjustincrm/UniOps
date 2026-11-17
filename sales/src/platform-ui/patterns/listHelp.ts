@@ -12,22 +12,25 @@ declare module '../help/types' {
 
 export const PLATFORM_HELP: Record<string, HelpEntry> = {
   'list.search': { title: 'Search', body: 'Type in Search and press Enter.' },
-  'list.searchPanel': { title: 'Search on any field', body: 'The sliders button finds by one column: a date range, a status, a partner.' },
-  'list.views': { title: 'Views', body: 'The View button (top left) switches between saved filters and columns. System views come with the page; My views are yours.' },
-  'list.defaultView': { title: 'Default view', body: 'In the View list, a view of yours → Set as default: the page opens on it.' },
-  'list.saveView': { title: 'Save a view', body: 'Change filters, sort or columns, then Save view (keeps it) or Save as a new view. Reset to the saved view drops your changes.' },
-  'list.columns': { title: 'Columns', body: "The eye button (first header cell): show, hide or move columns. Drag a header's grip to move it." },
-  'list.sortGroup': { title: 'Sort and group', body: "A header's arrow menu: Sort ascending / descending, Group ascending / descending, Hide column. Click a header to sort by it." },
-  'list.refresh': { title: 'Refresh', body: 'The refresh button reads the list again; its arrow sets Auto-refresh (30s, 1m, 5m).' },
-  'list.export': { title: 'Export CSV', body: 'Exports every row the current filters select, not only this page.' },
-  'list.phone': { title: 'On a phone', body: 'Each row is a card: Sort is a menu, "N more fields" shows the rest of a card, the arrows at the bottom change page.' },
+  'list.searchPanel': { title: 'Search on any field', body: 'The sliders button (Search on any field) finds by one column: a date range, a status, a partner.', buttons: ['Search on any field'] },
+  'list.views': { title: 'Views', body: 'The View button (beside Search) switches between saved filters and columns. System views come with the page; My views are yours.' },
+  'list.defaultView': { title: 'Default view', body: 'In the View list, a view of yours → Set as default: the page opens on it.', buttons: ['Set as default'] },
+  'list.saveView': { title: 'Save a view', body: 'Change filters, sort or columns, then Save view (keeps it) or Save as a new view. Reset to the saved view drops your changes.',
+    buttons: ['Save view', 'Save as a new view', 'Reset to the saved view'] },
+  'list.columns': { title: 'Columns', body: "The eye button (the column chooser): show, hide or move columns. Drag a header's grip to move it." },
+  'list.sortGroup': { title: 'Sort and group', body: "A header's arrow menu: Sort ascending / descending, Group ascending / descending, Hide column. Click a header to sort by it.",
+    buttons: ['Sort ascending', 'Group ascending', 'Hide column'] },
+  'list.refresh': { title: 'Refresh', body: 'The refresh button reads the list again; its arrow sets Auto-refresh (30s, 1m, 5m).', buttons: ['Auto-refresh'] },
+  'list.export': { title: 'Export CSV', body: 'Export CSV exports every row the current filters select, not only this page.', buttons: ['Export CSV'] },
+  'list.phone': { title: 'On a phone', body: 'Each row is a card: Sort is a menu, "N more fields" shows the rest of a card, the arrows at the bottom change page.',
+    buttons: ['more fields'] },
 }
 
 /** The tools a list has, in the order "Using lists" explains them. */
-export function listTools(has: { search: boolean; views: boolean; export: boolean }): string[] {
+export function listTools(has: { search: boolean; panel: boolean; views: boolean; export: boolean }): string[] {
   return [
     ...(has.search ? ['list.search'] : []),
-    'list.searchPanel',
+    ...(has.panel ? ['list.searchPanel'] : []),
     ...(has.views ? ['list.views', 'list.defaultView', 'list.saveView'] : []),
     'list.columns', 'list.sortGroup', 'list.refresh',
     ...(has.export ? ['list.export'] : []),

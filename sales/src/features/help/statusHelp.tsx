@@ -7,7 +7,7 @@ import { fetchStatusHelp } from './statusHelpApi'
 
 // The Sales help (the user, 2026-11-16). What a Status, an On Hold reason or a Detail means comes
 // from the API (sales-api app/domain/status_help.py, beside the rules); texts only the screens need
-// live in UI_HELP below. Ids: status:<Status>, hold:<reason>, detail:<Detail>, term:<glossary term>, and UI_HELP's keys.
+// are a layer (pageHelp.ts). Ids: status:<Status>, hold:<reason>, detail:<Detail>, term:<glossary term>, page:<page>.
 
 declare module '@/platform-ui/help/types' {
   interface HelpRegistry {
@@ -20,11 +20,9 @@ declare module '@/platform-ui/help/types' {
 }
 
 
-/** Texts that belong to a screen, not to the business rules: the pages' help panels. */
-const UI_HELP: Record<string, HelpEntry> = PAGE_HELP
 
-/** The component library's own texts (the list tools); Sales' texts above override them by id. */
-const LAYERS = [PLATFORM_HELP]
+/** The text layers: the component library's (the list tools), then Sales' screens'; a later one overrides by id. */
+const LAYERS = [PLATFORM_HELP, PAGE_HELP]
 
 const PART = { status: 'statuses', hold: 'holds', detail: 'details', term: 'terms' } as const
 /** What a search result says it is. */
@@ -35,7 +33,6 @@ export function SalesHelpProvider({ children }: { children: ReactNode }) {
     enabled: hasSession(), retry: 1 })
   const data = q.data
   const source = useCallback((id: string): HelpEntry | undefined => {
-    if (UI_HELP[id]) return UI_HELP[id]
     const [kind, ...rest] = id.split(':')
     const part = PART[kind as keyof typeof PART]
     const name = rest.join(':')
@@ -49,9 +46,8 @@ export function SalesHelpProvider({ children }: { children: ReactNode }) {
     warned.current.add(id)
     console.warn(`[help] no text for "${id}"`)
   }, [data])
-  // Every text, for the help panel's search: the screens' own, then the API's by kind.
+  // The API's texts, for the help panel's search (the layers are listed by the provider).
   const catalog = useCallback(() => [
-    ...Object.entries(UI_HELP).map(([id, entry]) => ({ id, entry })),
     ...(Object.keys(PART) as (keyof typeof PART)[]).flatMap((kind) =>
       Object.entries(data?.[PART[kind]] ?? {}).map(([name, t]) => ({ id: `${kind}:${name}`, entry: { title: `${name} — ${KIND[kind]}`, body: t.body } }))),
   ], [data])

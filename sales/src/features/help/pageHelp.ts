@@ -14,6 +14,9 @@ export const PAGE_HELP: Record<string, HelpEntry> = {
       'Open an order to act on it: Send 940 now, Release hold, Confirm delivery.',
       'New manual order: a customer order typed in by hand.',
     ],
+    // The pilot tour (the user, 2026-11-17): data only; each stop is a tool or a badge that marks itself
+    // and says its own text. Opt-in from the panel's "Show me", never automatic.
+    tour: [{ anchor: 'list.views' }, { anchor: 'list.search' }, { anchor: 'list.searchPanel' }, { anchor: 'status:*' }, { anchor: 'list.refresh' }],
   },
   'page:delivery': {
     title: 'Delivery confirmation',
