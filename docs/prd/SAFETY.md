@@ -451,6 +451,7 @@ Review of UAT 15 (built; no migration)
 - A quiz's course feedback takes each person's most recent answer to each question, from whichever attempt gave it; the comments are listed alphabetically.
 - A legal deadline escalated before coordinators were tasked gets its coordinator task at the next sweep, without a new email.
 - The Food Safety dashboard's lists say what each investigation state means.
+- On a new hazard, Record and assess the risk always answers: unnamed, it says to write what the hazard is first and goes to that field (it was greyed out, saying nothing — UAT 16, TC-03).
 - Before go-live every test email is deleted, with no copy kept (decided 17 November: everything to date is testing).
 
 UAT 15 (built; migration 0113)
@@ -458,7 +459,7 @@ UAT 15 (built; migration 0113)
 - A food-safety investigation's immediate cause records the plant area that completed the work, picked as Where did this happen is, its path kept as it read when picked (ehs_causes.completed_by_location_id/_path). A department recorded before stays on the cause and is shown until an area is picked.
 - The hazard form: Review due defaults to today on a new hazard (it can be changed or cleared); PPE from HSE's PPE list beside Controls in place (ehs_hazards.hazard_ppe), shown on the hazard. The risk assessment sits under Where and Equipment; a new hazard's button reads Record and assess the risk, records it and opens the assessment for that hazard.
 - Every risk assessment is shown as on an incident: its heading and current rating, the green button, and the assessments made under it — on the incident, the hazard form and the hazard's page. On a food-safety near miss the risk assessment and the Food Safety Risk Assessment stand side by side, each result under its own button.
-- This month's figure on the dashboards is half the size of the figure it sits by, and its arrow is red when the figure got worse and green when it got better: more injuries, incidents or corrective actions raised is worse; more near misses (food safety ones included) or hazard assessments is better.
+- This month's figure on the dashboards is a little over half the size of the figure it sits by (20px beside 36px; UAT 16, O: "make the fonts 2 points larger"), and its arrow is red when the figure got worse and green when it got better: more injuries or incidents is worse; more near misses (food safety ones included), hazard assessments or corrective actions raised is better (UAT 16, O).
 - The Food Safety dashboard's investigations: Open (reported, the investigation not signed), Under investigation (signed, not yet closed — where it waits while its corrective actions are completed and verified), Closed. The incident register takes the same investigation_signed filter, so each opens what it counted.
 - A toolbox talk held again counts in the tracker in the month it was held; a talk's completion counts the people it was handed to.
 - A legal deadline's task goes to the HSE Coordinator as well as the HSE Manager; recording the filing closes both.

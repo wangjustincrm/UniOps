@@ -47,8 +47,9 @@ export function MonthChange({ now, before, month, previous, percent, upIsGood = 
   const better = upIsGood ? up : down
   const worse = upIsGood ? down : up
   const tone = better ? 'text-success-700' : worse ? 'text-danger-700' : 'text-neutral-500'
-  const text = size === 'box' ? 'text-lg' : 'text-[15px]'
-  const icon = size === 'box' ? 'h-5 w-5' : 'h-4 w-4'
+  // UAT 16, O: "make the fonts 2 points larger."
+  const text = size === 'box' ? 'text-xl' : 'text-[17px]'
+  const icon = size === 'box' ? 'h-6 w-6' : 'h-5 w-5'
   return (
     <span className={`inline-flex items-center gap-0.5 font-bold leading-none tabular-nums text-neutral-800 ${text}`}
           title={`${words}${better ? ' — better' : worse ? ' — worse' : ''}`}>

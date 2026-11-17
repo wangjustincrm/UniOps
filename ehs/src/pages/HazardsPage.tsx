@@ -12,7 +12,7 @@
  * drift from it within a month.
  */
 import EquipmentSelect, { EquipmentName } from '@/components/EquipmentSelect'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, X } from 'lucide-react'
@@ -398,6 +398,12 @@ export function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: 
   // The hazard as recorded by "Record and assess the risk", to score it as itself.
   const [recorded, setRecorded] = useState<Hazard | null>(null)
   const [assessingNew, setAssessingNew] = useState(false)
+  // ★ UAT 16, TC-03: "pressing the record and assess the risk button does not
+  // open the form." It was greyed out until the hazard was named, and said
+  // nothing. Now it always answers: it records and opens the assessment, or
+  // says what is missing and takes you there.
+  const [assessBlocked, setAssessBlocked] = useState<string | null>(null)
+  const titleRef = useRef<HTMLInputElement>(null)
   const [findings, setFindings] = useState(existing?.findings ?? '')
   const [causes, setCauses] = useState<CauseDraft[]>([])
   // ★ Remembered once the hazard exists. Recording it is two calls — the hazard,
@@ -526,7 +532,8 @@ export function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: 
         </div>
         <div className="sm:col-span-2">
           <Field label="What is the hazard">
-            <input className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)}
+            <input ref={titleRef} className={inputClass} value={title}
+                   onChange={(e) => { setTitle(e.target.value); setAssessBlocked(null) }}
                    placeholder="Pinch point at the case sealer infeed" />
           </Field>
         </div>
@@ -553,11 +560,25 @@ export function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: 
           ) : (
             <div>
               <SectionTitle className="mb-2.5">Risk assessment</SectionTitle>
-              <button type="button" className={assessButton}
-                      disabled={!title.trim() || create.isPending || unfinishedAction(causes)}
-                      onClick={() => { if (!create.isPending) { setAssessAfterSave(true); create.mutate() } }}>
-                Record and assess the risk
+              <button type="button" className={assessButton} disabled={create.isPending}
+                      onClick={() => {
+                        if (create.isPending) return
+                        if (!title.trim()) {
+                          setAssessBlocked('Write what the hazard is first — it is recorded before it is assessed.')
+                          titleRef.current?.focus()
+                          return
+                        }
+                        if (unfinishedAction(causes)) {
+                          setAssessBlocked('Finish or remove the corrective action you started under Root causes first.')
+                          return
+                        }
+                        setAssessBlocked(null)
+                        setAssessAfterSave(true)
+                        create.mutate()
+                      }}>
+                {create.isPending && assessAfterSave ? 'Recording…' : 'Record and assess the risk'}
               </button>
+              {assessBlocked && <p role="alert" className="mt-1.5 text-xs text-danger-700">{assessBlocked}</p>}
             </div>
           )}
         </div>

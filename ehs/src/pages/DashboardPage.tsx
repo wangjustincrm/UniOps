@@ -344,9 +344,10 @@ export default function DashboardPage() {
   const year = h.year
   // ★ UAT 14: this month's count against last month's, on each figure.
   const mc = data.month_change
-  // UAT 15, I: more near misses and more assessments are better; more of
-  // anything else counted here is worse.
-  const UP_IS_GOOD = new Set(['near_misses', 'assessments'])
+  // UAT 15, I and UAT 16, O: "more someone was hurt, or equipment was involved
+  // incidents is worse, more near misses recorded and more hazard assessments
+  // are good. more corrective actions is good."
+  const UP_IS_GOOD = new Set(['near_misses', 'assessments', 'capa_raised'])
   const change = (key: string, size: 'box' | 'tile' = 'box') => (
     <MonthChange now={mc.this[key] ?? 0} before={mc.last[key] ?? 0} month={mc.month} previous={mc.previous}
                  upIsGood={UP_IS_GOOD.has(key)} size={size} />)
