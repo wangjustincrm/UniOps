@@ -382,3 +382,17 @@ async def test_voids_chargebacks_and_rows_only_once_their_details_are_read(env):
     [only] = [x for x in pays if x.order_id is None]
     assert (only.gateway_ref, only.issue) == ("70003", "In the gateway, not in Shopify")
     assert (sets["910"].pending_count, sets["910"].unmatched_count) == (0, 1)
+
+
+def test_a_void_never_takes_a_sale_by_order_number_or_amount_and_time():
+    """Review 2026-11-17: a void then a retry of the same amount 5 minutes later that settled. The
+    Shopify sale goes to the settled retry or stays unmatched — never to the void."""
+    void = gm.GatewayTx(1, "sale", Decimal("50.00"), AT, ("9301", ""), "1", final=True, void=True)
+    retry = gm.GatewayTx(2, "sale", Decimal("50.00"), AT + timedelta(minutes=5), ("9301", ""), "2", final=True)
+    sale = P(7, amount="50.00", at=AT + timedelta(minutes=5), number="9301")
+    for txs in ([void, retry], [retry, void], [void]):
+        assert [m for m in gm.match(txs, [sale]) if m.tx == 1] == []
+    assert [(m.tx, m.payment) for m in gm.match([void, retry], [sale])] == [(2, 7)]
+    # by an exact id a void still matches: the old gateway's id, or Shopify's payment id in its text
+    assert [m.method for m in gm.match([gm.GatewayTx(1, "sale", Decimal("50.00"), AT, ("", ""), "5001", void=True)],
+                                       [P(1, amount="50.00", gid="5001")])] == ["TRANSACTION_ID"]

@@ -326,7 +326,7 @@ class AuthorizeNetIntake:
             found = gm.match([gm.GatewayTx(key=t.id, kind="sale" if t.kind == "void" else t.kind, amount=t.amount,
                                            submitted_at=t.submitted_at,
                                            texts=(t.invoice_number or "", t.description or ""), external_id=t.external_id,
-                                           final=t.details_read_at is not None)
+                                           final=t.details_read_at is not None, void=t.kind == "void")
                               for t in txs], payments)
             if not found:
                 return 0

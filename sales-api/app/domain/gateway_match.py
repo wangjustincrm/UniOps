@@ -42,6 +42,10 @@ class GatewayTx:
     external_id: str
     # Amount and time are tried only once nothing better can come: its details were read.
     final: bool = True
+    # A voided transaction (passed as kind "sale"): matched only by an exact id (rules 1 and 2). By
+    # order number or amount it could take the real sale of a retry that settled, and show real
+    # money as voided — worse than leaving it unmatched (review 2026-11-17).
+    void: bool = False
 
 
 @dataclass(frozen=True)
@@ -99,7 +103,7 @@ def match(txs: list[GatewayTx], payments: list[ShopifyPayment], *, window: timed
     for p in payments:
         by_amount[(p.kind, p.amount)].append(p)
     for t in txs:
-        if t.key in used_tx or not any(t.texts):
+        if t.key in used_tx or t.void or not any(t.texts):
             continue
         found = [p for p in by_amount.get((t.kind, t.amount), []) if p.id not in used_p and p.order_number
                  and any(_number_in(p.order_number, x) for x in t.texts if x)]
@@ -107,7 +111,7 @@ def match(txs: list[GatewayTx], payments: list[ShopifyPayment], *, window: timed
             take(t, found[0], "ORDER_NUMBER")
 
     # 4. amount and time, the only candidate both ways
-    open_t = [t for t in txs if t.key not in used_tx and t.final and t.submitted_at is not None]
+    open_t = [t for t in txs if t.key not in used_tx and t.final and not t.void and t.submitted_at is not None]
     near_t: dict[int, list[GatewayTx]] = defaultdict(list)
     near_p: dict[int, list[ShopifyPayment]] = {}
     for t in open_t:
