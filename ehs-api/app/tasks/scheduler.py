@@ -95,6 +95,11 @@ async def _load_config(db: AsyncSession) -> EhsConfig | None:
 # and they did not while each kept its own answer.
 
 
+# Who is tasked with a legal deadline: the HSE Manager, and (UAT 15, L) the
+# HSE Coordinator, who may record the filings (ehs.statutory.record).
+STATUTORY_TASK_ROLES = ("ehs_manager", "ehs_coordinator")
+
+
 async def sweep_statutory(db: AsyncSession, now: datetime) -> int:
     """Raise a task for each statutory deadline that has crossed a threshold."""
     rows = (await db.execute(
@@ -124,27 +129,30 @@ async def sweep_statutory(db: AsyncSession, now: datetime) -> int:
         # three tones — and on the test database one incident had six. They
         # were invisible while nothing read role-assigned tasks; the moment
         # that was fixed they became most of what the HSE Manager could see.
-        existing = next(
-            (t for t in await task_service.open_tasks_for(
-                db, doc_type=doc_type, doc_id=deadline.source_id)
-             if t.type == task_service.TASK_STATUTORY
-             and (t.title or "").startswith(lead)), None)
-        if existing is not None:
-            existing.title = title
-            existing.description = description
-            existing.priority = priority
-        else:
-            await task_service.open_task(
-                db,
-                task_type=task_service.TASK_STATUTORY,
-                doc_type=doc_type,
-                doc_id=deadline.source_id,
-                doc_number=deadline.source_ref or str(deadline.source_id)[:8],
-                title=title,
-                assigned_role="ehs_manager",
-                description=description,
-                priority=priority,
-            )
+        # ★ UAT 15, question L: "coordinators get them too, so whichever of you
+        # is in that day files it." One task for each role, found again by its
+        # role; recording the filing closes every one of them (satisfy()).
+        open_now = [t for t in await task_service.open_tasks_for(
+            db, doc_type=doc_type, doc_id=deadline.source_id)
+            if t.type == task_service.TASK_STATUTORY and (t.title or "").startswith(lead)]
+        for role in STATUTORY_TASK_ROLES:
+            existing = next((t for t in open_now if t.assigned_role == role), None)
+            if existing is not None:
+                existing.title = title
+                existing.description = description
+                existing.priority = priority
+            else:
+                await task_service.open_task(
+                    db,
+                    task_type=task_service.TASK_STATUTORY,
+                    doc_type=doc_type,
+                    doc_id=deadline.source_id,
+                    doc_number=deadline.source_ref or str(deadline.source_id)[:8],
+                    title=title,
+                    assigned_role=role,
+                    description=description,
+                    priority=priority,
+                )
         # HSE gets this by email as well as by inbox. It is the one category
         # where a list somebody has not opened today is not good enough.
         await notify.statutory_escalated(db, deadline, overdue=overdue)

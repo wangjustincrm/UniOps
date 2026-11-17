@@ -97,7 +97,9 @@ async def test_a_distant_deadline_is_left_alone(db_session, monkeypatch):
     assert await _tasks(db_session, d.source_id) == []
 
 
-async def test_a_deadline_inside_a_day_raises_a_task_for_the_hse_manager(db_session, monkeypatch):
+async def test_a_deadline_inside_a_day_raises_a_task_for_the_hse_manager_and_coordinator(db_session, monkeypatch):
+    """UAT 15, question L: "coordinators get them too, so whichever of you is
+    in that day files it." One task for each role."""
     await _config(db_session, statutory_scan_interval_minutes=60)
     d = await _deadline(db_session, due_at=NOW + timedelta(hours=20))
     monkeypatch.setattr(scheduler, "AsyncSessionLocal", lambda: _Ctx(db_session))
@@ -105,9 +107,9 @@ async def test_a_deadline_inside_a_day_raises_a_task_for_the_hse_manager(db_sess
     assert (await scheduler.run_tick(NOW)).statutory_escalated == 1
     assert d.escalation_level == 1
     tasks = await _tasks(db_session, d.source_id)
-    assert len(tasks) == 1
-    assert tasks[0]["type"] == task_service.TASK_STATUTORY
-    assert tasks[0]["assigned_role"] == "ehs_manager"
+    assert len(tasks) == 2
+    assert {t["type"] for t in tasks} == {task_service.TASK_STATUTORY}
+    assert sorted(t["assigned_role"] for t in tasks) == ["ehs_coordinator", "ehs_manager"]
 
 
 async def test_an_overdue_deadline_is_high_priority(db_session, monkeypatch):
@@ -129,7 +131,7 @@ async def test_sweeping_twice_raises_nothing_the_second_time(db_session, monkeyp
 
     assert (await scheduler.run_tick(NOW)).statutory_escalated == 1
     assert (await scheduler.run_tick(NOW)).statutory_escalated == 0
-    assert len(await _tasks(db_session, d.source_id)) == 1
+    assert len(await _tasks(db_session, d.source_id)) == 2   # one each, not more
 
 
 async def test_a_satisfied_deadline_is_never_chased(db_session, monkeypatch):
