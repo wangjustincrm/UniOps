@@ -4,10 +4,10 @@ export interface HelpHit { id: string; entry: HelpEntry }
 
 const norm = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
 
-/** The texts that hold every word of `query` (in the title, the text or the tasks): those whose title
+/** The texts that hold every word of `query` (words of 2 letters or more) (in the title, the text or the tasks): those whose title
  *  holds them first, then the rest, each in catalog order. An empty query finds nothing. */
 export function searchHelp(all: HelpHit[], query: string, limit = 20): HelpHit[] {
-  const words = norm(query).split(/\s+/).filter(Boolean)
+  const words = norm(query).split(/\s+/).filter((w) => w.length >= 2)  // one letter matches nearly everything
   if (words.length === 0) return []
   const scored: { hit: HelpHit; title: boolean }[] = []
   for (const hit of all) {

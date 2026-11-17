@@ -111,3 +111,12 @@ describe('search and the page panel', () => {
     expect(within(panel).getByText('Nothing found for “zzz”.')).toBeInTheDocument()
   })
 })
+
+describe('search ignores one-letter words', () => {
+  it('"a" alone finds nothing; with a real word it is ignored', async () => {
+    const { searchHelp } = await import('./index')
+    const all = [{ id: 'term:EA', entry: { title: 'EA', body: 'Each: a unit.' } }, { id: 'term:SSCC', entry: { title: 'SSCC', body: 'A pallet label.' } }]
+    expect(searchHelp(all, 'a')).toEqual([])
+    expect(searchHelp(all, 'a pallet').map((h) => h.id)).toEqual(['term:SSCC'])
+  })
+})

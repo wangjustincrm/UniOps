@@ -291,3 +291,27 @@ describe('card help reaches hidden lines', () => {
     expect(within(second).getAllByRole('button', { name: 'Help' })).toHaveLength(1)
   })
 })
+
+describe('an empty list says why only when nothing narrows it', () => {
+  type Row = { id: number; code: string }
+  it('no filter: the list\'s own text; a search or filter: "No rows match" and Clear filters (the page\'s fixed filters stay)', async () => {
+    const { QueryTable } = await import('./patterns/QueryTable')
+    const { useState } = await import('react')
+    const seen: unknown[] = []
+    function T({ start }: { start: import('./index').QuerySpec }) {
+      const [spec, setSpec] = useState(start)
+      return <QueryTable<Row> columns={[columnsOf<Row>().text('code', 'Code')]} rows={[]} total={0} spec={spec} locked={['partner']}
+        onSpecChange={(s) => { seen.push(s); setSpec(s) }} rowKey={(r) => r.id} emptyTitle="No orders yet" emptyText="Orders arrive on each run." />
+    }
+    const { unmount } = render(<T start={{ page: 1, pageSize: 20, filters: [{ field: 'partner', op: 'eq', value: 'X' }] }} />)
+    expect(screen.getByText('No orders yet')).toBeInTheDocument()
+    expect(screen.getByText('Orders arrive on each run.')).toBeInTheDocument()
+    unmount()
+    render(<T start={{ page: 1, pageSize: 20, search: 'zz', filters: [{ field: 'partner', op: 'eq', value: 'X' }, { field: 'status', op: 'eq', value: 'Open' }] }} />)
+    expect(screen.getByText('No rows match the current filters')).toBeInTheDocument()
+    expect(screen.queryByText('Orders arrive on each run.')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(seen.at(-1)).toMatchObject({ page: 1, search: undefined, filters: [{ field: 'partner', op: 'eq', value: 'X' }] })
+    expect(screen.getByText('Orders arrive on each run.')).toBeInTheDocument()
+  })
+})

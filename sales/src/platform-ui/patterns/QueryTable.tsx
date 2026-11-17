@@ -1,5 +1,6 @@
 import { BooleanCell, DateCell, NumberCell, StackedDateTimeCell } from '../primitives/cells'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Button } from '../primitives/shell'
 import { DataTable, type ColumnDef, type Grouping } from '../primitives/DataTable'
 import { groupKey } from '../primitives/groupKey'
 import { formatMoney } from '../primitives/format'
@@ -241,10 +242,23 @@ function QueryTableView<T>({
     })
     : undefined
 
+  // Empty because of a filter, a search or a view's filters (the page's own fixed ones don't count): the
+  // list's "why it is empty" would mislead; say what narrows it and offer to clear it.
+  const narrowed = !!spec.search || (spec.filters ?? []).some((f) => !locked.includes(f.field))
+  const empty = narrowed ? {
+    emptyTitle: 'No rows match the current filters',
+    emptyText: undefined,
+    emptyAction: (
+      <Button variant="secondary" size="sm" onClick={() => change({ ...spec, page: 1, search: undefined, filters: (spec.filters ?? []).filter((f) => locked.includes(f.field)) })}>
+        Clear filters
+      </Button>
+    ),
+  } : {}
   return (
     <>
       <DataTable<T>
         {...view}
+        {...empty}
         columns={visible}
         grouping={grouping}
         footer={footer}
