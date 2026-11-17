@@ -7,7 +7,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight
 import { Button, Input, Pagination, Skeleton, SkeletonRow } from './shell'
 import { DropdownMenu } from './DropdownMenu'
 import { useElementWidth } from './useResponsive'
-import { HelpTip, useTourStop } from '../help'
+import { HelpTip, TourMark, useTourStop } from '../help'
 import { cn } from '../lib/cn'
 import { EmptyState, ErrorState } from './States'
 import { useSynced } from './useSynced'
@@ -131,6 +131,11 @@ export function DataTable<T>({
   const rootRef = useRef<HTMLDivElement>(null)
   const searchStop = useTourStop({ help: 'list.search', slot: 'list.search' })
   const phoneStop = useTourStop({ help: 'list.phone', slot: 'list.phone' })
+  // The table's own tips: its first row (open it), the first row's ▸, the first group, the totals.
+  const rowStop = useTourStop({ help: 'list.rowOpen', slot: 'list.rowOpen' })
+  const detailStop = useTourStop({ help: 'list.rowDetails', slot: 'list.rowDetails' })
+  const groupStop = useTourStop({ help: 'list.groups', slot: 'list.groups' })
+  const totalsStop = useTourStop({ help: 'list.totals', slot: 'list.totals' })
   const width = useElementWidth(rootRef)
   const cards = cardsBelow !== false && width !== null && width > 0 && width < cardsBelow
   const cellPad = density === 'compact' ? 'px-2 py-1' : 'px-3 py-2'
@@ -208,7 +213,9 @@ export function DataTable<T>({
     </button>
   )
 
-  const pager = pagination && pagination.total > 0 ? (cards ? <CompactPager {...pagination} /> : (
+  // The first row that has details (its ▸ is the tip's).
+  const firstDetailId = expand ? table.getRowModel().rows.find((r) => expand(r.original) !== null)?.id : undefined
+  const pager = pagination && pagination.total > 0 ? (cards ? <TourMark help="list.pages" slot="list.pages" className="inline-flex"><CompactPager {...pagination} /></TourMark> : (<TourMark help="list.pages" slot="list.pages" className="inline-flex">
     <Pagination
       page={pagination.page}
       pageSize={pagination.pageSize}
@@ -216,7 +223,7 @@ export function DataTable<T>({
       onPageChange={pagination.onPageChange}
       onPageSizeChange={pagination.onPageSizeChange}
     />
-  )) : null
+  </TourMark>)) : null
   const headerById = new Map((table.getHeaderGroups()[0]?.headers ?? []).map((h) => [h.column.id, h]))
   const headerIds = (table.getHeaderGroups()[0]?.headers ?? []).map((h) => h.column.id)
   const headerLabel = (id: string) => {
@@ -272,13 +279,13 @@ export function DataTable<T>({
               return (
                 <Fragment key={r.id}>
                   {heads.map((g) => (
-                    <li key={`g:${g.key}`} data-group-head className="bg-neutral-50/70 py-1.5 pr-3" style={{ paddingLeft: `${0.75 + g.level * 1}rem` }}>
+                    <li key={`g:${g.key}`} ref={i === 0 && g.level === 0 ? groupStop.attach : undefined} data-help={i === 0 && g.level === 0 ? 'list.groups' : undefined} data-group-head className="bg-neutral-50/70 py-1.5 pr-3" style={{ paddingLeft: `${0.75 + g.level * 1}rem` }}>
                       {groupButton(g)}
                       {g.summary && <div data-group-summary className="mt-0.5 text-xs font-medium text-neutral-600">{g.summary}</div>}
                     </li>
                   ))}
                   {!rowHidden && (
-                    <li {...rowData} data-row-card data-highlight={flash || undefined}
+                    <li ref={i === 0 && onRowClick ? rowStop.attach : undefined} data-help={i === 0 && onRowClick ? 'list.rowOpen' : undefined} {...rowData} data-row-card data-highlight={flash || undefined}
                       onClick={onRowClick ? (e) => { if (clickOpensRow(e)) onRowClick(r.original) } : undefined}
                       tabIndex={onRowClick ? 0 : undefined}
                       onKeyDown={onRowClick ? (e) => {
@@ -316,7 +323,7 @@ export function DataTable<T>({
                       ) : null}
                       {detail !== null && (
                         <div>
-                          <button type="button" aria-expanded={isOpen} onClick={() => toggleRow(r.id)}
+                          <button type="button" ref={r.id === firstDetailId ? detailStop.attach : undefined} data-help={r.id === firstDetailId ? 'list.rowDetails' : undefined} aria-expanded={isOpen} onClick={() => toggleRow(r.id)}
                             className="inline-flex items-center gap-1 rounded py-0.5 text-xs text-neutral-600 hover:text-neutral-900">
                             {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                             {isOpen ? 'Hide details' : 'Show details'}
@@ -331,7 +338,7 @@ export function DataTable<T>({
             })}
         </ul>
         {footer && rows.length > 0 && (
-          <div data-card-totals data-stale={dim || undefined}
+          <div ref={totalsStop.attach} data-help="list.totals" data-card-totals data-stale={dim || undefined}
             className={cn('sticky bottom-0 z-[1] border-t border-neutral-200 bg-neutral-50 px-3 py-2 text-xs font-medium text-neutral-800', dim && 'opacity-60')}>
             {footer[0] && <div className="mb-0.5">{footer[0]}</div>}
             <dl className="grid grid-cols-[fit-content(45%)_minmax(0,1fr)] gap-x-3 gap-y-0.5">
@@ -460,6 +467,7 @@ export function DataTable<T>({
                     <Fragment key={r.id}>
                     <tr
                       key={r.id}
+                      ref={i === 0 && onRowClick ? rowStop.attach : undefined} data-help={i === 0 && onRowClick ? 'list.rowOpen' : undefined}
                       {...rowData}
                       data-highlight={flash || undefined}
                       onClick={onRowClick ? (e) => { if (clickOpensRow(e)) onRowClick(r.original) } : undefined}
@@ -473,7 +481,7 @@ export function DataTable<T>({
                       {leadCell && (
                         <td className="w-8 px-2">
                           {detail !== null && (
-                            <button type="button" aria-expanded={isOpen} aria-label={isOpen ? 'Hide details' : 'Show details'}
+                            <button type="button" ref={r.id === firstDetailId ? detailStop.attach : undefined} data-help={r.id === firstDetailId ? 'list.rowDetails' : undefined} aria-expanded={isOpen} aria-label={isOpen ? 'Hide details' : 'Show details'}
                               onClick={() => toggleRow(r.id)}
                               className="rounded p-0.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-800">
                               {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
@@ -498,7 +506,7 @@ export function DataTable<T>({
                   const { heads, rowHidden } = groupsAt(i, all)
                   const span = columns.length + (leadCell ? 1 : 0)
                   const headers = heads.map((g) => (
-                    <tr key={`g:${g.key}`} className="border-t border-neutral-200 bg-neutral-50/70">
+                    <tr key={`g:${g.key}`} ref={i === 0 && g.level === 0 ? groupStop.attach : undefined} data-help={i === 0 && g.level === 0 ? 'list.groups' : undefined} className="border-t border-neutral-200 bg-neutral-50/70">
                       <td colSpan={span} className="py-1.5 pr-3" style={{ paddingLeft: `${0.75 + g.level * 1.25}rem` }}>
                         {groupButton(g)}
                         {g.summary && <span data-group-summary className="ml-3 text-xs font-medium text-neutral-600">{g.summary}</span>}
@@ -509,7 +517,7 @@ export function DataTable<T>({
                 })}
             </tbody>
             {footer && rows.length > 0 && (
-              <tfoot data-stale={dim || undefined} className={cn('sticky bottom-0 z-[1] bg-neutral-50 font-medium shadow-[inset_0_1px_0_0_var(--color-neutral-200,#e5e7eb)] transition-opacity', dim && 'opacity-60')}>
+              <tfoot ref={totalsStop.attach} data-help="list.totals" data-stale={dim || undefined} className={cn('sticky bottom-0 z-[1] bg-neutral-50 font-medium shadow-[inset_0_1px_0_0_var(--color-neutral-200,#e5e7eb)] transition-opacity', dim && 'opacity-60')}>
                 <tr>
                   {leadCell && <td />}
                   {footer.map((f, i) => <td key={i} className={cn(cellPad, 'text-neutral-800')}>{f}</td>)}

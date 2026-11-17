@@ -5,6 +5,7 @@ import { IconPopover } from '../primitives/IconPopover'
 import { formatTime } from '../primitives/format'
 import { cn } from '../lib/cn'
 import { NoticesContext, createNoticeStore, useNoticeSnapshot, type NoticeStore, type NoticeTone } from './notices'
+import { TourMark } from '../help'
 
 const ICON: Record<NoticeTone, ReactNode> = {
   info: <Info aria-hidden className="h-3.5 w-3.5 shrink-0 text-primary-600" />,
@@ -60,6 +61,7 @@ export function TableStatusBar({ store, right, className }: { store: NoticeStore
             </div>
           )}
         </div>
+        <TourMark help="list.notices" slot="list.notices" className="inline-flex">
         <IconPopover label="Notifications" icon={<Bell aria-hidden className="h-3.5 w-3.5" />} badge={unseen || undefined} open={open}
           onOpenChange={(o) => { setOpen(o); if (o) store.markSeen() }} align="end" className="w-80">
           <div className="flex items-center justify-between pb-2">
@@ -78,7 +80,7 @@ export function TableStatusBar({ store, right, className }: { store: NoticeStore
               ))}
             </ol>
           )}
-        </IconPopover>
+        </IconPopover></TourMark>
       </div>
       {right && <div className="flex min-h-9 items-center justify-end max-[480px]:w-full">{right}</div>}
     </div>

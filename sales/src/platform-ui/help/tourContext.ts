@@ -4,7 +4,7 @@ import type { TourStep } from './types'
 
 /** One part that is a tour stop: its help id (its text and its anchor), its slot (its place), its key
  *  (one stop per key: e.g. a list's many status badges are one stop, the first shown). */
-export interface Stop { help: string; slot: string; key: string; el: HTMLElement }
+export interface Stop { help: string; slot: string; key: string; el: HTMLElement; text?: string }
 
 /** A page's or a record's own stops (TourScope). */
 export interface ScopeValue {

@@ -48,7 +48,10 @@ export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sec
   }), [scopeId, ctx, manager, seen])
   const extra = useMemo(() => (sections ?? []).flatMap((x) => x.ids), [sections])
   const rows = useMemo(() => pageRows(plan, extra, sources), [plan, extra, sources])
-  const shownPlan = plan.filter((p) => p.shown)
+  // A tour stop (the slot table's `tour`, default on) is in the tours; a tip only (tour: false) is a row
+  // with Show, seen once read in the drawer like a tip with no place on the page.
+  const inTour = (sl: string) => sources.slot(sl)?.tour !== false
+  const shownPlan = plan.filter((p) => p.shown && inTour(p.slot))
   const keyOf = (sl: string) => seenKey(sl, sources.slot(sl)?.group, scopeId)
   const fresh = shownPlan.filter((p) => !sources.isSeen(keyOf(p.slot), sources.slot(p.slot)?.v))
   const firstEver = Object.keys(seen).length === 0
@@ -61,11 +64,11 @@ export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sec
     if (manager) manager.start(steps, null, back)
     else setLocal(steps)
   }, [manager])
-  const toSteps = (list: PlannedStop[]) => list.map((p) => ({ anchor: p.help, slot: p.slot, seen: keyOf(p.slot) }))
-  const tourAll = () => run(entry?.tour ?? toSteps(planStops(scope?.stops() ?? [], manager?.order).filter((p) => p.shown)))
+  const toSteps = (list: PlannedStop[]) => list.map((p) => ({ anchor: p.help, text: p.text, slot: p.slot, seen: keyOf(p.slot) }))
+  const tourAll = () => run(entry?.tour ?? toSteps(planStops(scope?.stops() ?? [], manager?.order).filter((p) => p.shown && inTour(p.slot))))
   const tourNew = () => run(toSteps(planStops(scope?.stops() ?? [], manager?.order)
-    .filter((p) => p.shown && !seenStore.isSeen(keyOf(p.slot), sources.slot(p.slot)?.v))))
-  const showOne = (r: HelpRow) => { if (r.anchor) run([{ anchor: r.anchor, slot: r.slot, seen: r.key }]) }
+    .filter((p) => p.shown && inTour(p.slot) && !seenStore.isSeen(keyOf(p.slot), sources.slot(p.slot)?.v))))
+  const showOne = (r: HelpRow) => { if (r.anchor) run([{ anchor: r.anchor, text: r.slot, slot: r.slot, seen: r.key }]) }
 
   // The page's stops as they are now (once it is on screen, and on each open).
   useEffect(() => {
@@ -74,7 +77,7 @@ export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sec
   }, [scope, manager, open])
   // A tip with no place on the page (e.g. how to sort) is seen by being read: shown in the open drawer
   // (its group is open while it is new) or in the catalog for a second.
-  const unreadText = (view === 'catalog' ? catalog : rows).filter((r) => !r.anchor && !r.seen)
+  const unreadText = (view === 'catalog' ? catalog : rows).filter((r) => (!r.anchor || !inTour(r.slot)) && !r.seen)
   useEffect(() => {
     if (!open || q.trim() || unreadText.length === 0) return
     const t = setTimeout(() => seenStore.mark(unreadText.map((r) => ({ id: r.key, v: r.v }))), 1000)
@@ -188,7 +191,7 @@ export function ShowMeAround({ className }: { className?: string }) {
   const me = useRef<HTMLButtonElement>(null)
   const [plan, setPlan] = useState<PlannedStop[]>([])
   useEffect(() => {
-    const t = setTimeout(() => setPlan(planStops(scope?.stops() ?? [], manager?.order).filter((p) => p.shown)), 300)
+    const t = setTimeout(() => setPlan(planStops(scope?.stops() ?? [], manager?.order).filter((p) => p.shown && manager?.slot(p.slot)?.tour !== false)), 300)
     return () => clearTimeout(t)
   }, [scope, manager])
   if (!manager || plan.length === 0) return null
@@ -197,7 +200,8 @@ export function ShowMeAround({ className }: { className?: string }) {
   return (
     <button ref={me} type="button" aria-label={fresh ? 'Show me around (new)' : 'Show me around'} title="Show me around"
       onClick={() => {
-        const steps = planStops(scope?.stops() ?? [], manager.order).filter((s) => s.shown).map((s) => ({ anchor: s.help, slot: s.slot, seen: keyOf(s.slot) }))
+        const steps = planStops(scope?.stops() ?? [], manager.order).filter((s) => s.shown && manager.slot(s.slot)?.tour !== false)
+          .map((s) => ({ anchor: s.help, text: s.text, slot: s.slot, seen: keyOf(s.slot) }))
         manager.start(steps, me.current?.closest('[role="dialog"]'), () => me.current?.focus())
       }}
       className={className ?? 'relative inline-flex h-7 w-7 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600'}>

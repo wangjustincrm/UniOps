@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp, ChevronDown, EyeOff, ListTree, Search } from 'lucide-react'
 import { DropdownMenu, type MenuItem } from '../primitives/DropdownMenu'
+import { TourMark } from '../help'
 import type { FieldMeta } from '../resource/listMeta'
 
 export interface ColumnMenuProps {
@@ -28,6 +29,7 @@ export function ColumnMenu({ field, onSearch, onSort, onGroup, canGroup = true, 
     { label: 'Hide column', icon: <EyeOff className="h-3.5 w-3.5" />, onSelect: onHide, separated: field.filterable || field.sortable },
   ]
   return (
+    <TourMark help="list.sortGroup" slot="list.sortGroup" className="inline-flex">
     <DropdownMenu
       label={`${field.label} column`}
       items={items}
@@ -37,5 +39,6 @@ export function ColumnMenu({ field, onSearch, onSort, onGroup, canGroup = true, 
         </button>
       }
     />
+    </TourMark>
   )
 }

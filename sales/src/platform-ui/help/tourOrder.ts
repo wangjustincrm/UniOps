@@ -7,6 +7,9 @@
 export interface SlotDef {
   order: number
   group: string
+  /** false: a tip, not a tour stop (the user's choice, 2026-11-17: tours stay short, ~5 stops; the rest are
+   *  tips in the drawer, with Show where they are on the page). */
+  tour?: boolean
   /** Its version (default 1): a viewer who saw an older one sees it as new. */
   v?: number
 }
@@ -21,9 +24,14 @@ export const GROUPS: Record<string, { label: string; shared?: boolean }> = {
 export const DEFAULT_SLOTS: Record<string, SlotDef> = {
   // a page with a list: the view, then finding, then the table, then refreshing and exporting
   'list.views': { order: 10, group: 'lists' }, 'list.defaultView': { order: 12, group: 'lists' }, 'list.saveView': { order: 15, group: 'lists' },
-  'list.search': { order: 20, group: 'lists' }, 'list.phone': { order: 25, group: 'lists' },
-  'list.searchPanel': { order: 30, group: 'lists' }, 'row.status': { order: 35, group: 'page' }, 'list.columns': { order: 40, group: 'lists' },
-  'list.sortGroup': { order: 45, group: 'lists' }, 'list.refresh': { order: 60, group: 'lists' }, 'list.export': { order: 70, group: 'lists' },
+  'list.search': { order: 20, group: 'lists' }, 'list.statusFind': { order: 22, group: 'lists' }, 'list.phone': { order: 25, group: 'lists' },
+  'list.searchPanel': { order: 30, group: 'lists', tour: false }, 'list.chips': { order: 32, group: 'lists', tour: false },
+  'row.status': { order: 35, group: 'page' }, 'list.columns': { order: 38, group: 'lists', tour: false },
+  'list.rowOpen': { order: 40, group: 'lists' }, 'list.sortGroup': { order: 45, group: 'lists' },
+  'list.rowDetails': { order: 50, group: 'lists', tour: false }, 'list.groups': { order: 52, group: 'lists', tour: false },
+  'list.totals': { order: 54, group: 'lists', tour: false }, 'list.moreColumns': { order: 56, group: 'lists', tour: false },
+  'list.refresh': { order: 60, group: 'lists', tour: false }, 'list.export': { order: 70, group: 'lists', tour: false },
+  'list.pages': { order: 80, group: 'lists', tour: false }, 'list.notices': { order: 85, group: 'lists', tour: false },
   // a record's sheet: what it is, what to do, its figures, its actions, its sections (its status badge: row.status)
   'record.header': { order: 10, group: 'records' }, 'record.next': { order: 20, group: 'page' }, 'record.facts': { order: 30, group: 'records' },
   'record.actions': { order: 40, group: 'records' }, 'record.tabs': { order: 50, group: 'records' },

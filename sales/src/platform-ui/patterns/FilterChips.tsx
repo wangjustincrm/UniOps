@@ -3,6 +3,7 @@ import { Chip } from '../primitives/Chip'
 import type { FieldMeta } from '../resource/listMeta'
 import { flipGroup, flipSort, removeFilterAt, removeGroup, removeSort, type QuerySpec } from '../resource/querySpec'
 import { filterText } from './listView'
+import { TourMark } from '../help'
 
 export interface FilterChipsProps {
   spec: QuerySpec
@@ -26,7 +27,7 @@ export function FilterChips({ spec, onSpecChange, fields, locked = [], labelOf }
   const group = spec.group ?? []
   if (sort.length === 0 && group.length === 0 && filters.length === 0 && !search) return null
   return (
-    <div role="group" aria-label="Active sort, grouping and search" className="flex flex-col gap-1.5 text-xs">
+    <TourMark as="div" role="group" aria-label="Active sort, grouping and search" help="list.chips" slot="list.chips" className="flex flex-col gap-1.5 text-xs">
       {sort.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="w-16 font-medium uppercase tracking-wide text-neutral-400">Sorting</span>
@@ -77,6 +78,6 @@ export function FilterChips({ spec, onSpecChange, fields, locked = [], labelOf }
           })}
         </div>
       )}
-    </div>
+    </TourMark>
   )
 }

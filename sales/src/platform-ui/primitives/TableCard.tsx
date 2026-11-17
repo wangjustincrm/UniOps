@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { cn } from '../lib/cn'
 import { BusyBar } from './BusyBar'
+import { TourMark } from '../help'
 import { useMediaQuery } from './useResponsive'
 
 /** The table's card (the user, 2026-11-03: "the footer always needs scrolling
@@ -55,12 +56,13 @@ export function TableCard({ children, busy, fit, highlight, bar }: {
         <div className="sticky bottom-0 z-[3] rounded-b-lg bg-white">
           {wide && (
             <div className="flex justify-end border-t border-neutral-200 px-1">
+            <TourMark help="list.moreColumns" slot="list.moreColumns" className="inline-flex">
               <button type="button" onClick={() => {
                 const el = ref.current
                 if (el) el.scrollBy({ left: atEnd ? -el.scrollWidth : el.clientWidth * 0.8, behavior: 'smooth' })
               }} className="rounded px-2 py-0.5 text-xs text-neutral-600 hover:text-neutral-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
                 {atEnd ? '← First columns' : 'More columns →'}
-              </button>
+              </button></TourMark>
             </div>
           )}
           {bar}

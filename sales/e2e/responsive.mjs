@@ -162,6 +162,9 @@ async function run(name, viewport) {
     check(await panel.getByRole('group', { name: 'Tours' }).count() === 1, `${name} page help: the drawer has its Tours`)
     await shot('drawer')
     check(await panel.locator('[data-help-row="list.search"]').count() === 1, `${name} page help: the list tools are among its tips`)
+    for (const tip of ['list.statusFind', 'list.chips', 'list.rowOpen', 'list.pages', 'list.notices']) {
+      check(await panel.locator(`[data-help-row="${tip}"]`).count() === 1, `${name} page help: the table tip ${tip} is listed`)
+    }
     await panel.getByRole('button', { name: /^All Sales tips/ }).click()
     check(await panel.getByRole('region', { name: /^All Sales tips/ }).count() === 1, `${name} page help: the catalog of every tip opens in the drawer`)
     await shot('catalog')
@@ -187,7 +190,7 @@ async function run(name, viewport) {
       if (await done.count()) { await done.click(); break }
       await box.getByRole('button', { name: 'Next' }).click()
     }
-    check(stops >= 5, `${name} orders tour: built from the page's own stops (${stops})`)
+    check(stops >= 5 && stops <= 7, `${name} orders tour: short, from the page's own stops (${stops})`)
     check(await page.locator('[data-tour-step]').count() === 0, `${name} orders tour: Done ends it`)
     // Seen per stop: after the Orders tour, another list (the same list tools) has nothing new
     await open('/payments')
