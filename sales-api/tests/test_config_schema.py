@@ -96,3 +96,21 @@ def test_downgrade_removes_the_tables_and_upgrade_restores_them(migrated_db):
         r = run_alembic("upgrade", "head")
         assert r.returncode == 0, r.stdout
     assert TABLES <= _tables()
+
+
+def test_sales32_downgrade_refuses_while_an_authorize_net_connection_exists_and_changes_nothing(migrated_db):
+    """Review 2026-11-17: never a half-run downgrade — the narrower checks would fail on the row."""
+    eng = sa.create_engine(SYNC_URL)
+    with eng.begin() as c:
+        c.execute(sa.text("INSERT INTO sales_connections (name, kind, host, username, secret_name, after_read, version, "
+                          "created_by_name) VALUES ('schema-test-anet', 'AUTHORIZE_NET', 'api.authorize.net', 'x', "
+                          "'SALES_SECRET_AUTHNET', 'LEAVE', 1, 'test')"))
+    try:
+        r = run_alembic("downgrade", "sales31_count_line_picked")
+        assert r.returncode != 0 and "sales32 downgrade refused" in ((r.stdout or "") + (r.stderr or ""))
+        assert {"sales_gateway_settlements", "sales_gateway_transactions"} <= _tables()
+    finally:
+        with eng.begin() as c:
+            c.execute(sa.text("DELETE FROM sales_connections WHERE name = 'schema-test-anet'"))
+        assert run_alembic("upgrade", "head").returncode == 0
+        eng.dispose()

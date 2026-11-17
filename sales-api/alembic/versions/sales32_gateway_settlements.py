@@ -108,6 +108,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Refuse before changing anything, never half-way: an Authorize.Net connection (or a document of
+    # its system) would fail the narrower checks below. Remove them on purpose first.
+    bind = op.get_bind()
+    conns = bind.execute(sa.text("SELECT count(*) FROM sales_connections WHERE kind = 'AUTHORIZE_NET'")).scalar()
+    docs = bind.execute(sa.text("SELECT count(*) FROM sales_documents WHERE system = 'AUTHORIZE_NET' "
+                                "AND kind <> 'GATEWAY_JSON'")).scalar()
+    if conns or docs:
+        raise RuntimeError(f"sales32 downgrade refused: {conns} AUTHORIZE_NET connection(s) and {docs} other "
+                           "AUTHORIZE_NET document(s) exist. Delete them (and their runs' references) first; "
+                           "nothing was changed.")
     op.drop_table('sales_gateway_transactions')
     op.drop_table('sales_gateway_settlements')
     op.execute("DELETE FROM sales_documents WHERE kind = 'GATEWAY_JSON'")
