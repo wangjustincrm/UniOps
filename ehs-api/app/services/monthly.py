@@ -89,12 +89,13 @@ async def _toolbox(db: AsyncSession, user_id: uuid.UUID, first: date) -> Item:
     # one per month, so any delivered talk meets it; otherwise point at the
     # earliest one still open. created_at breaks the tie, so the answer does not
     # depend on which row the database happens to return first.
+    # ★ Review U2 (UAT 15, K): a talk held again belongs to the month it was
+    # held, as the tracker counts it — one clause, shared, so they agree.
+    from app.crud.toolbox import _in_month
     rows = (await db.execute(
         select(TbtDelivery, ToolboxTalk)
         .join(ToolboxTalk, ToolboxTalk.id == TbtDelivery.talk_id)
-        .where(TbtDelivery.supervisor_id == user_id,
-               ToolboxTalk.period_month >= first,
-               ToolboxTalk.period_month < _next_month(first))
+        .where(TbtDelivery.supervisor_id == user_id, _in_month(first))
         .order_by(ToolboxTalk.period_month, ToolboxTalk.created_at,
                   TbtDelivery.id))).all()
     if not rows:

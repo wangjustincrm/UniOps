@@ -224,6 +224,8 @@ export default function AuditPackPage() {
         <Figures rows={[
           ['Topics issued', p.toolbox.topics],
           ['Team deliveries', p.toolbox.deliveries],
+          // Review U2: talks held again, counted in the period they were held.
+          ['Held again', p.toolbox.held_again ?? 0],
         ]} />
         <Rates rows={[
           ['Signed off', p.toolbox.completion_rate,

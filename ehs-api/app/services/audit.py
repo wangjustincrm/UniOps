@@ -319,22 +319,32 @@ async def emergency(db: AsyncSession, period: Period) -> dict:
 
 
 async def toolbox(db: AsyncSession, period: Period) -> dict:
+    """★ Review U2 (UAT 15, K): the completion rate is of the talks handed out
+    in the period (a talk held again is not a second hand-out, and would
+    inflate it); talks held again are counted apart, in the period they were
+    held, at the plant."""
     row = await _one(db, """
         select
           (select count(*) from ehs_toolbox_talks
             where period_month >= :start and period_month < :end)            as talks,
           (select count(*) from ehs_tbt_deliveries d
              join ehs_toolbox_talks t on t.id = d.talk_id
-            where t.period_month >= :start and t.period_month < :end)        as deliveries,
+            where t.period_month >= :start and t.period_month < :end
+              and d.rerun_of is null)                                        as deliveries,
           (select count(*) from ehs_tbt_deliveries d
              join ehs_toolbox_talks t on t.id = d.talk_id
             where t.period_month >= :start and t.period_month < :end
-              and d.status = 'delivered')                                    as delivered
+              and d.rerun_of is null and d.status = 'delivered')             as delivered,
+          (select count(*) from ehs_tbt_deliveries d
+            where d.rerun_of is not null and d.status = 'delivered'
+              and timezone('America/Toronto', d.held_at)::date >= :start
+              and timezone('America/Toronto', d.held_at)::date < :end)      as held_again
     """, period.params)
-    talks, deliveries, delivered = row
+    talks, deliveries, delivered, held_again = row
     return {
         "topics": talks, "deliveries": deliveries, "delivered": delivered,
         "completion_rate": _rate(delivered, deliveries),
+        "held_again": held_again,
     }
 
 
