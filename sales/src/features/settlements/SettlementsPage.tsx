@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
-import { ActionButton, Callout, ListPage, RecordSheet, StatusCell, ViewFileButton, formatDateTime, formatMoney, useOpenRecord } from '@/platform-ui'
+import { ActionButton, Callout, ListPage, RecordSheet, StatusCell, formatDateTime, formatMoney, useOpenRecord } from '@/platform-ui'
 import { EMPTY_TEXT } from '@/features/help/pageHelp'
 import { paymentsClient, type PaymentRowRead } from '@/features/payments/paymentsApi'
 import { hiddenPaymentColumns, paymentColumns } from '@/features/payments/paymentsColumns'
-import { downloadSettlements, downloadSettlementsReport, settlementPdf, settlementsClient, type SettlementRowRead } from './settlementsApi'
+import { downloadSettlementPdf, downloadSettlements, downloadSettlementsReport, settlementsClient, type SettlementRowRead } from './settlementsApi'
 import { hiddenSettlementColumns, settlementColumns } from './settlementsColumns'
 
 const NOTE = (
@@ -25,7 +25,11 @@ function SettlementDetail({ s }: { s: SettlementRowRead }) {
       title={`Batch ${s.batch_id}`}
       subtitle={`${s.gateway} · settled ${formatDateTime(s.settled_at)}`}
       badges={<StatusCell value={s.issue} />}
-      actions={<ViewFileButton source={settlementPdf(s)}>Settlement statement (PDF)</ViewFileButton>}
+      actions={(
+        <ActionButton size="sm" variant="secondary" done="Statement downloaded" onAction={() => downloadSettlementPdf(s)}>
+          Download statement (PDF)
+        </ActionButton>
+      )}
       facts={[
         { label: 'Net', value: money(s.net_amount) },
         { label: 'Matched in Shopify', value: money(s.matched_net) },
