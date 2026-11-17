@@ -15,13 +15,16 @@ interface At { i: number; id: string; shown: number[] }
  *  there is skipped; one that goes away mid-tour (a sheet opened, the list re-rendered) is found again, or
  *  after ~300 ms still gone, the tour moves on. A step on something hidden (a tab, a menu) is skipped: there is no "open it first"
  *  yet. Esc, End or Done ends it. */
-export function Tour({ steps, onEnd, container }: {
+export function Tour({ steps, onEnd, container, onShown }: {
   steps: TourStep[]; onEnd: () => void
+  /** Told about each step as it is shown (e.g. to count it as seen). */
+  onShown?: (step: TourStep) => void
   /** Where it is drawn: inside a modal (a sheet) that keeps clicks and focus inside itself; default the body. */
   container?: Element | null
 }) {
   const ctx = useContext(HelpContext)
-  const textOf = useCallback((step: TourStep, id: string) => ctx?.source(step.text ?? id), [ctx])
+  // The step's text, else its element's, else its slot's (e.g. a status with no text of its own: "Status").
+  const textOf = useCallback((step: TourStep, id: string) => ctx?.source(step.text ?? id) ?? (step.slot ? ctx?.source(step.slot) : undefined), [ctx])
   // A step that can be shown now: its element (shown, with a box) and a text; its help id.
   const resolve = useCallback((i: number): string | null => {
     const el = findAnchor(steps[i].anchor)
@@ -45,6 +48,7 @@ export function Tour({ steps, onEnd, container }: {
     return () => clearTimeout(t)
   }, [arrive])
   useEffect(() => { if (at === null) onEnd() }, [at, onEnd])
+  useEffect(() => { if (at) onShown?.(steps[at.i]) }, [at, steps, onShown])
   // Light the step's element and follow it (scrolling, resizing). Gone or without a box: find it again;
   // still nowhere: the next step that can be shown (or end). The box is set only when it moved.
   useEffect(() => {

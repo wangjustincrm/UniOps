@@ -23,6 +23,7 @@ export const PLATFORM_HELP: Record<string, HelpEntry> = {
     buttons: ['Sort ascending', 'Group ascending', 'Hide column'] },
   'list.refresh': { title: 'Refresh', body: 'The refresh button reads the list again; its arrow sets Auto-refresh (30s, 1m, 5m).', buttons: ['Auto-refresh'] },
   'list.export': { title: 'Export CSV', body: 'Export CSV exports every row the current filters select, not only this page.', buttons: ['Export CSV'] },
+  'row.status': { title: 'Status', body: "Each row's status: tap it to read what it means and what to do next." },
   // A record's parts (RecordSheet marks them): its own tour, "Show me around" in its header.
   'record.header': { title: 'The record', body: "Its name, its status and what it is. The arrows go to the list's previous or next record; Refresh reads it again." },
   'record.next': { title: 'Next step', body: 'What to do now, and whose turn it is.' },

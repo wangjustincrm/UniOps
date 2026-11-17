@@ -26,6 +26,9 @@ Help shown where it is needed (the user, 2026-11-16): a **?** beside what it exp
 - `TourScope` is a tour's boundary: ListPage, a page shell (Health) and RecordSheet wrap their content in one; the nearest wins, so a record's sheet keeps its parts out of its page's tour.
 - A part becomes a stop by declaring itself: `useTourStop({ help, slot, key })` (put `attach` as its ref) or `<TourMark help slot>`, or `HelpTip tourSlot`. `slot` is a name in the slot table (like a z-index, but named), never a number; `key` makes many parts one stop (a list's status badges: the first shown).
 - A page's "Show me" walks its scope's shown stops in slot order (`planStops`); a record's "Show me around" (`ShowMeAround`) its own; a search result on the page has Show. No stops: no button. A first visit shows "New here? Show me" (per viewer, in this browser).
+- **Seen per stop, not per page** (`seen.ts`, per viewer in this browser): a stop shown in a tour or by Show counts as seen wherever it is, so a tool seen on one list isn't new on the next; a slot's `v` raised after a change makes it new again. Beside the ?, `NewHint`: a first visit ever "New here? Show me"; later "N new on this page · Show" (a tour of only those); nothing new: nothing.
+- **The drawer** is built from parts: `TourButtons` (the whole tour, "What's new here"), `StopRows` (the page's tips by group, New / Show; a group shared by every list or record folds once seen), `TipsCatalog` ("All <app> tips": every slot with a text, in the drawer), "Replay all tips", "Mark all as seen". Groups and versions live in the slot table (`GROUPS`, `SlotDef`).
+- "?" doesn't open help while a dialog (e.g. a record's sheet) is open: a record has "Show me around" in its header instead.
 - In development the help panel's **Tour inspector** lists the page's stops: order, slot, help id, hidden now, no text.
 - Guards (`help.test.tsx`): every slot a component names is in the table; no raw tour numbers anywhere.
 

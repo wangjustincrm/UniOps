@@ -368,7 +368,7 @@ export default function AppLayout() {
   if (IS_EMBEDDED) {
     return (
       <PermissionProvider can={perms.can}>
-      <SalesHelpProvider><TourManager>
+      <SalesHelpProvider><TourManager appName="Sales">
       <ViewsProvider client={views}>
       <RouterOpenRecord>
       <div className="h-screen overflow-y-auto bg-[#FAFBFC]">
@@ -389,7 +389,7 @@ export default function AppLayout() {
 
   return (
     <PermissionProvider can={perms.can}>
-    <SalesHelpProvider><TourManager>
+    <SalesHelpProvider><TourManager appName="Sales">
     <ViewsProvider client={views}>
       <RouterOpenRecord>
     <TabStoreProvider options={{ initialTabs: [{

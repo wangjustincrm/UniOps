@@ -140,14 +140,14 @@ describe('layers', () => {
     expect(screen.getByText('My text.|Views text.|From the API.')).toBeInTheDocument()
     expect(cat.map((h) => h.id).sort()).toEqual(['list.search', 'list.views', 'status:Sent'])
   })
-  it('the page panel shows a section of other texts (e.g. Using lists) under the page\'s own', async () => {
+  it('the page panel lists a section\'s tips (e.g. Using lists) among its own', async () => {
     const { PageHelp } = await import('./index')
     const texts = { 'page:x': { body: 'The page.' }, 'list.search': { title: 'Search', body: 'Type and press Enter.' } }
     render(<HelpProvider layers={[texts]}><PageHelp id="page:x" page="X" sections={[{ title: 'Using lists', ids: ['list.search', 'list.none'] }]} /></HelpProvider>)
     fireEvent.click(screen.getByRole('button', { name: 'Help: X' }))
-    const sec = await screen.findByRole('region', { name: 'Using lists' })
-    expect(within(sec).getByText('Search')).toBeInTheDocument()
-    expect(within(sec).getByText('Type and press Enter.')).toBeInTheDocument()
+    const panel = await screen.findByRole('dialog', { name: 'Help: X' })
+    await waitFor(() => expect(panel.querySelector('[data-help-row="list.search"]')?.textContent).toContain('Type and press Enter.'))
+    expect(panel.querySelector('[data-help-row="list.none"]')).toBeNull()  // no text: no tip
   })
 })
 
@@ -207,7 +207,7 @@ describe('the tour', () => {
 })
 
 describe('the tour manager', () => {
-  afterEach(() => { vi.restoreAllMocks(); try { localStorage.clear() } catch { /* none */ } })
+  afterEach(async () => { vi.restoreAllMocks(); (await import('./index')).seenStore.reset() })
   const boxes = () => vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
     const w = this.getAttribute('data-hidden') ? 0 : 40
     return { width: w, height: w ? 20 : 0, top: 10, left: 10, right: 10 + w, bottom: 30, x: 10, y: 10, toJSON: () => ({}) } as DOMRect
@@ -254,12 +254,12 @@ describe('the tour manager', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Help: Y' }))
     const empty = await screen.findByRole('dialog', { name: 'Help: Y' })
     await new Promise((r) => setTimeout(r, 350))
-    expect(within(empty).queryByRole('button', { name: 'Show me' })).toBeNull()
+    expect(within(empty).queryByRole('button', { name: /^Show me around this page/ })).toBeNull()
     fireEvent.keyDown(empty, { key: 'Escape' })
     fireEvent.click(screen.getByRole('button', { name: 'Help: X' }))
     const panel = await screen.findByRole('dialog', { name: 'Help: X' })
-    await waitFor(() => expect(within(panel).getByRole('button', { name: 'Show me' })).toBeInTheDocument())
-    fireEvent.click(within(panel).getByRole('button', { name: 'Show me' }))
+    await waitFor(() => expect(within(panel).getByRole('button', { name: /^Show me around this page/ })).toBeInTheDocument())
+    fireEvent.click(within(panel).getByRole('button', { name: /^Show me around this page/ }))
     await waitFor(() => expect(document.querySelector('[data-tour-step]')?.textContent).toContain('Views text.'))
   })
   it('the inspector lists the page\'s stops in order, and says which are hidden or have no text', async () => {
@@ -314,5 +314,90 @@ describe('the slot table is the one place for order', () => {
     expect(named.size).toBeGreaterThan(8)
     for (const slot of named) expect(DEFAULT_SLOTS[slot], slot).toBeDefined()
     expect(code).not.toMatch(/data-tour=\{\d|data-tour="\d|tour=\{\d/)
+  })
+})
+
+describe('seen per stop, what is new, the drawer and the catalog', () => {
+  afterEach(async () => { vi.restoreAllMocks(); (await import('./index')).seenStore.reset() })
+  const boxes = () => vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+    return { width: 40, height: 20, top: 10, left: 10, right: 50, bottom: 30, x: 10, y: 10, toJSON: () => ({}) } as DOMRect
+  })
+  const texts = {
+    'page:a': { body: 'Page A.' }, 'page:b': { body: 'Page B.' },
+    'list.views': { title: 'Views', body: 'Views text.' }, 'list.search': { title: 'Search', body: 'Search text.' },
+    'row.status': { title: 'Status', body: 'Status text.' },
+  }
+  const wait = () => new Promise((r) => setTimeout(r, 350))
+  it('a stop seen on one list is not new on the next; a page with one more stop says "1 new" and plays only it', async () => {
+    const { HelpProvider, PageHelp, TourManager, TourScope, TourMark, seenStore } = await import('./index')
+    boxes()
+    seenStore.mark([{ id: 'list.views' }, { id: 'list.search' }])  // toured list A
+    render(<HelpProvider layers={[texts]}><TourManager>
+      <TourScope id="b"><PageHelp id="page:b" page="B" />
+        <TourMark help="list.views" slot="list.views">v</TourMark><TourMark help="list.search" slot="list.search">s</TourMark>
+        <TourMark help="status:Sent" slot="row.status" tourKey="status">Sent</TourMark>
+      </TourScope>
+    </TourManager></HelpProvider>)
+    await wait()
+    const hint = await screen.findByRole('button', { name: '1 new on this page · Show' })
+    fireEvent.click(hint)
+    await waitFor(() => expect(document.querySelector('[data-tour-step]')?.textContent).toContain('Status text.'))
+    expect(document.querySelector('[data-tour-step]')?.textContent).toContain('1 of 1')
+    await waitFor(() => expect(seenStore.isSeen('row.status')).toBe(true))  // shown: seen
+  })
+  it('the same stops seen elsewhere: no hint at all; nothing seen ever: "New here? Show me"', async () => {
+    const { HelpProvider, PageHelp, TourManager, TourScope, TourMark, seenStore } = await import('./index')
+    boxes()
+    const page = <HelpProvider layers={[texts]}><TourManager>
+      <TourScope id="a"><PageHelp id="page:a" page="A" /><TourMark help="list.views" slot="list.views">v</TourMark></TourScope>
+    </TourManager></HelpProvider>
+    const { unmount } = render(page)
+    await wait()
+    expect(screen.getByRole('button', { name: 'New here? Show me' })).toBeInTheDocument()
+    unmount()
+    seenStore.mark([{ id: 'list.views' }])
+    render(page)
+    await wait()
+    expect(document.querySelector('[data-help-new]')).toBeNull()
+  })
+  it('a raised version makes a seen stop new again', async () => {
+    const { HelpProvider, PageHelp, TourManager, TourScope, TourMark, seenStore } = await import('./index')
+    boxes()
+    seenStore.mark([{ id: 'list.views' }, { id: 'list.search' }])
+    render(<HelpProvider layers={[texts]}><TourManager slots={{ 'list.search': { v: 2 } }}>
+      <TourScope id="a"><PageHelp id="page:a" page="A" />
+        <TourMark help="list.views" slot="list.views">v</TourMark><TourMark help="list.search" slot="list.search">s</TourMark></TourScope>
+    </TourManager></HelpProvider>)
+    await wait()
+    expect(await screen.findByRole('button', { name: '1 new on this page · Show' })).toBeInTheDocument()
+  })
+  it('the drawer: tours (all, what\'s new), the page\'s tips with New and Show, the catalog, replay and mark all', async () => {
+    const { HelpProvider, PageHelp, TourManager, TourScope, TourMark, seenStore } = await import('./index')
+    boxes()
+    seenStore.mark([{ id: 'list.views' }])
+    render(<HelpProvider layers={[texts]}><TourManager appName="Demo">
+      <TourScope id="a"><PageHelp id="page:a" page="A" sections={[{ title: 'Using lists', ids: ['list.search'] }]} />
+        <TourMark help="list.views" slot="list.views">v</TourMark><TourMark help="status:Sent" slot="row.status" tourKey="status">s</TourMark></TourScope>
+    </TourManager></HelpProvider>)
+    await wait()
+    fireEvent.click(screen.getByRole('button', { name: 'Help: A' }))
+    const panel = await screen.findByRole('dialog', { name: 'Help: A' })
+    await waitFor(() => expect(within(panel).getByRole('group', { name: 'Tours' })).toBeInTheDocument())
+    const tours = within(panel).getByRole('group', { name: 'Tours' })
+    expect(tours.textContent).toContain('Show me around this page2')
+    expect(tours.textContent).toContain("What's new here1")
+    const statusRow = panel.querySelector('[data-help-row="row.status"]')!
+    expect(statusRow.textContent).toContain('New')
+    expect(within(statusRow as HTMLElement).getByRole('button', { name: 'Show Status' })).toBeInTheDocument()
+    const searchRow = panel.querySelector('[data-help-row="list.search"]')!  // a tip with no place on the page: no Show
+    expect(within(searchRow as HTMLElement).queryByRole('button')).toBeNull()
+    fireEvent.click(within(panel).getByRole('button', { name: /^All Demo tips/ }))
+    const cat = await within(panel).findByRole('region', { name: /^All Demo tips/ })
+    expect(cat.textContent).toContain('Views')
+    fireEvent.click(within(cat).getByRole('button', { name: 'Back' }))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Mark all as seen' }))
+    expect(seenStore.isSeen('row.status')).toBe(true)
+    fireEvent.click(within(panel).getByRole('button', { name: 'Replay all tips' }))
+    expect(seenStore.isSeen('list.views')).toBe(false)
   })
 })

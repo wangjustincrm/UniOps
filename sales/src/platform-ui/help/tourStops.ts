@@ -8,7 +8,7 @@ const docOrder = (a: HTMLElement, b: HTMLElement) => (a === b ? 0 : a.compareDoc
 
 /** A scope's stops in tour order: one per key (its first shown element, else its first), by its slot's
  *  place, then page order; `shown` says whether it can be shown now. */
-export function planStops(stops: Stop[], order: (slot: string) => number = (s) => DEFAULT_SLOTS[s] ?? 999): PlannedStop[] {
+export function planStops(stops: Stop[], order: (slot: string) => number = (s) => DEFAULT_SLOTS[s]?.order ?? 999): PlannedStop[] {
   const byKey = new Map<string, Stop[]>()
   for (const s of stops) byKey.set(s.key, [...(byKey.get(s.key) ?? []), s])
   return [...byKey.entries()].map(([key, list]) => {

@@ -159,14 +159,20 @@ async function run(name, viewport) {
     await panel.waitFor({ timeout: 5000 })
     const box = await panel.boundingBox()
     check(!!box && box.x >= 0 && box.x + box.width <= viewport.width + 1, `${name} page help: the panel fits the screen`)
-    check(await panel.getByRole('region', { name: 'Using lists' }).count() === 1, `${name} page help: "Using lists" is built from the list's tools`)
+    check(await panel.getByRole('group', { name: 'Tours' }).count() === 1, `${name} page help: the drawer has its Tours`)
+    await shot('drawer')
+    check(await panel.locator('[data-help-row="list.search"]').count() === 1, `${name} page help: the list tools are among its tips`)
+    await panel.getByRole('button', { name: /^All Sales tips/ }).click()
+    check(await panel.getByRole('region', { name: /^All Sales tips/ }).count() === 1, `${name} page help: the catalog of every tip opens in the drawer`)
+    await shot('catalog')
+    await panel.getByRole('button', { name: 'Back' }).click()
     await panel.getByRole('searchbox', { name: 'Search help' }).fill('pallet')
     check(await panel.getByText('SSCC — term').count() === 1, `${name} page help: search finds a glossary term`)
     await shot('page-help')
     await page.keyboard.press('Escape')
     // The Orders tour: every stop is on screen and Next walks to Done.
     await page.getByRole('button', { name: 'Help: Orders' }).click()
-    await page.getByRole('button', { name: 'Show me' }).click()
+    await page.getByRole('button', { name: /^Show me around this page/ }).click()
     let stops = 0
     for (let n = 0; n < 12; n++) {
       const box = page.locator('[data-tour-step]')
@@ -183,6 +189,12 @@ async function run(name, viewport) {
     }
     check(stops >= 5, `${name} orders tour: built from the page's own stops (${stops})`)
     check(await page.locator('[data-tour-step]').count() === 0, `${name} orders tour: Done ends it`)
+    // Seen per stop: after the Orders tour, another list (the same list tools) has nothing new
+    await open('/payments')
+    await page.waitForTimeout(500)
+    check(await page.locator('[data-help-new]').count() === 0, `${name} payments: no "new" hint after the Orders tour (same tools, seen)`)
+    await open('/orders')
+    await page.waitForTimeout(500)
     // "?" opens the page's help; Esc closes it
     await page.locator('body').press('?')
     check(await page.getByRole('dialog', { name: 'Help: Orders' }).count() === 1, `${name} "?" opens the page help`)
