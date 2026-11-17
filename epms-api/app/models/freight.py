@@ -15,7 +15,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -53,6 +53,11 @@ class FreightShipment(UUIDPrimaryKey, TimestampMixin, Base):
     __tablename__ = "freight_shipments"
     __table_args__ = (
         UniqueConstraint("carrier_id", "tracking_no", name="uq_freight_shipment_tracking"),
+        CheckConstraint(
+            "(is_project AND project_info IS NOT NULL AND cost_center_id IS NULL"
+            " AND department_id IS NULL)"
+            " OR (NOT is_project AND cost_center_id IS NOT NULL AND department_id IS NOT NULL)",
+            name="ck_freight_shipment_cc_or_project"),
     )
 
     carrier_id: Mapped[uuid.UUID] = mapped_column(
@@ -65,12 +70,20 @@ class FreightShipment(UUIDPrimaryKey, TimestampMixin, Base):
                                            server_default="outbound")
     # The waybill carries no date; filled from the invoice once billed.
     ship_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    cost_center_id: Mapped[uuid.UUID] = mapped_column(
+    # NULL exactly when is_project (check constraint ck_freight_shipment_cc_or_project).
+    cost_center_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("cost_centers.id", ondelete="RESTRICT"),
-        nullable=False, index=True)
+        nullable=True, index=True)
     # Derived from the cost centre at write time; kept so lists need no join.
-    department_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("departments.id", ondelete="RESTRICT"), nullable=False)
+    department_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departments.id", ondelete="RESTRICT"), nullable=True)
+    # "Project related": no department / cost center at registration — the
+    # registrar types the project details instead. The invoice line it matches
+    # is pre-filled with company_config.freight_project_cost_center_id and must
+    # be confirmed by whoever matches the invoice (match_status 'project').
+    is_project: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                             server_default="false")
+    project_info: Mapped[str | None] = mapped_column(Text, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     # File Server key of the waybill photo, when one was uploaded.
     attachment_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -118,7 +131,8 @@ class FreightInvoiceLine(UUIDPrimaryKey, TimestampMixin, Base):
         nullable=True)
     cost_center_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("cost_centers.id", ondelete="RESTRICT"), nullable=True)
-    # unmatched | auto | manual | duplicate_billing | unregistered | default
+    # unmatched | auto | manual | duplicate_billing | unregistered | default |
+    # project (matched a project-related shipment; cost center pre-filled, to be confirmed)
     match_status: Mapped[str] = mapped_column(String(20), nullable=False, default="unmatched",
                                               server_default="unmatched")
 

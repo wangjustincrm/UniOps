@@ -45,10 +45,14 @@ class CarrierResponse(BaseModel):
 class ShipmentCreate(BaseModel):
     carrier_id: uuid.UUID
     tracking_no: str = Field(min_length=1, max_length=64)
-    cost_center_id: uuid.UUID
+    # Required unless is_project; must be absent when is_project (crud checks).
+    cost_center_id: uuid.UUID | None = None
     direction: Direction = "outbound"
     note: str | None = None
     attachment_key: str | None = Field(default=None, max_length=500)
+    # "Project related": no department / cost center, project_info required.
+    is_project: bool = False
+    project_info: str | None = Field(default=None, max_length=1000)
 
 
 class ShipmentUpdate(BaseModel):
@@ -56,6 +60,21 @@ class ShipmentUpdate(BaseModel):
     cost_center_id: uuid.UUID | None = None
     direction: Direction | None = None
     note: str | None = None
+    # Switching to project clears the cost center; switching back needs cost_center_id.
+    is_project: bool | None = None
+    project_info: str | None = Field(default=None, max_length=1000)
+
+
+class FreightSettings(BaseModel):
+    # Pre-filled on an invoice line matching a project-related shipment.
+    project_cost_center_id: uuid.UUID | None = None
+    project_cost_center_code: str | None = None
+    project_cost_center_name: str | None = None
+    project_department_name: str | None = None
+
+
+class FreightSettingsUpdate(BaseModel):
+    project_cost_center_id: uuid.UUID | None = None
 
 
 class ShipmentResponse(BaseModel):
@@ -67,11 +86,14 @@ class ShipmentResponse(BaseModel):
     tracking_no: str
     direction: str
     ship_date: date | None
-    cost_center_id: uuid.UUID
+    # None for a project-related shipment.
+    cost_center_id: uuid.UUID | None
     cost_center_code: str | None = None
     cost_center_name: str | None = None
-    department_id: uuid.UUID
+    department_id: uuid.UUID | None
     department_name: str | None = None
+    is_project: bool = False
+    project_info: str | None = None
     note: str | None
     attachment_key: str | None
     source: str
@@ -177,6 +199,8 @@ class FreightLineResponse(BaseModel):
     match_status: str
     # For duplicate_billing: where the shipment was billed before.
     previously_billed_on: str | None = None
+    # The matched shipment's project details when it is project related.
+    shipment_project_info: str | None = None
 
 
 class CostCenterTotal(BaseModel):

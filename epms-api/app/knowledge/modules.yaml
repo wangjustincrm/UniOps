@@ -69,7 +69,13 @@ modules:
         Courier Shipments permission); Scan waybill on New Shipment reads the
         tracking number from a photo or PDF of the shipping label and keeps
         that label on the shipment, other supporting files can be attached
-        too, and View opens a shipment with all its attachments. Carriers
+        too, and View opens a shipment with all its attachments. Freight that
+        belongs to a project is registered with Project related ticked: no
+        department or cost center, the project details are typed instead, and
+        when the carrier's invoice is matched that line is pre-filled with the
+        project-freight cost center (R&D unless the Freight admin changes it
+        under Freight → Carriers → Project freight) for the matcher to confirm
+        or change before the invoice can be finalised. Carriers
         are set up on Freight → Carriers. The carrier's invoice is uploaded like any other invoice, on
         EPMS → Invoices → Upload Invoice, by anyone who uploads invoices: when
         the vendor is a carrier's, the form turns into the courier review by

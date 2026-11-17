@@ -1108,6 +1108,8 @@ entities:
         value_labels:
           registered: "Registered at ship time"
           from_invoice: "Added while matching an invoice"
+      is_project: {kind: bool, label: "Project related (no department / cost center; charged when its invoice is matched)"}
+      project_info: {kind: text, label: "Project details (project-related shipments)"}
       note: {kind: text, label: "Note"}
       created_by_name: {kind: text, label: "Registered by"}
       created_at: {kind: datetime, label: "Registered at"}

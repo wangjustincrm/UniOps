@@ -17,6 +17,7 @@ from app.core.plant_time import plant_now
 from app.crud._list_order import lower_text, sort_clauses
 from app.crud._numbering import next_number
 from app.crud import invoice_dedup
+from app.models.config import CompanyConfig
 from app.models.cost_center import CostCenter
 from app.models.department import Department
 from app.models.freight import (
@@ -32,7 +33,7 @@ _CENT = Decimal("0.01")
 _ZERO = Decimal("0")
 
 # Lines a human must look at before the invoice can be finalised.
-_NEEDS_DECISION = ("unmatched", "duplicate_billing")
+_NEEDS_DECISION = ("unmatched", "duplicate_billing", "project")
 
 
 class FreightError(Exception):
@@ -81,6 +82,46 @@ async def cost_center_labels(db: AsyncSession, ids) -> dict[uuid.UUID, tuple[str
         .where(CostCenter.id.in_(ids))
     )).all()
     return {r[0]: (r[1], r[2], r[3]) for r in rows}
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+
+async def project_cost_center_id(db: AsyncSession) -> uuid.UUID | None:
+    """The cost center pre-filled on an invoice line that matches a project-
+    related shipment (company_config.freight_project_cost_center_id); None
+    when unset or no longer active — the matcher then picks one."""
+    cc_id = (await db.execute(
+        select(CompanyConfig.freight_project_cost_center_id).limit(1))).scalar_one_or_none()
+    if cc_id is None:
+        return None
+    cc = await db.get(CostCenter, cc_id)
+    return cc.id if cc is not None and cc.is_active else None
+
+
+async def get_settings(db: AsyncSession) -> dict:
+    cc_id = (await db.execute(
+        select(CompanyConfig.freight_project_cost_center_id).limit(1))).scalar_one_or_none()
+    code, name, dept = (await cost_center_labels(db, [cc_id])).get(cc_id, (None, None, None))
+    return {"project_cost_center_id": cc_id, "project_cost_center_code": code,
+            "project_cost_center_name": name, "project_department_name": dept}
+
+
+async def update_settings(db: AsyncSession, payload) -> dict:
+    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalars().first()
+    if cfg is None:
+        raise FreightError(409, "Company settings have not been created yet")
+    if payload.project_cost_center_id is not None:
+        await _cost_center(db, payload.project_cost_center_id)
+    cfg.freight_project_cost_center_id = payload.project_cost_center_id
+    await db.flush()
+    return await get_settings(db)
+
+
+def _project_info(raw: str | None) -> str:
+    info = (raw or "").strip()
+    if not info:
+        raise FreightError(422, "Enter the project details for a project-related shipment")
+    return info
 
 
 # ── Carriers ──────────────────────────────────────────────────────────────────
@@ -171,11 +212,22 @@ async def create_shipment(db: AsyncSession, payload, user_id: uuid.UUID,
         raise FreightError(422, "Tracking number is required")
     _validate_tracking(carrier, tracking)
     await _ensure_tracking_free(db, carrier.id, tracking)
-    cc = await _cost_center(db, payload.cost_center_id)
+    if payload.is_project:
+        # A project shipment is charged when its invoice is matched (FRT-019).
+        if payload.cost_center_id:
+            raise FreightError(422, "A project-related shipment has no cost center")
+        cc_id = dept_id = None
+        project_info = _project_info(payload.project_info)
+    else:
+        if not payload.cost_center_id:
+            raise FreightError(422, "Choose the cost center that pays for this shipment")
+        cc = await _cost_center(db, payload.cost_center_id)
+        cc_id, dept_id, project_info = cc.id, cc.department_id, None
     name = (await db.execute(select(User.full_name).where(User.id == user_id))).scalar_one_or_none()
     s = FreightShipment(
         carrier_id=carrier.id, tracking_no=tracking, direction=payload.direction,
-        cost_center_id=cc.id, department_id=cc.department_id, note=payload.note,
+        cost_center_id=cc_id, department_id=dept_id, note=payload.note,
+        is_project=bool(payload.is_project), project_info=project_info,
         attachment_key=payload.attachment_key, source=source, status="pending",
         created_by=user_id, created_by_name=name)
     db.add(s)
@@ -193,9 +245,20 @@ async def update_shipment(db: AsyncSession, s: FreightShipment, payload) -> Frei
         _validate_tracking(carrier, tracking)
         await _ensure_tracking_free(db, s.carrier_id, tracking, exclude_id=s.id)
         s.tracking_no = tracking
-    if data.get("cost_center_id"):
-        cc = await _cost_center(db, data["cost_center_id"])
-        s.cost_center_id, s.department_id = cc.id, cc.department_id
+    to_project = data.get("is_project")
+    if to_project is True or (to_project is None and s.is_project):
+        if data.get("cost_center_id"):
+            raise FreightError(422, "A project-related shipment has no cost center")
+        if to_project is True or "project_info" in data:
+            s.project_info = _project_info(data.get("project_info", s.project_info))
+        s.is_project, s.cost_center_id, s.department_id = True, None, None
+    else:
+        if to_project is False and s.is_project and not data.get("cost_center_id"):
+            raise FreightError(422, "Choose the cost center that pays for this shipment")
+        if data.get("cost_center_id"):
+            cc = await _cost_center(db, data["cost_center_id"])
+            s.cost_center_id, s.department_id = cc.id, cc.department_id
+        s.is_project, s.project_info = False, None
     if data.get("direction"):
         s.direction = data["direction"]
     if "note" in data:
@@ -497,6 +560,7 @@ async def auto_match(db: AsyncSession, inv: Invoice) -> None:
             shipments[s.tracking_no] = s
     claimed: set[uuid.UUID] = {ln.shipment_id for ln in lines
                                if ln.match_status == "manual" and ln.shipment_id}
+    project_cc = await project_cost_center_id(db)
     by_date: dict = defaultdict(list)
 
     for ln in lines:
@@ -515,10 +579,16 @@ async def auto_match(db: AsyncSession, inv: Invoice) -> None:
             elif hit.status == "pending" or ln.charge_type == "adjustment" or \
                     await _billed_only_by(db, hit.id, inv.id):
                 # An adjustment follows the original shipment wherever it was billed.
-                ln.shipment_id, ln.cost_center_id, ln.match_status = hit.id, hit.cost_center_id, "auto"
+                # A project shipment has no cost center: pre-fill the project
+                # one and leave the line for the matcher to confirm (FRT-019).
+                if hit.is_project:
+                    ln.shipment_id, ln.cost_center_id, ln.match_status = hit.id, project_cc, "project"
+                else:
+                    ln.shipment_id, ln.cost_center_id, ln.match_status = hit.id, hit.cost_center_id, "auto"
                 claimed.add(hit.id)
             else:
-                ln.shipment_id, ln.cost_center_id = hit.id, hit.cost_center_id
+                ln.shipment_id = hit.id
+                ln.cost_center_id = project_cc if hit.is_project else hit.cost_center_id
                 ln.match_status = "duplicate_billing"
                 claimed.add(hit.id)
             if ln.charge_type == "shipment" and ln.cost_center_id:
@@ -582,6 +652,7 @@ async def update_line(db: AsyncSession, inv: Invoice, ln: FreightInvoiceLine, pa
     if inv.status != "unmatched":
         raise FreightError(409, "Reopen the invoice before changing its lines")
     data = payload.model_dump(exclude_unset=True)
+    was_project = ln.match_status == "project"
     if data.get("clear_shipment"):
         ln.shipment_id = None
     if data.get("clear_link"):
@@ -590,7 +661,8 @@ async def update_line(db: AsyncSession, inv: Invoice, ln: FreightInvoiceLine, pa
         s = await db.get(FreightShipment, data["shipment_id"])
         if s is None or s.carrier_id != inv.freight_carrier_id or s.status == "void":
             raise FreightError(422, "Shipment not found for this carrier")
-        ln.shipment_id, ln.cost_center_id = s.id, s.cost_center_id
+        ln.shipment_id = s.id
+        ln.cost_center_id = (await project_cost_center_id(db)) if s.is_project else s.cost_center_id
     if data.get("linked_line_id"):
         anchor = await db.get(FreightInvoiceLine, data["linked_line_id"])
         if anchor is None or anchor.invoice_id != inv.id or anchor.id == ln.id:
@@ -613,7 +685,16 @@ async def update_line(db: AsyncSession, inv: Invoice, ln: FreightInvoiceLine, pa
         if lead and lead not in pkgs:
             pkgs.insert(0, lead)
         ln.tracking_no, ln.package_tracking_nos = lead, pkgs
-    ln.match_status = "manual"
+    # Linking a project shipment only pre-fills its cost center — it still
+    # waits for the matcher to confirm (any cost_center_id sent confirms).
+    # Editing only the amount / tax of such a line does not confirm it either.
+    if data.get("cost_center_id") or ln.shipment_id is None:
+        still_project = False
+    elif data.get("shipment_id"):
+        still_project = (await db.get(FreightShipment, ln.shipment_id)).is_project
+    else:
+        still_project = was_project
+    ln.match_status = "project" if still_project else "manual"
     # Lines that follow this one (pickups linked to it) follow its cost centre.
     for follower in (await db.execute(select(FreightInvoiceLine).where(
             FreightInvoiceLine.linked_line_id == ln.id))).scalars():
@@ -636,6 +717,10 @@ async def finalize_blockers(db: AsyncSession, inv: Invoice, lines: list[FreightI
     if undecided:
         out.append(f"{len(undecided)} line(s) were already billed on another invoice — "
                    f"confirm each one (keep or change the cost center).")
+    project = [l for l in lines if l.match_status == "project"]
+    if project:
+        out.append(f"{len(project)} project-related line(s) — confirm or change the cost center "
+                   f"of each one.")
     return out
 
 
@@ -712,12 +797,17 @@ async def invoice_detail(db: AsyncSession, inv: Invoice) -> dict:
         t[0] += l.amount
         t[1] += l.tax_amount
     pa = await active_pa_for_invoice(db, inv.id)
+    sids = [l.shipment_id for l in lines if l.shipment_id]
+    projects = dict((await db.execute(
+        select(FreightShipment.id, FreightShipment.project_info)
+        .where(FreightShipment.id.in_(sids), FreightShipment.is_project))).all()) if sids else {}
     line_out = []
     for l in lines:
         code, name, dept = labels.get(l.cost_center_id, (None, None, None))
         line_out.append({**{c.key: getattr(l, c.key) for c in FreightInvoiceLine.__table__.columns},
                          "cost_center_code": code, "cost_center_name": name, "department_name": dept,
-                         "previously_billed_on": prev.get(l.shipment_id)})
+                         "previously_billed_on": prev.get(l.shipment_id),
+                         "shipment_project_info": projects.get(l.shipment_id)})
     return {
         **{k: getattr(inv, k) for k in (
             "id", "internal_ref", "vendor_id", "vendor_name", "vendor_invoice_number", "invoice_date",

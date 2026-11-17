@@ -20,6 +20,7 @@ from app.models.invoice import Invoice
 from app.schemas.freight import (
     CarrierCreate, CarrierResponse, CarrierUpdate, DefaultCostCenterResponse,
     DuplicateCheckResponse, FreightInvoiceCreate, FreightInvoiceListResponse,
+    FreightSettings, FreightSettingsUpdate,
     FreightInvoiceResponse, FreightLineUpdate, FreightPaCreate, FreightPaCreated,
     ShipmentAttachmentResponse, ShipmentCreate, ShipmentListResponse, ShipmentResponse,
     ShipmentUpdate,
@@ -130,6 +131,28 @@ async def update_carrier(carrier_id: uuid.UUID, body: CarrierUpdate, db: Session
     except FreightError as e:
         raise _err(e)
     return CarrierResponse.model_validate(c)
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+
+@router.get("/settings", response_model=FreightSettings)
+async def get_settings(db: SessionDep, user: CurrentUserPayload):
+    """Project-freight cost center (FRT-019). Read by whoever registers
+    shipments or matches courier invoices (an assignee holds neither key, so
+    the invoice upload permission reads it too — the value is not sensitive)."""
+    uid, role = uuid.UUID(user["sub"]), user.get("role") or ""
+    if not await has_permission(db, uid, role, "invoice_upload"):
+        await _need(db, user, "register", "manage", "admin")
+    return await crud.get_settings(db)
+
+
+@router.put("/settings", response_model=FreightSettings)
+async def update_settings(body: FreightSettingsUpdate, db: SessionDep, user: CurrentUserPayload):
+    await _need(db, user, "admin")
+    try:
+        return await crud.update_settings(db, body)
+    except FreightError as e:
+        raise _err(e)
 
 
 # ── Shipments ─────────────────────────────────────────────────────────────────

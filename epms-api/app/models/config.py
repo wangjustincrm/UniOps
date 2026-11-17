@@ -144,6 +144,14 @@ class CompanyConfig(Base):
     incoterms_terms: Mapped[list] = mapped_column(JSONB, nullable=False, default=list,
                                                   server_default="[]")
 
+    # ── Freight ─────────────────────────────────────────────────────────────
+    # Cost center pre-filled on a courier invoice line that matches a
+    # "Project related" shipment (the matcher confirms or changes it). Set by
+    # the Freight admin under Freight → Carriers; seeded with R&D by fr04.
+    freight_project_cost_center_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cost_centers.id", ondelete="SET NULL"), nullable=True
+    )
+
     # ── Audit ───────────────────────────────────────────────────────────────
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
