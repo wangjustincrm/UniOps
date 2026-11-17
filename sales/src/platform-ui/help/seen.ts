@@ -20,6 +20,15 @@ function write(next: Seen) {
   listeners.forEach((l) => l())
 }
 
+// Another tab of this app changed it (a tour there): read it again here.
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key !== KEY && e.key !== null) return
+    cache = null
+    listeners.forEach((l) => l())
+  })
+}
+
 export const seenStore = {
   all: read,
   isSeen: (id: string, v = 1) => (read()[id] ?? 0) >= v,

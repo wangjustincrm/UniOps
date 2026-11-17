@@ -26,8 +26,9 @@ export interface HelpEntry {
 export interface TourStep {
   anchor: string
   text?: string
-  /** Its slot: shown in a tour, it counts as seen (help/seen.ts). */
+  /** Its slot (its version), and the id it is seen under (default the slot): shown, it counts as seen. */
   slot?: string
+  seen?: string
 }
 
 /** Every text the module has, for the help panel's search: its id and text. */

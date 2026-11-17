@@ -4,7 +4,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'r
 import { findAnchor } from './anchor'
 import { ManagerContext, ScopeContext } from './tourContext'
 import { planStops, type PlannedStop } from './tourStops'
-import { catalogRows, pageRows, type HelpRow } from './rows'
+import { catalogRows, pageRows, seenKey, type HelpRow } from './rows'
 import { NewHint, StopRows, TipsCatalog, TourButtons } from './HelpRows'
 import { seenStore, useSeen } from './seen'
 import { DEFAULT_SLOTS } from './tourOrder'
@@ -39,18 +39,21 @@ export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sec
   const trigger = useRef<HTMLButtonElement>(null)
   const all = useMemo(() => (ctx?.catalog ? ctx.catalog() : []), [ctx])
   const hits = useMemo(() => searchHelp(all, q), [all, q])
+  const scopeId = scope?.id ?? id
   const sources = useMemo(() => ({
+    scope: scopeId,
     text: (h: string) => ctx?.source(h),
     slot: (sl: string) => manager?.slot(sl) ?? DEFAULT_SLOTS[sl],
     isSeen: (h: string, v?: number) => (seen[h] ?? 0) >= (v ?? 1),
-  }), [ctx, manager, seen])
+  }), [scopeId, ctx, manager, seen])
   const extra = useMemo(() => (sections ?? []).flatMap((x) => x.ids), [sections])
   const rows = useMemo(() => pageRows(plan, extra, sources), [plan, extra, sources])
   const shownPlan = plan.filter((p) => p.shown)
-  const fresh = shownPlan.filter((p) => !sources.isSeen(p.slot, sources.slot(p.slot)?.v))
+  const keyOf = (sl: string) => seenKey(sl, sources.slot(sl)?.group, scopeId)
+  const fresh = shownPlan.filter((p) => !sources.isSeen(keyOf(p.slot), sources.slot(p.slot)?.v))
   const firstEver = Object.keys(seen).length === 0
   const catalog = manager ? catalogRows(manager.slots(), new Map(shownPlan.map((p) => [p.slot, p.help])), sources) : []
-  const versioned = (sl: string) => ({ id: sl, v: sources.slot(sl)?.v })
+  const versioned = (sl: string) => ({ id: keyOf(sl), v: sources.slot(sl)?.v })
 
   const run = useCallback((steps: TourStep[]) => {
     setOpen(false)
@@ -58,17 +61,25 @@ export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sec
     if (manager) manager.start(steps, null, back)
     else setLocal(steps)
   }, [manager])
-  const toSteps = (list: PlannedStop[]) => list.map((p) => ({ anchor: p.help, slot: p.slot }))
+  const toSteps = (list: PlannedStop[]) => list.map((p) => ({ anchor: p.help, slot: p.slot, seen: keyOf(p.slot) }))
   const tourAll = () => run(entry?.tour ?? toSteps(planStops(scope?.stops() ?? [], manager?.order).filter((p) => p.shown)))
   const tourNew = () => run(toSteps(planStops(scope?.stops() ?? [], manager?.order)
-    .filter((p) => p.shown && !seenStore.isSeen(p.slot, sources.slot(p.slot)?.v))))
-  const showOne = (r: HelpRow) => { if (r.anchor) run([{ anchor: r.anchor, slot: r.slot }]) }
+    .filter((p) => p.shown && !seenStore.isSeen(keyOf(p.slot), sources.slot(p.slot)?.v))))
+  const showOne = (r: HelpRow) => { if (r.anchor) run([{ anchor: r.anchor, slot: r.slot, seen: r.key }]) }
 
   // The page's stops as they are now (once it is on screen, and on each open).
   useEffect(() => {
     const t = setTimeout(() => setPlan(planStops(scope?.stops() ?? [], manager?.order)), 300)
     return () => clearTimeout(t)
   }, [scope, manager, open])
+  // A tip with no place on the page (e.g. how to sort) is seen by being read: shown in the open drawer
+  // (its group is open while it is new) or in the catalog for a second.
+  const unreadText = (view === 'catalog' ? catalog : rows).filter((r) => !r.anchor && !r.seen)
+  useEffect(() => {
+    if (!open || q.trim() || unreadText.length === 0) return
+    const t = setTimeout(() => seenStore.mark(unreadText.map((r) => ({ id: r.key, v: r.v }))), 1000)
+    return () => clearTimeout(t)
+  })
   useEffect(() => manager?.registerHelp({ trigger: () => trigger.current, open: () => setOpen(true) }), [manager])
   if (!entry) return null
   const total = entry.tour ? entry.tour.length : shownPlan.length
@@ -76,7 +87,7 @@ export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sec
   return (
     <>
     {local && <Tour steps={local} onEnd={() => { setLocal(null); trigger.current?.focus() }}
-      onShown={(st) => { if (st.slot) seenStore.mark([versioned(st.slot)]) }} />}
+      onShown={(st) => { if (st.slot) seenStore.mark([{ id: st.seen ?? st.slot, v: sources.slot(st.slot)?.v }]) }} />}
     <RD.Root open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setQ(''); setView('page') } }}>
       <RD.Trigger asChild>
         <button ref={trigger} type="button" data-help={id} aria-label={`Help: ${page}`} aria-keyshortcuts="?"
@@ -127,7 +138,7 @@ export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sec
                     </button>
                     <span className="flex flex-wrap gap-x-3 text-xs">
                       <button type="button" onClick={() => seenStore.reset()} className="text-neutral-600 hover:underline">Replay all tips</button>
-                      <button type="button" onClick={() => seenStore.mark(catalog.map((r) => ({ id: r.slot, v: r.v })))} className="text-neutral-600 hover:underline">Mark all as seen</button>
+                      <button type="button" onClick={() => seenStore.mark([...catalog, ...rows].map((r) => ({ id: r.key, v: r.v })))} className="text-neutral-600 hover:underline">Mark all as seen</button>
                     </span>
                     <p className="text-xs text-neutral-500">Tip: press ? on any page to open its help.</p>
                   </div>
@@ -181,11 +192,12 @@ export function ShowMeAround({ className }: { className?: string }) {
     return () => clearTimeout(t)
   }, [scope, manager])
   if (!manager || plan.length === 0) return null
-  const fresh = plan.some((p) => (seen[p.slot] ?? 0) < (manager.slot(p.slot)?.v ?? 1))
+  const keyOf = (sl: string) => seenKey(sl, manager.slot(sl)?.group, scope?.id ?? 'record')
+  const fresh = plan.some((p) => (seen[keyOf(p.slot)] ?? 0) < (manager.slot(p.slot)?.v ?? 1))
   return (
     <button ref={me} type="button" aria-label={fresh ? 'Show me around (new)' : 'Show me around'} title="Show me around"
       onClick={() => {
-        const steps = planStops(scope?.stops() ?? [], manager.order).filter((s) => s.shown).map((s) => ({ anchor: s.help, slot: s.slot }))
+        const steps = planStops(scope?.stops() ?? [], manager.order).filter((s) => s.shown).map((s) => ({ anchor: s.help, slot: s.slot, seen: keyOf(s.slot) }))
         manager.start(steps, me.current?.closest('[role="dialog"]'), () => me.current?.focus())
       }}
       className={className ?? 'relative inline-flex h-7 w-7 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600'}>

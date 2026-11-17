@@ -343,7 +343,8 @@ describe('seen per stop, what is new, the drawer and the catalog', () => {
     fireEvent.click(hint)
     await waitFor(() => expect(document.querySelector('[data-tour-step]')?.textContent).toContain('Status text.'))
     expect(document.querySelector('[data-tour-step]')?.textContent).toContain('1 of 1')
-    await waitFor(() => expect(seenStore.isSeen('row.status')).toBe(true))  // shown: seen
+    await waitFor(() => expect(seenStore.isSeen('b:row.status')).toBe(true))  // shown: seen, as this page's own
+    expect(seenStore.isSeen('row.status')).toBe(false)  // not for every page
   })
   it('the same stops seen elsewhere: no hint at all; nothing seen ever: "New here? Show me"', async () => {
     const { HelpProvider, PageHelp, TourManager, TourScope, TourMark, seenStore } = await import('./index')
@@ -396,8 +397,36 @@ describe('seen per stop, what is new, the drawer and the catalog', () => {
     expect(cat.textContent).toContain('Views')
     fireEvent.click(within(cat).getByRole('button', { name: 'Back' }))
     fireEvent.click(within(panel).getByRole('button', { name: 'Mark all as seen' }))
-    expect(seenStore.isSeen('row.status')).toBe(true)
+    expect(seenStore.isSeen('a:row.status')).toBe(true)
     fireEvent.click(within(panel).getByRole('button', { name: 'Replay all tips' }))
     expect(seenStore.isSeen('list.views')).toBe(false)
+  })
+})
+
+describe('what is seen where', () => {
+  afterEach(async () => { vi.restoreAllMocks(); (await import('./index')).seenStore.reset() })
+  const boxes = () => vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+    return { width: 40, height: 20, top: 10, left: 10, right: 50, bottom: 30, x: 10, y: 10, toJSON: () => ({}) } as DOMRect
+  })
+  const texts = { 'page:c': { body: 'Page C.' }, 'list.views': { title: 'Views', body: 'Views text.' }, 'row.status': { title: 'Status', body: 'Status text.' },
+    'list.sortGroup': { title: 'Sort and group', body: 'Sort text.' } }
+  it("a page's own stop seen on one page is still new on another; a shared one is seen everywhere", async () => {
+    const { HelpProvider, PageHelp, TourManager, TourScope, TourMark, seenStore } = await import('./index')
+    boxes()
+    seenStore.mark([{ id: 'list.views' }, { id: 'orders:row.status' }])  // Orders toured
+    render(<HelpProvider layers={[texts]}><TourManager><TourScope id="c"><PageHelp id="page:c" page="C" />
+      <TourMark help="list.views" slot="list.views">v</TourMark><TourMark help="status:X" slot="row.status" tourKey="status">s</TourMark>
+    </TourScope></TourManager></HelpProvider>)
+    await new Promise((r) => setTimeout(r, 350))
+    expect(await screen.findByRole('button', { name: '1 new on this page · Show' })).toBeInTheDocument()
+  })
+  it('a tip with no place on the page counts as seen once it has been on screen in the drawer', async () => {
+    const { HelpProvider, PageHelp, TourManager, TourScope, seenStore } = await import('./index')
+    render(<HelpProvider layers={[texts]}><TourManager><TourScope id="c">
+      <PageHelp id="page:c" page="C" sections={[{ title: 'Using lists', ids: ['list.sortGroup'] }]} />
+    </TourScope></TourManager></HelpProvider>)
+    fireEvent.click(screen.getByRole('button', { name: 'Help: C' }))
+    await screen.findByRole('dialog', { name: 'Help: C' })
+    await waitFor(() => expect(seenStore.isSeen('list.sortGroup')).toBe(true), { timeout: 2500 })
   })
 })

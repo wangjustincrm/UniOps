@@ -12,3 +12,6 @@ export function useTourStop({ help, slot, key }: { help: string; slot: string; k
   }, [scope, help, slot, key])
   return { attach: ref, 'data-help': help }
 }
+
+/** The id of the nearest TourScope (e.g. a record's sheet names its scope after its list's). */
+export const useScopeId = () => useContext(ScopeContext)?.id

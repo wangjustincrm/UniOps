@@ -42,7 +42,7 @@ export function TourManager({ slots, appName, children }: { slots?: Record<strin
   }, [])
   const end = useCallback(() => { const done = active?.onEnd; setActive(null); done?.() }, [active])
   const shown = useCallback((step: TourStep) => {
-    if (step.slot) seenStore.mark([{ id: step.slot, v: table[step.slot]?.v }])
+    if (step.slot) seenStore.mark([{ id: step.seen ?? step.slot, v: table[step.slot]?.v }])
   }, [table])
   return (
     <ManagerContext.Provider value={value}>

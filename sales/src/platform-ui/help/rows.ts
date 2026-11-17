@@ -1,12 +1,18 @@
-import type { SlotDef } from './tourOrder'
+import { GROUPS, type SlotDef } from './tourOrder'
 import type { PlannedStop } from './tourStops'
 import type { HelpEntry } from './types'
 
 /** One tip in the help drawer or the tips catalog: a tour stop (by slot) with its text, its group, whether
  *  this viewer has seen it, and the help id to light when it is on the page now (null: not on it). */
-export interface HelpRow { slot: string; title: string; body: string; group: string; v: number; seen: boolean; anchor: string | null }
+export interface HelpRow { slot: string; title: string; body: string; group: string; v: number; seen: boolean; anchor: string | null; key: string }
+
+/** The id a stop is seen under: a shared one (the same on every list or record) by its slot, so seen once
+ *  is seen everywhere; a page's own (e.g. its status badge, a record's next step) by its scope and slot,
+ *  so another page's is still new. */
+export const seenKey = (slot: string, group: string | undefined, scope: string) => (GROUPS[group ?? 'page']?.shared ? slot : `${scope}:${slot}`)
 
 interface Sources {
+  scope: string
   text: (id: string) => HelpEntry | undefined
   slot: (slot: string) => SlotDef | undefined
   isSeen: (id: string, v?: number) => boolean
@@ -17,7 +23,8 @@ const row = (slot: string, help: string, anchor: string | null, s: Sources): Hel
   if (!t) return null
   const def = s.slot(slot)
   const v = def?.v ?? 1
-  return { slot, title: t.title ?? slot, body: t.body, group: def?.group ?? 'page', v, seen: s.isSeen(slot, v), anchor }
+  const key = seenKey(slot, def?.group, s.scope)
+  return { slot, title: t.title ?? slot, body: t.body, group: def?.group ?? 'page', v, seen: s.isSeen(key, v), anchor, key }
 }
 
 /** A page's tips: its stops in tour order (those shown now can be lit), then `extra` ids that are tips

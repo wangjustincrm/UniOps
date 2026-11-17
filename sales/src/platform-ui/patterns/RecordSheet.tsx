@@ -7,7 +7,7 @@ import { Sheet, SheetClose, SheetTitle, type SheetSize } from '../primitives/She
 import { Button, Skeleton } from '../primitives/shell'
 import { EmptyState } from '../primitives/States'
 import { AutoGrid } from '../primitives/Layout'
-import { HelpTip, ShowMeAround, TourMark, TourScope, type HelpId } from '../help'
+import { HelpTip, ShowMeAround, TourMark, TourScope, useScopeId, type HelpId } from '../help'
 import { Tabs } from '../primitives/Tabs'
 import { UnsavedBoundary, useUnsavedScope, whenDiscarded } from '../primitives/unsaved'
 import { BusyBar } from '../primitives/BusyBar'
@@ -149,6 +149,9 @@ export function RecordSheet(props: RecordSheetProps) {
   const visible = props.tabs.filter((t) => !t.hidden)
   // The host (a list) keeps the tab across records and takes a linked one; alone, the sheet keeps its own.
   const [own, setOwn] = useState<string | undefined>(undefined)
+  // Its tour scope is named after its list's page (a record of Orders: record:Orders), so what is seen
+  // on one order is seen on the next, and an invoice's own stops are still new.
+  const pageScope = useScopeId()
   const chosen = host ? host.tab : own
   const tab = visible.some((t) => t.id === chosen) ? chosen! : visible[0]?.id
   const [expanded, setExpanded] = useState(readExpanded)
@@ -252,7 +255,7 @@ export function RecordSheet(props: RecordSheetProps) {
 
   // Its own tour scope: the record's parts register here, not in the page's tour ("Show me around").
   return (
-    <TourScope id={`record:${props.title ?? ''}`} kind="record">
+    <TourScope id={`record:${pageScope ?? 'record'}`} kind="record">
     <Sheet open={open} onOpenChange={(o) => { if (!o) close() }} title={props.title || 'Record'} size={size} unsaved={sheetScope}
       header={header} onKeyDown={onKeyDown} bodyClassName="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4 sm:px-6"
       statusBar={<TableStatusBar store={notices} className="shrink-0 px-4 sm:px-6" />}>
