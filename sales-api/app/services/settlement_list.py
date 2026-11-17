@@ -3,6 +3,8 @@ Read-only; sales.read to look."""
 from __future__ import annotations
 
 from app.models.settlement_list import GATEWAY_NAMES, ISSUES, SettlementRow
+from app.platform.authorization import requires
+from app.platform.query import QuerySpec
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
@@ -45,7 +47,35 @@ class SettlementRowRepository(Repository[SettlementRow]):
     )
 
 
+REPORT_MAX = 2000  # deposits in one report (about five years of daily batches)
+
+
 class SettlementRowService(ReadOnlyService[SettlementRow, SettlementRowRead]):
     repo_cls = SettlementRowRepository
     read_schema = SettlementRowRead
     read_permission = READ
+
+    @requires(READ)
+    async def statement_pdf(self, id: int) -> tuple[str, bytes]:
+        """One deposit's settlement statement (sales.read)."""
+        from app.services import print_docs
+        row = await self.get(id)
+        return f"settlement-{row.batch_id}.pdf", await print_docs.settlement_pdf(self.uow.session, row)
+
+    @requires(READ)
+    async def report_pdf(self, spec: QuerySpec) -> tuple[str, bytes]:
+        """The list as it is filtered and sorted now, as one report (sales.read)."""
+        from app.services import print_docs
+        rows, page_no = [], 1
+        while len(rows) < REPORT_MAX:
+            page = await self.list(spec.model_copy(update={"page": page_no, "page_size": 200}))
+            rows += page.items
+            if page_no * 200 >= page.total:
+                break
+            page_no += 1
+        truncated = len(rows) > REPORT_MAX or (rows and len(rows) < page.total)
+        rows = rows[:REPORT_MAX]
+        dates = [r.settled_date for r in rows]
+        period = f"{min(dates):%b %d, %Y} – {max(dates):%b %d, %Y}" if dates else "No deposits"
+        name = f"settlements-{min(dates)}-{max(dates)}.pdf" if dates else "settlements.pdf"
+        return name, await print_docs.settlements_report_pdf(rows, period=period, truncated=bool(truncated))

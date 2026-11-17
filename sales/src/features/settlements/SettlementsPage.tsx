@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
-import { Callout, ListPage, RecordSheet, StatusCell, formatDateTime, formatMoney, useOpenRecord } from '@/platform-ui'
+import { Callout, ListPage, RecordSheet, StatusCell, ViewFileButton, formatDateTime, formatMoney, useOpenRecord } from '@/platform-ui'
 import { EMPTY_TEXT } from '@/features/help/pageHelp'
 import { paymentsClient, type PaymentRowRead } from '@/features/payments/paymentsApi'
 import { hiddenPaymentColumns, paymentColumns } from '@/features/payments/paymentsColumns'
-import { downloadSettlements, settlementsClient, type SettlementRowRead } from './settlementsApi'
+import { downloadSettlements, settlementPdf, settlementsClient, settlementsReportPdf, type SettlementRowRead } from './settlementsApi'
 import { hiddenSettlementColumns, settlementColumns } from './settlementsColumns'
 
 const NOTE = (
@@ -25,6 +25,7 @@ function SettlementDetail({ s }: { s: SettlementRowRead }) {
       title={`Batch ${s.batch_id}`}
       subtitle={`${s.gateway} · settled ${formatDateTime(s.settled_at)}`}
       badges={<StatusCell value={s.issue} />}
+      actions={<ViewFileButton source={settlementPdf(s)}>Settlement statement (PDF)</ViewFileButton>}
       facts={[
         { label: 'Net', value: money(s.net_amount) },
         { label: 'Matched in Shopify', value: money(s.matched_net) },
@@ -56,6 +57,7 @@ export default function SettlementsPage() {
       description="The deposits each payment provider paid to the bank, with the Shopify payments in them. Use the views by month and for what needs a look."
       columns={columns} defaultHidden={hiddenSettlementColumns} notice={NOTE} emptyTitle="No settlements yet"
       emptyText={EMPTY_TEXT.settlements} onExport={downloadSettlements} renderDetail={(s) => <SettlementDetail s={s} />}
+      toolbar={({ spec }) => <ViewFileButton source={settlementsReportPdf(spec)}>Report (PDF)</ViewFileButton>}
     />
   )
 }

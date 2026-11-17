@@ -1,6 +1,7 @@
 """The documents a person prints or downloads (FR-OB-55): the purchase order, the invoice, the
 packing list (of everything shipped, or of one shipment), the transfer order, and an order's audit
-packet (every stored file of the order with these PDFs, in one zip). The same PDFs go with an
+packet (every stored file of the order with these PDFs, in one zip), and for Finance a gateway
+deposit's settlement statement and the settlements report of a list. The same PDFs go with an
 emailed invoice. Their look is pdf_layout's (2026-11-12, after the user's templates)."""
 from __future__ import annotations
 
@@ -283,6 +284,141 @@ async def transfer_pdf(s, t: Transfer) -> bytes:
                   [("Lines", str(len(lines))), ("Total EA", L.qty(sum(ln.qty_ea for ln in lines)))], th),
     ]
     return L.build(story, company=company, title=f"Transfer order TO-{t.transfer_number}", theme=th)
+
+
+# ── Settlements (Finance, user 2026-11-17) ─────────────────────────────────
+
+_TZ = "America/Toronto"
+_MATCH_WORDS = {"TRANSACTION_ID": "Transaction ID", "SHOPIFY_PAYMENT_ID": "Shopify payment ID", "ORDER_NUMBER": "Order number",
+                "AMOUNT_TIME": "Amount and time (probable)"}
+
+
+def _local(t):
+    from zoneinfo import ZoneInfo
+    return t.astimezone(ZoneInfo(_TZ)) if t is not None else None
+
+
+def _when(t) -> str:
+    t = _local(t)
+    return f"{L.day(t.date())} {t:%H:%M}" if t is not None else ""
+
+
+def _signed(kind: str, amount: Decimal) -> Decimal:
+    return -amount if kind == "refund" else amount
+
+
+async def settlement_pdf(s, row) -> bytes:
+    """One deposit (a settled batch): the gateway's figures, the Shopify payments matched to it, and
+    each transaction in it with the order it is. `row` is the Settlements list's row."""
+    from app.models.gateways import GatewayTransaction as T
+    from app.models.payments import OrderPayment as P
+    company, th = await _company(), L.SETTLEMENT
+    rows = (await s.execute(
+        select(T, Order.source_reference).outerjoin(P, P.id == T.payment_row_id).outerjoin(Order, Order.id == P.order_id)
+        .where(T.settlement_id == row.id).order_by(T.submitted_at, T.id))).all()
+    shown = [(t, ref) for t, ref in rows if t.settled or t.kind in ("void", "other")]
+    # A refund made in the gateway itself is no Shopify payment: its original sale names the order.
+    origins = {t.ref_external_id for t, ref in shown if ref is None and t.ref_external_id}
+    of_origin = dict((await s.execute(
+        select(T.external_id, Order.source_reference).join(P, P.id == T.payment_row_id).join(Order, Order.id == P.order_id)
+        .where(T.external_id.in_(origins)))).all()) if origins else {}
+    cur = row.currency
+    table = []
+    for t, ref in shown:
+        what = {"sale": "Sale", "refund": "Refund", "void": "Void", "other": "Other"}[t.kind]
+        status = None if t.settled else (t.status or "")
+        order: object = ref or ""
+        if ref is None and t.settled:
+            origin = of_origin.get(t.ref_external_id or "")
+            order = (origin, "not in Shopify") if origin else "not in Shopify"
+        table.append([_when(t.submitted_at), t.external_id, (what, status) if status else what, t.card_type or "", order, _MATCH_WORDS.get(t.match_method or "", ""),
+                      L.money(_signed(t.kind, t.amount)) if t.settled else ""])
+    settled_net = sum((_signed(t.kind, t.amount) for t, _ in shown if t.settled), Decimal("0"))
+    issues = []
+    if row.unmatched_count:
+        issues.append(f"{row.unmatched_count} settled transaction(s) are no Shopify payment: refunded or charged in the "
+                      "gateway itself. Shopify's figures for those orders do not show them.")
+    if row.chargeback_count or row.returned_count or row.other_count:
+        issues.append("This batch has chargebacks or returned items (not in Net).")
+    if row.pending_count:
+        issues.append(f"{row.pending_count} transaction(s) are still being matched.")
+    story = [
+        L.header(company, th, "Settlement statement", f"Batch {row.batch_id}",
+                 [("Settled", _when(row.settled_at)), ("Gateway", row.gateway), ("Currency", cur)]),
+        L.gap(4), L.section("Deposit", "As the payment provider reports it", th), L.gap(2.5),
+        L.cards([
+            Card("Deposit", f"{row.gateway} batch {row.batch_id}", facts=[
+                ("Settled", _when(row.settled_at)), ("State", row.state), ("Payment method", row.payment_method)]),
+            Card("Gateway figures", None, facts=[
+                ("Sales", f"{L.money(row.sales_amount)} ({row.sales_count})"),
+                ("Refunds", f"{L.money(row.refund_amount)} ({row.refund_count})"),
+                ("Declined / voided", f"{row.declined_count} / {row.voided_count}"),
+                ("Chargebacks / returns", f"{L.money(row.chargeback_amount)} / {L.money(row.returned_amount)}")]),
+            Card("Reconciliation", None, facts=[
+                ("Net (gateway)", L.money(row.net_amount)), ("Matched in Shopify", L.money(row.matched_net)),
+                ("Difference", L.money(row.difference)), ("Unmatched", str(row.unmatched_count)),
+                ("Probable matches", str(row.probable_count))]),
+        ], th),
+        L.gap(5), L.section("Transactions", f"Settled, voided and other transactions in the batch · amounts in {cur}, refunds negative", th),
+        L.gap(2.5),
+    ]
+    for line in issues:
+        story += [L.note(line, th), L.gap(2)]
+    story += [
+        L.items([Col("Submitted", 1.45), Col("Transaction ID", 1.35), Col("Kind", 0.8), Col("Card", 1.25), Col("Order", 1.15),
+                 Col("Matched by", 1.4), Col("Amount", 1.05, "RIGHT", strong=True)],
+                table, th, foot=["Total settled", "", "", "", "", "", L.money(settled_net)]),
+        L.gap(5),
+        L.closing("Notes", [f"Read from {row.gateway}'s reporting API; matched to Shopify payments in Sales.",
+                            "The gateway reports no fees per deposit: they are billed monthly.",
+                            "Declined transactions moved no money and are not listed."],
+                  [("Sales", L.money(row.sales_amount)), ("Refunds", L.money(-row.refund_amount)),
+                   ("Difference with Shopify", L.money(row.difference)), (f"Net deposit ({cur})", L.money(row.net_amount))], th),
+    ]
+    return L.build(story, company=company, title=f"Settlement statement batch {row.batch_id}", theme=th)
+
+
+def settlements_report_pdf_from(rows, *, company: Company, period: str, truncated: bool) -> bytes:
+    """Every deposit of a list (as it is filtered), with the totals per currency."""
+    th = L.SETTLEMENT
+    table = [[L.day(r.settled_date), r.gateway, r.batch_id, L.money(r.sales_amount), L.money(-r.refund_amount),
+              L.money(r.net_amount), L.money(r.matched_net), L.money(r.difference), r.issue or ""] for r in rows]
+    by_cur: dict[str, list] = collections.defaultdict(list)
+    for r in rows:
+        by_cur[r.currency].append(r)
+    sums = {c: {k: sum((getattr(r, k) for r in rs), Decimal("0")) for k in ("sales_amount", "refund_amount", "net_amount",
+                                                                            "matched_net", "difference")}
+            for c, rs in by_cur.items()}
+    foot = None
+    if len(sums) == 1:
+        (c, t), = sums.items()
+        foot = [f"Total ({c})", "", f"{len(rows)} batches", L.money(t["sales_amount"]), L.money(-t["refund_amount"]),
+                L.money(t["net_amount"]), L.money(t["matched_net"]), L.money(t["difference"]), ""]
+    with_issue = sum(1 for r in rows if r.issue)
+    story = [
+        L.header(company, th, "Settlements report", period, [("Batches", str(len(rows))), ("Needing a look", str(with_issue))]),
+        L.gap(4), L.section("Deposits", "One row per deposit the payment provider paid to the bank · refunds negative", th), L.gap(2.5),
+    ]
+    if truncated:
+        story += [L.note("Only the first rows are listed: narrow the list (a month, a view) for a complete report.", th), L.gap(2)]
+    story += [
+        L.items([Col("Date", 1.15), Col("Gateway", 1.35), Col("Batch", 1.15), Col("Sales", 1.1, "RIGHT"), Col("Refunds", 1.0, "RIGHT"),
+                 Col("Net", 1.1, "RIGHT", strong=True), Col("Matched in Shopify", 1.15, "RIGHT"), Col("Difference", 1.05, "RIGHT"),
+                 Col("Issue", 1.6)], table, th, foot=foot),
+        L.gap(5),
+    ]
+    box = [(f"{label} ({c})", L.money(v)) for c, t in sums.items()
+           for label, v in (("Sales", t["sales_amount"]), ("Refunds", -t["refund_amount"]), ("Difference", t["difference"]),
+                            ("Net deposits", t["net_amount"]))]
+    story.append(L.closing("Notes", ["Net and the batch figures are the payment provider's own; Matched in Shopify adds up the "
+                                     "Shopify payments matched to each deposit's transactions.",
+                                     "A difference is money in a deposit that is no Shopify payment (e.g. a refund made in the "
+                                     "gateway), or a transaction not matched yet."], box or [("Batches", "0")], th))
+    return L.build(story, company=company, title=f"Settlements report {period}", theme=th)
+
+
+async def settlements_report_pdf(rows, *, period: str, truncated: bool) -> bytes:
+    return settlements_report_pdf_from(rows, company=await _company(), period=period, truncated=truncated)
 
 
 # ── Audit packet ────────────────────────────────────────────────────────────

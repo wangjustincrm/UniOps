@@ -105,6 +105,7 @@ PO = Theme(colors.HexColor("#2B5F8E"), colors.HexColor("#EEF3F8"))
 INVOICE = Theme(colors.HexColor("#A86F14"), colors.HexColor("#FBF6EC"))
 PACKING = Theme(colors.HexColor("#22704E"), colors.HexColor("#EDF6F1"))
 TRANSFER = Theme(colors.HexColor("#4A5568"), colors.HexColor("#F2F4F7"))
+SETTLEMENT = Theme(colors.HexColor("#0F6E78"), colors.HexColor("#ECF6F7"))  # Finance: a gateway's deposits
 
 PAGE_W, PAGE_H = LETTER
 MARGIN = 14 * mm

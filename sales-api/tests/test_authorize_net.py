@@ -294,6 +294,19 @@ async def test_a_pass_reads_batches_matches_payments_and_feeds_both_lists(env): 
     assert rows["900"].issue is None and rows["900"].transaction_count == 0
     assert [v["name"] for v in meta["views"]] == ["All", "By month", "Needs a look"]
 
+    # the PDFs: one deposit's statement, and the list as a report
+    from tests.test_order_ref import pdf_text
+    async with env.factory(OP) as u:
+        sname, spdf = await SettlementRowService(u).statement_pdf(b.id)
+        rname, rpdf = await SettlementRowService(u).report_pdf(QuerySpec(page_size=50))
+    st, rp = pdf_text(spdf).decode("latin-1"), pdf_text(rpdf).decode("latin-1")
+    assert sname == "settlement-901.pdf" and spdf.startswith(b"%PDF")
+    assert "SETTLEMENT" in st and "STATEMENT" in st and "Batch 901" in st and "60001" in st and "not in Shopify" in st
+    assert "Shopify payment ID" in st and "340.00" in st and "300.00" in st and "40.00" in st
+    assert rname == "settlements-2026-09-19-2026-10-04.pdf" and rpdf.startswith(b"%PDF")
+    assert "SETTLEMENTS" in rp and "REPORT" in rp and "901" in rp and "902" in rp and "Authorize.Net" in rp and "Unmatched" in rp
+    assert "4242" not in st + rp and "Jane" not in st + rp
+
     # a second pass: nothing new; batches read whole are not read again
     anet.calls.clear()
     r2 = await intake.run_pass(await snap(env, cid))
