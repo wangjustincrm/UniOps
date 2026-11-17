@@ -8,7 +8,7 @@ import { columnMismatch, useListMeta, type FieldMeta, type ListMeta } from '../r
 import {
   MAX_GROUP_KEYS, clampPageSize, groupBy, sortBy, type Filter, type GroupCount, type ListTotal, type QuerySpec,
 } from '../resource/querySpec'
-import { viewStateOf, type Layout, type ViewState } from '../resource/viewState'
+import { normalizeView, viewStateOf, type Layout, type ViewState } from '../resource/viewState'
 import { errorText } from '../resource/businessError'
 import { ColumnChooser } from '../primitives/ColumnChooser'
 import { columnId, startsHidden } from '../primitives/columnMeta'
@@ -252,8 +252,11 @@ function QueryTableView<T>({
     ? (picker.current.kind === 'system' ? picker.system.find((v) => v.key === (picker.current as { key: string }).key)
       : picker.mine.find((v) => v.id === (picker.current as { id: number }).id))?.state
     : undefined
-  const sameAsView = !!viewState && JSON.stringify(own) === JSON.stringify((viewState.filters ?? []).filter((f) => !locked.includes(f.field)))
-    && (spec.search ?? '') === (viewState.search ?? '')
+  const narrowing = (v: { filters?: Filter[]; search?: string }) => {  // in the views' one shape (normalizeView, as `dirty` compares)
+    const n = normalizeView({ filters: (v.filters ?? []).filter((f) => !locked.includes(f.field)), search: v.search })
+    return JSON.stringify([n.filters, n.search ?? ''])
+  }
+  const sameAsView = !!viewState && narrowing({ filters: spec.filters, search: spec.search }) === narrowing(viewState)
   const empty = narrowed && sameAsView ? { emptyTitle: 'Nothing in this view', emptyText: undefined, emptyAction: undefined } : narrowed ? {
     emptyTitle: 'No rows match the current filters',
     emptyText: undefined,

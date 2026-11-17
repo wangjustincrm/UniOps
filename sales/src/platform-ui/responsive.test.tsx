@@ -321,7 +321,9 @@ describe('an empty view', () => {
   it('narrowed only by the active view\'s own filters: "Nothing in this view", no Clear; one more filter: "No rows match"', async () => {
     const { QueryTable } = await import('./patterns/QueryTable')
     const hold = [{ field: 'status', op: 'eq' as const, value: 'On Hold' }]
-    const picker = { system: [{ key: 'hold', name: 'On hold', state: { version: 1, filters: hold } }], mine: [], current: { kind: 'system' as const, key: 'hold', name: 'On hold' },
+    // the view's stored filter in another key order: compared in the views' one shape, it is the same
+    const stored = [{ value: 'On Hold', op: 'eq' as const, field: 'status' }]
+    const picker = { system: [{ key: 'hold', name: 'On hold', state: { version: 1, filters: stored } }], mine: [], current: { kind: 'system' as const, key: 'hold', name: 'On hold' },
       dirty: false, stale: false, busy: false, error: null, select: () => {}, save: async () => {}, saveAs: async () => {}, reset: () => {},
       rename: async () => {}, remove: async () => {}, setDefault: async () => {} } as unknown as import('./patterns/views').ViewPickerModel
     const cols = [columnsOf<Row>().text('code', 'Code')]
