@@ -54,8 +54,7 @@ export const settlementPdf = (s: Pick<SettlementRowRead, 'id' | 'batch_id'>): Fi
   key: `settlement-${s.id}`, title: `Settlement statement · batch ${s.batch_id}`,
   load: () => api.file(`/settlements/${s.id}/statement.pdf`, `settlement-${s.batch_id}.pdf`) })
 
-/** The list as it is filtered and sorted now, as one PDF report (the CSV export's query). */
-export const settlementsReportPdf = (spec: QuerySpec): FileSource => {
-  const path = settlementsClient.exportPath(spec, 'report/settlements.pdf')
-  return { key: `settlements-report-${path}`, title: 'Settlements report', load: () => api.file(path, 'settlements-report.pdf') }
-}
+/** The list as it is filtered and sorted now, as one PDF report (the CSV export's query), downloaded:
+ *  a report of many pages is read in a PDF reader, not in the page (user 2026-11-17). */
+export const downloadSettlementsReport = (spec: QuerySpec) =>
+  api.download(settlementsClient.exportPath(spec, 'report/settlements.pdf'), 'settlements-report.pdf')

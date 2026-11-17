@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
-import { Callout, ListPage, RecordSheet, StatusCell, ViewFileButton, formatDateTime, formatMoney, useOpenRecord } from '@/platform-ui'
+import { ActionButton, Callout, ListPage, RecordSheet, StatusCell, ViewFileButton, formatDateTime, formatMoney, useOpenRecord } from '@/platform-ui'
 import { EMPTY_TEXT } from '@/features/help/pageHelp'
 import { paymentsClient, type PaymentRowRead } from '@/features/payments/paymentsApi'
 import { hiddenPaymentColumns, paymentColumns } from '@/features/payments/paymentsColumns'
-import { downloadSettlements, settlementPdf, settlementsClient, settlementsReportPdf, type SettlementRowRead } from './settlementsApi'
+import { downloadSettlements, downloadSettlementsReport, settlementPdf, settlementsClient, type SettlementRowRead } from './settlementsApi'
 import { hiddenSettlementColumns, settlementColumns } from './settlementsColumns'
 
 const NOTE = (
@@ -57,7 +57,11 @@ export default function SettlementsPage() {
       description="The deposits each payment provider paid to the bank, with the Shopify payments in them. Use the views by month and for what needs a look."
       columns={columns} defaultHidden={hiddenSettlementColumns} notice={NOTE} emptyTitle="No settlements yet"
       emptyText={EMPTY_TEXT.settlements} onExport={downloadSettlements} renderDetail={(s) => <SettlementDetail s={s} />}
-      toolbar={({ spec }) => <ViewFileButton source={settlementsReportPdf(spec)}>Report (PDF)</ViewFileButton>}
+      toolbar={({ spec }) => (
+        <ActionButton size="sm" variant="secondary" done="Report downloaded" onAction={() => downloadSettlementsReport(spec)}>
+          Download report (PDF)
+        </ActionButton>
+      )}
     />
   )
 }
