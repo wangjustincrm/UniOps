@@ -630,7 +630,7 @@ async def _investigation_state(db, incident) -> dict | None:
     inv = await inv_crud.get_investigation(db, incident.id)
     if inv is None:
         return None
-    skip = {"id", "incident_id", "created_at", "updated_at"}
+    skip = {"id", "incident_id", "created_at", "updated_at", "investigator_name"}
     import copy   # a list changed in place would otherwise compare equal to itself
     return {c.key: copy.deepcopy(getattr(inv, c.key)) for c in inv.__table__.columns if c.key not in skip}
 

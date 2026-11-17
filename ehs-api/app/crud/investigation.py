@@ -54,37 +54,48 @@ async def upsert_investigation(
         inv = IncidentInvestigation(id=uuid.uuid4(), incident_id=incident.id)
         db.add(inv)
 
+    whys = [{"question": w.question.strip(), "answer": w.answer.strip()}
+            for w in payload.five_whys][:5]
+    while whys and not (whys[-1]["question"] or whys[-1]["answer"]):
+        whys.pop()
+    content = {
+        "investigator_id": payload.investigator_id,
+        "supporting_investigator_ids": [str(i) for i in payload.supporting_investigator_ids],
+        "identified_hazard_ids": [str(i) for i in payload.identified_hazard_ids],
+        "ppe_that_could_prevent": [str(i) for i in payload.ppe_that_could_prevent],
+        "sequence_of_events": payload.sequence_of_events,
+        "root_cause_narrative": payload.root_cause_narrative,
+        "five_whys": whys,
+    }
+    if payload.production_chronology is not None:
+        chron = payload.production_chronology
+        rows = [r.model_dump() for r in chron.rows
+                if (r.detail or "").strip() or r.at or (r.quantity or "").strip()]
+        content["production_chronology"] = {
+            "rows": rows,
+            "affected_quantity": (chron.affected_quantity or "").strip() or None,
+            "product_status": (chron.product_status or "").strip() or None,
+        }
+    changed = {k for k, v in content.items() if getattr(inv, k) != v}
+
     # Editing un-signs it. The signature says "this is what I found"; leaving it
     # attached across a rewrite would let a signed investigation say something
     # its signatory never read — the same reason HSE's review is withdrawn when
-    # the record changes under it.
-    if inv.signature is not None:
+    # the record changes under it. ★ Review U1 (UAT 15, M): only when what it
+    # says changes. The investigation page saves everything on every save, so a
+    # save that changed only the batch code un-signed a signed investigation.
+    if changed and inv.signature is not None:
         inv.signature = None
         inv.signed_by = None
         inv.signed_by_name = None
         inv.completed_at = None
 
-    inv.investigator_id = payload.investigator_id
-    inv.investigator_name = await _name(db, payload.investigator_id)
-    inv.supporting_investigator_ids = [str(i) for i in payload.supporting_investigator_ids]
-    inv.identified_hazard_ids = [str(i) for i in payload.identified_hazard_ids]
-    inv.ppe_that_could_prevent = [str(i) for i in payload.ppe_that_could_prevent]
-    inv.sequence_of_events = payload.sequence_of_events
-    inv.root_cause_narrative = payload.root_cause_narrative
-    whys = [{"question": w.question.strip(), "answer": w.answer.strip()}
-            for w in payload.five_whys][:5]
-    while whys and not (whys[-1]["question"] or whys[-1]["answer"]):
-        whys.pop()
-    inv.five_whys = whys
-    if payload.production_chronology is not None:
-        chron = payload.production_chronology
-        rows = [r.model_dump() for r in chron.rows
-                if (r.detail or "").strip() or r.at or (r.quantity or "").strip()]
-        inv.production_chronology = {
-            "rows": rows,
-            "affected_quantity": (chron.affected_quantity or "").strip() or None,
-            "product_status": (chron.product_status or "").strip() or None,
-        }
+    for key in changed:
+        setattr(inv, key, content[key])
+    # The investigator's name is the one they had when named: looked up when the
+    # investigator is set or changed, not on every save (a rename is not an edit).
+    if "investigator_id" in changed or (inv.investigator_id and not inv.investigator_name):
+        inv.investigator_name = await _name(db, inv.investigator_id)
     await db.flush()
     return inv
 
