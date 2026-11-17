@@ -29,7 +29,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 
 from app.domain import gateway_match as gm
 from app.domain.gateways import kind_of, settled_of
@@ -49,7 +49,7 @@ from app.services.settings import SETTINGS, SHADOW_MODE
 STEP = "authorize_net"
 GATEWAY = "AUTHORIZE_NET"
 SHOPIFY_GATEWAYS = ("authorize_net", "authorize.net")  # the old gateway and the new app
-CURRENCY = "CAD"           # the merchant account's currency (its batches carry none)
+CURRENCY = "CAD"           # the merchant account's currency (its batches carry none); said on the Connections form
 OVERLAP = timedelta(days=1)  # each pass reads the last day again: a batch is never missed
 MAX_BATCHES = 120          # per pass
 DETAILS_PER_PASS = 200     # transaction details read per pass, for the unmatched only
@@ -99,7 +99,23 @@ def batch_totals(b: dict[str, Any]) -> dict[str, Any]:
     sales, refunds = total("chargeAmount"), total("refundAmount")
     return {"sales_amount": sales, "sales_count": count("chargeCount"), "refund_amount": refunds,
             "refund_count": count("refundCount"), "net_amount": sales - refunds,
-            "declined_count": count("declineCount"), "voided_count": count("voidCount")}
+            "declined_count": count("declineCount"), "voided_count": count("voidCount"),
+            # Not in Net: shown on their own so a difference with the bank has a visible reason.
+            "chargeback_amount": total("chargebackAmount"), "chargeback_count": count("chargebackCount"),
+            "returned_amount": total("returnedItemAmount"), "returned_count": count("returnedItemCount")}
+
+
+# What is matched to Shopify: money that moved (settled sales and refunds), and voids (the sale they undid).
+MATCHABLE = or_(GatewayTransaction.settled.is_(True) & GatewayTransaction.kind.in_(("sale", "refund")),
+                GatewayTransaction.kind == "void")
+
+
+def old_gateway_id(p: OrderPayment) -> str | None:
+    """The processor's id Shopify's old Authorize.Net gateway kept ("120474651006#1000#purchase"). A
+    "#void" refund is the void of its sale, not a refund: it takes no id (the sale has it)."""
+    if (p.gateway or "").lower() != "authorize_net" or not p.authorization or p.authorization.endswith("#void"):
+        return None
+    return p.authorization.split("#")[0] or None
 
 
 def _bytes(value: Any) -> bytes:
@@ -256,10 +272,10 @@ class AuthorizeNetIntake:
         return row
 
     async def _read_details(self, conn: ConnectionSnapshot, run_id, limit: int = DETAILS_PER_PASS) -> int:
-        """The details of settled transactions still unmatched (their order fields), a few per pass."""
+        """The details of settled (or voided) transactions still unmatched (their order fields), a few per pass."""
         async with self.uow_factory(SYSTEM_ACTOR) as uow:
             todo = list((await uow.session.execute(select(GatewayTransaction.id, GatewayTransaction.external_id).where(
-                GatewayTransaction.connection_id == conn.id, GatewayTransaction.settled.is_(True),
+                GatewayTransaction.connection_id == conn.id, MATCHABLE,
                 GatewayTransaction.payment_row_id.is_(None), GatewayTransaction.details_read_at.is_(None))
                 .order_by(GatewayTransaction.submitted_at.desc()).limit(limit))).all())
         read = 0
@@ -290,12 +306,12 @@ class AuthorizeNetIntake:
         return read
 
     async def match(self, connection_id: int) -> int:
-        """Link the connection's unmatched settled transactions to the unmatched Shopify payments."""
+        """Link the connection's unmatched settled (or voided) transactions to the unmatched Shopify payments."""
         async with self.uow_factory(SYSTEM_ACTOR) as uow:
             s = uow.session
             txs = (await s.execute(select(GatewayTransaction).where(
-                GatewayTransaction.connection_id == connection_id, GatewayTransaction.settled.is_(True),
-                GatewayTransaction.kind.in_(("sale", "refund")), GatewayTransaction.payment_row_id.is_(None)))).scalars().all()
+                GatewayTransaction.connection_id == connection_id, MATCHABLE,
+                GatewayTransaction.payment_row_id.is_(None)))).scalars().all()
             if not txs:
                 return 0
             taken = select(GatewayTransaction.payment_row_id).where(GatewayTransaction.payment_row_id.is_not(None))
@@ -305,9 +321,10 @@ class AuthorizeNetIntake:
                 OrderPayment.id.not_in(taken)))).all()
             payments = [gm.ShopifyPayment(
                 id=p.id, kind="refund" if p.kind == "refund" else "sale", amount=p.amount, processed_at=p.processed_at,
-                gateway_id=(p.authorization or "").split("#")[0] or None if (p.gateway or "").lower() == "authorize_net" else None,
-                payment_id=p.payment_id, order_number=number) for p, number in rows]
-            found = gm.match([gm.GatewayTx(key=t.id, kind=t.kind, amount=t.amount, submitted_at=t.submitted_at,
+                gateway_id=old_gateway_id(p), payment_id=p.payment_id, order_number=number) for p, number in rows]
+            # A voided transaction is the Shopify sale it voided (kind "sale" for matching).
+            found = gm.match([gm.GatewayTx(key=t.id, kind="sale" if t.kind == "void" else t.kind, amount=t.amount,
+                                           submitted_at=t.submitted_at,
                                            texts=(t.invoice_number or "", t.description or ""), external_id=t.external_id,
                                            final=t.details_read_at is not None)
                               for t in txs], payments)

@@ -261,3 +261,19 @@ def test_a_json_cell_exports_as_json_text():
     assert _csv_cell({"b": 1, "a": "x"}) == '{"a": "x", "b": 1}'
     assert _csv_cell(["é"]) == '["é"]'
     assert _csv_cell(True) == "true" and _csv_cell(None) == ""  # the other kinds are unchanged
+
+
+def test_any_other_database_refusal_is_a_readable_409_naming_the_rule_not_the_values():
+    """A check the database refuses (e.g. a value new in this version, before the migration ran) is a
+    refusal the screen can show, never a 500 — and the message never repeats what was sent."""
+    from sqlalchemy.exc import IntegrityError
+    from app.platform.errors import BusinessError
+    from app.platform.services import CrudService
+
+    class Orig(Exception):
+        constraint_name = "ck_things_kind"
+
+    err = IntegrityError("INSERT …", {"username": "secret-login"}, Orig())
+    out = CrudService._constraint_refusal(err)
+    assert isinstance(out, BusinessError) and out.status_code == 409 and out.code == "entity.constraint"
+    assert "ck_things_kind" in str(out) and "secret-login" not in str(out)

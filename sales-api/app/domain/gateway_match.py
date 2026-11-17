@@ -13,9 +13,11 @@ would have matched. Each payment and each transaction is matched at most once.
    A probable match only: the Payments list says so. Tried only for a transaction marked `final`
    (its details were read), so a stronger rule from the details is never pre-empted.
 
-Only settled money is matched: a settled sale to a successful Shopify sale / capture, a settled
-refund to a successful Shopify refund. Declined and voided transactions stay unmatched (they moved
-no money) and are not an issue.
+Settled money is matched: a settled sale to a successful Shopify sale / capture, a settled refund
+to a successful Shopify refund. A voided transaction is matched to the Shopify sale it voided (the
+caller passes it as kind "sale"): Shopify records such a void as a sale plus a refund, and the
+Payments list then shows both as voided in the gateway, not as money. Declined transactions stay
+unmatched and are not an issue.
 """
 from __future__ import annotations
 
@@ -74,11 +76,11 @@ def match(txs: list[GatewayTx], payments: list[ShopifyPayment], *, window: timed
         used_tx.add(t.key)
         used_p.add(p.id)
 
-    # 1. the gateway's id
-    by_gid = {p.gateway_id: p for p in payments if p.gateway_id}
+    # 1. the gateway's id (a sale and its refund may share it: keyed by both)
+    by_gid = {(p.gateway_id, p.kind): p for p in payments if p.gateway_id}
     for t in txs:
-        p = by_gid.get(t.external_id)
-        if p is not None and p.kind == t.kind and p.id not in used_p:
+        p = by_gid.get((t.external_id, t.kind))
+        if p is not None and p.id not in used_p:
             take(t, p, "TRANSACTION_ID")
 
     # 2. Shopify's payment id in the transaction's text (a whole token: ids are letters and digits)

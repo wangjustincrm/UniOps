@@ -54,6 +54,11 @@ class GatewaySettlement(Audited, Base):
     net_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     declined_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     voided_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Chargebacks and returned items in the batch statistics: not in Net, shown on their own.
+    chargeback_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    chargeback_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    returned_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    returned_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # The transaction list was read whole (all pages); until then the batch is read again.
     transactions_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     raw: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

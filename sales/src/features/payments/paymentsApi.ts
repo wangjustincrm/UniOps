@@ -47,6 +47,8 @@ export interface PaymentRowRead {
   settlement_ref: string | null
   settled_at: string | null
   settled_date: string | null
+  /** Voided in the gateway (Shopify shows it as a sale plus a refund): no money. */
+  voided: boolean
 }
 
 export const paymentsClient = createResourceClient<PaymentRowRead, never>(api, '/payments')

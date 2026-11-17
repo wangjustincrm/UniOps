@@ -127,7 +127,8 @@ def test_the_statuses_say_kind_and_whether_money_moved():
     assert batch_totals({"statistics": [{"chargeAmount": 100.1, "chargeCount": 2, "refundAmount": 5, "refundCount": 1},
                                         {"chargeAmount": "0.9", "chargeCount": 1, "voidCount": 3}]}) == {
         "sales_amount": Decimal("101.00"), "sales_count": 3, "refund_amount": Decimal("5.00"), "refund_count": 1,
-        "net_amount": Decimal("96.00"), "declined_count": 0, "voided_count": 3}
+        "net_amount": Decimal("96.00"), "declined_count": 0, "voided_count": 3, "chargeback_amount": Decimal("0.00"),
+        "chargeback_count": 0, "returned_amount": Decimal("0.00"), "returned_count": 0}
 
 
 # ── the connection's rules ───────────────────────────────────────────────────
@@ -324,3 +325,60 @@ async def test_a_long_history_is_read_in_31_day_windows_and_the_cursor_follows(e
     assert r.batches == 2 and r.status == "ok"
     # the last window ends now: the cursor stays at the last batch, or the end of a window fully in the past
     assert datetime.fromisoformat(r.cursor_after) >= datetime(2026, 3, 20, 6, tzinfo=timezone.utc)
+
+
+async def test_voids_chargebacks_and_rows_only_once_their_details_are_read(env):  # noqa: F811
+    """Review 2026-11-17: a void Shopify shows as a sale + refund is no money and never "not settled";
+    chargebacks are shown on the batch; a gateway-only row waits for its details."""
+    tx = lambda id, **kw: {"id": id, "kind": "sale", "status": "success", "currency": "CAD", "test": False,  # noqa: E731
+                           "processed_at": "2026-10-01T11:00:00-04:00", **kw}
+    env.shop.orders = [shopify_order(5, 9305), shopify_order(6, 9306)]
+    env.shop.transactions_by_order |= {
+        # the old gateway: the void is a "refund" whose authorization ends in #void, same id as the sale
+        "5": [tx(501, gateway="authorize_net", amount="50.00", authorization="70001#1000#purchase", payment_id="r5"),
+              tx(502, gateway="authorize_net", kind="refund", amount="50.00", authorization="70001#1000#void", payment_id="z5")],
+        # the new app: no id in Shopify; Authorize.Net says voided, its details name the Shopify payment
+        "6": [tx(601, gateway="authorize.net", amount="60.00", payment_id="rVoidNewApp12345"),
+              tx(602, gateway="authorize.net", kind="refund", amount="60.00", payment_id="zVoidNewApp12345",
+                 processed_at="2026-10-01T12:00:00-04:00")],
+    }
+    await env.pull()
+    anet = FakeAuthorizeNet(fail={"transaction_details": AuthorizeNetError("busy")})
+    anet.batches = [
+        batch("910", "2026-10-02T06:00:00Z", [
+            gtx("70001", "voided", 50.0, "2026-10-01T15:00:00Z"),
+            gtx("70002", "voided", 60.0, "2026-10-01T15:00:00Z"),
+            gtx("70003", "settledSuccessfully", 40.0, "2026-10-01T18:00:00Z"),
+            gtx("70004", "chargeback", 15.0, "2026-10-01T19:00:00Z"),
+        ], {"chargeAmount": 40.0, "chargeCount": 1, "voidCount": 2, "chargebackAmount": 15.0, "chargebackCount": 1}),
+        batch("911", "2026-10-20T06:00:00Z", [], {}),
+    ]
+    anet.details = {"70002": {"transId": "70002", "order": {"description": "Shopify rVoidNewApp12345"}}}
+    cid = await anet_connection(env, datetime(2026, 9, 30, tzinfo=timezone.utc))
+    intake = AuthorizeNetIntake(uow_factory=env.factory, gateway=anet, clock=lambda: datetime(2026, 10, 25, tzinfo=timezone.utc))
+
+    async def lists():
+        async with env.factory(OP) as u:
+            pays = (await PaymentRowRepository(u).list(QuerySpec(page_size=200))).items
+            sets = {x.batch_id: x for x in (await SettlementRowRepository(u).list(QuerySpec(page_size=50))).items}
+        return pays, sets
+
+    r = await intake.run_pass(await snap(env, cid))
+    assert r.details_read == 0  # the details could not be read this pass
+    pays, sets = await lists()
+    assert not [x for x in pays if x.order_id is None]  # 70003 waits for its details: no gateway-only row yet
+    assert (sets["910"].pending_count, sets["910"].unmatched_count) == (1, 0)
+    assert (sets["910"].chargeback_amount, sets["910"].other_count, sets["910"].issue) == (Decimal("15.00"), 1, "Chargebacks or returns")
+
+    anet.fail.clear()
+    await intake.run_pass(await snap(env, cid))
+    pays, sets = await lists()
+    by = {x.shopify_payment_id: x for x in pays if x.shopify_payment_id}
+    for pid in ("r5", "z5", "rVoidNewApp12345", "zVoidNewApp12345"):
+        x = by[pid]
+        assert (x.voided, x.sales_amount, x.refund_amount, x.net_amount, x.issue) == (True, 0, 0, 0, None), pid
+    assert (by["r5"].match_method, by["rVoidNewApp12345"].match_method) == ("Transaction ID", "Shopify payment ID")
+    assert by["r5"].gateway_status == "voided"
+    [only] = [x for x in pays if x.order_id is None]
+    assert (only.gateway_ref, only.issue) == ("70003", "In the gateway, not in Shopify")
+    assert (sets["910"].pending_count, sets["910"].unmatched_count) == (0, 1)

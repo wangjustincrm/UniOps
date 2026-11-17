@@ -26,6 +26,15 @@ export interface SettlementRowRead {
   net_amount: string
   declined_count: number
   voided_count: number
+  /** From the batch statistics, not in Net: they explain a difference with the bank deposit. */
+  chargeback_amount: string
+  chargeback_count: number
+  returned_amount: string
+  returned_count: number
+  /** Chargeback, returned-item … transactions in the batch. */
+  other_count: number
+  /** Settled transactions whose details are not read yet (matching continues next pass). */
+  pending_count: number
   transaction_count: number
   /** The Shopify payments matched to its settled transactions (sales − refunds), and Net − that. */
   matched_net: string

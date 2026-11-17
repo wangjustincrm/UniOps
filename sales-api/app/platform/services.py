@@ -66,6 +66,15 @@ class ReadOnlyService(Generic[T, R]):
         await authorize(self.uow, key, system=self.system_allowed)
 
     # ── CSV export: every row the spec selects (a read model: its list columns) ──
+    @staticmethod
+    def _constraint_refusal(e: DBAPIError) -> BusinessError:
+        """Any other rule the database refused (a check, a foreign key, a not-null): a readable refusal,
+        never a 500. It names the rule, never the values (they may be a login or a key)."""
+        name = _constraint_name(e) or "a database rule"
+        return BusinessError("entity.constraint",
+                             f"the database refused this record ({name}). If the value is new in this version, "
+                             "the server's database may not be upgraded yet.", {"constraint": name})
+
     def _csv_export_columns(self) -> tuple[str, ...]:
         return tuple(self.repo_cls.list_fields)
 
@@ -228,7 +237,7 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
             async with self.uow.session.begin_nested():
                 await self.repo.add(entity)
         except IntegrityError as e:
-            raise self._unique_refusal(e) or e
+            raise (self._unique_refusal(e) or self._constraint_refusal(e)) from e
         return await self._read_one(entity)
 
     async def update(self, id: int, data: U, version: int | None = None) -> R:
@@ -245,6 +254,8 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
             await self.uow.session.flush()
         except StaleDataError as e:
             raise BusinessError("entity.stale", "this record was changed by someone else; reload it") from e
+        except IntegrityError as e:
+            raise (self._unique_refusal(e) or self._constraint_refusal(e)) from e
         return await self._read_one(entity)
 
     async def deactivate(self, id: int) -> R:

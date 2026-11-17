@@ -6,9 +6,10 @@ const col = columnsOf<SettlementRowRead>()
 
 /** Shown where a view names them (or from the column menu). */
 export const hiddenSettlementColumns = ['settled_week', 'settled_month', 'settled_at', 'state', 'payment_method', 'fee_amount',
-  'sales_count', 'refund_count', 'declined_count', 'voided_count', 'transactions_read_at']
+  'sales_count', 'refund_count', 'declined_count', 'voided_count', 'transactions_read_at', 'chargeback_count', 'returned_count',
+  'other_count', 'pending_count']
 
-const issueTone = (v: string): Tone => (v === 'Transactions not read yet' ? 'warning' : 'danger')
+const issueTone = (v: string): Tone => (v === 'Transactions not read yet' || v === 'Still matching' ? 'warning' : 'danger')
 
 /** The Settlements list's columns (a row opens the batch with its payments). */
 export function settlementColumns(): ColumnDef<SettlementRowRead, unknown>[] {
@@ -24,6 +25,8 @@ export function settlementColumns(): ColumnDef<SettlementRowRead, unknown>[] {
     col.number('transaction_count', 'Transactions'),
     col.number('unmatched_count', 'Unmatched'),
     col.number('probable_count', 'Probable matches'),
+    col.money('chargeback_amount', 'Chargebacks', { currency: 'currency' }),
+    col.money('returned_amount', 'Returned items', { currency: 'currency' }),
     col.status('issue', 'Issue', { tone: issueTone }),
     col.date('settled_week', 'Week'),
     col.date('settled_month', 'Month'),
@@ -36,5 +39,9 @@ export function settlementColumns(): ColumnDef<SettlementRowRead, unknown>[] {
     col.number('declined_count', 'Declined'),
     col.number('voided_count', 'Voided'),
     col.datetime('transactions_read_at', 'Transactions read'),
+    col.number('chargeback_count', 'Chargebacks (count)'),
+    col.number('returned_count', 'Returned items (count)'),
+    col.number('other_count', 'Other transactions'),
+    col.number('pending_count', 'Still matching'),
   ]
 }

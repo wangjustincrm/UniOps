@@ -18,7 +18,8 @@ class SettlementRowRepository(Repository[SettlementRow]):
     suggestable = ("batch_id",)
     list_fields = ("id", "gateway", "batch_id", "settled_at", "settled_date", "settled_week", "settled_month", "state",
                    "payment_method", "currency", "sales_amount", "sales_count", "refund_amount", "refund_count", "fee_amount",
-                   "net_amount", "declined_count", "voided_count", "transaction_count", "matched_net", "difference",
+                   "net_amount", "declined_count", "voided_count", "chargeback_amount", "chargeback_count", "returned_amount",
+                   "returned_count", "other_count", "pending_count", "transaction_count", "matched_net", "difference",
                    "unmatched_count", "probable_count", "transactions_read_at", "issue")
     labels = {"batch_id": "Batch", "settled_at": "Settled", "settled_date": "Date", "settled_week": "Week",
               "settled_month": "Month", "state": "State", "payment_method": "Payment method", "sales_amount": "Sales",
@@ -26,7 +27,10 @@ class SettlementRowRepository(Repository[SettlementRow]):
               "fee_amount": "Fees", "net_amount": "Net", "declined_count": "Declined", "voided_count": "Voided",
               "transaction_count": "Transactions", "matched_net": "Matched in Shopify", "difference": "Difference",
               "unmatched_count": "Unmatched", "probable_count": "Probable matches",
-              "transactions_read_at": "Transactions read", "issue": "Issue"}
+              "transactions_read_at": "Transactions read", "issue": "Issue", "chargeback_amount": "Chargebacks",
+              "chargeback_count": "Chargebacks (count)", "returned_amount": "Returned items",
+              "returned_count": "Returned items (count)", "other_count": "Other transactions",
+              "pending_count": "Still matching"}
     enums = {"gateway": GATEWAY_NAMES, "issue": ISSUES}
     default_sort = ("-settled_at", "-id")
     groupable = ("gateway", "settled_week", "settled_month", "state", "issue", "currency")

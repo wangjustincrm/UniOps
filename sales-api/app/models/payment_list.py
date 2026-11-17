@@ -19,10 +19,15 @@ sales_order_payments and sales_orders, nothing stored.
   settled gateway transaction that is no Shopify payment is a row of its own (no order), so the
   Exceptions view shows it; a Shopify Authorize.Net payment the gateway never settled, once the
   gateway's data covers its date, is an issue too.
+- Voided (review 2026-11-17): Shopify records a void as a sale plus a refund. The old Authorize.Net
+  gateway marks the refund's authorization "…#void" (same id as the sale); with the new app the sale
+  is matched to a voided gateway transaction, and a refund of the same amount on the order is its
+  pair. Both rows are "Voided": no money (Sales / Refunds / Net 0) and never "Not settled".
 """
 from __future__ import annotations
 
 from sqlalchemy import Date, DateTime, Integer, Numeric, String, case, cast, func, literal, null, or_, select, union_all
+from sqlalchemy.orm import aliased
 
 from app.db.base import Base
 from app.models.gateways import GatewaySettlement, GatewayTransaction
@@ -92,17 +97,28 @@ _is_anet = func.lower(func.coalesce(_P.gateway, "")).in_(("authorize_net", "auth
 # The stretch the gateway's settlements cover (none read: no issue is raised).
 _covered_from = select(func.min(_S.settled_at)).where(_S.gateway == "AUTHORIZE_NET").scalar_subquery()
 _covered_to = select(func.max(_S.settled_at)).where(_S.gateway == "AUTHORIZE_NET").scalar_subquery()
-_not_settled = (_is_anet & (_ok_in | _ok_refund) & _T.id.is_(None) & ~_P.test & (_at >= _covered_from)
+# Voided in the gateway (see the module text): the old gateway's "#void" pair, or the new app's sale
+# matched to a voided transaction and the refund of the same amount on its order.
+_P2, _T2 = aliased(OrderPayment), aliased(GatewayTransaction)
+_old_void = (func.lower(func.coalesce(_P.gateway, "")) == "authorize_net") & select(_P2.id).where(
+    _P2.order_id == _P.order_id, _P2.status == "success", _P2.authorization.like("%#void"),
+    func.split_part(_P2.authorization, "#", 1) == func.split_part(_P.authorization, "#", 1)).exists()
+_new_void_refund = (_P.kind == "refund") & select(_P2.id).join(_T2, _T2.payment_row_id == _P2.id).where(
+    _P2.order_id == _P.order_id, _P2.kind.in_(_SUCCESS_IN), _T2.kind == "void", _P2.amount == _P.amount).exists()
+_voided = func.coalesce((_P.status == "success") & or_(_old_void, _T.kind == "void", _new_void_refund), False)
+_not_settled = (_is_anet & (_ok_in | _ok_refund) & _T.id.is_(None) & ~_P.test & ~_voided & (_at >= _covered_from)
                 & (_at < _covered_to - func.make_interval(0, 0, 0, SETTLE_GRACE_DAYS)))
+_money_in = _ok_in & ~_voided
+_money_back = _ok_refund & ~_voided
 
 _PAYMENTS = (
     select(
         _P.id.label("id"), _P.id.label("payment_row_id"), _O.id.label("order_id"), _O.source_reference.label("order_ref"),
         _customer(_O).label("customer"), _method(_P.gateway).label("method"), _P.gateway.label("gateway"),
         _P.kind.label("kind"), _P.status.label("status"), _P.amount.label("amount"), func.coalesce(_P.currency, _O.currency).label("currency"),
-        case((_ok_in, _P.amount), else_=0).label("sales_amount"),
-        case((_ok_refund, _P.amount), else_=0).label("refund_amount"),
-        case((_ok_in, _P.amount), (_ok_refund, -_P.amount), else_=0).label("net_amount"),
+        case((_money_in, _P.amount), else_=0).label("sales_amount"),
+        case((_money_back, _P.amount), else_=0).label("refund_amount"),
+        case((_money_in, _P.amount), (_money_back, -_P.amount), else_=0).label("net_amount"),
         _at.label("processed_at"), _local(_at, "week").label("processed_week"), _local(_at, "month").label("processed_month"),
         func.coalesce(
             case((func.lower(_P.gateway) == "authorize_net", func.nullif(func.split_part(_P.authorization, "#", 1), "")),
@@ -118,7 +134,7 @@ _PAYMENTS = (
              (_P.status.in_(("failure", "error")) & ~_cancelled & _O.shopify_financial_status.in_(_OPEN), "Failed on an open order"),
              (_not_settled, "Not settled in the gateway"),
              else_=null()).label("issue"),
-        *_gateway_columns(_T, _S),
+        *_gateway_columns(_T, _S), case((_voided, True), else_=False).label("voided"),
     )
     .join(_O, _O.id == _P.order_id)
     .outerjoin(_T, _T.payment_row_id == _P.id)
@@ -139,7 +155,7 @@ _NO_PAYMENT = (
         _O.shopify_financial_status.label("financial_status"), _cancelled.label("order_cancelled"),
         _O.discount.label("discount"), _O.shipping.label("shipping"), _O.original_total.label("order_total"), literal(False).label("test"),
         case((_O.shopify_financial_status == "partially_paid", "Partially paid"), else_="Paid, no payment").label("issue"),
-        *_no_gateway_columns(),
+        *_no_gateway_columns(), literal(False).label("voided"),
     )
     .where(_O.source_type == "SHOPIFY", _O.shopify_financial_status.in_(("paid", "partially_paid")),
            func.coalesce(_O.original_total, 0) > 0, ~select(_P.id).where(_P.order_id == _O.id).exists())
@@ -164,10 +180,13 @@ _GATEWAY_ONLY = (
         literal(False).label("order_cancelled"), cast(null(), Numeric(14, 2)).label("discount"),
         cast(null(), Numeric(14, 2)).label("shipping"), cast(null(), Numeric(14, 2)).label("order_total"),
         literal(False).label("test"), literal("In the gateway, not in Shopify").label("issue"),
-        *_gateway_columns(_T, _S),
+        *_gateway_columns(_T, _S), literal(False).label("voided"),
     )
     .select_from(_T).outerjoin(_S, _S.id == _T.settlement_id)
-    .where(_T.payment_row_id.is_(None), _T.settled.is_(True), _T.kind.in_(("sale", "refund")))
+    # Only once nothing better can come (its details were read and matching ran again): a first
+    # history read shows no transaction here that a later pass will match.
+    .where(_T.payment_row_id.is_(None), _T.settled.is_(True), _T.kind.in_(("sale", "refund")),
+           _T.details_read_at.is_not(None))
 )
 
 _ROWS = union_all(_PAYMENTS, _NO_PAYMENT, _GATEWAY_ONLY).subquery("sales_payment_rows")

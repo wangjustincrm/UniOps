@@ -10,7 +10,8 @@ const NOTE = (
   <Callout label="Where these come from">
     Each deposit a payment provider paid to the bank, read from the provider (Authorize.Net: one settled batch, about one a
     day). Sales, Refunds and Net are the provider's own figures; Matched in Shopify adds up the Shopify payments matched to
-    the deposit's transactions. Authorize.Net reports no fees per deposit: it bills them monthly.
+    the deposit's transactions. Chargebacks and returned items are shown on their own, not in Net. Authorize.Net reports no
+    fees per deposit: it bills them monthly.
   </Callout>
 )
 
@@ -31,6 +32,8 @@ function SettlementDetail({ s }: { s: SettlementRowRead }) {
         { label: 'Transactions', value: s.transaction_count },
         { label: 'Unmatched', value: s.unmatched_count, tone: s.unmatched_count ? 'danger' : 'neutral' },
         { label: 'Declined / voided', value: `${s.declined_count} / ${s.voided_count}` },
+        { label: 'Chargebacks / returns', value: `${money(s.chargeback_amount)} / ${money(s.returned_amount)}`,
+          tone: s.chargeback_count + s.returned_count + s.other_count ? 'danger' : 'neutral' },
       ]}
       tabs={[
         { id: 'payments', label: 'Payments', render: () => (

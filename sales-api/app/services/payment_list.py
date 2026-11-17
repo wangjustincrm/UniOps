@@ -21,14 +21,14 @@ class PaymentRowRepository(Repository[PaymentRow]):
                    "kind", "status", "amount", "currency", "sales_amount", "refund_amount", "net_amount", "gateway_ref",
                    "shopify_payment_id", "order_source", "financial_status", "order_cancelled", "issue", "discount", "shipping",
                    "order_total", "test", "gateway_status", "card_type", "match_method", "settlement_id", "settlement_ref",
-                   "settled_at", "settled_date")
+                   "settled_at", "settled_date", "voided")
     labels = {"order_ref": "Order ref", "processed_at": "Processed", "processed_week": "Week", "processed_month": "Month",
               "method": "Method", "gateway": "Shopify gateway", "kind": "Kind", "sales_amount": "Sales", "refund_amount": "Refunds",
               "net_amount": "Net", "gateway_ref": "Gateway transaction ID", "shopify_payment_id": "Shopify payment ID",
               "order_source": "Order source", "financial_status": "Order financial status", "order_cancelled": "Order cancelled",
               "issue": "Issue", "order_total": "Order total", "gateway_status": "Gateway status", "card_type": "Card type",
               "match_method": "Matched by", "settlement_ref": "Settlement (batch)", "settled_at": "Settled",
-              "settled_date": "Settlement date"}
+              "settled_date": "Settlement date", "voided": "Voided in the gateway"}
     enums = {"method": METHODS, "kind": KINDS, "status": STATUSES, "order_source": SOURCES, "issue": ISSUES, "match_method": MATCHES,
              "financial_status": ("paid", "partially_paid", "partially_refunded", "refunded", "pending", "authorized", "voided")}
     default_sort = ("-processed_at", "-id")

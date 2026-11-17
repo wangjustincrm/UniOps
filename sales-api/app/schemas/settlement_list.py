@@ -28,6 +28,12 @@ class SettlementRowRead(BaseModel):
     net_amount: Decimal
     declined_count: int
     voided_count: int
+    chargeback_amount: Decimal
+    chargeback_count: int
+    returned_amount: Decimal
+    returned_count: int
+    other_count: int
+    pending_count: int
     transaction_count: int
     matched_net: Decimal
     difference: Decimal

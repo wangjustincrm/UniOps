@@ -44,3 +44,4 @@ class PaymentRowRead(BaseModel):
     settlement_ref: str | None = None
     settled_at: datetime | None = None
     settled_date: date | None = None
+    voided: bool = False  # voided in the gateway: no money

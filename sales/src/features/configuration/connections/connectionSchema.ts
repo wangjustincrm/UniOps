@@ -133,7 +133,7 @@ export const scheduleFields: FieldSpec[] = scheduleSpecs.map((f) => ({ ...f, sec
 export const connectionFields: FieldSpec[] = [
   { name: 'name', label: 'Name', required: true, section: 'Basics', hint: 'Cannot be changed after the connection is created.' },
   { name: 'kind', label: 'Type', type: 'segmented', required: true, section: 'Basics', options: [{ value: 'SFTP', label: 'SFTP' }, { value: 'SHOPIFY', label: 'Shopify' }, { value: 'AUTHORIZE_NET', label: 'Authorize.Net' }],
-    hint: (v) => (anet(v) ? 'Authorize.Net: its settled batches and their transactions, for Finance. It only reads.' : '') },
+    hint: (v) => (anet(v) ? 'Authorize.Net: its settled batches and their transactions, for Finance. It only reads. Amounts are taken as CAD (the merchant account\'s currency).' : '') },
   { name: 'active', label: 'Active', type: 'checkbox', section: 'Basics' },
 
   { name: 'can_read', label: 'Read', type: 'checkbox', section: 'Reading',
