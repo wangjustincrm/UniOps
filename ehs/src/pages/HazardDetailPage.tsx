@@ -11,6 +11,7 @@
  * Someone who cannot write hazards reaches one once it has been assessed
  * (Q11); before that the server answers 404.
  */
+import RiskAssessmentSection from '@/components/RiskAssessmentSection'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -23,9 +24,8 @@ import { useEquipmentName } from '@/components/EquipmentSelect'
 import { ActionHistory } from '@/components/ActionHistory'
 import { ChangeHistory } from '@/components/ChangeHistory'
 import { RecordPhotos } from '@/components/RecordPhotos'
-import { RatingBadge, RiskScoringHistory } from '@/components/RiskScoring'
-import { RiskAssessmentDialog } from '@/components/RiskAssessmentDialog'
-import { Card, LoadFailedNote, LoadProblem, SectionTitle, primaryButton } from '@/components/ui'
+import { RatingBadge } from '@/components/RiskScoring'
+import { Card, LoadFailedNote, LoadProblem, SectionTitle } from '@/components/ui'
 import { CONTROL_LEVELS, HazardForm, hazardKinds, type Hazard } from '@/pages/HazardsPage'
 
 interface Cause { id: string; cause_type: string; label: string; note: string | null }
@@ -44,7 +44,6 @@ export default function HazardDetailPage() {
   const { id = '' } = useParams()
   const { can } = usePermissions()
   const mayWrite = can('ehs.action.write')
-  const [assessing, setAssessing] = useState(false)
   const [editing, setEditing] = useState(false)
   const hazard = useQuery({
     queryKey: ['hazard', id],
@@ -106,9 +105,6 @@ export default function HazardDetailPage() {
                   className="inline-flex min-h-[40px] items-center rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-700">
             Edit
           </button>
-          <button type="button" className={primaryButton} onClick={() => setAssessing(true)}>
-            {h.current_rating ? 'Reassess' : 'Assess the risk'}
-          </button>
         </div>
       )}
 
@@ -139,11 +135,20 @@ export default function HazardDetailPage() {
             {h.existing_controls && <span className="block">{h.existing_controls}</span>}
             {!(h.hazard_controls ?? []).length && !h.existing_controls && '—'}
           </Row>
+          {/* UAT 15, TC-15: PPE, beside the controls. */}
+          <Row label="PPE">{(h.hazard_ppe ?? []).length ? h.hazard_ppe!.map((p) => p.label).join(', ') : '—'}</Row>
           <Row label="Kind of control">{level ?? 'Not stated'}</Row>
           <Row label="Identified">{h.identified_on ? formatDate(h.identified_on) : '—'}</Row>
           <Row label="Review due">{h.review_due_on ? formatDate(h.review_due_on) : '—'}</Row>
         </dl>
       </Card>
+
+      {/* ★ UAT 15: the risk assessment's button with what was assessed under
+          it, as on an incident (it was a button at the top and a list at the
+          bottom of the page). */}
+      <RiskAssessmentSection sourceType="hazard" sourceId={h.id} mayAssess={mayWrite} className="mt-5"
+        hazard={{ id: h.id, hazard_no: h.hazard_no, title: h.title, kinds }}
+        emptyNote="This hazard has not been scored against the matrix yet." />
 
       <section className="mt-5">
         <SectionTitle className="mb-2">Causes</SectionTitle>
@@ -172,11 +177,6 @@ export default function HazardDetailPage() {
 
       <ActionHistory sourceType="hazard" sourceId={h.id} title="Corrective actions" />
 
-      <section className="mt-5">
-        <SectionTitle className="mb-2">Risk assessments</SectionTitle>
-        <RiskScoringHistory sourceType="hazard" sourceId={h.id} showHazard
-          emptyNote="This hazard has not been scored against the matrix yet." />
-      </section>
 
       <RecordPhotos type="hazard" ownerId={h.id} canAdd={mayWrite} />
 
@@ -185,10 +185,6 @@ export default function HazardDetailPage() {
       </section>
 
       {editing && <HazardForm key={h.id} existing={h} onClose={() => setEditing(false)} />}
-      {assessing && (
-        <RiskAssessmentDialog sourceType="hazard" sourceId={h.id} onClose={() => setAssessing(false)}
-          hazard={{ id: h.id, hazard_no: h.hazard_no, title: h.title, kinds }} />
-      )}
     </div>
   )
 }

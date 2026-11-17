@@ -12,7 +12,7 @@
  * drift from it within a month.
  */
 import EquipmentSelect, { EquipmentName } from '@/components/EquipmentSelect'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, X } from 'lucide-react'
@@ -22,7 +22,7 @@ import {
 } from '@/components/CausesEditor'
 import { SearchBox, DateRangeFilter, useDateFilter } from '@/components/ListView'
 import { Pagination, SortTh, sortParams, useSort } from '@uniops/shell'
-import { formatDate, formatDateTime } from '@/lib/formatDate'
+import { formatDate, formatDateTime, todayForInput } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useMyProfile } from '@/hooks/useMyProfile'
 import { PhotoCapture } from '@/components/PhotoCapture'
@@ -30,6 +30,7 @@ import { RecordPhotos, uploadPhotos } from '@/components/RecordPhotos'
 import { RiskAssessmentDialog } from '@/components/RiskAssessmentDialog'
 import PeopleList, { type Picked } from '@/components/PeopleList'
 import { assessButton } from '@/components/FoodSafetyRisk'
+import RiskAssessmentSection from '@/components/RiskAssessmentSection'
 import type { CompressedImage } from '@/lib/imageCompress'
 import { LocationSelect } from '@/components/LocationSelect'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
@@ -57,6 +58,7 @@ export interface Hazard {
   created_by_name?: string | null
   /** Round 12, HAZ-11: several kinds and controls, as named when picked. */
   hazard_types?: { id: string; label: string }[]
+  hazard_ppe?: { id: string; label: string }[]
   hazard_controls?: { id: string; label: string }[]
   /** Kirk, round 12: "last revised on". An edit, not an assessment. */
   revised_at?: string | null; revised_by_name?: string | null
@@ -366,6 +368,8 @@ export function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: 
       : existing?.hazard_type_id ? [existing.hazard_type_id] : [])
   const [controlIds, setControlIds] = useState<string[]>(
     (existing?.hazard_controls ?? []).map((c) => c.id))
+  // ★ UAT 15, TC-15: "beside the 'controls in place' add a PPE pick list."
+  const [ppeIds, setPpeIds] = useState<string[]>((existing?.hazard_ppe ?? []).map((c) => c.id))
   const [newPhotos, setNewPhotos] = useState<CompressedImage[]>([])
   const me = useMyProfile()
   const [locationId, setLocationId] = useState<string | null>(existing?.location_id ?? null)
@@ -383,23 +387,24 @@ export function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: 
       setOwner({ ...EMPTY_PERSON, userId: me.data.id, name: me.data.full_name })
     }
   }, [existing, ownerTouched, owner.userId, me.data])
-  const [reviewOn, setReviewOn] = useState(existing?.review_due_on ?? '')
+  // ★ UAT 15, TC-15: "when creating a new hazard, insert the current date as
+  // the default Review due date." A default — it can be changed or cleared.
+  const [reviewOn, setReviewOn] = useState(existing ? (existing.review_due_on ?? '') : todayForInput())
   const [helpers, setHelpers] = useState<Picked[]>(existing?.helpers ?? [])
   // ★ UAT 14: "add a risk assessment button and include the completed
   // assessment on the hazard form". On a new hazard the button records it
   // first, then opens the assessment.
   const [assessAfterSave, setAssessAfterSave] = useState(false)
-  const [assessingId, setAssessingId] = useState<string | null>(null)
+  // The hazard as recorded by "Record and assess the risk", to score it as itself.
+  const [recorded, setRecorded] = useState<Hazard | null>(null)
+  const [assessingNew, setAssessingNew] = useState(false)
   const [findings, setFindings] = useState(existing?.findings ?? '')
   const [causes, setCauses] = useState<CauseDraft[]>([])
   // ★ Remembered once the hazard exists. Recording it is two calls — the hazard,
   // then its causes, because the causes need its id — and if the second fails,
   // pressing Record again must correct the hazard already made rather than make a
   // second one. The same shape as attaching a file on the document's create form.
-  const [createdId, setCreatedIdState] = useState<string | null>(null)
-  // Read in onSuccess, which runs before the state update is visible.
-  const createdIdRef = useRef<string | null>(null)
-  const setCreatedId = (id: string) => { createdIdRef.current = id; setCreatedIdState(id) }
+  const [createdId, setCreatedId] = useState<string | null>(null)
   const hazardId = existing?.id ?? createdId
 
   // An existing hazard's causes, loaded once. Kept out of the form's own state
@@ -417,11 +422,19 @@ export function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: 
     setCauses([...immediate, ...root].map((c) => ({ ...c, actions: c.id ? actions[c.id] : undefined })))
   }
 
+  // The hazard as the assessment dialog scores it: itself, by its number.
+  const source = existing ?? recorded
+  const scored = source ? {
+    id: source.id, hazard_no: source.hazard_no, title: source.title,
+    kinds: (source.hazard_types ?? []).map((k) => k.label),
+  } : undefined
+
   const body = () => ({
     title, description: description || null,
     findings: findings || null,
     hazard_type_ids: kindIds,
     hazard_control_ids: controlIds,
+    hazard_ppe_ids: ppeIds,
     location_id: locationId,
     equipment_id: equipmentId,
     existing_controls: controls || null,
@@ -445,6 +458,7 @@ export function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: 
         const made = await api.post<Hazard>('/api/v1/hazards', body())
         id = made.id
         setCreatedId(made.id)
+        setRecorded(made)
       }
       await uploadPhotos('hazard', id, newPhotos)
       setNewPhotos([])
@@ -468,7 +482,7 @@ export function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: 
       queryClient.invalidateQueries({ queryKey: ['change-log'] })
       if (assessAfterSave) {
         setAssessAfterSave(false)
-        setAssessingId(existing?.id ?? createdIdRef.current)
+        setAssessingNew(true)
         return
       }
       onClose()
@@ -530,6 +544,22 @@ export function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: 
           <Field label="Equipment">
             <EquipmentSelect value={equipmentId} onChange={setEquipmentId} locationId={locationId} />
           </Field>
+          {/* ★ UAT 15: "move the 'record and assess the risk' button to under
+              the 'where' pick list. when the risk assessment is completed, place
+              the information under the button", as on an incident. */}
+          {hazardId ? (
+            <RiskAssessmentSection sourceType="hazard" sourceId={hazardId} mayAssess
+              hazard={scored} emptyNote="Not assessed yet." />
+          ) : (
+            <div>
+              <SectionTitle className="mb-2.5">Risk assessment</SectionTitle>
+              <button type="button" className={assessButton}
+                      disabled={!title.trim() || create.isPending || unfinishedAction(causes)}
+                      onClick={() => { if (!create.isPending) { setAssessAfterSave(true); create.mutate() } }}>
+                Record and assess the risk
+              </button>
+            </div>
+          )}
         </div>
         <div className="sm:col-span-2">
           <Field label="Description">
@@ -548,14 +578,16 @@ export function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: 
                       placeholder="Guard removed for a changeover and never put back" />
           </Field>
         </div>
-        <div className="sm:col-span-2">
-          <Field label="Controls in place" hint="Pick from the list; add anything it does not have below">
-            <VocabularyMultiSelect vocabulary="hazard_control" value={controlIds}
-                                   onChange={(ids) => setControlIds(ids)}
-                                   known={existing?.hazard_controls}
-                                   placeholder="Search the hazard controls…" />
-          </Field>
-        </div>
+        <Field label="Controls in place" hint="Pick from the list; add anything it does not have below">
+          <VocabularyMultiSelect vocabulary="hazard_control" value={controlIds}
+                                 onChange={(ids) => setControlIds(ids)}
+                                 known={existing?.hazard_controls}
+                                 placeholder="Search the hazard controls…" />
+        </Field>
+        <Field label="PPE" hint="From the PPE list">
+          <VocabularyMultiSelect vocabulary="ppe" value={ppeIds} onChange={(ids) => setPpeIds(ids)}
+                                 known={existing?.hazard_ppe} placeholder="Search PPE…" />
+        </Field>
         <div className="sm:col-span-2">
           <Field label="Other controls, in words">
             <textarea className={`${inputClass} min-h-[60px] py-2`} value={controls}
@@ -598,34 +630,12 @@ export function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: 
         )}
       </div>
 
-      {/* ★ UAT 14: the risk assessment on the form, as on an incident. */}
-      <div className="mt-4 border-t border-neutral-100 pt-3">
-        <div className="mb-1.5 flex items-center justify-between gap-3">
-          <SectionTitle className="mb-0">Risk assessment</SectionTitle>
-          {existing?.current_rating && <RatingBadge rating={existing.current_rating} />}
-        </div>
-        {hazardId ? (
-          <>
-            <button type="button" className={assessButton} onClick={() => setAssessingId(hazardId)}>
-              {existing?.current_rating ? 'Assess the risk again' : 'Assess the risk'}
-            </button>
-            <RiskScoringHistory sourceType="hazard" sourceId={hazardId}
-                                emptyNote="Not assessed yet." />
-          </>
-        ) : (
-          <button type="button" className={assessButton}
-                  disabled={!title.trim() || create.isPending || unfinishedAction(causes)}
-                  onClick={() => { if (!create.isPending) { setAssessAfterSave(true); create.mutate() } }}>
-            Record and assess the risk
-          </button>
-        )}
-      </div>
-      {assessingId && (
-        <RiskAssessmentDialog sourceType="hazard" sourceId={assessingId}
+      {assessingNew && scored && (
+        <RiskAssessmentDialog sourceType="hazard" sourceId={scored.id} hazard={scored}
                               onClose={() => {
-                                setAssessingId(null)
+                                setAssessingNew(false)
                                 queryClient.invalidateQueries({ queryKey: ['hazards'] })
-                                queryClient.invalidateQueries({ queryKey: ['hazard', assessingId] })
+                                queryClient.invalidateQueries({ queryKey: ['risk-assessments', scored.id] })
                               }} />
       )}
 

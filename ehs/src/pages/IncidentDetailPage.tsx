@@ -28,9 +28,8 @@ import { InjurySummary } from '@/components/InjurySummary'
 import { CommunicationLog } from '@/components/CommunicationLog'
 import { ReturnToWorkPanel } from '@/components/ReturnToWorkPanel'
 import { NewActionDialog } from '@/components/NewActionDialog'
-import { RiskAssessmentDialog } from '@/components/RiskAssessmentDialog'
-import { FoodSafetyRisk, assessButton, useFoodSafetyAssessments } from '@/components/FoodSafetyRisk'
-import { RatingBadge, RiskScoringHistory, useScorings } from '@/components/RiskScoring'
+import { FoodSafetyRisk } from '@/components/FoodSafetyRisk'
+import RiskAssessmentSection from '@/components/RiskAssessmentSection'
 import { LocationSelect } from '@/components/LocationSelect'
 import { useTabTitle } from '@uniops/shell'
 import { ehsRoutes } from '@/app/routes'
@@ -233,14 +232,6 @@ export default function IncidentDetailPage() {
 
   const canInvestigate = can('ehs.incident.investigate')
   const canRaiseAction = can('ehs.action.write')
-  const [assessing, setAssessing] = useState(false)
-  // The current rating, for the heading. The list below is the history; this
-  // is the answer to "how bad is this one" without reading it.
-  const scorings = useScorings('incident', id ?? '')
-  const latestRating = scorings.data?.[0]?.rating ?? null
-  const [assessingFood, setAssessingFood] = useState(false)
-  const foodAssessed = (useFoodSafetyAssessments(id ?? '', Boolean(incident.data?.food_safety_near_miss))
-    .data ?? []).length > 0
   const hasInvestigation = Boolean(
     tree.data && (tree.data.immediate.length > 0 || tree.data.root.length > 0))
 
@@ -416,40 +407,16 @@ export default function IncidentDetailPage() {
             scorings are readable by anybody who can open the incident — they
             are part of the record — while making one still needs the
             investigator's permission. */}
-        <section className="px-4 pb-4">
-          <div className="mb-2.5 flex items-center justify-between gap-3">
-            <SectionTitle className="mb-0">Risk assessment</SectionTitle>
-            {latestRating && <RatingBadge rating={latestRating} />}
-          </div>
-          {/* ★ UAT 14: on a food-safety near miss both assessments' buttons
-              sit on this one line, and both are green. */}
-          {canInvestigate && (
-            <div className={inc.food_safety_near_miss ? 'grid gap-2 sm:grid-cols-2' : ''}>
-              <button type="button" onClick={() => setAssessing(true)} className={assessButton}>
-                {latestRating ? 'Assess the risk again' : 'Assess the risk'}
-              </button>
-              {inc.food_safety_near_miss && (
-                <button type="button" onClick={() => setAssessingFood(true)} className={assessButton}>
-                  {foodAssessed ? 'Assess the food safety risk again' : 'Assess the food safety risk'}
-                </button>
-              )}
-            </div>
-          )}
-          {assessing && (
-            <RiskAssessmentDialog sourceType="incident" sourceId={id}
-                                  onClose={() => setAssessing(false)} />
-          )}
-          <RiskScoringHistory sourceType="incident" sourceId={id} showHazard
+        {/* ★ UAT 15: each assessment's results under its own button, as the
+            incident form has them — on a food-safety near miss the two side by
+            side, both buttons green on one line (UAT 14). */}
+        <div className={`px-4 pb-4 ${inc.food_safety_near_miss ? 'grid gap-4 sm:grid-cols-2' : ''}`}>
+          <RiskAssessmentSection sourceType="incident" sourceId={id} mayAssess={canInvestigate} showHazard
             emptyNote={canInvestigate
               ? 'Not scored against the matrix yet. Scoring an incident is how a one-off becomes a ranked hazard.'
               : 'Not scored against the matrix yet.'} />
-        </section>
-
-        {/* ★ UAT 13: "add this new one just under it and title it 'Food Safety
-            Risk Assessment'" — on a food-safety near miss only. */}
-        {inc.food_safety_near_miss && (
-          <FoodSafetyRisk incidentId={id} assessing={assessingFood} onAssessing={setAssessingFood} />
-        )}
+          {inc.food_safety_near_miss && <FoodSafetyRisk incidentId={id} mayAssess={canInvestigate} />}
+        </div>
 
         {/* ── Causes and what is being done ─────────────────────────────── */}
         <section className="p-4">

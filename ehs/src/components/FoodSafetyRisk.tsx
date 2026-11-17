@@ -68,15 +68,12 @@ export const assessButton =
   'flex min-h-[40px] w-full items-center justify-center rounded-lg bg-success-600 px-4 text-sm font-semibold text-white hover:bg-success-700'
 
 /**
- * ★ UAT 14: "On food safety near misses, place the button to 'assess the risk'
- * and 'Assess the food safety risk' on the same line, and make the buttons
- * green." So the button lives on the page, beside the other one, and this
- * section shows what was assessed and opens the dialog when told to.
+ * ★ UAT 14: both assess buttons green, on one line — the page sets this
+ * beside the risk assessment. ★ UAT 15: "place the information under the
+ * button", so the button heads this section and what was assessed is under it.
  */
-export function FoodSafetyRisk({ incidentId, assessing, onAssessing }: {
-  incidentId: string; assessing: boolean; onAssessing: (open: boolean) => void
-}) {
-  const setAssessing = onAssessing
+export function FoodSafetyRisk({ incidentId, mayAssess }: { incidentId: string; mayAssess: boolean }) {
+  const [assessing, setAssessing] = useState(false)
   const scales = useFoodSafetyScales()
   const list = useFoodSafetyAssessments(incidentId)
   const rows = list.data ?? []
@@ -85,11 +82,16 @@ export function FoodSafetyRisk({ incidentId, assessing, onAssessing }: {
   const latestBand = latest ? bands.find((b) => b.code === latest.band) : undefined
 
   return (
-    <section className="px-4 pb-4" aria-label="Food Safety Risk Assessment">
+    <section aria-label="Food Safety Risk Assessment">
       <div className="mb-2.5 flex items-center justify-between gap-3">
         <SectionTitle className="mb-0">Food Safety Risk Assessment</SectionTitle>
         {latest && <BandBadge band={latest.band} bands={bands} />}
       </div>
+      {mayAssess && (
+        <button type="button" onClick={() => setAssessing(true)} className={`${assessButton} mb-2.5`}>
+          {latest ? 'Assess the food safety risk again' : 'Assess the food safety risk'}
+        </button>
+      )}
       {latest && (
         <div className="mb-2.5 rounded-lg border border-neutral-200 bg-white p-3">
           {latest.ccp_failure && (
