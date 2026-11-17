@@ -64,7 +64,7 @@ const BANNED_PACKAGES: Record<Exclude<Layer, 'root'>, RegExp | null> = {
 
 // The help module is self-contained (help/README.md): it can be taken to another project as its
 // folder alone. Inside it, only its own files and these packages.
-const HELP_PACKAGES = /^(react|react-dom|@radix-ui\/react-popover|lucide-react|vitest|@testing-library\/[\w-]+)(\/|$)/
+const HELP_PACKAGES = /^(react|react-dom|@radix-ui\/react-popover|@radix-ui\/react-dialog|lucide-react|vitest|@testing-library\/[\w-]+)(\/|$)/
 
 export function helpViolations(file: string, source: string): string[] {
   if (!file.startsWith('./help/')) return []

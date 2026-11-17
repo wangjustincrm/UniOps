@@ -12,7 +12,12 @@ export interface HelpEntry {
   title?: string
   body: string
   next?: string
+  /** A page's common tasks (its help panel lists them). */
+  tasks?: string[]
 }
+
+/** Every text the module has, for the help panel's search: its id and text. */
+export type HelpCatalog = () => { id: string; entry: HelpEntry }[]
 
 /** Where the texts come from: the module looks an id up (its own texts, texts from its API…). */
 export type HelpSource = (id: string) => HelpEntry | undefined

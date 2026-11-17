@@ -3,6 +3,7 @@ import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '../primitives/DataTable'
 import { PageHeader } from '../primitives/PageHeader'
+import type { HelpId } from '../help'
 import { Sheet } from '../primitives/Sheet'
 import type { ListMeta } from '../resource/listMeta'
 import { queryKeys } from '../resource/queryKeys'
@@ -65,6 +66,10 @@ export interface ListPageProps<T extends { id: number }> {
    *  orders waiting for delivery) shares the resource and must not take the order page's requests. */
   takesOpenRequests?: boolean
   emptyTitle?: string
+  /** Under the empty title: why the list is empty and what to do. */
+  emptyText?: string
+  /** The page's help (its ? beside the title opens the help panel). */
+  help?: HelpId
   searchable?: boolean
   errorMessages?: Record<string, string>
   toolbar?: (ctx: ListContext<T>) => ReactNode
@@ -213,7 +218,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   return (
     <NoticesContext.Provider value={notices}>
     <div className="flex flex-col gap-4">
-      {props.title && <PageHeader title={props.title} description={props.description} />}
+      {props.title && <PageHeader title={props.title} description={props.description} help={props.help} />}
       {props.notice}
       <QueryTable<T>
         ariaLabel={props.title}
@@ -242,6 +247,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
         onRowClick={props.onRowClick ?? (renderDetail ? setOpen : undefined)}
         expand={props.expand}
         emptyTitle={props.emptyTitle}
+        emptyText={props.emptyText}
         toolbar={toolbar}
       />
       {renderDetail && current && (

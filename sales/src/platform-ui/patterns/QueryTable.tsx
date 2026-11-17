@@ -62,6 +62,7 @@ export interface QueryTableProps<T> {
   /** A row's detail under it, opened with its ▸ (DataTable `expand`); null: nothing to open. */
   expand?: (row: T) => ReactNode | null
   emptyTitle?: string
+  emptyText?: string
   toolbar?: ReactNode
   /** Everything the view is, on every change. */
   onViewChange?: (view: ViewState) => void

@@ -75,3 +75,39 @@ describe('DisabledReason', () => {
     expect(container.querySelector('[data-disabled-reason]')).toBeNull()
   })
 })
+
+describe('search and the page panel', () => {
+  const all = [
+    { id: 'term:EA', entry: { title: 'EA — term', body: 'Each: the unit everything is counted in.' } },
+    { id: 'status:Sent', entry: { title: 'Sent — order status', body: 'Waiting for its answer from the warehouse.' } },
+    { id: 'page:orders', entry: { title: 'Orders', body: 'Every order.', tasks: ['Find an order: search its ref.'] } },
+  ]
+  it('finds texts holding every word, titles first, case and accents ignored; empty finds nothing', async () => {
+    const { searchHelp } = await import('./index')
+    expect(searchHelp(all, '')).toEqual([])
+    expect(searchHelp(all, 'warehouse').map((h) => h.id)).toEqual(['status:Sent'])
+    expect(searchHelp(all, 'ORDER').map((h) => h.id)).toEqual(['status:Sent', 'page:orders'])  // both titles hold it
+    expect(searchHelp(all, 'each unit').map((h) => h.id)).toEqual(['term:EA'])
+    expect(searchHelp(all, 'search ref').map((h) => h.id)).toEqual(['page:orders'])  // its tasks count
+    expect(searchHelp(all, 'nope')).toEqual([])
+  })
+  it("a page's ? opens its panel: what it is for, its tasks, and a search over every text", async () => {
+    const { PageHelp } = await import('./index')
+    const source = (id: string) => all.find((h) => h.id === id)?.entry
+    render(<HelpProvider source={source} catalog={() => all}><PageHelp id="page:orders" page="Orders" /><PageHelp id="page:none" page="None" /></HelpProvider>)
+    expect(screen.queryByRole('button', { name: 'Help: None' })).toBeNull()  // no text: no button
+  })
+  it('the panel lists the page and searches', async () => {
+    const { PageHelp } = await import('./index')
+    const entries = { 'page:orders': all[2].entry } as Record<string, HelpEntry>
+    render(<HelpProvider source={(id) => entries[id]} catalog={() => all}><PageHelp id="page:orders" page="Orders" /></HelpProvider>)
+    fireEvent.click(screen.getByRole('button', { name: 'Help: Orders' }))
+    const panel = await screen.findByRole('dialog', { name: 'Help: Orders' })
+    expect(within(panel).getByText('Every order.')).toBeInTheDocument()
+    expect(within(panel).getByText('Find an order: search its ref.')).toBeInTheDocument()
+    fireEvent.change(within(panel).getByRole('searchbox', { name: 'Search help' }), { target: { value: 'warehouse' } })
+    expect(within(within(panel).getByRole('region', { name: 'Search results' })).getByText('Sent — order status')).toBeInTheDocument()
+    fireEvent.change(within(panel).getByRole('searchbox', { name: 'Search help' }), { target: { value: 'zzz' } })
+    expect(within(panel).getByText('Nothing found for “zzz”.')).toBeInTheDocument()
+  })
+})

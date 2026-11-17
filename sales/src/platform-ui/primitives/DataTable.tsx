@@ -62,6 +62,8 @@ export interface DataTableProps<T> {
   errorMessage?: string | null
   onRetry?: () => void
   emptyTitle?: string
+  /** Under the empty title: why it is empty and what to do. */
+  emptyText?: string
   /** The sort keys in priority order (one or several); only the `sortable`
    *  column ids get a header button, which sorts by that column alone. */
   sort?: SortValue | SortValue[] | null
@@ -120,7 +122,7 @@ export type RowAttrs = { className?: string } & { [data: `data-${string}`]: stri
  *  empty / loading / error states. It knows nothing about the API or the
  *  query contract — QueryTable (patterns) adapts it to a QuerySpec. */
 export function DataTable<T>({
-  columns, rows, rowKey, onRowClick, loading, fetching, stale, busyNow, highlight, fit, statusBar, errorMessage, onRetry, emptyTitle = 'Nothing here yet',
+  columns, rows, rowKey, onRowClick, loading, fetching, stale, busyNow, highlight, fit, statusBar, errorMessage, onRetry, emptyTitle = 'Nothing here yet', emptyText,
   sort, sortable = [], onSortChange, headerAddon, leadingHeader, chips, grouping, leading, afterSearch, onColumnMove, search, filters,
   toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs, expand, cardsBelow = 640, cardLines = 6,
 }: DataTableProps<T>) {
@@ -510,7 +512,7 @@ export function DataTable<T>({
             )}
           </table>
           )}
-          {!loading && rows.length === 0 && <EmptyState title={emptyTitle} className="border-0" />}
+          {!loading && rows.length === 0 && <EmptyState title={emptyTitle} description={emptyText} className="border-0" />}
           {grouping?.truncated && (
             <p className="border-t border-neutral-100 px-3 py-2 text-xs text-neutral-500">
               Too many groups to count them all: counts are shown for the first 500.
