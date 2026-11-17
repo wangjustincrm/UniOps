@@ -1,9 +1,13 @@
 # Finance — Product Requirements Document
 
-**Version:** 2.29
-**Date:** 2026-11-16
+**Version:** 2.30
+**Date:** 2026-11-17
 **Status:** Current. Describes the system as built on the main line, under the 2026-09-20 positioning decision.
 **Scope:** The UniOps Finance module: Finance web app and finance service. Covers the NC65 data mirror, the checks and reports built on it, AP handoff to NC, payments, remittance, vendor credits, bank reconciliation and the remaining finance-held records.
+
+**What changed in version 2.30** (2026-11-17)
+
+- The remittance advice of a OneTime (Deposit) agreement's deposit PA reads "Deposit - <agreement number>" instead of the bare "Prepayment" (FIN-REM-04; EPMS AGR-092). The deposit's refund is booked by Finance in NC; nothing about it is pushed from UniOps.
 
 **What changed in version 2.29** (2026-11-16)
 
@@ -522,7 +526,7 @@ Recipient, line and blocking rules match EPMS.md §3.18.3 (REM-001 to REM-006).
 | FIN-REM-01 | Scopes: single payment, payment batch, or a hand-picked selection. An advice already sent for the same payee and scope is skipped unless the payee is marked for resend. |
 | FIN-REM-02 | **Preview & Send → render → Confirm & Send**: the operator sees the exact emails (From / To / Cc / Subject / HTML) before anything is sent. Block reasons are computed live. |
 | FIN-REM-03 | Each payee is sent and logged on its own and committed straight away. One failure does not stop the rest, and a sent email is never recorded as "not sent". |
-| FIN-REM-04 | The advice shows gross / credit notes / net when credits were netted, and the vendor's invoice number. Prepayment PAs with no invoice number appear as "Prepayment - PO …" and are not blocked. A payment-date picker changes only the date printed on the email; it cannot be later than today in the plant time zone (FIN-PER-02). Dates on the email are printed as YYYY-MMM-DD. |
+| FIN-REM-04 | The advice shows gross / credit notes / net when credits were netted, and the vendor's invoice number. Prepayment PAs with no invoice number appear as "Prepayment - PO …" (a deposit agreement's deposit PA: "Deposit - <agreement number>", EPMS AGR-092) and are not blocked. A payment-date picker changes only the date printed on the email; it cannot be later than today in the plant time zone (FIN-PER-02). Dates on the email are printed as YYYY-MMM-DD. |
 | FIN-REM-05 | Sender, CC, enable switch, template text and logo come from Portal → Admin → Remittance Advice settings. Data values are HTML-escaped. Address lists accept commas or semicolons and are normalised before sending. |
 
 ---

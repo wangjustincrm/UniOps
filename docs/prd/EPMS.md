@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.58
+**Version:** 2.59
 **Date:** 2026-11-17
 **Status:** In Production
+
+> **v2.59 (2026-11-17)** — **OneTime (Deposit) agreements** (§3.17.9, AGR-090 – AGR-096; §3.17.1, AGR-002, AGR-051, §3.15.7, REM-003): a new agreement type for a one-time deposit that is refunded when the agreement ends. The agreement states the **Deposit Amount**; its deposit PA is a Prepayment for exactly that amount, with **no invoice** — the agreement's attachments are its evidence — and one per agreement. When the vendor returns the money, **Record Refund** on the paid deposit PA records the amount refunded (0 up to the deposit, never more), the refund evidence and, when less came back, the reason the rest was retained; Finance confirms the refund (or returns it) and only then is the deposit settled, the retained part recorded as a negative variance. Nothing is paid by the refund and nothing is pushed to NC — Finance books the refund in NC. The remittance advice of a deposit reads "Deposit - <agreement number>".
 
 > **v2.58 (2026-11-17)** — **Project-related freight** (§3.21, FRT-002, FRT-006, FRT-008, FRT-019): *New Shipment* has a **Project related** checkbox. Ticked, the shipment takes the project details (required text) instead of a department and cost center. When the carrier's invoice is matched, its line is pre-filled with the **project-freight cost center** (Freight → Carriers; R&D, agreed with Finance 2026-11-17) and marked *Project — confirm cost center*; the person matching confirms it or picks another before the invoice can be finalised. The Freight PA and the NC AP bill are unchanged (one row per cost center, CRM00204).
 
@@ -2250,7 +2252,7 @@ Applies to all PA types (Standard, Prepayment, Balance, Settlement). The number 
 
 #### 3.15.7 Agreement PAs
 
-Raised from Agreement Detail → *Create PA*. Type is always `regular`; the PA has no PO.
+Raised from Agreement Detail → *Create PA*. Type is always `regular`; the PA has no PO. *Exception:* a OneTime (Deposit) agreement takes only its deposit PA, a Prepayment with no invoice (§3.17.9); any other type on it is refused (422).
 
 | FR ID | Requirement |
 |-------|-------------|
@@ -2385,7 +2387,7 @@ load on a committed run, or on their own via **Import Attachments**. **FR-PMS-00
 
 ### 3.17 Purchase Agreements (AGR)
 
-A Purchase Agreement is a standing authorisation with one vendor for spend that does not go through PR → PO → GR: house accounts, recurring charges (rent, subscriptions, service contracts) and milestone-billed contracts. It carries no quantities and is never received against; invoices are matched directly to it (2-way) and paid by an agreement PA (§3.15.7).
+A Purchase Agreement is a standing authorisation with one vendor for spend that does not go through PR → PO → GR: house accounts, recurring charges (rent, subscriptions, service contracts), milestone-billed contracts and one-time deposits. It carries no quantities and is never received against; invoices are matched directly to it (2-way) and paid by an agreement PA (§3.15.7).
 
 #### 3.17.1 Agreement Types
 
@@ -2394,13 +2396,14 @@ A Purchase Agreement is a standing authorisation with one vendor for spend that 
 | `house_account` | Repeated small purchases billed periodically by the vendor | Receipts (§3.17.5) attached to the invoice, or an explicit "settle without receipt evidence" with a reason |
 | `recurring` | Fixed repeating charge on a cycle | The invoice is linked to a billing period, and the agreement owner has **confirmed service** for that period |
 | `milestone` | Staged contract billed on deliverables | The invoice is linked to a milestone stage |
+| `deposit` — *OneTime (Deposit)* | A one-time deposit (lease, equipment, security deposit) refunded when the agreement ends | **No invoice.** The agreement's attachments; the deposit PA pays the agreement's Deposit Amount (§3.17.9) |
 
 #### 3.17.2 Fields and Rules
 
 | FR ID | Requirement |
 |---|---|
 | **AGR-001** | Number `AGR-YYYYMM-NNNN`, system-generated on create; the month is the plant's (UI-DATE-003). |
-| **AGR-002** | Header: title, type, vendor, contract #, vendor reference, contact email, valid from/to (to ≥ from), grace days (default 30, 0–365), Not-to-Exceed (optional, **pre-tax**), currency, tax code/rate, department, cost center, budget code (must be a known budget code), **Owner**, notes. |
+| **AGR-002** | Header: title, type, vendor, contract #, vendor reference, contact email, valid from/to (to ≥ from), grace days (default 30, 0–365), Not-to-Exceed (optional, **pre-tax**; not offered on a deposit agreement), **Deposit Amount** (required, > 0, on a deposit agreement only — rejected on every other type), currency, tax code/rate, department, cost center, budget code (must be a known budget code), **Owner**, notes. |
 | **AGR-003** | Recurring only: cycle (`weekly`, `monthly`, `quarterly`, `yearly`, `special_monthly`), expected invoice day (weekly: 1–7, Monday = 1; otherwise 1–31), anchor month (required for quarterly/yearly), active months (required for, and only for, special monthly — the months that bill), optional schedule start date (inside the validity window, for an agreement entered in the system after it started), expected pre-tax amount per period, tolerance %, overdue-after days (default 7). Settings that produce no billing period are rejected. These fields are rejected on non-recurring agreements. |
 | **AGR-004** | Milestone only: one or more stages (name, expected timing, amount **or** % of Not-to-Exceed — the other is derived; % requires a Not-to-Exceed). At least one stage is required to submit. |
 | **AGR-005** | Not-to-Exceed is a **warning only**: Agreement Detail shows consumed vs ceiling and "Over ceiling — warning only"; no action is blocked. *Consumed* = sum of the **pre-tax amounts** of all invoices matched to the agreement, re-derived on every match/edit/unmatch/delete — the same basis as the Not-to-Exceed and the milestone stage amounts (and a recurring agreement's expected amount per period), so an agreement invoiced exactly to its stages is not over its ceiling. Screens label Consumed and NTE "(pre-tax)". |
@@ -2450,12 +2453,26 @@ A Purchase Agreement is a standing authorisation with one vendor for spend that 
 | FR ID | Requirement |
 |---|---|
 | **AGR-050** | *View Agreements* (`epms.agreement.read`) gates the module (menu entries *Agreements* and *Agreement Receipts*). Unrestricted roles see all agreements; restricted roles see: agreements they created or own (requester), of their department (dept manager/admin), mapped departments (GM/OPM), directed departments (director), created by direct reports (supervisor), and any agreement whose PA they have an open approval task for. Out-of-scope → 404. |
-| **AGR-051** | Agreement Detail shows header, NTE bar, billing schedule (each period with its invoices, status and confirmation), milestones, receipts, matched invoices, attachments, document chain, approval timeline with approver names, and Audit History; *Create PA* is offered only when at least one invoice is payable (AGR-061). |
+| **AGR-051** | Agreement Detail shows header, NTE bar, billing schedule (each period with its invoices, status and confirmation), milestones, receipts, matched invoices, attachments, document chain, approval timeline with approver names, and Audit History; *Create PA* is offered only when at least one invoice is payable (AGR-061). A deposit agreement shows a **Deposit** card instead of the NTE bar, receipts and matched invoices (AGR-095). |
 | **AGR-052** | The Agreements and Agreement Receipts lists sort by any column on the server (UI-SORT-004). Agreements open sorted by number, newest first. |
 
 #### 3.17.8 Paying an Agreement
 
 See §3.15.7 Agreement PAs.
+
+#### 3.17.9 OneTime (Deposit) Agreements
+
+A deposit is money that goes out with no invoice behind it and is expected to come back: the vendor refunds it when the agreement ends, in full or less whatever it retains under the contract (e.g. a 400,000 deposit refunded 400,000, or 350,000 after a 50,000 deduction). A lease that also bills monthly rent is two agreements — this one for the deposit, a recurring one for the rent. Decided with the user 2026-11-17.
+
+| FR ID | Requirement |
+|---|---|
+| **AGR-090** | Type `deposit`, labelled *OneTime (Deposit)*. **Deposit Amount** is required (> 0) and is the deposit PA's amount. It has no billing schedule, milestones or Not-to-Exceed. Approval is the ordinary agreement approval (AGR-010). |
+| **AGR-091** | A deposit agreement takes **no invoices**: it is not offered as a match candidate and matching an invoice to it is refused. |
+| **AGR-092** | **Deposit PA.** Raised from Agreement Detail → *Deposit* → *Create Deposit PA* (created and submitted in one step). It is a `prepayment` with no PO and no invoice; its amount is the agreement's Deposit Amount in the agreement's currency, with no tax, freight or other charges, whatever the client sends, and cannot be edited (only title, notes and expected refund date). Refused (422) unless the agreement is admissible (AGR-012) **and has at least one attachment** — the signed agreement or deposit request is its only evidence. One per agreement: a second is refused (409) while the first is not `cancelled`/`rejected`. It follows the normal PA approval and is paid by Finance (PAY-001); its remittance reference is "Deposit - <agreement number>" (REM-003). It pushes nothing to NC. |
+| **AGR-093** | **Record Refund.** On the paid (`processed`) deposit PA whose settlement is pending, *Record Refund* (`epms.pa.write` and the PA visible to the user) records, in one step: the **amount refunded**, 0 up to the deposit paid (more is refused, 422); the **refund evidence**, at least one file (422 without); and, when less than the deposit came back, the **reason it was retained** (422 without). It creates a Settlement PA of that agreement (`payment_amount` 0 — nothing is paid) in status `submitted`, and a *Confirm Deposit Refund* (`confirm_settlement`) task for the Finance BP pool. The agreement's validity window does **not** apply — a refund comes after the agreement has ended. Only one live refund per deposit (409). |
+| **AGR-094** | **Finance confirmation.** Only Finance (Finance BP, Finance Manager, Finance Director — primary or additional role — or System Admin) may act, on the refund PA: **Confirm Refund Received** → refund PA `processed`, deposit PA `settled` with variance = refunded − deposit (0 = refunded in full; negative = retained by the vendor) and a note naming the refund PA, the amount retained and why; or **Return** with a reason → refund PA `rejected` (reason appended to its notes), the deposit stays pending and the refund can be recorded again. A full refund is confirmed too. Finance books the refund itself in NC / bank reconciliation; EPMS records it and closes the deposit. |
+| **AGR-095** | Agreement Detail of a deposit agreement shows a **Deposit** card — deposit amount, the deposit PA and its status, the refund status (not paid yet / not refunded yet / waiting for Finance / refunded and confirmed) and each recorded refund (refunded, retained, reason, status) — with *Create Deposit PA* (disabled, with the reason, while the agreement is not admissible or has no attachment) and *Record Refund*. PA Detail of a refund shows deposit / refunded / retained / reason and Finance's two actions. |
+| **AGR-096** | Guide layer: `agreement_types.yaml` (deposit), `pa_types.yaml` (prepayment, settlement), rule `deposit_agreement`. |
 
 ---
 
@@ -2490,7 +2507,7 @@ Payment of an approved PA is executed in Finance; EPMS PA Detail offers the same
 |---|---|
 | **REM-001** | After payment, Finance sends a remittance advice email per payee, for a single payment, a payment batch, or a selection. Sending is open to AP Clerk as well as payment executors (it is not an act of paying). |
 | **REM-002** | Recipient: the vendor's *Remittance email* (Vendor Master), falling back to the contact email; several addresses may be entered (comma or semicolon). Sender, CC, template and logo come from Portal → Admin → Remittance Advice settings. |
-| **REM-003** | Each line shows the vendor's own invoice number (prepayment PAs with no invoice: "Prepayment - PO <number>"), payment date, and — when credits were netted — gross, each credit note number with its amount, and net. |
+| **REM-003** | Each line shows the vendor's own invoice number (prepayment PAs with no invoice: "Prepayment - PO <number>"; a deposit agreement's deposit PA: "Deposit - <agreement number>"), payment date, and — when credits were netted — gross, each credit note number with its amount, and net. |
 | **REM-004** | A payee is blocked from sending, with the reason shown, when it has no email, an invalid email, or a line with no vendor reference. Preview is live and refreshable; a **render** step shows the exact emails before sending. |
 | **REM-005** | **Payment date picker** (default today, future dates refused): overrides the payment date printed on the advice only; the payment record's accounting date is never changed. |
 | **REM-006** | An advice already sent to a payee for the same scope is skipped unless that payee is explicitly marked for resend. |
