@@ -57,8 +57,6 @@ export function EditVisitModal({ visit, onClose }: { visit: Visit; onClose: () =
     )
   }
 
-  const inputCls = 'mt-1 w-full rounded-md border border-line-strong px-3 py-1.5 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500'
-
   return (
     <Modal
       open
@@ -79,13 +77,13 @@ export function EditVisitModal({ visit, onClose }: { visit: Visit; onClose: () =
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="text-xs font-medium text-fg-secondary">Date
-            <Input type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} className={inputCls} />
+            <Input type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} className="mt-1" />
           </label>
           <label className="text-xs font-medium text-fg-secondary">Planned arrival
-            <Input type="time" value={arrival} onChange={(e) => setArrival(e.target.value)} className={inputCls} />
+            <Input type="time" value={arrival} onChange={(e) => setArrival(e.target.value)} className="mt-1" />
           </label>
           <label className="text-xs font-medium text-fg-secondary">Planned departure
-            <Input type="time" value={departure} onChange={(e) => setDeparture(e.target.value)} className={inputCls} />
+            <Input type="time" value={departure} onChange={(e) => setDeparture(e.target.value)} className="mt-1" />
           </label>
         </div>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -103,7 +101,7 @@ export function EditVisitModal({ visit, onClose }: { visit: Visit; onClose: () =
           </label>
         </div>
         <label className="mt-3 block text-xs font-medium text-fg-secondary">Notes
-          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={inputCls} />
+          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="mt-1" />
         </label>
 
         {update.error && <p className="mt-3 text-xs text-danger-fg">{update.error.message}</p>}

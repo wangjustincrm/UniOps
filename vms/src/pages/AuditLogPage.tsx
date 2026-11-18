@@ -156,7 +156,7 @@ export default function AuditLogPage() {
             value={pending.user_id ?? ''}
             onChange={(e) => setPending({ ...pending, user_id: e.target.value || undefined })}
             placeholder="optional"
-            className="font-mono text-xs"
+            inputSize="sm" className="font-mono"
           />
         </Field>
         <Field label="From (date)">

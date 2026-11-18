@@ -17,9 +17,6 @@ import {
   type UserBrief, type Zone,
 } from '@/services/api'
 
-const inputCls =
-  'mt-1 w-full rounded-md border border-line-strong px-3 py-1.5 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500'
-
 export default function ZonesPage() {
   const { data: zones, isLoading, error } = useZones()
   const update = useUpdateZone()
@@ -186,10 +183,10 @@ function ZoneModal({ zone, onClose }: { zone: Zone | null; onClose: () => void }
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="text-xs font-medium text-fg-secondary sm:col-span-2">Name
-            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} className={inputCls} />
+            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} className="mt-1" />
           </label>
           <label className="text-xs font-medium text-fg-secondary">Order
-            <Input type="number" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className={inputCls} />
+            <Input type="number" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="mt-1" />
           </label>
         </div>
         <label className="mt-3 inline-flex items-center gap-2 text-sm text-fg-secondary">

@@ -133,7 +133,7 @@ export function PpeRequestForm({ visitors, value, onChange }: Props) {
                     value={item.clothing_size_other ?? ''}
                     onChange={(e) => updateItem(v.id, { clothing_size_other: e.target.value })}
                     placeholder="e.g. EU 56 / 3XL coat"
-                    className={inputCls}
+                    className="block"
                   />
                 </Field>
               )}
@@ -179,7 +179,7 @@ export function PpeRequestForm({ visitors, value, onChange }: Props) {
                     value={item.shoe_size_other ?? ''}
                     onChange={(e) => updateItem(v.id, { shoe_size_other: e.target.value })}
                     placeholder="e.g. EU 47"
-                    className={inputCls}
+                    className="block"
                   />
                 </Field>
               )}
@@ -195,16 +195,13 @@ export function PpeRequestForm({ visitors, value, onChange }: Props) {
             onChange={(e) => onChange({ ...value, notes: e.target.value })}
             rows={2}
             placeholder="Anything else the Janitor should know…"
-            className={inputCls}
+            className="block"
           />
         </Field>
       )}
     </div>
   )
 }
-
-const inputCls =
-  'block w-full rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500'
 
 function Field({
   label, children, className,

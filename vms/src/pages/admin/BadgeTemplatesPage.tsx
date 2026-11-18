@@ -32,8 +32,6 @@ const SAMPLE_VISITOR = {
 } as unknown as Visitor
 const SAMPLE_HOST = { id: 'h', full_name: 'Pat Morgan' } as unknown as UserBrief
 
-const inputCls =
-  'rounded-md border border-line-strong px-2 py-1 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500'
 const sectionCls = 'rounded-md border border-line bg-surface p-3 space-y-2'
 const headCls = 'text-xs font-semibold text-fg-muted'
 
@@ -97,7 +95,7 @@ export default function BadgeTemplatesPage() {
           <div className={sectionCls}>
             <p className={headCls}>Top band</p>
             <label className="block text-xs text-fg-secondary">Title
-              <Input className={`${inputCls} mt-1 w-full`} value={cfg.band.title}
+              <Input className="mt-1" value={cfg.band.title}
                 onChange={(e) => update((c) => { c.band.title = e.target.value })} />
             </label>
             <div className="flex flex-wrap gap-4 text-xs text-fg-secondary">
@@ -110,7 +108,7 @@ export default function BadgeTemplatesPage() {
                   onChange={(e) => update((c) => { c.band.show_risk = e.target.checked })} /> Show risk
               </label>
               <label className="inline-flex items-center gap-1.5">Risk suffix
-                <Input className={`${inputCls} w-20`} value={cfg.band.risk_suffix}
+                <Input className="w-20" value={cfg.band.risk_suffix}
                   onChange={(e) => update((c) => { c.band.risk_suffix = e.target.value })} />
               </label>
             </div>
@@ -125,13 +123,13 @@ export default function BadgeTemplatesPage() {
                 return (
                   <div key={a} className="flex items-center gap-2">
                     <span className="w-32 shrink-0 truncate text-2xs text-fg-muted" title={zoneLabel}>{zoneLabel}</span>
-                    <Input className={`${inputCls} flex-1`} value={st.label}
+                    <Input className="flex-1" value={st.label}
                       onChange={(e) => set('label', e.target.value)} />
                     <Input inputSize="sm" type="color" className="w-9" value={st.bg}
                       onChange={(e) => set('bg', e.target.value.toUpperCase())} title="background" />
                     <Input inputSize="sm" type="color" className="w-9" value={st.fg}
                       onChange={(e) => set('fg', e.target.value.toUpperCase())} title="text" />
-                    <Input className={`${inputCls} w-24`} value={st.risk}
+                    <Input className="w-24" value={st.risk}
                       onChange={(e) => set('risk', e.target.value)} title="risk label" />
                   </div>
                 )
@@ -162,7 +160,7 @@ export default function BadgeTemplatesPage() {
                 <Checkbox checked={f.visible}
                   onChange={(e) => update((c) => { c.meta_fields[i].visible = e.target.checked })} />
                 <span className="w-32 shrink-0 text-2xs text-fg-muted">{f.key}</span>
-                <Input className={`${inputCls} flex-1`} value={f.label}
+                <Input className="flex-1" value={f.label}
                   onChange={(e) => update((c) => { c.meta_fields[i].label = e.target.value })} />
                 <Button variant="subtle" size="icon-xs" aria-label="Move up" onClick={() => moveMeta(i, -1)} disabled={i === 0}
                  ><ArrowUp className="h-3.5 w-3.5" /></Button>
@@ -185,7 +183,7 @@ export default function BadgeTemplatesPage() {
               </p>
             )}
             <label className="block text-xs text-fg-secondary">QR caption
-              <Input className={`${inputCls} mt-1 w-full`} value={cfg.qr.label}
+              <Input className="mt-1" value={cfg.qr.label}
                 onChange={(e) => update((c) => { c.qr.label = e.target.value })} />
             </label>
           </div>
@@ -203,7 +201,7 @@ export default function BadgeTemplatesPage() {
             </label>
             {cfg.footer.lines.map((line, i) => (
               <div key={i} className="flex items-center gap-2">
-                <Input className={`${inputCls} flex-1`} value={line}
+                <Input className="flex-1" value={line}
                   onChange={(e) => update((c) => { c.footer.lines[i] = e.target.value })} />
                 <Button variant="link" className="text-xs text-danger-fg"
                   onClick={() => update((c) => { c.footer.lines.splice(i, 1) })}>Remove</Button>
@@ -216,11 +214,11 @@ export default function BadgeTemplatesPage() {
             <p className={headCls}>Style</p>
             <div className="grid grid-cols-2 gap-2 text-xs text-fg-secondary">
               <label>Name size (pt)
-                <Input type="number" className={`${inputCls} mt-1 w-full`} value={cfg.style.name_size_pt}
+                <Input type="number" className="mt-1" value={cfg.style.name_size_pt}
                   onChange={(e) => update((c) => { c.style.name_size_pt = Number(e.target.value) })} />
               </label>
               <label>Band title size (pt)
-                <Input type="number" className={`${inputCls} mt-1 w-full`} value={cfg.style.band_title_size_pt}
+                <Input type="number" className="mt-1" value={cfg.style.band_title_size_pt}
                   onChange={(e) => update((c) => { c.style.band_title_size_pt = Number(e.target.value) })} />
               </label>
               <label className="flex items-center gap-2">Text color

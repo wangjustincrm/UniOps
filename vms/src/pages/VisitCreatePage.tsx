@@ -96,19 +96,19 @@ function InlineNewVisitorForm({
       <p className="text-xs font-medium text-fg-secondary">Register a new visitor</p>
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
         <Field label="First name *">
-          <Input value={first} onChange={(e) => setFirst(e.target.value)} className={inputCls} />
+          <Input value={first} onChange={(e) => setFirst(e.target.value)} />
         </Field>
         <Field label="Last name *">
-          <Input value={last} onChange={(e) => setLast(e.target.value)} className={inputCls} />
+          <Input value={last} onChange={(e) => setLast(e.target.value)} />
         </Field>
         <Field label="Company (optional)">
-          <Input value={company} onChange={(e) => setCo(e.target.value)} className={inputCls} />
+          <Input value={company} onChange={(e) => setCo(e.target.value)} />
         </Field>
         <Field label="Phone (optional)">
-          <Input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} />
+          <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
         </Field>
         <Field label="Email (optional)">
-          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
+          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
         <Field label="Visitor type">
           <Select value={type} onChange={(e) => setType(e.target.value as VisitorType)} className="w-full">
@@ -232,13 +232,13 @@ export default function VisitCreatePage() {
         <Section title="Schedule">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <Field label="Date">
-              <Input type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} className={inputCls} />
+              <Input type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} />
             </Field>
             <Field label="Planned arrival">
-              <Input type="time" value={arrivalTime} onChange={(e) => setArrivalTime(e.target.value)} className={inputCls} />
+              <Input type="time" value={arrivalTime} onChange={(e) => setArrivalTime(e.target.value)} />
             </Field>
             <Field label="Planned departure">
-              <Input type="time" value={departureTime} onChange={(e) => setDepartureTime(e.target.value)} className={inputCls} />
+              <Input type="time" value={departureTime} onChange={(e) => setDepartureTime(e.target.value)} />
             </Field>
           </div>
         </Section>
@@ -280,7 +280,7 @@ export default function VisitCreatePage() {
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
-            className={inputCls + ' resize-y'}
+            className="resize-y"
             placeholder="Anything the front desk should know…"
           />
         </Section>
@@ -315,9 +315,6 @@ export default function VisitCreatePage() {
 }
 
 // ── Bits ────────────────────────────────────────────────────────────────────-
-
-const inputCls =
-  'w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500'
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
