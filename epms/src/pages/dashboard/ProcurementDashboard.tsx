@@ -7,11 +7,11 @@ import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Badge, type Badge
 const PO_STATUS_TONE: Record<string, BadgeTone> = {
   draft:      'neutral',
   submitted:  'warning',
-  in_review:  'blue',
+  in_review:  'info',
   approved:   'success',
-  issued:     'accent',
-  closed:     'outline',
-  cancelled:  'danger',
+  issued:     'success',
+  closed:     'dark',
+  cancelled:  'outline',
 }
 
 function PoStatusBadge({ status }: { status: string }) {

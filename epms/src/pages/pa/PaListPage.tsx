@@ -18,15 +18,15 @@ import type { PaStatus, ApiPa } from '@/services/pa'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
-const STATUS_CFG: Record<PaStatus, { label: string; variant: 'neutral' | 'warning' | 'info' | 'success' | 'danger'; dot: string }> = {
+const STATUS_CFG: Record<PaStatus, { label: string; variant: BadgeTone; dot: string }> = {
   draft:     { label: 'Draft',      variant: 'neutral', dot: 'bg-fg-faint'  },
   submitted: { label: 'Submitted',  variant: 'warning', dot: 'bg-warning-solid'  },
   in_review: { label: 'In Review',  variant: 'info',    dot: 'bg-info-solid'     },
   approved:  { label: 'Approved',   variant: 'success', dot: 'bg-success-solid'  },
-  processed: { label: 'Processed',  variant: 'neutral', dot: 'bg-fg-secondary'  },
+  processed: { label: 'Processed',  variant: 'dark',    dot: 'bg-fg-faint'  },
   returned:  { label: 'Returned',   variant: 'warning', dot: 'bg-warning-400'  },
   rejected:  { label: 'Rejected',   variant: 'danger',  dot: 'bg-danger-solid'   },
-  cancelled: { label: 'Cancelled',  variant: 'danger',  dot: 'bg-danger-solid'   },
+  cancelled: { label: 'Cancelled',  variant: 'outline', dot: 'bg-fg-faint'   },
 }
 
 const STATUS_FILTER_OPTIONS = [

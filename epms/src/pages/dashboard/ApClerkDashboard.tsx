@@ -8,8 +8,8 @@ const INV_STATUS_TONE: Record<string, BadgeTone> = {
   unmatched: 'warning',
   matched:   'success',
   exception: 'danger',
-  approved:  'blue',
-  paid:      'neutral',
+  approved:  'success',
+  paid:      'dark',
 }
 
 function InvoiceStatusBadge({ status }: { status: string }) {

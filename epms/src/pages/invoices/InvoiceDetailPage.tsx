@@ -30,16 +30,16 @@ import { CourierInvoiceView } from './CourierInvoiceView'
 import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 import { ATTACHMENT_RULE, uploadProblem } from '@/lib/uploadLimits'
 
-import { Checkbox, FileInput, Input, Select, TBody, TFoot, THead, Table, Tabs, Td, Textarea, Th, Tr } from '@uniops/shell'
+import { Checkbox, FileInput, Input, Select, TBody, TFoot, THead, Table, Tabs, Td, Textarea, Th, Tr, type BadgeTone } from '@uniops/shell'
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
-const STATUS_CFG: Record<InvoiceStatus, { label: string; variant: 'neutral' | 'warning' | 'info' | 'success' | 'danger'; dot: string }> = {
+const STATUS_CFG: Record<InvoiceStatus, { label: string; variant: BadgeTone; dot: string }> = {
   unmatched:    { label: 'Unmatched',       variant: 'warning', dot: 'bg-warning-solid'  },
   matched:      { label: 'Matched',         variant: 'success', dot: 'bg-success-solid'  },
   exception:    { label: 'Exception',       variant: 'danger',  dot: 'bg-danger-solid'   },
   match_review: { label: 'Pending Review',  variant: 'info',    dot: 'bg-primary-500'  },
   approved:     { label: 'Approved',        variant: 'success', dot: 'bg-success-solid'  },
-  paid:         { label: 'Paid',            variant: 'neutral', dot: 'bg-fg-faint'  },
+  paid:         { label: 'Paid',            variant: 'dark',    dot: 'bg-fg-faint'  },
 }
 
 function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {

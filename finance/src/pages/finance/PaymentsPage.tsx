@@ -141,7 +141,7 @@ function fmtMoney(v: string, ccy: string): string {
 const PAYMENT_STATUS_TONE: Record<string, BadgeTone> = {
   pending: 'warning',
   completed: 'success',
-  cancelled: 'neutral',
+  cancelled: 'outline',
 }
 
 /** Local badge for the payment lifecycle (pending/completed/cancelled),

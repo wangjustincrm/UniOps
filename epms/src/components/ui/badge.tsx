@@ -1,11 +1,11 @@
-import { Badge } from '@uniops/shell'
+import { Badge, type BadgeTone } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import type { DocumentStatus } from '@/types'
 
 // Generic Badge now lives in @uniops/shell; re-export it for existing imports.
 export { Badge }
 
-type BadgeVariant = 'neutral' | 'warning' | 'info' | 'success' | 'danger' | 'dark'
+type BadgeVariant = BadgeTone
 
 const STATUS_CONFIG: Record<
   DocumentStatus,
@@ -17,7 +17,7 @@ const STATUS_CONFIG: Record<
   approved: { label: 'Approved', variant: 'success', dot: 'bg-success-solid' },
   returned: { label: 'Returned', variant: 'warning', dot: 'bg-warning-solid' },
   rejected: { label: 'Rejected', variant: 'danger', dot: 'bg-danger-solid' },
-  cancelled: { label: 'Cancelled', variant: 'danger', dot: 'bg-danger-solid' },
+  cancelled: { label: 'Cancelled', variant: 'outline', dot: 'bg-fg-faint' },
   issued: { label: 'Issued', variant: 'success', dot: 'bg-success-solid' },
   partially_received: { label: 'Partial Receipt', variant: 'info', dot: 'bg-primary-500' },
   fully_received: { label: 'Fully Received', variant: 'success', dot: 'bg-success-solid' },
@@ -47,7 +47,7 @@ const STATUS_CONFIG: Record<
   // told us "Void" told them nothing, so the word they READ is "Removed".
   // Note it is still a soft-cancel, not a row delete (see
   // services/agreementReceipts.ts's `void:` comment).
-  voided: { label: 'Removed', variant: 'dark', dot: 'bg-fg-faint' },
+  voided: { label: 'Removed', variant: 'outline', dot: 'bg-fg-faint' },
 }
 
 // The wording in STATUS_CONFIG above is the ONLY place a status is spelled out

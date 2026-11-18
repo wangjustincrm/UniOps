@@ -40,18 +40,18 @@ import type { ApiPa } from '@/services/pa'
 import { historyLine } from '@/lib/approvalHistory'
 import { approvalNodeStates } from '@/lib/approvalTimeline'
 
-import { Alert, Checkbox, FormField, MenuItem, Modal, Select, TBody, TFoot, THead, Table, Tabs, Td, Textarea, Th, Tr } from '@uniops/shell'
+import { Alert, Checkbox, FormField, MenuItem, Modal, Select, TBody, TFoot, THead, Table, Tabs, Td, Textarea, Th, Tr, type BadgeTone } from '@uniops/shell'
 // ─── Status config ────────────────────────────────────────────────────────────
 
-const STATUS_CFG: Record<PaStatus, { label: string; variant: 'neutral' | 'warning' | 'info' | 'success' | 'danger' }> = {
+const STATUS_CFG: Record<PaStatus, { label: string; variant: BadgeTone }> = {
   draft:     { label: 'Draft',     variant: 'neutral'  },
   submitted: { label: 'Submitted', variant: 'warning'  },
   in_review: { label: 'In Review', variant: 'info'     },
   approved:  { label: 'Approved',  variant: 'success'  },
-  processed: { label: 'Processed', variant: 'neutral'  },
+  processed: { label: 'Processed', variant: 'dark'     },
   returned:  { label: 'Returned',  variant: 'warning'  },
   rejected:  { label: 'Rejected',  variant: 'danger'   },
-  cancelled: { label: 'Cancelled', variant: 'danger'   },
+  cancelled: { label: 'Cancelled', variant: 'outline'  },
 }
 
 function PaStatusBadge({ status }: { status: PaStatus }) {

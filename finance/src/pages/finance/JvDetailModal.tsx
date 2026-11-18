@@ -56,7 +56,7 @@ interface JvDetail { voucher: JvHeader; lines: JvLine[] }
 
 export const JV_STATUS_TONE: Record<string, BadgeTone> = {
   draft: 'neutral',
-  reviewed: 'blue',
+  reviewed: 'info',
   posted: 'success',
   reversed: 'danger',
 }

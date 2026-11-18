@@ -1,10 +1,10 @@
-import { Badge } from '@uniops/shell'
+import { Badge, type BadgeTone } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 
 // Generic Badge lives in @uniops/shell; re-export for convenience.
 export { Badge }
 
-type BadgeVariant = 'neutral' | 'warning' | 'info' | 'success' | 'danger' | 'dark'
+type BadgeVariant = BadgeTone
 
 // Canonical OA document-status → shell Badge variant mapping.
 // Mirrors epms/src/components/ui/badge.tsx so statuses look identical across
@@ -17,7 +17,7 @@ const STATUS_CONFIG: Record<string, { label: string; variant: BadgeVariant; dot:
   approved:    { label: 'Approved',    variant: 'success', dot: 'bg-success-solid' },
   returned:    { label: 'Returned',    variant: 'warning', dot: 'bg-warning-solid' },
   rejected:    { label: 'Rejected',    variant: 'danger',  dot: 'bg-danger-solid' },
-  cancelled:   { label: 'Cancelled',   variant: 'danger',  dot: 'bg-danger-solid' },
+  cancelled:   { label: 'Cancelled',   variant: 'outline', dot: 'bg-fg-faint' },
   paid:        { label: 'Paid',        variant: 'dark',    dot: 'bg-fg-faint' },
   processed:   { label: 'Processed',   variant: 'dark',    dot: 'bg-fg-faint' },
   // Invoice statuses

@@ -8,9 +8,9 @@ import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr, Badge, type B
 const PA_STATUS_TONE: Record<string, BadgeTone> = {
   draft:      'neutral',
   submitted:  'warning',
-  in_review:  'blue',
+  in_review:  'info',
   approved:   'success',
-  processed:  'success',
+  processed:  'dark',
   cancelled:  'outline',
 }
 

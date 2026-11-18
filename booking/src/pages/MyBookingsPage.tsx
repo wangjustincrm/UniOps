@@ -40,7 +40,7 @@ function StatusBadge({ status }: { status: string }) {
   const confirmed = status === 'confirmed'
   const cancelled = status === 'cancelled'
   return (
-    <Badge variant={confirmed ? 'success' : cancelled ? 'danger' : 'neutral'}>
+    <Badge variant={confirmed ? 'accent' : cancelled ? 'outline' : 'neutral'}>
       {confirmed ? 'Confirmed' : cancelled ? 'Cancelled' : status}
     </Badge>
   )

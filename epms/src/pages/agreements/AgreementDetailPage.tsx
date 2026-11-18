@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { ArrowLeft, CheckCircle2, RotateCcw, XCircle, MessageSquare, X, FileText, AlertTriangle, ExternalLink, Pencil, CreditCard, Upload, Paperclip, Info, Plus, SearchX } from 'lucide-react'
-import { Alert, FileInput, FormField, Modal, SortTh, TBody, THead, Table, Td, Textarea, Tr, useSortableRows } from '@uniops/shell'
+import { Alert, FileInput, FormField, Modal, SortTh, TBody, THead, Table, Td, Textarea, Tr, useSortableRows, type BadgeTone } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
@@ -60,13 +60,13 @@ const DEFAULT_AGR_WORKFLOW: { id: string; label: string }[] = [
   { id: 'finance_manager', label: 'Finance Manager' },
 ]
 
-const INVOICE_STATUS_CFG: Record<InvoiceStatus, { label: string; variant: 'neutral' | 'warning' | 'info' | 'success' | 'danger' }> = {
+const INVOICE_STATUS_CFG: Record<InvoiceStatus, { label: string; variant: BadgeTone }> = {
   unmatched: { label: 'Unmatched', variant: 'warning' },
   matched: { label: 'Matched', variant: 'success' },
   exception: { label: 'Exception', variant: 'danger' },
   match_review: { label: 'Pending Review', variant: 'info' },
   approved: { label: 'Approved', variant: 'success' },
-  paid: { label: 'Paid', variant: 'neutral' },
+  paid: { label: 'Paid', variant: 'dark' },
 }
 
 // Approval-step timeline, adapted from PoDetailPage::buildWorkflowSteps. It

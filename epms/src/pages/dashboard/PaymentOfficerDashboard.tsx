@@ -15,7 +15,7 @@ import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr, Badge } from 
  */
 function PaTypeBadge({ type }: { type: string }) {
   return type === 'prepayment' ? (
-    <Badge variant="cat4">
+    <Badge variant="blue">
       Prepayment
     </Badge>
   ) : (

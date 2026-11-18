@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Plus, Search, Warehouse, ClipboardList } from 'lucide-react'
-import { ChipGroup, Input, SortTh, TBody, THead, Table, Td, Tr, sortParams, type Sort, useSort } from '@uniops/shell'
+import { ChipGroup, Input, SortTh, TBody, THead, Table, Td, Tr, sortParams, type Sort, useSort, type BadgeTone } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
@@ -13,13 +13,13 @@ import type { ApiGr } from '@/services/gr'
 
 // ─── GR Status badge ──────────────────────────────────────────────────────────
 
-const GR_STATUS_CONFIG: Record<GrStatus, { label: string; variant: 'neutral' | 'warning' | 'info' | 'success' | 'danger'; dot: string }> = {
+const GR_STATUS_CONFIG: Record<GrStatus, { label: string; variant: BadgeTone; dot: string }> = {
   pending_ack:        { label: 'Pending Acknowledgement', variant: 'warning',  dot: 'bg-warning-solid' },
   collection_pending: { label: 'Collection Pending',      variant: 'warning',  dot: 'bg-warning-solid' },
   collected:          { label: 'Collected',               variant: 'success',  dot: 'bg-success-solid' },
   confirmed:          { label: 'Confirmed',               variant: 'success',  dot: 'bg-success-solid' },
   discrepancy:        { label: 'Discrepancy',             variant: 'danger',   dot: 'bg-danger-solid'  },
-  cancelled:          { label: 'Cancelled',               variant: 'neutral',  dot: 'bg-fg-faint' },
+  cancelled:          { label: 'Cancelled',               variant: 'outline',  dot: 'bg-fg-faint' },
 }
 
 export function GrStatusBadge({ status }: { status: GrStatus }) {

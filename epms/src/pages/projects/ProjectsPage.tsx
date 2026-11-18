@@ -50,7 +50,7 @@ const STATUS_LABELS: Record<ProjectStatus, string> = {
 const STATUS_TONE: Record<ProjectStatus, BadgeTone> = {
   active: 'success',
   on_hold: 'warning',
-  closed: 'neutral',
+  closed: 'dark',
 }
 
 // ─── Form types ───────────────────────────────────────────────────────────────

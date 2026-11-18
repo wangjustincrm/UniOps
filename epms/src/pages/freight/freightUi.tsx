@@ -5,7 +5,7 @@ import type { ApiCostCenter } from '@/services/cost_centers'
 import type { ApiDepartment } from '@/services/departments'
 import type { MatchStatus } from '@/services/freight'
 
-import { Select, Modal as ShellModal } from '@uniops/shell'
+import { Select, Modal as ShellModal, type BadgeTone } from '@uniops/shell'
 export const SELECT_CLS =
   'h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-subtle disabled:text-fg-muted'
 export const SELECT_SM_CLS =
@@ -16,7 +16,7 @@ export const TH_CLS = 'px-3 py-2.5 text-left text-xs font-semibold text-fg-muted
 
 // ─── Badges ───────────────────────────────────────────────────────────────────
 
-type Variant = 'neutral' | 'warning' | 'info' | 'success' | 'danger' | 'dark'
+type Variant = BadgeTone
 
 function Dot({ cls }: { cls: string }) {
   return <span className={cn('size-1.5 rounded-full', cls)} />
@@ -25,7 +25,7 @@ function Dot({ cls }: { cls: string }) {
 const SHIPMENT_STATUS: Record<string, { label: string; variant: Variant; dot: string }> = {
   pending: { label: 'Pending', variant: 'warning', dot: 'bg-warning-solid' },
   billed: { label: 'Billed', variant: 'success', dot: 'bg-success-solid' },
-  void: { label: 'Void', variant: 'dark', dot: 'bg-fg-faint' },
+  void: { label: 'Void', variant: 'outline', dot: 'bg-fg-faint' },
 }
 
 export function ShipmentStatusBadge({ status }: { status: string }) {

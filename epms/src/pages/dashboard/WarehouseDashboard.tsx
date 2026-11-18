@@ -6,11 +6,11 @@ import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr, Badge, type B
 
 const GR_STATUS_TONE: Record<string, BadgeTone> = {
   pending_ack:        'warning',
-  collection_pending: 'blue',
+  collection_pending: 'warning',
   collected:          'success',
   confirmed:          'success',
   discrepancy:        'danger',
-  cancelled:          'neutral',
+  cancelled:          'outline',
 }
 
 const GR_STATUS_LABEL: Record<string, string> = {

@@ -20,7 +20,7 @@ import { canCancelGr } from '@/lib/documentActions'
 import { serviceHasIssues } from '@/lib/grNotes'
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
-import { Input, Modal, Radio, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr } from '@uniops/shell'
+import { Input, Modal, Radio, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr, type BadgeTone } from '@uniops/shell'
 // Statuses the backend accepts for POST /gr/{id}/attachments/regenerate-pdf
 // (anything from the acknowledge step onward, excluding cancelled).
 const GR_PDF_REGENERATABLE_STATUSES: GrStatus[] = ['collection_pending', 'collected', 'confirmed', 'discrepancy']
@@ -34,14 +34,14 @@ const SERVICE_ISSUES_CONDITION = { label: 'Has Issues', tone: 'warning' } as con
 
 // ─── GR Status helpers ────────────────────────────────────────────────────────
 
-const GR_STATUS_CONFIG: Record<GrStatus, { label: string; variant: 'neutral' | 'warning' | 'info' | 'success' | 'danger'; dot: string }> = {
+const GR_STATUS_CONFIG: Record<GrStatus, { label: string; variant: BadgeTone; dot: string }> = {
   pending_ack:        { label: 'Pending Acknowledgement', variant: 'warning',  dot: 'bg-warning-solid' },
   collection_pending: { label: 'Collection Pending',      variant: 'warning',  dot: 'bg-warning-solid' },
   collected:          { label: 'Collected',               variant: 'success',  dot: 'bg-success-solid' },
   confirmed:          { label: 'Confirmed',               variant: 'success',  dot: 'bg-success-solid' },
   discrepancy:        { label: 'Discrepancy',             variant: 'danger',   dot: 'bg-danger-solid'  },
   rejected:           { label: 'Rejected',                variant: 'danger',   dot: 'bg-danger-solid'  },
-  cancelled:          { label: 'Cancelled',               variant: 'neutral',  dot: 'bg-fg-faint' },
+  cancelled:          { label: 'Cancelled',               variant: 'outline',  dot: 'bg-fg-faint' },
 }
 
 function GrStatusBadge({ status }: { status: GrStatus }) {

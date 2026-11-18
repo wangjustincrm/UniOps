@@ -33,9 +33,9 @@ function fmtTime(iso: string): string {
 }
 
 const STATUS_TONE: Record<string, BadgeTone> = {
-  confirmed:  'success',
-  cancelled:  'neutral',
-  completed:  'blue',
+  confirmed:  'accent',
+  cancelled:  'outline',
+  completed:  'success',
   pending:    'warning',
   no_show:    'danger',
 }

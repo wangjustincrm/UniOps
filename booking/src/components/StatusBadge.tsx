@@ -18,7 +18,7 @@ const STATUS_LABEL: Record<BookingStatus, string> = {
 const STATUS_TONE: Record<BookingStatus, BadgeTone> = {
   pending:    'warning',
   confirmed:  'accent',
-  cancelled:  'neutral',
+  cancelled:  'outline',
   completed:  'success',
   no_show:    'danger',
 }

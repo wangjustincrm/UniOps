@@ -11,7 +11,7 @@ export const ROOM_STATUS_TONE: Record<RoomStatusNow, BadgeTone> = {
   starting_soon: 'warning',
   booked:        'blue',
   disabled:      'neutral',
-  maintenance:   'neutral',
+  maintenance:   'warning',
 }
 
 export const ROOM_STATUS_LABEL: Record<RoomStatusNow, string> = {
