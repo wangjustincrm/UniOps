@@ -2,6 +2,7 @@ import { CircleDot } from 'lucide-react'
 import { formatAmount, formatQty } from '@/lib/utils'
 import { derivedLinesTotal, type DerivedPaLine } from '@/lib/paLinesFromInvoices'
 
+import { TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 // Read-only line table for a PA whose invoices were matched line by line: the
 // lines are what those invoices bought, so there is nothing to tick. Shown in
 // place of the PO line picker on the create and edit screens.
@@ -19,33 +20,33 @@ export function DerivedPaLinesTable({ lines, currency, fromInvoiceLines = false 
         </span>
       </p>
       <div className="rounded-lg border border-line overflow-hidden">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-line bg-surface-subtle">
-              <th className="px-3 py-2 text-left font-semibold text-fg-muted uppercase tracking-wide">Description</th>
-              <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-20">Qty</th>
-              <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-24">Unit Price</th>
-              <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-28">Line Total</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table density="compact">
+          <THead>
+            <Tr className="bg-surface-subtle">
+              <Th>Description</Th>
+              <Th align="right" className="w-20">Qty</Th>
+              <Th align="right" className="w-24">Unit Price</Th>
+              <Th align="right" className="w-28">Line Total</Th>
+            </Tr>
+          </THead>
+          <TBody>
             {lines.map((l, i) => (
-              <tr key={i} className="border-b border-line-subtle last:border-0">
-                <td className="px-3 py-2.5">
+              <Tr key={i}>
+                <Td>
                   <div className="text-fg font-medium">{l.description}</div>
                   <div className="text-2xs text-fg-muted mt-0.5">
                     {l.po_line_id || fromInvoiceLines ? l.notes : `Non-PO fee · ${l.notes}`}
                   </div>
-                </td>
-                <td className="px-3 py-2.5 text-right font-mono text-fg-muted">{formatQty(l.qty)} {l.unit}</td>
-                <td className="px-3 py-2.5 text-right font-mono text-fg-muted">{l.unit_price}</td>
-                <td className="px-3 py-2.5 text-right font-mono font-semibold text-fg">
+                </Td>
+                <Td align="right" className="font-mono text-fg-muted">{formatQty(l.qty)} {l.unit}</Td>
+                <Td align="right" className="font-mono text-fg-muted">{l.unit_price}</Td>
+                <Td align="right" className="font-mono font-semibold text-fg">
                   {formatAmount(l.line_total, currency)}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
         <div className="flex items-center justify-between px-4 py-2 border-t border-line bg-primary-50">
           <span className="text-xs text-primary-700 font-medium">{lines.length} line{lines.length !== 1 ? 's' : ''}</span>
           <span className="text-xs font-mono font-semibold text-primary-700">

@@ -17,6 +17,7 @@ import {
 import { UserCombobox } from '@/components/agreements/UserCombobox'
 import { useNoticeDialog } from '@/components/ui/ConfirmDialog'
 
+import { FileInput, Textarea } from '@uniops/shell'
 interface ReceiptEntryFormProps {
   agreementId: string
   // Chosen by the caller — ReceiptCreatePage's type selector (Task 10). Defaults
@@ -446,7 +447,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
                 Attach the signed {receiptType === 'delivery' ? 'delivery note' : 'sign-off'} if you have one
               </p>
             )}
-            <input id="receipt-photo-upload" type="file" accept="image/*,.pdf" className="sr-only" onChange={handleFileChange} />
+            <FileInput id="receipt-photo-upload" accept="image/*,.pdf" className="sr-only" onChange={handleFileChange} />
           </label>
         ) : (
           <div className="flex items-center gap-2 rounded-md border border-line bg-surface-subtle px-3 py-2 text-sm">
@@ -552,25 +553,25 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
         htmlFor="receipt-missing-reason"
         hint="No photo on file will route this receipt to AP review instead of posting it directly."
       >
-        <textarea
+        <Textarea
           id="receipt-missing-reason"
           rows={2}
           value={missingReceiptReason}
           onChange={(e) => setMissingReceiptReason(e.target.value)}
           placeholder="e.g. receipt was lost / illegible / not issued"
-          className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+          className="w-full resize-none"
         />
       </FormField>
       )}
 
       <FormField label="Notes" htmlFor="receipt-notes">
-        <textarea
+        <Textarea
           id="receipt-notes"
           rows={2}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Optional notes"
-          className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+          className="w-full resize-none"
         />
       </FormField>
 

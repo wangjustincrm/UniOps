@@ -11,6 +11,18 @@ default aria-label for icon-only buttons). Children are kept as they are.
 """
 import re
 import sys
+
+
+def comment_spans(src):
+    """(start, end) of // line comments, /* */ and {/* */} blocks — tags in them are prose."""
+    spans = []
+    for m in re.finditer(r'\{/\*.*?\*/\}|/\*.*?\*/|(?<![:"\'`\\])//[^\n]*', src, re.S):
+        spans.append((m.start(), m.end()))
+    return spans
+
+
+def in_spans(i, spans):
+    return any(a <= i < b for a, b in spans)
 import importlib.util
 from pathlib import Path
 
@@ -20,6 +32,8 @@ _spec.loader.exec_module(_el)
 find_tag_end, add_imports = _el.find_tag_end, _el.add_imports
 
 # (prefix, component, props, keep-classes, default aria-label or None)
+HEUR_LOG = []
+
 RULES = [
     ('absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary', 'Button',
      'variant="subtle" size="icon-xs"', 'absolute right-1.5 top-1/2 -translate-y-1/2', 'Clear'),
@@ -88,17 +102,72 @@ RULES = [
 ]
 
 
-def convert(src):
+LAYOUT = re.compile(r'^(?:-?m[trblxy]?-[\w.]+|self-[\w-]+|shrink-0|grow|flex-1|w-full|w-\d+|max-w-[\w\[\].-]+|min-w-[\w\[\].-]+|'
+                    r'absolute|relative|top-[\w/.-]+|left-[\w/.-]+|right-[\w/.-]+|bottom-[\w/.-]+|-?translate-[xy]-[\w/.-]+|'
+                    r'truncate|ml-auto|mr-auto|order-[\w-]+|hidden|(?:sm|md|lg):[\w-]+|justify-[\w-]+|z-[\w\[\]-]+)$')
+
+
+def heuristic(cls, icon_only):
+    c = cls.split()
+    has = lambda *xs: any(x in c for x in xs)
+    pre = lambda p: any(x.startswith(p) for x in c)
+    keep = ' '.join(x for x in c if LAYOUT.match(x))
+    if has('w-full') and has('text-left') and (has('px-3', 'px-4')) and not pre('border-l') and not has('rounded-lg') :
+        tone = 'tone="danger"' if pre('text-danger') else 'tone="warning"' if pre('text-warning') else ''
+        return 'MenuItem', tone, ' '.join(x for x in c if LAYOUT.match(x) and x != 'w-full'), None
+    small = has('text-xs', 'text-2xs') or has('py-1', 'py-0.5', 'h-7')
+    medium = has('py-2', 'py-2.5', 'h-9', 'h-10')
+    size = 'xs' if small else 'md' if medium else 'sm'
+    def solid(v):
+        return v, f'size="{size}"'
+    if pre('bg-primary-6') or pre('bg-accent') and (has('text-white') or pre('text-fg-on')):
+        v, sz = solid('primary')
+    elif has('bg-success-solid'):
+        v, sz = solid('success')
+    elif has('bg-danger-solid'):
+        v, sz = solid('danger')
+    elif has('bg-warning-solid'):
+        v, sz = solid('warning')
+    elif has('border-danger-line') or (has('border') and pre('text-danger')):
+        v, sz = 'danger-outline', f'size="{size}"'
+    elif has('border') and (pre('border-primary') or pre('border-accent')):
+        v, sz = 'outline', f'size="{size}"'
+    elif has('border') and (pre('border-line') or True) and has('border'):
+        v, sz = 'secondary', f'size="{size}"'
+    elif icon_only:
+        isz = 'icon-sm' if has('p-1.5', 'p-2', 'h-8', 'w-8') else 'icon-xs'
+        v = 'danger-ghost' if any(x.startswith('hover:text-danger') for x in c) else 'subtle'
+        return 'Button', f'variant="{v}" size="{isz}"', keep, 'Remove' if v == 'danger-ghost' else None
+    elif pre('text-primary') or pre('text-accent') or any(x in ('underline', 'hover:underline') for x in c):
+        tone = ' text-danger-fg' if pre('text-danger') else ' text-fg-muted' if pre('text-fg-muted') else ''
+        txt = ' '.join(x for x in c if x in ('text-xs', 'text-2xs', 'text-sm'))
+        return 'Button', 'variant="link"', ' '.join(filter(None, [keep, txt + tone])), None
+    elif pre('text-fg'):
+        return 'Button', 'variant="subtle" size="xs"', keep, None
+    else:
+        return None
+    props = f'variant="{v}" {sz}' if v != 'primary' else sz
+    return 'Button', props, keep, None
+
+
+def convert(src, use_heuristic=False):
     out, i, used, manual = [], 0, set(), []
+    spans = comment_spans(src)
     for m in re.finditer(r'<button\b', src):
-        if m.start() < i:
+        if m.start() < i or in_spans(m.start(), spans):
             continue
         end = find_tag_end(src, m.start())
         tag = src[m.start():end]
         cm = re.search(r'\sclassName="([^"]*)"', tag)
         rule = None
+        inner_preview = src[end:_find_close(src, end)] if _find_close(src, end) > 0 else ''
         if cm:
             rule = next((r for r in RULES if cm.group(1).startswith(r[0])), None)
+            if not rule and use_heuristic:
+                h = heuristic(cm.group(1), not re.sub(r'<[^>]*/>|\s', '', inner_preview))
+                if h:
+                    rule = (cm.group(1),) + h
+                    HEUR_LOG.append((src.count('\n', 0, m.start()) + 1, cm.group(1)[:80], h[0], h[1], h[2]))
         elif not re.search(r'\sclassName=', tag):
             # bare <button> holding only an icon: quiet icon button
             rule = ('', 'Button', 'variant="subtle" size="icon-xs"', '', 'Clear')
@@ -154,14 +223,16 @@ def main(argv):
             src = fh.read()
         nl = '\r\n' if '\r\n' in src else '\n'
         body = src.replace('\r\n', '\n')
-        new, used, manual = convert(body)
+        HEUR_LOG.clear()
+        new, used, manual = convert(body, '--heuristic' in argv)
         local_ok = {n for n in used if re.search(rf"import\s*\{{[^}}]*\b{n}\b[^}}]*\}}\s*from\s*'@/components/ui/", new)}
         new = add_imports(new, used, local_ok)
         if new != body and not dry:
             with open(f, 'w', encoding='utf-8', newline='') as fh:
                 fh.write(new.replace('\n', nl))
         if new != body or manual:
-            print(f'{f}: converted {sorted(used)}' + ''.join(f'\n    MANUAL line {ln}: {c}' for ln, c in manual))
+            print(f'{f}: converted {sorted(used)}' + ''.join(f'\n    MANUAL line {ln}: {c}' for ln, c in manual)
+                  + ''.join(f'\n    HEUR  line {ln}: {c}  ->  {comp} {props} [{keep}]' for ln, c, comp, props, keep in HEUR_LOG))
 
 
 if __name__ == '__main__':

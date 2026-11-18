@@ -32,7 +32,7 @@ export function DirectPaBudgetPanel({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Budget (FY{currentFiscalYear()})</h3>
+      <h3 className="text-xs font-semibold text-fg-muted">Budget (FY{currentFiscalYear()})</h3>
       {isLoading ? (
         <p className="text-xs text-fg-muted">Loading budget…</p>
       ) : balance ? (

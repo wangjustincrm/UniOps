@@ -1,7 +1,7 @@
 import { useState, type ChangeEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Plus, Search, FileText, CreditCard, Loader2, Truck, FileInput } from 'lucide-react'
-import { SortTh, sortParams, useSort } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -61,7 +61,7 @@ const TYPE_BADGE_CFG: Record<ApiPa['pa_type'], { label: string; cls: string }> =
 
 function TypeBadge({ type }: { type: ApiPa['pa_type'] }) {
   const c = TYPE_BADGE_CFG[type] ?? TYPE_BADGE_CFG.regular
-  return <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-2xs uppercase tracking-wide', c.cls)}>{c.label}</span>
+  return <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-2xs', c.cls)}>{c.label}</span>
 }
 
 // GET /pa sort keys (epms-api crud/pa.py SORTABLE). Status sorts status →
@@ -126,7 +126,7 @@ export default function PaListPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-fg">Payment Applications</h1>
+          <h1 className="text-2xl font-semibold text-fg">Payment Applications</h1>
           <p className="text-sm text-fg-muted mt-0.5">Manage payment requests and prepayment settlements</p>
         </div>
         <div className="flex items-center gap-2">
@@ -167,25 +167,25 @@ export default function PaListPage() {
               className="pl-9"
             />
           </div>
-          <select
+          <Select
             value={statusFilter}
             onChange={(e) => handleFilterChange(e.target.value)}
-            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
+           
           >
             {STATUS_FILTER_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
             value={deptFilter}
             onChange={(e) => { setDeptFilter(e.target.value); setPage(1) }}
-            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
+           
           >
             <option value="all">All Departments</option>
             {departments.map((d) => (
               <option key={d.id} value={d.id}>{d.name}</option>
             ))}
-          </select>
+          </Select>
           <span className="text-sm text-fg-muted">
             {isPending ? 'Loading…' : `${total} result${total !== 1 ? 's' : ''}`}
           </span>
@@ -205,42 +205,42 @@ export default function PaListPage() {
             </p>
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line-subtle bg-surface-subtle">
+          <Table>
+            <THead>
+              <Tr className="bg-surface-subtle">
                 {COLUMNS.map(({ label, key }) => (
                   <SortTh key={key} label={label} sortKey={key} sort={sort} onSort={onSort}
                     align={key === 'payment_amount' ? 'right' : 'left'}
-                    className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap" />
+                    className="px-4 py-3 text-xs font-semibold text-fg-muted whitespace-nowrap" />
                 ))}
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap text-left" />
-              </tr>
-            </thead>
-            <tbody>
+                <Th />
+              </Tr>
+            </THead>
+            <TBody>
               {pas.map((pa, idx) => (
-                <tr
+                <Tr
                   key={pa.id}
                   onClick={() => navigate(`/pa/${pa.id}`)}
-                  className="border-b border-line-subtle bg-surface hover:bg-primary-50/60 cursor-pointer transition-colors"
+                  className="bg-surface hover:bg-primary-50/60 cursor-pointer transition-colors"
                 >
-                  <td className="px-4 py-3">
+                  <Td>
                     <span className="font-mono text-xs font-semibold text-primary-700">{pa.pa_number}</span>
                     {pa.pa_type === 'prepayment' && pa.settlement_status === 'pending' && pa.status !== 'cancelled' && (
                       <div className="text-2xs text-warning-fg font-medium mt-0.5">⚠ Settlement pending</div>
                     )}
-                  </td>
-                  <td className="px-4 py-3 font-medium text-fg">{pa.vendor_name}</td>
-                  <td className="px-4 py-3"><TypeBadge type={pa.pa_type} /></td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td className="font-medium text-fg">{pa.vendor_name}</Td>
+                  <Td><TypeBadge type={pa.pa_type} /></Td>
+                  <Td>
                     {/* A payment may settle several POs — list them all rather
                         than the header's primary one, which on its own reads as
                         though the other orders were not being paid. */}
                     {pa.source === 'freight' && (
-                      <span className="inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-primary-700">Freight</span>
+                      <span className="inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-2xs font-semibold text-primary-700">Freight</span>
                     )}
                     {pa.source === 'direct' && (
                       <>
-                        <span className="inline-flex items-center rounded-full border border-warning-line bg-warning-soft px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-warning-fg">Direct</span>
+                        <span className="inline-flex items-center rounded-full border border-warning-line bg-warning-soft px-2 py-0.5 text-2xs font-semibold text-warning-fg">Direct</span>
                         {pa.cost_center_code && (
                           <div className="font-mono text-2xs text-fg-muted mt-0.5">{pa.cost_center_code} · {pa.budget_account_code}</div>
                         )}
@@ -252,19 +252,19 @@ export default function PaListPage() {
                     {pa.invoice_ids.length > 0 && (
                       <div className="text-2xs text-fg-muted mt-0.5">{pa.invoice_ids.length} invoice{pa.invoice_ids.length !== 1 ? 's' : ''}</div>
                     )}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs font-semibold text-fg">
+                  </Td>
+                  <Td className="font-mono text-xs font-semibold text-fg">
                     {formatAmount(pa.payment_amount, pa.currency)}
                     {pa.pa_type === 'prepayment' && pa.prepayment_pct && (
                       <div className="text-2xs text-fg-muted font-normal">{pa.prepayment_pct}% prepayment</div>
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-fg-muted">{formatDate(pa.created_at)}</td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td className="text-xs text-fg-muted">{formatDate(pa.created_at)}</Td>
+                  <Td>
                     <PaStatusBadge status={pa.status} />
                     <CurrentStepHint current_step={pa.current_step} />
-                  </td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td>
                     <Link
                       to={`/pa/${pa.id}`}
                       onClick={(e) => e.stopPropagation()}
@@ -273,11 +273,11 @@ export default function PaListPage() {
                       <FileText className="h-3.5 w-3.5" />
                       View
                     </Link>
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         )}
 
         <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />

@@ -12,6 +12,7 @@ import {
 } from '@/hooks/useFreight'
 import { SELECT_CLS, TH_CLS, cents, errorMessage, num } from '@/pages/freight/freightUi'
 
+import { Checkbox, Select, TBody, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
 /** New PA → Freight payment (/pa/new?source=freight[&invoice=<id>]): matched
  *  courier invoices of one carrier, split over cost centres, become one draft
  *  Freight PA. Gated like the API on epms.freight.manage. */
@@ -24,7 +25,7 @@ export function FreightPaCreate({ preselectInvoiceId }: { preselectInvoiceId: st
           <ArrowLeft className="h-5 w-5" />
         </BackLink>
         <div>
-          <h1 className="text-2xl font-bold text-fg">New Freight PA</h1>
+          <h1 className="text-2xl font-semibold text-fg">New Freight PA</h1>
           <p className="text-sm text-fg-muted mt-0.5">Pay matched courier invoices of one carrier, split over the cost centers they were matched to</p>
         </div>
       </div>
@@ -115,10 +116,10 @@ function FreightPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nu
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
       <div className="lg:col-span-2 rounded-xl border border-line bg-surface shadow-sm overflow-hidden">
         <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
-          <select value={carrierId} onChange={(e) => { setCarrierId(e.target.value); setSelected(new Set()) }} className={SELECT_CLS}>
+          <Select value={carrierId} onChange={(e) => { setCarrierId(e.target.value); setSelected(new Set()) }} className={SELECT_CLS}>
             <option value="">Select carrier…</option>
             {carriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          </Select>
           <span className="text-sm text-fg-muted">
             {carrierId ? (isPending ? 'Loading…' : `${ready.length} matched invoice${ready.length !== 1 ? 's' : ''} not on a PA`) : 'Matched invoices of one carrier go on one PA'}
           </span>
@@ -133,85 +134,85 @@ function FreightPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nu
             <p className="text-xs text-fg-muted mt-1">Finalise the matching on a courier invoice first (Invoices page)</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line-subtle bg-surface-subtle">
-                <th className={cn(TH_CLS, 'w-10')}>
-                  <input type="checkbox" aria-label="Select all"
+          <Table density="compact">
+            <THead>
+              <Tr className="bg-surface-subtle">
+                <Th className={cn(TH_CLS, 'w-10')}>
+                  <Checkbox aria-label="Select all"
                     checked={ready.length > 0 && ready.every((i) => selected.has(i.id))}
                     onChange={(e) => setSelected(e.target.checked ? new Set(ready.map((i) => i.id)) : new Set())} />
-                </th>
+                </Th>
                 {['Invoice #', 'Invoice Date', 'Due Date', 'Amount', 'Tax', 'Total'].map((h) => (
-                  <th key={h} className={cn(TH_CLS, ['Amount', 'Tax', 'Total'].includes(h) && 'text-right')}>{h}</th>
+                  <Th key={h} className={cn(TH_CLS, ['Amount', 'Tax', 'Total'].includes(h) && 'text-right')}>{h}</Th>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
+              </Tr>
+            </THead>
+            <TBody>
               {ready.map((inv) => {
                 const due = dueInfo(inv.due_date, inv.status)
                 const urgent = due.tone === 'overdue' || due.tone === 'soon'
                 return (
-                  <tr key={inv.id} className="border-b border-line-subtle hover:bg-surface-subtle cursor-pointer" onClick={() => toggle(inv.id)}>
-                    <td className="px-3 py-2.5"><input type="checkbox" checked={selected.has(inv.id)} onChange={() => toggle(inv.id)} onClick={(e) => e.stopPropagation()} /></td>
-                    <td className="px-3 py-2.5">
+                  <Tr key={inv.id} className="hover:bg-surface-subtle cursor-pointer" onClick={() => toggle(inv.id)}>
+                    <Td><Checkbox checked={selected.has(inv.id)} onChange={() => toggle(inv.id)} onClick={(e) => e.stopPropagation()} /></Td>
+                    <Td>
                       <Link to={`/invoices/${inv.id}`} onClick={(e) => e.stopPropagation()} className="font-mono text-xs font-semibold text-primary-700 hover:underline">
                         {inv.vendor_invoice_number}
                       </Link>
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-fg-secondary">{formatDate(inv.invoice_date)}</td>
-                    <td className={cn('px-3 py-2.5 text-xs', urgent ? 'font-semibold text-danger-fg' : 'text-fg-secondary')}>
+                    </Td>
+                    <Td className="text-xs text-fg-secondary">{formatDate(inv.invoice_date)}</Td>
+                    <Td className={cn('px-3 py-2.5 text-xs', urgent ? 'font-semibold text-danger-fg' : 'text-fg-secondary')}>
                       {formatDate(inv.due_date)}{due.label && <span className="ml-1 text-2xs">({due.label})</span>}
-                    </td>
-                    <td className="px-3 py-2.5 text-right font-mono text-xs">{formatAmount(num(inv.amount), inv.currency)}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-xs">{formatAmount(num(inv.tax_amount), inv.currency)}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-xs font-semibold">{formatAmount(num(inv.total_amount), inv.currency)}</td>
-                  </tr>
+                    </Td>
+                    <Td align="right" className="font-mono text-xs">{formatAmount(num(inv.amount), inv.currency)}</Td>
+                    <Td align="right" className="font-mono text-xs">{formatAmount(num(inv.tax_amount), inv.currency)}</Td>
+                    <Td align="right" className="font-mono text-xs font-semibold">{formatAmount(num(inv.total_amount), inv.currency)}</Td>
+                  </Tr>
                 )
               })}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         )}
       </div>
 
       <div className="flex flex-col gap-4">
         <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
-          <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-3">Cost Split Preview</h3>
+          <h3 className="text-xs font-semibold text-fg-muted mb-3">Cost Split Preview</h3>
           {selectedIds.length === 0 ? (
             <p className="text-xs text-fg-muted">Tick one or more invoices.</p>
           ) : details.isLoading ? (
             <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-fg-faint" /></div>
           ) : (
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-fg-muted">
-                  <th className="pb-1.5 text-left font-medium">Cost center</th>
-                  <th className="pb-1.5 text-right font-medium">Amount</th>
-                  <th className="pb-1.5 text-right font-medium">Tax</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table density="compact">
+              <THead>
+                <Tr className="text-fg-muted">
+                  <Th>Cost center</Th>
+                  <Th align="right">Amount</Th>
+                  <Th align="right">Tax</Th>
+                </Tr>
+              </THead>
+              <TBody>
                 {split.map((r, i) => (
-                  <tr key={i} className="border-t border-line-subtle">
-                    <td className="py-1.5">
+                  <Tr key={i}>
+                    <Td>
                       <div className="text-fg">{r.code ? `${r.code} — ${r.name ?? ''}` : '—'}</div>
                       <div className="text-2xs text-fg-muted">{r.dept ?? ''}</div>
-                    </td>
-                    <td className="py-1.5 text-right font-mono">{formatAmount(r.amount, currency)}</td>
-                    <td className="py-1.5 text-right font-mono">{formatAmount(r.tax, currency)}</td>
-                  </tr>
+                    </Td>
+                    <Td align="right" className="font-mono">{formatAmount(r.amount, currency)}</Td>
+                    <Td align="right" className="font-mono">{formatAmount(r.tax, currency)}</Td>
+                  </Tr>
                 ))}
-                <tr className="border-t-2 border-line font-semibold">
-                  <td className="py-1.5">Total</td>
-                  <td className="py-1.5 text-right font-mono">{formatAmount(subtotal, currency)}</td>
-                  <td className="py-1.5 text-right font-mono">{formatAmount(taxTotal, currency)}</td>
-                </tr>
-              </tbody>
-            </table>
+                <Tr className="border-t-2 font-semibold">
+                  <Td>Total</Td>
+                  <Td align="right" className="font-mono">{formatAmount(subtotal, currency)}</Td>
+                  <Td align="right" className="font-mono">{formatAmount(taxTotal, currency)}</Td>
+                </Tr>
+              </TBody>
+            </Table>
           )}
           {selectedIds.length > 0 && (
             <div className="mt-3 flex items-center justify-between rounded-lg bg-primary-50 px-3 py-2">
               <span className="text-xs font-semibold text-primary-700">Payment amount</span>
-              <span className="font-mono text-sm font-bold text-primary-800">{formatAmount(cents(subtotal + taxTotal), currency)}</span>
+              <span className="font-mono text-sm font-semibold text-primary-800">{formatAmount(cents(subtotal + taxTotal), currency)}</span>
             </div>
           )}
           {currencies.size > 1 && (
@@ -226,8 +227,8 @@ function FreightPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nu
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Notes</label>
-            <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
-              className="w-full resize-none rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+            <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
+              className="w-full resize-none" />
           </div>
           {error && <p className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">{error}</p>}
           <Button onClick={submit} disabled={createPa.isPending || selectedIds.length === 0 || currencies.size > 1} className="gap-2">

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { cn, formatAmount } from '@/lib/utils'
 import type { MilestoneRowIn } from '@/services/agreement'
 
+import { Input, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 function newMilestoneRow(): MilestoneRowIn {
   return { milestone_name: '', expected_timing: '', expected_amount: '', amount_pct: '' }
 }
@@ -141,30 +142,30 @@ export function MilestoneEditor(props: {
   return (
     <div className="flex flex-col gap-3">
       <div className="overflow-x-auto rounded-lg border border-line">
-        <table className="w-full min-w-[640px] text-sm">
-          <thead>
-            <tr className="border-b border-line bg-surface-subtle">
-              <th className="w-8 px-2 py-2.5 text-left text-xs font-semibold text-fg-muted">#</th>
-              <th className="px-3 py-2.5 text-left text-xs font-semibold text-fg-secondary">
+        <Table density="compact" className="min-w-[640px]">
+          <THead>
+            <Tr className="bg-surface-subtle">
+              <Th className="w-8">#</Th>
+              <Th>
                 Stage name <span className="text-danger-fg">*</span>
-              </th>
-              <th className="px-3 py-2.5 text-left text-xs font-semibold text-fg-secondary">Timing</th>
-              <th className="w-32 px-3 py-2.5 text-right text-xs font-semibold text-fg-secondary">Amount</th>
-              <th className="w-28 px-3 py-2.5 text-right text-xs font-semibold text-fg-secondary">% of NTE</th>
-              <th className="w-8 px-2 py-2.5" />
-            </tr>
-          </thead>
-          <tbody>
+              </Th>
+              <Th>Timing</Th>
+              <Th align="right" className="w-32 ">Amount</Th>
+              <Th align="right" className="w-28 ">% of NTE</Th>
+              <Th className="w-8" />
+            </Tr>
+          </THead>
+          <TBody>
             {rows.map((row, i) => {
               const dp = derivedPct(row)
               return (
-              <tr
+              <Tr
                 key={i}
                 className={cn('border-b border-line-subtle last:border-0', i % 2 === 1 ? 'bg-surface-subtle/50' : 'bg-surface')}
               >
-                <td className="px-2 py-2 text-xs text-fg-muted">{i + 1}</td>
-                <td className="px-3 py-2">
-                  <input
+                <Td className="text-xs text-fg-muted">{i + 1}</Td>
+                <Td>
+                  <Input
                     type="text"
                     value={row.milestone_name}
                     disabled={disabled}
@@ -172,9 +173,9 @@ export function MilestoneEditor(props: {
                     placeholder="e.g. Design sign-off"
                     className={cellInputClass}
                   />
-                </td>
-                <td className="px-3 py-2">
-                  <input
+                </Td>
+                <Td>
+                  <Input
                     type="text"
                     value={row.expected_timing ?? ''}
                     disabled={disabled}
@@ -182,9 +183,9 @@ export function MilestoneEditor(props: {
                     placeholder="e.g. Within 1 week after contract signing"
                     className={cellInputClass}
                   />
-                </td>
-                <td className="px-3 py-2">
-                  <input
+                </Td>
+                <Td>
+                  <Input
                     type="number"
                     min={0}
                     step="0.01"
@@ -193,9 +194,9 @@ export function MilestoneEditor(props: {
                     onChange={(e) => updateFromAmount(i, e.target.value)}
                     className={cn(cellInputClass, 'text-right')}
                   />
-                </td>
-                <td className="px-3 py-2">
-                  <input
+                </Td>
+                <Td>
+                  <Input
                     type="number"
                     min={0}
                     max={100}
@@ -211,30 +212,30 @@ export function MilestoneEditor(props: {
                     onChange={(e) => updateFromPct(i, e.target.value)}
                     className={cn(cellInputClass, 'text-right')}
                   />
-                </td>
-                <td className="px-2 py-2">
-                  <button
+                </Td>
+                <Td>
+                  <Button variant="danger-ghost" size="icon-xs"
                     type="button"
                     onClick={() => removeRow(i)}
                     disabled={disabled}
-                    className="flex h-7 w-7 items-center justify-center rounded text-fg-faint hover:bg-danger-soft hover:text-danger-fg disabled:cursor-not-allowed disabled:opacity-30"
+                   
                     aria-label={`Remove stage ${i + 1}`}
                   >
                     <X className="h-3.5 w-3.5" />
-                  </button>
-                </td>
-              </tr>
+                  </Button>
+                </Td>
+              </Tr>
               )
             })}
             {rows.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-sm text-fg-muted">
+              <Tr>
+                <Td align="center" colSpan={6} className="text-sm text-fg-muted">
                   No stages yet — add one below.
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             )}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-surface-subtle px-3 py-2.5">
           <Button type="button" variant="ghost" size="sm" onClick={addRow} disabled={disabled}>

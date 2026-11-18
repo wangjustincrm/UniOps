@@ -10,6 +10,7 @@ import type { ApiScheduleRow } from '@/services/agreement'
 import type { ApiTask } from '@/services/tasks'
 import type { ApiUserBrief } from '@/services/users'
 
+import { TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 interface ScheduleTableProps {
   scheduleType: 'period' | 'milestone'
   rows: ApiScheduleRow[]
@@ -102,32 +103,32 @@ export function ScheduleTable({
         </p>
       )}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-line bg-surface-subtle">
-              <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">#</th>
+        <Table density="compact">
+          <THead>
+            <Tr className="bg-surface-subtle">
+              <Th>#</Th>
               {scheduleType === 'period' ? (
                 <>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Period</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Expected date</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-fg-muted">Expected amount</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Status</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Invoices</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Confirmed</th>
+                  <Th>Period</Th>
+                  <Th>Expected date</Th>
+                  <Th align="right">Expected amount</Th>
+                  <Th>Status</Th>
+                  <Th>Invoices</Th>
+                  <Th>Confirmed</Th>
                 </>
               ) : (
                 <>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Stage</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Timing</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-fg-muted">Expected amount</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-fg-muted">% of NTE</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Status</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Invoice</th>
+                  <Th>Stage</Th>
+                  <Th>Timing</Th>
+                  <Th align="right">Expected amount</Th>
+                  <Th align="right">% of NTE</Th>
+                  <Th>Status</Th>
+                  <Th>Invoice</Th>
                 </>
               )}
-            </tr>
-          </thead>
-          <tbody>
+            </Tr>
+          </THead>
+          <TBody>
             {scheduleType === 'period'
               ? rows.map((row) => {
                   const docNumber = `${agreementNumber} · ${row.period_label ?? ''}`
@@ -137,18 +138,18 @@ export function ScheduleTable({
                   const canConfirm = row.status === 'received' && !row.accepted_at && holdsTask
                   const confirmedName = resolveUserName(users, row.accepted_by)
                   return (
-                    <tr key={row.id} className="border-b border-line-subtle last:border-0 bg-surface">
-                      <td className="px-4 py-2.5 text-fg-muted">{row.sequence}</td>
-                      <td className="px-4 py-2.5 text-fg">{row.period_label ?? '—'}</td>
-                      <td className="px-4 py-2.5 text-xs text-fg-muted">{formatDate(row.expected_date)}</td>
-                      <td className="px-4 py-2.5 text-right amount font-medium text-fg">
+                    <Tr key={row.id} className="bg-surface">
+                      <Td className="text-fg-muted">{row.sequence}</Td>
+                      <Td className="text-fg">{row.period_label ?? '—'}</Td>
+                      <Td className="text-xs text-fg-muted">{formatDate(row.expected_date)}</Td>
+                      <Td align="right" className="amount font-medium text-fg">
                         {row.expected_amount !== null ? formatAmount(Number(row.expected_amount), currency) : '—'}
-                      </td>
-                      <td className="px-4 py-2.5"><StatusBadge status={row.status} /></td>
-                      <td className="px-4 py-2.5">
+                      </Td>
+                      <Td><StatusBadge status={row.status} /></Td>
+                      <Td>
                         <PeriodInvoices row={row} currency={currency} />
-                      </td>
-                      <td className="px-4 py-2.5">
+                      </Td>
+                      <Td>
                         {row.accepted_at ? (
                           <div className="flex flex-col">
                             {confirmedName && <span className="text-fg">{confirmedName}</span>}
@@ -163,23 +164,23 @@ export function ScheduleTable({
                         ) : (
                           <span className="text-fg-faint">—</span>
                         )}
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                   )
                 })
               : rows.map((row) => (
-                  <tr key={row.id} className="border-b border-line-subtle last:border-0 bg-surface">
-                    <td className="px-4 py-2.5 text-fg-muted">{row.sequence}</td>
-                    <td className="px-4 py-2.5 text-fg">{row.milestone_name ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-xs text-fg-muted">{row.expected_timing ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-right amount font-medium text-fg">
+                  <Tr key={row.id} className="bg-surface">
+                    <Td className="text-fg-muted">{row.sequence}</Td>
+                    <Td className="text-fg">{row.milestone_name ?? '—'}</Td>
+                    <Td className="text-xs text-fg-muted">{row.expected_timing ?? '—'}</Td>
+                    <Td align="right" className="amount font-medium text-fg">
                       {row.expected_amount !== null ? formatAmount(Number(row.expected_amount), currency) : '—'}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-fg-secondary">
+                    </Td>
+                    <Td align="right" className="text-fg-secondary">
                       {row.amount_pct !== null ? `${Number(row.amount_pct).toFixed(2)}%` : '—'}
-                    </td>
-                    <td className="px-4 py-2.5"><StatusBadge status={row.status} /></td>
-                    <td className="px-4 py-2.5">
+                    </Td>
+                    <Td><StatusBadge status={row.status} /></Td>
+                    <Td>
                       {row.invoice_id ? (
                         <Link
                           to={`/invoices/${row.invoice_id}`}
@@ -190,11 +191,11 @@ export function ScheduleTable({
                       ) : (
                         <span className="text-fg-faint">—</span>
                       )}
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 ))}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </div>
     </div>
   )

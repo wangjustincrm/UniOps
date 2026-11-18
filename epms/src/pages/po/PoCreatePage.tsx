@@ -303,7 +303,7 @@ export default function PoCreatePage() {
       {/* Page header */}
       <div className="flex items-center gap-3">
         <Link to="/po">
-          <Button variant="ghost" size="icon-sm">
+          <Button aria-label="Back" variant="ghost" size="icon-sm">
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>

@@ -6,7 +6,7 @@ import {
   ArrowLeft, CheckCircle2, RotateCcw, XCircle, MessageSquare, X, FileText, AlertTriangle, ExternalLink, Pencil,
   CreditCard, Upload, Paperclip, Info, Plus,
 } from 'lucide-react'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, FileInput, TBody, THead, Table, Td, Textarea, Tr } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
@@ -211,22 +211,22 @@ function ApprovalModal({ action, agreementNumber, onConfirm, onClose, isPending,
               <p className="text-xs text-fg-muted">{agreementNumber}</p>
             </div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary">
+          <Button variant="subtle" size="icon-sm" aria-label="Close" onClick={onClose}>
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">{config.commentLabel}</label>
             <div className="relative">
               <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-fg-muted" />
-              <textarea
+              <Textarea
                 rows={3}
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 placeholder={config.placeholder}
                 autoFocus
-                className="w-full resize-none rounded-lg border border-line-strong bg-surface pl-8 pr-3 pt-2 pb-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                className="w-full resize-none pl-8 pr-3 pt-2 pb-2"
               />
             </div>
           </div>
@@ -523,7 +523,7 @@ export default function AgreementDetailPage() {
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-bold text-fg">{agreement.number}</h1>
+              <h1 className="text-xl font-semibold text-fg">{agreement.number}</h1>
               <StatusBadge status={agreement.status as DocumentStatus} />
               <Badge variant="neutral">{TYPE_LABELS[agreement.agreement_type]}</Badge>
               {legacySettlementCount > 0 && (
@@ -641,7 +641,7 @@ export default function AgreementDetailPage() {
         <div className="lg:col-span-8 flex flex-col gap-6">
           <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-6">
             <section>
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">Terms</h2>
+              <h2 className="text-sm font-semibold text-fg-muted mb-3">Terms</h2>
               <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2 text-sm">
                 {([
                   ['Vendor', agreement.vendor_name],
@@ -672,7 +672,7 @@ export default function AgreementDetailPage() {
 
             {!isDeposit && (
             <section>
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">Consumed / Not to Exceed (pre-tax)</h2>
+              <h2 className="text-sm font-semibold text-fg-muted mb-3">Consumed / Not to Exceed (pre-tax)</h2>
               <NteBar consumedAmount={agreement.consumed_amount} notToExceed={agreement.not_to_exceed} currency={agreement.currency} />
             </section>
             )}
@@ -694,7 +694,7 @@ export default function AgreementDetailPage() {
           {agreement.agreement_type === 'recurring' && (
             <div className="rounded-xl bg-surface shadow-sm p-6">
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+                <h2 className="text-sm font-semibold text-fg-muted">
                   Payment Schedule <span className="normal-case font-normal text-fg-muted">({periodRows.length})</span>
                 </h2>
                 <div className="flex items-center gap-2 text-xs">
@@ -722,7 +722,7 @@ export default function AgreementDetailPage() {
           {agreement.agreement_type === 'milestone' && (
             <div className="rounded-xl bg-surface shadow-sm p-6">
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+                <h2 className="text-sm font-semibold text-fg-muted">
                   Payment Schedule <span className="normal-case font-normal text-fg-muted">({milestoneRows.length})</span>
                 </h2>
                 <div className="text-xs text-fg-muted">
@@ -762,7 +762,7 @@ export default function AgreementDetailPage() {
           {!isDeposit && (receipts.length > 0 || (canRecordReceipt && isAgreementAdmissible(agreement))) && (
             <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-5">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+                <h2 className="text-sm font-semibold text-fg-muted">
                   Agreement Receipts <span className="normal-case font-normal text-fg-muted">({receipts.length})</span>
                 </h2>
                 {/* Same admissibility gate the old inline form used (isAgreementAdmissible,
@@ -795,7 +795,7 @@ export default function AgreementDetailPage() {
           {!isDeposit && (
           <div className="rounded-xl bg-surface shadow-sm p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+              <h2 className="text-sm font-semibold text-fg-muted">
                 Matched Invoices <span className="normal-case font-normal text-fg-muted">({invoices.length})</span>
               </h2>
               {legacySettlementCount > 0 && (
@@ -816,9 +816,9 @@ export default function AgreementDetailPage() {
             ) : (
               <div className="rounded-lg border border-line overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-line bg-surface-subtle">
+                  <Table density="compact">
+                    <THead>
+                      <Tr className="bg-surface-subtle">
                         <SortTh label="Invoice" sortKey="internal_ref" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
                         <SortTh label="Vendor Invoice #" sortKey="vendor_invoice_number" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
                         <SortTh label="Amount" sortKey="total_amount" sort={invSort} onSort={onInvSort} align="right"
@@ -826,26 +826,26 @@ export default function AgreementDetailPage() {
                         <SortTh label="Date" sortKey="invoice_date" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
                         <SortTh label="Status" sortKey="status" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
                         <SortTh label="Receipt" sortKey="receipt" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
-                      </tr>
-                    </thead>
-                    <tbody>
+                      </Tr>
+                    </THead>
+                    <TBody>
                       {sortedInvoices.map((inv) => {
                         const invStatusCfg = INVOICE_STATUS_CFG[inv.status] ?? { label: inv.status, variant: 'neutral' as const }
                         return (
-                          <tr key={inv.id} className="border-b border-line-subtle last:border-0 bg-surface hover:bg-primary-50/60 transition-colors">
-                            <td className="px-4 py-2.5">
+                          <Tr key={inv.id} className="bg-surface hover:bg-primary-50/60 transition-colors">
+                            <Td>
                               <Link to={`/invoices/${inv.id}`} className="inline-flex items-center gap-1 font-mono text-xs font-medium text-primary-700 hover:text-primary-900">
                                 {inv.internal_ref}
                                 <ExternalLink className="h-3 w-3" />
                               </Link>
-                            </td>
-                            <td className="px-4 py-2.5 text-fg-secondary">{inv.vendor_invoice_number}</td>
-                            <td className="px-4 py-2.5 text-right amount font-medium text-fg">{formatAmount(inv.total_amount, inv.currency)}</td>
-                            <td className="px-4 py-2.5 text-xs text-fg-muted">{formatDate(inv.invoice_date)}</td>
-                            <td className="px-4 py-2.5">
+                            </Td>
+                            <Td className="text-fg-secondary">{inv.vendor_invoice_number}</Td>
+                            <Td align="right" className="amount font-medium text-fg">{formatAmount(inv.total_amount, inv.currency)}</Td>
+                            <Td className="text-xs text-fg-muted">{formatDate(inv.invoice_date)}</Td>
+                            <Td>
                               <Badge variant={invStatusCfg.variant}>{invStatusCfg.label}</Badge>
-                            </td>
-                            <td className="px-4 py-2.5">
+                            </Td>
+                            <Td>
                               {inv.legacy_settlement ? (
                                 <span title={inv.legacy_settlement_reason ?? undefined}>
                                   <Badge variant="warning">Settled without receipt</Badge>
@@ -853,12 +853,12 @@ export default function AgreementDetailPage() {
                               ) : (
                                 <span className="text-fg-faint">—</span>
                               )}
-                            </td>
-                          </tr>
+                            </Td>
+                          </Tr>
                         )
                       })}
-                    </tbody>
-                  </table>
+                    </TBody>
+                  </Table>
                 </div>
               </div>
             )}
@@ -868,7 +868,7 @@ export default function AgreementDetailPage() {
           {/* Attachments */}
           <div className="rounded-xl bg-surface shadow-sm p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+              <h2 className="text-sm font-semibold text-fg-muted">
                 Attachments <span className="normal-case font-normal text-fg-muted">({attachments.length})</span>
               </h2>
               {canWrite && (
@@ -881,9 +881,9 @@ export default function AgreementDetailPage() {
                 >
                   <Upload className="h-3.5 w-3.5" />
                   {uploadAttachment.isPending ? 'Uploading…' : 'Upload'}
-                  <input
+                  <FileInput
                     id="agreement-attachment-upload"
-                    type="file"
+                   
                     accept={ATTACHMENT_RULE.accept}
                     className="sr-only"
                     disabled={uploadAttachment.isPending}
@@ -924,22 +924,22 @@ export default function AgreementDetailPage() {
                     <Paperclip className="h-4 w-4 shrink-0 text-fg-muted" />
                     <span className="flex-1 truncate text-sm text-fg-secondary">{att.filename}</span>
                     <span className="text-xs text-fg-muted">{formatBytes(att.file_size)}</span>
-                    <button
+                    <Button variant="link"
                       type="button"
                       onClick={() => agreementAttachmentService.download(agreement.id, att.id, att.filename)}
-                      className="text-xs text-primary-600 hover:underline"
+                      className="text-xs"
                     >
                       Download
-                    </button>
+                    </Button>
                     {canWrite && !lockLastDepositAttachment && (
-                      <button
+                      <Button variant="danger-ghost" size="icon-xs" aria-label="Remove"
                         type="button"
                         onClick={() => { uploadAttachment.reset(); deleteAttachment.mutate(att.id) }}
                         disabled={deleteAttachment.isPending}
-                        className="text-fg-faint hover:text-danger-fg disabled:opacity-40"
+                       
                       >
                         <X className="h-3.5 w-3.5" />
-                      </button>
+                      </Button>
                     )}
                   </div>
                 ))}
@@ -956,7 +956,7 @@ export default function AgreementDetailPage() {
               and cancel are routinely seconds apart, and a date alone puts them
               on the same line with no order. */}
           <div className="rounded-xl bg-surface shadow-sm p-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">Audit History</h2>
+            <h2 className="text-sm font-semibold text-fg-muted mb-4">Audit History</h2>
             {events && events.length > 0 ? (
               <ul className="flex flex-col gap-3">
                 {events.map((e) => {
@@ -983,7 +983,7 @@ export default function AgreementDetailPage() {
         {/* Right: approval timeline */}
         <div className="lg:col-span-4">
           <div className="rounded-xl bg-surface shadow-sm p-5 sticky top-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">Approval Timeline</h2>
+            <h2 className="text-sm font-semibold text-fg-muted mb-4">Approval Timeline</h2>
             <ApprovalTimeline steps={approvalSteps} />
 
             {/* Document Chain */}
@@ -1010,12 +1010,12 @@ export default function AgreementDetailPage() {
             >
               <XCircle className="h-3.5 w-3.5" /> Reject
             </Button>
-            <button
+            <Button variant="success"
               onClick={() => setPendingAction('approve')}
-              className="inline-flex items-center gap-2 h-9 px-5 rounded-lg bg-success-solid text-white text-sm font-semibold hover:bg-success-700 transition-colors"
+             
             >
               <CheckCircle2 className="h-4 w-4" /> Approve
-            </button>
+            </Button>
           </div>
         </div>
       )}

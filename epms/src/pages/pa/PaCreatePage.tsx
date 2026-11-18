@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { FreightPaCreate } from './FreightPaCreate'
 import { DirectPaCreate } from './DirectPaCreate'
-import { useReplaceTab } from '@uniops/shell'
+import { useReplaceTab, Checkbox, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDot } from 'lucide-react'
@@ -112,12 +112,12 @@ function InvoiceSelectList({
               selectedIds.has(inv.id) && 'bg-primary-50'
             )}
           >
-            <input
-              type="checkbox"
+            <Checkbox
+             
               checked={selectedIds.has(inv.id)}
               onChange={() => onToggle(inv.id)}
               disabled={blocked && !selectedIds.has(inv.id)}
-              className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600"
+             
             />
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -977,11 +977,11 @@ function PoPaCreate() {
     <div className="flex flex-col gap-6 p-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => replaceTab('/pa')} className="p-2 rounded-lg hover:bg-surface-sunken text-fg-muted">
+        <Button aria-label="Back" variant="subtle" size="icon-sm" onClick={() => replaceTab('/pa')}>
           <ArrowLeft className="h-5 w-5" />
-        </button>
+        </Button>
         <div>
-          <h1 className="text-2xl font-bold text-fg">New Payment Application</h1>
+          <h1 className="text-2xl font-semibold text-fg">New Payment Application</h1>
           <p className="text-sm text-fg-muted mt-0.5">
             {isAgreementMode ? 'Create a payment request against an agreement' : 'Create a payment request linked to a PO'}
           </p>
@@ -996,7 +996,7 @@ function PoPaCreate() {
           {isAgreementMode ? (
             <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-4">
               <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-bold">1</span>
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-semibold">1</span>
                 Agreement
               </h2>
               {agreementLoadError ? (
@@ -1040,7 +1040,7 @@ function PoPaCreate() {
           ) : (
           <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-4">
             <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-bold">1</span>
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-semibold">1</span>
               {lockedFromSettle || (fromTask && !changingPo)
                 ? (isMultiPo ? 'Purchase Orders' : 'Purchase Order')
                 : 'Select Purchase Order(s)'}
@@ -1076,13 +1076,13 @@ function PoPaCreate() {
                   <div className="text-xs text-fg-muted mt-0.5">{selectedPo.vendor_name}</div>
                   <div className="mt-2 flex items-center justify-between">
                     <p className="text-2xs text-fg-muted">Pre-filled from the linked PO.</p>
-                    <button
+                    <Button variant="link"
                       type="button"
                       onClick={() => setChangingPo(true)}
-                      className="text-2xs font-medium text-primary-600 hover:text-primary-700 hover:underline"
+                      className="text-2xs"
                     >
                       Change or add POs
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ) : (
@@ -1090,11 +1090,11 @@ function PoPaCreate() {
               )
             ) : (
               <div className="flex flex-col gap-2">
-                <input
+                <Input inputSize="sm"
                   value={poSearch}
                   onChange={(e) => setPoSearch(e.target.value)}
                   placeholder="Search PO # or vendor…"
-                  className="h-9 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                 
                 />
                 <p className="text-2xs text-fg-muted">
                   Tick every purchase order this payment settles. They must share a vendor
@@ -1123,12 +1123,12 @@ function PoPaCreate() {
                             isChecked && 'bg-primary-50',
                           )}
                         >
-                          <input
-                            type="checkbox"
+                          <Checkbox
+                           
                             checked={isChecked}
                             disabled={Boolean(blockedReason)}
                             onChange={() => !blockedReason && togglePo(po.id)}
-                            className="mt-0.5 h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600 disabled:opacity-50"
+                            className="mt-0.5 disabled:opacity-50"
                           />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-2">
@@ -1176,14 +1176,14 @@ function PoPaCreate() {
                         className="inline-flex items-center gap-1 rounded-full bg-surface px-2 py-0.5 font-mono text-2xs font-semibold text-primary-700 ring-1 ring-primary-200"
                       >
                         {p.number}
-                        <button
+                        <Button variant="link"
                           type="button"
                           onClick={() => togglePo(p.id)}
-                          className="text-primary-400 hover:text-danger-fg"
+                         
                           aria-label={`Remove ${p.number} from this payment`}
                         >
                           ×
-                        </button>
+                        </Button>
                       </span>
                     ))}
                   </div>
@@ -1197,7 +1197,7 @@ function PoPaCreate() {
           {!isAgreementMode && selectedPo && (
             <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-5">
               <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-bold">2</span>
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-semibold">2</span>
                 Link Invoices & Goods Receipts
               </h2>
 
@@ -1263,11 +1263,11 @@ function PoPaCreate() {
                           selectedGrIds.has(gr.id) && 'bg-primary-50'
                         )}
                       >
-                        <input
-                          type="checkbox"
+                        <Checkbox
+                         
                           checked={selectedGrIds.has(gr.id)}
                           onChange={() => toggleGr(gr.id)}
-                          className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600"
+                         
                         />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
@@ -1294,36 +1294,36 @@ function PoPaCreate() {
                   <span className="text-fg-muted font-normal">(select items covered by this PA)</span>
                 </p>
                 <div className="rounded-lg border border-line overflow-hidden">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-line bg-surface-subtle">
-                        <th className="w-8 px-3 py-2"></th>
-                        <th className="px-3 py-2 text-left font-semibold text-fg-muted uppercase tracking-wide">Description</th>
-                        <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-20">Ordered</th>
-                        <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-20">Received</th>
-                        <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-28">Line Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table density="compact">
+                    <THead>
+                      <Tr className="bg-surface-subtle">
+                        <Th className="w-8"></Th>
+                        <Th>Description</Th>
+                        <Th align="right" className="w-20">Ordered</Th>
+                        <Th align="right" className="w-20">Received</Th>
+                        <Th align="right" className="w-28">Line Total</Th>
+                      </Tr>
+                    </THead>
+                    <TBody>
                       {selectedPos.flatMap((po) => [
                         // With more than one PO on the payment the lines have to
                         // say which order they came from — otherwise two orders'
                         // items sit in one anonymous list and the operator cannot
                         // tell what they are ticking.
                         ...(isMultiPo ? [(
-                          <tr key={`hdr-${po.id}`} className="bg-surface-sunken/70">
-                            <td colSpan={5} className="px-3 py-1.5">
+                          <Tr key={`hdr-${po.id}`} className="bg-surface-sunken/70">
+                            <Td colSpan={5}>
                               <span className="font-mono text-2xs font-semibold text-primary-700">{po.number}</span>
                               <span className="ml-2 text-2xs text-fg-muted">{po.title}</span>
-                            </td>
-                          </tr>
+                            </Td>
+                          </Tr>
                         )] : []),
                         ...po.line_items.map((line, idx) => {
                         const receivedQty = receivedQtyByPoLineId[line.id] ?? 0
                         const isReceived  = receivedQty > 0
                         const isSelected  = selectedLineIds.has(line.id)
                         return (
-                          <tr
+                          <Tr
                             key={line.id}
                             className={cn(
                               'border-b border-line-subtle last:border-0 cursor-pointer hover:bg-primary-50 transition-colors',
@@ -1332,16 +1332,16 @@ function PoPaCreate() {
                             )}
                             onClick={() => toggleLine(line.id)}
                           >
-                            <td className="px-3 py-2.5 text-center">
-                              <input
-                                type="checkbox"
+                            <Td align="center">
+                              <Checkbox
+                               
                                 checked={isSelected}
                                 onChange={() => toggleLine(line.id)}
                                 onClick={(e) => e.stopPropagation()}
-                                className="h-3.5 w-3.5 rounded border-line-strong text-primary-600 focus:ring-primary-600"
+                                className="h-3.5 w-3.5"
                               />
-                            </td>
-                            <td className="px-3 py-2.5">
+                            </Td>
+                            <Td>
                               <div className="text-fg font-medium">{line.description}</div>
                               {line.material_id && <div className="text-fg-muted font-mono mt-0.5">{line.material_id}</div>}
                               <div className={cn(
@@ -1351,20 +1351,20 @@ function PoPaCreate() {
                                 <span className={cn('h-1.5 w-1.5 rounded-full', isReceived ? 'bg-success-solid' : 'bg-line-strong')} />
                                 {isReceived ? `Received (${receivedQty} ${line.unit})` : 'Not yet received'}
                               </div>
-                            </td>
-                            <td className="px-3 py-2.5 text-right font-mono text-fg-muted">{formatQty(line.qty)} {line.unit}</td>
-                            <td className="px-3 py-2.5 text-right font-mono font-medium text-fg-secondary">
+                            </Td>
+                            <Td align="right" className="font-mono text-fg-muted">{formatQty(line.qty)} {line.unit}</Td>
+                            <Td align="right" className="font-mono font-medium text-fg-secondary">
                               {receivedQty > 0 ? `${receivedQty} ${line.unit}` : '—'}
-                            </td>
-                            <td className="px-3 py-2.5 text-right font-mono font-semibold text-fg">
+                            </Td>
+                            <Td align="right" className="font-mono font-semibold text-fg">
                               {formatAmount(line.line_total, po.currency)}
-                            </td>
-                          </tr>
+                            </Td>
+                          </Tr>
                         )
                         }),
                       ])}
-                    </tbody>
-                  </table>
+                    </TBody>
+                  </Table>
                   {selectedLineIds.size > 0 && (
                     <div className="flex items-center justify-between px-4 py-2 border-t border-line bg-primary-50">
                       <span className="text-xs text-primary-700 font-medium">{selectedLineIds.size} line{selectedLineIds.size !== 1 ? 's' : ''} selected</span>
@@ -1422,7 +1422,7 @@ function PoPaCreate() {
                       <label className="text-xs font-medium text-fg-secondary">
                         Original Prepayment PA <span className="text-danger-fg">*</span>
                       </label>
-                      <select
+                      <Select
                         value={prepaymentPaId}
                         onChange={(e) => setPrepaymentPaId(e.target.value)}
                         disabled={lockedFromSettle}
@@ -1438,7 +1438,7 @@ function PoPaCreate() {
                             {p.settlement_status ? ` · ${p.settlement_status}` : ''}
                           </option>
                         ))}
-                      </select>
+                      </Select>
                       {linkablePrepayments.length === 0 && (
                         <p className="text-2xs text-fg-muted">No prepayment PAs found for this PO.</p>
                       )}
@@ -1492,7 +1492,7 @@ function PoPaCreate() {
                           Prepayment % <span className="text-danger-fg">*</span>
                         </label>
                         <div className="relative">
-                          <input
+                          <Input
                             type="number" min={1} max={100} step={1}
                             value={prepaymentPct}
                             onChange={(e) => setPrepaymentPct(e.target.value)}
@@ -1508,7 +1508,7 @@ function PoPaCreate() {
                         <label className="text-xs font-medium text-fg-secondary">
                           Expected Settlement Date <span className="text-danger-fg">*</span>
                         </label>
-                        <input
+                        <Input
                           type="date"
                           max="9999-12-31"
                           value={expectedSettlement}
@@ -1537,7 +1537,7 @@ function PoPaCreate() {
           {isAgreementMode && (
             <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-4">
               <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-bold">2</span>
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-semibold">2</span>
                 Link Invoices
               </h2>
               <div className="flex flex-col gap-2">
@@ -1590,7 +1590,7 @@ function PoPaCreate() {
           {contextSelected && (
             <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-5">
               <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-bold">3</span>
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-semibold">3</span>
                 Charge Breakdown & Details
               </h2>
 
@@ -1599,7 +1599,7 @@ function PoPaCreate() {
                 <label className="text-xs font-medium text-fg-secondary">
                   PA Title <span className="text-danger-fg">*</span>
                 </label>
-                <input
+                <Input
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
@@ -1616,7 +1616,7 @@ function PoPaCreate() {
 
               {/* Charge breakdown */}
               <div className="flex flex-col gap-3">
-                <p className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">Charge Breakdown ({formCurrency})</p>
+                <p className="text-xs font-semibold text-fg-secondary">Charge Breakdown ({formCurrency})</p>
 
                 <div className="grid grid-cols-2 gap-3">
                   {/* Pre-tax */}
@@ -1624,7 +1624,7 @@ function PoPaCreate() {
                     <label className="text-xs font-medium text-fg-secondary">
                       Pre-tax Amount <span className="text-danger-fg">*</span>
                     </label>
-                    <input
+                    <Input
                       type="number" min={0} step={0.01}
                       value={subtotal}
                       onChange={(e) => setSubtotal(e.target.value)}
@@ -1658,7 +1658,7 @@ function PoPaCreate() {
                         <span className="ml-1.5 text-2xs font-normal text-fg-muted">{`${(paTaxRate * 100).toFixed(0)}% HST`}</span>
                       )}
                     </label>
-                    <input
+                    <Input
                       type="number" min={0} step={0.01}
                       value={taxAmount}
                       onChange={(e) => { setTaxAmount(e.target.value); setTaxManuallyEdited(true) }}
@@ -1676,12 +1676,12 @@ function PoPaCreate() {
                       Shipping / Freight
                       <span className="text-fg-muted font-normal ml-1">(optional)</span>
                     </label>
-                    <input
+                    <Input
                       type="number" min={0} step={0.01}
                       value={shippingAmount}
                       onChange={(e) => setShipping(e.target.value)}
                       placeholder="0.00"
-                      className="h-10 px-3 rounded-lg border border-line-strong text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
+                      className="font-mono"
                     />
                   </div>
 
@@ -1691,12 +1691,12 @@ function PoPaCreate() {
                       Other Charges
                       <span className="text-fg-muted font-normal ml-1">(optional)</span>
                     </label>
-                    <input
+                    <Input
                       type="number" min={0} step={0.01}
                       value={otherCharges}
                       onChange={(e) => setOther(e.target.value)}
                       placeholder="0.00"
-                      className="h-10 px-3 rounded-lg border border-line-strong text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
+                      className="font-mono"
                     />
                   </div>
                 </div>
@@ -1705,12 +1705,12 @@ function PoPaCreate() {
                 {otherNum > 0 && (
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-medium text-fg-secondary">Other Charges Description</label>
-                    <input
+                    <Input inputSize="sm"
                       type="text"
                       value={otherChargesNote}
                       onChange={(e) => setOtherNote(e.target.value)}
                       placeholder="Describe the other charges…"
-                      className="h-9 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                     
                     />
                   </div>
                 )}
@@ -1721,12 +1721,12 @@ function PoPaCreate() {
                     <label className="text-xs font-medium text-fg-secondary">
                       Prepayment Applied (deducted)
                     </label>
-                    <input
+                    <Input
                       type="number" min={0} step={0.01}
                       value={prepaymentApplied}
                       onChange={(e) => { setPrepaymentApplied(e.target.value); setAppliedEdited(true) }}
                       placeholder="0.00"
-                      className="h-10 px-3 rounded-lg border border-line-strong text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
+                      className="font-mono"
                     />
                     <p className="text-2xs text-fg-muted">
                       Amount already paid via the prepayment PA. Net payable = total − this.
@@ -1759,7 +1759,7 @@ function PoPaCreate() {
                       {isSettlementType ? 'Net Payable' : 'Total Payment Amount'}
                     </span>
                     <span className={cn(
-                      'font-mono font-bold text-xl',
+                      'font-mono font-semibold text-xl',
                       netPayable > 0 ? 'text-primary-700' : 'text-fg-faint'
                     )}>
                       {netPayable > 0 ? formatAmount(netPayable, formCurrency) : formatAmount(0, formCurrency)}
@@ -1779,12 +1779,12 @@ function PoPaCreate() {
                 <label className="text-xs font-medium text-fg-secondary">
                   Notes <span className="text-fg-muted font-normal">(optional)</span>
                 </label>
-                <textarea
+                <Textarea
                   rows={3}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Add any payment instructions or notes for the finance team…"
-                  className="px-3 py-2 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
+                  className="resize-none"
                 />
               </div>
             </div>
@@ -1813,8 +1813,8 @@ function PoPaCreate() {
               )}
               {canOverride && (
                 <label className="flex items-start gap-2 text-xs text-warning-fg">
-                  <input
-                    type="checkbox"
+                  <Checkbox
+                   
                     checked={receiptOverride}
                     onChange={(e) => setReceiptOverride(e.target.checked)}
                     className="mt-0.5"
@@ -1827,12 +1827,12 @@ function PoPaCreate() {
                 </label>
               )}
               {canOverride && receiptOverride && (
-                <textarea
+                <Textarea
                   rows={2}
                   value={receiptOverrideReason}
                   onChange={(e) => setReceiptOverrideReason(e.target.value)}
                   placeholder="Reason for override"
-                  className="px-3 py-2 rounded-lg border border-warning-line text-xs focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
+                  className="resize-none"
                 />
               )}
             </div>
@@ -1869,7 +1869,7 @@ function PoPaCreate() {
         {/* ── Sidebar — Payment Summary ───────────────────────────────────────── */}
         <div className="flex flex-col gap-4">
           <div className="rounded-xl border border-line bg-surface p-4 shadow-sm sticky top-6">
-            <p className="text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-3">Payment Summary</p>
+            <p className="text-xs font-semibold text-fg-secondary mb-3">Payment Summary</p>
 
             {!contextSelected ? (
               <p className="text-xs text-fg-muted text-center py-4">

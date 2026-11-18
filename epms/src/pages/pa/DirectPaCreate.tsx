@@ -16,6 +16,7 @@ import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 import type { LinkedPoDefaults } from '@/services/pa'
 import { SELECT_CLS, TH_CLS, cents, errorMessage, num } from '@/pages/freight/freightUi'
 
+import { Checkbox, Select, TBody, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
 /** Payment Applications → Create Direct PA (/pa/new?source=direct[&invoice=<id>]).
  *  Pays invoices matched to no PO and no agreement (Match → Direct PA on the
  *  invoice): one or more of one vendor and currency, charged to a department
@@ -33,7 +34,7 @@ export function DirectPaCreate({ preselectInvoiceId }: { preselectInvoiceId: str
           <ArrowLeft className="h-5 w-5" />
         </BackLink>
         <div>
-          <h1 className="text-2xl font-bold text-fg">Create Direct PA</h1>
+          <h1 className="text-2xl font-semibold text-fg">Create Direct PA</h1>
           <p className="text-sm text-fg-muted mt-0.5">Pay vendor invoices that have no purchase order or agreement behind them</p>
         </div>
       </div>
@@ -190,16 +191,16 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
             )}
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line-subtle bg-surface-subtle">
-                <th className={cn(TH_CLS, 'w-10')} />
+          <Table density="compact">
+            <THead>
+              <Tr className="bg-surface-subtle">
+                <Th className={cn(TH_CLS, 'w-10')} />
                 {['Invoice #', 'Vendor', 'Invoice Date', 'Due Date', 'Amount', 'Tax', 'Total'].map((h) => (
-                  <th key={h} className={cn(TH_CLS, ['Amount', 'Tax', 'Total'].includes(h) && 'text-right')}>{h}</th>
+                  <Th key={h} className={cn(TH_CLS, ['Amount', 'Tax', 'Total'].includes(h) && 'text-right')}>{h}</Th>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
+              </Tr>
+            </THead>
+            <TBody>
               {ready.map((inv) => {
                 const due = dueInfo(inv.due_date, inv.status)
                 const urgent = due.tone === 'overdue' || due.tone === 'soon'
@@ -207,46 +208,46 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
                 const blocked = !!vendorId && !selected.has(inv.id)
                   && (inv.vendor_id !== vendorId || inv.currency !== currency)
                 return (
-                  <tr key={inv.id}
+                  <Tr key={inv.id}
                     className={cn('border-b border-line-subtle', blocked ? 'opacity-40' : 'hover:bg-surface-subtle cursor-pointer')}
                     onClick={() => !blocked && toggle(inv.id)}>
-                    <td className="px-3 py-2.5">
-                      <input type="checkbox" checked={selected.has(inv.id)} disabled={blocked}
+                    <Td>
+                      <Checkbox checked={selected.has(inv.id)} disabled={blocked}
                         onChange={() => toggle(inv.id)} onClick={(e) => e.stopPropagation()} />
-                    </td>
-                    <td className="px-3 py-2.5">
+                    </Td>
+                    <Td>
                       <Link to={`/invoices/${inv.id}`} onClick={(e) => e.stopPropagation()} className="font-mono text-xs font-semibold text-primary-700 hover:underline">
                         {inv.vendor_invoice_number}
                       </Link>
                       {inv.linked_po && (
                         <div className="text-2xs text-fg-muted">Linked to {inv.linked_po.po_number}</div>
                       )}
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-fg-secondary">{inv.vendor_name}</td>
-                    <td className="px-3 py-2.5 text-xs text-fg-secondary">{formatDate(inv.invoice_date)}</td>
-                    <td className={cn('px-3 py-2.5 text-xs', urgent ? 'font-semibold text-danger-fg' : 'text-fg-secondary')}>
+                    </Td>
+                    <Td className="text-xs text-fg-secondary">{inv.vendor_name}</Td>
+                    <Td className="text-xs text-fg-secondary">{formatDate(inv.invoice_date)}</Td>
+                    <Td className={cn('px-3 py-2.5 text-xs', urgent ? 'font-semibold text-danger-fg' : 'text-fg-secondary')}>
                       {formatDate(inv.due_date)}{due.label && <span className="ml-1 text-2xs">({due.label})</span>}
-                    </td>
-                    <td className="px-3 py-2.5 text-right font-mono text-xs">{formatAmount(num(inv.amount), inv.currency)}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-xs">{formatAmount(num(inv.tax_amount), inv.currency)}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-xs font-semibold">{formatAmount(num(inv.total_amount), inv.currency)}</td>
-                  </tr>
+                    </Td>
+                    <Td align="right" className="font-mono text-xs">{formatAmount(num(inv.amount), inv.currency)}</Td>
+                    <Td align="right" className="font-mono text-xs">{formatAmount(num(inv.tax_amount), inv.currency)}</Td>
+                    <Td align="right" className="font-mono text-xs font-semibold">{formatAmount(num(inv.total_amount), inv.currency)}</Td>
+                  </Tr>
                 )
               })}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         )}
       </div>
 
       <div className="flex flex-col gap-4">
         <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-3">
-          <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Charged To</h3>
+          <h3 className="text-xs font-semibold text-fg-muted">Charged To</h3>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Department *</label>
-            <select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} className={cn(SELECT_CLS, 'w-full')}>
+            <Select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} className={cn(SELECT_CLS, 'w-full')}>
               <option value="">Select department…</option>
               {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
+            </Select>
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Cost Center & Budget Account *</label>
@@ -272,9 +273,9 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
         <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Reason for payment *</label>
-            <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)}
+            <Textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)}
               placeholder="Why is this paid without a purchase order or agreement?"
-              className="w-full resize-none rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+              className="w-full resize-none" />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Title</label>

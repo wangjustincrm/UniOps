@@ -43,6 +43,7 @@ import {
 } from '@/services/agreementReceipts'
 import type { DocumentStatus } from '@/types'
 
+import { FileInput, Textarea } from '@uniops/shell'
 const TYPE_OPTIONS: ReceiptType[] = ['counter_slip', 'delivery', 'service']
 
 // Why the edit form is locked, in the receipt's own terms. Never just a
@@ -316,7 +317,7 @@ function ReceiptDetail({
           </Link>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-fg font-mono">{heading}</h1>
+              <h1 className="text-2xl font-semibold text-fg font-mono">{heading}</h1>
               <StatusBadge status={receipt.status as DocumentStatus} />
             </div>
             <p className="mt-1 text-sm text-fg-muted">
@@ -393,7 +394,7 @@ function ReceiptDetail({
           {/* Receipt details — editable form, or read-only with the reason */}
           <div className="rounded-xl border border-line bg-surface p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+              <h2 className="text-sm font-semibold text-fg-muted">
                 Receipt Details
               </h2>
               {savedAt && (
@@ -546,24 +547,24 @@ function ReceiptDetail({
                       : 'This receipt is already with AP. Rewording the reason will not change that — only AP can approve or reject it.'
                   }
                 >
-                  <textarea
+                  <Textarea
                     id="receipt-missing-reason"
                     rows={2}
                     value={missingReason}
                     onChange={(e) => touch(setMissingReason)(e.target.value)}
                     placeholder="e.g. receipt was lost / illegible / not issued"
-                    className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="w-full resize-none"
                   />
                 </FormField>
 
                 <FormField label="Notes" htmlFor="receipt-notes">
-                  <textarea
+                  <Textarea
                     id="receipt-notes"
                     rows={2}
                     value={notes}
                     onChange={(e) => touch(setNotes)(e.target.value)}
                     placeholder="Optional notes"
-                    className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="w-full resize-none"
                   />
                 </FormField>
 
@@ -629,7 +630,7 @@ function ReceiptDetail({
         {/* Right column — context that isn't editable here */}
         <div className="w-72 flex-shrink-0 flex flex-col gap-4">
           <div className="rounded-xl border border-line bg-surface p-5">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">
+            <h3 className="text-xs font-semibold text-fg-muted mb-3">
               Linked Documents
             </h3>
             <div className="flex flex-col gap-3">
@@ -667,7 +668,7 @@ function ReceiptDetail({
           </div>
 
           <div className="rounded-xl border border-line bg-surface p-5">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">
+            <h3 className="text-xs font-semibold text-fg-muted mb-3">
               Record
             </h3>
             <div className="flex flex-col gap-2">
@@ -764,7 +765,7 @@ function ReceiptAttachmentsCard({
   return (
     <div className="rounded-xl border border-line bg-surface p-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+        <h2 className="text-sm font-semibold text-fg-muted">
           Photos &amp; Proof Files
         </h2>
         {canWrite && (
@@ -777,9 +778,9 @@ function ReceiptAttachmentsCard({
           >
             <Upload className="h-4 w-4" />
             {upload.isPending ? 'Uploading…' : 'Add photo'}
-            <input
+            <FileInput
               id="receipt-attachment-upload"
-              type="file"
+             
               accept="image/*,.pdf"
               className="sr-only"
               disabled={busy}
@@ -815,7 +816,7 @@ function ReceiptAttachmentsCard({
               <Paperclip className="h-4 w-4 shrink-0 text-fg-muted" />
               <span className="flex-1 truncate text-sm text-fg-secondary" title={att.filename}>{att.filename}</span>
               <span className="text-xs text-fg-muted">{(att.file_size / 1024).toFixed(0)} KB</span>
-              <button
+              <Button variant="subtle" size="icon-xs"
                 type="button"
                 // Token-bearing blob fetch, never a bare <a href>: an
                 // unauthenticated request to the download route is 401'd and
@@ -828,7 +829,7 @@ function ReceiptAttachmentsCard({
                 className="text-xs text-primary-600 hover:underline"
               >
                 Download
-              </button>
+              </Button>
               {canWrite && (
                 <button
                   type="button"

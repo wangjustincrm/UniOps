@@ -234,7 +234,7 @@ export default function PoEditPage() {
       {/* Header */}
       <div className="flex items-center gap-3">
         <Link to={`/po/${id}`}>
-          <Button variant="ghost" size="icon-sm"><ArrowLeft className="h-4 w-4" /></Button>
+          <Button aria-label="Back" variant="ghost" size="icon-sm"><ArrowLeft className="h-4 w-4" /></Button>
         </Link>
         <div>
           <h1 className="text-2xl font-semibold text-fg">Edit Purchase Order</h1>

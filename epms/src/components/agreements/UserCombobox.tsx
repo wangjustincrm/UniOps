@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { userService, type ApiUserBrief } from '@/services/users'
 
+import { Input, Button, MenuItem } from '@uniops/shell'
 /**
  * Type-to-search picker for a person, replacing a bare `<select>` of the whole
  * directory.
@@ -65,7 +66,7 @@ export function UserCombobox(props: {
     <div ref={anchorRef} className="flex flex-col gap-1.5">
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
-        <input
+        <Input
           id={inputId}
           type="text"
           autoComplete="off"
@@ -81,28 +82,28 @@ export function UserCombobox(props: {
           }`}
         />
         {value !== '' && !disabled && (
-          <button
+          <Button variant="subtle" size="icon-xs"
             type="button"
             aria-label="Clear selection"
             onClick={() => { onChange(''); setQuery(''); setOpen(false) }}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2"
           >
             <X className="h-3.5 w-3.5" />
-          </button>
+          </Button>
         )}
       </div>
       {open && !selected && rect && (
         <DropdownPortal anchorRect={rect} onClose={() => setOpen(false)}>
           {results.map((u) => (
-            <button
+            <MenuItem
               key={u.id}
               type="button"
-              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-primary-50"
+              className="justify-between"
               onClick={() => { onChange(u.id); setOpen(false); setQuery('') }}
             >
               <span>{u.full_name}</span>
               {u.department_name && <span className="text-xs text-fg-muted">{u.department_name}</span>}
-            </button>
+            </MenuItem>
           ))}
           {results.length === 0 && (
             <p className="px-3 py-2 text-sm text-fg-muted">No people found</p>

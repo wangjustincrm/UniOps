@@ -34,9 +34,9 @@ export function RejectReceiptDialog({ receiptLabel, onClose, onConfirm }: {
               <p className="text-xs text-fg-muted">{receiptLabel}</p>
             </div>
           </div>
-          <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary">
+          <Button variant="subtle" size="icon-sm" onClick={onClose} aria-label="Close">
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
           <p className="text-sm text-fg-secondary">
@@ -45,14 +45,14 @@ export function RejectReceiptDialog({ receiptLabel, onClose, onConfirm }: {
           </p>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-            <button
+            <Button variant="danger" size="sm"
               onClick={onConfirm}
               autoFocus
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-danger-solid px-3 text-sm font-medium text-white transition-colors hover:bg-danger-700"
+             
             >
               <XCircle className="h-4 w-4" />
               Reject
-            </button>
+            </Button>
           </div>
         </div>
       </div>

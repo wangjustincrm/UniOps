@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
-import { useReplaceTab } from '@uniops/shell'
+import { useReplaceTab, Checkbox, Input, TBody, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDot } from 'lucide-react'
@@ -478,11 +478,11 @@ function PoPaEditPage() {
     <div className="flex flex-col gap-6 p-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => replaceTab(`/pa/${id}`)} className="p-2 rounded-lg hover:bg-surface-sunken text-fg-muted">
+        <Button aria-label="Back" variant="subtle" size="icon-sm" onClick={() => replaceTab(`/pa/${id}`)}>
           <ArrowLeft className="h-5 w-5" />
-        </button>
+        </Button>
         <div>
-          <h1 className="text-2xl font-bold text-fg">Edit Payment Application</h1>
+          <h1 className="text-2xl font-semibold text-fg">Edit Payment Application</h1>
           <p className="text-sm text-fg-muted mt-0.5">
             {pa.pa_number} · {pa.status === 'returned' ? 'Returned — revise and resubmit' : 'Draft'}
           </p>
@@ -496,7 +496,7 @@ function PoPaEditPage() {
           {/* ── PO / Agreement (locked) ────────────────────────────────────── */}
           <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-3">
             <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-bold">1</span>
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-semibold">1</span>
               {isAgreementMode ? 'Purchase Agreement' : (isMultiPo ? 'Purchase Orders' : 'Purchase Order')}
             </h2>
             {isAgreementMode ? (
@@ -528,32 +528,32 @@ function PoPaEditPage() {
                         purchase order is not a document this app has a place for
                         (the backend refuses an empty set for the same reason). */}
                     {pos.length > 1 && (
-                      <button
+                      <Button variant="link"
                         type="button"
                         onClick={() => removePo(p.id)}
-                        className="shrink-0 text-2xs font-medium text-fg-muted hover:text-danger-fg hover:underline"
+                        className="shrink-0 text-2xs text-fg-muted"
                       >
                         Remove
-                      </button>
+                      </Button>
                     )}
                   </div>
                 ))}
                 {addingPo ? (
                   <div className="flex flex-col gap-2 rounded-lg border border-line p-3">
                     <div className="flex items-center gap-2">
-                      <input
+                      <Input inputSize="sm"
                         value={poSearch}
                         onChange={(e) => setPoSearch(e.target.value)}
                         placeholder="Search PO # or vendor…"
-                        className="h-9 flex-1 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                        className="flex-1"
                       />
-                      <button
+                      <Button variant="link"
                         type="button"
                         onClick={() => { setAddingPo(false); setPoSearch('') }}
-                        className="text-2xs font-medium text-fg-muted hover:underline"
+                        className="text-2xs text-fg-muted"
                       >
                         Cancel
-                      </button>
+                      </Button>
                     </div>
                     <div className="rounded-lg border border-line max-h-48 overflow-y-auto">
                       {addablePos.length === 0 ? (
@@ -595,13 +595,13 @@ function PoPaEditPage() {
                     </div>
                   </div>
                 ) : (
-                  <button
+                  <Button variant="link"
                     type="button"
                     onClick={() => setAddingPo(true)}
-                    className="self-start text-2xs font-medium text-primary-600 hover:text-primary-700 hover:underline"
+                    className="self-start text-2xs"
                   >
                     + Add another PO to this payment
-                  </button>
+                  </Button>
                 )}
               </div>
             )}
@@ -610,7 +610,7 @@ function PoPaEditPage() {
           {/* ── Step 2 — Link Invoices / GRs + PA Type ─────────────────────── */}
           <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-5">
             <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-bold">2</span>
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-semibold">2</span>
               {isAgreementMode ? 'Link Invoices' : 'Link Invoices & Goods Receipts'}
             </h2>
 
@@ -639,11 +639,11 @@ function PoPaEditPage() {
                         selectedInvoiceIds.has(inv.id) && 'bg-primary-50'
                       )}
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
+                       
                         checked={selectedInvoiceIds.has(inv.id)}
                         onChange={() => toggleInvoice(inv.id)}
-                        className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600"
+                       
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
@@ -697,11 +697,11 @@ function PoPaEditPage() {
                         selectedGrIds.has(gr.id) && 'bg-primary-50'
                       )}
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
+                       
                         checked={selectedGrIds.has(gr.id)}
                         onChange={() => toggleGr(gr.id)}
-                        className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600"
+                       
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
@@ -735,35 +735,35 @@ function PoPaEditPage() {
                   <span className="text-fg-muted font-normal">(select items covered by this PA)</span>
                 </p>
                 <div className="rounded-lg border border-line overflow-hidden">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-line bg-surface-subtle">
-                        <th className="w-8 px-3 py-2"></th>
-                        <th className="px-3 py-2 text-left font-semibold text-fg-muted uppercase tracking-wide">Description</th>
-                        <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-20">Ordered</th>
-                        <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-20">Received</th>
-                        <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-28">Line Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table density="compact">
+                    <THead>
+                      <Tr className="bg-surface-subtle">
+                        <Th className="w-8"></Th>
+                        <Th>Description</Th>
+                        <Th align="right" className="w-20">Ordered</Th>
+                        <Th align="right" className="w-20">Received</Th>
+                        <Th align="right" className="w-28">Line Total</Th>
+                      </Tr>
+                    </THead>
+                    <TBody>
                       {pos.flatMap((linePo) => [
                         // With more than one PO on the payment the lines must say
                         // which order they belong to, otherwise removing a PO
                         // gives no clue which rows are about to disappear.
                         ...(isMultiPo ? [(
-                          <tr key={`hdr-${linePo.id}`} className="bg-surface-sunken/70">
-                            <td colSpan={5} className="px-3 py-1.5">
+                          <Tr key={`hdr-${linePo.id}`} className="bg-surface-sunken/70">
+                            <Td colSpan={5}>
                               <span className="font-mono text-2xs font-semibold text-primary-700">{linePo.number}</span>
                               <span className="ml-2 text-2xs text-fg-muted">{linePo.title}</span>
-                            </td>
-                          </tr>
+                            </Td>
+                          </Tr>
                         )] : []),
                         ...linePo.line_items.map((line, idx) => {
                         const receivedQty = receivedQtyByPoLineId[line.id] ?? 0
                         const isReceived  = receivedQty > 0
                         const isSelected  = selectedLineIds.has(line.id)
                         return (
-                          <tr
+                          <Tr
                             key={line.id}
                             className={cn(
                               'border-b border-line-subtle last:border-0 cursor-pointer hover:bg-primary-50 transition-colors',
@@ -772,16 +772,16 @@ function PoPaEditPage() {
                             )}
                             onClick={() => toggleLine(line.id)}
                           >
-                            <td className="px-3 py-2.5 text-center">
-                              <input
-                                type="checkbox"
+                            <Td align="center">
+                              <Checkbox
+                               
                                 checked={isSelected}
                                 onChange={() => toggleLine(line.id)}
                                 onClick={(e) => e.stopPropagation()}
-                                className="h-3.5 w-3.5 rounded border-line-strong text-primary-600 focus:ring-primary-600"
+                                className="h-3.5 w-3.5"
                               />
-                            </td>
-                            <td className="px-3 py-2.5">
+                            </Td>
+                            <Td>
                               <div className="text-fg font-medium">{line.description}</div>
                               {line.material_id && <div className="text-fg-muted font-mono mt-0.5">{line.material_id}</div>}
                               <div className={cn(
@@ -791,20 +791,20 @@ function PoPaEditPage() {
                                 <span className={cn('h-1.5 w-1.5 rounded-full', isReceived ? 'bg-success-solid' : 'bg-line-strong')} />
                                 {isReceived ? `Received (${receivedQty} ${line.unit})` : 'Not yet received'}
                               </div>
-                            </td>
-                            <td className="px-3 py-2.5 text-right font-mono text-fg-muted">{formatQty(line.qty)} {line.unit}</td>
-                            <td className="px-3 py-2.5 text-right font-mono font-medium text-fg-secondary">
+                            </Td>
+                            <Td align="right" className="font-mono text-fg-muted">{formatQty(line.qty)} {line.unit}</Td>
+                            <Td align="right" className="font-mono font-medium text-fg-secondary">
                               {receivedQty > 0 ? `${receivedQty} ${line.unit}` : '—'}
-                            </td>
-                            <td className="px-3 py-2.5 text-right font-mono font-semibold text-fg">
+                            </Td>
+                            <Td align="right" className="font-mono font-semibold text-fg">
                               {formatAmount(line.line_total, linePo.currency)}
-                            </td>
-                          </tr>
+                            </Td>
+                          </Tr>
                         )
                         }),
                       ])}
-                    </tbody>
-                  </table>
+                    </TBody>
+                  </Table>
                   {selectedLineIds.size > 0 && (
                     <div className="flex items-center justify-between px-4 py-2 border-t border-line bg-primary-50">
                       <span className="text-xs text-primary-700 font-medium">{selectedLineIds.size} line{selectedLineIds.size !== 1 ? 's' : ''} selected</span>
@@ -850,7 +850,7 @@ function PoPaEditPage() {
                         Prepayment % <span className="text-danger-fg">*</span>
                       </label>
                       <div className="relative">
-                        <input
+                        <Input
                           type="number" min={1} max={100} step={1}
                           value={prepaymentPct}
                           onChange={(e) => {
@@ -872,7 +872,7 @@ function PoPaEditPage() {
                       <label className="text-xs font-medium text-fg-secondary">
                         Expected Settlement Date <span className="text-danger-fg">*</span>
                       </label>
-                      <input
+                      <Input
                         type="date"
                         max="9999-12-31"
                         value={expectedSettlement}
@@ -896,7 +896,7 @@ function PoPaEditPage() {
           {/* ── Step 3 — Charge Breakdown & Details ────────────────────────── */}
           <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-5">
             <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-bold">3</span>
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-semibold">3</span>
               Charge Breakdown & Details
             </h2>
 
@@ -905,7 +905,7 @@ function PoPaEditPage() {
               <label className="text-xs font-medium text-fg-secondary">
                 PA Title <span className="text-danger-fg">*</span>
               </label>
-              <input
+              <Input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
@@ -922,14 +922,14 @@ function PoPaEditPage() {
 
             {/* Charge breakdown */}
             <div className="flex flex-col gap-3">
-              <p className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">Charge Breakdown ({paCurrency})</p>
+              <p className="text-xs font-semibold text-fg-secondary">Charge Breakdown ({paCurrency})</p>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-medium text-fg-secondary">
                     Pre-tax Amount <span className="text-danger-fg">*</span>
                   </label>
-                  <input
+                  <Input
                     type="number" min={0} step={0.01}
                     value={subtotal}
                     onChange={(e) => setSubtotal(e.target.value)}
@@ -961,7 +961,7 @@ function PoPaEditPage() {
                       <span className="ml-1.5 text-2xs font-normal text-fg-muted">13% HST</span>
                     )}
                   </label>
-                  <input
+                  <Input
                     type="number" min={0} step={0.01}
                     value={taxAmount}
                     onChange={(e) => { setTaxAmount(e.target.value); setTaxManuallyEdited(true) }}
@@ -977,12 +977,12 @@ function PoPaEditPage() {
                   <label className="text-xs font-medium text-fg-secondary">
                     Shipping / Freight <span className="text-fg-muted font-normal ml-1">(optional)</span>
                   </label>
-                  <input
+                  <Input
                     type="number" min={0} step={0.01}
                     value={shippingAmount}
                     onChange={(e) => setShipping(e.target.value)}
                     placeholder="0.00"
-                    className="h-10 px-3 rounded-lg border border-line-strong text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="font-mono"
                   />
                 </div>
 
@@ -990,12 +990,12 @@ function PoPaEditPage() {
                   <label className="text-xs font-medium text-fg-secondary">
                     Other Charges <span className="text-fg-muted font-normal ml-1">(optional)</span>
                   </label>
-                  <input
+                  <Input
                     type="number" min={0} step={0.01}
                     value={otherCharges}
                     onChange={(e) => setOther(e.target.value)}
                     placeholder="0.00"
-                    className="h-10 px-3 rounded-lg border border-line-strong text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="font-mono"
                   />
                 </div>
               </div>
@@ -1003,19 +1003,19 @@ function PoPaEditPage() {
               {otherNum > 0 && (
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-medium text-fg-secondary">Other Charges Description</label>
-                  <input
+                  <Input inputSize="sm"
                     type="text"
                     value={otherChargesNote}
                     onChange={(e) => setOtherNote(e.target.value)}
                     placeholder="Describe the other charges…"
-                    className="h-9 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                   
                   />
                 </div>
               )}
 
               <div className="flex items-center justify-between rounded-xl border-2 border-primary-200 bg-primary-50 px-5 py-3">
                 <span className="text-sm font-semibold text-fg-secondary">Total Payment Amount</span>
-                <span className={cn('font-mono font-bold text-xl', paymentTotal > 0 ? 'text-primary-700' : 'text-fg-faint')}>
+                <span className={cn('font-mono font-semibold text-xl', paymentTotal > 0 ? 'text-primary-700' : 'text-fg-faint')}>
                   {paymentTotal > 0 ? formatAmount(paymentTotal, paCurrency) : '—'}
                 </span>
               </div>
@@ -1026,12 +1026,12 @@ function PoPaEditPage() {
               <label className="text-xs font-medium text-fg-secondary">
                 Notes <span className="text-fg-muted font-normal">(optional)</span>
               </label>
-              <textarea
+              <Textarea
                 rows={3}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Add any payment instructions or notes for the finance team…"
-                className="px-3 py-2 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
+                className="resize-none"
               />
             </div>
           </div>
@@ -1086,7 +1086,7 @@ function PoPaEditPage() {
         {/* ── Sidebar — Summary ───────────────────────────────────────────────── */}
         <div className="flex flex-col gap-4">
           <div className="rounded-xl border border-line bg-surface p-4 shadow-sm sticky top-6">
-            <p className="text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-3">Payment Summary</p>
+            <p className="text-xs font-semibold text-fg-secondary mb-3">Payment Summary</p>
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-1.5 text-xs">
                 <div className="flex justify-between">

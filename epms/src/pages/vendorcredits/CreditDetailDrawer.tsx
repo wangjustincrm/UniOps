@@ -7,6 +7,7 @@ import {
   useCreditAttachments, useUploadCreditAttachment, useVendorCreditApplications,
 } from '@/hooks/useVendorCredits'
 import { formatAmount, formatDate } from '@/lib/utils'
+import { FileInput, Button } from '@uniops/shell'
 import {
   CREDIT_EVIDENCE_ACCEPT, creditAttachmentService, type CreditAttachment, type VendorCredit,
 } from '@/services/vendorCredits'
@@ -87,9 +88,9 @@ export function CreditDetailDrawer({
             <h2 className="font-mono text-sm font-semibold text-fg">{credit.credit_number}</h2>
             <p className="mt-0.5 text-xs text-fg-muted">{SOURCE_LABEL[credit.source]}</p>
           </div>
-          <button onClick={onClose} aria-label="Close" className="text-fg-muted hover:text-fg-secondary">
+          <Button variant="subtle" size="icon-xs" onClick={onClose} aria-label="Close">
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -182,7 +183,7 @@ export function CreditDetailDrawer({
                 <label className="flex cursor-pointer items-center gap-1 text-xs font-medium text-primary-700 hover:text-primary-800">
                   <Paperclip className="h-3.5 w-3.5" />
                   {upload.isPending ? 'Attaching…' : 'Add file'}
-                  <input type="file" accept={CREDIT_EVIDENCE_ACCEPT} className="hidden" disabled={upload.isPending}
+                  <FileInput accept={CREDIT_EVIDENCE_ACCEPT} className="hidden" disabled={upload.isPending}
                          onChange={(e) => {
                            const f = e.target.files?.[0]
                            e.target.value = ''
@@ -204,15 +205,15 @@ export function CreditDetailDrawer({
                     <span className="truncate" title={a.file_name}>{a.file_name}</span>
                     <span className="flex shrink-0 gap-2">
                       {opensInBrowser(a.content_type) && (
-                        <button onClick={() => void openFile(a, false)} aria-label={`Open ${a.file_name}`}
-                                className="text-fg-muted hover:text-primary-700">
+                        <Button variant="subtle" size="icon-xs" onClick={() => void openFile(a, false)} aria-label={`Open ${a.file_name}`}
+                               >
                           <ExternalLink className="h-3.5 w-3.5" />
-                        </button>
+                        </Button>
                       )}
-                      <button onClick={() => void openFile(a, true)} aria-label={`Download ${a.file_name}`}
-                              className="text-fg-muted hover:text-primary-700">
+                      <Button variant="subtle" size="icon-xs" onClick={() => void openFile(a, true)} aria-label={`Download ${a.file_name}`}
+                             >
                         <Download className="h-3.5 w-3.5" />
-                      </button>
+                      </Button>
                     </span>
                   </li>
                 ))}
@@ -240,21 +241,21 @@ export function CreditDetailDrawer({
             <div className="flex justify-end gap-2">
               {credit.status === 'pending_review' ? (
                 <>
-                  <button onClick={onReject} disabled={reviewPending}
-                          className="rounded border border-danger-line px-3 py-1.5 text-sm font-medium text-danger-fg disabled:opacity-50">
+                  <Button variant="danger-outline" size="sm" onClick={onReject} disabled={reviewPending}
+                         >
                     Reject
-                  </button>
-                  <button onClick={onApprove}
+                  </Button>
+                  <Button variant="success" size="sm" onClick={onApprove}
                           disabled={reviewPending || needsEvidence || (credit.source === 'manual' && !atts.isSuccess)}
-                          className="rounded bg-success-solid px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+                         >
                     Approve
-                  </button>
+                  </Button>
                 </>
               ) : (
-                <button onClick={onVoid} disabled={reviewPending}
-                        className="rounded border border-line-strong px-3 py-1.5 text-sm font-medium text-fg-secondary disabled:opacity-50">
+                <Button variant="secondary" size="sm" onClick={onVoid} disabled={reviewPending}
+                       >
                   Void
-                </button>
+                </Button>
               )}
             </div>
           </div>

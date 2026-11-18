@@ -3,6 +3,7 @@ import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
 import type { RecurringType } from '@/services/agreement'
 
+import { Checkbox, Select, Button } from '@uniops/shell'
 export interface RecurringFieldsValue {
   recurringType: RecurringType | ''
   expectedInvoiceDay: string
@@ -113,7 +114,7 @@ export function RecurringFields(props: {
           <label className="text-sm font-medium text-fg-secondary">
             Cycle <span className="text-danger-fg">*</span>
           </label>
-          <select
+          <Select
             value={value.recurringType}
             disabled={disabled}
             onChange={(e) => handleCycleChange(e.target.value as RecurringType | '')}
@@ -125,7 +126,7 @@ export function RecurringFields(props: {
             <option value="quarterly">Quarterly</option>
             <option value="yearly">Yearly</option>
             <option value="special_monthly">Special Monthly</option>
-          </select>
+          </Select>
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -133,7 +134,7 @@ export function RecurringFields(props: {
             Expected invoice day <span className="text-danger-fg">*</span>
           </label>
           {value.recurringType === 'weekly' ? (
-            <select
+            <Select
               value={value.expectedInvoiceDay}
               disabled={disabled}
               onChange={(e) => set({ expectedInvoiceDay: e.target.value })}
@@ -143,7 +144,7 @@ export function RecurringFields(props: {
               {WEEKDAYS.map((d) => (
                 <option key={d.value} value={d.value}>{d.label}</option>
               ))}
-            </select>
+            </Select>
           ) : (
             <>
               <Input
@@ -197,12 +198,12 @@ export function RecurringFields(props: {
                       disabled ? 'text-fg-muted' : 'cursor-pointer text-fg-secondary'
                     }`}
                   >
-                    <input
-                      type="checkbox"
+                    <Checkbox
+                     
                       checked={value.activeMonths.includes(month)}
                       disabled={disabled}
                       onChange={() => toggleMonth(month)}
-                      className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600 disabled:opacity-50"
+                      className="disabled:opacity-50"
                     />
                     {m}
                   </label>
@@ -210,22 +211,22 @@ export function RecurringFields(props: {
               })}
             </div>
             <div className="flex items-center gap-3 text-xs">
-              <button
+              <Button variant="link"
                 type="button"
                 disabled={disabled}
                 onClick={() => set({ activeMonths: MONTHS.map((_, i) => i + 1) })}
-                className="text-primary-600 hover:underline disabled:text-fg-muted disabled:no-underline"
+               
               >
                 Select all
-              </button>
-              <button
+              </Button>
+              <Button variant="link"
                 type="button"
                 disabled={disabled}
                 onClick={() => set({ activeMonths: [] })}
-                className="text-primary-600 hover:underline disabled:text-fg-muted disabled:no-underline"
+               
               >
                 Clear
-              </button>
+              </Button>
               <span className="text-fg-muted">
                 {value.activeMonths.length === 0
                   ? 'No months selected yet — tick at least one'
@@ -243,7 +244,7 @@ export function RecurringFields(props: {
           htmlFor="anchorMonth"
           hint="Quarterly billing often runs Feb/May/Aug/Nov rather than the calendar quarters"
         >
-          <select
+          <Select
             id="anchorMonth"
             value={value.anchorMonth}
             disabled={disabled}
@@ -254,7 +255,7 @@ export function RecurringFields(props: {
             {MONTHS.map((m, i) => (
               <option key={m} value={i + 1}>{m}</option>
             ))}
-          </select>
+          </Select>
         </FormField>
       )}
 

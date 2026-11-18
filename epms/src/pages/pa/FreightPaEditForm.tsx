@@ -1,6 +1,6 @@
 import { useState, type ChangeEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useReplaceTab } from '@uniops/shell'
+import { useReplaceTab, Textarea } from '@uniops/shell'
 import { ArrowLeft, Info } from 'lucide-react'
 import { epmsRoutes } from '@/app/routes'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
@@ -61,11 +61,11 @@ export function FreightPaEditForm({ pa }: { pa: ApiPa }) {
   return (
     <div className="flex flex-col gap-6 p-6 max-w-3xl mx-auto">
       <div className="flex items-center gap-3">
-        <button onClick={() => replaceTab(`/pa/${pa.id}`)} className="p-2 rounded-lg hover:bg-surface-sunken text-fg-muted">
+        <Button aria-label="Back" variant="subtle" size="icon-sm" onClick={() => replaceTab(`/pa/${pa.id}`)}>
           <ArrowLeft className="h-5 w-5" />
-        </button>
+        </Button>
         <div>
-          <h1 className="text-2xl font-bold text-fg">Edit Freight PA</h1>
+          <h1 className="text-2xl font-semibold text-fg">Edit Freight PA</h1>
           <p className="text-sm text-fg-muted mt-0.5">
             {pa.pa_number} · {pa.status === 'returned' ? 'Returned — revise and resubmit' : 'Draft'} · {formatAmount(Number(pa.payment_amount), pa.currency)}
           </p>
@@ -87,8 +87,8 @@ export function FreightPaEditForm({ pa }: { pa: ApiPa }) {
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Notes</label>
-          <textarea rows={4} value={notes} onChange={(e) => setNotes(e.target.value)}
-            className="w-full resize-none rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+          <Textarea rows={4} value={notes} onChange={(e) => setNotes(e.target.value)}
+            className="w-full resize-none" />
         </div>
       </div>
 

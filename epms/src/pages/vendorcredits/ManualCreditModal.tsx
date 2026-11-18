@@ -5,6 +5,7 @@ import { AlertTriangle, Mail, Paperclip, Search, X } from 'lucide-react'
 import { useCreateVendorCredit } from '@/hooks/useVendorCredits'
 import { useVendors } from '@/hooks/useVendors'
 import { cn, formatAmount, todayISO } from '@/lib/utils'
+import { FileInput, Input, Select, Textarea, Button, MenuItem } from '@uniops/shell'
 import {
   CREDIT_EVIDENCE_ACCEPT, creditAttachmentService, type VendorCredit,
 } from '@/services/vendorCredits'
@@ -140,10 +141,10 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
               </p>
             </div>
           </div>
-          <button onClick={onClose} disabled={busy} aria-label="Close"
-                  className="text-fg-muted hover:text-fg-secondary disabled:opacity-50">
+          <Button variant="subtle" size="icon-xs" onClick={onClose} disabled={busy} aria-label="Close"
+                 >
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
 
         {partial ? (
@@ -164,10 +165,10 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
               </div>
             </div>
             <div className="flex justify-end">
-              <button className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white"
+              <Button size="md"
                       onClick={() => onCreated(partial.credit)}>
                 OK
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
@@ -180,7 +181,7 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                   </label>
                   <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-muted" />
-                    <input
+                    <Input
                       type="text" placeholder="Search vendor by name or code…"
                       value={vendor ? vendor.name : vendorQuery}
                       onFocus={() => { setVendorOpen(true); if (vendor) setVendorQuery('') }}
@@ -188,11 +189,11 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                       className={cn(input(missing.vendor), 'pl-8 pr-8')}
                     />
                     {vendor && (
-                      <button type="button" aria-label="Clear vendor"
+                      <Button variant="subtle" size="icon-xs" type="button" aria-label="Clear vendor"
                               onClick={() => { setVendor(null); setVendorQuery('') }}
-                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
+                              className="absolute right-1.5 top-1/2 -translate-y-1/2">
                         <X className="h-3.5 w-3.5" />
-                      </button>
+                      </Button>
                     )}
                   </div>
                   {submitted && missing.vendor && <p className="text-xs text-danger-fg">Select a vendor</p>}
@@ -201,12 +202,12 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                       <div className="fixed inset-0 z-10" onClick={() => setVendorOpen(false)} />
                       <div className="absolute left-0 top-full z-20 mt-1 max-h-44 w-full overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-lg">
                         {vendorOptions.map((v) => (
-                          <button key={v.id} type="button"
+                          <MenuItem key={v.id} type="button"
                                   onClick={() => { setVendor({ id: v.id, name: v.name, code: v.code }); setVendorOpen(false); setVendorQuery('') }}
-                                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-primary-50">
+                                 >
                             <span className="rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-xs text-fg-secondary">{v.code}</span>
                             {v.name}
-                          </button>
+                          </MenuItem>
                         ))}
                         {vendorOptions.length === 0 && <p className="px-3 py-2 text-xs text-fg-muted">No vendors found</p>}
                       </div>
@@ -218,7 +219,7 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                   <label className="text-xs font-medium text-fg-secondary">
                     Vendor Reference # <span className="ml-0.5 text-danger-fg">*</span>
                   </label>
-                  <input value={reference} onChange={(e) => setReference(e.target.value)}
+                  <Input value={reference} onChange={(e) => setReference(e.target.value)}
                          placeholder="e.g. 8480321003REV" className={cn(input(missing.reference), 'font-mono')} />
                   <p className="text-2xs text-fg-muted">
                     The number the vendor asked you to quote. It goes on the remittance, and blocks recording the same credit twice.
@@ -231,15 +232,15 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                   <label className="text-xs font-medium text-fg-secondary">
                     Credit Date <span className="ml-0.5 text-danger-fg">*</span>
                   </label>
-                  <input type="date" value={creditDate} onChange={(e) => setCreditDate(e.target.value)}
+                  <Input type="date" value={creditDate} onChange={(e) => setCreditDate(e.target.value)}
                          className={input(missing.date)} />
                   <p className="text-2xs text-fg-muted">Usually the date of the vendor's email.</p>
                 </div>
                 <div className="col-span-2 flex flex-col gap-1">
                   <label className="text-xs font-medium text-fg-secondary">Currency</label>
-                  <select value={currency} onChange={(e) => setCurrency(e.target.value)} className={input(false)}>
+                  <Select value={currency} onChange={(e) => setCurrency(e.target.value)} className={input(false)}>
                     {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
-                  </select>
+                  </Select>
                   <p className="text-2xs text-fg-muted">Only nets off payments in the same currency.</p>
                 </div>
               </div>
@@ -249,12 +250,12 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                   <label className="text-xs font-medium text-fg-secondary">
                     Amount (pre-tax) <span className="ml-0.5 text-danger-fg">*</span>
                   </label>
-                  <input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
+                  <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
                          placeholder="2216.15" className={cn(input(missing.amount), 'font-mono')} />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-medium text-fg-secondary">Tax</label>
-                  <input type="number" step="0.01" value={tax} onChange={(e) => setTax(e.target.value)}
+                  <Input type="number" step="0.01" value={tax} onChange={(e) => setTax(e.target.value)}
                          placeholder="0.00" className={cn(input(false), 'font-mono')} />
                 </div>
                 <div className="flex flex-col gap-1">
@@ -271,7 +272,7 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
 
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-fg-secondary">PO # (optional)</label>
-                <input value={poNumber} onChange={(e) => setPoNumber(e.target.value)}
+                <Input value={poNumber} onChange={(e) => setPoNumber(e.target.value)}
                        className={cn(input(false), 'font-mono')} />
               </div>
 
@@ -279,7 +280,7 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                 <label className="text-xs font-medium text-fg-secondary">
                   Basis <span className="ml-0.5 text-danger-fg">*</span>
                 </label>
-                <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)}
+                <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)}
                           placeholder="Why this credit exists and who confirmed it — e.g. Duplicate payment of invoice 8480321003. Hema Nanjiani (MSC collections) confirmed by email on 2026-09-25 that no credit memo will be issued; deduct on next payment."
                           className={cn(
                             'w-full rounded-lg border p-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
@@ -300,7 +301,7 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                   <span>
                     Attach the vendor's email — saved from Outlook (.msg / .eml), or printed to PDF, or a screenshot
                   </span>
-                  <input type="file" multiple accept={CREDIT_EVIDENCE_ACCEPT} className="hidden"
+                  <FileInput multiple accept={CREDIT_EVIDENCE_ACCEPT} className="hidden"
                          onChange={(e) => { addFiles(e.target.files); e.target.value = '' }} />
                 </label>
                 {files.length > 0 && (
@@ -308,11 +309,11 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                     {files.map((f) => (
                       <li key={`${f.name}-${f.size}`} className="flex items-center justify-between rounded bg-surface-subtle px-2 py-1 text-xs">
                         <span className="truncate">{f.name}</span>
-                        <button type="button" aria-label={`Remove ${f.name}`}
+                        <Button variant="danger-ghost" size="icon-xs" type="button" aria-label={`Remove ${f.name}`}
                                 onClick={() => setFiles((prev) => prev.filter((p) => p !== f))}
-                                className="text-fg-muted hover:text-danger-fg">
+                               >
                           <X className="h-3.5 w-3.5" />
-                        </button>
+                        </Button>
                       </li>
                     ))}
                   </ul>
@@ -335,14 +336,14 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
             <div className="flex items-center justify-between border-t border-line-subtle px-6 py-3">
               <p className="text-xs text-fg-muted">Goes to Pending Review — it is not netted off any payment until approved.</p>
               <div className="flex gap-2">
-                <button onClick={onClose} disabled={busy}
-                        className="rounded-lg border border-line-strong px-3 py-1.5 text-sm disabled:opacity-50">
+                <Button variant="secondary" size="sm" onClick={onClose} disabled={busy}
+                       >
                   Cancel
-                </button>
-                <button onClick={() => void submit()} disabled={busy || create.isPending}
-                        className="rounded-lg bg-primary-600 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+                </Button>
+                <Button size="sm" onClick={() => void submit()} disabled={busy || create.isPending}
+                       >
                   {busy ? 'Recording…' : 'Record Credit'}
-                </button>
+                </Button>
               </div>
             </div>
           </>

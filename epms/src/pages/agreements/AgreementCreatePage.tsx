@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useReplaceTab } from '@uniops/shell'
+import { useReplaceTab, FileInput, Select, Textarea, MenuItem } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Search, Upload, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -286,11 +286,11 @@ export default function AgreementCreatePage() {
       {/* Page header */}
       <div className="flex items-center gap-3">
         <Link to="/agreements">
-          <Button variant="ghost" size="icon-sm">
+          <Button aria-label="Back" variant="ghost" size="icon-sm">
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <h1 className="text-2xl font-bold text-fg">New Agreement</h1>
+        <h1 className="text-2xl font-semibold text-fg">New Agreement</h1>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
@@ -319,7 +319,7 @@ export default function AgreementCreatePage() {
                 </label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
-                  <input
+                  <Input
                     type="text"
                     placeholder="Search vendor by name or code…"
                     value={selectedVendor ? selectedVendor.name : vendorQuery}
@@ -331,27 +331,27 @@ export default function AgreementCreatePage() {
                     )}
                   />
                   {selectedVendor && (
-                    <button
+                    <Button variant="subtle" size="icon-xs" aria-label="Clear"
                       type="button"
                       onClick={() => { setSelectedVendor(null); setVendorQuery('') }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2"
                     >
                       <X className="h-3.5 w-3.5" />
-                    </button>
+                    </Button>
                   )}
                 </div>
                 {vendorOpen && !selectedVendor && vendorRect && (
                   <DropdownPortal anchorRect={vendorRect} onClose={() => setVendorOpen(false)}>
                     {vendors.map((v) => (
-                      <button
+                      <MenuItem
                         key={v.id}
                         type="button"
-                        className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-primary-50 text-left"
+                       
                         onClick={() => { setSelectedVendor(v); setVendorOpen(false); setVendorQuery(''); setErrors((p) => ({ ...p, vendor: '' })) }}
                       >
                         <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
                         {v.name}
-                      </button>
+                      </MenuItem>
                     ))}
                     {vendors.length === 0 && (
                       <p className="px-3 py-2 text-sm text-fg-muted">No vendors found</p>
@@ -365,15 +365,15 @@ export default function AgreementCreatePage() {
               {/* Agreement Type */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-fg-secondary">Type <span className="text-danger-fg">*</span></label>
-                <select
+                <Select
                   value={agreementType}
                   onChange={(e) => handleAgreementTypeChange(e.target.value as AgreementType)}
-                  className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                 
                 >
                   {TYPE_OPTIONS.map((t) => (
                     <option key={t.value} value={t.value}>{t.label}</option>
                   ))}
-                </select>
+                </Select>
                 <p className="text-xs text-fg-muted">
                   {TYPE_OPTIONS.find((t) => t.value === agreementType)?.hint}
                 </p>
@@ -416,7 +416,7 @@ export default function AgreementCreatePage() {
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-fg-secondary">Valid From <span className="text-danger-fg">*</span></label>
-                <input
+                <Input
                   type="date"
                   value={validFrom}
                   onChange={(e) => { setValidFrom(e.target.value); setErrors((p) => ({ ...p, validFrom: '' })) }}
@@ -429,7 +429,7 @@ export default function AgreementCreatePage() {
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-fg-secondary">Valid To <span className="text-danger-fg">*</span></label>
-                <input
+                <Input
                   type="date"
                   value={validTo}
                   onChange={(e) => { setValidTo(e.target.value); setErrors((p) => ({ ...p, validTo: '' })) }}
@@ -496,33 +496,33 @@ export default function AgreementCreatePage() {
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-fg-secondary">Currency <span className="text-danger-fg">*</span></label>
-                <select
+                <Select
                   value={currency}
                   onChange={(e) => {
                     const c = e.target.value as Currency
                     setCurrency(c)
                     if (c !== 'CAD') { setTaxRate(null); setTaxCode(null) }
                   }}
-                  className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                 
                 >
                   {enabledCurrencyOptions(config).map((c) => (
                     <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
                   ))}
-                </select>
+                </Select>
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-fg-secondary">Tax Code</label>
-                <select
+                <Select
                   value={taxCode ?? ''}
                   onChange={(e) => {
                     const c = taxCodes.find((tc) => tc.code === e.target.value)
                     setTaxCode(c?.code ?? null)
                     setTaxRate(c ? Number(c.rate) : null)
                   }}
-                  className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                 
                 >
                   <option value="">No tax</option>
                   {taxCodes.map((c) => (
@@ -530,23 +530,23 @@ export default function AgreementCreatePage() {
                       {+(Number(c.rate) * 100).toFixed(3)}% — {c.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
 
               {/* Department — drives the Budget Account cascade below it, same
                   as PrCreatePage: pick department first, cascade filters on it. */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-fg-secondary">Department</label>
-                <select
+                <Select
                   value={departmentId}
                   onChange={(e) => setDepartmentId(e.target.value)}
-                  className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                 
                 >
                   <option value="">No department</option>
                   {departments.map((d) => (
                     <option key={d.id} value={d.id}>{d.name}</option>
                   ))}
-                </select>
+                </Select>
               </div>
             </div>
 
@@ -571,7 +571,7 @@ export default function AgreementCreatePage() {
                 </label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
-                  <input
+                  <Input
                     type="text"
                     placeholder="Search people by name…"
                     value={selectedOwner ? selectedOwner.full_name : ownerQuery}
@@ -583,27 +583,27 @@ export default function AgreementCreatePage() {
                     )}
                   />
                   {selectedOwner && (
-                    <button
+                    <Button variant="subtle" size="icon-xs" aria-label="Clear"
                       type="button"
                       onClick={() => { setSelectedOwner(null); setOwnerQuery('') }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2"
                     >
                       <X className="h-3.5 w-3.5" />
-                    </button>
+                    </Button>
                   )}
                 </div>
                 {ownerOpen && !selectedOwner && ownerRect && (
                   <DropdownPortal anchorRect={ownerRect} onClose={() => setOwnerOpen(false)}>
                     {owners.map((u) => (
-                      <button
+                      <MenuItem
                         key={u.id}
                         type="button"
-                        className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-primary-50 text-left"
+                        className="justify-between"
                         onClick={() => { setSelectedOwner(u); setOwnerOpen(false); setOwnerQuery(''); setErrors((p) => ({ ...p, owner: '' })) }}
                       >
                         <span>{u.full_name}</span>
                         {u.department_name && <span className="text-xs text-fg-muted">{u.department_name}</span>}
-                      </button>
+                      </MenuItem>
                     ))}
                     {owners.length === 0 && (
                       <p className="px-3 py-2 text-sm text-fg-muted">No people found</p>
@@ -642,13 +642,13 @@ export default function AgreementCreatePage() {
           <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-4">
             <h2 className="text-base font-semibold text-fg">Notes</h2>
             <FormField label="Internal Notes" htmlFor="notes">
-              <textarea
+              <Textarea
                 id="notes"
                 rows={3}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Terms, special conditions, background…"
-                className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                className="w-full resize-none"
               />
             </FormField>
           </div>
@@ -670,21 +670,21 @@ export default function AgreementCreatePage() {
                 </p>
                 <p className="text-xs text-fg-muted mt-1">{ATTACHMENT_RULE.hint}</p>
               </div>
-              <input id="agreement-file-upload" type="file" multiple accept={ATTACHMENT_RULE.accept} className="sr-only" onChange={handleFileInput} />
+              <FileInput id="agreement-file-upload" multiple accept={ATTACHMENT_RULE.accept} className="sr-only" onChange={handleFileInput} />
             </label>
             {attachmentError && <p role="alert" className="text-xs text-danger-fg">{attachmentError}</p>}
             {attachments.map((f, i) => (
               <div key={i} className="flex items-center gap-2 rounded-md border border-line bg-surface-subtle px-3 py-2 text-sm">
                 <span className="flex-1 truncate text-fg-secondary">📎 {f.name}</span>
                 <span className="text-fg-muted text-xs">{formatBytes(f.size)}</span>
-                <button
+                <Button variant="danger-ghost" size="icon-xs"
                   type="button"
                   onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-                  className="text-fg-muted hover:text-danger-fg"
+                 
                   aria-label="Remove file"
                 >
                   <X className="h-3.5 w-3.5" />
-                </button>
+                </Button>
               </div>
             ))}
           </div>

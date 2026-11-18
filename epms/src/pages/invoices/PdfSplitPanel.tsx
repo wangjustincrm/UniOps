@@ -134,7 +134,7 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
             {fit ? <><Maximize2 className="h-3.5 w-3.5" /> Actual size</>
                  : <><Minimize2 className="h-3.5 w-3.5" /> Fit to window</>}
           </Button>
-          <Button variant="inverse" size="icon-sm" type="button" onClick={onClose}
+          <Button aria-label="Close" variant="inverse" size="icon-sm" type="button" onClick={onClose}
                  >
             <X className="h-4 w-4" />
           </Button>

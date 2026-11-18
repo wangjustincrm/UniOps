@@ -7,6 +7,7 @@ import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { cn } from '@/lib/utils'
 import type { ApiVendor } from '@/services/vendors'
 
+import { Input, MenuItem, Button } from '@uniops/shell'
 // The merchant on a receipt, as the two things it actually is: a row in the
 // vendor master (or not), and the text that gets stored either way.
 export interface ReceiptVendorValue {
@@ -243,7 +244,7 @@ export function ReceiptVendorPicker({
     <div ref={anchorRef} className="flex flex-col gap-1">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
-        <input
+        <Input
           id={inputId}
           type="text"
           disabled={disabled}
@@ -262,29 +263,29 @@ export function ReceiptVendorPicker({
           )}
         />
         {value.vendorName !== '' && !disabled && (
-          <button
+          <Button variant="subtle" size="icon-xs"
             type="button"
             onClick={clear}
             aria-label="Clear vendor"
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
+            className="absolute right-3 top-1/2 -translate-y-1/2"
           >
             <X className="h-3.5 w-3.5" />
-          </button>
+          </Button>
         )}
       </div>
 
       {open && !disabled && anchorRect && (
         <DropdownPortal anchorRect={anchorRect} onClose={() => setOpen(false)}>
           {options.map((v) => (
-            <button
+            <MenuItem
               key={v.id}
               type="button"
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-primary-50 text-left"
+             
               onClick={() => pick(v)}
             >
               <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
               {v.name}
-            </button>
+            </MenuItem>
           ))}
           {options.length === 0 && (
             <p className="px-3 py-2 text-sm text-fg-muted">

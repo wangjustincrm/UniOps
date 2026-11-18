@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, XCircle, Trash2, Paperclip } from 'lucide-react'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, statusLabel } from '@/components/ui/badge'
 import { formatAmount, formatDate, cn } from '@/lib/utils'
@@ -56,19 +56,19 @@ function ReceiptAttachmentsCell({ agreementId, receiptId }: { agreementId: strin
   return (
     <div className="flex flex-col gap-0.5">
       {attachments.map((att) => (
-        <button
+        <Button variant="link"
           key={att.id}
           type="button"
           onClick={() => { setDownloadError(null); agreementReceiptAttachmentService.download(agreementId, receiptId, att.id, att.filename)
             // download() rejects on a failed fetch (it used to swallow it silently);
             // an unreported failure here reads as "the Download link does nothing".
             .catch((err: unknown) => setDownloadError(errorMessage(err, 'Download failed'))) }}
-          className="inline-flex max-w-[9rem] items-center gap-1 truncate text-xs text-primary-600 hover:underline"
+          className="max-w-[9rem] truncate text-xs"
           title={att.filename}
         >
           <Paperclip className="h-3 w-3 shrink-0" />
           <span className="truncate">{att.filename}</span>
-        </button>
+        </Button>
       ))}
       {downloadError && <span role="alert" className="max-w-[9rem] text-xs text-danger-fg">{downloadError}</span>}
     </div>
@@ -173,9 +173,9 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
       )}
       <div className="rounded-lg border border-line overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line bg-surface-subtle">
+          <Table density="compact">
+            <THead>
+              <Tr className="bg-surface-subtle">
                 <SortTh label="Date" sortKey="receipt_date" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
                 <SortTh label="Reference #" sortKey="receipt_ref" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
                 {/* Renders total_amount (tax-inclusive) — ReceiptEntryForm labels the
@@ -186,11 +186,11 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
                   className="px-4 py-2.5 text-right text-xs font-semibold text-fg-muted" />
                 <SortTh label="Received by" sortKey="received_by" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
                 <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Attachments</th>
-                {!readOnly && <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Actions</th>}
-              </tr>
-            </thead>
-            <tbody>
+                <Th>Attachments</Th>
+                {!readOnly && <Th>Actions</Th>}
+              </Tr>
+            </THead>
+            <TBody>
               {sortedReceipts.map((receipt) => {
                 const receivedByName = resolveUserName(users, receipt.received_by)
                 const aged = isAged(receipt)
@@ -200,8 +200,8 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
                 const rowApprovePending = apReview.isPending && pendingReviewKey === `${receipt.id}:approve`
                 const rowRejectPending = apReview.isPending && pendingReviewKey === `${receipt.id}:reject`
                 return (
-                  <tr key={receipt.id} className="border-b border-line-subtle last:border-0 bg-surface">
-                    <td className="px-4 py-2.5 text-xs text-fg-muted">
+                  <Tr key={receipt.id} className="bg-surface">
+                    <Td className="text-xs text-fg-muted">
                       <div className="flex items-center gap-1.5">
                         {formatDate(receipt.receipt_date)}
                         {aged && (
@@ -210,19 +210,19 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
                           </span>
                         )}
                       </div>
-                    </td>
-                    <td className="px-4 py-2.5 text-fg-secondary">{receipt.receipt_ref ?? '—'}</td>
+                    </Td>
+                    <Td className="text-fg-secondary">{receipt.receipt_ref ?? '—'}</Td>
                     {/* An em-dash, not CA$0.00: a delivery note / service
                         sign-off carries no amount at all (ag09), and rendering
                         it as zero dollars states a figure the document never
                         had. */}
-                    <td className="px-4 py-2.5 text-right amount font-medium text-fg">
+                    <Td align="right" className="amount font-medium text-fg">
                       {receiptTotal(receipt) === null
                         ? <span className="text-fg-muted">—</span>
                         : formatAmount(receiptTotal(receipt)!, currency)}
-                    </td>
-                    <td className="px-4 py-2.5 text-fg">{receivedByName ?? '—'}</td>
-                    <td className="px-4 py-2.5">
+                    </Td>
+                    <Td className="text-fg">{receivedByName ?? '—'}</Td>
+                    <Td>
                       <StatusBadge status={receipt.status as DocumentStatus} />
                       {/* The entire point of the AP-review step is to weigh this reason —
                           without it AP is just clicking Approve/Reject blind. Truncated
@@ -236,12 +236,12 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
                           {receipt.missing_receipt_reason}
                         </p>
                       )}
-                    </td>
-                    <td className="px-4 py-2.5">
+                    </Td>
+                    <Td>
                       <ReceiptAttachmentsCell agreementId={agreementId} receiptId={receipt.id} />
-                    </td>
+                    </Td>
                     {!readOnly && (
-                      <td className="px-4 py-2.5">
+                      <Td>
                         <div className="flex items-center gap-2">
                           {canReview && (
                             <>
@@ -279,13 +279,13 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
                           )}
                           {!canReview && !canVoid && <span className="text-fg-faint">—</span>}
                         </div>
-                      </td>
+                      </Td>
                     )}
-                  </tr>
+                  </Tr>
                 )
               })}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
       </div>
       {confirmDlg.dialog}

@@ -23,6 +23,18 @@ Buttons are NOT touched here — their look varies too much; do them by hand.
 """
 import re
 import sys
+
+
+def comment_spans(src):
+    """(start, end) of // line comments, /* */ and {/* */} blocks — tags in them are prose."""
+    spans = []
+    for m in re.finditer(r'\{/\*.*?\*/\}|/\*.*?\*/|(?<![:"\'`\\])//[^\n]*', src, re.S):
+        spans.append((m.start(), m.end()))
+    return spans
+
+
+def in_spans(i, spans):
+    return any(a <= i < b for a, b in spans)
 from pathlib import Path
 
 TABLE_TAGS = {'table': 'Table', 'thead': 'THead', 'tbody': 'TBody', 'tfoot': 'TFoot', 'tr': 'Tr', 'th': 'Th', 'td': 'Td'}
@@ -103,12 +115,17 @@ def convert(src):
     out, i = [], 0
     tag_re = re.compile(r'<(/?)(table|thead|tbody|tfoot|tr|th|td|input|select|textarea)(?=[\s>/])')
     skipped = 0
+    spans = comment_spans(src)
     open_stack = {'select': [], 'textarea': []}  # was each open tag converted?
     while True:
         m = tag_re.search(src, i)
         if not m:
             out.append(src[i:])
             break
+        if in_spans(m.start(), spans):
+            out.append(src[i:m.end()])
+            i = m.end()
+            continue
         out.append(src[i:m.start()])
         closing, name = m.group(1), m.group(2)
         end = find_tag_end(src, m.start())

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { useReplaceTab } from '@uniops/shell'
+import { useReplaceTab, Input, MenuItem } from '@uniops/shell'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { epmsRoutes } from '@/app/routes'
 import { Button } from '@/components/ui/button'
@@ -80,7 +80,7 @@ export default function ReceiptCreatePage() {
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-fg">New Agreement Receipt</h1>
+          <h1 className="text-2xl font-semibold text-fg">New Agreement Receipt</h1>
           <p className="mt-1 text-sm text-fg-muted">
             Record a counter slip, delivery note, or service sign-off against a house-account agreement
           </p>
@@ -102,7 +102,7 @@ export default function ReceiptCreatePage() {
             </div>
           ) : (
             <div className="relative">
-              <input
+              <Input
                 type="text"
                 placeholder="Search by agreement number, vendor, or title..."
                 value={
@@ -116,16 +116,16 @@ export default function ReceiptCreatePage() {
                   setSelectedAgreementId('')
                   setShowAgreementDropdown(true)
                 }}
-                className="w-full h-10 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                className="w-full"
               />
               {selectedAgreement && (
-                <button
+                <Button variant="subtle" size="icon-xs"
                   type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2"
                   onClick={() => { setSelectedAgreementId(''); setAgreementSearch(''); setShowAgreementDropdown(true) }}
                 >
                   ×
-                </button>
+                </Button>
               )}
               {showAgreementDropdown && !selectedAgreement && (
                 <div className="absolute z-10 mt-1 w-full rounded-lg border border-line bg-surface shadow-lg max-h-64 overflow-y-auto">
@@ -135,10 +135,10 @@ export default function ReceiptCreatePage() {
                     </div>
                   ) : (
                     filteredAgreements.map((a) => (
-                      <button
+                      <MenuItem
                         key={a.id}
                         type="button"
-                        className="w-full text-left px-4 py-3 hover:bg-primary-50 border-b border-line-subtle last:border-0"
+                        className="px-4 py-3 border-b border-line-subtle last:border-0"
                         onClick={() => {
                           setSelectedAgreementId(a.id)
                           setShowAgreementDropdown(false)
@@ -153,7 +153,7 @@ export default function ReceiptCreatePage() {
                         <div className="text-xs text-fg-muted mt-0.5">
                           Valid {formatDate(a.valid_from)} – {formatDate(a.valid_to)}
                         </div>
-                      </button>
+                      </MenuItem>
                     ))
                   )}
                 </div>

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, Receipt, Plus, CheckCircle2, XCircle, Trash2, Paperclip, AlertTriangle } from 'lucide-react'
-import { SortTh, sortParams, useSort, type Sort } from '@uniops/shell'
+import { SortTh, sortParams, useSort, type Sort, Input, Select, TBody, THead, Table, Td, Tr } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, statusLabel } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
@@ -141,7 +141,7 @@ export default function ReceiptListPage() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-fg">Agreement Receipts</h1>
+          <h1 className="text-2xl font-semibold text-fg">Agreement Receipts</h1>
           <p className="mt-1 text-sm text-fg-muted">
             Counter slips, delivery notes, and service sign-offs recorded against house-account agreements
           </p>
@@ -167,23 +167,23 @@ export default function ReceiptListPage() {
       <div className="rounded-xl border border-line bg-surface p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
         <div className="relative flex-1 min-w-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-fg-muted" />
-          <input
+          <Input inputSize="sm"
             type="text"
             placeholder="Search by reference # or agreement #..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-            className="w-full h-9 pl-9 pr-3 rounded-lg border border-line-strong bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="w-full pl-9 pr-3"
           />
         </div>
-        <select
+        <Select selectSize="sm"
           value={typeFilter}
           onChange={(e) => { setTypeFilter(e.target.value as ReceiptType | 'all'); setPage(1) }}
-          className="h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
+         
         >
           {TYPE_FILTERS.map((f) => (
             <option key={f.value} value={f.value}>{f.label}</option>
           ))}
-        </select>
+        </Select>
         <div className="flex flex-wrap gap-1.5">
           {STATUS_FILTERS.map((f) => (
             <button
@@ -213,9 +213,9 @@ export default function ReceiptListPage() {
             {!isLoading && <p className="text-xs text-fg-muted mt-1">Try adjusting your filters</p>}
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line bg-surface-subtle">
+          <Table>
+            <THead>
+              <Tr className="bg-surface-subtle">
                 <SortHead label="Date" sortKey="receipt_date" sort={sort} onSort={onSort} />
                 <SortHead label="Type" sortKey="receipt_type" sort={sort} onSort={onSort} />
                 <SortHead label="Reference #" sortKey="receipt_ref" sort={sort} onSort={onSort} />
@@ -240,9 +240,9 @@ export default function ReceiptListPage() {
                 <SortHead label="Evidence" sortKey="attachment_count" sort={sort} onSort={onSort} />
                 <SortHead label="Linked Invoice" sortKey="invoice_ref" sort={sort} onSort={onSort} />
                 <Th>Actions</Th>
-              </tr>
-            </thead>
-            <tbody>
+              </Tr>
+            </THead>
+            <TBody>
               {receipts.map((receipt) => {
                 const canVoid = canRecordReceipt && VOIDABLE_STATUSES.has(receipt.status)
                 const canReview = canApReview && receipt.status === 'pending_ap_review'
@@ -268,8 +268,8 @@ export default function ReceiptListPage() {
                   />
                 )
               })}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         )}
       </div>
 
@@ -305,7 +305,7 @@ function SortHead({ label, sortKey, sort, onSort, align = 'left' }: {
     <SortTh
       label={label} sortKey={sortKey} sort={sort} onSort={onSort} align={align}
       className={cn(
-        'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap',
+        'px-4 py-3 text-xs font-semibold text-fg-muted whitespace-nowrap',
         align === 'right' ? 'text-right' : 'text-left'
       )}
     />
@@ -316,7 +316,7 @@ function Th({ children, align = 'left' }: { children: React.ReactNode; align?: '
   return (
     <th
       className={cn(
-        'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap',
+        'px-4 py-3 text-xs font-semibold text-fg-muted whitespace-nowrap',
         align === 'right' ? 'text-right' : 'text-left'
       )}
     >
@@ -352,13 +352,13 @@ function ReceiptRow({
   const hasPhoto = receipt.attachment_count > 0
   return (
     <>
-    <tr className={cn(
+    <Tr className={cn(
       'bg-surface hover:bg-primary-50/60 transition-colors',
       showReason ? 'border-b-0' : 'border-b border-line-subtle',
     )}>
-      <td className="px-4 py-3 text-fg-secondary">{formatDate(receipt.receipt_date)}</td>
-      <td className="px-4 py-3 text-fg-secondary">{RECEIPT_TYPE_LABELS[receipt.receipt_type]}</td>
-      <td className="px-4 py-3">
+      <Td className="text-fg-secondary">{formatDate(receipt.receipt_date)}</Td>
+      <Td className="text-fg-secondary">{RECEIPT_TYPE_LABELS[receipt.receipt_type]}</Td>
+      <Td>
         {/* The way into the receipt itself (Task 12) — until this existed the
             only link on a row was the parent AGREEMENT's, so a recorder who
             needed to fix a receipt, add its photo, or just read its notes had
@@ -375,8 +375,8 @@ function ReceiptRow({
         >
           {receipt.receipt_ref ?? 'No reference #'}
         </Link>
-      </td>
-      <td className="px-4 py-3">
+      </Td>
+      <Td>
         {receipt.vendor_name ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-fg-secondary">
             <span className="max-w-[10rem] truncate" title={receipt.vendor_name}>{receipt.vendor_name}</span>
@@ -416,15 +416,15 @@ function ReceiptRow({
           // header is illegible, and a blank vendor is never a mismatch.
           <span className="text-fg-faint">—</span>
         )}
-      </td>
-      <td className="px-4 py-3">
+      </Td>
+      <Td>
         {/* Never a bare agreement_id UUID — the parent agreement's human number,
             linking through to its detail page. */}
         <Link to={`/agreements/${receipt.agreement_id}`} className="text-primary-600 hover:underline font-mono text-xs">
           {receipt.agreement_number}
         </Link>
-      </td>
-      <td className="px-4 py-3 font-mono text-xs text-fg-secondary text-right">
+      </Td>
+      <Td align="right" className="font-mono text-xs text-fg-secondary ">
         {/* This list spans multiple agreements, which can each be a
             different currency (fix round 1, Critical) — must use THIS row's
             own currency, never a hardcoded one. */}
@@ -434,12 +434,12 @@ function ReceiptRow({
         {receiptTotal(receipt) === null
           ? <span className="text-fg-muted">—</span>
           : formatAmount(receiptTotal(receipt)!, receipt.currency)}
-      </td>
-      <td className="px-4 py-3 text-fg-secondary">{receivedByName ?? '—'}</td>
-      <td className="px-4 py-3">
+      </Td>
+      <Td className="text-fg-secondary">{receivedByName ?? '—'}</Td>
+      <Td>
         <StatusBadge status={receipt.status as DocumentStatus} />
-      </td>
-      <td className="px-4 py-3">
+      </Td>
+      <Td>
         {hasPhoto ? (
           <span className="inline-flex items-center gap-1 text-xs text-fg-secondary" title={`${receipt.attachment_count} file(s) attached`}>
             <Paperclip className="h-3.5 w-3.5" />
@@ -454,8 +454,8 @@ function ReceiptRow({
             No photo
           </span>
         )}
-      </td>
-      <td className="px-4 py-3">
+      </Td>
+      <Td>
         {receipt.invoice_id ? (
           <Link to={`/invoices/${receipt.invoice_id}`} className="text-primary-600 hover:underline font-mono text-xs">
             {/* Never a bare UUID (fix round 1, Important 2) — fall back to a
@@ -467,8 +467,8 @@ function ReceiptRow({
         ) : (
           <span className="text-fg-faint">—</span>
         )}
-      </td>
-      <td className="px-4 py-3">
+      </Td>
+      <Td>
         <div className="flex items-center gap-2">
           {/* Void and Approve/Reject are two independent mutations sharing no
               lock — Task 10 fix round 2 (Minor): without this, mid-flight
@@ -508,14 +508,14 @@ function ReceiptRow({
             Open
           </Link>
         </div>
-      </td>
-    </tr>
+      </Td>
+    </Tr>
     {showReason && (
-      <tr className="border-b border-line-subtle bg-warning-50/40">
+      <Tr className="bg-warning-50/40">
         {/* colSpan must match the header's column count: Date, Type,
             Reference #, Vendor on Receipt, Agreement, Amount, Received By,
             Status, Evidence, Linked Invoice, Actions = 11. */}
-        <td colSpan={11} className="px-4 pb-3 pt-0 text-xs text-warning-fg">
+        <Td colSpan={11} className="text-xs text-warning-fg">
           <span className="font-medium">Why this needs AP review: </span>
           {/* The reason is what create()/update() route a receipt to
               pending_ap_review on — a receipt can only get here by carrying
@@ -525,8 +525,8 @@ function ReceiptRow({
           {receipt.missing_receipt_reason?.trim()
             ? receipt.missing_receipt_reason
             : <span className="italic">no reason was recorded on this receipt.</span>}
-        </td>
-      </tr>
+        </Td>
+      </Tr>
     )}
     </>
   )
