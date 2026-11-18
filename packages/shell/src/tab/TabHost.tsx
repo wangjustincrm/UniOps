@@ -25,9 +25,9 @@ export function TabHost({ routes, pageClassName }: TabHostProps) {
   // mismatch is diagnosable on sight rather than by bisecting the store.
   if (mounted.length === 0 || !mounted.some((t) => t.key === activeKey)) {
     return (
-      <div className="p-6 text-sm text-danger-600">
+      <div className="p-6 text-sm text-danger-fg">
         <p className="font-medium">No tab is mounted for the active key.</p>
-        <p className="mt-2 font-mono text-xs text-neutral-600">
+        <p className="mt-2 font-mono text-xs text-fg-secondary">
           activeKey={JSON.stringify(activeKey)} · alive={JSON.stringify(alive)} ·
           tabKeys={JSON.stringify(tabs.map((t) => t.key))}
         </p>
@@ -53,7 +53,7 @@ export function TabHost({ routes, pageClassName }: TabHostProps) {
             className="absolute inset-0 overflow-y-auto"
           >
             {t.kind === 'iframe' ? (
-              <iframe title={t.title} src={t.src} className="block h-full w-full border-0 bg-white" />
+              <iframe title={t.title} src={t.src} className="block h-full w-full border-0 bg-surface" />
             ) : (
               // Rendered via the single shared BrowserRouter using <Routes location>,
               // which pins this tab to its own path independent of the browser URL

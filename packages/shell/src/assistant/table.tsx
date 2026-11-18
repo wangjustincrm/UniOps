@@ -110,7 +110,7 @@ export function AnswerTable({
         type="button"
         onClick={() => setOpen(true)}
         aria-expanded={false}
-        className="inline-flex items-center gap-1 rounded border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-700 hover:border-primary-600 hover:text-primary-600"
+        className="inline-flex items-center gap-1 rounded border border-line bg-surface px-2 py-1 text-xs text-fg-secondary hover:border-primary-600 hover:text-primary-600"
       >
         <ChevronRight className="h-3 w-3" aria-hidden />
         {rowsLabel} — show table
@@ -120,7 +120,7 @@ export function AnswerTable({
 
   return (
     <div className="space-y-1">
-      <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-500">
+      <div className="flex flex-wrap items-center gap-2 text-2xs text-fg-muted">
         <button
           type="button"
           onClick={() => setOpen(false)}
@@ -137,12 +137,12 @@ export function AnswerTable({
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter rows"
             aria-label="Filter rows"
-            className="h-6 min-w-0 flex-1 rounded border border-neutral-200 bg-white px-1.5 text-[11px] text-neutral-800 focus:border-primary-600 focus:outline-none"
+            className="h-6 min-w-0 flex-1 rounded border border-line bg-surface px-1.5 text-2xs text-fg focus:border-primary-600 focus:outline-none"
           />
         )}
       </div>
       {(sort || filter.trim()) && !holdsAll && (
-        <p role="note" className="text-[11px] text-warning-700">
+        <p role="note" className="text-2xs text-warning-fg">
           {`Sorting and the filter apply only to the ${rowsLabel} shown here`}
           {resultRows != null && resultRows > body.length
             ? `, not the whole result (${resultRows} rows) — Export to Excel has every row.`
@@ -159,7 +159,7 @@ export function AnswerTable({
                 sort={sort}
                 onSort={onSort}
                 title={`Sort by ${plain(c)}`}
-                className="border-b border-neutral-300 px-2 py-1 text-left font-semibold"
+                className="border-b border-line-strong px-2 py-1 text-left font-semibold"
               >
                 {renderInline(c, `${keyBase}-h${ci}`)}
               </SortTh>
@@ -168,17 +168,17 @@ export function AnswerTable({
           </thead>
           <tbody>
             {shown.map((r, ri) => (
-              <tr key={ri} className="border-b border-neutral-200 last:border-0">
+              <tr key={ri} className="border-b border-line last:border-0">
                 {head.map((_, ci) => (
                   <td key={ci} className="px-2 py-1 align-top">{renderInline(r[ci] ?? '', `${keyBase}-${ri}-${ci}`)}</td>
                 ))}
               </tr>
             ))}
             {shown.length === 0 && (
-              <tr><td colSpan={head.length} className="px-2 py-1 text-neutral-500">No rows match the filter.</td></tr>
+              <tr><td colSpan={head.length} className="px-2 py-1 text-fg-muted">No rows match the filter.</td></tr>
             )}
             {total && (
-              <tr className="border-t border-neutral-300 font-semibold">
+              <tr className="border-t border-line-strong font-semibold">
                 {head.map((_, ci) => (
                   <td key={ci} className="px-2 py-1 align-top">{renderInline(total[ci] ?? '', `${keyBase}-t-${ci}`)}</td>
                 ))}

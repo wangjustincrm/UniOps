@@ -8,7 +8,7 @@ class TabErrorBoundary extends Component<{ children: ReactNode }, { error: Error
   render() {
     if (this.state.error) {
       return (
-        <div className="p-6 text-sm text-danger-600">
+        <div className="p-6 text-sm text-danger-fg">
           This tab failed to render: {this.state.error.message}
         </div>
       )
@@ -25,7 +25,7 @@ class TabErrorBoundary extends Component<{ children: ReactNode }, { error: Error
 // from "still loading" or "nothing to show here".
 function NoRouteMatched({ path }: { path: string }) {
   return (
-    <div className="p-6 text-sm text-danger-600">
+    <div className="p-6 text-sm text-danger-fg">
       No route matched: {path}
     </div>
   )
@@ -34,7 +34,7 @@ function NoRouteMatched({ path }: { path: string }) {
 export function RouteRenderer({ routes, path }: { routes: RouteDef[]; path: string }) {
   return (
     <TabErrorBoundary>
-      <Suspense fallback={<div className="p-6 text-sm text-neutral-500">Loading…</div>}>
+      <Suspense fallback={<div className="p-6 text-sm text-fg-muted">Loading…</div>}>
         <Routes location={path}>
           {routes.map((r) => (
             <Route key={r.path} path={r.path} element={r.element} />

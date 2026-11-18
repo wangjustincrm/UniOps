@@ -40,7 +40,7 @@ export function renderInline(text: string, keyBase = 'i'): ReactNode[] {
     if (m.index > last) out.push(text.slice(last, m.index))
     const tok = m[0]
     const key = `${keyBase}-${n++}`
-    if (m[1]) out.push(<code key={key} className="rounded bg-neutral-200/70 px-1 font-mono text-[0.85em]">{tok.slice(1, -1)}</code>)
+    if (m[1]) out.push(<code key={key} className="rounded bg-surface-strong/70 px-1 font-mono text-[0.85em]">{tok.slice(1, -1)}</code>)
     else if (m[2]) out.push(<strong key={key} className="font-semibold">{tok.slice(2, -2)}</strong>)
     else out.push(<em key={key}>{tok.slice(1, -1)}</em>)
     last = m.index + tok.length
@@ -115,7 +115,7 @@ export function Markdown({ text, resultRows }: {
         const k = `b${bi}`
         switch (b.kind) {
           case 'h':
-            return <p key={k} className="font-semibold text-neutral-900">{renderInline(b.text, k)}</p>
+            return <p key={k} className="font-semibold text-fg">{renderInline(b.text, k)}</p>
           case 'ul':
             return (
               <ul key={k} className="list-disc space-y-0.5 pl-5">

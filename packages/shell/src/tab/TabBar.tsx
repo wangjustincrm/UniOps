@@ -26,7 +26,7 @@ export function TabBar() {
   }
 
   return (
-    <div className="flex h-10 shrink-0 items-stretch gap-1 overflow-x-auto border-b border-neutral-200 bg-white px-2">
+    <div className="flex h-10 shrink-0 items-stretch gap-1 overflow-x-auto border-b border-line bg-surface px-2">
       {tabs.map((t) => {
         const Icon = resolveIcon(t.icon)
         const active = t.key === activeKey
@@ -38,19 +38,19 @@ export function TabBar() {
               'group flex items-center gap-1.5 self-center rounded-md px-3 py-1.5 text-sm transition-colors',
               active
                 ? 'bg-primary-50 text-primary-700 font-medium'
-                : 'text-neutral-600 hover:bg-neutral-50',
+                : 'text-fg-secondary hover:bg-surface-subtle',
             )}
           >
             {Icon && <Icon className="h-3.5 w-3.5 shrink-0" />}
             <span className="max-w-[160px] truncate">{t.title}</span>
-            {t.dirty && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning-500" />}
+            {t.dirty && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning-solid" />}
             {t.closable && (
               <span
                 role="button"
                 tabIndex={-1}
                 aria-label={`Close ${t.title}`}
                 onClick={(e) => close(e, t.key)}
-                className="ml-1 rounded p-0.5 text-neutral-400 opacity-60 hover:bg-neutral-200 hover:text-neutral-700 group-hover:opacity-100"
+                className="ml-1 rounded p-0.5 text-fg-muted opacity-60 hover:bg-surface-strong hover:text-fg-secondary group-hover:opacity-100"
               >
                 <X className="h-3 w-3" />
               </span>

@@ -29,18 +29,18 @@ export function Pagination({ page, pageSize, total, onPageChange, onPageSizeChan
   }
 
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-neutral-200 px-4 py-3">
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-line px-4 py-3">
       {/* Left: count + per-page selector */}
-      <div className="flex items-center gap-3 text-sm text-neutral-500">
+      <div className="flex items-center gap-3 text-sm text-fg-muted">
         <span>
           {total === 0 ? 'No results' : `${from}–${to} of ${total}`}
         </span>
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-neutral-400">Per page:</span>
+          <span className="text-xs text-fg-muted">Per page:</span>
           <select
             value={pageSize}
             onChange={(e) => { onPageSizeChange(Number(e.target.value)); onPageChange(1) }}
-            className="h-7 rounded border border-neutral-200 bg-white px-1.5 text-xs text-neutral-700 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="h-7 rounded border border-line bg-surface px-1.5 text-xs text-fg-secondary focus:outline-none focus:ring-1 focus:ring-primary-500"
           >
             {PAGE_SIZE_OPTIONS.map((s) => (
               <option key={s} value={s}>{s}</option>
@@ -60,7 +60,7 @@ export function Pagination({ page, pageSize, total, onPageChange, onPageSizeChan
 
         {pages.map((p, i) =>
           p === '...'
-            ? <span key={`ellipsis-${i}`} className="px-1 text-xs text-neutral-400">…</span>
+            ? <span key={`ellipsis-${i}`} className="px-1 text-xs text-fg-muted">…</span>
             : (
               <button
                 key={p}
@@ -69,7 +69,7 @@ export function Pagination({ page, pageSize, total, onPageChange, onPageSizeChan
                   'flex h-7 w-7 items-center justify-center rounded text-xs font-medium transition-colors',
                   p === page
                     ? 'bg-primary-600 text-white'
-                    : 'text-neutral-600 hover:bg-neutral-100',
+                    : 'text-fg-secondary hover:bg-surface-sunken',
                 )}
               >
                 {p}
@@ -99,7 +99,7 @@ function PageBtn({ onClick, disabled, title, children }: {
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="flex h-7 w-7 items-center justify-center rounded text-neutral-500 transition-colors hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-30"
+      className="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-30"
     >
       {children}
     </button>

@@ -177,14 +177,14 @@ export function Assistant({
       <button
         type="button"
         aria-label="Close assistant"
-        className="flex-1 bg-neutral-900/20"
+        className="flex-1 bg-inverse/20"
         onClick={() => !busy && setOpen(false)}
       />
-      <div className="flex h-full w-full max-w-[26rem] flex-col border-l border-neutral-200 bg-white shadow-xl">
-        <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
+      <div className="flex h-full w-full max-w-[26rem] flex-col border-l border-line bg-surface shadow-xl">
+        <header className="flex items-center justify-between border-b border-line px-4 py-3">
           <div className="flex items-center gap-2">
             <MessageSquare className="h-4 w-4 text-primary-600" aria-hidden />
-            <span className="text-sm font-semibold text-neutral-900">Assistant</span>
+            <span className="text-sm font-semibold text-fg">Assistant</span>
           </div>
           <div className="flex items-center gap-1">
             {saved && messages.length > 0 && (
@@ -194,10 +194,10 @@ export function Assistant({
                 type="button"
                 onClick={() => setShowMarked((v) => !v)}
                 aria-expanded={showMarked}
-                className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100 hover:text-neutral-800"
+                className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-fg-secondary hover:bg-surface-sunken hover:text-fg"
               >
                 <Star
-                  className={cn('h-3.5 w-3.5', (marked.list?.items.length ?? 0) > 0 && 'fill-current text-warning-500')}
+                  className={cn('h-3.5 w-3.5', (marked.list?.items.length ?? 0) > 0 && 'fill-current text-warning-fg')}
                   aria-hidden
                 />
                 Marked{marked.list ? ` (${marked.list.items.length})` : ''}
@@ -208,7 +208,7 @@ export function Assistant({
               onClick={() => setOpen(false)}
               disabled={busy}
               aria-label="Close"
-              className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-40"
+              className="rounded p-1 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary disabled:opacity-40"
             >
               <X className="h-4 w-4" aria-hidden />
             </button>
@@ -216,7 +216,7 @@ export function Assistant({
         </header>
 
         {saved && messages.length > 0 && showMarked && (
-          <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-3">
+          <div className="border-b border-line bg-surface-subtle px-4 py-3">
             <MarkedList
               marked={marked}
               disabled={busy}
@@ -231,12 +231,12 @@ export function Assistant({
         <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
           {messages.length === 0 && (
             <div className="space-y-3">
-              <p className="text-sm text-neutral-600">
+              <p className="text-sm text-fg-secondary">
                 {greeting ??
                   'Ask about purchasing data, or why a document is blocked. Answers come with the query or the checks behind them.'}
               </p>
               {scope && scope.length > 0 && (
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-fg-muted">
                   I can currently answer about {scope.join(', ')}.
                 </p>
               )}
@@ -249,7 +249,7 @@ export function Assistant({
                     key={s}
                     type="button"
                     onClick={() => send(s)}
-                    className="block w-full rounded-lg border border-neutral-200 px-3 py-2 text-left text-xs text-neutral-700 transition-colors hover:border-primary-600 hover:bg-primary-600/5"
+                    className="block w-full rounded-lg border border-line px-3 py-2 text-left text-xs text-fg-secondary transition-colors hover:border-primary-600 hover:bg-primary-600/5"
                   >
                     {s}
                   </button>
@@ -271,7 +271,7 @@ export function Assistant({
           ))}
 
           {busy && (
-            <div className="flex items-center gap-2 text-xs text-neutral-500">
+            <div className="flex items-center gap-2 text-xs text-fg-muted">
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
               Thinking…
             </div>
@@ -279,7 +279,7 @@ export function Assistant({
         </div>
 
         <form
-          className="border-t border-neutral-200 p-3"
+          className="border-t border-line p-3"
           onSubmit={(e) => {
             e.preventDefault()
             send(draft)
@@ -298,7 +298,7 @@ export function Assistant({
               }}
               rows={2}
               placeholder="Ask a question…"
-              className="flex-1 resize-none rounded-lg border border-neutral-200 px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus-visible:border-primary-600 focus-visible:outline-none"
+              className="flex-1 resize-none rounded-lg border border-line px-3 py-2 text-sm text-fg placeholder:text-fg-faint focus-visible:border-primary-600 focus-visible:outline-none"
             />
             <button
               type="submit"
@@ -355,7 +355,7 @@ function MessageRow({
           </div>
         </div>
         {markError && (
-          <p role="alert" className="text-right text-xs text-danger-600">{markError}</p>
+          <p role="alert" className="text-right text-xs text-danger-fg">{markError}</p>
         )}
       </div>
     )
@@ -368,8 +368,8 @@ function MessageRow({
         className={cn(
           'max-w-[92%] rounded-lg rounded-bl-sm px-3 py-2 text-sm',
           message.error
-            ? 'whitespace-pre-wrap bg-danger-50 text-danger-700'
-            : 'bg-neutral-100 text-neutral-800'
+            ? 'whitespace-pre-wrap bg-danger-soft text-danger-fg'
+            : 'bg-surface-sunken text-fg'
         )}
       >
         {/* Replies are Markdown (ISS-0012: "**Issued**" and raw "| … |" tables
@@ -388,8 +388,8 @@ function MessageRow({
         ?.map((part, i) => ({ part, i }))
         .filter(({ part }) => part.query || part.preflight || part.workflow || part.sources)
         .map(({ part, i }) => (
-          <div key={i} className="space-y-1.5 border-l-2 border-neutral-200 pl-2">
-            <p className="text-[11px] text-neutral-500">
+          <div key={i} className="space-y-1.5 border-l-2 border-line pl-2">
+            <p className="text-2xs text-fg-muted">
               {i + 1}. {part.question}
             </p>
             {part.preflight && <GateList preflight={part.preflight} />}
@@ -441,7 +441,7 @@ function ExportButton({
             setBusy(false)
           }
         }}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1 text-xs text-neutral-700 transition-colors hover:border-primary-600 hover:text-primary-600 disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 text-xs text-fg-secondary transition-colors hover:border-primary-600 hover:text-primary-600 disabled:opacity-50"
       >
         {busy ? (
           <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
@@ -451,7 +451,7 @@ function ExportButton({
         {busy ? 'Preparing…' : 'Export to Excel'}
       </button>
       {failed && (
-        <span className="text-xs text-danger-600">Export failed — try again.</span>
+        <span className="text-xs text-danger-fg">Export failed — try again.</span>
       )}
     </div>
   )
@@ -471,9 +471,9 @@ function GateList({ preflight }: { preflight: NonNullable<AssistantReply['prefli
   const theirs = failed.filter((c) => !c.fixable_by_user)
 
   return (
-    <div className="space-y-2 rounded-lg border border-neutral-200 p-3">
+    <div className="space-y-2 rounded-lg border border-line p-3">
       {!preflight.complete && (
-        <p className="flex items-start gap-1.5 text-xs text-warning-700">
+        <p className="flex items-start gap-1.5 text-xs text-warning-fg">
           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
           The approval engine could not be reached, so this list may be incomplete.
         </p>
@@ -493,19 +493,19 @@ function GateGroup({
     <div className="space-y-1.5">
       <p
         className={cn(
-          'text-[11px] font-semibold uppercase tracking-wide',
-          tone === 'fixable' ? 'text-primary-600' : 'text-danger-600'
+          'text-2xs font-semibold uppercase tracking-wide',
+          tone === 'fixable' ? 'text-primary-600' : 'text-danger-fg'
         )}
       >
         {title}
       </p>
       <ul className="space-y-1.5">
         {checks.map((c) => (
-          <li key={c.id} className="flex items-start gap-2 text-xs text-neutral-700">
+          <li key={c.id} className="flex items-start gap-2 text-xs text-fg-secondary">
             <span
               className={cn(
                 'mt-0.5 shrink-0',
-                tone === 'fixable' ? 'text-primary-600' : 'text-danger-600'
+                tone === 'fixable' ? 'text-primary-600' : 'text-danger-fg'
               )}
               aria-hidden
             >
@@ -514,7 +514,7 @@ function GateGroup({
             <span className="min-w-0">
               {c.message ?? c.id}
               {c.owner && tone === 'blocked' && (
-                <span className="ml-1 text-neutral-500">(ask {c.owner})</span>
+                <span className="ml-1 text-fg-muted">(ask {c.owner})</span>
               )}
               {c.fix_route && (
                 <a
@@ -543,9 +543,9 @@ function Chain({ workflow }: { workflow: NonNullable<AssistantReply['workflow']>
   if (!current && history.length === 0) return null
 
   return (
-    <div className="space-y-2 rounded-lg border border-neutral-200 p-3 text-xs">
+    <div className="space-y-2 rounded-lg border border-line p-3 text-xs">
       {!complete && (
-        <p className="flex items-start gap-1.5 text-warning-700">
+        <p className="flex items-start gap-1.5 text-warning-fg">
           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
           The approval engine could not be reached, so the full chain is unknown —
           this is the recorded history only.
@@ -553,15 +553,15 @@ function Chain({ workflow }: { workflow: NonNullable<AssistantReply['workflow']>
       )}
       {current && (
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-600">
+          <p className="text-2xs font-semibold uppercase tracking-wide text-primary-600">
             Waiting on
           </p>
-          <p className="mt-0.5 text-neutral-800">
+          <p className="mt-0.5 text-fg">
             {/* A broadcast step has no named holder; it sits with the role. */}
             {current.approver_name ?? `whoever holds ${current.label}`}
-            <span className="ml-1 text-neutral-500">({current.label})</span>
+            <span className="ml-1 text-fg-muted">({current.label})</span>
             {current.since && (
-              <span className="ml-1 text-neutral-500">
+              <span className="ml-1 text-fg-muted">
                 · since {formatDate(String(current.since))}
                 {current.days_waiting != null && ` (${current.days_waiting} d)`}
               </span>
@@ -571,19 +571,19 @@ function Chain({ workflow }: { workflow: NonNullable<AssistantReply['workflow']>
       )}
       {history.length > 0 && (
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+          <p className="text-2xs font-semibold uppercase tracking-wide text-fg-muted">
             History
           </p>
           <ul className="mt-0.5 space-y-1">
             {history.map((e, i) => (
-              <li key={i} className="text-neutral-700">
+              <li key={i} className="text-fg-secondary">
                 <span className="font-medium">{e.action ?? '—'}</span>
                 {e.actor_name && <span> by {e.actor_name}</span>}
-                {e.actor_role && <span className="text-neutral-500"> ({e.actor_role})</span>}
-                {e.at && <span className="text-neutral-500"> · {formatDate(String(e.at))}</span>}
-                {e.imported && <span className="text-neutral-400"> · imported from PMS</span>}
+                {e.actor_role && <span className="text-fg-muted"> ({e.actor_role})</span>}
+                {e.at && <span className="text-fg-muted"> · {formatDate(String(e.at))}</span>}
+                {e.imported && <span className="text-fg-muted"> · imported from PMS</span>}
                 {e.comment && (
-                  <span className="block pl-3 text-neutral-500">“{e.comment}”</span>
+                  <span className="block pl-3 text-fg-muted">“{e.comment}”</span>
                 )}
               </li>
             ))}
@@ -602,7 +602,7 @@ function Evidence({ reply }: { reply: AssistantReply }) {
   // A workflow answer renders its chain inline; the toggle would only repeat it.
   if (reply.kind === 'workflow' && !reply.query) {
     return (
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-fg-muted">
         {s?.document} · {s?.steps ?? 0} steps, {s?.events ?? 0} events
         {s?.complete === false && ' · chain incomplete'}
       </p>
@@ -654,7 +654,7 @@ function Evidence({ reply }: { reply: AssistantReply }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 text-neutral-500 hover:text-neutral-700"
+        className="flex items-center gap-1 text-fg-muted hover:text-fg-secondary"
       >
         <ChevronDown
           className={cn('h-3 w-3 transition-transform', open && 'rotate-180')}
@@ -665,21 +665,21 @@ function Evidence({ reply }: { reply: AssistantReply }) {
       {open && (
         <div className="mt-1.5 space-y-1.5">
           {reply.query && (
-            <pre className="overflow-x-auto rounded border border-neutral-200 bg-neutral-50 p-2 text-[11px] leading-relaxed text-neutral-700">
+            <pre className="overflow-x-auto rounded border border-line bg-surface-subtle p-2 text-2xs leading-relaxed text-fg-secondary">
               {JSON.stringify(reply.query, null, 2)}
             </pre>
           )}
           {reply.preflight && (
             <ul className="space-y-0.5">
               {reply.preflight.checks.map((c) => (
-                <li key={c.id} className="flex items-center gap-1.5 text-neutral-600">
+                <li key={c.id} className="flex items-center gap-1.5 text-fg-secondary">
                   {c.passed ? (
-                    <Check className="h-3 w-3 shrink-0 text-success-600" aria-hidden />
+                    <Check className="h-3 w-3 shrink-0 text-success-fg" aria-hidden />
                   ) : (
-                    <X className="h-3 w-3 shrink-0 text-danger-600" aria-hidden />
+                    <X className="h-3 w-3 shrink-0 text-danger-fg" aria-hidden />
                   )}
-                  <span className="font-mono text-[11px]">{c.id}</span>
-                  <span className="text-neutral-400">{c.layer}</span>
+                  <span className="font-mono text-2xs">{c.id}</span>
+                  <span className="text-fg-muted">{c.layer}</span>
                 </li>
               ))}
             </ul>
@@ -794,9 +794,9 @@ function MarkToggle({ marked, question }: { marked: Marked; question: string }) 
       aria-label={label}
       aria-pressed={!!id}
       title={label}
-      className="mt-1.5 shrink-0 rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-warning-500 disabled:opacity-40"
+      className="mt-1.5 shrink-0 rounded p-1 text-fg-muted hover:bg-surface-sunken hover:text-warning-fg disabled:opacity-40"
     >
-      <Star className={cn('h-3.5 w-3.5', id && 'fill-current text-warning-500')} aria-hidden />
+      <Star className={cn('h-3.5 w-3.5', id && 'fill-current text-warning-fg')} aria-hidden />
     </button>
   )
 }
@@ -813,16 +813,16 @@ function MarkedList({
   if (hideWhenEmpty && items.length === 0 && !marked.error && !marked.loadError) return null
   return (
     <div className="space-y-1.5">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+      <p className="text-2xs font-semibold uppercase tracking-wide text-fg-muted">
         Marked questions
         {marked.list && (
-          <span className="ml-1 font-normal normal-case tracking-normal text-neutral-400">
+          <span className="ml-1 font-normal normal-case tracking-normal text-fg-muted">
             {items.length}/{marked.list.limit}
           </span>
         )}
       </p>
       {!marked.list && marked.loadError && (
-        <p className="text-xs text-danger-600">
+        <p className="text-xs text-danger-fg">
           Could not load your marked questions: {marked.loadError}{' '}
           <button
             type="button"
@@ -834,7 +834,7 @@ function MarkedList({
         </p>
       )}
       {marked.list && items.length === 0 && !marked.error && (
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-fg-muted">
           None yet. Click the star next to a question you ask often.
         </p>
       )}
@@ -846,7 +846,7 @@ function MarkedList({
               disabled={disabled}
               onClick={() => onAsk(i.question)}
               title="Ask this again"
-              className="block min-w-0 flex-1 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-left text-xs text-neutral-700 transition-colors hover:border-primary-600 hover:bg-primary-600/5 disabled:opacity-50"
+              className="block min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-left text-xs text-fg-secondary transition-colors hover:border-primary-600 hover:bg-primary-600/5 disabled:opacity-50"
             >
               {i.question}
             </button>
@@ -856,14 +856,14 @@ function MarkedList({
               onClick={() => marked.remove(i.id)}
               aria-label={`Unmark: ${i.question}`}
               title="Unmark"
-              className="mt-1 shrink-0 rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-40"
+              className="mt-1 shrink-0 rounded p-1 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary disabled:opacity-40"
             >
               <X className="h-3.5 w-3.5" aria-hidden />
             </button>
           </li>
         ))}
       </ul>
-      {marked.error && <p className="text-xs text-danger-600">{marked.error}</p>}
+      {marked.error && <p className="text-xs text-danger-fg">{marked.error}</p>}
     </div>
   )
 }
