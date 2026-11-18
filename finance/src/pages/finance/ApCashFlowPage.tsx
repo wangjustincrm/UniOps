@@ -34,7 +34,7 @@ import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, Download, HelpCircle, Loader2, Search } from 'lucide-react'
-import { SortTh, sortParams, useSort, useSortableRows } from '@uniops/shell'
+import { SortTh, sortParams, useSort, useSortableRows, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
@@ -312,22 +312,22 @@ export default function ApCashFlowPage() {
             {currency} · as of {formatDate(summary?.as_of)}
           </span>
           {selected && (
-            <button onClick={clearSelection}
-                    className="rounded-lg border border-line-strong px-2.5 py-1 text-xs text-fg-secondary hover:bg-surface-subtle">
+            <Button variant="secondary" size="xs" onClick={clearSelection}
+                   >
               Clear selection
-            </button>
+            </Button>
           )}
           <div className="relative ml-auto">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
-            <input type="search" value={searchQ} onChange={(e) => setSearchQ(e.target.value)}
+            <Input type="search" value={searchQ} onChange={(e) => setSearchQ(e.target.value)}
                    placeholder="Search AP, invoice, supplier, PA, claim"
                    aria-label="Search AP number, invoice number, supplier or employee, PA number or claim number"
-                   className="w-72 rounded-lg border border-line-strong py-1.5 pl-8 pr-2.5 text-sm" />
+                   className="w-72 pl-8 pr-2.5" />
           </div>
-          <button onClick={exportCsv}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle">
+          <Button variant="secondary" size="sm" onClick={exportCsv}
+                 >
             <Download className="h-4 w-4" /> Export CSV
-          </button>
+          </Button>
         </div>
 
         <div className="grid gap-5 lg:grid-cols-2">
@@ -338,42 +338,42 @@ export default function ApCashFlowPage() {
               includes everything above it.
             </p>
             <div className="overflow-x-auto rounded-lg border border-line">
-              <table className="w-full min-w-[420px] text-sm">
-                <thead>
-                  <tr className="border-b border-line-subtle bg-surface-subtle text-xs text-fg-muted">
-                    <th className="px-3 py-2 text-left font-medium">Horizon</th>
-                    <th className="px-3 py-2 text-right font-medium">Bills</th>
-                    <th className="px-3 py-2 text-right font-medium">Amount</th>
-                    <th className="px-3 py-2 text-right font-medium">Cumulative</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table density="compact" className="min-w-[420px]">
+                <THead>
+                  <Tr className="bg-surface-subtle text-xs text-fg-muted">
+                    <Th>Horizon</Th>
+                    <Th align="right">Bills</Th>
+                    <Th align="right">Amount</Th>
+                    <Th align="right">Cumulative</Th>
+                  </Tr>
+                </THead>
+                <TBody>
                   {forwardCumulative.every((b) => b.bills === 0) ? (
-                    <tr><td colSpan={4} className="px-3 py-6 text-center text-fg-muted">
+                    <Tr><Td align="center" colSpan={4} className="text-fg-muted">
                       Nothing dated and not yet due in {currency}.
-                    </td></tr>
+                    </Td></Tr>
                   ) : forwardCumulative.filter((b) => b.bills > 0).map((b) => (
-                    <tr key={b.key}
+                    <Tr key={b.key}
                         onClick={() => pickBucket(b.key)}
                         className={cn('cursor-pointer border-t border-line-subtle hover:bg-surface-subtle/60',
                                       bucket === b.key && !supplier && 'bg-primary-50/60')}>
-                      <td className="px-3 py-2">
+                      <Td>
                         {b.label}
                         {b.first_due && (
                           <div className="text-2xs text-fg-muted">
                             {day(b.first_due)} – {day(b.last_due)}
                           </div>
                         )}
-                      </td>
-                      <td className={cell}>{b.bills}</td>
-                      <td className={cell}>{money(b.amount)}</td>
-                      <td className={cn(cell, 'font-semibold text-primary-700')}>
+                      </Td>
+                      <Td className={cell}>{b.bills}</Td>
+                      <Td className={cell}>{money(b.amount)}</Td>
+                      <Td className={cn(cell, 'font-semibold text-primary-700')}>
                         {money(String(b.cumulative))}
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                   ))}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
           </div>
 
@@ -386,38 +386,38 @@ export default function ApCashFlowPage() {
                 AP Subledger Health</a> and anything set aside there stops appearing here.
             </p>
             <div className="overflow-x-auto rounded-lg border border-line">
-              <table className="w-full min-w-[420px] text-sm">
-                <thead>
-                  <tr className="border-b border-line-subtle bg-surface-subtle text-xs text-fg-muted">
-                    <th className="px-3 py-2 text-left font-medium">Age</th>
-                    <th className="px-3 py-2 text-right font-medium">Bills</th>
-                    <th className="px-3 py-2 text-right font-medium">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table density="compact" className="min-w-[420px]">
+                <THead>
+                  <Tr className="bg-surface-subtle text-xs text-fg-muted">
+                    <Th>Age</Th>
+                    <Th align="right">Bills</Th>
+                    <Th align="right">Amount</Th>
+                  </Tr>
+                </THead>
+                <TBody>
                   {overdue.every((b) => b.bills === 0) ? (
-                    <tr><td colSpan={3} className="px-3 py-6 text-center text-fg-muted">
+                    <Tr><Td align="center" colSpan={3} className="text-fg-muted">
                       Nothing overdue in {currency}.
-                    </td></tr>
+                    </Td></Tr>
                   ) : overdue.filter((b) => b.bills > 0).map((b) => (
-                    <tr key={b.key}
+                    <Tr key={b.key}
                         onClick={() => pickBucket(b.key)}
                         className={cn('cursor-pointer border-t border-line-subtle hover:bg-surface-subtle/60',
                                       bucket === b.key && !supplier && 'bg-primary-50/60')}>
-                      <td className="px-3 py-2">
+                      <Td>
                         {b.label}
                         {b.first_due && (
                           <div className="text-2xs text-fg-muted">
                             due {day(b.first_due)} – {day(b.last_due)}
                           </div>
                         )}
-                      </td>
-                      <td className={cell}>{b.bills}</td>
-                      <td className={cn(cell, 'font-semibold text-warning-fg')}>{money(b.amount)}</td>
-                    </tr>
+                      </Td>
+                      <Td className={cell}>{b.bills}</Td>
+                      <Td className={cn(cell, 'font-semibold text-warning-fg')}>{money(b.amount)}</Td>
+                    </Tr>
                   ))}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
           </div>
         </div>
@@ -446,9 +446,9 @@ export default function ApCashFlowPage() {
               </span>
             </h3>
             <div className="overflow-x-auto rounded-lg border border-line">
-              <table className="w-full min-w-[900px] text-sm">
-                <thead>
-                  <tr className="border-b border-line-subtle bg-surface-subtle text-xs text-fg-muted">
+              <Table density="compact" className="min-w-[900px]">
+                <THead>
+                  <Tr className="bg-surface-subtle text-xs text-fg-muted">
                     <SortTh label="AP no." sortKey="bill_no" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="Supplier" sortKey="supplier" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="Invoice no." sortKey="invoice_no" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
@@ -458,45 +458,45 @@ export default function ApCashFlowPage() {
                     <SortTh label="Term" sortKey="payment_terms" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="Due" sortKey="due_date" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="Open" sortKey="open_bal" sort={billSort} onSort={onBillSort} align="right" className="px-3 py-2 font-medium" />
-                  </tr>
-                </thead>
-                <tbody>
+                  </Tr>
+                </THead>
+                <TBody>
                   {loadingItems && !items ? (
-                    <tr><td colSpan={9} className="px-3 py-8 text-center">
-                      <Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></td></tr>
+                    <Tr><Td align="center" colSpan={9}>
+                      <Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></Td></Tr>
                   ) : itemsError ? (
                     // A failed request must never read as "nothing here".
-                    <tr><td colSpan={9} className="px-3 py-8 text-center text-danger-fg">
+                    <Tr><Td align="center" colSpan={9} className="text-danger-fg">
                       Could not load these bills: {String((itemsError as Error).message ?? itemsError)}
-                    </td></tr>
+                    </Td></Tr>
                   ) : (items?.items.length ?? 0) === 0 ? (
-                    <tr><td colSpan={9} className="px-3 py-8 text-center text-fg-muted">
-                      {searching ? 'No bill matches the search.' : 'Nothing in this bucket.'}</td></tr>
+                    <Tr><Td align="center" colSpan={9} className="text-fg-muted">
+                      {searching ? 'No bill matches the search.' : 'Nothing in this bucket.'}</Td></Tr>
                   ) : items!.items.map((r) => (
-                    <tr key={r.doc_key} className="border-t border-line-subtle hover:bg-surface-subtle/60">
-                      <td className="px-3 py-2 font-mono text-xs">
+                    <Tr key={r.doc_key} className="hover:bg-surface-subtle/60">
+                      <Td className="font-mono text-xs">
                         {r.bill_no ?? (
                           <span className="rounded bg-surface-strong px-1.5 py-0.5 font-sans text-2xs font-semibold text-fg-secondary">
                             {DOC_KIND_LABEL[r.doc_kind]}
                           </span>
                         )}
-                      </td>
-                      <td className="px-3 py-2">
+                      </Td>
+                      <Td>
                         <div className="text-fg">{r.supplier_name ?? '—'}</div>
                         <div className="font-mono text-2xs text-fg-muted">{r.supplier_code ?? '—'}</div>
-                      </td>
-                      <td className="px-3 py-2 font-mono text-xs text-fg-secondary"><BillInvoices invoices={r.invoices} /></td>
-                      <td className="px-3 py-2 font-mono text-xs text-fg-muted">{billPurchaseOrders(r.invoices).join(', ') || '—'}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-fg-muted">{r.pa_numbers.join(', ') || '—'}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-xs text-fg-secondary">
+                      </Td>
+                      <Td className="font-mono text-xs text-fg-secondary"><BillInvoices invoices={r.invoices} /></Td>
+                      <Td className="font-mono text-xs text-fg-muted">{billPurchaseOrders(r.invoices).join(', ') || '—'}</Td>
+                      <Td className="font-mono text-xs text-fg-muted">{r.pa_numbers.join(', ') || '—'}</Td>
+                      <Td className="whitespace-nowrap text-xs text-fg-secondary">
                         {day(r.invoice_date)}
                         {r.doc_kind === 'bill' && r.bill_date && r.bill_date !== r.invoice_date && (
                           <div className="text-2xs text-fg-muted" title="NC bill date — when the payable was keyed in NC">
                             NC {day(r.bill_date)}
                           </div>
                         )}
-                      </td>
-                      <td className="px-3 py-2 text-xs text-fg-muted">
+                      </Td>
+                      <Td className="text-xs text-fg-muted">
                         {r.due_from === 'invoice' ? (
                           <span title="Days from invoice date to the EPMS invoice due date">
                             {r.term_days !== null ? `${r.term_days}d` : '—'}
@@ -507,8 +507,8 @@ export default function ApCashFlowPage() {
                             {r.term_days !== null && <span className="text-fg-muted"> ({r.term_days}d)</span>}
                           </>
                         )}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-xs">
+                      </Td>
+                      <Td className="whitespace-nowrap text-xs">
                         {day(r.due_date)}
                         {r.days_to_due !== null && (
                           <span className={cn('ml-1.5 text-2xs',
@@ -516,12 +516,12 @@ export default function ApCashFlowPage() {
                             {r.days_to_due < 0 ? `${-r.days_to_due}d late` : `in ${r.days_to_due}d`}
                           </span>
                         )}
-                      </td>
-                      <td className={cn(cell, 'font-semibold')}>{money(r.open_bal)}</td>
-                    </tr>
+                      </Td>
+                      <Td className={cn(cell, 'font-semibold')}>{money(r.open_bal)}</Td>
+                    </Tr>
                   ))}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
             <ListPager page={billPage} pageSize={BILL_PAGE_SIZE} total={items?.total ?? 0}
                        noun="bills" onPage={setBillPage} />
@@ -565,24 +565,24 @@ export default function ApCashFlowPage() {
               )}
             </p>
             <div className="overflow-x-auto rounded-lg border border-line">
-              <table className="w-full min-w-[720px] text-sm">
-                <thead>
-                  <tr className="border-b border-line-subtle bg-surface-subtle text-xs text-fg-muted">
+              <Table density="compact" className="min-w-[720px]">
+                <THead>
+                  <Tr className="bg-surface-subtle text-xs text-fg-muted">
                     <SortTh label="Supplier" sortKey="supplier" sort={missingSort.sort} onSort={missingSort.onSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="What is missing" sortKey="reason" sort={missingSort.sort} onSort={missingSort.onSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="Bills" sortKey="bills" sort={missingSort.sort} onSort={missingSort.onSort} align="right" className="px-3 py-2 font-medium" />
                     <SortTh label="Open balance" sortKey="amount" sort={missingSort.sort} onSort={missingSort.onSort} align="right" className="px-3 py-2 font-medium" />
                     <SortTh label="Bills dated" sortKey="dated" sort={missingSort.sort} onSort={missingSort.onSort} className="px-3 py-2 font-medium text-left" />
-                    <th className="px-3 py-2 text-left font-medium"></th>
-                  </tr>
-                </thead>
-                <tbody>
+                    <Th></Th>
+                  </Tr>
+                </THead>
+                <TBody>
                   {(missing?.items.length ?? 0) === 0 ? (
-                    <tr><td colSpan={6} className="px-3 py-6 text-center text-fg-muted">
+                    <Tr><Td align="center" colSpan={6} className="text-fg-muted">
                       Loading…
-                    </td></tr>
+                    </Td></Tr>
                   ) : missingSort.rows.map((r) => (
-                    <tr key={(r.supplier_code ?? '') + r.currency}
+                    <Tr key={(r.supplier_code ?? '') + r.currency}
                         onClick={() => {
                           if (!r.supplier_code) return
                           const same = supplier?.code === r.supplier_code
@@ -592,11 +592,11 @@ export default function ApCashFlowPage() {
                         className={cn('border-t border-line-subtle',
                                       r.supplier_code && 'cursor-pointer hover:bg-surface-subtle/60',
                                       supplier?.code === r.supplier_code && 'bg-primary-50/60')}>
-                      <td className="px-3 py-2">
+                      <Td>
                         <div className="text-fg">{r.supplier_name ?? '—'}</div>
                         <div className="font-mono text-2xs text-fg-muted">{r.supplier_code ?? '—'}</div>
-                      </td>
-                      <td className="px-3 py-2 text-xs">
+                      </Td>
+                      <Td className="text-xs">
                         {r.reason === 'no_vendor_record' ? (
                           <span className="rounded bg-warning-soft px-1.5 py-0.5 text-2xs font-semibold text-warning-fg">
                             no vendor record
@@ -606,19 +606,19 @@ export default function ApCashFlowPage() {
                             term &ldquo;{r.payment_terms}&rdquo; not recognised
                           </span>
                         )}
-                      </td>
-                      <td className={cell}>{r.bills}</td>
-                      <td className={cn(cell, 'font-semibold')}>{money(r.amount)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-xs text-fg-muted">
+                      </Td>
+                      <Td className={cell}>{r.bills}</Td>
+                      <Td className={cn(cell, 'font-semibold')}>{money(r.amount)}</Td>
+                      <Td className="whitespace-nowrap text-xs text-fg-muted">
                         {day(r.oldest_bill)} – {day(r.newest_bill)}
-                      </td>
-                      <td className="px-3 py-2 text-xs font-medium text-primary-700">
+                      </Td>
+                      <Td className="text-xs font-medium text-primary-700">
                         {r.supplier_code && 'Show bills'}
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                   ))}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
           </div>
         )}

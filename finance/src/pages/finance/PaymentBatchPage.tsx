@@ -21,7 +21,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Loader2, Play, Undo2, Wallet, X } from 'lucide-react'
-import { SortTh, sortParams, useOptionalTabStoreApi, useSort, useSortableRows } from '@uniops/shell'
+import { SortTh, sortParams, useOptionalTabStoreApi, useSort, useSortableRows, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
 import { cn, formatDate, todayISO } from '@/lib/utils'
@@ -346,10 +346,10 @@ export default function PaymentBatchPage() {
 
         {pageTab === 'due' && (<>
         <div className="mb-3 flex flex-wrap items-center gap-3">
-          <select value={currency} onChange={(e) => setFilter('currency', e.target.value)}
+          <Select value={currency} onChange={(e) => setFilter('currency', e.target.value)}
                   className={cn(inputCls, 'w-28')}>
             {DUE_CURRENCIES.map((c) => <option key={c}>{c}</option>)}
-          </select>
+          </Select>
           <div className="flex flex-wrap gap-1.5">
             {DUE_TYPES.map((t) => (
               <button key={t.key} onClick={() => setFilter('type', t.key)}
@@ -367,7 +367,7 @@ export default function PaymentBatchPage() {
                 {selected.size} selected · <span className="font-mono">{fmtMoney(String(selectedTotal), currency)}</span>
               </span>
             )}
-            <input type="search" value={search} onChange={(e) => setSearch(e.target.value)}
+            <Input type="search" value={search} onChange={(e) => setSearch(e.target.value)}
                    placeholder="Search PA or invoice no" aria-label="Search PA or invoice number"
                    className={cn(inputCls, 'w-56')} />
             {canPay && (
@@ -387,11 +387,11 @@ export default function PaymentBatchPage() {
         </div>
 
         <div className={listBox}>
-          <table className="w-full text-sm">
-            <thead className={listHead}>
-              <tr>
-                <th className="px-3 py-2 w-10">
-                  <input type="checkbox" checked={allChecked}
+          <Table density="compact">
+            <THead className={listHead}>
+              <Tr>
+                <Th className="w-10">
+                  <Checkbox checked={allChecked}
                          onChange={(e) => setSelected((prev) => {
                            // Only the rows on screen: picks made under another
                            // search stay picked.
@@ -402,7 +402,7 @@ export default function PaymentBatchPage() {
                            }
                            return next
                          })} />
-                </th>
+                </Th>
                 <SortTh label="Document" sortKey="document" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
                 <SortTh label="Submitted" sortKey="submitted" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
                 <SortTh label="Payee" sortKey="payee" sort={sort} onSort={onSort} className="px-3 py-2" />
@@ -411,15 +411,15 @@ export default function PaymentBatchPage() {
                 <SortTh label="NC Paid" sortKey="nc" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
                 <SortTh label="Type" sortKey="type" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
                 <SortTh label="Amount" sortKey="amount" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-40" />
-              </tr>
-            </thead>
-            <tbody>
+              </Tr>
+            </THead>
+            <TBody>
               {due.length === 0 && (
-                <tr><td colSpan={9} className="px-3 py-6 text-center text-fg-muted">
+                <Tr><Td align="center" colSpan={9} className="text-fg-muted">
                   {term ? `Nothing matches "${search.trim()}".`
                     : dueType === 'claim'
                     ? `No approved ${currency} expense claims awaiting payment.`
-                    : `No approved ${currency} payments awaiting a run.`}</td></tr>
+                    : `No approved ${currency} payments awaiting a run.`}</Td></Tr>
               )}
               {due.map((d, i) => {
                 const picked = selected.get(d.doc_id)
@@ -427,17 +427,17 @@ export default function PaymentBatchPage() {
                 const owed = Number(d.amount) !== Number(d.payment_amount)
                 return (
                 <Fragment key={d.doc_id}>
-                <tr className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
-                  <td className="px-3 py-2">
-                    <input type="checkbox" aria-label={`Select ${d.doc_number ?? 'document'}`}
+                <Tr className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
+                  <Td>
+                    <Checkbox aria-label={`Select ${d.doc_number ?? 'document'}`}
                            checked={!!picked && !partial} onChange={() => toggle(d)}
                            ref={(el) => { if (el) el.indeterminate = partial }} />
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs">
+                  </Td>
+                  <Td className="font-mono text-xs">
                     {d.doc_kind === 'expense_claim' ? (
-                      <button onClick={() => openClaim(d)} className="text-primary-700 underline hover:text-primary-800">
+                      <Button variant="link" onClick={() => openClaim(d)}>
                         {d.doc_number || d.doc_id.slice(0, 8)}
-                      </button>
+                      </Button>
                     ) : (d.doc_number || d.doc_id.slice(0, 8))}
                     {d.in_draft_batches && d.in_draft_batches.length > 0 && (
                       <div className="mt-0.5 font-sans text-2xs text-warning-fg"
@@ -445,20 +445,20 @@ export default function PaymentBatchPage() {
                         In draft {d.in_draft_batches.join(', ')}
                       </div>
                     )}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-fg-secondary">
+                  </Td>
+                  <Td className="text-xs text-fg-secondary">
                     {d.submitted_at ? formatDate(d.submitted_at) : <span className="text-fg-faint">—</span>}
-                  </td>
-                  <td className="px-3 py-2">{d.payee}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-fg-secondary">
+                  </Td>
+                  <Td>{d.payee}</Td>
+                  <Td className="font-mono text-xs text-fg-secondary">
                     {d.splittable ? (
                       <span className="font-sans text-fg-muted">{d.invoices!.length} invoices</span>
                     ) : d.invoices?.length ? d.invoices.map((inv, k) => (
                       <span key={inv.id}>
                         {k > 0 && ', '}
-                        <button onClick={() => openInvoice(inv)} className="text-primary-700 underline hover:text-primary-800">
+                        <Button variant="link" onClick={() => openInvoice(inv)}>
                           {inv.number || 'Invoice'}
-                        </button>
+                        </Button>
                       </span>
                     )) : (d.vendor_inv_no || <span className="text-fg-faint">—</span>)}
                     {!d.splittable && (d.invoices?.length ?? 0) > 1 && (
@@ -467,83 +467,83 @@ export default function PaymentBatchPage() {
                         Paid as a whole
                       </div>
                     )}
-                  </td>
-                  <td className={cn('px-3 py-2 text-xs', d.due_date && d.due_date < today ? 'font-medium text-danger-fg' : 'text-fg-secondary')}>
+                  </Td>
+                  <Td className={cn('px-3 py-2 text-xs', d.due_date && d.due_date < today ? 'font-medium text-danger-fg' : 'text-fg-secondary')}>
                     {d.due_date ? formatDate(d.due_date) : <span className="text-fg-faint">—</span>}
-                  </td>
-                  <td className="px-3 py-2 text-xs"><NcPaidCell d={d} /></td>
-                  <td className="px-3 py-2 text-xs text-fg-muted">{dueTypeLabel(d)}</td>
-                  <td className="px-3 py-2 text-right font-mono">
+                  </Td>
+                  <Td className="text-xs"><NcPaidCell d={d} /></Td>
+                  <Td className="text-xs text-fg-muted">{dueTypeLabel(d)}</Td>
+                  <Td align="right" className="font-mono">
                     {fmtMoney(d.amount, d.currency)}
                     {owed && (
                       <div className="font-sans text-2xs text-fg-muted">
                         left of {fmtMoney(d.payment_amount)}
                       </div>
                     )}
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
                 {d.splittable && d.invoices!.map((inv) => (
-                  <tr key={inv.id} className={cn('text-xs', i % 2 && 'bg-surface-subtle/40', inv.paid && 'text-fg-muted')}>
-                    <td className="py-1.5 pl-6 pr-3">
-                      <input type="checkbox" aria-label={`Select invoice ${inv.number}`} disabled={inv.paid}
+                  <Tr key={inv.id} className={cn('text-xs', i % 2 && 'bg-surface-subtle/40', inv.paid && 'text-fg-muted')}>
+                    <Td className="pl-6 pr-3">
+                      <Checkbox aria-label={`Select invoice ${inv.number}`} disabled={inv.paid}
                              checked={!!picked?.has(inv.id)} onChange={() => toggleInvoice(d, inv.id)} />
-                    </td>
-                    <td colSpan={3} className="py-1.5 pr-3 text-right text-2xs text-warning-fg">
+                    </Td>
+                    <Td align="right" colSpan={3} className="pr-3 text-2xs text-warning-fg">
                       {inv.in_draft_batches.length > 0 && `In draft ${inv.in_draft_batches.join(', ')}`}
-                    </td>
-                    <td className="px-3 py-1.5 font-mono">
-                      <button onClick={() => openInvoice(inv)} className="text-primary-700 underline hover:text-primary-800">
+                    </Td>
+                    <Td className="font-mono">
+                      <Button variant="link" onClick={() => openInvoice(inv)}>
                         {inv.number || 'Invoice'}
-                      </button>
-                    </td>
-                    <td className={cn('px-3 py-1.5', !inv.paid && inv.due_date && inv.due_date < today ? 'font-medium text-danger-fg' : 'text-fg-muted')}>
+                      </Button>
+                    </Td>
+                    <Td className={cn('px-3 py-1.5', !inv.paid && inv.due_date && inv.due_date < today ? 'font-medium text-danger-fg' : 'text-fg-muted')}>
                       {inv.due_date ? formatDate(inv.due_date) : <span className="text-fg-faint">—</span>}
-                    </td>
-                    <td className="px-3 py-1.5"><NcInvoiceBadge nc={inv.nc} /></td>
-                    <td className="px-3 py-1.5 text-fg-muted">{inv.paid ? <StatusPill status="paid" /> : 'Invoice'}</td>
-                    <td className="px-3 py-1.5 text-right font-mono text-fg-secondary">{fmtMoney(inv.amount, d.currency)}</td>
-                  </tr>
+                    </Td>
+                    <Td><NcInvoiceBadge nc={inv.nc} /></Td>
+                    <Td className="text-fg-muted">{inv.paid ? <StatusPill status="paid" /> : 'Invoice'}</Td>
+                    <Td align="right" className="font-mono text-fg-secondary">{fmtMoney(inv.amount, d.currency)}</Td>
+                  </Tr>
                 ))}
                 </Fragment>
                 )
               })}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
 
         </>)}
 
         {pageTab === 'batches' && (<>
         <div className={listBox}>
-          <table className="w-full text-sm">
-            <thead className={listHead}>
-              <tr>
+          <Table density="compact">
+            <THead className={listHead}>
+              <Tr>
                 <SortTh label="Batch" sortKey="batch_number" sort={batchSort} onSort={onBatchSort} className="px-3 py-2 w-44" />
                 <SortTh label="Date" sortKey="batch_date" sort={batchSort} onSort={onBatchSort} className="px-3 py-2 w-28" />
                 <SortTh label="Status" sortKey="status" sort={batchSort} onSort={onBatchSort} className="px-3 py-2 w-24" />
                 <SortTh label="Method" sortKey="payment_method" sort={batchSort} onSort={onBatchSort} className="px-3 py-2" />
                 <SortTh label="Total" sortKey="total" sort={batchSort} onSort={onBatchSort} align="right" className="px-3 py-2 w-40" />
-                <th className="px-3 py-2 w-24" />
-              </tr>
-            </thead>
-            <tbody>
+                <Th className="w-24" />
+              </Tr>
+            </THead>
+            <TBody>
               {batches.length === 0 && (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-fg-muted">No batches yet.</td></tr>
+                <Tr><Td align="center" colSpan={6} className="text-fg-muted">No batches yet.</Td></Tr>
               )}
               {batches.map((b, i) => (
-                <tr key={b.id} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
-                  <td className="px-3 py-2 font-mono text-xs">{b.batch_number}</td>
-                  <td className="px-3 py-2 text-xs text-fg-secondary">{formatDate(b.batch_date)}</td>
-                  <td className="px-3 py-2"><StatusPill status={b.status} /></td>
-                  <td className="px-3 py-2 text-xs text-fg-muted">{b.payment_method}</td>
-                  <td className="px-3 py-2 text-right font-mono">{fmtMoney(b.total, b.currency)}</td>
-                  <td className="px-3 py-2 text-right">
+                <Tr key={b.id} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
+                  <Td className="font-mono text-xs">{b.batch_number}</Td>
+                  <Td className="text-xs text-fg-secondary">{formatDate(b.batch_date)}</Td>
+                  <Td><StatusPill status={b.status} /></Td>
+                  <Td className="text-xs text-fg-muted">{b.payment_method}</Td>
+                  <Td align="right" className="font-mono">{fmtMoney(b.total, b.currency)}</Td>
+                  <Td align="right">
                     <button onClick={() => setOpenBatch(b.id)} className={secondaryBtn}>Open</button>
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
         <ListPager page={batchPage} pageSize={BATCH_PAGE_SIZE} total={batchResp?.total ?? 0}
                    noun="batches" onPage={setBatchPage} />
@@ -765,9 +765,9 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
             {batch ? `Batch ${batch.batch_number}` : 'Batch'}
             {batch && <span className="ml-2"><StatusPill status={batch.status} /></span>}
           </h2>
-          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
+          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
 
         {isLoading ? (
@@ -784,34 +784,34 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
               </div>
             )}
             <div className="max-h-80 overflow-y-auto rounded-lg border border-line">
-              <table className="w-full text-sm">
-                <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-                  <tr>
-                    <th className="px-3 py-2">Document</th>
-                    <th className="px-3 py-2 w-40">Invoice No</th>
-                    <th className="px-3 py-2 w-24">Type</th>
-                    <th className="px-3 py-2 w-24">Status</th>
-                    <th className="px-3 py-2 w-32 text-right">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table density="compact">
+                <THead>
+                  <Tr>
+                    <Th>Document</Th>
+                    <Th className="w-40">Invoice No</Th>
+                    <Th className="w-24">Type</Th>
+                    <Th className="w-24">Status</Th>
+                    <Th align="right" className="w-32 ">Amount</Th>
+                  </Tr>
+                </THead>
+                <TBody>
                   {lines.map((ln) => (
-                    <tr key={ln.id} className="border-t border-line-subtle">
-                      <td className="px-3 py-2">
+                    <Tr key={ln.id}>
+                      <Td>
                         <span className="font-mono text-xs">{ln.doc_number || ln.doc_id.slice(0, 8)}</span>
                         {ln.invoice_ids && <span className="ml-2 rounded-full bg-warning-soft px-2 py-0.5 text-2xs font-medium text-warning-fg">Part of PA</span>}
                         {ln.error && <div className="text-xs text-danger-fg">{ln.error}</div>}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-xs text-fg-secondary">{ln.vendor_inv_no || <span className="text-fg-faint">—</span>}</td>
-                      <td className="px-3 py-2 text-xs text-fg-muted">
+                      </Td>
+                      <Td className="font-mono text-xs text-fg-secondary">{ln.vendor_inv_no || <span className="text-fg-faint">—</span>}</Td>
+                      <Td className="text-xs text-fg-muted">
                         {ln.doc_kind === 'expense_claim' ? 'Claim' : ln.doc_kind === 'pa_dir' ? 'Direct PA' : 'PA'}
-                      </td>
-                      <td className="px-3 py-2"><StatusPill status={ln.status} /></td>
-                      <td className="px-3 py-2 text-right font-mono">{fmtMoney(ln.amount)}</td>
-                    </tr>
+                      </Td>
+                      <Td><StatusPill status={ln.status} /></Td>
+                      <Td align="right" className="font-mono">{fmtMoney(ln.amount)}</Td>
+                    </Tr>
                   ))}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
 
             {batch?.status === 'draft' && lines.some((ln) => (suggestions[ln.doc_id]?.suggested.length ?? 0) > 0) && (
@@ -846,7 +846,7 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
                               const take = takeById.get(c.credit_id)
                               return (
                                 <label key={c.credit_id} className="flex items-center gap-1.5 text-xs text-fg-secondary">
-                                  <input type="checkbox" checked={!off.has(c.credit_id)}
+                                  <Checkbox checked={!off.has(c.credit_id)}
                                          onChange={() => toggleCredit(ln.doc_id, c.credit_id)} />
                                   <span className="font-mono">{c.credit_number}</span>
                                   {/* The vendor's own credit-note number — AP
@@ -887,7 +887,7 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
               {batch?.status === 'executed' ? (
                 <>
                   {canPay && lines.some((ln) => ln.status === 'paid') && (
-                    <button onClick={() => {
+                    <Button variant="danger-outline" size="md" onClick={() => {
                       if (reverse.isPending) return
                       const reason = window.prompt(
                         `Reverse ${batch.batch_number}?\n\nUse this only when the money was NOT actually sent. `
@@ -898,10 +898,10 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
                       if (!reason.trim()) { onError('A reason is required to reverse a batch'); return }
                       reverse.mutate(reason.trim())
                     }} disabled={reverse.isPending}
-                            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-danger-line px-3 text-sm text-danger-fg hover:bg-danger-soft disabled:opacity-50">
+                           >
                       {reverse.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />}
                       Reverse Batch
-                    </button>
+                    </Button>
                   )}
                   <span className="flex items-center gap-1.5 text-sm text-success-fg">
                     <CheckCircle2 className="h-4 w-4" /> Executed
@@ -913,24 +913,24 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
                 </span>
               ) : canPay && batch?.status === 'draft' ? (
                 <>
-                  <button onClick={() => {
+                  <Button variant="secondary" size="md" onClick={() => {
                     if (window.confirm(`Cancel draft ${batch.batch_number}? Nothing is paid; its payments go back to unbatched.`)) cancel.mutate()
                   }} disabled={cancel.isPending || execute.isPending}
-                          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line-strong px-3 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50">
+                         >
                     {cancel.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                     Cancel Draft
-                  </button>
+                  </Button>
                   <label className="flex items-center gap-2 text-sm text-fg-secondary">
                     <span>Pay from bank</span>
-                    <select value={bankId} onChange={(e) => setBankId(e.target.value)}
-                            className="h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
+                    <Select selectSize="sm" value={bankId} onChange={(e) => setBankId(e.target.value)}
+                           >
                       <option value="">Select a {batch?.currency} account…</option>
                       {banksForCcy.map((a) => (
                         <option key={a.id} value={a.id}>
                           {a.bank_name} — {a.name}{a.account_masked ? ` · …${a.account_masked}` : ''}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </label>
                   <button onClick={() => execute.mutate()} disabled={execute.isPending || !bankId}
                           title={!bankId ? 'Select a funding bank first' : undefined} className={primaryBtn}>

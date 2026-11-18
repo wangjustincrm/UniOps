@@ -11,6 +11,7 @@ import { BookOpen, Check, Loader2, RotateCcw, Send, Undo2, X } from 'lucide-reac
 import { financeApi } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
 
+import { TBody, TFoot, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 const dangerBtn = 'flex items-center gap-1.5 rounded-lg border border-danger-line bg-surface px-3 py-2 text-sm font-medium text-danger-fg hover:bg-danger-soft disabled:opacity-50'
@@ -126,9 +127,9 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
             {v ? `${v.voucher_word} · ${v.jv_number}` : 'Journal Voucher'}
             {v && <JvStatusBadge status={v.status} />}
           </h2>
-          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
+          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
 
         {isLoading && <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>}
@@ -177,28 +178,28 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
             {err && <div className="mb-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{err}</div>}
 
             <div className="overflow-x-auto rounded-lg border border-line">
-              <table className="w-full text-sm">
-                <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-                  <tr>
-                    <th className="px-3 py-2 w-8">#</th>
-                    <th className="px-3 py-2">Account</th>
-                    <th className="px-3 py-2">Summary</th>
-                    <th className="px-3 py-2">Aux. Acctg</th>
-                    {multiCurrency && <th className="px-3 py-2 w-24 text-right">Orig Dr</th>}
-                    {multiCurrency && <th className="px-3 py-2 w-24 text-right">Orig Cr</th>}
-                    <th className="px-3 py-2 w-28 text-right">Debit (CAD)</th>
-                    <th className="px-3 py-2 w-28 text-right">Credit (CAD)</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table density="compact">
+                <THead>
+                  <Tr>
+                    <Th className="w-8">#</Th>
+                    <Th>Account</Th>
+                    <Th>Summary</Th>
+                    <Th>Aux. Acctg</Th>
+                    {multiCurrency && <Th align="right" className="w-24 ">Orig Dr</Th>}
+                    {multiCurrency && <Th align="right" className="w-24 ">Orig Cr</Th>}
+                    <Th align="right" className="w-28 ">Debit (CAD)</Th>
+                    <Th align="right" className="w-28 ">Credit (CAD)</Th>
+                  </Tr>
+                </THead>
+                <TBody>
                   {data.lines.map((l, i) => (
-                    <tr key={l.line_no} className={cn('border-t border-line-subtle align-top', i % 2 && 'bg-surface-subtle/40')}>
-                      <td className="px-3 py-2 font-mono text-xs text-fg-muted">{l.line_no}</td>
-                      <td className="px-3 py-2">
+                    <Tr key={l.line_no} className={cn('border-t border-line-subtle align-top', i % 2 && 'bg-surface-subtle/40')}>
+                      <Td className="font-mono text-xs text-fg-muted">{l.line_no}</Td>
+                      <Td>
                         <span className="font-mono text-xs">{l.account_code ?? '—'}</span>
                         {l.account_name && <span className="ml-1 text-fg-secondary">{l.account_name}</span>}
-                      </td>
-                      <td className="px-3 py-2">
+                      </Td>
+                      <Td>
                         {l.summary && <div className="text-fg-secondary">{l.summary}</div>}
                         <div className="mt-0.5 flex flex-wrap gap-1">
                           {/* UniOps' own mapping — only for lines NC gave no
@@ -211,32 +212,32 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
                           {l.currency !== 'CAD' && <Dim label={`${l.currency} @ ${l.fx_rate}`} />}
                           {l.quantity && <Dim label={`${l.quantity} ${l.unit ?? ''} @ ${l.price ?? ''}`} />}
                         </div>
-                      </td>
+                      </Td>
                       {/* Reads like NC's own Aux. Acctg cell:
                           【Department: 0106/Engineering】【Cost Center: E04】 */}
-                      <td className="px-3 py-2 text-xs text-fg-secondary">
+                      <Td className="text-xs text-fg-secondary">
                         {l.dims.length === 0 ? <span className="text-fg-faint">—</span>
                           : l.dims.map((d, j) => (
                             <span key={j} className="mr-1 inline-block whitespace-nowrap">
                               【<span className="text-fg-muted">{d.label}:</span> {d.display}】
                             </span>
                           ))}
-                      </td>
-                      {multiCurrency && <td className="px-3 py-2 text-right font-mono">{money(l.orig_debit)}</td>}
-                      {multiCurrency && <td className="px-3 py-2 text-right font-mono">{money(l.orig_credit)}</td>}
-                      <td className="px-3 py-2 text-right font-mono">{money(l.local_debit)}</td>
-                      <td className="px-3 py-2 text-right font-mono">{money(l.local_credit)}</td>
-                    </tr>
+                      </Td>
+                      {multiCurrency && <Td align="right" className="font-mono">{money(l.orig_debit)}</Td>}
+                      {multiCurrency && <Td align="right" className="font-mono">{money(l.orig_credit)}</Td>}
+                      <Td align="right" className="font-mono">{money(l.local_debit)}</Td>
+                      <Td align="right" className="font-mono">{money(l.local_credit)}</Td>
+                    </Tr>
                   ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-line bg-surface-subtle font-semibold">
-                    <td className="px-3 py-2" colSpan={multiCurrency ? 6 : 4}>Totals (CAD)</td>
-                    <td className="px-3 py-2 text-right font-mono">{money(v.total_local_debit)}</td>
-                    <td className="px-3 py-2 text-right font-mono">{money(v.total_local_credit)}</td>
-                  </tr>
-                </tfoot>
-              </table>
+                </TBody>
+                <TFoot>
+                  <Tr className="border-t-2 bg-surface-subtle font-semibold">
+                    <Td colSpan={multiCurrency ? 6 : 4}>Totals (CAD)</Td>
+                    <Td align="right" className="font-mono">{money(v.total_local_debit)}</Td>
+                    <Td align="right" className="font-mono">{money(v.total_local_credit)}</Td>
+                  </Tr>
+                </TFoot>
+              </Table>
             </div>
 
             {canAct && (

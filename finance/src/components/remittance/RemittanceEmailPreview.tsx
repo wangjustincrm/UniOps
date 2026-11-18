@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import type { RenderedEmail } from '@/services/remittance'
 import { primaryBtn, secondaryBtn } from './buttonStyles'
 
+import { Select } from '@uniops/shell'
 /**
  * The email body in a sandboxed iframe: its styles cannot leak into the page
  * and vice versa, and with no `allow-scripts` nothing in it can run.
@@ -81,14 +82,14 @@ export function RemittanceEmailPreview({ emails, sending, onBack, onConfirm }: {
             onClick={() => setIndex((i) => i - 1)} className={secondaryBtn}>
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <select value={index} onChange={(e) => setIndex(Number(e.target.value))}
-            className="min-w-0 flex-1 rounded-md border border-line-strong px-2 py-1.5 text-sm">
+          <Select value={index} onChange={(e) => setIndex(Number(e.target.value))}
+            className="min-w-0 flex-1">
             {emails.map((e, i) => (
               <option key={`${e.recipient_kind}:${e.party_id}`} value={i}>
                 {i + 1} / {emails.length} — {e.party_name}{e.status !== 'ready' ? ' (not sent)' : ''}
               </option>
             ))}
-          </select>
+          </Select>
           <button type="button" aria-label="Next email" disabled={index >= emails.length - 1}
             onClick={() => setIndex((i) => i + 1)} className={secondaryBtn}>
             <ChevronRight className="h-4 w-4" />

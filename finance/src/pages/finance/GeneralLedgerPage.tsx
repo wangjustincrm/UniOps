@@ -20,6 +20,7 @@ import { financeApi } from '@/lib/api'
 import { cn, currentMonthISO, formatDate, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
+import { Checkbox, Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
@@ -121,7 +122,7 @@ export default function GeneralLedgerPage() {
             </button>
           ))}
           <div className="ml-auto flex items-center gap-2">
-            <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)}
+            <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)}
                    className={cn(inputCls, 'w-40')} />
             {canManage && (
               <>
@@ -187,46 +188,46 @@ function TrialBalanceTab({ q, onDrill }: { q: any; onDrill: (c: string) => void 
     <>
       <div className="mb-2 flex justify-end"><Balanced ok={tb.balanced} /></div>
       <div className="overflow-hidden rounded-lg border border-line">
-        <table className="w-full text-sm">
-          <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-            <tr>
-              <th className="px-3 py-2 w-20">Code</th>
-              <th className="px-3 py-2">Account</th>
-              <th className="px-3 py-2 w-28 text-right">Opening</th>
-              <th className="px-3 py-2 w-28 text-right">Period Dr</th>
-              <th className="px-3 py-2 w-28 text-right">Period Cr</th>
-              <th className="px-3 py-2 w-28 text-right">Closing Dr</th>
-              <th className="px-3 py-2 w-28 text-right">Closing Cr</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table density="compact">
+          <THead>
+            <Tr>
+              <Th className="w-20">Code</Th>
+              <Th>Account</Th>
+              <Th align="right" className="w-28 ">Opening</Th>
+              <Th align="right" className="w-28 ">Period Dr</Th>
+              <Th align="right" className="w-28 ">Period Cr</Th>
+              <Th align="right" className="w-28 ">Closing Dr</Th>
+              <Th align="right" className="w-28 ">Closing Cr</Th>
+            </Tr>
+          </THead>
+          <TBody>
             {tb.rows.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-6 text-center text-fg-muted">No activity in {tb.period}.</td></tr>
+              <Tr><Td align="center" colSpan={7} className="text-fg-muted">No activity in {tb.period}.</Td></Tr>
             )}
             {tb.rows.map((r, i) => (
-              <tr key={r.account_code} onClick={() => onDrill(r.account_code)}
+              <Tr key={r.account_code} onClick={() => onDrill(r.account_code)}
                   className={cn('cursor-pointer border-t border-line-subtle hover:bg-primary-50/40', i % 2 && 'bg-surface-subtle/40')}>
-                <td className="px-3 py-2 font-mono text-xs">{r.account_code}</td>
-                <td className="px-3 py-2">{r.account_name}</td>
-                <td className="px-3 py-2 text-right font-mono text-fg-muted">{r.opening !== '0.00' ? money(r.opening) : '—'}</td>
-                <td className="px-3 py-2 text-right font-mono">{r.period_debit !== '0.00' ? money(r.period_debit) : ''}</td>
-                <td className="px-3 py-2 text-right font-mono">{r.period_credit !== '0.00' ? money(r.period_credit) : ''}</td>
-                <td className="px-3 py-2 text-right font-mono">{drCol(r.closing)}</td>
-                <td className="px-3 py-2 text-right font-mono">{crCol(r.closing)}</td>
-              </tr>
+                <Td className="font-mono text-xs">{r.account_code}</Td>
+                <Td>{r.account_name}</Td>
+                <Td align="right" className="font-mono text-fg-muted">{r.opening !== '0.00' ? money(r.opening) : '—'}</Td>
+                <Td align="right" className="font-mono">{r.period_debit !== '0.00' ? money(r.period_debit) : ''}</Td>
+                <Td align="right" className="font-mono">{r.period_credit !== '0.00' ? money(r.period_credit) : ''}</Td>
+                <Td align="right" className="font-mono">{drCol(r.closing)}</Td>
+                <Td align="right" className="font-mono">{crCol(r.closing)}</Td>
+              </Tr>
             ))}
-          </tbody>
-          <tfoot>
-            <tr className="border-t-2 border-line bg-surface-subtle font-semibold">
-              <td className="px-3 py-2" colSpan={3}>Totals</td>
-              <td className="px-3 py-2 text-right font-mono">{money(tb.totals.period_debit)}</td>
-              <td className="px-3 py-2 text-right font-mono">{money(tb.totals.period_credit)}</td>
-              <td className="px-3 py-2 text-right font-mono" colSpan={2}>
+          </TBody>
+          <TFoot>
+            <Tr className="border-t-2 bg-surface-subtle font-semibold">
+              <Td colSpan={3}>Totals</Td>
+              <Td align="right" className="font-mono">{money(tb.totals.period_debit)}</Td>
+              <Td align="right" className="font-mono">{money(tb.totals.period_credit)}</Td>
+              <Td align="right" className="font-mono" colSpan={2}>
                 {tb.balanced ? 'debits = credits' : 'imbalance!'}
-              </td>
-            </tr>
-          </tfoot>
-        </table>
+              </Td>
+            </Tr>
+          </TFoot>
+        </Table>
       </div>
       <p className="mt-2 text-xs text-fg-muted">Click a row to open its account ledger.</p>
     </>
@@ -238,22 +239,22 @@ function Section({ title, rows, total }: { title: string; rows: StatementRow[]; 
     <div className="mb-4">
       <h3 className="mb-1 text-sm font-semibold text-fg-secondary">{title}</h3>
       <div className="overflow-hidden rounded-lg border border-line">
-        <table className="w-full text-sm">
-          <tbody>
-            {rows.length === 0 && <tr><td className="px-3 py-2 text-fg-muted">—</td></tr>}
+        <Table density="compact">
+          <TBody>
+            {rows.length === 0 && <Tr><Td className="text-fg-muted">—</Td></Tr>}
             {rows.map((r) => (
-              <tr key={r.account_code + r.account_name} className="border-t border-line-subtle first:border-t-0">
-                <td className="px-3 py-2 w-20 font-mono text-xs text-fg-muted">{r.account_code}</td>
-                <td className="px-3 py-2">{r.account_name}</td>
-                <td className="px-3 py-2 text-right font-mono">{money(r.amount)}</td>
-              </tr>
+              <Tr key={r.account_code + r.account_name} className="first:border-t-0">
+                <Td className="w-20 font-mono text-xs text-fg-muted">{r.account_code}</Td>
+                <Td>{r.account_name}</Td>
+                <Td align="right" className="font-mono">{money(r.amount)}</Td>
+              </Tr>
             ))}
-            <tr className="border-t-2 border-line bg-surface-subtle font-semibold">
-              <td className="px-3 py-2" colSpan={2}>Total {title}</td>
-              <td className="px-3 py-2 text-right font-mono">{money(total)}</td>
-            </tr>
-          </tbody>
-        </table>
+            <Tr className="border-t-2 bg-surface-subtle font-semibold">
+              <Td colSpan={2}>Total {title}</Td>
+              <Td align="right" className="font-mono">{money(total)}</Td>
+            </Tr>
+          </TBody>
+        </Table>
       </div>
     </div>
   )
@@ -283,7 +284,7 @@ function IncomeStatementTab({ q, ytd, setYtd }: { q: any; ytd: boolean; setYtd: 
     <>
       <div className="mb-2 flex items-center justify-end gap-2 text-sm">
         <label className="flex items-center gap-1.5 text-fg-secondary">
-          <input type="checkbox" checked={ytd} onChange={(e) => setYtd(e.target.checked)} /> Year-to-date
+          <Checkbox checked={ytd} onChange={(e) => setYtd(e.target.checked)} /> Year-to-date
         </label>
       </div>
       {q.isFetching && !s ? <Loading /> : s && (
@@ -312,18 +313,18 @@ function JournalTab({ q }: { q: any }) {
             <span className="font-mono text-xs">{formatDate(e.date)} · {e.source}</span>
             <span className="rounded-full bg-surface px-2 py-0.5 font-mono text-xs text-fg-secondary">{e.jv_number}</span>
           </div>
-          <table className="w-full text-sm">
-            <tbody>
+          <Table density="compact">
+            <TBody>
               {e.lines.map((l: any, i: number) => (
-                <tr key={i} className="border-t border-line-subtle">
-                  <td className="px-3 py-1.5 w-20 font-mono text-xs text-fg-muted">{l.account_code ?? '—'}</td>
-                  <td className="px-3 py-1.5">{l.partner_name || l.summary || '—'}</td>
-                  <td className="px-3 py-1.5 w-28 text-right font-mono">{num(l.debit) ? money(l.debit) : ''}</td>
-                  <td className="px-3 py-1.5 w-28 text-right font-mono">{num(l.credit) ? money(l.credit) : ''}</td>
-                </tr>
+                <Tr key={i}>
+                  <Td className="w-20 font-mono text-xs text-fg-muted">{l.account_code ?? '—'}</Td>
+                  <Td>{l.partner_name || l.summary || '—'}</Td>
+                  <Td align="right" className="w-28 font-mono">{num(l.debit) ? money(l.debit) : ''}</Td>
+                  <Td align="right" className="w-28 font-mono">{num(l.credit) ? money(l.credit) : ''}</Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
       ))}
     </div>
@@ -345,34 +346,34 @@ function AccountLedgerModal({ code, period, onClose }: { code: string; period: s
             <span>Closing: <span className="font-mono font-semibold">{money(data.closing)}</span></span>
           </div>
           <div className="max-h-96 overflow-y-auto rounded-lg border border-line">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-                <tr>
-                  <th className="px-3 py-2 w-24">Date</th>
-                  <th className="px-3 py-2">Source</th>
-                  <th className="px-3 py-2 w-24 text-right">Debit</th>
-                  <th className="px-3 py-2 w-24 text-right">Credit</th>
-                  <th className="px-3 py-2 w-28 text-right">Balance</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table density="compact">
+              <THead>
+                <Tr>
+                  <Th className="w-24">Date</Th>
+                  <Th>Source</Th>
+                  <Th align="right" className="w-24 ">Debit</Th>
+                  <Th align="right" className="w-24 ">Credit</Th>
+                  <Th align="right" className="w-28 ">Balance</Th>
+                </Tr>
+              </THead>
+              <TBody>
                 {data.entries.length === 0 && (
-                  <tr><td colSpan={5} className="px-3 py-6 text-center text-fg-muted">No movement this period.</td></tr>
+                  <Tr><Td align="center" colSpan={5} className="text-fg-muted">No movement this period.</Td></Tr>
                 )}
                 {data.entries.map((en: any, i: number) => (
-                  <tr key={i} className="border-t border-line-subtle">
-                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-fg-secondary">{formatDate(en.date)}</td>
-                    <td className="px-3 py-1.5">
+                  <Tr key={i}>
+                    <Td className="whitespace-nowrap font-mono text-xs text-fg-secondary">{formatDate(en.date)}</Td>
+                    <Td>
                       <span className="font-mono text-xs">{en.source}</span>
                       {en.partner_name && <span className="ml-1 text-fg-muted">· {en.partner_name}</span>}
-                    </td>
-                    <td className="px-3 py-1.5 text-right font-mono">{num(en.debit) ? money(en.debit) : ''}</td>
-                    <td className="px-3 py-1.5 text-right font-mono">{num(en.credit) ? money(en.credit) : ''}</td>
-                    <td className="px-3 py-1.5 text-right font-mono">{money(en.balance)}</td>
-                  </tr>
+                    </Td>
+                    <Td align="right" className="font-mono">{num(en.debit) ? money(en.debit) : ''}</Td>
+                    <Td align="right" className="font-mono">{num(en.credit) ? money(en.credit) : ''}</Td>
+                    <Td align="right" className="font-mono">{money(en.balance)}</Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
         </>
       )}
@@ -432,24 +433,24 @@ function OpeningModal({ onClose, onSaved, onError }: {
       </p>
       <label className="mb-3 flex w-48 flex-col gap-1 text-sm">
         <span className="text-fg-secondary">As-of date</span>
-        <input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} className={inputCls} />
+        <Input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} className={inputCls} />
       </label>
       <div className="space-y-2">
         {lines.map((l, i) => (
           <div key={i} className="grid grid-cols-[1fr_7rem_8rem_auto] items-center gap-2">
-            <select value={l.account_code} onChange={(e) => setLine(i, { account_code: e.target.value })} className={inputCls}>
+            <Select value={l.account_code} onChange={(e) => setLine(i, { account_code: e.target.value })} className={inputCls}>
               <option value="">Select account…</option>
               {accounts.map((a) => <option key={a.code} value={a.code}>{a.code} · {a.name}</option>)}
-            </select>
-            <select value={l.side} onChange={(e) => setLine(i, { side: e.target.value as 'debit' | 'credit' })} className={inputCls}>
+            </Select>
+            <Select value={l.side} onChange={(e) => setLine(i, { side: e.target.value as 'debit' | 'credit' })} className={inputCls}>
               <option value="debit">Debit</option>
               <option value="credit">Credit</option>
-            </select>
-            <input type="number" step="0.01" value={l.amount} placeholder="0.00"
+            </Select>
+            <Input type="number" step="0.01" value={l.amount} placeholder="0.00"
                    onChange={(e) => setLine(i, { amount: e.target.value })}
                    className={cn(inputCls, 'text-right font-mono')} />
-            <button onClick={() => setLines((p) => p.filter((_, idx) => idx !== i))}
-                    className="rounded p-1.5 text-fg-muted hover:text-danger-fg"><Trash2 className="h-4 w-4" /></button>
+            <Button variant="danger-ghost" size="icon-sm" aria-label="Remove" onClick={() => setLines((p) => p.filter((_, idx) => idx !== i))}
+                   ><Trash2 className="h-4 w-4" /></Button>
           </div>
         ))}
       </div>
@@ -498,7 +499,7 @@ function CloseYearModal({ onClose, onDone, onError }: {
       </p>
       <label className="flex w-40 flex-col gap-1 text-sm">
         <span className="text-fg-secondary">Fiscal year</span>
-        <input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))}
+        <Input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))}
                className={cn(inputCls, 'font-mono')} />
       </label>
       <div className="mt-5 flex justify-end gap-2">
@@ -523,9 +524,9 @@ function Modal({ title, children, onClose, wide }: {
           <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
             <BookOpen className="h-4 w-4 text-fg-muted" /> {title}
           </h2>
-          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
+          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
         {children}
       </div>

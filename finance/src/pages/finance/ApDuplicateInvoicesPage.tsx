@@ -23,7 +23,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Download, Loader2, Undo2 } from 'lucide-react'
-import { SortTh, sortParams, useSort } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Button } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
@@ -124,20 +124,20 @@ function ReviewDialog({ finding, pending, error, onCancel, onDone }: {
         <div className="space-y-3 px-5 py-4">
           <div>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">Reason</label>
-            <select value={reason} onChange={(e) => setReason(e.target.value)}
-                    className="w-full rounded-lg border border-line-strong px-2.5 py-1.5 text-sm">
+            <Select value={reason} onChange={(e) => setReason(e.target.value)}
+                    className="w-full">
               {(data?.reasons ?? []).map((r) => (
                 <option key={r.code} value={r.code}>{r.label}</option>
               ))}
-            </select>
+            </Select>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">
               Note {reason === 'other' && <span className="text-warning-fg">(required)</span>}
             </label>
-            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
+            <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
                       placeholder="e.g. Supplier issued credit note CN-1042 on 2026-10-02"
-                      className="w-full rounded-lg border border-line-strong px-2.5 py-1.5 text-sm" />
+                      className="w-full" />
           </div>
           <div className="rounded border border-line bg-surface-subtle px-2.5 py-1.5 font-mono text-2xs text-fg-muted">
             {finding.bill_nos.join(', ')}
@@ -145,14 +145,14 @@ function ReviewDialog({ finding, pending, error, onCancel, onDone }: {
           {error && <p className="text-xs text-danger-fg">{error}</p>}
         </div>
         <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
-          <button onClick={onCancel}
-                  className="rounded-lg border border-line-strong px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle">
+          <Button variant="secondary" size="sm" onClick={onCancel}
+                 >
             Cancel
-          </button>
-          <button onClick={() => onDone(reason, note.trim())} disabled={needsNote || pending}
-                  className="rounded-lg bg-primary-700 px-3 py-1.5 text-sm text-white hover:bg-primary-800 disabled:opacity-40">
+          </Button>
+          <Button size="sm" onClick={() => onDone(reason, note.trim())} disabled={needsNote || pending}
+                 >
             {pending ? 'Saving…' : 'Mark reviewed'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -161,43 +161,43 @@ function ReviewDialog({ finding, pending, error, onCancel, onDone }: {
 
 function BillsTable({ bills }: { bills: Bill[] }) {
   return (
-    <table className="w-full text-xs">
-      <thead>
-        <tr className="text-left text-2xs uppercase tracking-wide text-fg-muted">
-          <th className="px-2 py-1.5 font-medium">NC bill</th>
-          <th className="px-2 py-1.5 font-medium">Status</th>
-          <th className="px-2 py-1.5 font-medium">Bill date</th>
-          <th className="px-2 py-1.5 font-medium">Supplier</th>
-          <th className="px-2 py-1.5 text-right font-medium">Invoice amount</th>
-          <th className="px-2 py-1.5 text-right font-medium">Still open</th>
-          <th className="px-2 py-1.5 text-right font-medium">Paid on bill</th>
-          <th className="px-2 py-1.5 font-medium">NC payments</th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table density="compact">
+      <THead>
+        <Tr className="text-left text-2xs text-fg-muted">
+          <Th>NC bill</Th>
+          <Th>Status</Th>
+          <Th>Bill date</Th>
+          <Th>Supplier</Th>
+          <Th align="right">Invoice amount</Th>
+          <Th align="right">Still open</Th>
+          <Th align="right">Paid on bill</Th>
+          <Th>NC payments</Th>
+        </Tr>
+      </THead>
+      <TBody>
         {bills.map((b) => (
-          <tr key={`${b.bill_no}-${b.supplier_code}`} className="border-t border-line-subtle">
-            <td className="px-2 py-1.5 font-mono">{b.bill_no}</td>
-            <td className="px-2 py-1.5">
+          <Tr key={`${b.bill_no}-${b.supplier_code}`}>
+            <Td className="font-mono">{b.bill_no}</Td>
+            <Td>
               <span className={cn(!b.effective && 'font-medium text-danger-fg')}>{b.status_label}</span>
               {b.dismissed && <span className="ml-1 text-fg-muted">(ignored)</span>}
-            </td>
-            <td className="px-2 py-1.5 font-mono">{day(b.bill_date)}</td>
-            <td className="px-2 py-1.5">
+            </Td>
+            <Td className="font-mono">{day(b.bill_date)}</Td>
+            <Td>
               <span className="font-mono text-fg-muted">{b.supplier_code}</span> {b.supplier_name}
-            </td>
-            <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
-                              Number(b.amount) < 0 && 'text-success-fg')}>{money(b.amount)}</td>
-            <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
-                              Number(b.open) !== 0 && 'font-semibold text-danger-fg')}>{money(b.open)}</td>
-            <td className="px-2 py-1.5 text-right font-mono tabular-nums">{money(b.paid_on_bill)}</td>
-            <td className="px-2 py-1.5 font-mono text-2xs text-fg-muted">
+            </Td>
+            <Td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
+                              Number(b.amount) < 0 && 'text-success-fg')}>{money(b.amount)}</Td>
+            <Td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
+                              Number(b.open) !== 0 && 'font-semibold text-danger-fg')}>{money(b.open)}</Td>
+            <Td align="right" className="font-mono tabular-nums">{money(b.paid_on_bill)}</Td>
+            <Td className="font-mono text-2xs text-fg-muted">
               {b.payment_nos ?? '—'}{b.last_paid && <span className="text-fg-muted"> · {day(b.last_paid)}</span>}
-            </td>
-          </tr>
+            </Td>
+          </Tr>
         ))}
-      </tbody>
-    </table>
+      </TBody>
+    </Table>
   )
 }
 
@@ -365,15 +365,15 @@ export default function ApDuplicateInvoicesPage() {
               </button>
             ))}
           </div>
-          <input value={search} onChange={(e) => setSearch(e.target.value)}
+          <Input value={search} onChange={(e) => setSearch(e.target.value)}
                  placeholder="Invoice no, supplier, or NC bill no"
-                 className="w-72 rounded-lg border border-line-strong px-2.5 py-1.5 text-sm" />
+                 className="w-72" />
           {isFetching && <Loader2 className="h-4 w-4 animate-spin text-fg-muted" />}
           <span className="ml-auto text-xs text-fg-muted">{data ? `${data.total} groups` : ''}</span>
-          <button onClick={exportCsv} disabled={!rows.length}
-                  className="inline-flex items-center gap-1 rounded-lg border border-line-strong px-2.5 py-1.5 text-xs text-fg-secondary hover:bg-surface-subtle disabled:opacity-40">
+          <Button variant="secondary" size="xs" onClick={exportCsv} disabled={!rows.length}
+                 >
             <Download className="h-3.5 w-3.5" /> CSV
-          </button>
+          </Button>
         </div>
 
         {error ? (
@@ -389,10 +389,10 @@ export default function ApDuplicateInvoicesPage() {
         ) : (
           <>
           <div className="overflow-x-auto rounded-lg border border-line">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-subtle">
-                <tr className="text-left text-xs text-fg-muted">
-                  <th className="w-6 px-2 py-2" />
+            <Table density="compact">
+              <THead>
+                <Tr className="text-left text-xs text-fg-muted">
+                  <Th className="w-6" />
                   <SortTh label="Action" sortKey="action" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
                   <SortTh label="Invoice no" sortKey="invoice" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
                   <SortTh label="Supplier" sortKey="supplier" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
@@ -402,9 +402,9 @@ export default function ApDuplicateInvoicesPage() {
                   {showMoney && <SortTh label="Billed twice" sortKey="extra" sort={sort} onSort={onSort} align="right" className="px-2.5 py-2 font-medium" />}
                   {showMoney && <SortTh label="Still payable" sortKey="open" sort={sort} onSort={onSort} align="right" className="px-2.5 py-2 font-medium" />}
                   <SortTh label="Review" sortKey="review" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
-                </tr>
-              </thead>
-              <tbody>
+                </Tr>
+              </THead>
+              <TBody>
                 {rows.map((f) => {
                   const open = expanded.has(f.key)
                   const st = STATUS[f.status]
@@ -412,12 +412,12 @@ export default function ApDuplicateInvoicesPage() {
                     ?? Array.from(new Set(f.bills.map((b) => b.supplier_name))).join(' / ')
                   return (
                     <Fragment key={f.key}>
-                      <tr className="cursor-pointer border-t border-line-subtle hover:bg-surface-subtle"
+                      <Tr className="cursor-pointer hover:bg-surface-subtle"
                           onClick={() => toggle(f.key)}>
-                        <td className="px-2 py-2 text-fg-muted">
+                        <Td className="text-fg-muted">
                           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        </td>
-                        <td className="px-2.5 py-2">
+                        </Td>
+                        <Td>
                           <span title={st.hint}
                                 className={cn('inline-block rounded border px-1.5 py-0.5 text-2xs font-medium', st.cls)}>
                             {st.label}
@@ -427,60 +427,60 @@ export default function ApDuplicateInvoicesPage() {
                               new copy
                             </span>
                           )}
-                        </td>
-                        <td className="px-2.5 py-2 font-mono">{f.invoice_no ?? f.invoice_no_norm}</td>
-                        <td className="px-2.5 py-2">
+                        </Td>
+                        <Td className="font-mono">{f.invoice_no ?? f.invoice_no_norm}</Td>
+                        <Td>
                           {f.supplier_code && <span className="font-mono text-xs text-fg-muted">{f.supplier_code} </span>}
                           {suppliers}
-                        </td>
-                        <td className="px-2.5 py-2 font-mono text-xs">{f.currency}</td>
-                        <td className="px-2.5 py-2 text-right font-mono tabular-nums">{money(f.amount)}</td>
-                        <td className="px-2.5 py-2 text-right font-mono tabular-nums">{f.bill_nos.length}</td>
+                        </Td>
+                        <Td className="font-mono text-xs">{f.currency}</Td>
+                        <Td align="right" className="font-mono tabular-nums">{money(f.amount)}</Td>
+                        <Td align="right" className="font-mono tabular-nums">{f.bill_nos.length}</Td>
                         {showMoney && (
-                          <td className="px-2.5 py-2 text-right font-mono tabular-nums">{money(f.extra_amount)}</td>
+                          <Td align="right" className="font-mono tabular-nums">{money(f.extra_amount)}</Td>
                         )}
                         {showMoney && (
-                          <td className={cn('px-2.5 py-2 text-right font-mono tabular-nums',
+                          <Td className={cn('px-2.5 py-2 text-right font-mono tabular-nums',
                                             Number(f.open_exposure) > 0 && 'font-semibold text-danger-fg')}>
                             {money(f.open_exposure)}
-                          </td>
+                          </Td>
                         )}
-                        <td className="px-2.5 py-2" onClick={(e) => e.stopPropagation()}>
+                        <Td onClick={(e) => e.stopPropagation()}>
                           {f.review ? (
                             <div className="flex items-center gap-2 text-xs">
                               <span className="text-fg-secondary" title={f.review.note ?? ''}>
                                 {reasonLabel[f.review.reason] ?? f.review.reason} · {f.review.reviewed_by_name ?? '—'} · {day(f.review.reviewed_at)}
                               </span>
-                              <button onClick={() => unreview.mutate(f.key)} disabled={unreview.isPending}
+                              <Button aria-label="Put back on the list" variant="subtle" size="icon-xs" onClick={() => unreview.mutate(f.key)} disabled={unreview.isPending}
                                       title="Put back on the list"
-                                      className="text-fg-muted hover:text-fg-secondary disabled:opacity-40">
+                                     >
                                 <Undo2 className="h-3.5 w-3.5" />
-                              </button>
+                              </Button>
                             </div>
                           ) : (
-                            <button onClick={() => { setReviewError(null); setReviewing(f) }}
-                                    className="rounded-lg border border-line-strong px-2 py-1 text-xs text-fg-secondary hover:bg-surface-subtle">
+                            <Button variant="secondary" size="xs" onClick={() => { setReviewError(null); setReviewing(f) }}
+                                   >
                               Mark reviewed
-                            </button>
+                            </Button>
                           )}
-                        </td>
-                      </tr>
+                        </Td>
+                      </Tr>
                       {open && (
-                        <tr className="bg-surface-subtle/60">
-                          <td />
-                          <td colSpan={showMoney ? 9 : 7} className="px-2.5 py-2">
+                        <Tr className="bg-surface-subtle/60">
+                          <Td />
+                          <Td colSpan={showMoney ? 9 : 7}>
                             <BillsTable bills={f.bills} />
                             {f.review?.note && (
                               <p className="mt-2 text-xs text-fg-muted">Note: {f.review.note}</p>
                             )}
-                          </td>
-                        </tr>
+                          </Td>
+                        </Tr>
                       )}
                     </Fragment>
                   )
                 })}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
           <ListPager page={page} pageSize={PAGE_SIZE} total={data.total} noun="groups" onPage={setPage} />
           </>
@@ -500,7 +500,7 @@ export default function ApDuplicateInvoicesPage() {
       {reviewError && !reviewing && (
         <div className="fixed bottom-4 right-4 z-[60] max-w-sm rounded-lg border border-warning-line bg-warning-soft px-4 py-3 text-sm text-warning-fg shadow">
           {reviewError}
-          <button onClick={() => setReviewError(null)} className="ml-2 text-xs underline">Dismiss</button>
+          <Button variant="link" onClick={() => setReviewError(null)} className="ml-2 text-xs">Dismiss</Button>
         </div>
       )}
     </PortalChromeLayout>

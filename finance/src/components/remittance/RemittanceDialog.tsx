@@ -18,6 +18,7 @@ import { RemittancePanel } from './RemittancePanel'
 import { secondaryBtn } from './buttonStyles'
 import type { RemittanceScope, SendResult } from '@/services/remittance'
 
+import { Button } from '@uniops/shell'
 const DEFAULT_HEADER = (
   <div>
     <h2 className="text-base font-semibold text-fg">Send Remittance Advice</h2>
@@ -42,9 +43,9 @@ export function RemittanceDialog({ scope, open, onClose, onSent, header }: {
            onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-start justify-between">
           {header ?? DEFAULT_HEADER}
-          <button type="button" onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
+          <Button aria-label="Close" variant="subtle" size="icon-xs" type="button" onClick={onClose}>
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
 
         <RemittancePanel scope={scope} onSent={onSent} />

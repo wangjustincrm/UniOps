@@ -11,7 +11,7 @@
 import { Fragment, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { SortTh, deriveTabMeta, useOptionalTabStoreApi, useSortableRows } from '@uniops/shell'
+import { SortTh, deriveTabMeta, useOptionalTabStoreApi, useSortableRows, Input, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { financeRoutes } from '@/app/routes'
 import { ChevronDown, ChevronRight, Loader2, Search } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
@@ -106,26 +106,26 @@ function Detail({ a }: { a: Anomaly }) {
           {a.next_month.length === 0 ? (
             <p className="text-fg-muted">Not consumed yet.</p>
           ) : (
-            <table className="mt-1 w-full max-w-2xl text-xs">
-              <thead><tr className="text-left text-fg-muted">
-                <th className="py-1 pr-3 font-medium">Production order</th>
-                <th className="py-1 pr-3 font-medium">Made</th>
-                <th className="py-1 pr-3 text-right font-medium">Qty</th>
-                <th className="py-1 pr-3 text-right font-medium">Value</th>
-                <th className="py-1 text-right font-medium">Unit</th>
-              </tr></thead>
-              <tbody>
+            <Table density="compact" className="mt-1 max-w-2xl">
+              <THead><Tr className="text-left text-fg-muted">
+                <Th className="pr-3">Production order</Th>
+                <Th className="pr-3">Made</Th>
+                <Th align="right" className="pr-3 ">Qty</Th>
+                <Th align="right" className="pr-3 ">Value</Th>
+                <Th align="right">Unit</Th>
+              </Tr></THead>
+              <TBody>
                 {a.next_month.map((f, i) => (
-                  <tr key={i} className="border-t border-line-subtle">
-                    <td className="py-1 pr-3 font-mono">{f.mo_code ?? '—'}</td>
-                    <td className="py-1 pr-3">{f.products.map((p) => `${p.material_code} ${p.material_name ?? ''}`).join('; ') || '—'}</td>
-                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{qty(f.qty)}</td>
-                    <td className={cn('py-1 pr-3 text-right font-mono tabular-nums', (f.amount ?? 0) < 0 && 'text-danger-fg')}>{num(f.amount)}</td>
-                    <td className="py-1 text-right font-mono tabular-nums">{num(f.unit, 4)}</td>
-                  </tr>
+                  <Tr key={i}>
+                    <Td className="pr-3 font-mono">{f.mo_code ?? '—'}</Td>
+                    <Td className="pr-3">{f.products.map((p) => `${p.material_code} ${p.material_name ?? ''}`).join('; ') || '—'}</Td>
+                    <Td align="right" className="pr-3 font-mono tabular-nums">{qty(f.qty)}</Td>
+                    <Td className={cn('py-1 pr-3 text-right font-mono tabular-nums', (f.amount ?? 0) < 0 && 'text-danger-fg')}>{num(f.amount)}</Td>
+                    <Td align="right" className="font-mono tabular-nums">{num(f.unit, 4)}</Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           )}
         </div>
       )}
@@ -197,16 +197,16 @@ export default function CostAnomaliesPage() {
 
         <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
           <label className="text-xs text-fg-muted">From</label>
-          <input type="month" value={from} onChange={(e) => setFrom(e.target.value)}
-                 className="rounded-lg border border-line-strong px-2 py-1" />
+          <Input inputSize="sm" type="month" value={from} onChange={(e) => setFrom(e.target.value)}
+                 />
           <label className="text-xs text-fg-muted">To</label>
-          <input type="month" value={to} onChange={(e) => setTo(e.target.value)}
-                 className="rounded-lg border border-line-strong px-2 py-1" />
+          <Input inputSize="sm" type="month" value={to} onChange={(e) => setTo(e.target.value)}
+                 />
           <div className="relative">
             <Search className="pointer-events-none absolute left-2 top-2 h-3.5 w-3.5 text-fg-muted" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)}
+            <Input inputSize="sm" value={search} onChange={(e) => setSearch(e.target.value)}
                    placeholder="Material or NC document"
-                   className="w-64 rounded-lg border border-line-strong py-1 pl-7 pr-2" />
+                   className="w-64 pl-7 pr-2" />
           </div>
           {isFetching && <Loader2 className="h-4 w-4 animate-spin text-fg-muted" />}
           {data && data.open_periods.length > 0 && (
@@ -245,58 +245,58 @@ export default function CostAnomaliesPage() {
               </div>
             ) : (
               <div className="overflow-x-auto rounded-lg border border-line">
-                <table className="w-full text-sm">
-                  <thead className="bg-surface-subtle">
-                    <tr className="text-left text-xs text-fg-muted">
-                      <th className="w-6 px-2 py-2" />
+                <Table density="compact">
+                  <THead>
+                    <Tr className="text-left text-xs text-fg-muted">
+                      <Th className="w-6" />
                       <SortTh label="Severity" sortKey="severity" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
                       <SortTh label="Rule" sortKey="rule" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
                       <SortTh label="Month" sortKey="month" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
                       <SortTh label="Material" sortKey="material" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
                       <SortTh label="What happened" sortKey="what" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
-                      <th className="px-2.5 py-2 font-medium" />
-                    </tr>
-                  </thead>
-                  <tbody>
+                      <Th />
+                    </Tr>
+                  </THead>
+                  <TBody>
                     {rows.map(({ a, id: i }) => {
                       const open = expanded.has(i)
                       const href = traceHref(a, from, to)
                       return (
                         <Fragment key={i}>
-                          <tr className="cursor-pointer border-t border-line-subtle hover:bg-surface-subtle" onClick={() => toggle(i)}>
-                            <td className="px-2 py-2 text-fg-muted">
+                          <Tr className="cursor-pointer hover:bg-surface-subtle" onClick={() => toggle(i)}>
+                            <Td className="text-fg-muted">
                               {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                            </td>
-                            <td className="px-2.5 py-2"><SeverityBadge severity={a.severity} /></td>
-                            <td className="px-2.5 py-2 text-xs"><span className="font-mono text-fg-muted">{a.rule}</span> {a.title}</td>
-                            <td className="whitespace-nowrap px-2.5 py-2 font-mono text-xs">
+                            </Td>
+                            <Td><SeverityBadge severity={a.severity} /></Td>
+                            <Td className="text-xs"><span className="font-mono text-fg-muted">{a.rule}</span> {a.title}</Td>
+                            <Td className="whitespace-nowrap font-mono text-xs">
                               {a.period ?? '—'}{a.period_closed === false && <OpenPeriodBadge />}
-                            </td>
-                            <td className="px-2.5 py-2">
+                            </Td>
+                            <Td>
                               {a.material_code && <span className="font-mono text-xs">{a.material_code}</span>}
                               <span className="ml-1 text-xs text-fg-muted">{a.material_name}</span>
-                            </td>
-                            <td className="px-2.5 py-2 text-xs">{summary(a)}</td>
-                            <td className="px-2.5 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                            </Td>
+                            <Td className="text-xs">{summary(a)}</Td>
+                            <Td align="right" onClick={(e) => e.stopPropagation()}>
                               {href && (
                                 <Link to={href} onClick={() => retarget(href)}
                                       className="whitespace-nowrap text-xs text-primary-700 underline">
                                   Trace
                                 </Link>
                               )}
-                            </td>
-                          </tr>
+                            </Td>
+                          </Tr>
                           {open && (
-                            <tr className="bg-surface-subtle/60">
-                              <td />
-                              <td colSpan={6} className="px-2.5 py-3"><Detail a={a} /></td>
-                            </tr>
+                            <Tr className="bg-surface-subtle/60">
+                              <Td />
+                              <Td colSpan={6}><Detail a={a} /></Td>
+                            </Tr>
                           )}
                         </Fragment>
                       )
                     })}
-                  </tbody>
-                </table>
+                  </TBody>
+                </Table>
               </div>
             )}
           </>

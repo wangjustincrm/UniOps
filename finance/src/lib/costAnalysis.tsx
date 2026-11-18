@@ -15,6 +15,7 @@ import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Load
 import { financeApi } from '@/lib/api'
 import { cn, currentMonthISO, formatDateTime } from '@/lib/utils'
 
+import { TBody, Table, Td, Tr, Button } from '@uniops/shell'
 export interface SyncRun {
   id: string; status: string; started_at: string | null; finished_at: string | null
   counts: Record<string, number> | null; tie_out_ok: boolean | null
@@ -143,11 +144,11 @@ export function SyncBar() {
         <span className="text-danger-fg" title={failed.error ?? ''}>Last sync failed {when(failed.finished_at)}</span>
       )}
       {data.can_sync && data.configured && (
-        <button onClick={() => sync.mutate()} disabled={running}
-                className="ml-auto inline-flex items-center gap-1 rounded-lg border border-line-strong px-2.5 py-1 text-xs text-fg-secondary hover:bg-surface-subtle disabled:opacity-50">
+        <Button variant="secondary" size="xs" onClick={() => sync.mutate()} disabled={running}
+                className="ml-auto">
           {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           {running ? 'Syncing…' : 'Sync now'}
-        </button>
+        </Button>
       )}
       {sync.error && <span className="text-danger-fg">{(sync.error as Error).message}</span>}
     </div>
@@ -195,17 +196,17 @@ export function traceLink(code: string, from: string, to: string): string {
 
 function EvidenceTable({ rows }: { rows: Evidence[] }) {
   return (
-    <table className="mt-1 w-full text-xs">
-      <tbody>
+    <Table density="compact" className="mt-1">
+      <TBody>
         {rows.map((e, i) => (
-          <tr key={i} className="border-t border-line-subtle">
-            <td className="w-1/2 py-1 pr-3 text-fg-muted">{e.label}</td>
-            <td className="py-1 pr-3 font-mono tabular-nums text-fg">{e.value}</td>
-            <td className="py-1 font-mono text-2xs text-fg-muted">{e.ref ?? ''}</td>
-          </tr>
+          <Tr key={i}>
+            <Td className="w-1/2 pr-3 text-fg-muted">{e.label}</Td>
+            <Td className="pr-3 font-mono tabular-nums text-fg">{e.value}</Td>
+            <Td className="font-mono text-2xs text-fg-muted">{e.ref ?? ''}</Td>
+          </Tr>
         ))}
-      </tbody>
-    </table>
+      </TBody>
+    </Table>
   )
 }
 
@@ -235,10 +236,10 @@ export function FindingCard({ f, prefix }: { f: Finding; prefix?: string }) {
           ))}
         </p>
       )}
-      <button onClick={() => setOpen(!open)} className="mt-2 inline-flex items-center gap-1 text-xs text-primary-700">
+      <Button variant="link" onClick={() => setOpen(!open)} className="mt-2 text-xs">
         {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         Evidence ({f.evidence.length})
-      </button>
+      </Button>
       {open && <EvidenceTable rows={f.evidence} />}
     </div>
   )
@@ -251,7 +252,7 @@ export function DiagnosisPanel({ d, compact = false }: { d: Diagnosis; compact?:
   const ok = d.findings.every((f) => f.severity === 'info')
   return (
     <div className={cn('rounded-lg border p-4', ok ? 'border-line bg-surface-subtle' : 'border-primary-700/30 bg-primary-50/40')}>
-      <p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Summary</p>
+      <p className="text-xs font-semibold text-primary-700">Summary</p>
       <p className="mt-1 text-base font-semibold leading-snug text-fg">{d.headline}</p>
 
       {d.root_chain.length > 0 && (

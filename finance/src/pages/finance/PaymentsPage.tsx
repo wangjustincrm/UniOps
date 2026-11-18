@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { SortTh, deriveTabMeta, sortParams, useOptionalTabStoreApi, useSort } from '@uniops/shell'
+import { SortTh, deriveTabMeta, sortParams, useOptionalTabStoreApi, useSort, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { Download, Receipt, Send, X } from 'lucide-react'
 import { financeRoutes } from '@/app/routes'
 import { financeApi, financeDownload, mdmApi } from '@/lib/api'
@@ -239,7 +239,7 @@ function VendorFilter({ vendorId, vendorName, onChange }: {
 
   return (
     <div ref={triggerRef} className="relative">
-      <input
+      <Input
         value={query}
         placeholder="All vendors"
         className={cn(inputCls, 'block w-48 pr-6')}
@@ -251,11 +251,11 @@ function VendorFilter({ vendorId, vendorName, onChange }: {
         }}
       />
       {vendorId && (
-        <button type="button" title="Clear vendor filter"
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
+        <Button aria-label="Clear vendor filter" variant="subtle" size="icon-xs" type="button" title="Clear vendor filter"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2"
                 onClick={() => { onChange(null); setQuery(''); setOpen(false) }}>
           <X className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       )}
       {open && createPortal(
         <div ref={overlayRef}
@@ -434,8 +434,8 @@ export default function PaymentsPage() {
         <div className="mb-4 flex flex-wrap gap-4">
           {summary.map((s) => (
             <div key={s.currency} className="rounded-lg border border-line bg-surface px-5 py-4">
-              <p className="text-xs uppercase tracking-wide text-fg-muted">Total Paid ({s.currency})</p>
-              <p className="mt-1 font-mono text-2xl font-bold text-fg">
+              <p className="text-xs text-fg-muted">Total Paid ({s.currency})</p>
+              <p className="mt-1 font-mono text-2xl font-semibold text-fg">
                 {Number(s.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
               <p className="text-xs text-fg-muted">{s.count} payment{s.count === 1 ? '' : 's'}</p>
@@ -451,65 +451,65 @@ export default function PaymentsPage() {
         <div className="mb-3 flex flex-wrap items-end gap-3">
           <label className="text-xs text-fg-secondary">
             From
-            <input type="date" value={filters.date_from} className={cn(inputCls, 'block')}
+            <Input type="date" value={filters.date_from} className={cn(inputCls, 'block')}
                    onChange={(e) => setFilter({ date_from: e.target.value })} />
           </label>
           <label className="text-xs text-fg-secondary">
             To
-            <input type="date" value={filters.date_to} className={cn(inputCls, 'block')}
+            <Input type="date" value={filters.date_to} className={cn(inputCls, 'block')}
                    onChange={(e) => setFilter({ date_to: e.target.value })} />
           </label>
           <label className="text-xs text-fg-secondary">
             Search
-            <input value={filters.q} placeholder="Document, payee, reference" className={cn(inputCls, 'block w-56')}
+            <Input value={filters.q} placeholder="Document, payee, reference" className={cn(inputCls, 'block w-56')}
                    onChange={(e) => setFilter({ q: e.target.value })} />
           </label>
           <label className="text-xs text-fg-secondary">
             Currency
-            <select value={filters.currency} className={cn(inputCls, 'block w-24')}
+            <Select value={filters.currency} className={cn(inputCls, 'block w-24')}
                     onChange={(e) => setFilter({ currency: e.target.value })}>
               <option value="">All</option>
               {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
-            </select>
+            </Select>
           </label>
           <label className="text-xs text-fg-secondary">
             Method
-            <select value={filters.payment_method} className={cn(inputCls, 'block w-28')}
+            <Select value={filters.payment_method} className={cn(inputCls, 'block w-28')}
                     onChange={(e) => setFilter({ payment_method: e.target.value })}>
               <option value="">All</option>
               <option value="eft">EFT</option>
               <option value="cheque">Cheque</option>
               <option value="wire">Wire</option>
               <option value="other">Other</option>
-            </select>
+            </Select>
           </label>
           <label className="text-xs text-fg-secondary">
             Bank Account
-            <select value={filters.bank_account_id} className={cn(inputCls, 'block w-56')}
+            <Select value={filters.bank_account_id} className={cn(inputCls, 'block w-56')}
                     onChange={(e) => setFilter({ bank_account_id: e.target.value })}>
               <option value="">All</option>
               {bankAccounts.map((a) => (
                 <option key={a.id} value={a.id}>{bankLabel(a)}</option>
               ))}
-            </select>
+            </Select>
           </label>
           <label className="text-xs text-fg-secondary">
             Source
-            <select value={filters.source} className={cn(inputCls, 'block w-24')}
+            <Select value={filters.source} className={cn(inputCls, 'block w-24')}
                     onChange={(e) => setFilter({ source: e.target.value })}>
               <option value="">All</option>
               <option value="batch">Batch</option>
               <option value="single">Single</option>
-            </select>
+            </Select>
           </label>
           <label className="text-xs text-fg-secondary">
             Remittance
-            <select value={filters.remittance} className={cn(inputCls, 'block w-28')}
+            <Select value={filters.remittance} className={cn(inputCls, 'block w-28')}
                     onChange={(e) => setFilter({ remittance: e.target.value })}>
               <option value="">All</option>
               <option value="sent">Sent</option>
               <option value="not_sent">Not sent</option>
-            </select>
+            </Select>
           </label>
           <label className="text-xs text-fg-secondary">
             Vendor
@@ -555,14 +555,14 @@ export default function PaymentsPage() {
         )}
 
         <div className="overflow-hidden rounded-lg border border-line">
-          <table className="w-full text-sm">
-            <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-              <tr>
-                <th className="w-8 px-3 py-2">
-                  <input type="checkbox" checked={allOnPageSelected}
+          <Table density="compact">
+            <THead>
+              <Tr>
+                <Th className="w-8">
+                  <Checkbox checked={allOnPageSelected}
                          onChange={(e) => toggleAllOnPage(e.target.checked)}
                          aria-label="Select all payments on this page" />
-                </th>
+                </Th>
                 <SortTh label="Date" sortKey="payment_date" sort={sort} onSort={onSort} className="px-3 py-2" />
                 <SortTh label="Document" sortKey="doc_number" sort={sort} onSort={onSort} className="px-3 py-2" />
                 <SortTh label="Payee" sortKey="payee" sort={sort} onSort={onSort} className="px-3 py-2" />
@@ -577,52 +577,52 @@ export default function PaymentsPage() {
                 <SortTh label="Source" sortKey="source" sort={sort} onSort={onSort} className="px-3 py-2" />
                 <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-3 py-2" />
                 <SortTh label="Remittance" sortKey="remittance" sort={sort} onSort={onSort} title="Send history only — open a row to check whether it can actually be sent" className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody>
+              </Tr>
+            </THead>
+            <TBody>
               {isLoading && (
-                <tr><td colSpan={10} className="px-3 py-6 text-center text-fg-muted">Loading…</td></tr>
+                <Tr><Td align="center" colSpan={10} className="text-fg-muted">Loading…</Td></Tr>
               )}
               {!isLoading && rows.length === 0 && (
-                <tr><td colSpan={10} className="px-3 py-6 text-center text-fg-muted">No payments match the current filters.</td></tr>
+                <Tr><Td align="center" colSpan={10} className="text-fg-muted">No payments match the current filters.</Td></Tr>
               )}
               {rows.map((r, i) => (
-                <tr key={r.id} className={cn('cursor-pointer border-t border-line-subtle hover:bg-surface-subtle', i % 2 && 'bg-surface-subtle/40')}
+                <Tr key={r.id} className={cn('cursor-pointer border-t border-line-subtle hover:bg-surface-subtle', i % 2 && 'bg-surface-subtle/40')}
                     onClick={() => setOpenRow(r)}>
-                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" checked={selectedIds.has(r.id)}
+                  <Td onClick={(e) => e.stopPropagation()}>
+                    <Checkbox checked={selectedIds.has(r.id)}
                            onChange={(e) => toggleRow(r.id, e.target.checked)}
                            aria-label={`Select payment ${r.doc_number ?? r.id}`} />
-                  </td>
-                  <td className="px-3 py-2 text-xs text-fg-secondary">{formatDate(r.payment_date)}</td>
-                  <td className="px-3 py-2 font-mono text-xs">{r.doc_number ?? '—'}</td>
-                  <td className="px-3 py-2">{r.payee_name ?? '—'}</td>
-                  <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.amount, r.currency)}</td>
+                  </Td>
+                  <Td className="text-xs text-fg-secondary">{formatDate(r.payment_date)}</Td>
+                  <Td className="font-mono text-xs">{r.doc_number ?? '—'}</Td>
+                  <Td>{r.payee_name ?? '—'}</Td>
+                  <Td align="right" className="font-mono">{fmtMoney(r.amount, r.currency)}</Td>
                   {/* Without this the short payment has no explanation inside
                       the app at all — `amount` is already net. Dash rather
                       than "0.00" so a genuinely netted row stands out. */}
-                  <td className="px-3 py-2 text-right font-mono text-xs text-fg-muted">
+                  <Td align="right" className="font-mono text-xs text-fg-muted">
                     {Number(r.credit_applied ?? 0) > 0 ? fmtMoney(r.credit_applied, r.currency) : '—'}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-fg-secondary">{r.bank_account_name ?? '—'}</td>
-                  <td className="px-3 py-2 text-xs text-fg-muted">{r.batch_id ? 'Batch' : 'Single'}</td>
-                  <td className="px-3 py-2"><PaymentStatusBadge status={r.status} /></td>
-                  <td className="px-3 py-2"><RemittanceStatusBadge status={remittanceColumnStatus(r.remittance_status)} /></td>
-                </tr>
+                  </Td>
+                  <Td className="text-xs text-fg-secondary">{r.bank_account_name ?? '—'}</Td>
+                  <Td className="text-xs text-fg-muted">{r.batch_id ? 'Batch' : 'Single'}</Td>
+                  <Td><PaymentStatusBadge status={r.status} /></Td>
+                  <Td><RemittanceStatusBadge status={remittanceColumnStatus(r.remittance_status)} /></Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
 
         <div className="mt-3 flex items-center justify-between text-xs text-fg-muted">
           <span>{total} payment{total === 1 ? '' : 's'}</span>
           {pageCount > 1 && (
             <div className="flex items-center gap-2">
-              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}
-                      className="rounded border border-line-strong px-2 py-1 disabled:opacity-40">Prev</button>
+              <Button variant="secondary" size="xs" type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}
+                     >Prev</Button>
               <span>Page {page} of {pageCount}</span>
-              <button type="button" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)}
-                      className="rounded border border-line-strong px-2 py-1 disabled:opacity-40">Next</button>
+              <Button variant="secondary" size="xs" type="button" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)}
+                     >Next</Button>
             </div>
           )}
         </div>

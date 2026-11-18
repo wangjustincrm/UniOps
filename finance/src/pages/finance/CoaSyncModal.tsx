@@ -8,6 +8,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { financeApi } from '@/lib/api'
 
+import { TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 export interface CoaSyncStatus {
   can_sync: boolean
   configured: boolean
@@ -102,23 +103,23 @@ export function CoaSyncModal({ onClose, onSynced }:
 
             {preview.accounts.updates.length > 0 && (
               <div className="mb-3 max-h-64 overflow-y-auto rounded-lg border border-line">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-surface-subtle text-fg-secondary">
-                    <tr><th className="p-2">Account</th><th className="p-2">Field</th>
-                        <th className="p-2">Before</th><th className="p-2">After</th></tr>
-                  </thead>
-                  <tbody>
+                <Table density="compact" className="text-left">
+                  <THead>
+                    <Tr><Th>Account</Th><Th>Field</Th>
+                        <Th>Before</Th><Th>After</Th></Tr>
+                  </THead>
+                  <TBody>
                     {preview.accounts.updates.flatMap((u) =>
                       Object.entries(u.changes).map(([f, [before, after]]) => (
-                        <tr key={`${u.code}-${f}`} className="border-t border-line-subtle">
-                          <td className="p-2 font-mono">{u.code}{u.reactivated ? ' (reactivated)' : ''}</td>
-                          <td className="p-2">{f}</td>
-                          <td className="p-2 text-fg-muted">{String(before)}</td>
-                          <td className="p-2 font-medium">{String(after)}</td>
-                        </tr>
+                        <Tr key={`${u.code}-${f}`}>
+                          <Td className="font-mono">{u.code}{u.reactivated ? ' (reactivated)' : ''}</Td>
+                          <Td>{f}</Td>
+                          <Td className="text-fg-muted">{String(before)}</Td>
+                          <Td className="font-medium">{String(after)}</Td>
+                        </Tr>
                       )))}
-                  </tbody>
-                </table>
+                  </TBody>
+                </Table>
               </div>
             )}
 
@@ -128,19 +129,19 @@ export function CoaSyncModal({ onClose, onSynced }:
                   Accounts to be deactivated (not deleted — historical postings keep resolving):
                 </p>
                 <div className="max-h-64 overflow-y-auto rounded-lg border border-line">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-surface-subtle text-fg-secondary">
-                      <tr><th className="p-2">Code</th><th className="p-2">Name</th></tr>
-                    </thead>
-                    <tbody>
+                  <Table density="compact" className="text-left">
+                    <THead>
+                      <Tr><Th>Code</Th><Th>Name</Th></Tr>
+                    </THead>
+                    <TBody>
                       {preview.accounts.deactivations.map((d) => (
-                        <tr key={d.code} className="border-t border-line-subtle">
-                          <td className="p-2 font-mono">{d.code}</td>
-                          <td className="p-2">{d.name}</td>
-                        </tr>
+                        <Tr key={d.code}>
+                          <Td className="font-mono">{d.code}</Td>
+                          <Td>{d.name}</Td>
+                        </Tr>
                       ))}
-                    </tbody>
-                  </table>
+                    </TBody>
+                  </Table>
                 </div>
               </div>
             )}

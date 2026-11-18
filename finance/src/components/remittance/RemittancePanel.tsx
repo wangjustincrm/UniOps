@@ -28,6 +28,7 @@ import {
 import { primaryBtn, secondaryBtn } from './buttonStyles'
 import { RemittanceEmailPreview } from './RemittanceEmailPreview'
 
+import { Checkbox, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 type Recipient = { recipient_kind: string; party_id: string; resend: boolean }
 
 /** What the operator is looking at on the confirmation step, frozen at the
@@ -307,10 +308,10 @@ export function RemittancePanel({ scope, onSent }: {
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-2 text-sm text-fg-secondary">
             Payment date
-            <input type="date" value={paymentDate} max={todayLocal()}
+            <Input inputSize="sm" type="date" value={paymentDate} max={todayLocal()}
               onChange={(e) => setPaymentDate(e.target.value)}
               title="The date the advice tells the payee the funds left. Defaults to today — back-date it if the payment actually cleared earlier."
-              className="rounded-md border border-line-strong px-2 py-1 text-sm" />
+              />
           </label>
           <button type="button" onClick={() => void refetch()} disabled={isFetching} className={secondaryBtn}>
             <RefreshCw className={cn('h-4 w-4', isFetching && 'animate-spin')} />
@@ -336,17 +337,17 @@ export function RemittancePanel({ scope, onSent }: {
         <p className="py-4 text-center text-sm text-fg-muted">No payees to email for this {scope.kind}.</p>
       ) : (
         <div className="overflow-hidden rounded-lg border border-line">
-          <table className="w-full text-sm">
-            <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-              <tr>
-                <th className="w-8 px-3 py-2" />
-                <th className="px-3 py-2">Payee</th>
-                <th className="px-3 py-2">Email</th>
-                <th className="px-3 py-2 text-right">Amount</th>
-                <th className="px-3 py-2">Status</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <THead>
+              <Tr>
+                <Th className="w-8" />
+                <Th>Payee</Th>
+                <Th>Email</Th>
+                <Th align="right">Amount</Th>
+                <Th>Status</Th>
+              </Tr>
+            </THead>
+            <TBody>
               {preview.groups.map((g, i) => {
                 const key = payeeKey(g.recipient_kind, g.party_id)
                 const blocked = g.block_reasons.length > 0
@@ -354,9 +355,9 @@ export function RemittancePanel({ scope, onSent }: {
                 const isExpanded = expanded.has(key)
                 return (
                   <Fragment key={key}>
-                    <tr className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40', blocked && 'text-fg-muted')}>
-                      <td className="px-3 py-2">
-                        <input type="checkbox" disabled={blocked} checked={selected.has(key)}
+                    <Tr className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40', blocked && 'text-fg-muted')}>
+                      <Td>
+                        <Checkbox disabled={blocked} checked={selected.has(key)}
                           title={status === 'sent' ? 'Already sent — check to resend' : undefined}
                           onChange={(e) => setSelected((prev) => {
                             const next = new Set(prev)
@@ -364,23 +365,23 @@ export function RemittancePanel({ scope, onSent }: {
                             else next.delete(key)
                             return next
                           })} />
-                      </td>
-                      <td className="px-3 py-2">
-                        <button type="button" onClick={() => toggleExpanded(key)}
-                          className="mr-1 inline-flex align-middle text-fg-muted hover:text-fg-secondary"
+                      </Td>
+                      <Td>
+                        <Button variant="subtle" size="xs" type="button" onClick={() => toggleExpanded(key)}
+                          className="mr-1"
                           aria-label={isExpanded ? 'Collapse lines' : 'Expand lines'}>
                           {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                        </button>
+                        </Button>
                         {g.party_name}
                         <span className="ml-1 text-xs text-fg-muted">
                           ({g.recipient_kind === 'vendor' ? 'Vendor' : 'Employee'})
                         </span>
-                      </td>
-                      <td className="px-3 py-2 text-xs text-fg-secondary">
+                      </Td>
+                      <Td className="text-xs text-fg-secondary">
                         {g.email || <span className="text-fg-faint">—</span>}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">{fmtMoney(g.total, g.currency)}</td>
-                      <td className="px-3 py-2">
+                      </Td>
+                      <Td align="right" className="font-mono">{fmtMoney(g.total, g.currency)}</Td>
+                      <Td>
                         <RemittanceStatusBadge status={status} />
                         {blocked && <div className="mt-1 text-xs text-warning-fg">{blockReasonText(g.block_reasons)}</div>}
                         {/* Fix 6 (Round 2): show whenever an error is persisted, not only
@@ -398,8 +399,8 @@ export function RemittancePanel({ scope, onSent }: {
                               : g.last_send.error}
                           </div>
                         )}
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                     {/* Line detail — what this payee's advice will actually say. Collapsed by
                         default (see `expanded` state above); a line with credit netted off it
                         shows the same three-tier breakdown as the email (gross, one row per
@@ -409,22 +410,22 @@ export function RemittancePanel({ scope, onSent }: {
                         mirrors. A line with no credit renders as a single amount, same as
                         today. */}
                     {isExpanded && (
-                      <tr className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
-                        <td className="px-3 py-2" />
-                        <td colSpan={4} className="px-3 py-2">
-                          <table className="w-full text-xs">
-                            <tbody>
+                      <Tr className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
+                        <Td />
+                        <Td colSpan={4}>
+                          <Table>
+                            <TBody>
                               {g.lines.map((l, li) => {
                                 const hasCredit = Number(l.credit_applied) > 0
                                 return (
-                                  <tr key={li} className={cn(li > 0 && 'border-t border-line-subtle')}>
-                                    <td className="py-1 pr-3 align-top text-fg-secondary">{l.reference}</td>
+                                  <Tr key={li} className={cn(li > 0 && 'border-t border-line-subtle')}>
+                                    <Td className="pr-3 align-top text-fg-secondary">{l.reference}</Td>
                                     {/* The date the advice will carry, not the date recorded
                                         against the payment — those differ whenever the operator
                                         back-dates above, and this detail exists so AP is reading
                                         exactly what the payee will read. */}
-                                    <td className="py-1 pr-3 align-top text-fg-muted">{formatDate(paymentDate || l.payment_date)}</td>
-                                    <td className="py-1 text-right align-top font-mono">
+                                    <Td className="pr-3 align-top text-fg-muted">{formatDate(paymentDate || l.payment_date)}</Td>
+                                    <Td align="right" className="align-top font-mono">
                                       {hasCredit ? (
                                         <div className="space-y-0.5">
                                           <div>{fmtMoney(l.gross, g.currency)}</div>
@@ -438,20 +439,20 @@ export function RemittancePanel({ scope, onSent }: {
                                       ) : (
                                         fmtMoney(l.amount, g.currency)
                                       )}
-                                    </td>
-                                  </tr>
+                                    </Td>
+                                  </Tr>
                                 )
                               })}
-                            </tbody>
-                          </table>
-                        </td>
-                      </tr>
+                            </TBody>
+                          </Table>
+                        </Td>
+                      </Tr>
                     )}
                   </Fragment>
                 )
               })}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
       )}
 

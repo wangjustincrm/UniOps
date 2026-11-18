@@ -37,6 +37,7 @@ import {
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
+import { Checkbox, FileInput, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
@@ -216,7 +217,7 @@ function Stat({ label, value, tone, hint }: {
 }) {
   return (
     <div className="rounded-lg border border-line bg-surface px-3 py-2">
-      <div className="text-2xs uppercase tracking-wide text-fg-muted">{label}</div>
+      <div className="text-2xs text-fg-muted">{label}</div>
       <div className={cn('font-mono text-sm font-semibold tabular-nums',
         tone === 'neg' && 'text-danger-fg', tone === 'pos' && 'text-success-fg',
         tone === 'warn' && 'text-warning-fg')}>{value}</div>
@@ -492,17 +493,17 @@ export default function BankReconciliationPage() {
             {banner.kind === 'err' ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
             <span>{banner.text}</span>
-            <button onClick={() => setBanner(null)} className="ml-auto text-xs underline">dismiss</button>
+            <Button variant="link" onClick={() => setBanner(null)} className="ml-auto text-xs">dismiss</Button>
           </div>
         )}
 
         {/* ── account + period ─────────────────────────────────────────── */}
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <div>
-            <label className="mb-1 block text-2xs uppercase tracking-wide text-fg-muted">Bank account</label>
+            <label className="mb-1 block text-2xs text-fg-muted">Bank account</label>
             <div className="flex items-center gap-2">
               <Landmark className="h-4 w-4 text-fg-muted" />
-              <select value={accountId} className={cn(inputCls, 'w-72')}
+              <Select value={accountId} className={cn(inputCls, 'w-72')}
                       onChange={(e) => { setAccountId(e.target.value); setReconId(''); clearPicks() }}>
                 <option value="">Select an account…</option>
                 {accounts.map((a) => (
@@ -511,16 +512,16 @@ export default function BankReconciliationPage() {
                     {a.nc_bank_account_code ? '' : '  (not linked to NC)'}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-2xs uppercase tracking-wide text-fg-muted">Period</label>
+            <label className="mb-1 block text-2xs text-fg-muted">Period</label>
             <div className="flex items-center gap-2">
-              <input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)}
+              <Input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)}
                      className={cn(inputCls, 'w-40')} />
               <span className="text-fg-muted">to</span>
-              <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)}
+              <Input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)}
                      className={cn(inputCls, 'w-40')} />
             </div>
           </div>
@@ -544,47 +545,47 @@ export default function BankReconciliationPage() {
           <div className="mb-4 rounded-lg border border-line bg-surface">
             <div className="flex items-center gap-2 border-b border-line-subtle px-3 py-2">
               <History className="h-4 w-4 text-fg-muted" />
-              <span className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+              <span className="text-xs font-semibold text-fg-muted">
                 Periods for this account ({history.length})
               </span>
             </div>
             <div className="max-h-60 overflow-y-auto">
-              <table className="w-full text-sm">
-                <tbody>
+              <Table density="compact">
+                <TBody>
                   {history.map((h, i) => (
-                    <tr key={h.id}
+                    <Tr key={h.id}
                         onClick={() => { setReconId(h.id); setFindings([]); clearPicks() }}
                         className={cn('cursor-pointer border-t border-line-subtle hover:bg-surface-subtle',
                           i % 2 && 'bg-surface-subtle/40',
                           h.id === reconId && 'bg-[#E4EFEC]')}>
-                      <td className="w-56 px-3 py-2 font-mono text-sm">
+                      <Td className="w-56 font-mono text-sm">
                         {formatDate(h.period_start)} → {formatDate(h.period_end)}
-                      </td>
-                      <td className="w-28 px-3 py-2">
+                      </Td>
+                      <Td className="w-28">
                         {h.status === 'finalized'
                           ? <Pill tone="bg-success-soft text-success-fg">signed off</Pill>
                           : <Pill tone="bg-warning-soft text-warning-fg">open</Pill>}
-                      </td>
-                      <td className="w-36 px-3 py-2 text-right font-mono text-sm tabular-nums">
+                      </Td>
+                      <Td align="right" className="w-36 font-mono text-sm tabular-nums">
                         {/* The number that decides whether it could be signed off */}
                         <span className={Number(h.difference) === 0 ? 'text-fg-muted' : 'text-danger-fg'}>
                           {money(h.difference)}
                         </span>
-                      </td>
-                      <td className="px-3 py-2 text-sm text-fg-muted">
+                      </Td>
+                      <Td className="text-sm text-fg-muted">
                         {h.finalized_at
                           ? `signed off ${formatDate(h.finalized_at)}`
                           : 'not signed off'}
-                      </td>
-                      <td className="w-32 px-3 py-2 text-right">
+                      </Td>
+                      <Td align="right" className="w-32 ">
                         {h.has_report && (
                           <span className="text-sm text-fg-muted">report kept</span>
                         )}
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                   ))}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
           </div>
         )}
@@ -675,7 +676,7 @@ export default function BankReconciliationPage() {
               <label className={cn('flex items-center gap-1.5 text-sm text-fg-secondary',
                                    (!canManage || frozen) && 'opacity-60')}
                      title="Count vouchers NC has not tallied yet on the ledger side. Saved on this period; the sign-off report states it.">
-                <input type="checkbox" checked={period.include_unposted}
+                <Checkbox checked={period.include_unposted}
                        disabled={!canManage || frozen || setBasis.isPending}
                        onChange={(e) => setBasis.mutate(e.target.checked)} />
                 Include unposted vouchers
@@ -683,7 +684,7 @@ export default function BankReconciliationPage() {
               </label>
               {canManage && !frozen && (
                 <>
-                  <input ref={stmtInput} type="file" accept="application/pdf" className="hidden"
+                  <FileInput ref={stmtInput} accept="application/pdf" className="hidden"
                          onChange={(e) => {
                            const f = e.target.files?.[0]
                            if (f) importStatement.mutate(f)
@@ -696,7 +697,7 @@ export default function BankReconciliationPage() {
                     Import statement (PDF)
                   </button>
 
-                  <input ref={adviceInput} type="file" accept="application/pdf" multiple className="hidden"
+                  <FileInput ref={adviceInput} accept="application/pdf" multiple className="hidden"
                          onChange={(e) => {
                            const fs = Array.from(e.target.files ?? [])
                            if (fs.length) importAdvices.mutate(fs)
@@ -761,7 +762,7 @@ export default function BankReconciliationPage() {
 
             {findings.length > 0 && (
               <div className="mb-3 rounded-lg border border-warning-line bg-warning-soft px-3 py-2">
-                <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-warning-fg">
+                <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-warning-fg">
                   <AlertTriangle className="h-3.5 w-3.5" /> Needs a look ({findings.length})
                 </div>
                 {/* Clickable: a finding names a statement line, and reading it used
@@ -776,15 +777,15 @@ export default function BankReconciliationPage() {
                     return (
                       <li key={i}>
                         {reachable ? (
-                          <button type="button"
+                          <Button variant="link" type="button"
                                   onClick={() => {
                                     if (gid) setFocusGroup(gid)
                                     else document.getElementById(`bank-${bankId}`)
                                       ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
                                   }}
-                                  className="text-left underline decoration-warning-400 underline-offset-2 hover:decoration-warning-fg">
+                                  className="text-left">
                             · {f.message}
-                          </button>
+                          </Button>
                         ) : <>· {f.message}</>}
                       </li>
                     )
@@ -830,7 +831,7 @@ export default function BankReconciliationPage() {
               <div className="mb-3 rounded-lg border border-primary-700/30 bg-surface">
                 <div className="flex items-center gap-2 border-b border-line-subtle px-3 py-2 text-xs">
                   <Link2 className="h-4 w-4 text-fg-muted" />
-                  <span className="font-semibold uppercase tracking-wide text-fg-muted">
+                  <span className="font-semibold text-fg-muted">
                     Ledger lines that could make up this statement line
                   </span>
                   {candidatesLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-fg-muted" />}
@@ -845,36 +846,36 @@ export default function BankReconciliationPage() {
                   </div>
                 ) : (
                   <div className="max-h-56 overflow-y-auto">
-                    <table className="w-full text-sm">
-                      <tbody>
+                    <Table density="compact">
+                      <TBody>
                         {candidates.map((c, i) => (
-                          <tr key={c.jv_line_id}
+                          <Tr key={c.jv_line_id}
                               onClick={() => toggle(pickedBook, c.jv_line_id, setPickedBook)}
                               className={cn('cursor-pointer border-t border-line-subtle hover:bg-surface-subtle',
                                 i % 2 && 'bg-surface-subtle/40',
                                 pickedBook.has(c.jv_line_id)
                                   && 'bg-[#F2F8F7] ring-1 ring-inset ring-primary-700/30')}>
-                            <td className="w-10 px-2 py-1.5">
-                              <input type="checkbox" readOnly checked={pickedBook.has(c.jv_line_id)}
+                            <Td className="w-10">
+                              <Checkbox readOnly checked={pickedBook.has(c.jv_line_id)}
                                      className="h-3.5 w-3.5 accent-[#085E5E]" />
-                            </td>
-                            <td className="w-24 whitespace-nowrap px-2 py-1.5 font-mono text-xs text-fg-muted">
+                            </Td>
+                            <Td className="w-24 whitespace-nowrap font-mono text-xs text-fg-muted">
                               {shortDate(c.voucher_date)}
-                            </td>
-                            <td className={cn('w-28 px-2 py-1.5 text-right font-mono tabular-nums',
+                            </Td>
+                            <Td className={cn('w-28 px-2 py-1.5 text-right font-mono tabular-nums',
                               Number(c.amount) < 0 ? 'text-danger-fg' : 'text-success-fg')}>
                               {money(c.amount)}
-                            </td>
-                            <td className="px-2 py-1.5">
+                            </Td>
+                            <Td>
                               <div className="truncate" title={c.summary ?? ''}>{c.summary || '—'}</div>
                               <div className="font-mono text-2xs text-fg-muted">{c.jv_number}</div>
-                            </td>
-                            <td className="w-36 px-2 py-1.5">
+                            </Td>
+                            <Td className="w-36">
                               <Pill tone={KIND_TONE[c.contra_kind]}>
                                 {KIND_LABEL_UI[c.contra_kind] ?? c.contra_kind}
                               </Pill>
-                            </td>
-                            <td className="w-24 px-2 py-1.5 text-right">
+                            </Td>
+                            <Td align="right" className="w-24 ">
                               {/* Named, not just ranked first: "same amount to the cent"
                                   is a different kind of claim from "nearby and plausible". */}
                               {c.exact && (
@@ -882,11 +883,11 @@ export default function BankReconciliationPage() {
                                   exact amount
                                 </span>
                               )}
-                            </td>
-                          </tr>
+                            </Td>
+                          </Tr>
                         ))}
-                      </tbody>
-                    </table>
+                      </TBody>
+                    </Table>
                   </div>
                 )}
               </div>
@@ -897,7 +898,7 @@ export default function BankReconciliationPage() {
               <div className="mb-3 rounded-lg border border-line bg-surface">
                 <div className="flex items-center gap-2 border-b border-line-subtle px-3 py-2">
                   <Paperclip className="h-4 w-4 text-fg-muted" />
-                  <span className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                  <span className="text-xs font-semibold text-fg-muted">
                     Documents for this period ({docs.length})
                   </span>
                 </div>
@@ -907,44 +908,44 @@ export default function BankReconciliationPage() {
                     appear here as they are imported, and the report once it is signed off.
                   </div>
                 ) : (
-                  <table className="w-full text-sm">
-                    <tbody>
+                  <Table density="compact">
+                    <TBody>
                       {docs.map((d, i) => (
-                        <tr key={`${d.kind}-${d.storage_key ?? i}`}
+                        <Tr key={`${d.kind}-${d.storage_key ?? i}`}
                             className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40',
                               d.superseded && 'opacity-50')}>
-                          <td className="w-40 px-3 py-2">
+                          <Td className="w-40">
                             <Pill tone={DOC_TONE[d.kind] ?? 'bg-surface-sunken text-fg-secondary'}>
                               {d.label}
                             </Pill>
-                          </td>
-                          <td className="px-3 py-2">
+                          </Td>
+                          <Td>
                             <div className="truncate" title={d.name}>{d.name}</div>
                             <div className="text-xs text-fg-muted">{d.detail}</div>
-                          </td>
-                          <td className="w-40 px-3 py-2 text-xs text-fg-muted">
+                          </Td>
+                          <Td className="w-40 text-xs text-fg-muted">
                             {d.imported_at ? formatDateTime(d.imported_at) : ''}
                             {/* A superseded statement is kept on purpose — a re-import
                                 replaces what is reconciled against, not the record of
                                 what was once uploaded. */}
                             {d.superseded && <span className="ml-2">superseded</span>}
-                          </td>
-                          <td className="w-28 px-3 py-2 text-right">
+                          </Td>
+                          <Td align="right" className="w-28 ">
                             {d.storage_key ? (
-                              <button className="text-xs text-primary-700 underline"
+                              <Button variant="link" className="text-xs"
                                       onClick={() => downloadDoc(d)}>
                                 Download
-                              </button>
+                              </Button>
                             ) : (
                               <span className="text-xs text-fg-muted" title="Imported before file retention was in place, or the file server rejected it">
                                 not stored
                               </span>
                             )}
-                          </td>
-                        </tr>
+                          </Td>
+                        </Tr>
                       ))}
-                    </tbody>
-                  </table>
+                    </TBody>
+                  </Table>
                 )}
               </div>
             )}
@@ -960,7 +961,7 @@ export default function BankReconciliationPage() {
                 <CheckCircle2 className="h-4 w-4 text-success-fg" /> matched — click to see its group
               </span>
               <span className="flex items-center gap-1">
-                <input type="checkbox" readOnly className="h-3.5 w-3.5 accent-[#085E5E]" />
+                <Checkbox readOnly className="h-3.5 w-3.5 accent-[#085E5E]" />
                 not matched — tick both sides, then Match these
               </span>
               <span className="flex items-center gap-1">
@@ -984,30 +985,30 @@ export default function BankReconciliationPage() {
             <div className="grid gap-3 lg:grid-cols-2">
               <Side title={`Bank statement · ${period.bank_lines.length} lines`}
                     subtitle={s?.bank_account}>
-                <table className="w-full text-sm">
-                  <thead className="bg-surface-subtle text-left text-2xs uppercase tracking-wide text-fg-muted">
-                    <tr>
-                      <th className="w-10 px-2 py-2" />
-                      <th className="w-24 px-2 py-2">Date</th>
+                <Table density="compact">
+                  <THead>
+                    <Tr>
+                      <Th className="w-10" />
+                      <Th className="w-24">Date</Th>
                       {/* Amount in the same column position as the ledger side: the
                           two tables are read against each other, and an amount that
                           sits in a different place on each is work the reader has to
                           do on every line. */}
-                      <th className="w-28 px-2 py-2 text-right">Amount</th>
-                      <th className="px-2 py-2">Description</th>
-                      <th className="w-28 px-2 py-2 text-right">Balance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                      <Th align="right" className="w-28 ">Amount</Th>
+                      <Th>Description</Th>
+                      <Th align="right" className="w-28 ">Balance</Th>
+                    </Tr>
+                  </THead>
+                  <TBody>
                     {period.bank_lines.length === 0 && (
-                      <tr><td colSpan={5} className="px-3 py-8 text-center text-fg-muted">
-                        No statement lines yet — import the statement PDF.</td></tr>
+                      <Tr><Td align="center" colSpan={5} className="text-fg-muted">
+                        No statement lines yet — import the statement PDF.</Td></Tr>
                     )}
                     {period.bank_lines.map((b, i) => {
                       const gid = groupOfBank[b.id]
                       const inFocus = !!focusGroup && gid === focusGroup
                       return (
-                        <tr key={b.id}
+                        <Tr key={b.id}
                             onClick={() => (b.cleared ? setFocusGroup(gid === focusGroup ? null : gid)
                               : !frozen && toggle(pickedBank, b.id, setPickedBank))}
                             id={`bank-${b.id}`}
@@ -1018,57 +1019,57 @@ export default function BankReconciliationPage() {
                               // the zebra stripe to find by eye.
                               inFocus && 'bg-[#BFE3DA] ring-1 ring-inset ring-primary-700',
                               pickedBank.has(b.id) && 'bg-[#F2F8F7] ring-1 ring-inset ring-primary-700/30')}>
-                          <td className="px-2 py-1.5">
+                          <Td>
                             {b.cleared
                               ? <CheckCircle2 className="h-4 w-4 text-success-fg" />
-                              : <input type="checkbox" readOnly checked={pickedBank.has(b.id)}
+                              : <Checkbox readOnly checked={pickedBank.has(b.id)}
                                        className="h-3.5 w-3.5 accent-[#085E5E]" />}
-                          </td>
-                          <td className="whitespace-nowrap px-2 py-1.5 font-mono text-xs text-fg-muted">{shortDate(b.txn_date)}</td>
-                          <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
+                          </Td>
+                          <Td className="whitespace-nowrap font-mono text-xs text-fg-muted">{shortDate(b.txn_date)}</Td>
+                          <Td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
                             Number(b.amount) < 0 ? 'text-danger-fg' : 'text-success-fg')}>
                             {money(b.amount)}
-                          </td>
-                          <td className="px-2 py-1.5">{b.description}</td>
-                          <td className="px-2 py-1.5 text-right font-mono text-xs tabular-nums text-fg-muted">
+                          </Td>
+                          <Td>{b.description}</Td>
+                          <Td align="right" className="font-mono text-xs tabular-nums text-fg-muted">
                             {b.running_balance ? money(b.running_balance) : ''}
-                          </td>
-                        </tr>
+                          </Td>
+                        </Tr>
                       )
                     })}
-                  </tbody>
-                </table>
+                  </TBody>
+                </Table>
               </Side>
 
               <Side title={`NC ledger · ${period.book_lines.length} lines`}
                     subtitle={foreignCcy
                       ? `Account 100201, expanded by bank account · amounts in ${foreignCcy} (NC original currency), CAD below`
                       : 'Account 100201, expanded by bank account'}>
-                <table className="w-full text-sm">
-                  <thead className="bg-surface-subtle text-left text-2xs uppercase tracking-wide text-fg-muted">
-                    <tr>
-                      <th className="w-10 px-2 py-2" />
-                      <th className="w-24 px-2 py-2">Date</th>
+                <Table density="compact">
+                  <THead>
+                    <Tr>
+                      <Th className="w-10" />
+                      <Th className="w-24">Date</Th>
                       {/* Amount before Summary: Summary is the only elastic column, so
                           it took every spare pixel and pushed Amount past the right
                           edge — the one number you scan a ledger for was behind a
                           horizontal scroll. */}
-                      <th className="w-28 px-2 py-2 text-right">Amount</th>
-                      <th className="px-2 py-2">Summary</th>
-                      <th className="w-36 px-2 py-2">Contra</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                      <Th align="right" className="w-28 ">Amount</Th>
+                      <Th>Summary</Th>
+                      <Th className="w-36">Contra</Th>
+                    </Tr>
+                  </THead>
+                  <TBody>
                     {period.book_lines.length === 0 && (
-                      <tr><td colSpan={5} className="px-3 py-8 text-center text-fg-muted">
+                      <Tr><Td align="center" colSpan={5} className="text-fg-muted">
                         No ledger lines for this account and period. If NC has them,
-                        the bank-account dimension has not been synced yet.</td></tr>
+                        the bank-account dimension has not been synced yet.</Td></Tr>
                     )}
                     {period.book_lines.map((b, i) => {
                       const gid = groupOfBook[b.jv_line_id]
                       const inFocus = !!focusGroup && gid === focusGroup
                       return (
-                        <tr key={b.jv_line_id}
+                        <Tr key={b.jv_line_id}
                             onClick={() => (b.cleared ? setFocusGroup(gid === focusGroup ? null : gid)
                               : !frozen && toggle(pickedBook, b.jv_line_id, setPickedBook))}
                             id={`book-${b.jv_line_id}`}
@@ -1076,21 +1077,21 @@ export default function BankReconciliationPage() {
                               i % 2 && 'bg-surface-subtle/40',
                               inFocus && 'bg-[#BFE3DA] ring-1 ring-inset ring-primary-700',
                               pickedBook.has(b.jv_line_id) && 'bg-[#F2F8F7] ring-1 ring-inset ring-primary-700/30')}>
-                          <td className="px-2 py-1.5">
+                          <Td>
                             {b.cleared
                               ? <CheckCircle2 className="h-4 w-4 text-success-fg" />
-                              : <input type="checkbox" readOnly checked={pickedBook.has(b.jv_line_id)}
+                              : <Checkbox readOnly checked={pickedBook.has(b.jv_line_id)}
                                        className="h-3.5 w-3.5 accent-[#085E5E]" />}
-                          </td>
-                          <td className="whitespace-nowrap px-2 py-1.5 font-mono text-xs text-fg-muted">{shortDate(b.voucher_date)}</td>
-                          <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
+                          </Td>
+                          <Td className="whitespace-nowrap font-mono text-xs text-fg-muted">{shortDate(b.voucher_date)}</Td>
+                          <Td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
                             Number(b.amount) < 0 ? 'text-danger-fg' : 'text-success-fg')}>
                             {money(b.amount)}
                             {foreignCcy && b.local_amount != null && (
                               <div className="text-2xs text-fg-muted">CAD {money(b.local_amount)}</div>
                             )}
-                          </td>
-                          <td className="px-2 py-1.5">
+                          </Td>
+                          <Td>
                             <div className="truncate" title={b.summary ?? ''}>{b.summary || '—'}</div>
                             <div className="font-mono text-2xs text-fg-muted">
                               {b.jv_number}
@@ -1100,44 +1101,44 @@ export default function BankReconciliationPage() {
                                 </span>
                               )}
                             </div>
-                          </td>
-                          <td className="px-2 py-1.5">
+                          </Td>
+                          <Td>
                             <Pill tone={KIND_TONE[b.contra_kind]}>{b.contra_label}</Pill>
-                          </td>
-                        </tr>
+                          </Td>
+                        </Tr>
                       )
                     })}
                     {/* Not selectable on purpose: they have no amount in the account's
                         currency, so there is nothing on the statement they could ever
                         match. Listed so the CAD 科目余额表 figure can still be traced. */}
                     {baseOnly.length > 0 && (
-                      <tr className="border-t border-line bg-surface-subtle">
-                        <td colSpan={5} className="px-3 py-1.5 text-2xs text-fg-muted">
+                      <Tr className="bg-surface-subtle">
+                        <Td colSpan={5} className="text-2xs text-fg-muted">
                           Not on the statement · {baseOnly.length} line{baseOnly.length > 1 ? 's' : ''} with
                           no {foreignCcy ?? period.currency} amount (FX revaluation / CAD-only),
                           CAD {money(s?.base_only_local_total ??
                             String(baseOnly.reduce((t, b) => t + Number(b.local_amount), 0)))} — excluded
                           from the ledger balance
-                        </td>
-                      </tr>
+                        </Td>
+                      </Tr>
                     )}
                     {baseOnly.map((b) => (
-                      <tr key={b.jv_line_id} className="border-t border-line-subtle text-fg-muted">
-                        <td className="px-2 py-1.5" />
-                        <td className="whitespace-nowrap px-2 py-1.5 font-mono text-xs">{shortDate(b.voucher_date)}</td>
-                        <td className="px-2 py-1.5 text-right font-mono text-xs tabular-nums">
+                      <Tr key={b.jv_line_id} className="text-fg-muted">
+                        <Td />
+                        <Td className="whitespace-nowrap font-mono text-xs">{shortDate(b.voucher_date)}</Td>
+                        <Td align="right" className="font-mono text-xs tabular-nums">
                           <div>—</div>
                           <div className="text-2xs">CAD {money(b.local_amount)}</div>
-                        </td>
-                        <td className="px-2 py-1.5">
+                        </Td>
+                        <Td>
                           <div className="truncate" title={b.summary ?? ''}>{b.summary || '—'}</div>
                           <div className="font-mono text-2xs">{b.jv_number}</div>
-                        </td>
-                        <td className="px-2 py-1.5" />
-                      </tr>
+                        </Td>
+                        <Td />
+                      </Tr>
                     ))}
-                  </tbody>
-                </table>
+                  </TBody>
+                </Table>
               </Side>
             </div>
 
@@ -1175,33 +1176,33 @@ export default function BankReconciliationPage() {
                   </div>
                 </div>
                 {openAdvice === focused.advice_id && (
-                  <table className="w-full text-sm">
-                    <thead className="bg-surface-subtle text-left text-2xs uppercase tracking-wide text-fg-muted">
-                      <tr>
-                        <th className="w-10 px-2 py-1.5">#</th>
-                        <th className="px-2 py-1.5">Payee</th>
-                        <th className="w-32 px-2 py-1.5 text-right">Amount</th>
-                        <th className="w-32 px-2 py-1.5">Ledger line</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table density="compact">
+                    <THead>
+                      <Tr>
+                        <Th className="w-10">#</Th>
+                        <Th>Payee</Th>
+                        <Th align="right" className="w-32 ">Amount</Th>
+                        <Th className="w-32">Ledger line</Th>
+                      </Tr>
+                    </THead>
+                    <TBody>
                       {adviceLines.map((l) => (
-                        <tr key={l.id} className="border-t border-line-subtle">
-                          <td className="px-2 py-1 font-mono text-xs text-fg-muted">{l.seq}</td>
-                          <td className="px-2 py-1">
+                        <Tr key={l.id}>
+                          <Td className="font-mono text-xs text-fg-muted">{l.seq}</Td>
+                          <Td>
                             {l.payee_name}
                             {l.payee_code && <span className="ml-2 rounded bg-surface-sunken px-1 font-mono text-2xs text-fg-muted">{l.payee_code}</span>}
-                          </td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums">{money(l.amount)}</td>
-                          <td className="px-2 py-1">
+                          </Td>
+                          <Td align="right" className="font-mono tabular-nums">{money(l.amount)}</Td>
+                          <Td>
                             {l.matched_jv_line_id
                               ? <Pill tone="bg-success-soft text-success-fg">matched</Pill>
                               : <Pill tone="bg-warning-soft text-warning-fg">not found</Pill>}
-                          </td>
-                        </tr>
+                          </Td>
+                        </Tr>
                       ))}
-                    </tbody>
-                  </table>
+                    </TBody>
+                  </Table>
                 )}
               </div>
             )}
@@ -1209,7 +1210,7 @@ export default function BankReconciliationPage() {
             {/* ── every group, for review ───────────────────────────────── */}
             {period.matches.length > 0 && (
               <div className="mt-4">
-                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                <div className="mb-1 text-xs font-semibold text-fg-muted">
                   Cleared groups ({period.matches.length})
                 </div>
                 {/* A fixed 6-column grid, not flex-wrap: wrapped chips of different

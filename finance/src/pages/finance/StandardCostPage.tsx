@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { AccessMessage, num, SyncBar, thisMonth, traceLink } from '@/lib/costAnalysis'
 
+import { Checkbox, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 interface Line {
   material_code: string; material_name: string | null; std_usage: number; usage_samples: number
   outliers_dropped: number; usage_min: number | null; usage_max: number | null
@@ -44,16 +45,16 @@ function CardRows({ c, depth }: { c: Card; depth: number }) {
   return (
     <>
       {c.lines.map((l) => <LineRow key={`${c.material_code}-${l.material_code}`} l={l} depth={depth} />)}
-      <tr className="border-t border-line-subtle bg-surface-subtle/60">
-        <td className="py-1.5 pr-2 text-fg-muted" style={{ paddingLeft: 26 + depth * 18 }}>Conversion (per unit, NC basis{c.conversion.excluded_stoppage ? ', stoppage left out' : ''})</td>
-        <td colSpan={5} />
-        <td className="px-2 py-1.5 text-right font-mono tabular-nums">{num(c.conversion.unit, 4)}</td>
-      </tr>
-      <tr className="border-t border-line">
-        <td className="py-1.5 pr-2 font-semibold" style={{ paddingLeft: 26 + depth * 18 }}>Standard {c.material_code}</td>
-        <td colSpan={5} className="text-2xs text-fg-muted">usage from {c.samples} {c.usage_basis}</td>
-        <td className="px-2 py-1.5 text-right font-mono font-semibold tabular-nums">{num(c.std_unit, 4)}</td>
-      </tr>
+      <Tr className="bg-surface-subtle/60">
+        <Td className="pr-2 text-fg-muted" style={{ paddingLeft: 26 + depth * 18 }}>Conversion (per unit, NC basis{c.conversion.excluded_stoppage ? ', stoppage left out' : ''})</Td>
+        <Td colSpan={5} />
+        <Td align="right" className="font-mono tabular-nums">{num(c.conversion.unit, 4)}</Td>
+      </Tr>
+      <Tr>
+        <Td className="pr-2 font-semibold" style={{ paddingLeft: 26 + depth * 18 }}>Standard {c.material_code}</Td>
+        <Td colSpan={5} className="text-2xs text-fg-muted">usage from {c.samples} {c.usage_basis}</Td>
+        <Td align="right" className="font-mono font-semibold tabular-nums">{num(c.std_unit, 4)}</Td>
+      </Tr>
     </>
   )
 }
@@ -63,26 +64,26 @@ function LineRow({ l, depth }: { l: Line; depth: number }) {
   const dev = l.bom_deviation
   return (
     <>
-      <tr className="border-t border-line-subtle">
-        <td className="py-1.5 pr-2" style={{ paddingLeft: 8 + depth * 18 }}>
+      <Tr>
+        <Td className="pr-2" style={{ paddingLeft: 8 + depth * 18 }}>
           <span className="inline-flex items-center gap-1">
             {l.child ? (
-              <button onClick={() => setOpen(!open)} className="text-fg-muted">
+              <Button variant="subtle" size="xs" onClick={() => setOpen(!open)}>
                 {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-              </button>
+              </Button>
             ) : <span className="inline-block w-3.5" />}
             <Link to={traceLink(l.material_code, `${thisMonth().slice(0, 4)}-01`, thisMonth())} className="font-mono text-primary-700 underline">{l.material_code}</Link>
             <span className="text-fg-muted">{l.material_name}</span>
             {l.self_made && <span className="text-2xs text-fg-muted">in-house</span>}
           </span>
-        </td>
-        <td className="px-2 py-1.5 text-right font-mono tabular-nums" title={`${l.usage_samples} samples, ${l.outliers_dropped} outlier(s) left out; range ${num(l.usage_min, 4)}–${num(l.usage_max, 4)}`}>{num(l.std_usage, 4)}</td>
-        <td className="px-2 py-1.5 text-right font-mono tabular-nums text-fg-muted">{l.bom_qty_per != null ? num(l.bom_qty_per, 4) : '—'}</td>
-        <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', dev != null && Math.abs(dev) > 0.05 && 'font-semibold text-warning-fg')}>{dev != null ? `${(dev * 100).toFixed(0)}%` : ''}</td>
-        <td className="px-2 py-1.5 text-right font-mono tabular-nums">{num(l.std_price, 4)}</td>
-        <td className="px-2 py-1.5 text-2xs text-fg-muted">{l.price_basis}</td>
-        <td className="px-2 py-1.5 text-right font-mono tabular-nums">{num(l.std_cost, 4)}</td>
-      </tr>
+        </Td>
+        <Td align="right" className="font-mono tabular-nums" title={`${l.usage_samples} samples, ${l.outliers_dropped} outlier(s) left out; range ${num(l.usage_min, 4)}–${num(l.usage_max, 4)}`}>{num(l.std_usage, 4)}</Td>
+        <Td align="right" className="font-mono tabular-nums text-fg-muted">{l.bom_qty_per != null ? num(l.bom_qty_per, 4) : '—'}</Td>
+        <Td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', dev != null && Math.abs(dev) > 0.05 && 'font-semibold text-warning-fg')}>{dev != null ? `${(dev * 100).toFixed(0)}%` : ''}</Td>
+        <Td align="right" className="font-mono tabular-nums">{num(l.std_price, 4)}</Td>
+        <Td className="text-2xs text-fg-muted">{l.price_basis}</Td>
+        <Td align="right" className="font-mono tabular-nums">{num(l.std_cost, 4)}</Td>
+      </Tr>
       {open && l.child && <CardRows c={l.child} depth={depth + 1} />}
     </>
   )
@@ -144,19 +145,19 @@ export default function StandardCostPage() {
         <SyncBar />
         <form className="mb-2 flex flex-wrap items-center gap-2 text-sm"
               onSubmit={(e) => { e.preventDefault(); const c = draft.trim().toUpperCase(); if (c && dFrom <= dTo) navigate(`/finance/analysis/standard/${encodeURIComponent(c)}?from=${dFrom}&to=${dTo}`) }}>
-          <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Product, e.g. S0104" className="w-56 rounded-lg border border-line-strong px-2.5 py-1 font-mono" />
+          <Input inputSize="sm" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Product, e.g. S0104" className="w-56 font-mono" />
           <label className="text-xs text-fg-muted">From</label>
-          <input type="month" value={dFrom} onChange={(e) => setDFrom(e.target.value)} className="rounded-lg border border-line-strong px-2 py-1" />
+          <Input inputSize="sm" type="month" value={dFrom} onChange={(e) => setDFrom(e.target.value)} />
           <label className="text-xs text-fg-muted">To</label>
-          <input type="month" value={dTo} onChange={(e) => setDTo(e.target.value)} className="rounded-lg border border-line-strong px-2 py-1" />
-          <button type="submit" disabled={!draft.trim()} className="rounded-lg bg-primary-700 px-3 py-1 text-white disabled:opacity-40">Suggest standard</button>
+          <Input inputSize="sm" type="month" value={dTo} onChange={(e) => setDTo(e.target.value)} />
+          <Button size="xs" type="submit" disabled={!draft.trim()}>Suggest standard</Button>
           {isFetching && <Loader2 className="h-4 w-4 animate-spin text-fg-muted" />}
         </form>
         <div className="mb-5 flex flex-wrap items-center gap-3 text-xs text-fg-secondary">
-          <label>Price window <input type="number" min={1} max={12} value={win} onChange={(e) => setWin(Number(e.target.value) || 6)} className="w-14 rounded border border-line-strong px-1 py-0.5" /> months</label>
-          <label>Outliers beyond <input type="number" min={1} max={10} step={0.5} value={k} onChange={(e) => setK(Number(e.target.value) || 3)} className="w-14 rounded border border-line-strong px-1 py-0.5" /> MAD</label>
-          <label>Flag BOM lines beyond ± <input type="number" min={0} max={100} value={tol} onChange={(e) => setTol(Number(e.target.value))} className="w-14 rounded border border-line-strong px-1 py-0.5" /> %</label>
-          <label className="inline-flex items-center gap-1"><input type="checkbox" checked={stop} onChange={(e) => setStop(e.target.checked)} /> Leave stoppage cost out of conversion</label>
+          <label>Price window <Input inputSize="sm" type="number" min={1} max={12} value={win} onChange={(e) => setWin(Number(e.target.value) || 6)} className="w-14" /> months</label>
+          <label>Outliers beyond <Input inputSize="sm" type="number" min={1} max={10} step={0.5} value={k} onChange={(e) => setK(Number(e.target.value) || 3)} className="w-14" /> MAD</label>
+          <label>Flag BOM lines beyond ± <Input inputSize="sm" type="number" min={0} max={100} value={tol} onChange={(e) => setTol(Number(e.target.value))} className="w-14" /> %</label>
+          <label className="inline-flex items-center gap-1"><Checkbox checked={stop} onChange={(e) => setStop(e.target.checked)} /> Leave stoppage cost out of conversion</label>
         </div>
 
         {!material ? (
@@ -166,57 +167,57 @@ export default function StandardCostPage() {
         ) : (
           <>
             <div className="mb-6 rounded-lg border border-primary-700/30 bg-primary-50/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Summary</p>
+              <p className="text-xs font-semibold text-primary-700">Summary</p>
               <p className="mt-1 text-base font-semibold leading-snug text-fg">{data.summary.headline}</p>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-relaxed text-fg-secondary">
                 {data.summary.because.map((b, i) => <li key={i}>{b}</li>)}
               </ul>
             </div>
 
-            <h2 className="mb-3 border-b border-line pb-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">Supporting data</h2>
+            <h2 className="mb-3 border-b border-line pb-1 text-xs font-semibold text-fg-muted">Supporting data</h2>
             <div className="mb-2 flex items-center justify-between">
               <p className="text-sm font-semibold text-fg">Suggested standard cost card — per unit of output</p>
-              <button onClick={exportCsv} className="inline-flex items-center gap-1 rounded-lg border border-line-strong px-2.5 py-1 text-xs text-fg-secondary hover:bg-surface-subtle">
+              <Button variant="secondary" size="xs" onClick={exportCsv}>
                 <Download className="h-3.5 w-3.5" /> CSV (opens in Excel)
-              </button>
+              </Button>
             </div>
             <div className="mb-6 overflow-x-auto rounded-lg border border-line">
-              <table className="w-full text-xs">
-                <thead className="bg-surface-subtle text-left text-fg-muted"><tr>
-                  <th className="px-2 py-1.5 font-medium">Input</th>
-                  <th className="px-2 py-1.5 text-right font-medium" title="Median of actual consumption per unit of output">Std usage</th>
-                  <th className="px-2 py-1.5 text-right font-medium">BOM</th>
-                  <th className="px-2 py-1.5 text-right font-medium">vs BOM</th>
-                  <th className="px-2 py-1.5 text-right font-medium">Std price</th>
-                  <th className="px-2 py-1.5 font-medium">Price from</th>
-                  <th className="px-2 py-1.5 text-right font-medium">Std cost</th>
-                </tr></thead>
-                <tbody><CardRows c={data.card} depth={0} /></tbody>
-              </table>
+              <Table density="compact">
+                <THead><Tr>
+                  <Th>Input</Th>
+                  <Th align="right" title="Median of actual consumption per unit of output">Std usage</Th>
+                  <Th align="right">BOM</Th>
+                  <Th align="right">vs BOM</Th>
+                  <Th align="right">Std price</Th>
+                  <Th>Price from</Th>
+                  <Th align="right">Std cost</Th>
+                </Tr></THead>
+                <TBody><CardRows c={data.card} depth={0} /></TBody>
+              </Table>
             </div>
 
             {data.summary.bom_suggestions.length > 0 && (
               <div className="mb-6">
                 <p className="mb-2 text-sm font-semibold text-fg">BOM revisions this implies</p>
                 <div className="overflow-x-auto rounded-lg border border-line">
-                  <table className="w-full text-xs">
-                    <thead className="bg-surface-subtle text-left text-fg-muted"><tr>
-                      <th className="px-2 py-1.5 font-medium">Component</th><th className="px-2 py-1.5 font-medium">Finding</th>
-                      <th className="px-2 py-1.5 text-right font-medium">BOM</th><th className="px-2 py-1.5 text-right font-medium">Actual (median)</th>
-                      <th className="px-2 py-1.5 text-right font-medium">Difference</th>
-                    </tr></thead>
-                    <tbody>
+                  <Table density="compact">
+                    <THead><Tr>
+                      <Th>Component</Th><Th>Finding</Th>
+                      <Th align="right">BOM</Th><Th align="right">Actual (median)</Th>
+                      <Th align="right">Difference</Th>
+                    </Tr></THead>
+                    <TBody>
                       {data.summary.bom_suggestions.map((f) => (
-                        <tr key={f.material_code} className="border-t border-line-subtle">
-                          <td className="px-2 py-1.5 font-mono">{f.material_code}</td>
-                          <td className="px-2 py-1.5">{f.kind}</td>
-                          <td className="px-2 py-1.5 text-right font-mono">{f.bom != null ? num(f.bom, 4) : '—'}</td>
-                          <td className="px-2 py-1.5 text-right font-mono">{num(f.actual_median, 4)}</td>
-                          <td className="px-2 py-1.5 text-right font-mono">{f.deviation != null ? `${(f.deviation * 100).toFixed(1)}%` : '—'}</td>
-                        </tr>
+                        <Tr key={f.material_code}>
+                          <Td className="font-mono">{f.material_code}</Td>
+                          <Td>{f.kind}</Td>
+                          <Td align="right" className="font-mono">{f.bom != null ? num(f.bom, 4) : '—'}</Td>
+                          <Td align="right" className="font-mono">{num(f.actual_median, 4)}</Td>
+                          <Td align="right" className="font-mono">{f.deviation != null ? `${(f.deviation * 100).toFixed(1)}%` : '—'}</Td>
+                        </Tr>
                       ))}
-                    </tbody>
-                  </table>
+                    </TBody>
+                  </Table>
                 </div>
               </div>
             )}
@@ -224,29 +225,29 @@ export default function StandardCostPage() {
             <p className="mb-2 text-sm font-semibold text-fg">2026 replayed against the standard</p>
             <p className="mb-2 text-xs text-fg-muted">Actual − standard = usage + purchased price + in-house input cost + conversion + accounting adjustments. Under standard costing the adjustments column would not reach product cost.</p>
             <div className="overflow-x-auto rounded-lg border border-line">
-              <table className="w-full text-xs">
-                <thead className="bg-surface-subtle text-fg-muted"><tr>
+              <Table density="compact">
+                <THead><Tr>
                   {['Month', 'Output', 'Actual / unit', 'Standard / unit', 'Actual − std', 'Usage', 'Purchased price', 'In-house inputs', 'Conversion', 'Adjustments'].map((h, i) => (
-                    <th key={h} className={cn('px-2 py-1.5 font-medium', i === 0 ? 'text-left' : 'text-right')}>{h}</th>
+                    <Th key={h} className={cn('px-2 py-1.5 font-medium', i === 0 ? 'text-left' : 'text-right')}>{h}</Th>
                   ))}
-                </tr></thead>
-                <tbody>
+                </Tr></THead>
+                <TBody>
                   {data.simulation.map((r) => (
                     <Fragment key={r.period}>
-                      <tr className="border-t border-line-subtle">
-                        <td className="px-2 py-1.5 font-mono">{r.period}</td>
-                        <td className="px-2 py-1.5 text-right font-mono tabular-nums">{num(r.qty, 0)}</td>
-                        <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', (r.actual_unit ?? 0) < 0 && 'text-danger-fg')}>{num(r.actual_unit, 4)}</td>
-                        <td className="px-2 py-1.5 text-right font-mono tabular-nums">{num(r.std_unit, 4)}</td>
-                        <td className="px-2 py-1.5 text-right font-mono font-semibold tabular-nums">{num(r.actual - r.standard)}</td>
+                      <Tr>
+                        <Td className="font-mono">{r.period}</Td>
+                        <Td align="right" className="font-mono tabular-nums">{num(r.qty, 0)}</Td>
+                        <Td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', (r.actual_unit ?? 0) < 0 && 'text-danger-fg')}>{num(r.actual_unit, 4)}</Td>
+                        <Td align="right" className="font-mono tabular-nums">{num(r.std_unit, 4)}</Td>
+                        <Td align="right" className="font-mono font-semibold tabular-nums">{num(r.actual - r.standard)}</Td>
                         {[r.usage_variance, r.price_variance, r.input_cost_variance, r.conversion_variance, r.adjustments].map((v, i) => (
-                          <td key={i} className={cn('px-2 py-1.5 text-right font-mono tabular-nums', Math.abs(v) >= Math.max(0.1 * Math.abs(r.actual - r.standard), 1) && 'font-semibold', v < 0 && 'text-danger-fg')}>{num(v)}</td>
+                          <Td key={i} className={cn('px-2 py-1.5 text-right font-mono tabular-nums', Math.abs(v) >= Math.max(0.1 * Math.abs(r.actual - r.standard), 1) && 'font-semibold', v < 0 && 'text-danger-fg')}>{num(v)}</Td>
                         ))}
-                      </tr>
+                      </Tr>
                     </Fragment>
                   ))}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
           </>
         )}

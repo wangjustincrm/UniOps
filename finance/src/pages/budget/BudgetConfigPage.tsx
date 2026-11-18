@@ -7,7 +7,7 @@ import {
   Calendar, Plus, X, Search, Pencil, Trash2, Building2,
   Wallet, Upload, Download,
 } from 'lucide-react'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, FileInput, Input, Radio, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, mdmApi, budgetApi, budgetUpload, EPMS_URL, encodeSession } from '@/lib/api'
 import { cn, todayISO } from '@/lib/utils'
@@ -100,14 +100,14 @@ function Toast({ ok, msg }: { ok: boolean; msg: string }) {
 
 function SaveButton({ loading, label = 'Save Changes' }: { loading: boolean; label?: string }) {
   return (
-    <button
+    <Button size="md"
       type="submit"
       disabled={loading}
-      className="flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60 transition-colors"
+     
     >
       {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
       {loading ? 'Saving…' : label}
-    </button>
+    </Button>
   )
 }
 
@@ -155,15 +155,15 @@ function FiscalYearsEditor({
               className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-subtle pl-3 pr-1 py-1 text-xs font-medium text-fg-secondary"
             >
               FY {y}
-              <button
+              <Button variant="danger-ghost" size="icon-xs"
                 type="button"
                 onClick={() => onRemove(y)}
-                className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-fg-muted hover:bg-surface-strong hover:text-danger-fg"
+                className="ml-0.5"
                 aria-label={`Remove FY ${y}`}
                 title={`Remove FY ${y}`}
               >
                 <X className="h-3 w-3" />
-              </button>
+              </Button>
             </span>
           ))}
         </div>
@@ -172,25 +172,25 @@ function FiscalYearsEditor({
       {/* Add row */}
       <div className="flex items-start gap-2">
         <div className="flex flex-col gap-1">
-          <input
+          <Input inputSize="sm"
             type="number"
             min={2000} max={2100}
             placeholder="e.g. 2028"
             value={input}
             onChange={(e) => { setInput(e.target.value); setError(null) }}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit() } }}
-            className="h-9 w-32 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="w-32"
           />
           {error && <p className="text-2xs text-danger-fg">{error}</p>}
         </div>
-        <button
+        <Button variant="secondary" size="xs"
           type="button"
           onClick={submit}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 h-9 text-xs font-medium text-fg-secondary hover:bg-surface-subtle"
+         
         >
           <Plus className="h-3.5 w-3.5" />
           Add Year
-        </button>
+        </Button>
       </div>
       <p className="text-2xs text-fg-muted">
         Removing a year only hides it from the dropdown — existing budget plans for that year remain accessible from Budget Plans.
@@ -318,13 +318,13 @@ function CompanyConfigSection() {
                 <p className="text-xs text-fg-muted">{desc}</p>
               </div>
               <div className="shrink-0 flex items-center gap-2">
-                <input
+                <Input inputSize="sm"
                   type="number" min={1} max={200}
                   value={form[k]}
                   onChange={(e) =>
                     set(k, Math.min(200, Math.max(1, Number(e.target.value))))
                   }
-                  className="h-9 w-20 rounded-lg border border-line-strong bg-surface px-2 text-center text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="w-20 text-center font-semibold"
                 />
                 <span className="text-sm text-fg-muted">%</span>
               </div>
@@ -373,11 +373,11 @@ function CompanyConfigSection() {
                   : 'border-line bg-surface hover:bg-surface-subtle',
               )}
             >
-              <input
-                type="radio"
+              <Radio
+               
                 checked={form.over_budget_mode === v}
                 onChange={() => set('over_budget_mode', v)}
-                className="mt-0.5 accent-primary-600 shrink-0"
+                className="mt-0.5"
               />
               <div>
                 <p className="text-sm font-medium text-fg">{label}</p>
@@ -543,51 +543,51 @@ function OpeningBalanceSection() {
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-fg-secondary">Cost Center</span>
-            <select
+            <Select selectSize="sm"
               value={ccId}
               onChange={(e) => { setCcId(e.target.value); setResult(null); setError(null) }}
-              className="h-9 w-64 rounded-lg border border-line-strong bg-surface px-3 text-sm"
+              className="w-64"
             >
               <option value="">Select a cost center…</option>
               {activeCcs.map((cc) => (
                 <option key={cc.id} value={cc.id}>{cc.code} — {cc.name}</option>
               ))}
-            </select>
+            </Select>
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-fg-secondary">Fiscal Year</span>
-            <select
+            <Select selectSize="sm"
               value={year}
               onChange={(e) => { setYear(Number(e.target.value)); setResult(null) }}
-              className="h-9 w-32 rounded-lg border border-line-strong bg-surface px-3 text-sm"
+              className="w-32"
             >
               {years.map((y) => <option key={y} value={y}>FY {y}</option>)}
-            </select>
+            </Select>
           </label>
         </div>
 
         {/* Actions */}
         <div className="flex flex-wrap items-center gap-2">
-          <button
+          <Button variant="secondary" size="xs"
             type="button"
             onClick={downloadTemplate}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 h-9 text-xs font-medium text-fg-secondary hover:bg-surface-subtle"
+           
           >
             <Download className="h-3.5 w-3.5" />
             Download Template
-          </button>
-          <button
+          </Button>
+          <Button size="xs"
             type="button"
             disabled={!ccId || busy}
             onClick={() => fileRef.current?.click()}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 h-9 text-xs font-medium text-white hover:bg-primary-800 disabled:opacity-50"
+           
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
             {busy ? 'Importing…' : 'Import CSV'}
-          </button>
-          <input
+          </Button>
+          <FileInput
             ref={fileRef}
-            type="file"
+           
             accept=".csv,text/csv"
             className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f) }}
@@ -616,29 +616,29 @@ function OpeningBalanceSection() {
               <span className="font-mono font-medium">Total: {openingTotal.toLocaleString('en-CA', { style: 'currency', currency: 'CAD' })}</span>
             </div>
             <div className="max-h-56 overflow-y-auto">
-              <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-surface">
-                  <tr className="border-b border-line-subtle text-fg-muted">
-                    <th className="px-3 py-1.5 text-left font-medium">Account</th>
-                    <th className="px-3 py-1.5 text-left font-medium">Month</th>
-                    <th className="px-3 py-1.5 text-right font-medium">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table density="compact">
+                <THead className="sticky top-0">
+                  <Tr className="text-fg-muted">
+                    <Th>Account</Th>
+                    <Th>Month</Th>
+                    <Th align="right">Amount</Th>
+                  </Tr>
+                </THead>
+                <TBody>
                   {openingItems.map((r) => (
-                    <tr key={`${r.account_id}-${r.month}`} className="border-b border-line-subtle">
-                      <td className="px-3 py-1.5">
+                    <Tr key={`${r.account_id}-${r.month}`}>
+                      <Td>
                         <span className="font-mono text-fg-muted mr-1">{r.account_code}</span>
                         <span className="text-fg-secondary">{r.account_name}</span>
-                      </td>
-                      <td className="px-3 py-1.5 text-fg-secondary">{OPENING_MONTHS[r.month - 1] ?? r.month}</td>
-                      <td className="px-3 py-1.5 text-right font-mono text-fg-secondary">
+                      </Td>
+                      <Td className="text-fg-secondary">{OPENING_MONTHS[r.month - 1] ?? r.month}</Td>
+                      <Td align="right" className="font-mono text-fg-secondary">
                         {Number(r.amount).toLocaleString('en-CA', { style: 'currency', currency: 'CAD' })}
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                   ))}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
           </div>
         )}
@@ -817,31 +817,31 @@ function CostCentersSection() {
         <div className="flex items-center gap-2 flex-1 flex-wrap">
           <div className="relative min-w-48">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
-            <input
+            <Input
               placeholder="Search cost centers…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-10 w-full rounded-lg border border-line-strong bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700"
+              className="w-full pl-9 pr-3"
             />
           </div>
-          <select
+          <Select
             value={filterDeptId}
             onChange={(e) => setFilterDeptId(e.target.value)}
-            className="h-10 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700"
+           
           >
             <option value="">All Departments</option>
             {departments.filter((d) => d.is_active).map((d) => (
               <option key={d.id} value={d.id}>{d.name}</option>
             ))}
-          </select>
+          </Select>
         </div>
-        <button
+        <Button size="md"
           onClick={() => { setError(''); setMode('add') }}
           disabled={mode !== 'none'}
-          className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50"
+         
         >
           <Plus className="h-4 w-4" />Add Cost Center
-        </button>
+        </Button>
       </div>
 
       {mode === 'add' && (
@@ -876,54 +876,54 @@ function CostCentersSection() {
         ) : !filtered.length ? (
           <div className="py-10 text-center text-sm text-fg-muted">No cost centers found.</div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line bg-surface-subtle">
-                <SortTh label="Cost Center" sortKey="name" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-                <SortTh label="Code" sortKey="code" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-                <SortTh label="Department" sortKey="department" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-                <SortTh label="Status" sortKey="status" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted w-24" />
-                <th className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted w-24" />
-              </tr>
-            </thead>
-            <tbody>
+          <Table density="compact">
+            <THead>
+              <Tr className="bg-surface-subtle">
+                <SortTh label="Cost Center" sortKey="name" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold text-fg-muted" />
+                <SortTh label="Code" sortKey="code" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold text-fg-muted" />
+                <SortTh label="Department" sortKey="department" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold text-fg-muted" />
+                <SortTh label="Status" sortKey="status" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold text-fg-muted w-24" />
+                <Th className="w-24" />
+              </Tr>
+            </THead>
+            <TBody>
               {ccSort.rows.map((cc, i) => {
                 const dept = deptMap[cc.department_id]
                 return (
-                  <tr key={cc.id} className={cn('border-b border-line-subtle last:border-b-0', i % 2 === 1 ? 'bg-surface-subtle' : 'bg-surface')}>
-                    <td className="px-4 py-2.5 font-medium text-fg">
+                  <Tr key={cc.id} className={cn('border-b border-line-subtle last:border-b-0', i % 2 === 1 ? 'bg-surface-subtle' : 'bg-surface')}>
+                    <Td className="font-medium text-fg">
                       <div className="flex items-center gap-2.5">
                         <Building2 className="h-4 w-4 text-primary-600 shrink-0" />
                         {cc.name}
                       </div>
-                    </td>
-                    <td className="px-4 py-2.5"><span className="inline-flex items-center rounded-md bg-surface-sunken px-2 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">{cc.code}</span></td>
-                    <td className="px-4 py-2.5 text-xs text-fg-secondary">{dept ? dept.name : cc.department_name || <span className="text-fg-faint">—</span>}</td>
-                    <td className="px-4 py-2.5">
+                    </Td>
+                    <Td><span className="inline-flex items-center rounded-md bg-surface-sunken px-2 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">{cc.code}</span></Td>
+                    <Td className="text-xs text-fg-secondary">{dept ? dept.name : cc.department_name || <span className="text-fg-faint">—</span>}</Td>
+                    <Td>
                       <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium', cc.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                         {cc.is_active ? 'Active' : 'Inactive'}
                       </span>
-                    </td>
-                    <td className="px-4 py-2.5">
+                    </Td>
+                    <Td>
                       <div className="flex items-center justify-end gap-1">
                         {deleteConfirm === cc.id ? (
                           <>
-                            <button onClick={() => { deleteMut.mutate(cc.id); setDeleteConfirm(null) }} className="flex h-7 w-7 items-center justify-center rounded text-danger-fg hover:bg-danger-soft"><Check className="h-3.5 w-3.5" /></button>
-                            <button onClick={() => setDeleteConfirm(null)} className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-surface-sunken"><X className="h-3.5 w-3.5" /></button>
+                            <Button aria-label="Confirm delete" variant="subtle" size="icon-xs" onClick={() => { deleteMut.mutate(cc.id); setDeleteConfirm(null) }} className="text-danger-fg hover:bg-danger-soft"><Check className="h-3.5 w-3.5" /></Button>
+                            <Button aria-label="Cancel delete" variant="subtle" size="icon-xs" onClick={() => setDeleteConfirm(null)}><X className="h-3.5 w-3.5" /></Button>
                           </>
                         ) : (
                           <>
-                            <button onClick={() => { setError(''); setMode({ edit: cc.id }); setDeleteConfirm(null) }} className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-primary-50 hover:text-primary-600"><Pencil className="h-3.5 w-3.5" /></button>
-                            <button onClick={() => { setDeleteConfirm(cc.id); setMode('none') }} className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-danger-soft hover:text-danger-fg"><Trash2 className="h-3.5 w-3.5" /></button>
+                            <Button aria-label="Edit" variant="subtle" size="icon-xs" onClick={() => { setError(''); setMode({ edit: cc.id }); setDeleteConfirm(null) }}><Pencil className="h-3.5 w-3.5" /></Button>
+                            <Button variant="danger-ghost" size="icon-xs" aria-label="Remove" onClick={() => { setDeleteConfirm(cc.id); setMode('none') }}><Trash2 className="h-3.5 w-3.5" /></Button>
                           </>
                         )}
                       </div>
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 )
               })}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         )}
         <div className="border-t border-line bg-surface-subtle px-4 py-2 text-2xs text-fg-muted">
           {filtered.length} of {ccs.length} cost center{ccs.length !== 1 ? 's' : ''}
@@ -966,46 +966,46 @@ function CcForm({
     <div className="mb-4 rounded-lg border border-primary-200 bg-primary-50 p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-fg">{title}</h3>
-        <button onClick={onCancel} className="text-fg-muted hover:text-fg-secondary"><X className="h-4 w-4" /></button>
+        <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onCancel}><X className="h-4 w-4" /></Button>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Code <span className="text-danger-fg">*</span></label>
-          <input value={form.code} onChange={(e) => set('code', e.target.value)} placeholder="e.g. CC-MKT-03" className={fldCls(errors.code)} />
+          <Input value={form.code} onChange={(e) => set('code', e.target.value)} placeholder="e.g. CC-MKT-03" className={fldCls(errors.code)} />
           {errors.code && <p className="text-xs text-danger-fg">{errors.code}</p>}
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Name <span className="text-danger-fg">*</span></label>
-          <input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Brand & Campaigns" className={fldCls(errors.name)} />
+          <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Brand & Campaigns" className={fldCls(errors.name)} />
           {errors.name && <p className="text-xs text-danger-fg">{errors.name}</p>}
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Department <span className="text-danger-fg">*</span></label>
-          <select value={form.department_id} onChange={(e) => set('department_id', e.target.value)} className={fldCls(errors.department_id)}>
+          <Select value={form.department_id} onChange={(e) => set('department_id', e.target.value)} className={fldCls(errors.department_id)}>
             <option value="">Select department…</option>
             {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
+          </Select>
           {errors.department_id && <p className="text-xs text-danger-fg">{errors.department_id}</p>}
         </div>
         <div className="mt-5 flex items-center gap-2">
-          <input
-            type="checkbox"
+          <Checkbox
+           
             id="cc-active"
             checked={form.is_active}
             onChange={(e) => set('is_active', e.target.checked)}
-            className="h-4 w-4 rounded border-line-strong"
+           
           />
           <label htmlFor="cc-active" className="text-sm text-fg-secondary">Active</label>
         </div>
       </div>
       <div className="mt-3 flex justify-end gap-2">
-        <button onClick={onCancel} className="rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-fg-secondary hover:bg-surface-subtle">Cancel</button>
-        <button
+        <Button variant="secondary" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button size="sm"
           onClick={() => { if (validate()) onSave({ ...form, code: form.code.trim().toUpperCase() }) }}
-          className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-800"
+         
         >
           <Check className="h-3.5 w-3.5" />Save
-        </button>
+        </Button>
       </div>
     </div>
   )

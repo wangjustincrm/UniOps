@@ -15,6 +15,7 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { AccountVouchersModal } from './AccountVouchersModal'
 import { JvDetailModal } from './JvDetailModal'
 
+import { Checkbox, Input, TBody, TFoot, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
@@ -96,12 +97,12 @@ export default function AccountBalancePage() {
     >
       <div className="mx-auto max-w-6xl">
         <div className="mb-4 flex items-center gap-2">
-          <input type="month" value={period}
+          <Input type="month" value={period}
                  onChange={(e) => { setPeriod(e.target.value); setExpanded({}) }}
                  className={cn(inputCls, 'w-40')} />
           <label className="flex items-center gap-1.5 text-sm text-fg-secondary"
                  title="Fold in vouchers NC has not tallied yet, and UniOps JVs not yet posted">
-            <input type="checkbox" checked={includeUnposted}
+            <Checkbox checked={includeUnposted}
                    onChange={(e) => { setIncludeUnposted(e.target.checked); setExpanded({}) }} />
             Include unposted
           </label>
@@ -117,48 +118,48 @@ export default function AccountBalancePage() {
           <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
         ) : data && (
           <div className="overflow-hidden rounded-lg border border-line">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-                <tr>
-                  <th className="w-8 px-2 py-2" />
-                  <th className="px-3 py-2 w-24">Code</th>
-                  <th className="px-3 py-2">Account</th>
-                  <th className="px-3 py-2 w-28 text-right">Opening</th>
-                  <th className="px-3 py-2 w-28 text-right">Period Dr</th>
-                  <th className="px-3 py-2 w-28 text-right">Period Cr</th>
-                  <th className="px-3 py-2 w-28 text-right">Closing</th>
-                  <th className="px-3 py-2 w-24" />
-                </tr>
-              </thead>
-              <tbody>
+            <Table density="compact">
+              <THead>
+                <Tr>
+                  <Th className="w-8" />
+                  <Th className="w-24">Code</Th>
+                  <Th>Account</Th>
+                  <Th align="right" className="w-28 ">Opening</Th>
+                  <Th align="right" className="w-28 ">Period Dr</Th>
+                  <Th align="right" className="w-28 ">Period Cr</Th>
+                  <Th align="right" className="w-28 ">Closing</Th>
+                  <Th className="w-24" />
+                </Tr>
+              </THead>
+              <TBody>
                 {data.rows.length === 0 && (
-                  <tr><td colSpan={8} className="px-3 py-6 text-center text-fg-muted">
-                    No {includeUnposted ? '' : 'posted '}activity up to {data.period}.</td></tr>
+                  <Tr><Td align="center" colSpan={8} className="text-fg-muted">
+                    No {includeUnposted ? '' : 'posted '}activity up to {data.period}.</Td></Tr>
                 )}
                 {data.rows.map((r, i) => (
                   <Fragment key={r.account_code}>
-                    <tr className={cn('border-t border-line-subtle hover:bg-primary-50/40', i % 2 && 'bg-surface-subtle/40')}>
-                      <td className="px-2 py-2">
-                        <button onClick={() => toggle(r.account_code)}
-                                className="rounded p-0.5 text-fg-muted hover:text-fg-secondary"
+                    <Tr className={cn('border-t border-line-subtle hover:bg-primary-50/40', i % 2 && 'bg-surface-subtle/40')}>
+                      <Td>
+                        <Button variant="subtle" size="xs" onClick={() => toggle(r.account_code)}
+                               
                                 title="Expand by auxiliary dimensions">
                           {expanded[r.account_code] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        </button>
-                      </td>
-                      <td className={cn('px-3 py-2 font-mono text-xs', !r.is_postable && 'font-semibold')}>{r.account_code}</td>
-                      <td className={cn('px-3 py-2', !r.is_postable && 'font-semibold')}
-                          style={{ paddingLeft: `${12 + r.level * 18}px` }}>{r.account_name}</td>
-                      <td className="px-3 py-2 text-right font-mono text-fg-muted">{money(r.opening)}</td>
-                      <td className="px-3 py-2 text-right font-mono">{money(r.period_debit)}</td>
-                      <td className="px-3 py-2 text-right font-mono">{money(r.period_credit)}</td>
-                      <td className="px-3 py-2 text-right font-mono font-semibold">{money(r.closing)}</td>
-                      <td className="px-3 py-2 text-right">
+                        </Button>
+                      </Td>
+                      <Td className={cn('px-3 py-2 font-mono text-xs', !r.is_postable && 'font-semibold')}>{r.account_code}</Td>
+                      <Td className={cn('px-3 py-2', !r.is_postable && 'font-semibold')}
+                          style={{ paddingLeft: `${12 + r.level * 18}px` }}>{r.account_name}</Td>
+                      <Td align="right" className="font-mono text-fg-muted">{money(r.opening)}</Td>
+                      <Td align="right" className="font-mono">{money(r.period_debit)}</Td>
+                      <Td align="right" className="font-mono">{money(r.period_credit)}</Td>
+                      <Td align="right" className="font-mono font-semibold">{money(r.closing)}</Td>
+                      <Td align="right">
                         <button className={linkBtn}
                                 onClick={() => setDrill({ accountCode: r.account_code, title: `Vouchers — ${r.account_code} ${r.account_name} · ${period}` })}>
                           Vouchers
                         </button>
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                     {expanded[r.account_code] && (
                       <DimExpansion accountCode={r.account_code} accountName={r.account_name}
                                     period={period} dims={expanded[r.account_code]}
@@ -166,17 +167,17 @@ export default function AccountBalancePage() {
                     )}
                   </Fragment>
                 ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-line bg-surface-subtle font-semibold">
-                  <td className="px-3 py-2" colSpan={4}>Totals</td>
-                  <td className="px-3 py-2 text-right font-mono">{money(data.totals.period_debit)}</td>
-                  <td className="px-3 py-2 text-right font-mono">{money(data.totals.period_credit)}</td>
-                  <td className="px-3 py-2 text-right font-mono">{money(data.totals.closing)}</td>
-                  <td />
-                </tr>
-              </tfoot>
-            </table>
+              </TBody>
+              <TFoot>
+                <Tr className="border-t-2 bg-surface-subtle font-semibold">
+                  <Td colSpan={4}>Totals</Td>
+                  <Td align="right" className="font-mono">{money(data.totals.period_debit)}</Td>
+                  <Td align="right" className="font-mono">{money(data.totals.period_credit)}</Td>
+                  <Td align="right" className="font-mono">{money(data.totals.closing)}</Td>
+                  <Td />
+                </Tr>
+              </TFoot>
+            </Table>
           </div>
         )}
       </div>
@@ -222,9 +223,9 @@ function DimPickerModal({ accountCode, onClose, onApply }: {
       <div className="w-full max-w-sm rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-semibold text-fg">Expand {accountCode} by…</h2>
-          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
+          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
         {isLoading ? (
           <div className="py-6 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
@@ -234,7 +235,7 @@ function DimPickerModal({ accountCode, onClose, onApply }: {
               <label key={o.dim_code}
                      className={cn('flex items-center gap-2 text-sm',
                        o.supported ? 'text-fg-secondary' : 'cursor-not-allowed text-fg-muted')}>
-                <input type="checkbox" disabled={!o.supported}
+                <Checkbox disabled={!o.supported}
                        checked={chosen.includes(o.dim_code)}
                        onChange={() => flip(o.dim_code)} />
                 {o.label}
@@ -268,17 +269,17 @@ function DimExpansion({ accountCode, accountName, period, dims, includeUnposted,
   })
   if (isLoading) {
     return (
-      <tr className="border-t border-line-subtle bg-surface-subtle/60">
-        <td colSpan={8} className="px-3 py-3 text-center"><Loader2 className="mx-auto h-4 w-4 animate-spin text-fg-muted" /></td>
-      </tr>
+      <Tr className="bg-surface-subtle/60">
+        <Td align="center" colSpan={8}><Loader2 className="mx-auto h-4 w-4 animate-spin text-fg-muted" /></Td>
+      </Tr>
     )
   }
   const rows = data?.rows ?? []
   if (rows.length === 0) {
     return (
-      <tr className="border-t border-line-subtle bg-surface-subtle/60">
-        <td colSpan={8} className="px-3 py-2 pl-12 text-xs text-fg-muted">No movement this period.</td>
-      </tr>
+      <Tr className="bg-surface-subtle/60">
+        <Td colSpan={8} className="pl-12 text-xs text-fg-muted">No movement this period.</Td>
+      </Tr>
     )
   }
   return (
@@ -289,16 +290,16 @@ function DimExpansion({ accountCode, accountName, period, dims, includeUnposted,
                  : k.id ? '(unknown)' : '(none)').join('  |  ')
         const dv = row.keys.map((k) => `${k.dim_code}:${k.id ?? 'none'}`).join(',')
         return (
-          <tr key={ri} className="border-t border-line-subtle bg-surface-subtle/60 text-xs">
-            <td />
-            <td colSpan={2} className="px-3 py-1.5 pl-8 text-fg-secondary">{label}</td>
-            <td className="px-3 py-1.5 text-right font-mono">{money(row.opening)}</td>
-            <td className="px-3 py-1.5 text-right font-mono">{money(row.period_debit)}</td>
-            <td className="px-3 py-1.5 text-right font-mono">{money(row.period_credit)}</td>
-            <td className="px-3 py-1.5 text-right font-mono">
+          <Tr key={ri} className="bg-surface-subtle/60 text-xs">
+            <Td />
+            <Td colSpan={2} className="pl-8 text-fg-secondary">{label}</Td>
+            <Td align="right" className="font-mono">{money(row.opening)}</Td>
+            <Td align="right" className="font-mono">{money(row.period_debit)}</Td>
+            <Td align="right" className="font-mono">{money(row.period_credit)}</Td>
+            <Td align="right" className="font-mono">
               {Number(row.closing) === 0 ? <span className="text-fg-muted">Balanced</span> : money(row.closing)}
-            </td>
-            <td className="px-3 py-1.5 text-right">
+            </Td>
+            <Td align="right">
               <button className={linkBtn}
                       onClick={() => onDrill({
                         accountCode, dimsValues: dv,
@@ -306,8 +307,8 @@ function DimExpansion({ accountCode, accountName, period, dims, includeUnposted,
                       })}>
                 Vouchers
               </button>
-            </td>
-          </tr>
+            </Td>
+          </Tr>
         )
       })}
     </>

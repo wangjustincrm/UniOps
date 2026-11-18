@@ -23,6 +23,7 @@ import { cn, currentMonthISO } from '@/lib/utils'
 import { UnallocatedLinesModal } from './UnallocatedLinesModal'
 import { JvDetailModal } from './JvDetailModal'
 
+import { Checkbox, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -150,10 +151,10 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
     <div className="mb-6 rounded-lg border border-line bg-surface">
       {/* controls */}
       <div className="flex flex-wrap items-center gap-2 border-b border-line-subtle px-3 py-2.5">
-        <select value={fiscalYear} onChange={(e) => onFiscalYearChange(Number(e.target.value))}
+        <Select value={fiscalYear} onChange={(e) => onFiscalYearChange(Number(e.target.value))}
                 className={selectCls}>
           {years.map((y) => <option key={y} value={y}>FY {y}</option>)}
-        </select>
+        </Select>
         <div className="flex rounded-lg border border-line-strong p-0.5">
           {([['month', 'Month'], ['quarter', 'Quarter'], ['ytd', 'YTD'],
              ['custom', 'Custom']] as [Preset, string][]).map(([p, label]) => (
@@ -167,21 +168,21 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
         </div>
         {preset === 'custom' && (
           <span className="flex items-center gap-1">
-            <select value={custom[0]} className={selectCls}
+            <Select value={custom[0]} className={selectCls}
                     onChange={(e) => {
                       const next: [number, number] = [Number(e.target.value), custom[1]]
                       setCustom(next); applyWindow(next)
                     }}>
               {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-            </select>
+            </Select>
             <span className="text-xs text-fg-muted">to</span>
-            <select value={custom[1]} className={selectCls}
+            <Select value={custom[1]} className={selectCls}
                     onChange={(e) => {
                       const next: [number, number] = [custom[0], Number(e.target.value)]
                       setCustom(next); applyWindow(next)
                     }}>
               {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-            </select>
+            </Select>
           </span>
         )}
         {/* NC counts a voucher once it is tallied (记账); a month still being
@@ -189,9 +190,9 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
             Balance's, same rule (finance-api fiscal.status_filter). */}
         <label className="ml-2 inline-flex cursor-pointer select-none items-center gap-1.5 text-xs text-fg-secondary"
                title="Also count vouchers entered in NC but not yet tallied (记账). Discarded or deleted vouchers never count.">
-          <input type="checkbox" checked={includeUnposted}
+          <Checkbox checked={includeUnposted}
                  onChange={(e) => onIncludeUnpostedChange(e.target.checked)}
-                 className="h-3.5 w-3.5 cursor-pointer rounded border-line-strong accent-primary-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600" />
+                 className="h-3.5 w-3.5" />
           Include unposted vouchers
         </label>
         <span className="ml-auto text-xs text-fg-muted">
@@ -226,7 +227,7 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
                 sub: `${pct(data.company.consumed_pct)} consumed` },
             ].map((c) => (
               <div key={c.label} className="bg-surface px-4 py-3.5">
-                <p className="text-2xs font-medium uppercase tracking-wide text-fg-muted">{c.label}</p>
+                <p className="text-2xs font-medium text-fg-muted">{c.label}</p>
                 <p className={cn('mt-1 font-mono text-xl font-semibold tabular-nums tracking-tight',
                   c.bad ? 'text-danger-fg' : 'text-fg')}>{money(c.v)}</p>
                 {c.sub && <p className="mt-0.5 text-xs text-fg-muted">{c.sub}</p>}
@@ -251,9 +252,9 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
 
             {multiMonth && (
               <label className="ml-auto inline-flex cursor-pointer select-none items-center gap-1.5 text-xs text-fg-secondary">
-                <input type="checkbox" checked={expandMonths}
+                <Checkbox checked={expandMonths}
                        onChange={(e) => setExpandMonths(e.target.checked)}
-                       className="h-3.5 w-3.5 cursor-pointer rounded border-line-strong accent-primary-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600" />
+                       className="h-3.5 w-3.5" />
                 Expand by months
               </label>
             )}
@@ -293,28 +294,28 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
           )}
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[60rem] text-sm"
+            <Table density="compact" className="min-w-[60rem]"
                    style={months.length ? { minWidth: `${60 + months.length * 11}rem` } : undefined}>
-              <thead className="sticky top-0 z-10">
-                <tr className="border-y border-line bg-surface-subtle/95 text-xs font-medium text-fg-secondary backdrop-blur">
-                  <th className="px-3 py-2 text-left font-medium">
+              <THead className="sticky top-0 z-10">
+                <Tr className="border-y bg-surface-subtle/95 text-xs font-medium text-fg-secondary backdrop-blur">
+                  <Th>
                     {tab === 'centre' ? 'Expense centre' : 'Department'}
-                  </th>
+                  </Th>
                   {months.map((m, i) => (
                     <MonthHeads key={m} month={m} first={i === 0} />
                   ))}
-                  <th className={cn('px-3 py-2 text-right font-medium',
-                    months.length > 0 && 'border-l border-line')}>Plan {windowLabel}</th>
-                  <th className="px-3 py-2 text-right font-medium">Actual {windowLabel}</th>
-                  <th className="px-3 py-2 text-right font-medium">Variance</th>
-                  <th className="px-3 py-2 text-right font-medium">%</th>
-                  <th className="border-l border-line px-3 py-2 text-right font-medium">Full-year plan</th>
-                  <th className="px-3 py-2 text-right font-medium">Actual YTD</th>
-                  <th className="px-3 py-2 text-right font-medium">Remaining</th>
-                  <th className="px-3 py-2 text-right font-medium">Consumed</th>
-                </tr>
-              </thead>
-              <tbody>
+                  <Th className={cn('px-3 py-2 text-right font-medium',
+                    months.length > 0 && 'border-l border-line')}>Plan {windowLabel}</Th>
+                  <Th align="right">Actual {windowLabel}</Th>
+                  <Th align="right">Variance</Th>
+                  <Th align="right">%</Th>
+                  <Th align="right" className="border-l border-line ">Full-year plan</Th>
+                  <Th align="right">Actual YTD</Th>
+                  <Th align="right">Remaining</Th>
+                  <Th align="right">Consumed</Th>
+                </Tr>
+              </THead>
+              <TBody>
                 {nodes.map((n) => (
                   <Row key={n.code || n.label} node={n} isOpen={open.has(n.code || n.label)}
                        onToggle={() => toggle(n.code || n.label)} tab={tab} months={months}
@@ -322,72 +323,72 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
                 ))}
 
                 {/* Not a footnote — see the file header. */}
-                <tr className="border-t-2 border-line bg-warning-soft/40">
-                  <td className="px-3 py-2">
-                    <button onClick={() => setShowUnallocated((v) => !v)}
-                            className="flex cursor-pointer items-center gap-1 text-left text-fg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+                <Tr className="border-t-2 bg-warning-soft/40">
+                  <Td>
+                    <Button variant="subtle" size="xs" onClick={() => setShowUnallocated((v) => !v)}
+                            className="text-left">
                       <ChevronRight className={cn('h-3.5 w-3.5 motion-safe:transition-transform',
                         showUnallocated && 'rotate-90')} />
                       <span className="font-medium">Category-level (not allocated)</span>
-                    </button>
+                    </Button>
                     <p className="pl-5 text-xs text-fg-muted">
                       Tracked by category, never spread over cost centres
                     </p>
-                  </td>
+                  </Td>
                   <MonthActualOnly months={months} cells={data.unallocated.monthly} />
-                  <td className={cn('px-3 py-2 text-right text-fg-muted',
-                    months.length > 0 && 'border-l border-line')}>—</td>
-                  <td className="px-3 py-2 text-right font-mono">{money(data.unallocated.actual_period)}</td>
-                  <td colSpan={3} className="px-3 py-2 text-right text-fg-muted">—</td>
-                  <td className="px-3 py-2 text-right font-mono">{money(data.unallocated.actual_ytd)}</td>
-                  <td colSpan={2} className="px-3 py-2 text-right text-fg-muted">—</td>
-                </tr>
+                  <Td className={cn('px-3 py-2 text-right text-fg-muted',
+                    months.length > 0 && 'border-l border-line')}>—</Td>
+                  <Td align="right" className="font-mono">{money(data.unallocated.actual_period)}</Td>
+                  <Td align="right" colSpan={3} className="text-fg-muted">—</Td>
+                  <Td align="right" className="font-mono">{money(data.unallocated.actual_ytd)}</Td>
+                  <Td align="right" colSpan={2} className="text-fg-muted">—</Td>
+                </Tr>
                 {showUnallocated && data.unallocated.breakdown.map((b) => (
-                  <tr key={b.key} className="border-t border-line-subtle bg-warning-soft/30 text-fg-secondary">
-                    <td className="py-1.5 pl-10 pr-3 text-xs">
-                      <button onClick={() => setDrillBucket({ key: b.key, label: b.label })}
-                              className="cursor-pointer text-left hover:text-primary-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+                  <Tr key={b.key} className="bg-warning-soft/30 text-fg-secondary">
+                    <Td className="pl-10 pr-3 text-xs">
+                      <Button variant="link" onClick={() => setDrillBucket({ key: b.key, label: b.label })}
+                              className="text-left">
                         {b.label}
-                      </button>
-                      <button onClick={() => setDrillBucket({ key: b.key, label: b.label })}
-                              className="ml-2 cursor-pointer rounded text-2xs font-medium text-primary-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+                      </Button>
+                      <Button variant="link" onClick={() => setDrillBucket({ key: b.key, label: b.label })}
+                              className="ml-2 text-2xs">
                         Vouchers
-                      </button>
-                    </td>
+                      </Button>
+                    </Td>
                     <MonthActualOnly months={months} cells={b.monthly} small />
-                    <td className={cn('px-3 py-1.5 text-right text-fg-faint',
-                      months.length > 0 && 'border-l border-line')}>—</td>
-                    <td className="px-3 py-1.5 text-right font-mono text-xs">{money(b.actual_period)}</td>
-                    <td colSpan={3} className="px-3 py-1.5 text-right text-fg-faint">—</td>
-                    <td className="px-3 py-1.5 text-right font-mono text-xs">{money(b.actual_ytd)}</td>
-                    <td colSpan={2} className="px-3 py-1.5 text-right text-fg-faint">—</td>
-                  </tr>
+                    <Td className={cn('px-3 py-1.5 text-right text-fg-faint',
+                      months.length > 0 && 'border-l border-line')}>—</Td>
+                    <Td align="right" className="font-mono text-xs">{money(b.actual_period)}</Td>
+                    <Td align="right" colSpan={3} className="text-fg-faint">—</Td>
+                    <Td align="right" className="font-mono text-xs">{money(b.actual_ytd)}</Td>
+                    <Td align="right" colSpan={2} className="text-fg-faint">—</Td>
+                  </Tr>
                 ))}
-              </tbody>
-              <tfoot>
+              </TBody>
+              <TFoot>
                 {/* The report's own proof: placed + unallocated == everything
                     posted in the window. A summary whose parts do not add to the
                     whole is what this page was rebuilt to stop being. */}
-                <tr className="border-t-2 border-line-strong bg-surface-subtle font-semibold">
-                  <td className="px-3 py-2">Total actual {windowLabel}</td>
+                <Tr className="border-t-2 bg-surface-subtle font-semibold">
+                  <Td>Total actual {windowLabel}</Td>
                   <MonthActualOnly months={months} cells={data.reconciliation.total_monthly} />
                   {/* No plan figure beside this total on purpose: the plan
                       covers only what lands in a cost centre, while this actual
                       includes the category-level items, which are not budgeted
                       at all. Printing them side by side reads as a 12M overrun
                       that does not exist. The company plan is in the card above. */}
-                  <td className={cn('px-3 py-2 text-right text-fg-faint',
-                    months.length > 0 && 'border-l border-line')}>—</td>
-                  <td className="px-3 py-2 text-right font-mono">
+                  <Td className={cn('px-3 py-2 text-right text-fg-faint',
+                    months.length > 0 && 'border-l border-line')}>—</Td>
+                  <Td align="right" className="font-mono">
                     {money(data.reconciliation.total_actual_period)}
-                  </td>
-                  <td colSpan={6} className="px-3 py-2 text-xs font-normal text-fg-muted">
+                  </Td>
+                  <Td colSpan={6} className="text-xs font-normal text-fg-muted">
                     = {money(data.reconciliation.placed_actual_period)} in cost centres
                     + {money(data.reconciliation.unallocated_actual_period)} category-level
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+                  </Td>
+                </Tr>
+              </TFoot>
+            </Table>
           </div>
         </>
       )}
@@ -416,32 +417,32 @@ function Row({ node, isOpen, onToggle, tab, months, scope, onScopeChange }: {
   const selected = scope?.kind === kind && scope.key === node.code
   return (
     <>
-      <tr className={cn('border-t border-line-subtle transition-colors hover:bg-surface-subtle',
+      <Tr className={cn('border-t border-line-subtle transition-colors hover:bg-surface-subtle',
         selected && 'bg-primary-50/70 hover:bg-primary-50/70')}>
-        <td className="px-3 py-2">
+        <Td>
           <span className="flex items-center gap-1">
             {/* The chevron expands in place; the label drives the composition
                 below. Two separate targets, because "show me the cost centres"
                 and "show me what this is made of" are different questions. */}
-            <button onClick={onToggle} aria-label="Expand rows"
-                    className="shrink-0 cursor-pointer rounded p-0.5 hover:bg-surface-strong/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+            <Button variant="subtle" size="icon-xs" onClick={onToggle} aria-label="Expand rows"
+                    className="shrink-0">
               <ChevronRight className={cn('h-3.5 w-3.5 text-fg-muted transition-transform',
                 isOpen && 'rotate-90')} />
-            </button>
+            </Button>
             <button onClick={() => onScopeChange({ kind, key: node.code, label: node.label })}
                     className="cursor-pointer rounded text-left transition-colors hover:text-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
               <span className="font-medium text-fg">{node.label}</span>
               {node.code && <span className="ml-1.5 font-mono text-xs text-fg-muted">{node.code}</span>}
             </button>
           </span>
-        </td>
+        </Td>
         <Cells m={node} overspent={overspent} months={months} />
-      </tr>
+      </Tr>
       {isOpen && node.children.map((c) => (
-        <tr key={c.cost_center_id}
+        <Tr key={c.cost_center_id}
             className={cn('border-t border-line-subtle bg-surface-subtle/40 text-fg-secondary',
               scope?.kind === 'cost_centre' && scope.key === c.cost_center_code && 'bg-primary-50/70')}>
-          <td className="border-l-2 border-primary-200 py-1.5 pl-9 pr-3">
+          <Td className="border-l-2 border-primary-200 pl-9 pr-3">
             <button className="cursor-pointer rounded text-left transition-colors hover:text-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
                     onClick={() => onScopeChange({ kind: 'cost_centre', key: c.cost_center_code,
                                                    label: `${c.cost_center_code} ${c.cost_center_name}` })}>
@@ -455,9 +456,9 @@ function Row({ node, isOpen, onToggle, tab, months, scope, onScopeChange }: {
                 {c.expense_centre}
               </span>
             )}
-          </td>
+          </Td>
           <Cells m={c} overspent={Number(c.variance_period) < 0} months={months} small />
-        </tr>
+        </Tr>
       ))}
     </>
   )
@@ -466,9 +467,9 @@ function Row({ node, isOpen, onToggle, tab, months, scope, onScopeChange }: {
 function MonthHeads({ month, first }: { month: number; first: boolean }) {
   return (
     <>
-      <th className={cn('whitespace-nowrap px-3 py-2 text-right font-medium text-fg-muted',
-        !first && 'border-l border-line-subtle')}>{MONTHS[month - 1]} plan</th>
-      <th className="whitespace-nowrap px-3 py-2 text-right font-medium">{MONTHS[month - 1]} actual</th>
+      <Th className={cn('whitespace-nowrap px-3 py-2 text-right font-medium text-fg-muted',
+        !first && 'border-l border-line-subtle')}>{MONTHS[month - 1]} plan</Th>
+      <Th align="right">{MONTHS[month - 1]} actual</Th>
     </>
   )
 }
@@ -496,8 +497,8 @@ function MonthPair({ plan, actual, cls, first }: {
 }) {
   return (
     <>
-      <td className={cn(cls, 'text-fg-muted', !first && 'border-l border-line-subtle')}>{plan}</td>
-      <td className={cls}>{actual}</td>
+      <Td className={cn(cls, 'text-fg-muted', !first && 'border-l border-line-subtle')}>{plan}</Td>
+      <Td className={cls}>{actual}</Td>
     </>
   )
 }
@@ -518,22 +519,22 @@ function Cells({ m, overspent, months, small }: {
                    plan={money(by.get(mo)?.plan ?? null)}
                    actual={money(by.get(mo)?.actual ?? null)} />
       ))}
-      <td className={cn(cls, 'text-fg-muted', months.length > 0 && 'border-l border-line')}>
+      <Td className={cn(cls, 'text-fg-muted', months.length > 0 && 'border-l border-line')}>
         {money(m.plan_period)}
-      </td>
-      <td className={cls}>{money(m.actual_period)}</td>
-      <td className={cn(cls, overspent && 'text-danger-fg font-semibold')}>
+      </Td>
+      <Td className={cls}>{money(m.actual_period)}</Td>
+      <Td className={cn(cls, overspent && 'text-danger-fg font-semibold')}>
         {money(m.variance_period)}
-      </td>
-      <td className={cn(cls, 'text-fg-muted')}>{pct(m.variance_period_pct)}</td>
-      <td className={cn(cls, 'border-l border-line text-fg-muted')}>
+      </Td>
+      <Td className={cn(cls, 'text-fg-muted')}>{pct(m.variance_period_pct)}</Td>
+      <Td className={cn(cls, 'border-l border-line text-fg-muted')}>
         {money(m.plan_full_year)}
-      </td>
-      <td className={cls}>{money(m.actual_ytd)}</td>
-      <td className={cn(cls, Number(m.remaining_full_year) < 0 && 'text-danger-fg')}>
+      </Td>
+      <Td className={cls}>{money(m.actual_ytd)}</Td>
+      <Td className={cn(cls, Number(m.remaining_full_year) < 0 && 'text-danger-fg')}>
         {money(m.remaining_full_year)}
-      </td>
-      <td className={cn(cls, 'text-fg-muted')}>{pct(m.consumed_pct)}</td>
+      </Td>
+      <Td className={cn(cls, 'text-fg-muted')}>{pct(m.consumed_pct)}</Td>
     </>
   )
 }

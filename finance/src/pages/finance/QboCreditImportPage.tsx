@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check, Loader2, Search } from 'lucide-react'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import {
   qboCreditImportApi,
   type ImportRunResponse,
@@ -188,62 +188,62 @@ export default function QboCreditImportPage() {
               and correct it by hand. After cutover, vendor credits should be applied
               only in UniOps; two ledgers decrementing independently will double-spend.
             </p>
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs text-warning-fg">
-                <tr>
+            <Table density="compact">
+              <THead>
+                <Tr>
                   <SortTh label="Credit" sortKey="credit" sort={driftSort.sort} onSort={driftSort.onSort} className="py-1 pr-3 font-medium" />
                   <SortTh label="Vendor" sortKey="vendor" sort={driftSort.sort} onSort={driftSort.onSort} className="py-1 pr-3 font-medium" />
                   <SortTh label="Imported" sortKey="imported" sort={driftSort.sort} onSort={driftSort.onSort} align="right" className="py-1 pr-3 font-medium" />
                   <SortTh label="QuickBooks now" sortKey="qbo" sort={driftSort.sort} onSort={driftSort.onSort} align="right" className="py-1 pr-3 font-medium" />
                   <SortTh label="Applied here" sortKey="applied" sort={driftSort.sort} onSort={driftSort.onSort} align="right" className="py-1 font-medium" />
-                </tr>
-              </thead>
-              <tbody>
+                </Tr>
+              </THead>
+              <TBody>
                 {driftSort.rows.map((d) => (
-                  <tr key={d.source_ref} className="border-t border-warning-line">
-                    <td className="py-1 pr-3 font-mono text-xs">{d.credit_number}</td>
-                    <td className="py-1 pr-3">{d.vendor_name}</td>
-                    <td className="py-1 pr-3 text-right tabular-nums">{money(d.imported_total)}</td>
-                    <td className="py-1 pr-3 text-right tabular-nums">{money(d.qbo_balance)}</td>
-                    <td className="py-1 text-right tabular-nums">{money(d.applied_amount)}</td>
-                  </tr>
+                  <Tr key={d.source_ref} className="border-warning-line">
+                    <Td className="pr-3 font-mono text-xs">{d.credit_number}</Td>
+                    <Td className="pr-3">{d.vendor_name}</Td>
+                    <Td align="right" className="pr-3 tabular-nums">{money(d.imported_total)}</Td>
+                    <Td align="right" className="pr-3 tabular-nums">{money(d.qbo_balance)}</Td>
+                    <Td align="right" className="tabular-nums">{money(d.applied_amount)}</Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </section>
         )}
 
         <section className="overflow-auto rounded-lg border border-line bg-surface">
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-fg-muted">
-              <tr>
+          <Table density="compact">
+            <THead>
+              <Tr>
                 <SortTh label="QuickBooks vendor" sortKey="vendor" sort={candSort.sort} onSort={candSort.onSort} className="border-b border-line bg-surface-subtle px-3 py-2 font-medium" />
                 <SortTh label="Credits" sortKey="credits" sort={candSort.sort} onSort={candSort.onSort} align="right" className="border-b border-line bg-surface-subtle px-3 py-2 font-medium" />
                 <SortTh label="Open balance" sortKey="balance" sort={candSort.sort} onSort={candSort.onSort} align="right" className="border-b border-line bg-surface-subtle px-3 py-2 font-medium" />
                 <SortTh label="Currency" sortKey="currency" sort={candSort.sort} onSort={candSort.onSort} className="border-b border-line bg-surface-subtle px-3 py-2 font-medium" />
-                <th className="border-b border-line bg-surface-subtle px-3 py-2 font-medium">EPMS vendor</th>
+                <Th className="border-b border-line bg-surface-subtle">EPMS vendor</Th>
                 <SortTh label="Status" sortKey="status" sort={candSort.sort} onSort={candSort.onSort} className="border-b border-line bg-surface-subtle px-3 py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
+              </Tr>
+            </THead>
+            <TBody>
               {isLoading && (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-fg-muted">
-                  <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
+                <Tr><Td align="center" colSpan={6} className="text-fg-muted">
+                  <Loader2 className="mx-auto h-5 w-5 animate-spin" /></Td></Tr>
               )}
               {!isLoading && candidates.length === 0 && (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-fg-muted">
-                  No QuickBooks vendor credits with an open balance.</td></tr>
+                <Tr><Td align="center" colSpan={6} className="text-fg-muted">
+                  No QuickBooks vendor credits with an open balance.</Td></Tr>
               )}
               {candSort.rows.map((c) => {
                 const skipped = decisions.skipped.includes(c.qbo_vendor_id)
                 const chosen = decisions.chosen[c.qbo_vendor_id] ?? null
                 return (
-                  <tr key={c.qbo_vendor_id} className={cn('border-t border-line-subtle', skipped && 'opacity-50')}>
-                    <td className="px-3 py-2">{c.qbo_display_name ?? '—'}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{c.credit_count}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{money(c.credit_total)}</td>
-                    <td className="px-3 py-2 text-xs text-fg-secondary">{c.currencies.join(', ')}</td>
-                    <td className="px-3 py-2">
+                  <Tr key={c.qbo_vendor_id} className={cn('border-t border-line-subtle', skipped && 'opacity-50')}>
+                    <Td>{c.qbo_display_name ?? '—'}</Td>
+                    <Td align="right" className="tabular-nums">{c.credit_count}</Td>
+                    <Td align="right" className="tabular-nums">{money(c.credit_total)}</Td>
+                    <Td className="text-xs text-fg-secondary">{c.currencies.join(', ')}</Td>
+                    <Td>
                       <VendorPicker
                         suggestedId={c.suggested_vendor_id}
                         suggestedName={c.suggested_vendor_name}
@@ -251,28 +251,28 @@ export default function QboCreditImportPage() {
                         disabled={skipped}
                         onChoose={(id) => choose(c.qbo_vendor_id, id)}
                       />
-                    </td>
-                    <td className="px-3 py-2 text-xs">
+                    </Td>
+                    <Td className="text-xs">
                       <div className="flex flex-col gap-1">
                         {c.already_imported > 0 && (
                           <span className="text-fg-muted">
                             {c.already_imported} already imported
                           </span>
                         )}
-                        <button
+                        <Button variant="link"
                           type="button"
-                          className="self-start text-fg-muted underline hover:text-fg-secondary"
+                          className="self-start  text-fg-muted"
                           onClick={() => toggleSkip(c.qbo_vendor_id)}
                         >
                           {skipped ? 'Include' : 'Skip'}
-                        </button>
+                        </Button>
                       </div>
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 )
               })}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </section>
 
         <section className="flex flex-wrap items-center gap-3">
@@ -347,26 +347,26 @@ function RunSummary({ run }: { run: ImportRunResponse }) {
 
       {run.rows.length > 0 && (
         <div className="max-h-72 overflow-auto rounded-lg border border-line">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 text-left text-xs text-fg-muted">
-              <tr>
-                <th className="border-b border-line bg-surface-subtle px-3 py-2 font-medium">Credit note</th>
-                <th className="border-b border-line bg-surface-subtle px-3 py-2 font-medium">Vendor</th>
-                <th className="border-b border-line bg-surface-subtle px-3 py-2 text-right font-medium">Amount</th>
-                <th className="border-b border-line bg-surface-subtle px-3 py-2 font-medium">Currency</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table density="compact">
+            <THead className="sticky top-0">
+              <Tr>
+                <Th className="border-b border-line bg-surface-subtle">Credit note</Th>
+                <Th className="border-b border-line bg-surface-subtle">Vendor</Th>
+                <Th align="right" className="border-b border-line bg-surface-subtle ">Amount</Th>
+                <Th className="border-b border-line bg-surface-subtle">Currency</Th>
+              </Tr>
+            </THead>
+            <TBody>
               {run.rows.map((r) => (
-                <tr key={r.qbo_id} className="border-t border-line-subtle">
-                  <td className="px-3 py-1.5 font-mono text-xs">{r.vendor_credit_number}</td>
-                  <td className="px-3 py-1.5">{r.vendor_name}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{money(r.amount)}</td>
-                  <td className="px-3 py-1.5 text-xs text-fg-secondary">{r.currency}</td>
-                </tr>
+                <Tr key={r.qbo_id}>
+                  <Td className="font-mono text-xs">{r.vendor_credit_number}</Td>
+                  <Td>{r.vendor_name}</Td>
+                  <Td align="right" className="tabular-nums">{money(r.amount)}</Td>
+                  <Td className="text-xs text-fg-secondary">{r.currency}</Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
       )}
     </section>
@@ -408,10 +408,10 @@ function VendorPicker({
         <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-xs text-success-fg">
           <Check className="h-3 w-3" /> {chosenName ?? 'Selected'}
         </span>
-        <button type="button" className="text-xs text-fg-muted underline hover:text-fg-secondary"
+        <Button variant="link" type="button" className="text-xs text-fg-muted"
           onClick={() => { onChoose(null); setOpen(false) }}>
           Change
-        </button>
+        </Button>
       </div>
     )
   }
@@ -423,14 +423,14 @@ function VendorPicker({
           <span className="text-xs text-fg-secondary">
             Suggested: <span className="font-medium">{suggestedName}</span>
           </span>
-          <button type="button" className="rounded border border-success-line bg-success-soft px-2 py-0.5 text-xs text-success-fg hover:bg-success-100"
+          <Button variant="secondary" size="xs" type="button"
             onClick={() => onChoose(suggestedId)}>
             Confirm
-          </button>
-          <button type="button" className="text-xs text-fg-muted underline hover:text-fg-secondary"
+          </Button>
+          <Button variant="link" type="button" className="text-xs text-fg-muted"
             onClick={() => setOpen(true)}>
             Pick another
-          </button>
+          </Button>
         </div>
       )}
 
@@ -439,10 +439,10 @@ function VendorPicker({
           <span className="text-xs text-fg-muted">
             No EPMS vendor matched — create it in Vendor Master, or pick one.
           </span>
-          <button type="button" className="text-xs text-fg-secondary underline hover:text-fg"
+          <Button variant="link" type="button" className="text-xs"
             onClick={() => setOpen(true)}>
             Pick
-          </button>
+          </Button>
         </div>
       )}
 
@@ -450,7 +450,7 @@ function VendorPicker({
         <div className="space-y-1">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-fg-muted" />
-            <input
+            <Input
               autoFocus
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -474,10 +474,10 @@ function VendorPicker({
               </button>
             ))}
           </div>
-          <button type="button" className="text-xs text-fg-muted underline hover:text-fg-secondary"
+          <Button variant="link" type="button" className="text-xs text-fg-muted"
             onClick={() => setOpen(false)}>
             Cancel
-          </button>
+          </Button>
         </div>
       )}
     </div>

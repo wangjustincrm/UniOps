@@ -9,6 +9,7 @@ import { AlertTriangle, DatabaseZap, Loader2, X } from 'lucide-react'
 import { financeApi } from '@/lib/api'
 import { cn, formatDateTime } from '@/lib/utils'
 
+import { Input, Radio, Button } from '@uniops/shell'
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
@@ -96,9 +97,9 @@ export function NcSyncModal({ onClose, onSynced }: { onClose: () => void; onSync
           <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
             <DatabaseZap className="h-4 w-4 text-fg-muted" /> NC Voucher Sync
           </h2>
-          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
+          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
 
         <div className="space-y-3">
@@ -120,7 +121,7 @@ export function NcSyncModal({ onClose, onSynced }: { onClose: () => void; onSync
             <>
               <div className="space-y-2 text-sm">
                 <label className="flex items-start gap-2">
-                  <input type="radio" checked={mode === 'incremental'}
+                  <Radio checked={mode === 'incremental'}
                          onChange={() => setMode('incremental')} className="mt-0.5" />
                   <span>
                     <span className="font-medium">Incremental</span>
@@ -131,7 +132,7 @@ export function NcSyncModal({ onClose, onSynced }: { onClose: () => void; onSync
                   </span>
                 </label>
                 <label className="flex items-start gap-2">
-                  <input type="radio" checked={mode === 'full'}
+                  <Radio checked={mode === 'full'}
                          onChange={() => setMode('full')} className="mt-0.5" />
                   <span>
                     <span className="font-medium">Full reload</span>
@@ -149,7 +150,7 @@ export function NcSyncModal({ onClose, onSynced }: { onClose: () => void; onSync
                     Destructive: deletes every NC-sourced voucher before re-importing.
                     Type {FULL_CONFIRM} to enable.
                   </div>
-                  <input value={confirm} onChange={(e) => setConfirm(e.target.value)}
+                  <Input value={confirm} onChange={(e) => setConfirm(e.target.value)}
                          placeholder={FULL_CONFIRM} className={cn(inputCls, 'w-full font-mono')} />
                 </div>
               )}

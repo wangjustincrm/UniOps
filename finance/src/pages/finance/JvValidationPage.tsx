@@ -19,7 +19,7 @@ import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Download, Loader2 } from 'lucide-react'
-import { SortTh, sortParams, useSort } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, todayISO } from '@/lib/utils'
@@ -166,15 +166,15 @@ export default function JvValidationPage() {
     >
       <div className="mx-auto max-w-7xl">
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <input type="month" value={from} onChange={(e) => { setFrom(e.target.value); setOffset(0) }}
+          <Input type="month" value={from} onChange={(e) => { setFrom(e.target.value); setOffset(0) }}
                  className={cn(inputCls, 'w-40')} />
           <span className="text-sm text-fg-muted">to</span>
-          <input type="month" value={to} onChange={(e) => { setTo(e.target.value); setOffset(0) }}
+          <Input type="month" value={to} onChange={(e) => { setTo(e.target.value); setOffset(0) }}
                  className={cn(inputCls, 'w-40')} />
-          <button onClick={exportCsv}
-                  className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-line-strong px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle">
+          <Button variant="secondary" size="sm" onClick={exportCsv}
+                  className="ml-auto">
             <Download className="h-4 w-4" /> Export CSV
-          </button>
+          </Button>
         </div>
 
         <p className="mb-3 text-xs text-fg-muted">
@@ -194,41 +194,41 @@ export default function JvValidationPage() {
           <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
         ) : (
           <div className="mb-5 overflow-hidden rounded-lg border border-line">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-line-subtle bg-surface-subtle text-xs text-fg-muted">
-                  <th className="px-3 py-2 text-left font-medium">Finding</th>
-                  <th className="px-3 py-2 text-right font-medium">Lines</th>
-                  <th className="px-3 py-2 text-right font-medium">Vouchers</th>
-                  <th className="px-3 py-2 text-right font-medium">Debit</th>
-                  <th className="px-3 py-2 text-left font-medium">Effect</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className={cn('border-t border-line-subtle', rule === null && 'bg-primary-50/60')}>
-                  <td className="px-3 py-2">
+            <Table density="compact">
+              <THead>
+                <Tr className="bg-surface-subtle text-xs text-fg-muted">
+                  <Th>Finding</Th>
+                  <Th align="right">Lines</Th>
+                  <Th align="right">Vouchers</Th>
+                  <Th align="right">Debit</Th>
+                  <Th>Effect</Th>
+                </Tr>
+              </THead>
+              <TBody>
+                <Tr className={cn('border-t border-line-subtle', rule === null && 'bg-primary-50/60')}>
+                  <Td>
                     <button className={linkBtn} onClick={() => pick(null)}>All findings</button>
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono">{lines?.total ?? '—'}</td>
-                  <td className="px-3 py-2"></td>
-                  <td className="px-3 py-2"></td>
-                  <td className="px-3 py-2"></td>
-                </tr>
+                  </Td>
+                  <Td align="right" className="font-mono">{lines?.total ?? '—'}</Td>
+                  <Td></Td>
+                  <Td></Td>
+                  <Td></Td>
+                </Tr>
                 {(summary?.rules ?? []).map((r) => (
-                  <tr key={r.rule}
+                  <Tr key={r.rule}
                       className={cn('border-t border-line-subtle', rule === r.rule && 'bg-primary-50/60',
                                     r.lines === 0 && 'text-fg-muted')}>
-                    <td className="px-3 py-2">
+                    <Td>
                       <button className={cn(linkBtn, r.lines === 0 && 'text-fg-muted hover:no-underline')}
                               disabled={r.lines === 0} onClick={() => pick(r.rule)}
                               title={RULE_HELP[r.rule]}>
                         {r.label}
                       </button>
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono">{r.lines.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right font-mono">{r.vouchers.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right font-mono">{money(r.debit)}</td>
-                    <td className="px-3 py-2">
+                    </Td>
+                    <Td align="right" className="font-mono">{r.lines.toLocaleString()}</Td>
+                    <Td align="right" className="font-mono">{r.vouchers.toLocaleString()}</Td>
+                    <Td align="right" className="font-mono">{money(r.debit)}</Td>
+                    <Td>
                       <span className={cn('rounded px-2 py-0.5 text-xs font-medium',
                         r.drops_from_dashboard ? 'bg-danger-soft text-danger-fg'
                           : 'bg-warning-soft text-warning-fg')}>
@@ -242,11 +242,11 @@ export default function JvValidationPage() {
                           Needs a decision
                         </span>
                       )}
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
         )}
 
@@ -258,9 +258,9 @@ export default function JvValidationPage() {
 
         <div className="overflow-hidden rounded-lg border border-line">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-line-subtle bg-surface-subtle text-xs text-fg-muted">
+            <Table density="compact">
+              <THead>
+                <Tr className="bg-surface-subtle text-xs text-fg-muted">
                   <SortTh label="Voucher" sortKey="jv_number" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
                   <SortTh label="Account" sortKey="account_code" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
                   <SortTh label="Debit" sortKey="debit" sort={sort} onSort={onSort} align="right" className="px-3 py-2 font-medium" />
@@ -268,33 +268,33 @@ export default function JvValidationPage() {
                   <SortTh label="NC / Dept" sortKey="nc_dept" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
                   <SortTh label="Income / Expense" sortKey="income_expense" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
                   <SortTh label="Finding" sortKey="finding" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
-                  <th className="px-3 py-2 w-20"></th>
-                </tr>
-              </thead>
-              <tbody>
+                  <Th className="w-20"></Th>
+                </Tr>
+              </THead>
+              <TBody>
                 {loadingLines && !lines && (
-                  <tr><td colSpan={8} className="px-3 py-6 text-center">
-                    <Loader2 className="mx-auto h-4 w-4 animate-spin text-fg-muted" /></td></tr>
+                  <Tr><Td align="center" colSpan={8}>
+                    <Loader2 className="mx-auto h-4 w-4 animate-spin text-fg-muted" /></Td></Tr>
                 )}
                 {lines && lines.rows.length === 0 && (
-                  <tr><td colSpan={8} className="px-3 py-6 text-center text-xs text-fg-muted">
+                  <Tr><Td align="center" colSpan={8} className="text-xs text-fg-muted">
                     Nothing flagged in this range. Every posted line reaches a budget cell.
-                  </td></tr>
+                  </Td></Tr>
                 )}
                 {(lines?.rows ?? []).map((r, i) => (
-                  <tr key={`${r.jv_id}-${r.line_no}-${r.rule}`}
+                  <Tr key={`${r.jv_id}-${r.line_no}-${r.rule}`}
                       className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
-                    <td className="px-3 py-2">
+                    <Td>
                       <span className="font-mono text-xs">{r.jv_number}</span>
                       <span className="ml-1 text-xs text-fg-muted">#{r.line_no}</span>
                       <div className="text-xs text-fg-muted">{r.fiscal_period}</div>
-                    </td>
-                    <td className="px-3 py-2">
+                    </Td>
+                    <Td>
                       <span className="font-mono text-xs">{r.account_code}</span>
                       <div className="text-xs text-fg-muted">{r.category}</div>
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono">{money(r.debit)}</td>
-                    <td className="px-3 py-2">
+                    </Td>
+                    <Td align="right" className="font-mono">{money(r.debit)}</Td>
+                    <Td>
                       {r.cost_center_code
                         ? <span className="font-mono text-xs">{r.cost_center_code}</span>
                         : <span className="text-xs text-danger-fg">(none)</span>}
@@ -303,27 +303,27 @@ export default function JvValidationPage() {
                           would be <span className="font-mono">{r.expected_cost_center_code}</span>
                         </div>
                       )}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-fg-secondary">
+                    </Td>
+                    <Td className="text-xs text-fg-secondary">
                       <span className="font-mono">{r.nc_cost_center_code ?? '—'}</span>
                       {' · '}
                       <span className="font-mono">{r.department_code ?? '—'}</span>
-                    </td>
-                    <td className="px-3 py-2 text-xs">
+                    </Td>
+                    <Td className="text-xs">
                       {r.budget_account_code
                         ? <span className="font-mono">{r.budget_account_code}</span>
                         : r.income_expense_text
                           ? <span className="font-mono text-danger-fg">{r.income_expense_text}</span>
                           : <span className="text-danger-fg">(none)</span>}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-fg-secondary">{r.label}</td>
-                    <td className="px-3 py-2 text-right">
+                    </Td>
+                    <Td className="text-xs text-fg-secondary">{r.label}</Td>
+                    <Td align="right">
                       <button className={linkBtn} onClick={() => setJvId(r.jv_id)}>Voucher</button>
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
           {lines && lines.total > PAGE && (
             <div className="flex items-center justify-between border-t border-line-subtle px-3 py-2 text-xs text-fg-muted">

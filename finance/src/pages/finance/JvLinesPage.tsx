@@ -12,7 +12,7 @@ import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Download, Loader2, Search, X } from 'lucide-react'
-import { SortTh, sortParams, useSort } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Input, Select, TBody, THead, Table, Td, Tr, Button } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financeDownload } from '@/lib/api'
 import { cn, currentMonthISO, formatDate } from '@/lib/utils'
@@ -144,31 +144,31 @@ export default function JvLinesPage() {
       <div className="mx-auto max-w-[110rem]">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1">
-            <input type="month" value={periodFrom} aria-label="Period from"
+            <Input type="month" value={periodFrom} aria-label="Period from"
                    onChange={(e) => { setPeriodFrom(e.target.value); reset() }}
                    className={cn(inputCls, 'w-36')} />
             <span className="text-sm text-fg-muted">–</span>
-            <input type="month" value={periodTo} aria-label="Period to"
+            <Input type="month" value={periodTo} aria-label="Period to"
                    onChange={(e) => { setPeriodTo(e.target.value); reset() }}
                    className={cn(inputCls, 'w-36')} />
           </div>
-          <select value={subsystem} onChange={(e) => { setSubsystem(e.target.value); reset() }} className={inputCls}>
+          <Select value={subsystem} onChange={(e) => { setSubsystem(e.target.value); reset() }} className={inputCls}>
             <option value="">All systems</option>
             {SUBSYSTEMS.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
-          </select>
-          <input value={account} placeholder="Account code" aria-label="Account code"
+          </Select>
+          <Input value={account} placeholder="Account code" aria-label="Account code"
                  onChange={(e) => { setAccount(e.target.value.trim()); reset() }}
                  className={cn(inputCls, 'w-36')} />
-          <input value={currency} placeholder="Currency" aria-label="Currency"
+          <Input value={currency} placeholder="Currency" aria-label="Currency"
                  onChange={(e) => { setCurrency(e.target.value.trim().toUpperCase()); reset() }}
                  className={cn(inputCls, 'w-24')} />
-          <select value={auxCode} aria-label="Auxiliary"
+          <Select value={auxCode} aria-label="Auxiliary"
                   onChange={(e) => { setAuxCode(e.target.value); setAuxValue(''); reset() }}
                   className={inputCls}>
             <option value="">Any auxiliary</option>
             {(opts?.aux_codes ?? []).map((c) => <option key={c} value={c}>{dimLabel(c)}</option>)}
-          </select>
-          <input list="jv-lines-aux-values" value={auxValue} disabled={!auxCode}
+          </Select>
+          <Input list="jv-lines-aux-values" value={auxValue} disabled={!auxCode}
                  placeholder="Auxiliary code" aria-label="Auxiliary code"
                  onChange={(e) => { setAuxValue(e.target.value); reset() }}
                  className={cn(inputCls, 'w-40 disabled:bg-surface-sunken')} />
@@ -176,16 +176,16 @@ export default function JvLinesPage() {
             {(auxValues?.items ?? []).map((v) => <option key={v} value={v} />)}
           </datalist>
           <form className="flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); reset() }}>
-            <input value={qInput} onChange={(e) => setQInput(e.target.value)}
+            <Input value={qInput} onChange={(e) => setQInput(e.target.value)}
                    placeholder="Voucher no. / line summary…" className={cn(inputCls, 'w-60')} />
             <button type="submit" className={secondaryBtn}><Search className="h-4 w-4" /></button>
           </form>
           {(subsystem || account || currency || auxCode || q) && (
-            <button type="button"
+            <Button variant="subtle" size="xs" type="button"
                     onClick={() => { setSubsystem(''); setAccount(''); setCurrency(''); setAuxCode(''); setAuxValue(''); setQ(''); setQInput(''); reset() }}
-                    className="flex items-center gap-1 text-sm text-fg-muted hover:text-fg-secondary">
+                    className="text-sm">
               <X className="h-3.5 w-3.5" /> Clear
-            </button>
+            </Button>
           )}
         </div>
 
@@ -196,9 +196,9 @@ export default function JvLinesPage() {
         ) : (
           <>
             <div className="max-h-[calc(100vh-15rem)] min-h-[16rem] overflow-auto rounded-lg border border-line">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 z-10 bg-surface-subtle text-left text-xs text-fg-muted shadow-[0_1px_0_#e5e5e5]">
-                  <tr>
+              <Table density="compact">
+                <THead className="sticky top-0 z-10 shadow-[0_1px_0_#e5e5e5]">
+                  <Tr>
                     <SortTh label="Date" sortKey="voucher_date" sort={sort} onSort={onSort} className="px-3 py-2 whitespace-nowrap" />
                     <SortTh label="Voucher No." sortKey="jv_number" sort={sort} onSort={onSort} className="px-3 py-2 whitespace-nowrap" />
                     <SortTh label="#" sortKey="line_no" sort={sort} onSort={onSort} className="px-3 py-2 whitespace-nowrap" title="Sort by line number" />
@@ -211,34 +211,34 @@ export default function JvLinesPage() {
                       <SortTh key={c.code} label={c.label} sortKey={`aux:${c.code}`} sort={sort} onSort={onSort}
                               className="px-3 py-2 whitespace-nowrap" />
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
+                  </Tr>
+                </THead>
+                <TBody>
                   {items.length === 0 && (
-                    <tr><td colSpan={8 + dimCols.length} className="px-3 py-6 text-center text-fg-muted">No voucher lines match the filters.</td></tr>
+                    <Tr><Td align="center" colSpan={8 + dimCols.length} className="text-fg-muted">No voucher lines match the filters.</Td></Tr>
                   )}
                   {items.map((l, i) => (
-                    <tr key={`${l.jv_id}-${l.line_no}`} onClick={() => setDetailId(l.jv_id)}
+                    <Tr key={`${l.jv_id}-${l.line_no}`} onClick={() => setDetailId(l.jv_id)}
                         title="Open the voucher"
                         className={cn('cursor-pointer border-t border-line-subtle align-top hover:bg-primary-50/40', i % 2 && 'bg-surface-subtle/40')}>
-                      <td className="px-3 py-2 font-mono text-xs text-fg-secondary whitespace-nowrap">{formatDate(l.voucher_date)}</td>
-                      <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{l.jv_number}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-fg-muted">{l.line_no}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">
+                      <Td className="font-mono text-xs text-fg-secondary whitespace-nowrap">{formatDate(l.voucher_date)}</Td>
+                      <Td className="font-mono text-xs whitespace-nowrap">{l.jv_number}</Td>
+                      <Td className="font-mono text-xs text-fg-muted">{l.line_no}</Td>
+                      <Td className="whitespace-nowrap">
                         <span className="font-mono text-xs">{l.account_code ?? '—'}</span>
                         {l.account_name && <span className="ml-1 text-xs text-fg-secondary">{l.account_name}</span>}
-                      </td>
-                      <td className="px-3 py-2 text-fg-secondary break-words">{l.summary || '—'}</td>
-                      <td className="px-3 py-2 text-xs text-fg-secondary">{l.currency}</td>
-                      <td className="px-3 py-2 text-right font-mono whitespace-nowrap">{money(l.local_debit)}</td>
-                      <td className="px-3 py-2 text-right font-mono whitespace-nowrap">{money(l.local_credit)}</td>
+                      </Td>
+                      <Td className="text-fg-secondary break-words">{l.summary || '—'}</Td>
+                      <Td className="text-xs text-fg-secondary">{l.currency}</Td>
+                      <Td align="right" className="font-mono whitespace-nowrap">{money(l.local_debit)}</Td>
+                      <Td align="right" className="font-mono whitespace-nowrap">{money(l.local_credit)}</Td>
                       {dimCols.map((c) => (
-                        <td key={c.code} className="px-3 py-2 text-xs text-fg-secondary whitespace-nowrap">{l.aux[c.code] ?? ''}</td>
+                        <Td key={c.code} className="text-xs text-fg-secondary whitespace-nowrap">{l.aux[c.code] ?? ''}</Td>
                       ))}
-                    </tr>
+                    </Tr>
                   ))}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
 
             <ListPager page={page + 1} pageSize={PAGE_SIZE} total={total} noun={total === 1 ? 'line' : 'lines'}

@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, Input, TBody, TFoot, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, currentMonthISO } from '@/lib/utils'
@@ -158,7 +158,7 @@ export default function BudgetActualPage() {
           </summary>
           <div className="px-3 py-3">
         <div className="mb-3 flex items-center gap-2">
-          <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)}
+          <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)}
                  className={cn(inputCls, 'w-40')} />
           <span className="text-xs text-fg-muted">
             Per cost centre × budget account, with a Vouchers drill on every row
@@ -181,42 +181,42 @@ export default function BudgetActualPage() {
                   </span>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-line-subtle text-xs text-fg-muted">
-                        <th className="px-3 py-2 text-left font-medium">Cost Center</th>
-                        <th className="px-3 py-2 text-left font-medium">Income / Expense</th>
-                        <th className="px-3 py-2 text-right font-medium">Budget</th>
-                        <th className="px-3 py-2 text-right font-medium">Actual</th>
-                        <th className="px-3 py-2 text-right font-medium">Variance</th>
-                        <th className="px-3 py-2 w-20"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table density="compact">
+                    <THead>
+                      <Tr className="text-xs text-fg-muted">
+                        <Th>Cost Center</Th>
+                        <Th>Income / Expense</Th>
+                        <Th align="right">Budget</Th>
+                        <Th align="right">Actual</Th>
+                        <Th align="right">Variance</Th>
+                        <Th className="w-20"></Th>
+                      </Tr>
+                    </THead>
+                    <TBody>
                       {cat.detail.length === 0 && (
-                        <tr><td colSpan={6} className="px-3 py-4 text-center text-xs text-fg-muted">No actuals this period.</td></tr>
+                        <Tr><Td align="center" colSpan={6} className="text-xs text-fg-muted">No actuals this period.</Td></Tr>
                       )}
                       {cat.detail.map((r, i) => (
-                        <tr key={`${r.cost_center_id ?? 'none'}-${r.income_expense_item_id ?? i}`}
+                        <Tr key={`${r.cost_center_id ?? 'none'}-${r.income_expense_item_id ?? i}`}
                             className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
-                          <td className="px-3 py-2">
+                          <Td>
                             {r.cost_center_code
                               ? <><span className="font-mono text-xs">{r.cost_center_code}</span><span className="ml-1 text-fg-secondary">{r.cost_center_name}</span></>
                               : <span className="text-fg-muted">(no cost center)</span>}
-                          </td>
-                          <td className="px-3 py-2">
+                          </Td>
+                          <Td>
                             {r.income_expense_code
                               ? <><span className="font-mono text-xs">{r.income_expense_code}</span><span className="ml-1 text-fg-secondary">{r.income_expense_name}</span></>
                               : <span className="text-fg-muted">—</span>}
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono text-fg-secondary">{money(r.budget)}</td>
-                          <td className="px-3 py-2 text-right font-mono">{money(r.actual)}</td>
-                          <td className={cn('px-3 py-2 text-right font-mono',
-                            Number(r.variance) < 0 && 'text-danger-fg')}>{money(r.variance)}</td>
-                          <td className="px-3 py-2 text-right">
+                          </Td>
+                          <Td align="right" className="font-mono text-fg-secondary">{money(r.budget)}</Td>
+                          <Td align="right" className="font-mono">{money(r.actual)}</Td>
+                          <Td className={cn('px-3 py-2 text-right font-mono',
+                            Number(r.variance) < 0 && 'text-danger-fg')}>{money(r.variance)}</Td>
+                          <Td align="right">
                             <button className={linkBtn} onClick={() => openDetailDrill(cat.account_code, r)}>Vouchers</button>
-                          </td>
-                        </tr>
+                          </Td>
+                        </Tr>
                       ))}
                       {/* Category-level tie-out rows: finance tracks these by
                           category rather than by cost center. Driven by the
@@ -228,23 +228,23 @@ export default function BudgetActualPage() {
                             { prefix: 'CRM004', label: 'Depreciation', actual: cat.depreciation_actual }])
                         .filter((x) => Number(x.actual) !== 0)
                         .map((x) => (
-                          <tr key={x.prefix} className="border-t border-line-subtle bg-surface-subtle text-fg-muted">
-                            <td className="px-3 py-2 italic" colSpan={2}>{x.label} (category-level)</td>
-                            <td className="px-3 py-2 text-right">—</td>
-                            <td className="px-3 py-2 text-right font-mono">{money(x.actual)}</td>
-                            <td className="px-3 py-2 text-right">—</td>
-                            <td></td>
-                          </tr>
+                          <Tr key={x.prefix} className="bg-surface-subtle text-fg-muted">
+                            <Td className="italic" colSpan={2}>{x.label} (category-level)</Td>
+                            <Td align="right">—</Td>
+                            <Td align="right" className="font-mono">{money(x.actual)}</Td>
+                            <Td align="right">—</Td>
+                            <Td></Td>
+                          </Tr>
                         ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t border-line bg-surface-subtle font-semibold">
-                        <td className="px-3 py-2" colSpan={3}>Category total</td>
-                        <td className="px-3 py-2 text-right font-mono">{money(cat.category_actual_total)}</td>
-                        <td colSpan={2}></td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                    </TBody>
+                    <TFoot>
+                      <Tr className="bg-surface-subtle font-semibold">
+                        <Td colSpan={3}>Category total</Td>
+                        <Td align="right" className="font-mono">{money(cat.category_actual_total)}</Td>
+                        <Td colSpan={2}></Td>
+                      </Tr>
+                    </TFoot>
+                  </Table>
                 </div>
               </div>
             ))}
@@ -254,41 +254,41 @@ export default function BudgetActualPage() {
                 <div className="bg-warning-soft px-3 py-2 text-sm font-semibold text-warning-fg">
                   Exceptions — {includeUnposted ? 'lines' : 'posted lines'} with no cost center ({unmapped.length}). Fix in NC or add to the mapping.
                 </div>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-line-subtle text-xs text-fg-muted">
+                <Table density="compact">
+                  <THead>
+                    <Tr className="text-xs text-fg-muted">
                       <SortTh label="Account" sortKey="account" sort={unmappedSort.sort} onSort={unmappedSort.onSort} className="px-3 py-2 font-medium text-left" />
                       <SortTh label="NC Cost Center" sortKey="nc_cc" sort={unmappedSort.sort} onSort={unmappedSort.onSort} className="px-3 py-2 font-medium text-left" />
                       <SortTh label="Income / Expense" sortKey="income_expense" sort={unmappedSort.sort} onSort={unmappedSort.onSort} className="px-3 py-2 font-medium text-left" />
                       <SortTh label="Actual" sortKey="actual" sort={unmappedSort.sort} onSort={unmappedSort.onSort} align="right" className="px-3 py-2 font-medium" />
                       <SortTh label="Lines" sortKey="lines" sort={unmappedSort.sort} onSort={unmappedSort.onSort} align="right" className="px-3 py-2 font-medium" />
-                      <th className="px-3 py-2 w-20"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                      <Th className="w-20"></Th>
+                    </Tr>
+                  </THead>
+                  <TBody>
                     {unmapped.map((u, i) => (
-                      <tr key={`${u.account_code}-${u.nc_cc_code}-${i}`}
+                      <Tr key={`${u.account_code}-${u.nc_cc_code}-${i}`}
                           className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
-                        <td className="px-3 py-2 font-mono text-xs">{u.account_code}</td>
-                        <td className="px-3 py-2 font-mono text-xs">{u.nc_cc_code ?? '—'}</td>
-                        <td className="px-3 py-2">
+                        <Td className="font-mono text-xs">{u.account_code}</Td>
+                        <Td className="font-mono text-xs">{u.nc_cc_code ?? '—'}</Td>
+                        <Td>
                           {u.income_expense_code
                             ? <><span className="font-mono text-xs">{u.income_expense_code}</span><span className="ml-1 text-fg-secondary">{u.income_expense_name}</span></>
                             : <span className="text-fg-muted">—</span>}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono">{money(u.actual)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-fg-muted">{u.line_count}</td>
-                        <td className="px-3 py-2 text-right">
+                        </Td>
+                        <Td align="right" className="font-mono">{money(u.actual)}</Td>
+                        <Td align="right" className="font-mono text-fg-muted">{u.line_count}</Td>
+                        <Td align="right">
                           <button className={linkBtn}
                                   onClick={() => setDrill({
                                     accountCode: u.account_code, dimsValues: 'cost_center:none',
                                     title: `Vouchers — ${u.account_code} · no cost center · ${period}`,
                                   })}>Vouchers</button>
-                        </td>
-                      </tr>
+                        </Td>
+                      </Tr>
                     ))}
-                  </tbody>
-                </table>
+                  </TBody>
+                </Table>
               </div>
             )}
           </div>

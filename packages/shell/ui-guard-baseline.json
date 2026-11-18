@@ -12,12 +12,11 @@
    "shouting-type": 2
   },
   "finance": {
-   "raw-control": 507,
-   "shouting-type": 75,
+   "raw-control": 134,
    "raw-overlay": 22,
    "raw-color": 12,
-   "raw-table": 1442,
-   "arbitrary-size": 5
+   "arbitrary-size": 5,
+   "shouting-type": 8
   },
   "inventory": {
    "raw-control": 68,
@@ -141,218 +140,141 @@
   "finance/src/components/ListPager.tsx": {
    "raw-control": 2
   },
-  "finance/src/components/ap/BillInvoices.tsx": {
-   "shouting-type": 1
-  },
   "finance/src/components/layout/AppLayout.tsx": {
-   "raw-control": 5,
+   "raw-control": 1,
    "raw-overlay": 1,
-   "raw-color": 1,
-   "shouting-type": 3
-  },
-  "finance/src/components/layout/PortalChromeLayout.tsx": {
-   "shouting-type": 1
+   "raw-color": 1
   },
   "finance/src/components/remittance/RemittanceDialog.tsx": {
-   "raw-control": 2,
+   "raw-control": 1,
    "raw-overlay": 1
   },
   "finance/src/components/remittance/RemittanceEmailPreview.tsx": {
-   "raw-control": 5
+   "raw-control": 4
   },
   "finance/src/components/remittance/RemittancePanel.tsx": {
-   "raw-control": 5,
-   "raw-table": 24
-  },
-  "finance/src/lib/costAnalysis.tsx": {
-   "raw-control": 2,
-   "raw-table": 6,
-   "shouting-type": 1
+   "raw-control": 2
   },
   "finance/src/pages/budget/BudgetConfigPage.tsx": {
-   "raw-control": 25,
-   "raw-table": 22,
-   "arbitrary-size": 1,
-   "shouting-type": 5
+   "arbitrary-size": 1
   },
   "finance/src/pages/budget/FactorLibraryPage.tsx": {
-   "raw-control": 23,
-   "raw-table": 15,
-   "shouting-type": 7
+   "raw-control": 1
   },
   "finance/src/pages/finance/AccountBalancePage.tsx": {
-   "raw-control": 9,
-   "raw-table": 42,
+   "raw-control": 4,
    "raw-overlay": 1
   },
   "finance/src/pages/finance/AccountVouchersModal.tsx": {
-   "raw-control": 2,
-   "raw-table": 13,
    "raw-overlay": 1
   },
   "finance/src/pages/finance/AccountsPayablePage.tsx": {
-   "raw-control": 10,
-   "raw-table": 38,
+   "raw-control": 1,
    "raw-color": 1,
    "arbitrary-size": 1,
    "shouting-type": 1
   },
   "finance/src/pages/finance/AccountsReceivablePage.tsx": {
-   "raw-control": 27,
-   "raw-table": 33,
+   "raw-control": 7,
    "raw-overlay": 1
   },
   "finance/src/pages/finance/ApCashFlowPage.tsx": {
-   "raw-control": 4,
-   "raw-table": 62
+   "raw-control": 1
   },
   "finance/src/pages/finance/ApDuplicateInvoicesPage.tsx": {
-   "raw-control": 11,
-   "raw-table": 40,
-   "raw-overlay": 1,
-   "shouting-type": 1
+   "raw-control": 2,
+   "raw-overlay": 1
   },
   "finance/src/pages/finance/ApLedgerHealthPage.tsx": {
-   "raw-control": 29,
-   "raw-table": 142,
+   "raw-control": 3,
    "raw-overlay": 2
   },
   "finance/src/pages/finance/ApReconciliationPage.tsx": {
-   "raw-control": 7,
-   "raw-table": 67,
+   "raw-control": 1,
    "shouting-type": 2
   },
   "finance/src/pages/finance/BankReconciliationPage.tsx": {
-   "raw-control": 27,
-   "raw-table": 79,
-   "raw-color": 10,
-   "shouting-type": 11
+   "raw-control": 14,
+   "raw-color": 10
   },
   "finance/src/pages/finance/BankSettingsPage.tsx": {
-   "raw-control": 14,
-   "raw-table": 19,
+   "raw-control": 3,
    "raw-overlay": 1
   },
   "finance/src/pages/finance/BankStatementCsvPage.tsx": {
-   "raw-control": 28,
-   "raw-table": 31,
+   "raw-control": 9,
    "raw-overlay": 1
   },
   "finance/src/pages/finance/BatchCostPage.tsx": {
-   "raw-control": 6,
-   "raw-table": 20,
-   "shouting-type": 2
+   "raw-control": 3
   },
   "finance/src/pages/finance/BudgetActualBreakdown.tsx": {
-   "raw-control": 4,
-   "raw-table": 30,
    "arbitrary-size": 1
   },
   "finance/src/pages/finance/BudgetActualPage.tsx": {
-   "raw-control": 3,
-   "raw-table": 42
+   "raw-control": 2
   },
   "finance/src/pages/finance/BudgetActualRollup.tsx": {
-   "raw-control": 15,
-   "raw-table": 49,
-   "shouting-type": 1
+   "raw-control": 6
   },
   "finance/src/pages/finance/CoaConfigPage.tsx": {
-   "raw-control": 38,
-   "raw-table": 26,
-   "raw-overlay": 1,
-   "shouting-type": 16
+   "raw-control": 9,
+   "raw-overlay": 1
   },
   "finance/src/pages/finance/CoaSyncModal.tsx": {
    "raw-control": 4,
-   "raw-table": 22,
    "raw-overlay": 1
   },
   "finance/src/pages/finance/CostAnomaliesPage.tsx": {
-   "raw-control": 4,
-   "raw-table": 32
-  },
-  "finance/src/pages/finance/CostChainPage.tsx": {
-   "raw-control": 4,
-   "raw-table": 52,
-   "shouting-type": 2
+   "raw-control": 1
   },
   "finance/src/pages/finance/ExchangeRatesPage.tsx": {
-   "raw-control": 18,
-   "raw-table": 21,
    "shouting-type": 3
   },
   "finance/src/pages/finance/GeneralLedgerPage.tsx": {
-   "raw-control": 17,
-   "raw-table": 62,
+   "raw-control": 8,
    "raw-overlay": 1
   },
-  "finance/src/pages/finance/GrossMarginPage.tsx": {
-   "raw-control": 3,
-   "raw-table": 12,
-   "shouting-type": 2
-  },
   "finance/src/pages/finance/JournalVouchersPage.tsx": {
-   "raw-control": 29,
-   "raw-table": 17
+   "raw-control": 6
   },
   "finance/src/pages/finance/JvDetailModal.tsx": {
-   "raw-control": 6,
-   "raw-table": 26,
+   "raw-control": 5,
    "raw-overlay": 1
   },
   "finance/src/pages/finance/JvLinesPage.tsx": {
-   "raw-control": 11,
-   "raw-table": 16,
+   "raw-control": 2,
    "arbitrary-size": 1
   },
   "finance/src/pages/finance/JvValidationPage.tsx": {
-   "raw-control": 8,
-   "raw-table": 39
-  },
-  "finance/src/pages/finance/MaterialTracePage.tsx": {
-   "raw-control": 5,
-   "raw-table": 107,
-   "shouting-type": 1
+   "raw-control": 5
   },
   "finance/src/pages/finance/NcSyncModal.tsx": {
-   "raw-control": 6,
+   "raw-control": 2,
    "raw-overlay": 1
   },
   "finance/src/pages/finance/PaymentBatchPage.tsx": {
-   "raw-control": 18,
-   "raw-table": 54,
+   "raw-control": 5,
    "raw-overlay": 1,
    "arbitrary-size": 1
   },
   "finance/src/pages/finance/PaymentsPage.tsx": {
-   "raw-control": 18,
-   "raw-table": 20,
-   "shouting-type": 3
+   "raw-control": 4,
+   "shouting-type": 1
   },
   "finance/src/pages/finance/QboCreditImportPage.tsx": {
-   "raw-control": 10,
-   "raw-table": 39
+   "raw-control": 3
   },
   "finance/src/pages/finance/QboMirrorPage.tsx": {
-   "raw-control": 16,
-   "raw-table": 33,
+   "raw-control": 11,
    "raw-overlay": 4
   },
-  "finance/src/pages/finance/StandardCostPage.tsx": {
-   "raw-control": 10,
-   "raw-table": 54,
-   "shouting-type": 2
-  },
   "finance/src/pages/finance/TaxSettingsPage.tsx": {
-   "raw-control": 15,
-   "raw-table": 15,
+   "raw-control": 2,
    "raw-overlay": 1,
-   "shouting-type": 10
+   "shouting-type": 1
   },
   "finance/src/pages/finance/UnallocatedLinesModal.tsx": {
-   "raw-control": 2,
-   "raw-table": 21,
    "raw-overlay": 1
   },
   "inventory/src/components/Combobox.tsx": {

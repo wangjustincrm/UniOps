@@ -13,7 +13,7 @@ import { globalSignOut } from '@/lib/signOut'
 import { useBranding } from '@/hooks/useBranding'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { useAuthStore } from '@/store/auth'
-import { TabStoreProvider, TabBar, TabHost, TabRouterSync, deriveTabMeta } from '@uniops/shell'
+import { TabStoreProvider, TabBar, TabHost, TabRouterSync, deriveTabMeta, MenuItem, Button } from '@uniops/shell'
 import type { TabMeta } from '@uniops/shell'
 import { financeRoutes } from '@/app/routes'
 
@@ -154,11 +154,11 @@ function Sidebar({ mobileOpen, onClose, collapsed, onToggleCollapse }: {
               <img src={brandLogo} alt={brandName} className="h-8 w-8 shrink-0 rounded-md bg-surface object-contain p-0.5" />
             ) : (
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/15">
-                <span className="text-xs font-bold text-white">{initials}</span>
+                <span className="text-xs font-semibold text-white">{initials}</span>
               </div>
             )}
             <div className="min-w-0">
-              <p className="text-sm font-bold text-white/95 leading-tight truncate">{brandName}</p>
+              <p className="text-sm font-semibold text-white/95 leading-tight truncate">{brandName}</p>
               <p className="text-2xs text-white/45 leading-tight truncate">{brandTagline}</p>
             </div>
           </div>
@@ -181,7 +181,7 @@ function Sidebar({ mobileOpen, onClose, collapsed, onToggleCollapse }: {
           return (
           <div key={section.title} className="mb-4">
             {!collapsed && (
-              <p className="mb-1 px-2 text-2xs font-semibold uppercase tracking-wider text-white/40">{section.title}</p>
+              <p className="mb-1 px-2 text-2xs font-semibold text-white/40">{section.title}</p>
             )}
             {collapsed && <div className="my-2 border-t border-white/10" />}
             {items.map(({ label, href, icon: Icon }) => (
@@ -232,16 +232,16 @@ function Header({ onMobileMenuToggle }: { onMobileMenuToggle: () => void }) {
 
   return (
     <header className="flex h-[60px] shrink-0 items-center gap-4 border-b border-line bg-surface px-4 md:px-6">
-      <button className="rounded-md p-2 text-fg-muted hover:bg-surface-subtle md:hidden" aria-label="Open menu" onClick={onMobileMenuToggle}>
+      <Button variant="subtle" size="icon-sm" className="md:hidden" aria-label="Open menu" onClick={onMobileMenuToggle}>
         <Menu className="h-5 w-5" />
-      </button>
+      </Button>
       <div className="flex-1" />
       <div className="relative" ref={menuRef}>
-        <button onClick={() => setMenuOpen((v) => !v)} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle transition-colors">
+        <Button variant="subtle" size="xs" onClick={() => setMenuOpen((v) => !v)} className="text-sm">
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary-100 text-xs font-semibold text-primary-700 ring-2 ring-primary-400">{initials}</div>
           <span className="hidden sm:block font-medium">{fullName}</span>
           <ChevronDown className={cn('h-3.5 w-3.5 text-fg-muted transition-transform', menuOpen && 'rotate-180')} />
-        </button>
+        </Button>
         {menuOpen && (
           <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-line bg-surface py-1 shadow-lg">
             <div className="border-b border-line-subtle px-3 py-2.5">
@@ -252,9 +252,9 @@ function Header({ onMobileMenuToggle }: { onMobileMenuToggle: () => void }) {
               <User className="h-4 w-4" /> Portal Home
             </a>
             <div className="mt-1 border-t border-line-subtle">
-              <button onClick={() => { setMenuOpen(false); globalSignOut() }} className="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger-fg hover:bg-danger-soft transition-colors">
+              <MenuItem tone="danger" onClick={() => { setMenuOpen(false); globalSignOut() }}>
                 <LogOut className="h-4 w-4" /> Sign Out
-              </button>
+              </MenuItem>
             </div>
           </div>
         )}
@@ -326,13 +326,13 @@ export default function AppLayout() {
             : `The server returned an error: ${permsError?.message ?? 'unknown error'}`}
         </p>
         <div className="flex items-center gap-4">
-          <button
+          <Button variant="link"
             onClick={() => refetchPerms()}
             disabled={permsRefetching}
-            className="font-medium text-primary-600 hover:underline disabled:opacity-50"
+           
           >
             {permsRefetching ? 'Retrying…' : 'Try again'}
-          </button>
+          </Button>
           <a href={PORTAL_URL} className="font-medium text-primary-600 hover:underline">Back to UniOps Portal</a>
         </div>
       </div>

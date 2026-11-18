@@ -49,7 +49,7 @@ export function BillInvoices({ invoices, amount = 'money_bal' }: {
   }
   return (
     <div className="min-w-[11rem]">
-      <div className="mb-0.5 font-sans text-2xs uppercase tracking-wide text-fg-muted">
+      <div className="mb-0.5 font-sans text-2xs text-fg-muted">
         {invoices.length} invoices
       </div>
       <ul className="space-y-0.5">

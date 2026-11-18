@@ -11,7 +11,7 @@ import { Fragment, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
-import { SortTh, useSortableRows, type SortValue } from '@uniops/shell'
+import { SortTh, useSortableRows, type SortValue, Input, TBody, THead, Table, Td, Tr, Button } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
@@ -79,9 +79,9 @@ export default function GrossMarginPage() {
         <SyncBar />
         <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
           <label className="text-xs text-fg-muted">From</label>
-          <input type="month" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-lg border border-line-strong px-2 py-1" />
+          <Input inputSize="sm" type="month" value={from} onChange={(e) => setFrom(e.target.value)} />
           <label className="text-xs text-fg-muted">To</label>
-          <input type="month" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-line-strong px-2 py-1" />
+          <Input inputSize="sm" type="month" value={to} onChange={(e) => setTo(e.target.value)} />
           {isFetching && <Loader2 className="h-4 w-4 animate-spin text-fg-muted" />}
         </div>
 
@@ -90,24 +90,24 @@ export default function GrossMarginPage() {
         ) : (
           <>
             <div className="mb-6 rounded-lg border border-primary-700/30 bg-primary-50/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Summary</p>
+              <p className="text-xs font-semibold text-primary-700">Summary</p>
               <p className="mt-1 text-base font-semibold leading-snug text-fg">{data.summary.headline}</p>
               <div className="mt-3 space-y-2">
                 {shown.map((f, i) => <FindingCard key={i} f={f} prefix={`${f.material_code} ${f.period} ·`} />)}
               </div>
               {findings.length > 6 && (
-                <button onClick={() => setShowAll(!showAll)} className="mt-2 text-xs text-primary-700 underline">
+                <Button variant="link" onClick={() => setShowAll(!showAll)} className="mt-2 text-xs">
                   {showAll ? 'Show the first 6' : `Show all ${findings.length}`}
-                </button>
+                </Button>
               )}
             </div>
 
-            <h2 className="mb-3 border-b border-line pb-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">Supporting data</h2>
+            <h2 className="mb-3 border-b border-line pb-1 text-xs font-semibold text-fg-muted">Supporting data</h2>
             <p className="mb-2 text-xs text-fg-muted">Gross margin % by product and month. Red = negative; amber = explained above. Click a cell for its figures.</p>
             <div className="overflow-x-auto rounded-lg border border-line">
-              <table className="w-full text-xs">
-                <thead className="bg-surface-subtle text-fg-muted">
-                  <tr>
+              <Table density="compact">
+                <THead>
+                  <Tr>
                     <SortTh label="Product" sortKey="product" sort={sort} onSort={onSort} className="px-2 py-1.5 text-left font-medium" />
                     {data.periods.map((p) => (
                       <SortTh key={p} label={p.slice(2)} sortKey={`m:${p}`} sort={sort} onSort={onSort} align="right"
@@ -116,39 +116,39 @@ export default function GrossMarginPage() {
                     <SortTh label="Revenue" sortKey="revenue" sort={sort} onSort={onSort} align="right" className="px-2 py-1.5 font-medium" />
                     <SortTh label="Margin" sortKey="margin" sort={sort} onSort={onSort} align="right" className="px-2 py-1.5 font-medium" />
                     <SortTh label="%" sortKey="pct" sort={sort} onSort={onSort} align="right" className="px-2 py-1.5 font-medium" />
-                  </tr>
-                </thead>
-                <tbody>
+                  </Tr>
+                </THead>
+                <TBody>
                   {rows.map((r) => (
                     <Fragment key={r.material_code}>
-                      <tr className="border-t border-line-subtle">
-                        <td className="px-2 py-1.5">
+                      <Tr>
+                        <Td>
                           <Link to={traceLink(r.material_code, from, to)} className="font-mono text-primary-700 underline">{r.material_code}</Link>
                           <span className="ml-1 text-fg-muted">{r.material_name}</span>
                           {r.byproduct && <span className="ml-1 rounded border border-line px-1 text-2xs text-fg-muted">by-product · {r.byproduct}</span>}
-                        </td>
+                        </Td>
                         {data.periods.map((p) => {
                           const c = r.months[p]
                           const k = `${r.material_code}|${p}`
                           return (
-                            <td key={p} onClick={() => c && setOpen(open === k ? null : k)}
+                            <Td key={p} onClick={() => c && setOpen(open === k ? null : k)}
                                 title={c ? `Revenue ${num(c.revenue)} · cost ${num(c.cost)} · ${qty(c.qty)} sold` : ''}
                                 className={cn('cursor-pointer px-2 py-1.5 text-right font-mono tabular-nums',
                                   pctCls(c?.margin_pct, flagged.has(k)), open === k && 'ring-2 ring-primary-700 ring-inset')}>
                               {c ? (c.margin_pct === null ? '—' : `${c.margin_pct}`) : ''}
-                            </td>
+                            </Td>
                           )
                         })}
-                        <td className="px-2 py-1.5 text-right font-mono tabular-nums">{num(r.total.revenue, 0)}</td>
-                        <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', r.total.margin < 0 && 'text-danger-fg')}>{num(r.total.margin, 0)}</td>
-                        <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', (r.total.margin_pct ?? 0) < 0 && 'text-danger-fg')}>{r.total.margin_pct ?? '—'}</td>
-                      </tr>
+                        <Td align="right" className="font-mono tabular-nums">{num(r.total.revenue, 0)}</Td>
+                        <Td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', r.total.margin < 0 && 'text-danger-fg')}>{num(r.total.margin, 0)}</Td>
+                        <Td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', (r.total.margin_pct ?? 0) < 0 && 'text-danger-fg')}>{r.total.margin_pct ?? '—'}</Td>
+                      </Tr>
                       {data.periods.map((p) => {
                         const c = r.months[p]
                         if (!c || open !== `${r.material_code}|${p}`) return null
                         return (
-                          <tr key={`${p}-d`} className="bg-surface-subtle/70">
-                            <td colSpan={data.periods.length + 4} className="px-3 py-2">
+                          <Tr key={`${p}-d`} className="bg-surface-subtle/70">
+                            <Td colSpan={data.periods.length + 4}>
                               <div className="flex flex-wrap gap-x-6 gap-y-1">
                                 <span><span className="text-fg-muted">{r.material_code} {p}:</span> {qty(c.qty)} sold</span>
                                 <span>Revenue <b className="font-mono">{num(c.revenue)}</b> ({num(c.unit_price, 4)}/unit)</span>
@@ -160,14 +160,14 @@ export default function GrossMarginPage() {
                                 <Link to={`/finance/analysis/standard/${encodeURIComponent(r.material_code)}?from=${from}&to=${to}`} className="text-primary-700 underline">Standard cost</Link>
                               </div>
                               <p className="mt-1 font-mono text-2xs text-fg-muted">Invoices: {c.invoices.join(', ')}</p>
-                            </td>
-                          </tr>
+                            </Td>
+                          </Tr>
                         )
                       })}
                     </Fragment>
                   ))}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
             {data.costed_in_a_later_month.length > 0 && (
               <p className="mt-3 text-xs text-fg-muted">

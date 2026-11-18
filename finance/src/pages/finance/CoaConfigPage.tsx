@@ -19,7 +19,7 @@ import {
   AlertCircle, BookOpenCheck, Check, Download, Loader2, Pencil, Plus,
   RefreshCw, Search, Trash2, Upload, X,
 } from 'lucide-react'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, FileInput, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financeDownload, financeUpload } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -108,93 +108,93 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
           <h3 className="text-lg font-semibold text-fg">
             {isNew ? 'New Account' : `Edit Account ${initial.code}`}
           </h3>
-          <button onClick={onClose}><X className="h-5 w-5 text-fg-muted" /></button>
+          <Button variant="subtle" size="icon-xs" aria-label="Clear" onClick={onClose}><X className="h-5 w-5 text-fg-muted" /></Button>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <label className="text-sm">
             <span className="mb-1 block text-fg-secondary">Code</span>
-            <input value={form.code} disabled={!isNew}
+            <Input value={form.code} disabled={!isNew}
                    onChange={(e) => set({ code: e.target.value.trim() })}
                    className={cn(inputCls, 'w-full disabled:bg-surface-sunken')} />
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-fg-secondary">Parent</span>
-            <input value={form.parent_code ?? ''} placeholder="(top level)"
+            <Input value={form.parent_code ?? ''} placeholder="(top level)"
                    onChange={(e) => set({ parent_code: e.target.value.trim() || null })}
                    className={cn(inputCls, 'w-full')} />
           </label>
           <label className="col-span-2 text-sm">
             <span className="mb-1 block text-fg-secondary">Name</span>
-            <input value={form.name} onChange={(e) => set({ name: e.target.value })}
+            <Input value={form.name} onChange={(e) => set({ name: e.target.value })}
                    className={cn(inputCls, 'w-full')} />
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-fg-secondary">Type</span>
-            <select value={form.account_type}
+            <Select value={form.account_type}
                     onChange={(e) => set({ account_type: e.target.value })}
                     className={cn(inputCls, 'w-full')}>
               {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
-            </select>
+            </Select>
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-fg-secondary">Normal Balance</span>
-            <select value={form.normal_balance}
+            <Select value={form.normal_balance}
                     onChange={(e) => set({ normal_balance: e.target.value })}
                     className={cn(inputCls, 'w-full')}>
               <option value="debit">Debit</option>
               <option value="credit">Credit</option>
-            </select>
+            </Select>
           </label>
           <label className="flex items-center gap-2 text-sm text-fg-secondary">
-            <input type="checkbox" checked={form.is_postable}
+            <Checkbox checked={form.is_postable}
                    onChange={(e) => set({ is_postable: e.target.checked })} />
             Postable (uncheck = summary/header account)
           </label>
           <label className="flex items-center gap-2 text-sm text-fg-secondary">
-            <input type="checkbox" checked={form.is_active}
+            <Checkbox checked={form.is_active}
                    onChange={(e) => set({ is_active: e.target.checked })} />
             Active
           </label>
 
           {/* NC-parity metadata */}
           <label className="flex items-center gap-2 text-sm text-fg-secondary">
-            <input type="checkbox" checked={form.quantity_accounting}
+            <Checkbox checked={form.quantity_accounting}
                    onChange={(e) => set({ quantity_accounting: e.target.checked })} />
             Quantity accounting
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-fg-secondary">Default UoM</span>
-            <input value={form.default_uom ?? ''} placeholder="e.g. kg"
+            <Input value={form.default_uom ?? ''} placeholder="e.g. kg"
                    onChange={(e) => set({ default_uom: e.target.value.trim() || null })}
                    className={cn(inputCls, 'w-full')} />
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-fg-secondary">Default Currency</span>
-            <input value={form.default_currency ?? ''} placeholder="(entity default)"
+            <Input value={form.default_currency ?? ''} placeholder="(entity default)"
                    onChange={(e) => set({ default_currency: e.target.value.trim().toUpperCase() || null })}
                    className={cn(inputCls, 'w-full')} />
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-fg-secondary">Mnemonic</span>
-            <input value={form.mnemonic ?? ''}
+            <Input value={form.mnemonic ?? ''}
                    onChange={(e) => set({ mnemonic: e.target.value.trim() || null })}
                    className={cn(inputCls, 'w-full')} />
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-fg-secondary">Effective From</span>
-            <input type="date" value={form.effective_from ?? ''}
+            <Input type="date" value={form.effective_from ?? ''}
                    onChange={(e) => set({ effective_from: e.target.value || null })}
                    className={cn(inputCls, 'w-full')} />
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-fg-secondary">Cash Flow Category</span>
-            <input value={form.cash_flow_category ?? ''} placeholder="operating / investing / financing"
+            <Input value={form.cash_flow_category ?? ''} placeholder="operating / investing / financing"
                    onChange={(e) => set({ cash_flow_category: e.target.value.trim() || null })}
                    className={cn(inputCls, 'w-full')} />
           </label>
           <label className="flex items-center gap-2 text-sm text-fg-secondary">
-            <input type="checkbox" checked={form.is_off_balance}
+            <Checkbox checked={form.is_off_balance}
                    onChange={(e) => set({ is_off_balance: e.target.checked })} />
             Off-balance-sheet
           </label>
@@ -224,7 +224,7 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
                     {d.name}
                   </span>
                   {state && (
-                    <span className={cn('text-2xs font-semibold uppercase tracking-wide',
+                    <span className={cn('text-2xs font-semibold',
                                         state.required ? 'text-white/90' : 'text-primary-600')}>
                       {state.required ? 'Required' : 'Optional'}
                     </span>
@@ -284,11 +284,11 @@ function MappingsTab({ accounts, canManage }: { accounts: Account[]; canManage: 
   ]
 
   const acctSelect = (value: string, onChange: (v: string) => void) => (
-    <select value={value} disabled={!canManage} onChange={(e) => onChange(e.target.value)}
+    <Select value={value} disabled={!canManage} onChange={(e) => onChange(e.target.value)}
             className={cn(inputCls, 'h-8 py-0 disabled:bg-surface-subtle')}>
       <option value="">— Select account —</option>
       {postable.map((a) => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}
-    </select>
+    </Select>
   )
 
   return (
@@ -296,7 +296,7 @@ function MappingsTab({ accounts, canManage }: { accounts: Account[]; canManage: 
       {error && <div className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{error}</div>}
       {groups.map(([mtype, title, rows]) => (
         <div key={mtype} className="rounded-lg border border-line bg-surface p-4">
-          <h3 className="mb-3 text-2xs font-semibold uppercase tracking-wide text-fg-muted">{title}</h3>
+          <h3 className="mb-3 text-2xs font-semibold text-fg-muted">{title}</h3>
           {rows.length === 0 && <div className="mb-2 text-sm text-fg-muted">No mappings yet.</div>}
           <div className="flex flex-col gap-2">
             {rows.map((m) => (
@@ -311,7 +311,7 @@ function MappingsTab({ accounts, canManage }: { accounts: Account[]; canManage: 
             ))}
             {mtype === 'budget_account' && canManage && (
               <div className="mt-2 flex items-center gap-3 border-t border-line-subtle pt-3 text-sm">
-                <input value={newSrc} onChange={(e) => setNewSrc(e.target.value)}
+                <Input value={newSrc} onChange={(e) => setNewSrc(e.target.value)}
                        placeholder="Budget account code"
                        className={cn(inputCls, 'h-8 w-48 py-0')} />
                 <span className="text-fg-muted">→</span>
@@ -426,10 +426,10 @@ export default function CoaConfigPage() {
       title="Chart of Accounts"
       subtitle="Accounts, auxiliary dimensions, and account mappings — export/import CSV to manage the chart wholesale"
       headerActions={ncStatus?.configured && ncStatus?.can_sync ? (
-        <button onClick={() => setShowCoaSync(true)}
-                className="flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle">
+        <Button variant="secondary" size="md" onClick={() => setShowCoaSync(true)}
+               >
           <RefreshCw className="h-4 w-4" /> NC Sync
-        </button>
+        </Button>
       ) : undefined}
     >
       <div className="mx-auto max-w-6xl">
@@ -458,17 +458,17 @@ export default function CoaConfigPage() {
             <div className="mb-3 flex flex-wrap items-center gap-3">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-fg-muted" />
-                <input value={search} onChange={(e) => setSearch(e.target.value)}
+                <Input value={search} onChange={(e) => setSearch(e.target.value)}
                        placeholder="Search code or name"
                        className={cn(inputCls, 'w-56 pl-8')} />
               </div>
-              <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
+              <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
                       className={cn(inputCls, 'w-36')}>
                 <option value="">All types</option>
                 {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
-              </select>
+              </Select>
               <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
-                <input type="checkbox" checked={showInactive}
+                <Checkbox checked={showInactive}
                        onChange={(e) => setShowInactive(e.target.checked)} />
                 Include inactive
               </label>
@@ -478,7 +478,7 @@ export default function CoaConfigPage() {
                 </button>
                 {canManage && (
                   <>
-                    <input ref={fileInput} type="file" accept=".csv,text/csv" className="hidden"
+                    <FileInput ref={fileInput} accept=".csv,text/csv" className="hidden"
                            onChange={(e) => e.target.files?.[0] && onImportFile(e.target.files[0])} />
                     <button onClick={() => fileInput.current?.click()} disabled={importBusy}
                             className={secondaryBtn}>
@@ -502,38 +502,38 @@ export default function CoaConfigPage() {
                   <BookOpenCheck className="mx-auto mb-2 h-8 w-8" />No matching accounts.
                 </div>
               ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-line bg-surface-subtle">
-                      <SortTh label="Code" sortKey="code" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-                      <SortTh label="Name" sortKey="name" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-                      <SortTh label="Type" sortKey="type" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-                      <SortTh label="Balance" sortKey="balance" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-                      <SortTh label="Aux Dimensions" sortKey="aux" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-                      <SortTh label="Status" sortKey="status" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted w-24" />
-                      <th className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted w-24" />
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table density="compact">
+                  <THead>
+                    <Tr className="bg-surface-subtle">
+                      <SortTh label="Code" sortKey="code" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold text-fg-muted" />
+                      <SortTh label="Name" sortKey="name" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold text-fg-muted" />
+                      <SortTh label="Type" sortKey="type" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold text-fg-muted" />
+                      <SortTh label="Balance" sortKey="balance" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold text-fg-muted" />
+                      <SortTh label="Aux Dimensions" sortKey="aux" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold text-fg-muted" />
+                      <SortTh label="Status" sortKey="status" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold text-fg-muted w-24" />
+                      <Th className="w-24" />
+                    </Tr>
+                  </THead>
+                  <TBody>
                     {acctSort.rows.map((a, i) => (
-                      <tr key={a.id}
+                      <Tr key={a.id}
                           className={cn('border-b border-line-subtle last:border-b-0',
                                         i % 2 === 1 ? 'bg-surface-subtle' : 'bg-surface',
                                         !a.is_active && 'opacity-50')}>
-                        <td className={cn('px-4 py-2.5', a.parent_code && 'pl-8')}>
+                        <Td className={cn('px-4 py-2.5', a.parent_code && 'pl-8')}>
                           <span className="inline-flex items-center rounded-md bg-surface-sunken px-2 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">
                             {a.code}
                           </span>
-                        </td>
-                        <td className={cn('px-4 py-2.5 text-fg', !a.is_postable && 'font-semibold')}>
+                        </Td>
+                        <Td className={cn('px-4 py-2.5 text-fg', !a.is_postable && 'font-semibold')}>
                           {a.name}
                           {!a.is_postable && <span className="ml-2 text-2xs font-normal text-fg-muted">header</span>}
-                        </td>
-                        <td className="px-4 py-2.5 text-xs text-fg-secondary">{TYPE_LABEL[a.account_type]}</td>
-                        <td className="px-4 py-2.5 text-xs text-fg-secondary">
+                        </Td>
+                        <Td className="text-xs text-fg-secondary">{TYPE_LABEL[a.account_type]}</Td>
+                        <Td className="text-xs text-fg-secondary">
                           {a.normal_balance === 'debit' ? 'Dr' : 'Cr'}
-                        </td>
-                        <td className="px-4 py-2.5">
+                        </Td>
+                        <Td>
                           <div className="flex flex-wrap gap-1">
                             {a.aux_dimensions.map((d) => (
                               <span key={d.code}
@@ -544,47 +544,47 @@ export default function CoaConfigPage() {
                               </span>
                             ))}
                           </div>
-                        </td>
-                        <td className="px-4 py-2.5">
+                        </Td>
+                        <Td>
                           <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium',
                             a.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                             {a.is_active ? 'Active' : 'Inactive'}
                           </span>
-                        </td>
-                        <td className="px-4 py-2.5">
+                        </Td>
+                        <Td>
                           {canManage && (
                             <div className="flex items-center justify-end gap-1">
                               {deleteConfirm === a.code ? (
                                 <>
-                                  <button onClick={() => { deleteMut.mutate(a.code); setDeleteConfirm(null) }}
-                                          className="flex h-7 w-7 items-center justify-center rounded text-danger-fg hover:bg-danger-soft">
+                                  <Button aria-label="Confirm delete" variant="subtle" size="icon-xs" onClick={() => { deleteMut.mutate(a.code); setDeleteConfirm(null) }}
+                                          className="text-danger-fg hover:bg-danger-soft">
                                     <Check className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button onClick={() => setDeleteConfirm(null)}
-                                          className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-surface-sunken">
+                                  </Button>
+                                  <Button aria-label="Cancel delete" variant="subtle" size="icon-xs" onClick={() => setDeleteConfirm(null)}
+                                         >
                                     <X className="h-3.5 w-3.5" />
-                                  </button>
+                                  </Button>
                                 </>
                               ) : (
                                 <>
-                                  <button onClick={() => { setEditing({ form: { ...a }, isNew: false }); setDeleteConfirm(null) }}
-                                          className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-primary-50 hover:text-primary-600">
+                                  <Button aria-label="Edit" variant="subtle" size="icon-xs" onClick={() => { setEditing({ form: { ...a }, isNew: false }); setDeleteConfirm(null) }}
+                                         >
                                     <Pencil className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button onClick={() => setDeleteConfirm(a.code)}
+                                  </Button>
+                                  <Button variant="danger-ghost" size="icon-xs" aria-label="Remove" onClick={() => setDeleteConfirm(a.code)}
                                           title="Delete (only if never referenced)"
-                                          className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-danger-soft hover:text-danger-fg">
+                                         >
                                     <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
+                                  </Button>
                                 </>
                               )}
                             </div>
                           )}
-                        </td>
-                      </tr>
+                        </Td>
+                      </Tr>
                     ))}
-                  </tbody>
-                </table>
+                  </TBody>
+                </Table>
               )}
               <div className="border-t border-line bg-surface-subtle px-4 py-2 text-2xs text-fg-muted">
                 {filtered.length} of {accounts.length} account{accounts.length !== 1 ? 's' : ''}
@@ -637,9 +637,9 @@ function AuxTypesTab({ auxTypes, canManage }: { auxTypes: AuxType[]; canManage: 
     <div className="overflow-hidden rounded-lg border border-line">
       {canManage && (
         <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-subtle p-3">
-          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="code (e.g. grant_program)"
+          <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="code (e.g. grant_program)"
                  className={cn(inputCls, 'w-56')} />
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Display name"
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Display name"
                  className={cn(inputCls, 'w-64')} />
           <button disabled={!code.trim() || !name.trim() || create.isPending}
                   onClick={() => create.mutate()} className={primaryBtn}>
@@ -648,46 +648,46 @@ function AuxTypesTab({ auxTypes, canManage }: { auxTypes: AuxType[]; canManage: 
           {error && <span className="text-sm text-danger-fg">{error}</span>}
         </div>
       )}
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-line bg-surface-subtle">
-            <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-            <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-            <SortTh label="Storage" sortKey="storage" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-            <SortTh label="Source" sortKey="source" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-            <SortTh label="Built-in" sortKey="builtin" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-            <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-            <th className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-          </tr>
-        </thead>
-        <tbody>
+      <Table density="compact">
+        <THead>
+          <Tr className="bg-surface-subtle">
+            <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold text-fg-muted" />
+            <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold text-fg-muted" />
+            <SortTh label="Storage" sortKey="storage" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold text-fg-muted" />
+            <SortTh label="Source" sortKey="source" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold text-fg-muted" />
+            <SortTh label="Built-in" sortKey="builtin" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold text-fg-muted" />
+            <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold text-fg-muted" />
+            <Th />
+          </Tr>
+        </THead>
+        <TBody>
           {rows.map((t, i) => (
-            <tr key={t.id} className={cn('border-b border-line-subtle last:border-0', i % 2 === 1 && 'bg-surface-subtle')}>
-              <td className="px-4 py-2.5 font-mono text-2xs">{t.code}</td>
-              <td className="px-4 py-2.5 text-fg">{t.name}</td>
-              <td className="px-4 py-2.5 text-xs text-fg-muted">
+            <Tr key={t.id} className={cn('border-b border-line-subtle last:border-0', i % 2 === 1 && 'bg-surface-subtle')}>
+              <Td className="font-mono text-2xs">{t.code}</Td>
+              <Td className="text-fg">{t.name}</Td>
+              <Td className="text-xs text-fg-muted">
                 {t.storage === 'column' ? 'spine column' : 'side table'}
-              </td>
-              <td className="px-4 py-2.5 text-xs text-fg-muted">{t.master_source ?? '—'}</td>
-              <td className="px-4 py-2.5 text-xs text-fg-muted">{t.builtin ? 'yes' : ''}</td>
-              <td className="px-4 py-2.5">
+              </Td>
+              <Td className="text-xs text-fg-muted">{t.master_source ?? '—'}</Td>
+              <Td className="text-xs text-fg-muted">{t.builtin ? 'yes' : ''}</Td>
+              <Td>
                 <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium',
                   t.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                   {t.is_active ? 'Active' : 'Inactive'}
                 </span>
-              </td>
-              <td className="px-4 py-2.5 text-right">
+              </Td>
+              <Td align="right">
                 {canManage && !t.builtin && (
-                  <button onClick={() => toggle.mutate(t)}
-                          className="text-xs text-fg-muted hover:text-primary-700">
+                  <Button variant="subtle" size="xs" onClick={() => toggle.mutate(t)}
+                         >
                     {t.is_active ? 'Deactivate' : 'Activate'}
-                  </button>
+                  </Button>
                 )}
-              </td>
-            </tr>
+              </Td>
+            </Tr>
           ))}
-        </tbody>
-      </table>
+        </TBody>
+      </Table>
     </div>
   )
 }

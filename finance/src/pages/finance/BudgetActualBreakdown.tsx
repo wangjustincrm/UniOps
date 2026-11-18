@@ -16,6 +16,7 @@ import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { Scope } from './BudgetActualRollup'
 
+import { TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 interface Metrics {
   plan_period: string; actual_period: string
   variance_period: string; variance_period_pct: string | null
@@ -89,11 +90,11 @@ export function BudgetActualBreakdown({ fiscalYear, window: win, windowLabel, sc
 
       {/* A grab-handle shape, even though it is click-to-resize rather than
           drag — it reads as "this panel has a size" without a legend. */}
-      <button onClick={() => setTall((v) => !v)}
+      <Button variant="subtle" size="icon-xs" onClick={() => setTall((v) => !v)}
               aria-label={tall ? 'Shrink panel' : 'Expand panel'}
-              className="group mx-auto mt-2 mb-1 flex h-4 w-16 cursor-pointer items-center justify-center">
+              className="mx-auto mt-2 mb-1">
         <span className="h-1 w-10 rounded-full bg-line-strong transition-colors group-hover:bg-fg-faint" />
-      </button>
+      </Button>
 
       <header className="flex flex-wrap items-center gap-2 px-4 pb-2.5">
         <h2 className="text-sm font-semibold text-fg">Composition</h2>
@@ -105,42 +106,42 @@ export function BudgetActualBreakdown({ fiscalYear, window: win, windowLabel, sc
         </span>
         <span className="ml-auto flex items-center gap-1 text-xs text-fg-muted">
           {isFetching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          <button onClick={() => setTall((v) => !v)} aria-label={tall ? 'Shrink' : 'Expand'}
-                  className="ml-1 cursor-pointer rounded-md p-1.5 text-fg-muted transition-colors hover:bg-surface-sunken hover:text-fg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+          <Button variant="subtle" size="xs" onClick={() => setTall((v) => !v)} aria-label={tall ? 'Shrink' : 'Expand'}
+                  className="ml-1">
             {tall ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </button>
-          <button onClick={onClose} aria-label="Close composition"
-                  className="cursor-pointer rounded-md p-1.5 text-fg-muted transition-colors hover:bg-surface-sunken hover:text-fg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+          </Button>
+          <Button variant="subtle" size="icon-sm" onClick={onClose} aria-label="Close composition"
+                 >
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </span>
       </header>
 
       <div ref={bodyRef} className="flex-1 overflow-auto">
-        <table className="w-full min-w-[56rem] text-sm">
+        <Table density="compact" className="min-w-[56rem]">
           {/* Both rows live in <thead> so they stay pinned together — the
               total is the claim this panel makes (it equals the roll-up row
               that was clicked), so it has to stay on screen while the reader
               scrolls the rows that make it up. */}
-          <thead className="sticky top-0 z-10">
-            <tr className="border-b border-line bg-surface-subtle/95 text-xs font-medium text-fg-secondary backdrop-blur">
-              <th className="px-3 py-2 text-left font-medium">Budget account</th>
-              <th className="px-3 py-2 text-right font-medium">Plan {windowLabel}</th>
-              <th className="px-3 py-2 text-right font-medium">Actual {windowLabel}</th>
-              <th className="px-3 py-2 text-right font-medium">Variance</th>
-              <th className="px-3 py-2 text-right font-medium">%</th>
-              <th className="border-l border-line px-3 py-2 text-right font-medium">Full-year plan</th>
-              <th className="px-3 py-2 text-right font-medium">Actual YTD</th>
-              <th className="px-3 py-2 text-right font-medium">Consumed</th>
-            </tr>
+          <THead className="sticky top-0 z-10">
+            <Tr className="bg-surface-subtle/95 text-xs font-medium text-fg-secondary backdrop-blur">
+              <Th>Budget account</Th>
+              <Th align="right">Plan {windowLabel}</Th>
+              <Th align="right">Actual {windowLabel}</Th>
+              <Th align="right">Variance</Th>
+              <Th align="right">%</Th>
+              <Th align="right" className="border-l border-line ">Full-year plan</Th>
+              <Th align="right">Actual YTD</Th>
+              <Th align="right">Consumed</Th>
+            </Tr>
             {data && (
-              <tr className="border-b-2 border-line-strong bg-white/95 text-sm font-semibold text-fg backdrop-blur">
-                <th className="px-3 py-2 text-left">
+              <Tr className="border-b-2 bg-white/95 text-sm font-semibold text-fg backdrop-blur">
+                <Th>
                   Total — {scope.label}
                   <span className="ml-2 text-xs font-normal text-fg-muted">
                     {rows.length} accounts
                   </span>
-                </th>
+                </Th>
                 <TotalCell v={data.totals.plan_period} muted />
                 <TotalCell v={data.totals.actual_period} />
                 <TotalCell v={data.totals.variance_period}
@@ -149,35 +150,35 @@ export function BudgetActualBreakdown({ fiscalYear, window: win, windowLabel, sc
                 <TotalCell v={data.totals.plan_full_year} muted sep />
                 <TotalCell v={data.totals.actual_ytd} />
                 <TotalCell v={pct(data.totals.consumed_pct)} raw muted />
-              </tr>
+              </Tr>
             )}
-          </thead>
-          <tbody>
+          </THead>
+          <TBody>
             {!data && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center">
-                <Loader2 className="mx-auto h-4 w-4 animate-spin text-fg-muted" /></td></tr>
+              <Tr><Td align="center" colSpan={8}>
+                <Loader2 className="mx-auto h-4 w-4 animate-spin text-fg-muted" /></Td></Tr>
             )}
             {data && rows.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-xs text-fg-muted">
+              <Tr><Td align="center" colSpan={8} className="text-xs text-fg-muted">
                 Nothing budgeted or posted here in this window.
-              </td></tr>
+              </Td></Tr>
             )}
             {rows.map((a) => {
               const expandable = a.children.length > 1
               const isOpen = open.has(a.budget_account_id)
               return (
                 <Fragment key={a.budget_account_id}>
-                  <tr className="border-t border-line-subtle transition-colors hover:bg-surface-subtle">
-                    <td className="px-3 py-2">
+                  <Tr className="transition-colors hover:bg-surface-subtle">
+                    <Td>
                       <span className="flex items-center gap-1">
                         {/* One cost centre under an account is the same row
                             twice — no expander for it. */}
                         {expandable ? (
-                          <button onClick={() => toggle(a.budget_account_id)} aria-label="Expand cost centres"
-                                  className="cursor-pointer rounded p-0.5 hover:bg-surface-strong/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+                          <Button variant="subtle" size="icon-xs" onClick={() => toggle(a.budget_account_id)} aria-label="Expand cost centres"
+                                 >
                             <ChevronRight className={cn('h-3.5 w-3.5 text-fg-muted motion-safe:transition-transform',
                               isOpen && 'rotate-90')} />
-                          </button>
+                          </Button>
                         ) : <span className="w-3.5" />}
                         <span className="font-mono text-xs text-fg-muted">{a.code}</span>
                         <span className="text-fg">{a.name}</span>
@@ -185,24 +186,24 @@ export function BudgetActualBreakdown({ fiscalYear, window: win, windowLabel, sc
                           <span className="text-xs text-fg-muted">({a.children.length})</span>
                         )}
                       </span>
-                    </td>
+                    </Td>
                     <Cells m={a} />
-                  </tr>
+                  </Tr>
                   {isOpen && a.children.map((c) => (
-                    <tr key={c.cost_center_id}
-                        className="border-t border-line-subtle bg-surface-subtle/40 text-fg-secondary">
-                      <td className="border-l-2 border-primary-200 py-1.5 pl-9 pr-3">
+                    <Tr key={c.cost_center_id}
+                        className="bg-surface-subtle/40 text-fg-secondary">
+                      <Td className="border-l-2 border-primary-200 pl-9 pr-3">
                         <span className="font-mono text-xs">{c.cost_center_code}</span>
                         <span className="ml-1.5 text-xs">{c.cost_center_name}</span>
-                      </td>
+                      </Td>
                       <Cells m={c} small />
-                    </tr>
+                    </Tr>
                   ))}
                 </Fragment>
               )
             })}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </div>
     </section>,
     host,
@@ -213,11 +214,11 @@ function TotalCell({ v, muted, bad, sep, raw }: {
   v: string; muted?: boolean; bad?: boolean; sep?: boolean; raw?: boolean
 }) {
   return (
-    <th className={cn('px-3 py-2 text-right font-mono tabular-nums font-semibold',
+    <Th className={cn('px-3 py-2 text-right font-mono tabular-nums font-semibold',
       sep && 'border-l border-line',
       bad ? 'text-danger-fg' : muted ? 'text-fg-muted' : 'text-fg')}>
       {raw ? v : money(v)}
-    </th>
+    </Th>
   )
 }
 
@@ -227,13 +228,13 @@ function Cells({ m, small }: { m: Metrics; small?: boolean }) {
   const over = Number(m.variance_period) < 0
   return (
     <>
-      <td className={cn(cls, 'text-fg-muted')}>{money(m.plan_period)}</td>
-      <td className={cls}>{money(m.actual_period)}</td>
-      <td className={cn(cls, over && 'font-semibold text-danger-fg')}>{money(m.variance_period)}</td>
-      <td className={cn(cls, 'text-fg-muted')}>{pct(m.variance_period_pct)}</td>
-      <td className={cn(cls, 'border-l border-line text-fg-muted')}>{money(m.plan_full_year)}</td>
-      <td className={cls}>{money(m.actual_ytd)}</td>
-      <td className={cn(cls, 'text-fg-muted')}>{pct(m.consumed_pct)}</td>
+      <Td className={cn(cls, 'text-fg-muted')}>{money(m.plan_period)}</Td>
+      <Td className={cls}>{money(m.actual_period)}</Td>
+      <Td className={cn(cls, over && 'font-semibold text-danger-fg')}>{money(m.variance_period)}</Td>
+      <Td className={cn(cls, 'text-fg-muted')}>{pct(m.variance_period_pct)}</Td>
+      <Td className={cn(cls, 'border-l border-line text-fg-muted')}>{money(m.plan_full_year)}</Td>
+      <Td className={cls}>{money(m.actual_ytd)}</Td>
+      <Td className={cn(cls, 'text-fg-muted')}>{pct(m.consumed_pct)}</Td>
     </>
   )
 }

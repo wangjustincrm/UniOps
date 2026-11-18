@@ -19,7 +19,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Upload, AlertTriangle } from 'lucide-react'
-import { SortTh, sortParams, useSort, useSortableRows, useTabStoreApi } from '@uniops/shell'
+import { SortTh, sortParams, useSort, useSortableRows, useTabStoreApi, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
@@ -292,31 +292,31 @@ export default function AccountsPayablePage() {
           <>
             <div ref={barRef} className="sticky top-0 z-20 -mx-1 bg-[#FAFBFC] px-1 pb-3 pt-1">
             <div className="flex flex-wrap items-center gap-3">
-              <select value={source} onChange={(e) => { setSource(e.target.value); resetPage() }} className={cn(inputCls, 'w-40')}>
+              <Select value={source} onChange={(e) => { setSource(e.target.value); resetPage() }} className={cn(inputCls, 'w-40')}>
                 <option value="">All sources</option>
                 {SOURCES.map((s) => <option key={s} value={s}>{s.toUpperCase()}</option>)}
-              </select>
-              <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); resetPage() }} className={cn(inputCls, 'w-44')}>
+              </Select>
+              <Select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); resetPage() }} className={cn(inputCls, 'w-44')}>
                 <option value="">All statuses</option>
                 {STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
-              </select>
+              </Select>
               <form className="flex items-center gap-1"
                     onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); resetPage() }}>
-                <input value={qInput} onChange={(e) => setQInput(e.target.value)}
+                <Input value={qInput} onChange={(e) => setQInput(e.target.value)}
                        placeholder="Vendor / vendor inv #…" className={cn(inputCls, 'w-52')} />
-                <button type="submit" className="rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle">Search</button>
+                <Button variant="secondary" size="md" type="submit">Search</Button>
               </form>
               <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
-                <input type="checkbox" checked={hideInNc}
+                <Checkbox checked={hideInNc}
                        onChange={(e) => { setHideInNc(e.target.checked); resetPage() }} />
                 Hide in NC
               </label>
-              <button onClick={runPush} disabled={pushing || pickedCount === 0}
+              <Button size="md" onClick={runPush} disabled={pushing || pickedCount === 0}
                       title="Create saved payable bills in NC for the selected invoices"
-                      className="ml-auto flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50">
+                      className="ml-auto">
                 {pushing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                 Push to NC{pickedCount > 0 ? ` (${pickedCount})` : ''}
-              </button>
+              </Button>
             </div>
 
             {banner && (
@@ -334,11 +334,11 @@ export default function AccountsPayablePage() {
             </div>
 
             <div className="overflow-clip rounded-lg border border-line">
-              <table className="w-full text-sm">
-                <thead className="sticky z-10 bg-surface-subtle text-left text-xs text-fg-muted shadow-[0_1px_0_#e5e5e5]"
+              <Table density="compact">
+                <THead className="sticky z-10 shadow-[0_1px_0_#e5e5e5]"
                        style={{ top: barH }}>
-                  <tr>
-                    <th className="w-9 px-3 py-2" />
+                  <Tr>
+                    <Th className="w-9" />
                     <SortTh label="AP No." sortKey="ap_invoice_number" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
                     <SortTh label="Source" sortKey="source" sort={sort} onSort={onSort} className="px-3 py-2 w-16" />
                     <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="px-3 py-2" />
@@ -347,70 +347,70 @@ export default function AccountsPayablePage() {
                     <SortTh label="Due" sortKey="due_date" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
                     <SortTh label="Total" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-32" />
                     <SortTh label="Outstanding" sortKey="outstanding" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-32" />
-                    <th className="px-3 py-2 w-28 whitespace-nowrap" title="Budget account code — from the PO; for courier / Direct / agreement invoices, the one the NC push uses">GL Code</th>
+                    <Th className="w-28" title="Budget account code — from the PO; for courier / Direct / agreement invoices, the one the NC push uses">GL Code</Th>
                     <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
                     <SortTh label="NC AP Doc" sortKey="nc_bill_no" sort={sort} onSort={onSort} className="px-3 py-2 w-48" />
-                  </tr>
-                </thead>
-                <tbody>
+                  </Tr>
+                </THead>
+                <TBody>
                   {isFetching && (
-                    <tr><td colSpan={12} className="px-3 py-6 text-center text-fg-muted">
-                      <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
+                    <Tr><Td align="center" colSpan={12} className="text-fg-muted">
+                      <Loader2 className="mx-auto h-5 w-5 animate-spin" /></Td></Tr>
                   )}
                   {!isFetching && invoices.length === 0 && (
-                    <tr><td colSpan={12} className="px-3 py-6 text-center text-fg-muted">No AP invoices.</td></tr>
+                    <Tr><Td align="center" colSpan={12} className="text-fg-muted">No AP invoices.</Td></Tr>
                   )}
                   {invoices.map((inv, i) => {
                     const outstanding = Number(inv.total_amount) - Number(inv.paid_amount)
                     const open = inv.status === 'posted' || inv.status === 'partially_paid'
                     return (
-                      <tr key={inv.id}
+                      <Tr key={inv.id}
                           onClick={() => openInvoiceTab(inv)}
                           title="Open invoice detail in a tab"
                           className={cn('cursor-pointer border-t border-line-subtle hover:bg-surface-sunken', i % 2 && 'bg-surface-subtle/40')}>
-                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                        <Td onClick={(e) => e.stopPropagation()}>
                           {pushable(inv) && (
-                            <input type="checkbox" checked={selected.has(inv.id)}
+                            <Checkbox checked={selected.has(inv.id)}
                                    onChange={() => toggle(inv.id)} />
                           )}
-                        </td>
-                        <td className="px-3 py-2 font-mono text-xs text-primary-700 underline-offset-2 hover:underline">{inv.ap_invoice_number}</td>
-                        <td className="px-3 py-2 text-xs uppercase text-fg-muted">{inv.source}</td>
-                        <td className="px-3 py-2">{inv.vendor_name ?? '—'}</td>
-                        <td className="px-3 py-2 text-xs text-fg-secondary">{inv.vendor_invoice_number ?? '—'}</td>
-                        <td className="px-3 py-2 text-xs text-fg-secondary">{formatDate(inv.invoice_date)}</td>
-                        <td className="px-3 py-2 text-xs text-fg-secondary">{formatDate(inv.due_date)}</td>
-                        <td className="px-3 py-2 text-right font-mono">{fmtMoney(inv.total_amount, inv.currency)}</td>
-                        <td className="px-3 py-2 text-right font-mono">{open ? fmtMoney(String(outstanding)) : '—'}</td>
-                        <td className="px-3 py-2 font-mono text-xs text-fg-secondary">{inv.gl_code ?? ''}</td>
-                        <td className="px-3 py-2"><StatusPill status={inv.status} /></td>
-                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                        </Td>
+                        <Td className="font-mono text-xs text-primary-700 underline-offset-2 hover:underline">{inv.ap_invoice_number}</Td>
+                        <Td className="text-xs uppercase text-fg-muted">{inv.source}</Td>
+                        <Td>{inv.vendor_name ?? '—'}</Td>
+                        <Td className="text-xs text-fg-secondary">{inv.vendor_invoice_number ?? '—'}</Td>
+                        <Td className="text-xs text-fg-secondary">{formatDate(inv.invoice_date)}</Td>
+                        <Td className="text-xs text-fg-secondary">{formatDate(inv.due_date)}</Td>
+                        <Td align="right" className="font-mono">{fmtMoney(inv.total_amount, inv.currency)}</Td>
+                        <Td align="right" className="font-mono">{open ? fmtMoney(String(outstanding)) : '—'}</Td>
+                        <Td className="font-mono text-xs text-fg-secondary">{inv.gl_code ?? ''}</Td>
+                        <Td><StatusPill status={inv.status} /></Td>
+                        <Td onClick={(e) => e.stopPropagation()}>
                           <NcDocCell inv={inv} />
-                        </td>
-                      </tr>
+                        </Td>
+                      </Tr>
                     )
                   })}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
 
             <div className="mt-3 flex items-center justify-between text-sm text-fg-muted">
               <span>{total.toLocaleString()} invoice{total === 1 ? '' : 's'}</span>
               <div className="flex items-center gap-2">
-                <button onClick={() => gotoPage(Math.max(0, page - 1))} disabled={page === 0}
-                        className="rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50">Prev</button>
+                <Button variant="secondary" size="sm" onClick={() => gotoPage(Math.max(0, page - 1))} disabled={page === 0}
+                       >Prev</Button>
                 <span>Page {page + 1} / {pageCount}</span>
-                <button onClick={() => gotoPage(Math.min(pageCount - 1, page + 1))}
+                <Button variant="secondary" size="sm" onClick={() => gotoPage(Math.min(pageCount - 1, page + 1))}
                         disabled={page >= pageCount - 1}
-                        className="rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50">Next</button>
+                       >Next</Button>
               </div>
             </div>
           </>
         ) : (
           <div className="overflow-hidden rounded-lg border border-line">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-                <tr>
+            <Table density="compact">
+              <THead>
+                <Tr>
                   <SortTh label="Vendor" sortKey="vendor" sort={agingSort.sort} onSort={agingSort.onSort} className="px-3 py-2" />
                   <SortTh label="Ccy" sortKey="currency" sort={agingSort.sort} onSort={agingSort.onSort} className="px-3 py-2 w-16" />
                   <SortTh label="Current" sortKey="current" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2" />
@@ -419,26 +419,26 @@ export default function AccountsPayablePage() {
                   <SortTh label="61-90" sortKey="d61_90" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2" />
                   <SortTh label="90+" sortKey="d90_plus" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2" />
                   <SortTh label="Total" sortKey="total" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2 font-semibold" />
-                </tr>
-              </thead>
-              <tbody>
+                </Tr>
+              </THead>
+              <TBody>
                 {aging.length === 0 && (
-                  <tr><td colSpan={8} className="px-3 py-6 text-center text-fg-muted">No open payables.</td></tr>
+                  <Tr><Td align="center" colSpan={8} className="text-fg-muted">No open payables.</Td></Tr>
                 )}
                 {agingSort.rows.map((r, i) => (
-                  <tr key={`${r.vendor_id ?? 'none'}-${r.currency}-${i}`} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
-                    <td className="px-3 py-2">{r.vendor_name || '—'}</td>
-                    <td className="px-3 py-2 text-xs text-fg-muted">{r.currency}</td>
-                    <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.current)}</td>
-                    <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.d1_30)}</td>
-                    <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.d31_60)}</td>
-                    <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.d61_90)}</td>
-                    <td className={cn('px-3 py-2 text-right font-mono', Number(r.d90_plus) > 0 && 'text-danger-fg')}>{fmtMoney(r.d90_plus)}</td>
-                    <td className="px-3 py-2 text-right font-mono font-semibold">{fmtMoney(r.total, r.currency)}</td>
-                  </tr>
+                  <Tr key={`${r.vendor_id ?? 'none'}-${r.currency}-${i}`} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
+                    <Td>{r.vendor_name || '—'}</Td>
+                    <Td className="text-xs text-fg-muted">{r.currency}</Td>
+                    <Td align="right" className="font-mono">{fmtMoney(r.current)}</Td>
+                    <Td align="right" className="font-mono">{fmtMoney(r.d1_30)}</Td>
+                    <Td align="right" className="font-mono">{fmtMoney(r.d31_60)}</Td>
+                    <Td align="right" className="font-mono">{fmtMoney(r.d61_90)}</Td>
+                    <Td className={cn('px-3 py-2 text-right font-mono', Number(r.d90_plus) > 0 && 'text-danger-fg')}>{fmtMoney(r.d90_plus)}</Td>
+                    <Td align="right" className="font-mono font-semibold">{fmtMoney(r.total, r.currency)}</Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
         )}
       </div>

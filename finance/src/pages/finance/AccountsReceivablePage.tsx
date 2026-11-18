@@ -15,7 +15,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Check, FileText, HandCoins, Loader2, Plus, Send, Trash2, X,
 } from 'lucide-react'
-import { SortTh, sortParams, useSort, useSortableRows } from '@uniops/shell'
+import { SortTh, sortParams, useSort, useSortableRows, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, mdmApi } from '@/lib/api'
 import { cn, formatDate, todayISO } from '@/lib/utils'
@@ -149,11 +149,11 @@ export default function AccountsReceivablePage() {
         {tab === 'invoices' ? (
           <>
             <div className="mb-3 flex flex-wrap items-center gap-3">
-              <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
+              <Select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
                       className={cn(inputCls, 'w-44')}>
                 <option value="">All statuses</option>
                 {STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-              </select>
+              </Select>
               {canManage && (
                 <button onClick={() => setNewInvoice(true)} className={cn(primaryBtn, 'ml-auto')}>
                   <Plus className="h-4 w-4" /> New Invoice
@@ -162,9 +162,9 @@ export default function AccountsReceivablePage() {
             </div>
 
             <div className="overflow-hidden rounded-lg border border-line">
-              <table className="w-full text-sm">
-                <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-                  <tr>
+              <Table density="compact">
+                <THead>
+                  <Tr>
                     <SortTh label="Invoice" sortKey="invoice_number" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
                     <SortTh label="Customer" sortKey="customer_name" sort={sort} onSort={onSort} className="px-3 py-2" />
                     <SortTh label="Date" sortKey="invoice_date" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
@@ -172,63 +172,63 @@ export default function AccountsReceivablePage() {
                     <SortTh label="Total" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-32" />
                     <SortTh label="Outstanding" sortKey="outstanding" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-32" />
                     <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
-                    <th className="px-3 py-2 w-32" />
-                  </tr>
-                </thead>
-                <tbody>
+                    <Th className="w-32" />
+                  </Tr>
+                </THead>
+                <TBody>
                   {isFetching && (
-                    <tr><td colSpan={8} className="px-3 py-6 text-center text-fg-muted">
-                      <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
+                    <Tr><Td align="center" colSpan={8} className="text-fg-muted">
+                      <Loader2 className="mx-auto h-5 w-5 animate-spin" /></Td></Tr>
                   )}
                   {!isFetching && invoices.length === 0 && (
-                    <tr><td colSpan={8} className="px-3 py-6 text-center text-fg-muted">No invoices.</td></tr>
+                    <Tr><Td align="center" colSpan={8} className="text-fg-muted">No invoices.</Td></Tr>
                   )}
                   {invoices.map((inv, i) => {
                     const outstanding = Number(inv.total_amount) - Number(inv.paid_amount)
                     const open = inv.status === 'posted' || inv.status === 'partially_paid'
                     return (
-                      <tr key={inv.id} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
-                        <td className="px-3 py-2 font-mono text-xs">{inv.invoice_number}</td>
-                        <td className="px-3 py-2">{inv.customer_name}</td>
-                        <td className="px-3 py-2 text-xs text-fg-secondary">{formatDate(inv.invoice_date)}</td>
-                        <td className="px-3 py-2 text-xs text-fg-secondary">{formatDate(inv.due_date)}</td>
-                        <td className="px-3 py-2 text-right font-mono">{fmtMoney(inv.total_amount, inv.currency)}</td>
-                        <td className="px-3 py-2 text-right font-mono">{open ? fmtMoney(String(outstanding)) : '—'}</td>
-                        <td className="px-3 py-2"><StatusPill status={inv.status} /></td>
-                        <td className="px-3 py-2">
+                      <Tr key={inv.id} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
+                        <Td className="font-mono text-xs">{inv.invoice_number}</Td>
+                        <Td>{inv.customer_name}</Td>
+                        <Td className="text-xs text-fg-secondary">{formatDate(inv.invoice_date)}</Td>
+                        <Td className="text-xs text-fg-secondary">{formatDate(inv.due_date)}</Td>
+                        <Td align="right" className="font-mono">{fmtMoney(inv.total_amount, inv.currency)}</Td>
+                        <Td align="right" className="font-mono">{open ? fmtMoney(String(outstanding)) : '—'}</Td>
+                        <Td><StatusPill status={inv.status} /></Td>
+                        <Td>
                           {canManage && (
                             <div className="flex justify-end gap-1.5">
                               {inv.status === 'draft' && (
                                 <>
-                                  <button onClick={() => post.mutate(inv.id)} title="Post (recognize revenue)"
-                                          className="rounded p-1 text-fg-muted hover:text-primary-700">
-                                    <Send className="h-4 w-4" /></button>
-                                  <button onClick={() => voidInv.mutate(inv.id)} title="Void"
-                                          className="rounded p-1 text-fg-muted hover:text-danger-fg">
-                                    <Trash2 className="h-4 w-4" /></button>
+                                  <Button aria-label="Post (recognize revenue)" variant="subtle" size="icon-xs" onClick={() => post.mutate(inv.id)} title="Post (recognize revenue)"
+                                         >
+                                    <Send className="h-4 w-4" /></Button>
+                                  <Button variant="danger-ghost" size="icon-xs" aria-label="Remove" onClick={() => voidInv.mutate(inv.id)} title="Void"
+                                         >
+                                    <Trash2 className="h-4 w-4" /></Button>
                                 </>
                               )}
                               {open && (
-                                <button onClick={() => setReceiptFor(inv)} title="Record receipt"
-                                        className="rounded p-1 text-fg-muted hover:text-primary-700">
-                                  <HandCoins className="h-4 w-4" /></button>
+                                <Button aria-label="Record receipt" variant="subtle" size="icon-xs" onClick={() => setReceiptFor(inv)} title="Record receipt"
+                                       >
+                                  <HandCoins className="h-4 w-4" /></Button>
                               )}
                             </div>
                           )}
-                        </td>
-                      </tr>
+                        </Td>
+                      </Tr>
                     )
                   })}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
             <ListPager page={page} pageSize={PAGE_SIZE} total={invTotal} noun="invoices" onPage={setPage} />
           </>
         ) : (
           <div className="overflow-hidden rounded-lg border border-line">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-                <tr>
+            <Table density="compact">
+              <THead>
+                <Tr>
                   <SortTh label="Customer" sortKey="customer" sort={agingSort.sort} onSort={agingSort.onSort} className="px-3 py-2" />
                   <SortTh label="Ccy" sortKey="currency" sort={agingSort.sort} onSort={agingSort.onSort} className="px-3 py-2 w-16" />
                   <SortTh label="Current" sortKey="current" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2" />
@@ -237,26 +237,26 @@ export default function AccountsReceivablePage() {
                   <SortTh label="61-90" sortKey="d61_90" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2" />
                   <SortTh label="90+" sortKey="d90_plus" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2" />
                   <SortTh label="Total" sortKey="total" sort={agingSort.sort} onSort={agingSort.onSort} align="right" className="px-3 py-2 font-semibold" />
-                </tr>
-              </thead>
-              <tbody>
+                </Tr>
+              </THead>
+              <TBody>
                 {aging.length === 0 && (
-                  <tr><td colSpan={8} className="px-3 py-6 text-center text-fg-muted">No open receivables.</td></tr>
+                  <Tr><Td align="center" colSpan={8} className="text-fg-muted">No open receivables.</Td></Tr>
                 )}
                 {agingSort.rows.map((r, i) => (
-                  <tr key={`${r.customer_id}-${r.currency}`} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
-                    <td className="px-3 py-2">{r.customer_name}</td>
-                    <td className="px-3 py-2 text-xs text-fg-muted">{r.currency}</td>
-                    <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.current)}</td>
-                    <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.d1_30)}</td>
-                    <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.d31_60)}</td>
-                    <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.d61_90)}</td>
-                    <td className={cn('px-3 py-2 text-right font-mono', Number(r.d90_plus) > 0 && 'text-danger-fg')}>{fmtMoney(r.d90_plus)}</td>
-                    <td className="px-3 py-2 text-right font-mono font-semibold">{fmtMoney(r.total, r.currency)}</td>
-                  </tr>
+                  <Tr key={`${r.customer_id}-${r.currency}`} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
+                    <Td>{r.customer_name}</Td>
+                    <Td className="text-xs text-fg-muted">{r.currency}</Td>
+                    <Td align="right" className="font-mono">{fmtMoney(r.current)}</Td>
+                    <Td align="right" className="font-mono">{fmtMoney(r.d1_30)}</Td>
+                    <Td align="right" className="font-mono">{fmtMoney(r.d31_60)}</Td>
+                    <Td align="right" className="font-mono">{fmtMoney(r.d61_90)}</Td>
+                    <Td className={cn('px-3 py-2 text-right font-mono', Number(r.d90_plus) > 0 && 'text-danger-fg')}>{fmtMoney(r.d90_plus)}</Td>
+                    <Td align="right" className="font-mono font-semibold">{fmtMoney(r.total, r.currency)}</Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
         )}
       </div>
@@ -346,33 +346,33 @@ function InvoiceModal({ onClose, onSaved, onError }: {
       <div className="grid grid-cols-2 gap-3">
         <label className="col-span-2 flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Customer</span>
-          <select value={customerId} onChange={(e) => onPickCustomer(e.target.value)} className={inputCls}>
+          <Select value={customerId} onChange={(e) => onPickCustomer(e.target.value)} className={inputCls}>
             <option value="">Select a customer…</option>
             {customers?.items.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.currency}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Invoice date</span>
-          <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className={inputCls} />
+          <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className={inputCls} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Due date</span>
-          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputCls} />
+          <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputCls} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Currency</span>
-          <select value={currency} onChange={(e) => setCurrency(e.target.value)} className={inputCls}>
+          <Select value={currency} onChange={(e) => setCurrency(e.target.value)} className={inputCls}>
             {['CAD', 'USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Pre-tax amount</span>
-          <input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
+          <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
                  placeholder="0.00" className={cn(inputCls, 'text-right font-mono')} />
         </label>
         <label className="col-span-2 flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Description</span>
-          <input value={description} onChange={(e) => setDescription(e.target.value)} className={inputCls} />
+          <Input value={description} onChange={(e) => setDescription(e.target.value)} className={inputCls} />
         </label>
       </div>
 
@@ -389,23 +389,23 @@ function InvoiceModal({ onClose, onSaved, onError }: {
               <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2">
                 <label className="flex flex-col gap-1 text-xs">
                   <span className="text-fg-muted">Tax code</span>
-                  <select value={t.tax_code} onChange={(e) => onCodeChange(i, e.target.value)} className={inputCls}>
+                  <Select value={t.tax_code} onChange={(e) => onCodeChange(i, e.target.value)} className={inputCls}>
                     <option value="">—</option>
                     {taxCodes.map((tc) => <option key={`${tc.code}-${tc.rate}`} value={tc.code}>{tc.code} ({(Number(tc.rate) * 100).toFixed(0)}%)</option>)}
-                  </select>
+                  </Select>
                 </label>
                 <label className="flex flex-col gap-1 text-xs">
                   <span className="text-fg-muted">Taxable base</span>
-                  <input type="number" step="0.01" value={t.taxable_base}
+                  <Input type="number" step="0.01" value={t.taxable_base}
                          onChange={(e) => onBaseChange(i, e.target.value)} className={cn(inputCls, 'text-right font-mono')} />
                 </label>
                 <label className="flex flex-col gap-1 text-xs">
                   <span className="text-fg-muted">Tax amount</span>
-                  <input type="number" step="0.01" value={t.tax_amount}
+                  <Input type="number" step="0.01" value={t.tax_amount}
                          onChange={(e) => setLine(i, { tax_amount: e.target.value })} className={cn(inputCls, 'text-right font-mono')} />
                 </label>
-                <button onClick={() => setTaxLines((p) => p.filter((_, idx) => idx !== i))}
-                        className="mb-1 rounded p-1.5 text-fg-muted hover:text-danger-fg"><X className="h-4 w-4" /></button>
+                <Button variant="danger-ghost" size="icon-sm" aria-label="Remove" onClick={() => setTaxLines((p) => p.filter((_, idx) => idx !== i))}
+                        className="mb-1"><X className="h-4 w-4" /></Button>
               </div>
             ))}
           </div>
@@ -466,31 +466,31 @@ function ReceiptModal({ invoice, onClose, onSaved, onError }: {
       <div className="grid gap-3">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Amount received</span>
-          <input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
+          <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
                  className={cn(inputCls, 'text-right font-mono')} />
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-fg-secondary">Receipt date</span>
-            <input type="date" value={receiptDate} onChange={(e) => setReceiptDate(e.target.value)} className={inputCls} />
+            <Input type="date" value={receiptDate} onChange={(e) => setReceiptDate(e.target.value)} className={inputCls} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-fg-secondary">Method</span>
-            <select value={method} onChange={(e) => setMethod(e.target.value)} className={inputCls}>
+            <Select value={method} onChange={(e) => setMethod(e.target.value)} className={inputCls}>
               {['bank_transfer', 'cheque', 'cash', 'card', 'other'].map((m) => <option key={m} value={m}>{m.replace('_', ' ')}</option>)}
-            </select>
+            </Select>
           </label>
         </div>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Bank account (optional)</span>
-          <select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} className={inputCls}>
+          <Select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} className={inputCls}>
             <option value="">—</option>
             {sameCcy.map((a) => <option key={a.id} value={a.id}>{a.name} · {a.currency}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Reference (optional)</span>
-          <input value={reference} onChange={(e) => setReference(e.target.value)} className={inputCls} />
+          <Input value={reference} onChange={(e) => setReference(e.target.value)} className={inputCls} />
         </label>
       </div>
       <div className="mt-5 flex justify-end gap-2">
@@ -513,9 +513,9 @@ function Modal({ title, children, onClose, wide }: {
            onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold text-fg">{title}</h2>
-          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
+          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
         {children}
       </div>

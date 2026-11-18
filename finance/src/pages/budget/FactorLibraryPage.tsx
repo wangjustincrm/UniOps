@@ -13,7 +13,7 @@ import {
   Layers, Plus, Pencil, Trash2, X, Check, Search,
   ChevronDown, ChevronRight, AlertCircle,
 } from 'lucide-react'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { budgetApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -143,9 +143,9 @@ function FactorLibrary() {
       {error && (
         <div className="mb-3 flex items-center gap-2 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           <AlertCircle className="h-4 w-4" /> {error}
-          <button onClick={() => setError('')} className="ml-auto text-danger-400 hover:text-danger-fg">
+          <Button aria-label="Dismiss" variant="subtle" size="icon-xs" onClick={() => setError('')} className="ml-auto text-danger-fg hover:bg-danger-soft">
             <X className="h-3.5 w-3.5" />
-          </button>
+          </Button>
         </div>
       )}
 
@@ -153,30 +153,30 @@ function FactorLibrary() {
         <div className="flex items-center gap-2 flex-1 flex-wrap">
           <div className="relative min-w-52">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
-            <input
+            <Input
               placeholder="Search by code or name…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-10 w-full rounded-lg border border-line-strong bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700"
+              className="w-full pl-9 pr-3"
             />
           </div>
           <label className="flex items-center gap-1.5 text-xs text-fg-secondary">
-            <input
-              type="checkbox"
+            <Checkbox
+             
               checked={showActiveOnly}
               onChange={(e) => setShowActiveOnly(e.target.checked)}
-              className="h-4 w-4 rounded border-line-strong"
+             
             />
             Active only
           </label>
         </div>
-        <button
+        <Button size="md"
           onClick={() => { setError(''); setMode('add') }}
           disabled={mode !== 'none'}
-          className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50"
+         
         >
           <Plus className="h-4 w-4" />Add Template
-        </button>
+        </Button>
       </div>
 
       {mode === 'add' && (
@@ -222,74 +222,74 @@ function FactorLibrary() {
               : 'No templates match the current filters.'}
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line bg-surface-subtle">
-                <th className="px-3 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted w-8" />
-                <SortTh label="Code" sortKey="code" sort={tplSort.sort} onSort={tplSort.onSort} className="px-3 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-                <SortTh label="Name" sortKey="name" sort={tplSort.sort} onSort={tplSort.onSort} className="px-3 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
-                <SortTh label="Values" sortKey="values" sort={tplSort.sort} onSort={tplSort.onSort} align="center" className="px-3 py-2.5 text-2xs font-semibold uppercase tracking-wide text-fg-muted w-20" />
-                <SortTh label="Status" sortKey="status" sort={tplSort.sort} onSort={tplSort.onSort} className="px-3 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted w-24" />
-                <th className="px-3 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted w-24" />
-              </tr>
-            </thead>
-            <tbody>
+          <Table density="compact">
+            <THead>
+              <Tr className="bg-surface-subtle">
+                <Th className="w-8" />
+                <SortTh label="Code" sortKey="code" sort={tplSort.sort} onSort={tplSort.onSort} className="px-3 py-2.5 text-left text-2xs font-semibold text-fg-muted" />
+                <SortTh label="Name" sortKey="name" sort={tplSort.sort} onSort={tplSort.onSort} className="px-3 py-2.5 text-left text-2xs font-semibold text-fg-muted" />
+                <SortTh label="Values" sortKey="values" sort={tplSort.sort} onSort={tplSort.onSort} align="center" className="px-3 py-2.5 text-2xs font-semibold text-fg-muted w-20" />
+                <SortTh label="Status" sortKey="status" sort={tplSort.sort} onSort={tplSort.onSort} className="px-3 py-2.5 text-left text-2xs font-semibold text-fg-muted w-24" />
+                <Th className="w-24" />
+              </Tr>
+            </THead>
+            <TBody>
               {tplSort.rows.map((t, i) => {
                 const isOpen = expanded.has(t.id)
                 const activeValues = t.values.filter((v) => v.is_active).length
                 return (
                   <Fragment key={t.id}>
-                    <tr className={cn('border-b border-line-subtle', i % 2 === 1 ? 'bg-surface-subtle' : 'bg-surface')}>
-                      <td className="px-3 py-2.5">
-                        <button onClick={() => toggleExpanded(t.id)} className="text-fg-muted hover:text-fg-secondary">
+                    <Tr className={cn('border-b border-line-subtle', i % 2 === 1 ? 'bg-surface-subtle' : 'bg-surface')}>
+                      <Td>
+                        <Button variant="subtle" size="xs" onClick={() => toggleExpanded(t.id)}>
                           {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        </button>
-                      </td>
-                      <td className="px-3 py-2.5"><span className="inline-flex items-center rounded-md bg-surface-sunken px-2 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">{t.factor_code}</span></td>
-                      <td className="px-3 py-2.5 font-medium text-fg">
+                        </Button>
+                      </Td>
+                      <Td><span className="inline-flex items-center rounded-md bg-surface-sunken px-2 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">{t.factor_code}</span></Td>
+                      <Td className="font-medium text-fg">
                         <div className="flex flex-col">
                           <span>{t.factor_name}</span>
                           {t.description && <span className="text-2xs text-fg-muted">{t.description}</span>}
                         </div>
-                      </td>
-                      <td className="px-3 py-2.5 text-center">
+                      </Td>
+                      <Td align="center">
                         <span className={cn('inline-flex items-center justify-center rounded-full w-7 h-7 text-xs font-semibold', activeValues > 0 ? 'bg-primary-50 text-primary-700' : 'bg-surface-sunken text-fg-muted')}>
                           {activeValues}
                         </span>
-                      </td>
-                      <td className="px-3 py-2.5">
+                      </Td>
+                      <Td>
                         <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium', t.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                           {t.is_active ? 'Active' : 'Inactive'}
                         </span>
-                      </td>
-                      <td className="px-3 py-2.5">
+                      </Td>
+                      <Td>
                         <div className="flex items-center justify-end gap-1">
                           {deleteConfirm === t.id ? (
                             <>
-                              <button onClick={() => { deleteMut.mutate(t.id); setDeleteConfirm(null) }} className="flex h-7 w-7 items-center justify-center rounded text-danger-fg hover:bg-danger-soft" title="Confirm delete"><Check className="h-3.5 w-3.5" /></button>
-                              <button onClick={() => setDeleteConfirm(null)} className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-surface-sunken"><X className="h-3.5 w-3.5" /></button>
+                              <Button aria-label="Confirm delete" variant="subtle" size="icon-xs" onClick={() => { deleteMut.mutate(t.id); setDeleteConfirm(null) }} className="text-danger-fg hover:bg-danger-soft" title="Confirm delete"><Check className="h-3.5 w-3.5" /></Button>
+                              <Button aria-label="Cancel delete" variant="subtle" size="icon-xs" onClick={() => setDeleteConfirm(null)}><X className="h-3.5 w-3.5" /></Button>
                             </>
                           ) : (
                             <>
-                              <button onClick={() => { setError(''); setMode({ edit: t.id }); setDeleteConfirm(null) }} className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-primary-50 hover:text-primary-600"><Pencil className="h-3.5 w-3.5" /></button>
-                              <button onClick={() => { setDeleteConfirm(t.id); setMode('none') }} className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-danger-soft hover:text-danger-fg" title="Delete template (does not affect accounts that copied from it)"><Trash2 className="h-3.5 w-3.5" /></button>
+                              <Button aria-label="Edit" variant="subtle" size="icon-xs" onClick={() => { setError(''); setMode({ edit: t.id }); setDeleteConfirm(null) }}><Pencil className="h-3.5 w-3.5" /></Button>
+                              <Button variant="danger-ghost" size="icon-xs" aria-label="Remove" onClick={() => { setDeleteConfirm(t.id); setMode('none') }} title="Delete template (does not affect accounts that copied from it)"><Trash2 className="h-3.5 w-3.5" /></Button>
                             </>
                           )}
                         </div>
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                     {isOpen && (
-                      <tr className="bg-surface-subtle/50">
-                        <td colSpan={6} className="px-3 py-3">
+                      <Tr className="bg-surface-subtle/50">
+                        <Td colSpan={6}>
                           <TemplateValuesEditor template={t} onError={setError} />
-                        </td>
-                      </tr>
+                        </Td>
+                      </Tr>
                     )}
                   </Fragment>
                 )
               })}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         )}
         <div className="border-t border-line bg-surface-subtle px-4 py-2 text-2xs text-fg-muted">
           {filtered.length} of {templates.length} template{templates.length !== 1 ? 's' : ''}
@@ -336,7 +336,7 @@ function TemplateForm({
     <div className="mb-4 rounded-lg border border-primary-200 bg-primary-50 p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-fg">{title}</h3>
-        <button onClick={onCancel} className="text-fg-muted hover:text-fg-secondary"><X className="h-4 w-4" /></button>
+        <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onCancel}><X className="h-4 w-4" /></Button>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
@@ -344,7 +344,7 @@ function TemplateForm({
             Code <span className="text-danger-fg">*</span>
             {!codeEditable && <span className="ml-1 text-2xs text-fg-muted">(immutable)</span>}
           </label>
-          <input
+          <Input
             value={form.factor_code}
             onChange={(e) => set('factor_code', e.target.value)}
             placeholder="e.g. brand, channel"
@@ -355,7 +355,7 @@ function TemplateForm({
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Name <span className="text-danger-fg">*</span></label>
-          <input
+          <Input
             value={form.factor_name}
             onChange={(e) => set('factor_name', e.target.value)}
             placeholder="e.g. Brand"
@@ -365,7 +365,7 @@ function TemplateForm({
         </div>
         <div className="flex flex-col gap-1.5 sm:col-span-2">
           <label className="text-xs font-medium text-fg-secondary">Description (optional)</label>
-          <input
+          <Input
             value={form.description}
             onChange={(e) => set('description', e.target.value)}
             placeholder="What does this factor break a budget down by?"
@@ -374,25 +374,25 @@ function TemplateForm({
         </div>
         {!codeEditable && onToggleActive && (
           <div className="sm:col-span-2 flex items-center gap-2">
-            <input
-              type="checkbox"
+            <Checkbox
+             
               id="tmpl-active"
               checked={isActive ?? true}
               onChange={(e) => onToggleActive(e.target.checked)}
-              className="h-4 w-4 rounded border-line-strong"
+             
             />
             <label htmlFor="tmpl-active" className="text-sm text-fg-secondary">Active</label>
           </div>
         )}
       </div>
       <div className="mt-3 flex justify-end gap-2">
-        <button onClick={onCancel} className="rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-fg-secondary hover:bg-surface-subtle">Cancel</button>
-        <button
+        <Button variant="secondary" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button size="sm"
           onClick={() => { if (validate()) onSave(form) }}
-          className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-800"
+         
         >
           <Check className="h-3.5 w-3.5" />Save
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -428,7 +428,7 @@ function TemplateValuesEditor({
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-2xs font-semibold uppercase tracking-wide text-fg-muted">
+      <p className="text-2xs font-semibold text-fg-muted">
         Values ({template.values.length})
       </p>
       <ul className="flex flex-col gap-1">
@@ -443,12 +443,12 @@ function TemplateValuesEditor({
             >
               {v.is_active ? 'Active' : 'Inactive'}
             </button>
-            <button
+            <Button variant="danger-ghost" size="icon-xs" aria-label="Remove"
               onClick={() => { if (confirm(`Delete value "${v.value_code}"?`)) deleteValueMut.mutate(v.id) }}
-              className="flex h-6 w-6 items-center justify-center rounded text-fg-muted hover:bg-danger-soft hover:text-danger-fg"
+             
             >
               <Trash2 className="h-3 w-3" />
-            </button>
+            </Button>
           </li>
         ))}
         {!template.values.length && (
@@ -459,23 +459,23 @@ function TemplateValuesEditor({
         <div className="mt-1 flex items-end gap-2">
           <div className="flex flex-col gap-0.5">
             <label className="text-2xs font-medium text-fg-secondary">Code</label>
-            <input
+            <Input inputSize="sm"
               value={editForm.value_code}
               onChange={(e) => setEditForm((p) => ({ ...p, value_code: e.target.value }))}
               placeholder="BRAND_A"
-              className="h-8 w-32 rounded border border-line-strong px-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-700"
+              className="w-32"
             />
           </div>
           <div className="flex flex-1 flex-col gap-0.5">
             <label className="text-2xs font-medium text-fg-secondary">Name</label>
-            <input
+            <Input inputSize="sm"
               value={editForm.value_name}
               onChange={(e) => setEditForm((p) => ({ ...p, value_name: e.target.value }))}
               placeholder="Brand A"
-              className="h-8 w-full rounded border border-line-strong px-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-700"
+              className="w-full"
             />
           </div>
-          <button
+          <Button size="xs"
             onClick={() => {
               if (!editForm.value_code.trim() || !editForm.value_name.trim()) {
                 onError('Value code and name are required')
@@ -486,21 +486,21 @@ function TemplateValuesEditor({
                 { onSuccess: () => { setEditForm({ value_code: '', value_name: '' }); setAdding(false) } },
               )
             }}
-            className="flex h-8 items-center gap-1 rounded bg-primary-700 px-2.5 text-xs font-medium text-white hover:bg-primary-800"
+           
           >
             <Check className="h-3 w-3" />Add
-          </button>
-          <button onClick={() => { setAdding(false); setEditForm({ value_code: '', value_name: '' }) }} className="flex h-8 w-8 items-center justify-center rounded border border-line-strong text-fg-muted hover:bg-surface-subtle">
+          </Button>
+          <Button aria-label="Cancel" variant="secondary" size="icon-sm" onClick={() => { setAdding(false); setEditForm({ value_code: '', value_name: '' }) }}>
             <X className="h-3 w-3" />
-          </button>
+          </Button>
         </div>
       ) : (
-        <button
+        <Button variant="secondary" size="xs"
           onClick={() => setAdding(true)}
-          className="self-start inline-flex items-center gap-1 rounded border border-dashed border-line-strong px-2.5 py-1 text-xs text-fg-secondary hover:border-primary-400 hover:text-primary-700"
+          className="self-start"
         >
           <Plus className="h-3 w-3" />Add Value
-        </button>
+        </Button>
       )}
     </div>
   )

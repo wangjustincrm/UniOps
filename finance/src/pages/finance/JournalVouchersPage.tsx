@@ -8,7 +8,7 @@ import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronLeft, ChevronRight, DatabaseZap, Loader2, Search, Send, SlidersHorizontal, X } from 'lucide-react'
-import { SortTh, sortParams, useSort } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, currentMonthISO, formatDate } from '@/lib/utils'
@@ -71,11 +71,11 @@ function AdvField({ label, children }: { label: string; children: React.ReactNod
 function NameSelect({ value, options, onChange }:
   { value?: string; options?: string[]; onChange: (v: string) => void }) {
   return (
-    <select value={value ?? ''} onChange={(e) => onChange(e.target.value)}
+    <Select value={value ?? ''} onChange={(e) => onChange(e.target.value)}
             className={cn(inputCls, 'w-full')}>
       <option value="">Anyone</option>
       {(options ?? []).map((n) => <option key={n} value={n}>{n}</option>)}
-    </select>
+    </Select>
   )
 }
 
@@ -206,33 +206,33 @@ export default function JournalVouchersPage() {
       title="Journal Vouchers"
       subtitle="Voucher center — review, post, and trace formal GL journal vouchers"
       headerActions={ncStatus?.configured && ncStatus?.can_sync ? (
-        <button onClick={() => setShowNcSync(true)}
-                className="flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle">
+        <Button variant="secondary" size="md" onClick={() => setShowNcSync(true)}
+               >
           <DatabaseZap className="h-4 w-4" /> NC Sync
-        </button>
+        </Button>
       ) : undefined}
     >
       <div className="mx-auto max-w-7xl">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1">
-            <input type="month" value={periodFrom} aria-label="Period from"
+            <Input type="month" value={periodFrom} aria-label="Period from"
                    onChange={(e) => { setPeriodFrom(e.target.value); resetPage() }}
                    className={cn(inputCls, 'w-36')} />
             <span className="text-sm text-fg-muted">–</span>
-            <input type="month" value={periodTo} aria-label="Period to"
+            <Input type="month" value={periodTo} aria-label="Period to"
                    onChange={(e) => { setPeriodTo(e.target.value); resetPage() }}
                    className={cn(inputCls, 'w-36')} />
           </div>
-          <select value={status} onChange={(e) => { setStatus(e.target.value); resetPage() }} className={inputCls}>
+          <Select value={status} onChange={(e) => { setStatus(e.target.value); resetPage() }} className={inputCls}>
             {STATUSES.map((s) => <option key={s} value={s}>{s ? s[0].toUpperCase() + s.slice(1) : 'All statuses'}</option>)}
-          </select>
-          <select value={subsystem} onChange={(e) => { setPage(0); setSubsystem(e.target.value) }}
+          </Select>
+          <Select value={subsystem} onChange={(e) => { setPage(0); setSubsystem(e.target.value) }}
                   className={inputCls}>
             <option value="">All systems</option>
             {SUBSYSTEMS.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
-          </select>
+          </Select>
           <form className="flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); resetPage() }}>
-            <input value={qInput} onChange={(e) => setQInput(e.target.value)}
+            <Input value={qInput} onChange={(e) => setQInput(e.target.value)}
                    placeholder="Voucher no. / summary…" className={cn(inputCls, 'w-56')} />
             <button type="submit" className={secondaryBtn}><Search className="h-4 w-4" /></button>
           </form>
@@ -242,10 +242,10 @@ export default function JournalVouchersPage() {
             More filters{advCount > 0 ? ` (${advCount})` : ''}
           </button>
           {advCount > 0 && (
-            <button type="button" onClick={() => { setAdv({}); resetPage() }}
-                    className="flex items-center gap-1 text-sm text-fg-muted hover:text-fg-secondary">
+            <Button variant="subtle" size="xs" type="button" onClick={() => { setAdv({}); resetPage() }}
+                    className="text-sm">
               <X className="h-3.5 w-3.5" /> Clear
-            </button>
+            </Button>
           )}
           {canAct && (
             <div className="ml-auto flex items-center gap-2">
@@ -267,35 +267,35 @@ export default function JournalVouchersPage() {
         {showAdvanced && (
           <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-line bg-surface-subtle/60 p-3 sm:grid-cols-2 lg:grid-cols-4">
             <AdvField label="Date from">
-              <input type="date" value={adv.date_from ?? ''} className={cn(inputCls, 'w-full')}
+              <Input type="date" value={adv.date_from ?? ''} className={cn(inputCls, 'w-full')}
                      onChange={(e) => { setAdvField('date_from', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Date to">
-              <input type="date" value={adv.date_to ?? ''} className={cn(inputCls, 'w-full')}
+              <Input type="date" value={adv.date_to ?? ''} className={cn(inputCls, 'w-full')}
                      onChange={(e) => { setAdvField('date_to', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Voucher no. from">
-              <input type="number" value={adv.num_from ?? ''} className={cn(inputCls, 'w-full')}
+              <Input type="number" value={adv.num_from ?? ''} className={cn(inputCls, 'w-full')}
                      onChange={(e) => { setAdvField('num_from', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Voucher no. to">
-              <input type="number" value={adv.num_to ?? ''} className={cn(inputCls, 'w-full')}
+              <Input type="number" value={adv.num_to ?? ''} className={cn(inputCls, 'w-full')}
                      onChange={(e) => { setAdvField('num_to', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Voucher state">
-              <select value={adv.voucher_state ?? ''} className={cn(inputCls, 'w-full')}
+              <Select value={adv.voucher_state ?? ''} className={cn(inputCls, 'w-full')}
                       onChange={(e) => { setAdvField('voucher_state', e.target.value); resetPage() }}>
                 {VOUCHER_STATES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
+              </Select>
             </AdvField>
             <AdvField label="Voucher kind">
-              <select value={adv.voucher_kind ?? ''} className={cn(inputCls, 'w-full')}
+              <Select value={adv.voucher_kind ?? ''} className={cn(inputCls, 'w-full')}
                       onChange={(e) => { setAdvField('voucher_kind', e.target.value); resetPage() }}>
                 <option value="">All kinds</option>
                 {(opts?.voucher_kinds ?? []).map((k) => (
                   <option key={k.value} value={k.value}>{k.label}</option>
                 ))}
-              </select>
+              </Select>
             </AdvField>
             <AdvField label="Prepared by">
               <NameSelect value={adv.prepared_by} options={opts?.prepared_by}
@@ -310,27 +310,27 @@ export default function JournalVouchersPage() {
                           onChange={(v) => { setAdvField('manager', v); resetPage() }} />
             </AdvField>
             <AdvField label="Account code">
-              <input value={adv.account_code ?? ''} placeholder="e.g. 5101" className={cn(inputCls, 'w-full')}
+              <Input value={adv.account_code ?? ''} placeholder="e.g. 5101" className={cn(inputCls, 'w-full')}
                      onChange={(e) => { setAdvField('account_code', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Contra account">
-              <input value={adv.opposite_subject ?? ''} className={cn(inputCls, 'w-full')}
+              <Input value={adv.opposite_subject ?? ''} className={cn(inputCls, 'w-full')}
                      onChange={(e) => { setAdvField('opposite_subject', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Currency">
-              <input value={adv.currency ?? ''} placeholder="CAD / USD" className={cn(inputCls, 'w-full')}
+              <Input value={adv.currency ?? ''} placeholder="CAD / USD" className={cn(inputCls, 'w-full')}
                      onChange={(e) => { setAdvField('currency', e.target.value.toUpperCase()); resetPage() }} />
             </AdvField>
             <AdvField label="Amount min (CAD)">
-              <input type="number" value={adv.amount_min ?? ''} className={cn(inputCls, 'w-full')}
+              <Input type="number" value={adv.amount_min ?? ''} className={cn(inputCls, 'w-full')}
                      onChange={(e) => { setAdvField('amount_min', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Amount max (CAD)">
-              <input type="number" value={adv.amount_max ?? ''} className={cn(inputCls, 'w-full')}
+              <Input type="number" value={adv.amount_max ?? ''} className={cn(inputCls, 'w-full')}
                      onChange={(e) => { setAdvField('amount_max', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Auxiliary">
-              <select value={adv.aux_code ?? ''} className={cn(inputCls, 'w-full')}
+              <Select value={adv.aux_code ?? ''} className={cn(inputCls, 'w-full')}
                       onChange={(e) => {
                         setAdvField('aux_code', e.target.value)
                         setAdvField('aux_value', '')   // a value is meaningless under a different dimension
@@ -338,10 +338,10 @@ export default function JournalVouchersPage() {
                       }}>
                 <option value="">Any auxiliary</option>
                 {(opts?.aux_codes ?? []).map((c) => <option key={c} value={c}>{dimLabel(c)}</option>)}
-              </select>
+              </Select>
             </AdvField>
             <AdvField label="Auxiliary value">
-              <input list="jv-aux-values" value={adv.aux_value ?? ''} disabled={!adv.aux_code}
+              <Input list="jv-aux-values" value={adv.aux_value ?? ''} disabled={!adv.aux_code}
                      className={cn(inputCls, 'w-full disabled:bg-surface-sunken')}
                      onChange={(e) => { setAdvField('aux_value', e.target.value); resetPage() }} />
               <datalist id="jv-aux-values">
@@ -370,13 +370,13 @@ export default function JournalVouchersPage() {
                 spare. Fixed layout makes the w-* classes authoritative and
                 leaves Summary exactly the remainder. */}
             <div className="overflow-x-auto rounded-lg border border-line">
-              <table className="w-full min-w-[80rem] table-fixed text-sm">
-                <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-                  <tr>
+              <Table density="compact" className="min-w-[80rem] table-fixed">
+                <THead>
+                  <Tr>
                     {canAct && (
-                      <th className="w-9 px-3 py-2">
-                        <input type="checkbox" checked={allSelected} onChange={toggleAll} />
-                      </th>
+                      <Th className="w-9">
+                        <Checkbox checked={allSelected} onChange={toggleAll} />
+                      </Th>
                     )}
                     <SortTh label="Voucher No." sortKey="jv_number" sort={sort} onSort={onSort} className="px-3 py-2 w-44 whitespace-nowrap" />
                     <SortTh label="Date" sortKey="voucher_date" sort={sort} onSort={onSort} className="px-3 py-2 w-28 whitespace-nowrap" />
@@ -390,31 +390,31 @@ export default function JournalVouchersPage() {
                     <SortTh label="System" sortKey="source_subsystem" sort={sort} onSort={onSort} className="px-3 py-2 w-20 whitespace-nowrap" />
                     <SortTh label="Debit (CAD)" sortKey="total_debit" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-32 whitespace-nowrap" />
                     <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-3 py-2 w-28 whitespace-nowrap" />
-                  </tr>
-                </thead>
-                <tbody>
+                  </Tr>
+                </THead>
+                <TBody>
                   {items.length === 0 && (
-                    <tr><td colSpan={canAct ? 9 : 8} className="px-3 py-6 text-center text-fg-muted">No vouchers match the filters.</td></tr>
+                    <Tr><Td align="center" colSpan={canAct ? 9 : 8} className="text-fg-muted">No vouchers match the filters.</Td></Tr>
                   )}
                   {items.map((v, i) => (
-                    <tr key={v.id} onClick={() => setDetailId(v.id)}
+                    <Tr key={v.id} onClick={() => setDetailId(v.id)}
                         className={cn('cursor-pointer border-t border-line-subtle hover:bg-primary-50/40', i % 2 && 'bg-surface-subtle/40')}>
                       {canAct && (
-                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                        <Td onClick={(e) => e.stopPropagation()}>
                           {(v.status === 'draft' || v.status === 'reviewed') && (
-                            <input type="checkbox" checked={selected.has(v.id)} onChange={() => toggle(v.id)} />
+                            <Checkbox checked={selected.has(v.id)} onChange={() => toggle(v.id)} />
                           )}
-                        </td>
+                        </Td>
                       )}
-                      <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{v.voucher_word} · {v.jv_number}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-fg-secondary whitespace-nowrap">{formatDate(v.voucher_date)}</td>
+                      <Td className="font-mono text-xs whitespace-nowrap">{v.voucher_word} · {v.jv_number}</Td>
+                      <Td className="font-mono text-xs text-fg-secondary whitespace-nowrap">{formatDate(v.voucher_date)}</Td>
                       {/* The only column allowed to wrap; break-words so a long
                           unbroken token cannot push the row wider than its share. */}
-                      <td className="px-3 py-2 text-fg-secondary break-words">{v.summary || '—'}</td>
+                      <Td className="text-fg-secondary break-words">{v.summary || '—'}</Td>
                       {/* Doc number on its own line: "ap_invoice · AP-20260916-0010"
                           on one line needs ~28 mono chars, and the number is the
                           half people scan for. */}
-                      <td className="px-3 py-2 text-xs text-fg-muted">
+                      <Td className="text-xs text-fg-muted">
                         {v.source_doc_type ? (
                           <>
                             <span className="block font-mono text-fg-secondary truncate"
@@ -426,12 +426,12 @@ export default function JournalVouchersPage() {
                             </span>
                           </>
                         ) : '—'}
-                      </td>
+                      </Td>
                       {/* The NC subsystem CODE, with the full name on hover:
                           "Gain/Loss Carry-Forward" spelled out costs 160px of a
                           row whose useful content is Summary, and AP / AR / GL
                           is what finance reads anyway. */}
-                      <td className="px-3 py-2 text-xs text-fg-muted">
+                      <Td className="text-xs text-fg-muted">
                         {v.nc_prepared_name || v.nc_checked_name ? (
                           <>
                             <span className="block truncate text-fg-secondary"
@@ -447,13 +447,13 @@ export default function JournalVouchersPage() {
                             </span>
                           </>
                         ) : '—'}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-xs text-fg-secondary"
+                      </Td>
+                      <Td className="font-mono text-xs text-fg-secondary"
                           title={v.source_subsystem_label ?? undefined}>
                         {v.source_subsystem ?? '—'}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">{money(v.total_local_debit)}</td>
-                      <td className="px-3 py-2">
+                      </Td>
+                      <Td align="right" className="font-mono">{money(v.total_local_debit)}</Td>
+                      <Td>
                         <JvStatusBadge status={v.status} />
                         {/* Only ever rendered for a non-normal voucher: 41,334 of
                             this book's 41,335 are normal, so a badge on every row
@@ -466,11 +466,11 @@ export default function JournalVouchersPage() {
                               : v.nc_voucher_state === 'deleted' ? 'Deleted in NC' : 'Error'}
                           </span>
                         )}
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                   ))}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
 
             <div className="mt-3 flex items-center justify-between text-sm text-fg-muted">

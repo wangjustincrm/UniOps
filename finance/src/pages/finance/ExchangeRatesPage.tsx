@@ -5,6 +5,7 @@ import { financeApi } from '@/lib/api'
 import { cn, formatDate, formatDateTime, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
+import { Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 /**
  * Exchange Rates — Finance's one history of FX rates (finance-api /fx).
  *
@@ -157,11 +158,11 @@ export default function ExchangeRatesPage() {
           <div className="rounded-lg border border-line bg-surface p-3 text-sm">
             <div className="text-xs font-medium uppercase text-fg-muted">Rate for a document dated</div>
             <div className="mt-1 flex items-center gap-2">
-              <select value={probe.currency} onChange={(e) => setProbe({ ...probe, currency: e.target.value })}
+              <Select value={probe.currency} onChange={(e) => setProbe({ ...probe, currency: e.target.value })}
                       className={cn(inputCls, 'h-8 w-24')}>
                 {currencies.map((c) => <option key={c}>{c}</option>)}
-              </select>
-              <input type="date" value={probe.on} onChange={(e) => setProbe({ ...probe, on: e.target.value })}
+              </Select>
+              <Input type="date" value={probe.on} onChange={(e) => setProbe({ ...probe, on: e.target.value })}
                      className={cn(inputCls, 'h-8 w-40')} />
             </div>
             <div className="mt-1 font-mono text-fg">
@@ -173,27 +174,27 @@ export default function ExchangeRatesPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <select value={currency} onChange={(e) => { setCurrency(e.target.value); setPage(0) }} className={cn(inputCls, 'w-32')}>
+          <Select value={currency} onChange={(e) => { setCurrency(e.target.value); setPage(0) }} className={cn(inputCls, 'w-32')}>
             <option value="">All currencies</option>
             {currencies.map((c) => <option key={c}>{c}</option>)}
-          </select>
-          <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0) }} className={cn(inputCls, 'w-40')} />
+          </Select>
+          <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0) }} className={cn(inputCls, 'w-40')} />
           <span className="text-fg-muted">→</span>
-          <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0) }} className={cn(inputCls, 'w-40')} />
+          <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0) }} className={cn(inputCls, 'w-40')} />
           <div className="ml-auto flex items-center gap-2">
             <span className="text-sm text-fg-secondary">Fetch from</span>
-            <input type="date" value={fetchFrom} onChange={(e) => setFetchFrom(e.target.value)} className={cn(inputCls, 'w-40')} />
-            <button onClick={runFetch} disabled={fetching || !fetchFrom}
+            <Input type="date" value={fetchFrom} onChange={(e) => setFetchFrom(e.target.value)} className={cn(inputCls, 'w-40')} />
+            <Button variant="secondary" size="md" onClick={runFetch} disabled={fetching || !fetchFrom}
                     title="Bring in Bank of Canada rates from this date to today"
-                    className="flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50">
+                   >
               {fetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               Fetch from Bank of Canada
-            </button>
+            </Button>
             {canManage && (
-              <button onClick={() => setEdit({ from_currency: currency || 'USD', effective_date: todayLocal(), rate: '', note: '' })}
-                      className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800">
+              <Button size="md" onClick={() => setEdit({ from_currency: currency || 'USD', effective_date: todayLocal(), rate: '', note: '' })}
+                     >
                 <Pencil className="h-4 w-4" /> Set a rate
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -207,85 +208,85 @@ export default function ExchangeRatesPage() {
           <div className="rounded-lg border border-line bg-surface p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="text-sm font-medium text-fg">Set a rate by hand (kept as manual; the daily fetch will not overwrite it)</div>
-              <button onClick={() => setEdit(null)} className="text-fg-muted hover:text-fg-secondary"><X className="h-4 w-4" /></button>
+              <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={() => setEdit(null)}><X className="h-4 w-4" /></Button>
             </div>
             <div className="flex flex-wrap items-end gap-3">
               <label className="text-xs text-fg-muted">Currency
-                <input value={edit.from_currency} onChange={(e) => setEdit({ ...edit, from_currency: e.target.value.toUpperCase() })}
+                <Input value={edit.from_currency} onChange={(e) => setEdit({ ...edit, from_currency: e.target.value.toUpperCase() })}
                        className={cn(inputCls, 'mt-1 block w-24')} /></label>
               <label className="text-xs text-fg-muted">Date
-                <input type="date" value={edit.effective_date} onChange={(e) => setEdit({ ...edit, effective_date: e.target.value })}
+                <Input type="date" value={edit.effective_date} onChange={(e) => setEdit({ ...edit, effective_date: e.target.value })}
                        className={cn(inputCls, 'mt-1 block w-40')} /></label>
               <label className="text-xs text-fg-muted">CAD per 1 unit
-                <input value={edit.rate} onChange={(e) => setEdit({ ...edit, rate: e.target.value })} inputMode="decimal"
+                <Input value={edit.rate} onChange={(e) => setEdit({ ...edit, rate: e.target.value })} inputMode="decimal"
                        className={cn(inputCls, 'mt-1 block w-32 font-mono')} /></label>
               <label className="flex-1 text-xs text-fg-muted">Note (required)
-                <input value={edit.note} onChange={(e) => setEdit({ ...edit, note: e.target.value })}
+                <Input value={edit.note} onChange={(e) => setEdit({ ...edit, note: e.target.value })}
                        placeholder="Why this rate" className={cn(inputCls, 'mt-1 block w-full')} /></label>
-              <button onClick={saveOverride}
+              <Button size="md" onClick={saveOverride}
                       disabled={saving || !edit.rate || !(Number(edit.rate) > 0) || !edit.note.trim() || !edit.effective_date}
-                      className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50">
+                     >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
-              </button>
+              </Button>
             </div>
           </div>
         )}
 
         <div className="overflow-hidden rounded-lg border border-line">
-          <table className="w-full text-sm">
-            <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-              <tr>
-                <th className="px-3 py-2 w-32">Date</th>
-                <th className="px-3 py-2 w-28">Currency</th>
-                <th className="px-3 py-2 w-36 text-right">CAD per unit</th>
-                <th className="px-3 py-2 w-40">Source</th>
-                <th className="px-3 py-2">Note</th>
-                <th className="px-3 py-2 w-16" />
-              </tr>
-            </thead>
-            <tbody>
+          <Table density="compact">
+            <THead>
+              <Tr>
+                <Th className="w-32">Date</Th>
+                <Th className="w-28">Currency</Th>
+                <Th align="right" className="w-36 ">CAD per unit</Th>
+                <Th className="w-40">Source</Th>
+                <Th>Note</Th>
+                <Th className="w-16" />
+              </Tr>
+            </THead>
+            <TBody>
               {isFetching && (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-fg-muted"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
+                <Tr><Td align="center" colSpan={6} className="text-fg-muted"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></Td></Tr>
               )}
               {!isFetching && rows.length === 0 && (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-fg-muted">No rates. Use “Fetch from Bank of Canada”.</td></tr>
+                <Tr><Td align="center" colSpan={6} className="text-fg-muted">No rates. Use “Fetch from Bank of Canada”.</Td></Tr>
               )}
               {!isFetching && rows.map((r, i) => (
-                <tr key={r.id} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
-                  <td className="px-3 py-2 font-mono text-xs">{formatDate(r.effective_date)}</td>
-                  <td className="px-3 py-2">{r.from_currency} → {r.to_currency}</td>
-                  <td className="px-3 py-2 text-right font-mono">{Number(r.rate).toFixed(4)}</td>
-                  <td className="px-3 py-2">
+                <Tr key={r.id} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
+                  <Td className="font-mono text-xs">{formatDate(r.effective_date)}</Td>
+                  <Td>{r.from_currency} → {r.to_currency}</Td>
+                  <Td align="right" className="font-mono">{Number(r.rate).toFixed(4)}</Td>
+                  <Td>
                     <span className={cn('whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium',
                       r.source === 'manual' ? 'bg-warning-soft text-warning-fg' : 'bg-info-soft text-info-fg')}>
                       {r.source === 'manual' ? 'Manual' : 'Bank of Canada'}</span>
-                  </td>
-                  <td className="px-3 py-2 text-xs text-fg-secondary">{r.note ?? ''}</td>
-                  <td className="px-3 py-2 text-right">
+                  </Td>
+                  <Td className="text-xs text-fg-secondary">{r.note ?? ''}</Td>
+                  <Td align="right">
                     {canManage && (
                       <span className="flex justify-end gap-2">
-                        <button title="Set this day by hand" onClick={() => setEdit({ from_currency: r.from_currency, effective_date: r.effective_date, rate: r.rate, note: r.note ?? '' })}
-                                className="text-fg-muted hover:text-fg-secondary"><Pencil className="h-3.5 w-3.5" /></button>
+                        <Button aria-label="Set this day by hand" variant="subtle" size="icon-xs" title="Set this day by hand" onClick={() => setEdit({ from_currency: r.from_currency, effective_date: r.effective_date, rate: r.rate, note: r.note ?? '' })}
+                               ><Pencil className="h-3.5 w-3.5" /></Button>
                         {r.source === 'manual' && (
-                          <button title="Remove the manual rate" onClick={() => removeOverride(r)}
-                                  className="text-fg-muted hover:text-danger-fg"><Trash2 className="h-3.5 w-3.5" /></button>
+                          <Button variant="danger-ghost" size="icon-xs" aria-label="Remove" title="Remove the manual rate" onClick={() => removeOverride(r)}
+                                 ><Trash2 className="h-3.5 w-3.5" /></Button>
                         )}
                       </span>
                     )}
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
         <div className="flex items-center justify-between text-sm text-fg-muted">
           <span>{total.toLocaleString()} rate{total === 1 ? '' : 's'}</span>
           <div className="flex items-center gap-2">
-            <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0}
-                    className="rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50">Prev</button>
+            <Button variant="secondary" size="sm" onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0}
+                   >Prev</Button>
             <span>Page {page + 1} / {pageCount}</span>
-            <button onClick={() => setPage(Math.min(pageCount - 1, page + 1))} disabled={page >= pageCount - 1}
-                    className="rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50">Next</button>
+            <Button variant="secondary" size="sm" onClick={() => setPage(Math.min(pageCount - 1, page + 1))} disabled={page >= pageCount - 1}
+                   >Next</Button>
           </div>
         </div>
       </div>

@@ -26,7 +26,7 @@ import {
   Ban, Check, Landmark, Link2, Loader2, Plus, RefreshCw,
   Undo2, Upload, X,
 } from 'lucide-react'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, FileInput, Input, Radio, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financeUploadFields } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
@@ -198,7 +198,7 @@ export default function BankStatementCsvPage() {
         {/* account bar */}
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <Landmark className="h-5 w-5 text-fg-muted" />
-          <select value={accountId} onChange={(e) => setAccountId(e.target.value)}
+          <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}
                   className={cn(inputCls, 'w-80')}>
             <option value="">Select a bank account…</option>
             {Object.entries(byBank).map(([bank, accts]) => (
@@ -210,7 +210,7 @@ export default function BankStatementCsvPage() {
                 ))}
               </optgroup>
             ))}
-          </select>
+          </Select>
           {account && (
             <span className="text-xs text-fg-muted">
               GL: {account.ledger_account_code || '— not mapped —'}
@@ -250,13 +250,13 @@ export default function BankStatementCsvPage() {
 
             {/* toolbar */}
             <div className="mb-3 flex flex-wrap items-center gap-3">
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+              <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
                       className={cn(inputCls, 'w-40')}>
                 <option value="">All statuses</option>
                 <option value="unmatched">Unmatched</option>
                 <option value="matched">Matched</option>
                 <option value="excluded">Excluded</option>
-              </select>
+              </Select>
               <div className="ml-auto flex gap-2">
                 {canManage && (
                   <>
@@ -265,7 +265,7 @@ export default function BankStatementCsvPage() {
                       {autoMatch.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                       Auto-match
                     </button>
-                    <input ref={fileInput} type="file" accept=".csv,text/csv" className="hidden"
+                    <FileInput ref={fileInput} accept=".csv,text/csv" className="hidden"
                            onChange={(e) => e.target.files?.[0] && setImportFile(e.target.files[0])} />
                     <button onClick={() => fileInput.current?.click()} className={primaryBtn}>
                       <Upload className="h-4 w-4" /> Import Statement
@@ -277,69 +277,69 @@ export default function BankStatementCsvPage() {
 
             {/* transactions */}
             <div className="overflow-hidden rounded-lg border border-line">
-              <table className="w-full text-sm">
-                <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-                  <tr>
+              <Table density="compact">
+                <THead>
+                  <Tr>
                     <SortTh label="Date" sortKey="date" sort={txnSort.sort} onSort={txnSort.onSort} className="px-3 py-2 w-28" />
                     <SortTh label="Description" sortKey="description" sort={txnSort.sort} onSort={txnSort.onSort} className="px-3 py-2" />
                     <SortTh label="Reference" sortKey="reference" sort={txnSort.sort} onSort={txnSort.onSort} className="px-3 py-2 w-40" />
                     <SortTh label="Amount" sortKey="amount" sort={txnSort.sort} onSort={txnSort.onSort} align="right" className="px-3 py-2 w-36" />
                     <SortTh label="Status" sortKey="status" sort={txnSort.sort} onSort={txnSort.onSort} className="px-3 py-2 w-24" />
-                    <th className="px-3 py-2 w-44" />
-                  </tr>
-                </thead>
-                <tbody>
+                    <Th className="w-44" />
+                  </Tr>
+                </THead>
+                <TBody>
                   {txnsLoading && (
-                    <tr><td colSpan={6} className="px-3 py-6 text-center text-fg-muted">
-                      <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
+                    <Tr><Td align="center" colSpan={6} className="text-fg-muted">
+                      <Loader2 className="mx-auto h-5 w-5 animate-spin" /></Td></Tr>
                   )}
                   {!txnsLoading && txns.length === 0 && (
-                    <tr><td colSpan={6} className="px-3 py-6 text-center text-fg-muted">
-                      No statement lines. Import a statement to begin.</td></tr>
+                    <Tr><Td align="center" colSpan={6} className="text-fg-muted">
+                      No statement lines. Import a statement to begin.</Td></Tr>
                   )}
                   {txnSort.rows.map((t, i) => {
                     const amt = Number(t.amount)
                     return (
-                      <tr key={t.id} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
-                        <td className="px-3 py-2 font-mono text-xs text-fg-secondary">{formatDate(t.txn_date)}</td>
-                        <td className="px-3 py-2">{t.description}</td>
-                        <td className="px-3 py-2 text-xs text-fg-muted">{t.reference || '—'}</td>
-                        <td className={cn('px-3 py-2 text-right font-mono', amt < 0 ? 'text-danger-fg' : 'text-success-fg')}>
+                      <Tr key={t.id} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
+                        <Td className="font-mono text-xs text-fg-secondary">{formatDate(t.txn_date)}</Td>
+                        <Td>{t.description}</Td>
+                        <Td className="text-xs text-fg-muted">{t.reference || '—'}</Td>
+                        <Td className={cn('px-3 py-2 text-right font-mono', amt < 0 ? 'text-danger-fg' : 'text-success-fg')}>
                           {fmtMoney(t.amount)}
-                        </td>
-                        <td className="px-3 py-2"><StatusPill status={t.status} /></td>
-                        <td className="px-3 py-2">
+                        </Td>
+                        <Td><StatusPill status={t.status} /></Td>
+                        <Td>
                           {canManage && (
                             <div className="flex justify-end gap-1.5">
                               {t.status === 'matched' ? (
-                                <button onClick={() => unmatch.mutate(t.id)} title="Unmatch"
-                                        className="rounded p-1 text-fg-muted hover:text-warning-fg">
-                                  <Undo2 className="h-4 w-4" /></button>
+                                <Button aria-label="Unmatch" variant="subtle" size="icon-xs" onClick={() => unmatch.mutate(t.id)} title="Unmatch"
+                                       >
+                                  <Undo2 className="h-4 w-4" /></Button>
                               ) : t.status === 'excluded' ? (
-                                <button onClick={() => exclude.mutate({ id: t.id, excluded: false })}
-                                        title="Re-include" className="rounded p-1 text-fg-muted hover:text-primary-700">
-                                  <Undo2 className="h-4 w-4" /></button>
+                                <Button aria-label="Re-include" variant="subtle" size="icon-xs" onClick={() => exclude.mutate({ id: t.id, excluded: false })}
+                                        title="Re-include">
+                                  <Undo2 className="h-4 w-4" /></Button>
                               ) : (
                                 <>
                                   {amt < 0 && (
-                                    <button onClick={() => setMatchFor(t)} title="Match to payment"
-                                            className="rounded p-1 text-fg-muted hover:text-primary-700">
-                                      <Link2 className="h-4 w-4" /></button>
+                                    <Button aria-label="Match to payment" variant="subtle" size="icon-xs" onClick={() => setMatchFor(t)} title="Match to payment"
+                                           >
+                                      <Link2 className="h-4 w-4" /></Button>
                                   )}
-                                  <button onClick={() => exclude.mutate({ id: t.id, excluded: true })}
+                                  <Button aria-label="Exclude (fee / interest / internal transfer)" variant="subtle" size="icon-xs" onClick={() => exclude.mutate({ id: t.id, excluded: true })}
                                           title="Exclude (fee / interest / internal transfer)"
-                                          className="rounded p-1 text-fg-muted hover:text-fg-secondary">
-                                    <Ban className="h-4 w-4" /></button>
+                                         >
+                                    <Ban className="h-4 w-4" /></Button>
                                 </>
                               )}
                             </div>
                           )}
-                        </td>
-                      </tr>
+                        </Td>
+                      </Tr>
                     )
                   })}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
 
             {/* discrepancy: payments not seen on the bank */}
@@ -349,24 +349,24 @@ export default function BankStatementCsvPage() {
                   Payments not yet seen on any statement ({recon.unreconciled_payments.length})
                 </h3>
                 <div className="overflow-hidden rounded-lg border border-line">
-                  <table className="w-full text-sm">
-                    <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-                      <tr>
+                  <Table density="compact">
+                    <THead>
+                      <Tr>
                         <SortTh label="Date" sortKey="date" sort={unrecSort.sort} onSort={unrecSort.onSort} className="px-3 py-2 w-28" />
                         <SortTh label="Document" sortKey="document" sort={unrecSort.sort} onSort={unrecSort.onSort} className="px-3 py-2" />
                         <SortTh label="Amount" sortKey="amount" sort={unrecSort.sort} onSort={unrecSort.onSort} align="right" className="px-3 py-2 w-36" />
-                      </tr>
-                    </thead>
-                    <tbody>
+                      </Tr>
+                    </THead>
+                    <TBody>
                       {unrecSort.rows.map((p) => (
-                        <tr key={p.payment_record_id} className="border-t border-line-subtle">
-                          <td className="px-3 py-2 font-mono text-xs text-fg-secondary">{formatDate(p.payment_date)}</td>
-                          <td className="px-3 py-2">{p.doc_number || p.payment_record_id.slice(0, 8)}</td>
-                          <td className="px-3 py-2 text-right font-mono">{fmtMoney(p.amount, p.currency)}</td>
-                        </tr>
+                        <Tr key={p.payment_record_id}>
+                          <Td className="font-mono text-xs text-fg-secondary">{formatDate(p.payment_date)}</Td>
+                          <Td>{p.doc_number || p.payment_record_id.slice(0, 8)}</Td>
+                          <Td align="right" className="font-mono">{fmtMoney(p.amount, p.currency)}</Td>
+                        </Tr>
                       ))}
-                    </tbody>
-                  </table>
+                    </TBody>
+                  </Table>
                 </div>
               </div>
             )}
@@ -443,11 +443,11 @@ function ImportMappingModal({ account, file, onClose, onDone, onError }: {
   const colSelect = (key: keyof ColumnMapping, label: string, required = false) => (
     <label className="flex flex-col gap-1 text-sm">
       <span className="text-fg-secondary">{label}{required && <span className="text-danger-fg"> *</span>}</span>
-      <select value={(m[key] as string) ?? ''} onChange={(e) => set({ [key]: e.target.value || undefined } as Partial<ColumnMapping>)}
+      <Select value={(m[key] as string) ?? ''} onChange={(e) => set({ [key]: e.target.value || undefined } as Partial<ColumnMapping>)}
               className={inputCls}>
         <option value="">— none —</option>
         {headers.map((h) => <option key={h} value={h}>{h}</option>)}
-      </select>
+      </Select>
     </label>
   )
 
@@ -484,15 +484,15 @@ function ImportMappingModal({ account, file, onClose, onDone, onError }: {
         {colSelect('reference', 'Reference column')}
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Date format</span>
-          <select value={m.date_format ?? ''} onChange={(e) => set({ date_format: e.target.value || undefined })}
+          <Select value={m.date_format ?? ''} onChange={(e) => set({ date_format: e.target.value || undefined })}
                   className={inputCls}>
             {DATE_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-          </select>
+          </Select>
         </label>
         {m.date_format === '%d %b' && (
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-fg-secondary">Statement year (date has no year)</span>
-            <input type="number" value={m.default_year ?? ''} placeholder="2026"
+            <Input type="number" value={m.default_year ?? ''} placeholder="2026"
                    onChange={(e) => set({ default_year: e.target.value ? Number(e.target.value) : undefined })}
                    className={inputCls} />
           </label>
@@ -502,11 +502,11 @@ function ImportMappingModal({ account, file, onClose, onDone, onError }: {
       <div className="mt-4 rounded-lg border border-line p-3">
         <div className="mb-2 flex gap-4 text-sm">
           <label className="flex items-center gap-1.5">
-            <input type="radio" checked={amountMode === 'signed'} onChange={() => setAmountMode('signed')} />
+            <Radio checked={amountMode === 'signed'} onChange={() => setAmountMode('signed')} />
             One signed amount column
           </label>
           <label className="flex items-center gap-1.5">
-            <input type="radio" checked={amountMode === 'split'} onChange={() => setAmountMode('split')} />
+            <Radio checked={amountMode === 'split'} onChange={() => setAmountMode('split')} />
             Separate debit / credit columns
           </label>
         </div>
@@ -559,31 +559,31 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
       <div className="grid gap-3">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Name</span>
-          <input value={f.name ?? ''} onChange={(e) => set({ name: e.target.value })} className={inputCls} />
+          <Input value={f.name ?? ''} onChange={(e) => set({ name: e.target.value })} className={inputCls} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Bank</span>
-          <input value={f.bank_name ?? ''} onChange={(e) => set({ bank_name: e.target.value })} className={inputCls} />
+          <Input value={f.bank_name ?? ''} onChange={(e) => set({ bank_name: e.target.value })} className={inputCls} />
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-fg-secondary">Account (last 4)</span>
-            <input value={f.account_masked ?? ''} onChange={(e) => set({ account_masked: e.target.value })} className={inputCls} />
+            <Input value={f.account_masked ?? ''} onChange={(e) => set({ account_masked: e.target.value })} className={inputCls} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-fg-secondary">Currency</span>
-            <select value={f.currency ?? 'CAD'} onChange={(e) => set({ currency: e.target.value })} className={inputCls}>
+            <Select value={f.currency ?? 'CAD'} onChange={(e) => set({ currency: e.target.value })} className={inputCls}>
               {['CAD', 'USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}
-            </select>
+            </Select>
           </label>
         </div>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">GL account code (COA bank account)</span>
-          <input value={f.ledger_account_code ?? ''} onChange={(e) => set({ ledger_account_code: e.target.value })}
+          <Input value={f.ledger_account_code ?? ''} onChange={(e) => set({ ledger_account_code: e.target.value })}
                  placeholder="e.g. 1010" className={inputCls} />
         </label>
         <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
-          <input type="checkbox" checked={f.is_active ?? true} onChange={(e) => set({ is_active: e.target.checked })} />
+          <Checkbox checked={f.is_active ?? true} onChange={(e) => set({ is_active: e.target.checked })} />
           Active
         </label>
       </div>
@@ -628,30 +628,30 @@ function ManualMatchModal({ txn, candidates, onClose, onMatched, onError }: {
         </p>
       ) : (
         <div className="max-h-80 overflow-y-auto rounded-lg border border-line">
-          <table className="w-full text-sm">
-            <tbody>
+          <Table density="compact">
+            <TBody>
               {sorted.map((c) => {
                 const exact = Math.abs(Number(c.amount) - target) < 0.005
                 return (
-                  <tr key={c.payment_record_id} className="border-t border-line-subtle first:border-t-0">
-                    <td className="px-3 py-2 font-mono text-xs text-fg-muted">{formatDate(c.payment_date)}</td>
-                    <td className="px-3 py-2">{c.doc_number || c.payment_record_id.slice(0, 8)}</td>
-                    <td className="px-3 py-2 text-right font-mono">
+                  <Tr key={c.payment_record_id} className="first:border-t-0">
+                    <Td className="font-mono text-xs text-fg-muted">{formatDate(c.payment_date)}</Td>
+                    <Td>{c.doc_number || c.payment_record_id.slice(0, 8)}</Td>
+                    <Td align="right" className="font-mono">
                       {fmtMoney(c.amount, c.currency)}
                       {exact && <span className="ml-2 rounded bg-success-soft px-1.5 py-0.5 text-xs text-success-fg">exact</span>}
-                    </td>
-                    <td className="px-3 py-2 text-right">
+                    </Td>
+                    <Td align="right">
                       <button onClick={() => match(c.payment_record_id)} disabled={!!busy}
                               className={cn(secondaryBtn, 'ml-auto')}>
                         {busy === c.payment_record_id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
                         Match
                       </button>
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 )
               })}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
       )}
       <p className="mt-3 text-xs text-fg-muted">
@@ -671,9 +671,9 @@ function Modal({ title, children, onClose, wide }: {
            onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold text-fg">{title}</h2>
-          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
+          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
         {children}
       </div>

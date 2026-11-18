@@ -9,7 +9,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ChevronLeft, ChevronRight, Download, Loader2, Mail, RefreshCw, X } from 'lucide-react'
-import { SortTh, sortParams, useSort } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { qboApi, ENTITY_TABS, type QboBackfillResult, type QboDetail } from '@/services/qboApi'
 import { financeDownload } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
@@ -212,15 +212,15 @@ function QboTabs() {
       <div className="flex flex-wrap items-center gap-2">
         <form className="flex items-center gap-1"
           onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); setPage(1) }}>
-          <input
+          <Input
             value={qInput}
             onChange={(e) => setQInput(e.target.value)}
             placeholder="Search name / doc #"
             className={cn(inputCls, 'w-56')}
           />
-          <button type="submit" className="rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle">
+          <Button variant="secondary" size="md" type="submit">
             Search
-          </button>
+          </Button>
         </form>
         <button
           type="button"
@@ -259,40 +259,40 @@ function QboTabs() {
       )}
 
       <div className="overflow-auto rounded-lg border border-line max-h-[70vh]">
-        <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 text-left text-xs text-fg-muted">
-              <tr>
+        <Table density="compact">
+            <THead className="sticky top-0 z-10">
+              <Tr>
                 {cols.map((c) => (
                   <SortTh key={c} label={c} sortKey={c} sort={sort} onSort={onSort}
                           align={isAmountCol(c) ? 'right' : 'left'}
                           className="whitespace-nowrap border-b border-line bg-surface-subtle px-3 py-2 font-medium" />
                 ))}
-              </tr>
-            </thead>
-            <tbody>
+              </Tr>
+            </THead>
+            <TBody>
               {isFetching && (
-                <tr><td colSpan={cols.length || 1} className="px-3 py-6 text-center text-fg-muted">
-                  <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
+                <Tr><Td align="center" colSpan={cols.length || 1} className="text-fg-muted">
+                  <Loader2 className="mx-auto h-5 w-5 animate-spin" /></Td></Tr>
               )}
               {!isFetching && items.length === 0 && (
-                <tr><td colSpan={cols.length || 1} className="px-3 py-6 text-center text-fg-muted">No rows.</td></tr>
+                <Tr><Td align="center" colSpan={cols.length || 1} className="text-fg-muted">No rows.</Td></Tr>
               )}
               {items.map((row, i) => (
-                <tr
+                <Tr
                   key={String(row.qbo_id)}
                   onClick={() => setOpenId(String(row.qbo_id))}
                   title="Open detail"
                   className={cn('cursor-pointer border-t border-line-subtle hover:bg-surface-sunken', i % 2 && 'bg-surface-subtle/40')}
                 >
                   {cols.map((c) => (
-                    <td key={c} className={cn('whitespace-nowrap px-3 py-2', isAmountCol(c) && 'text-right')}>
+                    <Td key={c} className={cn('whitespace-nowrap px-3 py-2', isAmountCol(c) && 'text-right')}>
                       {cell(c, row[c])}
-                    </td>
+                    </Td>
                   ))}
-                </tr>
+                </Tr>
               ))}
-            </tbody>
-        </table>
+            </TBody>
+        </Table>
       </div>
 
       <div className="mt-3 flex items-center justify-between text-sm text-fg-muted">
@@ -342,9 +342,9 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
       <div className="max-h-[85vh] w-full max-w-3xl overflow-auto rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between border-b border-line-subtle pb-3">
           <h2 className="text-base font-semibold text-fg">{entity} · {id}</h2>
-          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
+          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
 
         {!data && (
@@ -353,42 +353,42 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
 
         {data && (
           <>
-            <table className="mb-4 text-sm">
-              <tbody>
+            <Table className="mb-4">
+              <TBody>
                 {Object.entries(data.header).filter(([k]) => k !== 'raw').map(([k, v]) => (
-                  <tr key={k}>
-                    <td className="pr-4 align-top text-fg-muted">{k}</td>
-                    <td className="text-fg">{cell(k, v)}</td>
-                  </tr>
+                  <Tr key={k}>
+                    <Td className="pr-4 align-top text-fg-muted">{k}</Td>
+                    <Td className="text-fg">{cell(k, v)}</Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
 
             {data.lines.length > 0 && (
               <div className="mb-4">
                 <h3 className="mb-1 text-sm font-semibold text-fg-secondary">Lines</h3>
                 <div className="overflow-hidden rounded-lg border border-line">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-                        <tr>
+                    <Table density="compact">
+                      <THead>
+                        <Tr>
                           {Object.keys(data.lines[0]).filter((c) => c !== 'raw').map((c) => (
-                            <th key={c} className="whitespace-nowrap px-3 py-2 font-medium">{c}</th>
+                            <Th key={c}>{c}</Th>
                           ))}
-                        </tr>
-                      </thead>
-                      <tbody>
+                        </Tr>
+                      </THead>
+                      <TBody>
                         {data.lines.map((ln, i) => (
-                          <tr key={i} className="border-t border-line-subtle">
+                          <Tr key={i}>
                             {Object.keys(data.lines[0]).filter((c) => c !== 'raw').map((c) => (
-                              <td key={c} className={cn('whitespace-nowrap px-3 py-2', isAmountCol(c) && 'text-right')}>
+                              <Td key={c} className={cn('whitespace-nowrap px-3 py-2', isAmountCol(c) && 'text-right')}>
                                 {cell(c, ln[c])}
-                              </td>
+                              </Td>
                             ))}
-                          </tr>
+                          </Tr>
                         ))}
-                      </tbody>
-                    </table>
+                      </TBody>
+                    </Table>
                   </div>
                 </div>
               </div>
@@ -400,15 +400,15 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
                 <ul className="space-y-0.5 text-sm">
                   {data.attachments.map((a) => (
                     <li key={a.attachment_qbo_id}>
-                      <button
+                      <Button variant="link"
                         type="button"
                         disabled={downloadingId === a.attachment_qbo_id}
                         onClick={() => downloadAttachment(a.attachment_qbo_id)}
-                        className="flex items-center gap-1.5 text-primary-700 underline hover:no-underline disabled:opacity-50"
+                       
                       >
                         {downloadingId === a.attachment_qbo_id && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                         {a.attachment_qbo_id}
-                      </button>
+                      </Button>
                     </li>
                   ))}
                 </ul>
@@ -476,9 +476,9 @@ function VendorEmailBackfill() {
           <div className="max-h-[85vh] w-full max-w-2xl space-y-4 overflow-auto rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-line-subtle pb-3">
               <h2 className="text-base font-semibold text-fg">Backfill result</h2>
-              <button onClick={() => setResult(null)} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
+              <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={() => setResult(null)}>
                 <X className="h-5 w-5" />
-              </button>
+              </Button>
             </div>
 
             <p className="text-sm text-fg-secondary">
@@ -490,24 +490,24 @@ function VendorEmailBackfill() {
               <div>
                 <h3 className="mb-1 text-sm font-semibold text-fg-secondary">Filled</h3>
                 <div className="overflow-hidden rounded-lg border border-line">
-                  <table className="w-full text-sm">
-                    <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-                      <tr>
-                        <th className="px-3 py-2 font-medium">Code</th>
-                        <th className="px-3 py-2 font-medium">Vendor</th>
-                        <th className="px-3 py-2 font-medium">Email</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table density="compact">
+                    <THead>
+                      <Tr>
+                        <Th>Code</Th>
+                        <Th>Vendor</Th>
+                        <Th>Email</Th>
+                      </Tr>
+                    </THead>
+                    <TBody>
                       {result.updated.map((u) => (
-                        <tr key={u.code} className="border-t border-line-subtle">
-                          <td className="whitespace-nowrap px-3 py-1.5">{u.code}</td>
-                          <td className="px-3 py-1.5">{u.name}</td>
-                          <td className="px-3 py-1.5">{u.email}</td>
-                        </tr>
+                        <Tr key={u.code}>
+                          <Td className="whitespace-nowrap">{u.code}</Td>
+                          <Td>{u.name}</Td>
+                          <Td>{u.email}</Td>
+                        </Tr>
                       ))}
-                    </tbody>
-                  </table>
+                    </TBody>
+                  </Table>
                 </div>
               </div>
             )}

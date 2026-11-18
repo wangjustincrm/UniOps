@@ -12,7 +12,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Button } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -41,9 +41,9 @@ function Genealogy({ n, depth }: { n: BatchNode; depth: number }) {
       <div className={cn('flex flex-wrap items-center gap-2 rounded border px-2 py-1 text-xs',
                          off ? 'border-danger-line bg-danger-soft/60' : 'border-line bg-surface')}>
         {n.children.length > 0 ? (
-          <button onClick={() => setOpen(!open)} className="text-fg-muted">
+          <Button variant="subtle" size="xs" onClick={() => setOpen(!open)}>
             {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-          </button>
+          </Button>
         ) : <span className="inline-block w-3.5" />}
         <Link to={traceLink(n.material_code, n.period, n.period)} className="font-mono text-primary-700 underline">{n.material_code}</Link>
         <span className="font-mono text-fg-secondary">batch {n.batch}</span>
@@ -73,19 +73,19 @@ function BatchDetail({ material, batch }: { material: string; batch: string }) {
         <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm leading-relaxed text-fg-secondary">
           {data.summary.because.map((x, i) => <li key={i}>{x}</li>)}
         </ul>
-        <button onClick={() => setEv(!ev)} className="mt-2 inline-flex items-center gap-1 text-xs text-primary-700">
+        <Button variant="link" onClick={() => setEv(!ev)} className="mt-2 text-xs">
           {ev ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />} Evidence ({data.summary.evidence.length})
-        </button>
+        </Button>
         {ev && (
-          <table className="mt-1 w-full text-xs"><tbody>
+          <Table density="compact" className="mt-1"><TBody>
             {data.summary.evidence.map((e, i) => (
-              <tr key={i} className="border-t border-line-subtle">
-                <td className="w-1/3 py-1 pr-3 text-fg-muted">{e.label}</td>
-                <td className="py-1 pr-3 font-mono text-fg">{e.value}</td>
-                <td className="py-1 font-mono text-2xs text-fg-muted">{e.ref ?? ''}</td>
-              </tr>
+              <Tr key={i}>
+                <Td className="w-1/3 pr-3 text-fg-muted">{e.label}</Td>
+                <Td className="pr-3 font-mono text-fg">{e.value}</Td>
+                <Td className="font-mono text-2xs text-fg-muted">{e.ref ?? ''}</Td>
+              </Tr>
             ))}
-          </tbody></table>
+          </TBody></Table>
         )}
       </div>
       <div>
@@ -136,7 +136,7 @@ export default function BatchCostPage() {
           <input type="month" value={dFrom} onChange={(e) => setDFrom(e.target.value)} className="rounded-lg border border-line-strong px-2 py-1" />
           <label className="text-xs text-fg-muted">To</label>
           <input type="month" value={dTo} onChange={(e) => setDTo(e.target.value)} className="rounded-lg border border-line-strong px-2 py-1" />
-          <button type="submit" disabled={!draft.trim()} className="rounded-lg bg-primary-700 px-3 py-1 text-white disabled:opacity-40">Show batches</button>
+          <Button size="xs" type="submit" disabled={!draft.trim()}>Show batches</Button>
           {isFetching && <Loader2 className="h-4 w-4 animate-spin text-fg-muted" />}
         </form>
         {!material ? (
@@ -146,14 +146,14 @@ export default function BatchCostPage() {
         ) : (
           <>
             <div className="mb-6 rounded-lg border border-primary-700/30 bg-primary-50/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Summary</p>
+              <p className="text-xs font-semibold text-primary-700">Summary</p>
               <p className="mt-1 text-base font-semibold leading-snug text-fg">{data.headline}</p>
               {data.receipts_without_batch > 0 && <p className="mt-1 text-xs text-fg-secondary">{data.receipts_without_batch} completion receipt line(s) carry no batch number and are not listed.</p>}
             </div>
-            <h2 className="mb-3 border-b border-line pb-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">Batches — click one for its analysis</h2>
+            <h2 className="mb-3 border-b border-line pb-1 text-xs font-semibold text-fg-muted">Batches — click one for its analysis</h2>
             <div className="overflow-x-auto rounded-lg border border-line">
-              <table className="w-full text-xs">
-                <thead className="bg-surface-subtle text-left text-fg-muted"><tr>
+              <Table density="compact">
+                <THead><Tr>
                   <SortTh label="Batch" sortKey="batch" sort={sort} onSort={onSort} className="px-2 py-1.5 font-medium" />
                   <SortTh label="Month" sortKey="month" sort={sort} onSort={onSort} className="px-2 py-1.5 font-medium" />
                   <SortTh label="Qty" sortKey="qty" sort={sort} onSort={onSort} align="right" className="px-2 py-1.5 font-medium" />
@@ -161,30 +161,30 @@ export default function BatchCostPage() {
                   <SortTh label="Actual unit cost" sortKey="actual_unit" sort={sort} onSort={onSort} align="right" className="px-2 py-1.5 font-medium" />
                   <SortTh label="NC − actual" sortKey="variance" sort={sort} onSort={onSort} align="right" className="px-2 py-1.5 font-medium" />
                   <SortTh label="Basis" sortKey="basis" sort={sort} onSort={onSort} className="px-2 py-1.5 font-medium" />
-                </tr></thead>
-                <tbody>
+                </Tr></THead>
+                <TBody>
                   {batches.map((b) => {
                     const off = Math.abs(b.variance) >= Math.max(0.005 * Math.abs((b.actual_unit ?? 0) * b.qty), 1)
                     return (
                       <Fragment key={b.batch}>
-                        <tr onClick={() => setOpen(open === b.batch ? null : b.batch)}
+                        <Tr onClick={() => setOpen(open === b.batch ? null : b.batch)}
                             className={cn('cursor-pointer border-t border-line-subtle hover:bg-surface-subtle', off && 'bg-danger-soft/50')}>
-                          <td className="px-2 py-1.5 font-mono">{open === b.batch ? '▾' : '▸'} {b.batch}</td>
-                          <td className="px-2 py-1.5 font-mono">{b.period}</td>
-                          <td className="px-2 py-1.5 text-right font-mono tabular-nums">{qty(b.qty)}</td>
-                          <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', (b.nc_unit ?? 0) < 0 && 'text-danger-fg')}>{num(b.nc_unit, 4)}</td>
-                          <td className="px-2 py-1.5 text-right font-mono tabular-nums">{num(b.actual_unit, 4)}</td>
-                          <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', off && 'font-semibold text-danger-fg')}>{num(b.variance)}</td>
-                          <td className="px-2 py-1.5 text-fg-muted">{b.basis === 'month' ? 'month (no order)' : `order ${b.mo_codes.join(', ')}`}</td>
-                        </tr>
+                          <Td className="font-mono">{open === b.batch ? '▾' : '▸'} {b.batch}</Td>
+                          <Td className="font-mono">{b.period}</Td>
+                          <Td align="right" className="font-mono tabular-nums">{qty(b.qty)}</Td>
+                          <Td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', (b.nc_unit ?? 0) < 0 && 'text-danger-fg')}>{num(b.nc_unit, 4)}</Td>
+                          <Td align="right" className="font-mono tabular-nums">{num(b.actual_unit, 4)}</Td>
+                          <Td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', off && 'font-semibold text-danger-fg')}>{num(b.variance)}</Td>
+                          <Td className="text-fg-muted">{b.basis === 'month' ? 'month (no order)' : `order ${b.mo_codes.join(', ')}`}</Td>
+                        </Tr>
                         {open === b.batch && (
-                          <tr><td colSpan={7} className="bg-surface-subtle/60 px-3"><BatchDetail material={material} batch={b.batch} /></td></tr>
+                          <Tr><Td colSpan={7} className="bg-surface-subtle/60"><BatchDetail material={material} batch={b.batch} /></Td></Tr>
                         )}
                       </Fragment>
                     )
                   })}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
           </>
         )}

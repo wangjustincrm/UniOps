@@ -13,7 +13,7 @@ import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, CreditCard, Landmark, Loader2, Pencil, Plus, X } from 'lucide-react'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -96,11 +96,11 @@ export default function BankSettingsPage() {
         )}
 
         <div className="mb-3 flex flex-wrap items-center gap-3">
-          <select value={kindFilter} onChange={(e) => setKindFilter(e.target.value)} className={cn(inputCls, 'w-44')}>
+          <Select value={kindFilter} onChange={(e) => setKindFilter(e.target.value)} className={cn(inputCls, 'w-44')}>
             <option value="">All accounts</option>
             <option value="bank">Bank Accounts</option>
             <option value="credit_card">Credit Cards</option>
-          </select>
+          </Select>
           {canManage && (
             <button onClick={() => setEditing({ kind: 'bank', currency: 'CAD', is_active: true })}
                     className={cn(primaryBtn, 'ml-auto')}>
@@ -110,9 +110,9 @@ export default function BankSettingsPage() {
         </div>
 
         <div className="overflow-hidden rounded-lg border border-line">
-          <table className="w-full text-sm">
-            <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-              <tr>
+          <Table density="compact">
+            <THead>
+              <Tr>
                 <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className="px-3 py-2" />
                 <SortTh label="Bank / Issuer" sortKey="bank" sort={sort} onSort={onSort} className="px-3 py-2" />
                 <SortTh label="Type" sortKey="kind" sort={sort} onSort={onSort} className="px-3 py-2 w-32" />
@@ -121,47 +121,47 @@ export default function BankSettingsPage() {
                 <SortTh label="GL Account" sortKey="gl" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
                 <SortTh label="NC bank account" sortKey="nc" sort={sort} onSort={onSort} className="px-3 py-2 w-44" />
                 <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-3 py-2 w-20" />
-                <th className="px-3 py-2 w-16" />
-              </tr>
-            </thead>
-            <tbody>
+                <Th className="w-16" />
+              </Tr>
+            </THead>
+            <TBody>
               {isFetching && (
-                <tr><td colSpan={9} className="px-3 py-6 text-center text-fg-muted">
-                  <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
+                <Tr><Td align="center" colSpan={9} className="text-fg-muted">
+                  <Loader2 className="mx-auto h-5 w-5 animate-spin" /></Td></Tr>
               )}
               {!isFetching && rows.length === 0 && (
-                <tr><td colSpan={9} className="px-3 py-6 text-center text-fg-muted">No accounts.</td></tr>
+                <Tr><Td align="center" colSpan={9} className="text-fg-muted">No accounts.</Td></Tr>
               )}
               {rows.map((a, i) => (
-                <tr key={a.id} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40', !a.is_active && 'opacity-50')}>
-                  <td className="px-3 py-2 font-medium text-fg">{a.name}</td>
-                  <td className="px-3 py-2 text-fg-secondary">{a.bank_name}</td>
-                  <td className="px-3 py-2"><KindBadge kind={a.kind} /></td>
-                  <td className="px-3 py-2 font-mono text-xs text-fg-muted">{a.account_masked ? `…${a.account_masked}` : '—'}</td>
-                  <td className="px-3 py-2 text-xs text-fg-muted">{a.currency}</td>
-                  <td className="px-3 py-2 font-mono text-xs">{a.ledger_account_code || <span className="text-warning-fg">unmapped</span>}</td>
-                  <td className="px-3 py-2 font-mono text-xs">
+                <Tr key={a.id} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40', !a.is_active && 'opacity-50')}>
+                  <Td className="font-medium text-fg">{a.name}</Td>
+                  <Td className="text-fg-secondary">{a.bank_name}</Td>
+                  <Td><KindBadge kind={a.kind} /></Td>
+                  <Td className="font-mono text-xs text-fg-muted">{a.account_masked ? `…${a.account_masked}` : '—'}</Td>
+                  <Td className="text-xs text-fg-muted">{a.currency}</Td>
+                  <Td className="font-mono text-xs">{a.ledger_account_code || <span className="text-warning-fg">unmapped</span>}</Td>
+                  <Td className="font-mono text-xs">
                     {a.nc_bank_account_code
                       ? a.nc_bank_account_code
                       : <span className="text-warning-fg" title="Without this the account has no ledger side to reconcile against">not linked</span>}
-                  </td>
-                  <td className="px-3 py-2">
+                  </Td>
+                  <Td>
                     <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium',
                       a.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                       {a.is_active ? 'active' : 'inactive'}
                     </span>
-                  </td>
-                  <td className="px-3 py-2 text-right">
+                  </Td>
+                  <Td align="right">
                     {canManage && (
-                      <button onClick={() => setEditing(a)} className="rounded p-1 text-fg-muted hover:text-primary-700">
+                      <Button aria-label="Edit" variant="subtle" size="icon-xs" onClick={() => setEditing(a)}>
                         <Pencil className="h-4 w-4" />
-                      </button>
+                      </Button>
                     )}
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
         <p className="mt-2 text-xs text-fg-muted">
           Credit cards map to a liability GL account (e.g. 2050 Credit Card Payable); bank accounts map to a cash asset (e.g. 1010).
@@ -223,56 +223,56 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
       <div className="w-full max-w-md rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold text-fg">{isNew ? 'New account' : 'Edit account'}</h2>
-          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary"><X className="h-5 w-5" /></button>
+          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}><X className="h-5 w-5" /></Button>
         </div>
         <div className="grid gap-3">
           <label className="flex min-w-0 flex-col gap-1 text-sm">
             <span className="text-fg-secondary">Type</span>
-            <select value={f.kind ?? 'bank'} onChange={(e) => set({ kind: e.target.value })} className={inputCls}>
+            <Select value={f.kind ?? 'bank'} onChange={(e) => set({ kind: e.target.value })} className={inputCls}>
               <option value="bank">Bank Account</option>
               <option value="credit_card">Credit Card</option>
-            </select>
+            </Select>
           </label>
           <label className="flex min-w-0 flex-col gap-1 text-sm">
             <span className="text-fg-secondary">{isCard ? 'Card name' : 'Account name'}</span>
-            <input value={f.name ?? ''} onChange={(e) => set({ name: e.target.value })}
+            <Input value={f.name ?? ''} onChange={(e) => set({ name: e.target.value })}
                    placeholder={isCard ? 'e.g. Amex Corporate' : 'e.g. RBC Operating'} className={inputCls} />
           </label>
           <div className="grid grid-cols-2 gap-3">
             <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="text-fg-secondary">{isCard ? 'Card issuer' : 'Bank'}</span>
-              <input value={f.bank_name ?? ''} onChange={(e) => set({ bank_name: e.target.value })}
+              <Input value={f.bank_name ?? ''} onChange={(e) => set({ bank_name: e.target.value })}
                      placeholder={isCard ? 'Visa / MC / Amex' : 'Royal Bank of Canada'} className={inputCls} />
             </label>
             <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="text-fg-secondary">{isCard ? 'Card last 4' : 'Account last 4'}</span>
-              <input value={f.account_masked ?? ''} onChange={(e) => set({ account_masked: e.target.value })} className={inputCls} />
+              <Input value={f.account_masked ?? ''} onChange={(e) => set({ account_masked: e.target.value })} className={inputCls} />
             </label>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="text-fg-secondary">Currency</span>
-              <select value={f.currency ?? 'CAD'} onChange={(e) => set({ currency: e.target.value })} className={inputCls}>
+              <Select value={f.currency ?? 'CAD'} onChange={(e) => set({ currency: e.target.value })} className={inputCls}>
                 {['CAD', 'USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}
-              </select>
+              </Select>
             </label>
             <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="text-fg-secondary">GL account code</span>
-              <input value={f.ledger_account_code ?? ''} onChange={(e) => set({ ledger_account_code: e.target.value })}
+              <Input value={f.ledger_account_code ?? ''} onChange={(e) => set({ ledger_account_code: e.target.value })}
                      placeholder={isCard ? '2050 (liability)' : '1010 (cash)'} className={cn(inputCls, 'font-mono')} />
             </label>
           </div>
           {!isCard && (
             <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="text-fg-secondary">NC bank account</span>
-              <select value={f.nc_bank_account_code ?? ''}
+              <Select value={f.nc_bank_account_code ?? ''}
                       onChange={(e) => set({ nc_bank_account_code: e.target.value || null })}
                       className={cn(inputCls, 'truncate')}>
                 <option value="">— not linked —</option>
                 {ncAccounts.map((n) => (
                   <option key={n.code} value={n.code}>{n.label} · {n.currency}</option>
                 ))}
-              </select>
+              </Select>
               <span className="text-xs text-fg-muted">
                 {ncHint ?? 'Which account NC\u2019s 100201 calls this one. Bank Reconciliation reads the ledger side through it \u2014 without it there is nothing to reconcile against.'}
               </span>
@@ -284,7 +284,7 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
               : 'Bank payments credit this cash asset account.'}
           </p>
           <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
-            <input type="checkbox" checked={f.is_active ?? true} onChange={(e) => set({ is_active: e.target.checked })} />
+            <Checkbox checked={f.is_active ?? true} onChange={(e) => set({ is_active: e.target.checked })} />
             Active
           </label>
         </div>

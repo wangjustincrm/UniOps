@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, X } from 'lucide-react'
-import { SortTh, sortParams, useSort } from '@uniops/shell'
+import { SortTh, sortParams, useSort, TBody, TFoot, THead, Table, Td, Tr, Button } from '@uniops/shell'
 import { ListPager } from '@/components/ListPager'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -95,17 +95,17 @@ export function UnallocatedLinesModal({ fiscalYear, window: win, windowLabel,
           <span className="text-xs text-fg-muted">{windowLabel} {fiscalYear}</span>
           <span className="ml-auto flex items-center gap-2 text-xs text-fg-muted">
             {data ? `${lineCount} lines` : <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            <button onClick={onClose} aria-label="Close"
-                    className="cursor-pointer rounded-md p-1.5 text-fg-muted transition-colors hover:bg-surface-sunken focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+            <Button variant="subtle" size="icon-sm" onClick={onClose} aria-label="Close"
+                   >
               <X className="h-4 w-4" />
-            </button>
+            </Button>
           </span>
         </header>
 
         <div className="flex-1 overflow-auto">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10">
-              <tr className="border-b border-line bg-surface-subtle/95 text-xs font-medium text-fg-secondary backdrop-blur">
+          <Table density="compact">
+            <THead className="sticky top-0 z-10">
+              <Tr className="bg-surface-subtle/95 text-xs font-medium text-fg-secondary backdrop-blur">
                 <SortTh label="Voucher" sortKey="voucher" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
                 <SortTh label="Account" sortKey="account" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
                 <SortTh label="Dept" sortKey="dept" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
@@ -113,25 +113,25 @@ export function UnallocatedLinesModal({ fiscalYear, window: win, windowLabel,
                 <SortTh label="Why" sortKey="why" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
                 <SortTh label="Debit" sortKey="debit" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
                 <SortTh label="Summary" sortKey="summary" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
-              </tr>
-            </thead>
-            <tbody>
+              </Tr>
+            </THead>
+            <TBody>
               {!data && (
-                <tr><td colSpan={7} className="px-3 py-8 text-center">
-                  <Loader2 className="mx-auto h-4 w-4 animate-spin text-fg-muted" /></td></tr>
+                <Tr><Td align="center" colSpan={7}>
+                  <Loader2 className="mx-auto h-4 w-4 animate-spin text-fg-muted" /></Td></Tr>
               )}
               {data && rows.length === 0 && (
-                <tr><td colSpan={7} className="px-3 py-8 text-center text-xs text-fg-muted">
-                  No lines in this window.</td></tr>
+                <Tr><Td align="center" colSpan={7} className="text-xs text-fg-muted">
+                  No lines in this window.</Td></Tr>
               )}
               {rows.map((r, i) => (
-                <tr key={`${r.jv_id}-${r.line_no}`}
+                <Tr key={`${r.jv_id}-${r.line_no}`}
                     className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
-                  <td className="px-3 py-1.5">
-                    <button onClick={() => onOpenJv(r.jv_id)}
-                            className="cursor-pointer font-mono text-xs text-primary-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+                  <Td>
+                    <Button variant="link" onClick={() => onOpenJv(r.jv_id)}
+                            className="font-mono text-xs">
                       {r.jv_number}
-                    </button>
+                    </Button>
                     <span className="ml-1 text-xs text-fg-muted">#{r.line_no}</span>
                     {r.posted === false && (
                       <span className="ml-1.5 rounded bg-warning-soft px-1.5 py-0.5 text-2xs font-medium text-warning-fg">
@@ -139,37 +139,37 @@ export function UnallocatedLinesModal({ fiscalYear, window: win, windowLabel,
                       </span>
                     )}
                     <div className="text-xs text-fg-muted">{r.fiscal_period}</div>
-                  </td>
-                  <td className="px-3 py-1.5 font-mono text-xs">{r.account_code}</td>
-                  <td className="px-3 py-1.5 font-mono text-xs text-fg-secondary">
+                  </Td>
+                  <Td className="font-mono text-xs">{r.account_code}</Td>
+                  <Td className="font-mono text-xs text-fg-secondary">
                     {r.department_code ?? '—'}
-                  </td>
-                  <td className="px-3 py-1.5 font-mono text-xs text-fg-secondary">
+                  </Td>
+                  <Td className="font-mono text-xs text-fg-secondary">
                     {r.nc_income_expense ?? <span className="text-danger-fg">(none)</span>}
-                  </td>
-                  <td className="px-3 py-1.5 text-xs text-fg-secondary">{whyLabel(r)}</td>
-                  <td className="px-3 py-1.5 text-right font-mono tabular-nums">
+                  </Td>
+                  <Td className="text-xs text-fg-secondary">{whyLabel(r)}</Td>
+                  <Td align="right" className="font-mono tabular-nums">
                     {Number(r.debit).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </td>
-                  <td className="max-w-md truncate px-3 py-1.5 text-xs text-fg-secondary"
-                      title={r.summary ?? undefined}>{r.summary}</td>
-                </tr>
+                  </Td>
+                  <Td className="max-w-md truncate text-xs text-fg-secondary"
+                      title={r.summary ?? undefined}>{r.summary}</Td>
+                </Tr>
               ))}
-            </tbody>
+            </TBody>
             {rows.length > 0 && (
-              <tfoot className="sticky bottom-0">
-                <tr className="border-t-2 border-line-strong bg-surface-subtle font-semibold">
-                  <td colSpan={5} className="px-3 py-2 text-xs">
+              <TFoot className="sticky bottom-0">
+                <Tr className="border-t-2 bg-surface-subtle font-semibold">
+                  <Td colSpan={5} className="text-xs">
                     Total of all {lineCount} lines
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums">
+                  </Td>
+                  <Td align="right" className="font-mono tabular-nums">
                     {total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </td>
-                  <td />
-                </tr>
-              </tfoot>
+                  </Td>
+                  <Td />
+                </Tr>
+              </TFoot>
             )}
-          </table>
+          </Table>
         </div>
         <ListPager page={page} pageSize={PAGE_SIZE} total={lineCount} noun="lines" onPage={setPage}
                    className="flex items-center justify-between border-t border-line-subtle px-4 py-2 text-sm text-fg-muted" />
