@@ -156,7 +156,7 @@ console.log('planPaste: exact 100/101 threshold boundary (MatrixGrid gates on to
 console.log('applyPasteUpdates')
 {
   const base = new Map([[cellKey('p0', 'm0'), 5]])
-  const next = applyPasteUpdates(base, [{ key: cellKey('p0', 'm0'), value: 0, rowIdx: 0, colIdx: 0 }])
+  const next = applyPasteUpdates(base, [{ key: cellKey('p0', 'm0'), value: 0 }])
   check('writing 0 deletes the sparse entry', !next.has(cellKey('p0', 'm0')))
 }
 
