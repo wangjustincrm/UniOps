@@ -68,6 +68,15 @@ export const METRICS = {
   // holding a radius + badge padding counts. Cards (rounded-lg, p-3 …) do not match.
   'badge-chrome-string': new RegExp(
     String.raw`(['"\x60])(?=[^'"\x60\n]*?(?<![\w-])rounded(?:-full|-md|-sm)?(?![\w-]))(?=[^'"\x60\n]*?(?<![\w-])px-(?:1|1\.5|2|2\.5)(?![\w-]))(?=[^'"\x60\n]*?(?<![\w-])py-(?:0|0\.5|px)(?![\w-]))[^'"\x60\n]*\1`, 'g'),
+  // A card / panel frame drawn by hand: radius + border + the plain surface on a block
+  // element. Use <Card> (page section) or <Card inset> (box inside a card). Floating
+  // menus (shadow-md/lg), state-coloured / dashed frames are other things and do not
+  // match; mark a deliberate exception data-panel.
+  'hand-card': new RegExp(
+    String.raw`<(?:div|section|article|aside|li)\b(?!(?:[^>{]|\{(?:[^{}]|\{[^{}]*\})*\})*\bdata-panel\b)(?:[^<>{}]|\{(?:[^{}]|\{[^{}]*\})*\})*?className=(?:"|\{)(?=[^>]{0,400}?(?<![\w-])rounded-(?:md|lg|xl|2xl)(?![\w-]))(?=[^>]{0,400}?(?<![\w-])border(?![\w-]))(?=[^>]{0,400}?(?<![\w-])bg-surface(?![\w-]))(?![^>]{0,400}?(?<![\w-])(?:shadow-(?:md|lg|xl|2xl)|border-(?:dashed|line-strong|warning-line|success-line|danger-line|info-line|primary-\d+))(?![\w-]))`, 'g'),
+  // The same frame kept in a string constant (const panel = 'rounded-xl border bg-surface …').
+  'card-chrome-string': new RegExp(
+    String.raw`(['"\x60])(?=[^'"\x60\n]*?(?<![\w-])rounded-(?:md|lg|xl|2xl)(?![\w-]))(?=[^'"\x60\n]*?(?<![\w-])border(?![\w-]))(?=[^'"\x60\n]*?(?<![\w-])bg-surface(?![\w-]))(?![^'"\x60\n]*?(?<![\w-])(?:shadow-(?:md|lg|xl|2xl)|border-(?:dashed|line-strong|warning-line|success-line|danger-line|info-line|primary-\d+))(?![\w-]))[^'"\x60\n]*\1`, 'g'),
   // emoji as icons / decoration
   'emoji': /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}\u{2705}\u{274C}\u{2B06}\u{27A1}]/gu,
 }

@@ -2,26 +2,38 @@
  "$comment": "UI ratchet baseline — counts may only go down. Regenerate with: node scripts/ui-guard.mjs --update",
  "totals": {
   "booking": {
-   "badge-chrome-string": 2
+   "badge-chrome-string": 2,
+   "card-chrome-string": 2
   },
   "epms": {
+   "card-chrome-string": 16,
    "badge-chrome-string": 3,
-   "shouting-type": 2
+   "shouting-type": 2,
+   "hand-card": 1
   },
   "finance": {
+   "card-chrome-string": 4,
    "badge-chrome-string": 3,
    "shouting-type": 3
   },
   "inventory": {
+   "hand-card": 1,
+   "card-chrome-string": 4,
    "shouting-type": 1
   },
+  "mrp": {
+   "card-chrome-string": 2
+  },
   "portal": {
+   "card-chrome-string": 4,
    "raw-control": 1,
    "raw-color": 1
   },
   "vms": {
    "raw-color": 2,
    "shouting-type": 2,
+   "card-chrome-string": 9,
+   "hand-card": 1,
    "badge-chrome-string": 1
   }
  },
@@ -29,17 +41,42 @@
   "booking/src/components/AttendeePicker.tsx": {
    "badge-chrome-string": 1
   },
+  "booking/src/pages/BookingCreatePage.tsx": {
+   "card-chrome-string": 1
+  },
+  "booking/src/pages/BookingEditPage.tsx": {
+   "card-chrome-string": 1
+  },
   "booking/src/pages/MeetingSummaryPage.tsx": {
    "badge-chrome-string": 1
+  },
+  "epms/src/components/dashboard/StatCard.tsx": {
+   "card-chrome-string": 1
   },
   "epms/src/components/po/PoFeePanel.tsx": {
    "badge-chrome-string": 1
   },
   "epms/src/pages/admin/AdminPanel.tsx": {
-   "shouting-type": 1
+   "shouting-type": 1,
+   "hand-card": 1
+  },
+  "epms/src/pages/budget/BudgetCatalogPage.tsx": {
+   "card-chrome-string": 1
+  },
+  "epms/src/pages/dashboard/ApClerkDashboard.tsx": {
+   "card-chrome-string": 2
+  },
+  "epms/src/pages/dashboard/ProcurementDashboard.tsx": {
+   "card-chrome-string": 3
+  },
+  "epms/src/pages/dashboard/SystemAdminDashboard.tsx": {
+   "card-chrome-string": 1
   },
   "epms/src/pages/invoices/CourierInvoiceReview.tsx": {
    "shouting-type": 1
+  },
+  "epms/src/pages/invoices/MatchPanel.tsx": {
+   "card-chrome-string": 8
   },
   "epms/src/pages/invoices/PdfSplitPanel.tsx": {
    "badge-chrome-string": 1
@@ -47,8 +84,15 @@
   "epms/src/pages/pa/PaCreatePage.tsx": {
    "badge-chrome-string": 1
   },
+  "finance/src/components/remittance/RemittanceEmailPreview.tsx": {
+   "card-chrome-string": 1
+  },
   "finance/src/lib/costAnalysis.tsx": {
-   "badge-chrome-string": 2
+   "badge-chrome-string": 2,
+   "card-chrome-string": 1
+  },
+  "finance/src/pages/budget/EpmsEmbed.tsx": {
+   "card-chrome-string": 1
   },
   "finance/src/pages/budget/FactorLibraryPage.tsx": {
    "badge-chrome-string": 1
@@ -56,18 +100,44 @@
   "finance/src/pages/finance/AccountsPayablePage.tsx": {
    "shouting-type": 1
   },
+  "finance/src/pages/finance/BudgetActualPage.tsx": {
+   "card-chrome-string": 1
+  },
   "finance/src/pages/finance/PaymentsPage.tsx": {
    "shouting-type": 1
   },
   "finance/src/pages/finance/TaxSettingsPage.tsx": {
    "shouting-type": 1
   },
+  "inventory/src/components/ScrollTable.tsx": {
+   "hand-card": 1,
+   "card-chrome-string": 1
+  },
+  "inventory/src/pages/nc/NcUi.tsx": {
+   "card-chrome-string": 1
+  },
+  "inventory/src/pages/trace/TracePage.tsx": {
+   "card-chrome-string": 2
+  },
   "inventory/src/pages/trace/TracePickers.tsx": {
    "shouting-type": 1
   },
+  "mrp/src/pages/consignment/ConsignmentStockPage.tsx": {
+   "card-chrome-string": 1
+  },
+  "mrp/src/pages/purchase/PurchaseSuggestionsPage.tsx": {
+   "card-chrome-string": 1
+  },
+  "portal/src/pages/PortalHome.tsx": {
+   "card-chrome-string": 2
+  },
   "portal/src/pages/admin/AdminPanel.tsx": {
    "raw-control": 1,
-   "raw-color": 1
+   "raw-color": 1,
+   "card-chrome-string": 1
+  },
+  "portal/src/pages/mdm/org/OrgChart.tsx": {
+   "card-chrome-string": 1
   },
   "vms/src/components/BadgePreview.tsx": {
    "raw-color": 1,
@@ -75,6 +145,34 @@
   },
   "vms/src/components/HealthDeclForm.tsx": {
    "raw-color": 1
+  },
+  "vms/src/components/HealthDeclView.tsx": {
+   "card-chrome-string": 1
+  },
+  "vms/src/pages/AuditLogPage.tsx": {
+   "card-chrome-string": 1
+  },
+  "vms/src/pages/CheckOutPage.tsx": {
+   "card-chrome-string": 1
+  },
+  "vms/src/pages/DashboardPage.tsx": {
+   "card-chrome-string": 1
+  },
+  "vms/src/pages/TaskInboxPage.tsx": {
+   "card-chrome-string": 1
+  },
+  "vms/src/pages/VisitCreatePage.tsx": {
+   "card-chrome-string": 1
+  },
+  "vms/src/pages/VisitDetailPage.tsx": {
+   "hand-card": 1,
+   "card-chrome-string": 1
+  },
+  "vms/src/pages/admin/BadgeTemplatesPage.tsx": {
+   "card-chrome-string": 1
+  },
+  "vms/src/pages/admin/HealthQuestionsPage.tsx": {
+   "card-chrome-string": 1
   },
   "vms/src/pages/admin/ZonesPage.tsx": {
    "badge-chrome-string": 1

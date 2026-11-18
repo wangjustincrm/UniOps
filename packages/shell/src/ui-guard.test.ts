@@ -78,6 +78,20 @@ describe('ui-guard ratchet', () => {
     expect(hit("const row = 'rounded-md px-3 py-2 text-sm'")).toBe(0)
     expect(hit("const tone = 'success'")).toBe(0)
   })
+  it('hand-card / card-chrome-string: a hand-drawn panel frame; not menus, state frames or Card', async () => {
+    const guard = await import(/* @vite-ignore */ guardPath)
+    const card = (src: string) => src.match(guard.METRICS['hand-card'])?.length ?? 0
+    const str = (src: string) => src.match(guard.METRICS['card-chrome-string'])?.length ?? 0
+    expect(card('<div className="rounded-xl border border-line bg-surface p-5">x</div>')).toBe(1)
+    expect(card('<section className={cn("rounded-lg border bg-surface", open && "p-4")}>')).toBe(1)
+    expect(card('<div className="absolute rounded-lg border bg-surface shadow-lg">menu</div>')).toBe(0)
+    expect(card('<div className="rounded-lg border border-warning-line bg-surface p-3">!</div>')).toBe(0)
+    expect(card('<div className="rounded-lg border bg-surface-subtle p-3">tinted</div>')).toBe(0)
+    expect(card('<div data-panel className="rounded-xl border bg-surface">x</div>')).toBe(0)
+    expect(card('<Card inset className="p-4">x</Card>')).toBe(0)
+    expect(str("const panel = 'rounded-xl border border-line bg-surface p-6'")).toBe(1)
+    expect(str("const menu = 'rounded-lg border bg-surface shadow-lg'")).toBe(0)
+  })
   it('a "/*" inside a string is not a comment (accept="image/*")', async () => {
     const guard = await import(/* @vite-ignore */ guardPath)
     const src = '<FileInput accept="image/*" />\n<button>x</button>\n/* gone */<input />'
