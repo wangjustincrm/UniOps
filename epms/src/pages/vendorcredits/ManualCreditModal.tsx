@@ -1,11 +1,10 @@
-import { useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useState, useRef } from 'react'
 import { AlertTriangle, Mail, Paperclip, Search, X } from 'lucide-react'
 
 import { useCreateVendorCredit } from '@/hooks/useVendorCredits'
 import { useVendors } from '@/hooks/useVendors'
 import { cn, formatAmount, todayISO } from '@/lib/utils'
-import { FileInput, Input, Select, Textarea, Button, MenuItem } from '@uniops/shell'
+import { Button, DropdownPortal, FileInput, Input, MenuItem, Modal, Select, Textarea, useAnchorRect } from '@uniops/shell'
 import {
   CREDIT_EVIDENCE_ACCEPT, creditAttachmentService, type VendorCredit,
 } from '@/services/vendorCredits'
@@ -39,6 +38,8 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
   const [vendor, setVendor] = useState<Vendor | null>(null)
   const [vendorQuery, setVendorQuery] = useState('')
   const [vendorOpen, setVendorOpen] = useState(false)
+  const vendorAnchorRef = useRef<HTMLDivElement>(null)
+  const vendorRect = useAnchorRect(vendorOpen, vendorAnchorRef)
   const { data: vendorsData } = useVendors({ search: vendorQuery || undefined, active_only: true, page_size: 50 })
   const vendorOptions = vendorsData?.items ?? []
 
@@ -121,31 +122,20 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
     onCreated(credit)
   }
 
-  const input = (bad: boolean) => cn(
-    'h-9 w-full rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-    submitted && bad ? 'border-danger-400' : 'border-line-strong',
-  )
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
-      <div className="flex max-h-[92vh] w-full max-w-2xl flex-col rounded-2xl bg-surface shadow-2xl">
-        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-50">
-              <Mail className="h-5 w-5 text-primary-600" />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-fg">Record Manual Credit</h2>
-              <p className="text-xs text-fg-muted">
-                For a credit the vendor confirmed in writing but will not issue a credit note for
-              </p>
-            </div>
-          </div>
-          <Button variant="subtle" size="icon-xs" onClick={onClose} disabled={busy} aria-label="Close"
-                 >
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      busy={busy}
+      // Closed only by its buttons, as before.
+      closeOnEscape={false}
+      size="lg"
+      icon={<Mail />}
+      title="Record Manual Credit"
+      description="For a credit the vendor confirmed in writing but will not issue a credit note for"
+      // The two views keep their own scroll area and footer, as before.
+      bodyClassName="flex min-h-0 flex-col overflow-hidden p-0"
+    >
 
         {partial ? (
           <div className="flex flex-col gap-3 px-6 py-5 text-sm">
@@ -179,14 +169,14 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                   <label className="text-xs font-medium text-fg-secondary">
                     Vendor <span className="ml-0.5 text-danger-fg">*</span>
                   </label>
-                  <div className="relative">
+                  <div className="relative" ref={vendorAnchorRef}>
                     <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-muted" />
                     <Input
                       type="text" placeholder="Search vendor by name or code…"
                       value={vendor ? vendor.name : vendorQuery}
                       onFocus={() => { setVendorOpen(true); if (vendor) setVendorQuery('') }}
                       onChange={(e) => { setVendorQuery(e.target.value); setVendor(null); setVendorOpen(true) }}
-                      className={cn(input(missing.vendor), 'pl-8 pr-8')}
+                      error={submitted && missing.vendor} className="pl-8 pr-8"
                     />
                     {vendor && (
                       <Button variant="subtle" size="icon-xs" type="button" aria-label="Clear vendor"
@@ -197,10 +187,9 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                     )}
                   </div>
                   {submitted && missing.vendor && <p className="text-xs text-danger-fg">Select a vendor</p>}
-                  {vendorOpen && !vendor && (
+                  {vendorOpen && !vendor && vendorRect && (
                     <>
-                      <div className="fixed inset-0 z-10" onClick={() => setVendorOpen(false)} />
-                      <div className="absolute left-0 top-full z-20 mt-1 max-h-44 w-full overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-lg">
+                      <DropdownPortal anchorRect={vendorRect} onClose={() => setVendorOpen(false)} className="max-h-44 overflow-y-auto">
                         {vendorOptions.map((v) => (
                           <MenuItem key={v.id} type="button"
                                   onClick={() => { setVendor({ id: v.id, name: v.name, code: v.code }); setVendorOpen(false); setVendorQuery('') }}
@@ -210,7 +199,7 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                           </MenuItem>
                         ))}
                         {vendorOptions.length === 0 && <p className="px-3 py-2 text-xs text-fg-muted">No vendors found</p>}
-                      </div>
+                      </DropdownPortal>
                     </>
                   )}
                 </div>
@@ -220,7 +209,7 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                     Vendor Reference # <span className="ml-0.5 text-danger-fg">*</span>
                   </label>
                   <Input value={reference} onChange={(e) => setReference(e.target.value)}
-                         placeholder="e.g. 8480321003REV" className={cn(input(missing.reference), 'font-mono')} />
+                         placeholder="e.g. 8480321003REV" error={submitted && missing.reference} className="font-mono" />
                   <p className="text-2xs text-fg-muted">
                     The number the vendor asked you to quote. It goes on the remittance, and blocks recording the same credit twice.
                   </p>
@@ -233,12 +222,12 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                     Credit Date <span className="ml-0.5 text-danger-fg">*</span>
                   </label>
                   <Input type="date" value={creditDate} onChange={(e) => setCreditDate(e.target.value)}
-                         className={input(missing.date)} />
+                         error={submitted && missing.date} />
                   <p className="text-2xs text-fg-muted">Usually the date of the vendor's email.</p>
                 </div>
                 <div className="col-span-2 flex flex-col gap-1">
                   <label className="text-xs font-medium text-fg-secondary">Currency</label>
-                  <Select value={currency} onChange={(e) => setCurrency(e.target.value)} className={input(false)}>
+                  <Select value={currency} onChange={(e) => setCurrency(e.target.value)} >
                     {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
                   </Select>
                   <p className="text-2xs text-fg-muted">Only nets off payments in the same currency.</p>
@@ -251,12 +240,12 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                     Amount (pre-tax) <span className="ml-0.5 text-danger-fg">*</span>
                   </label>
                   <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
-                         placeholder="2216.15" className={cn(input(missing.amount), 'font-mono')} />
+                         placeholder="2216.15" error={submitted && missing.amount} className="font-mono" />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-medium text-fg-secondary">Tax</label>
                   <Input type="number" step="0.01" value={tax} onChange={(e) => setTax(e.target.value)}
-                         placeholder="0.00" className={cn(input(false), 'font-mono')} />
+                         placeholder="0.00" className="font-mono" />
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className="text-xs font-medium text-fg-secondary">Credit Total</span>
@@ -273,7 +262,7 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-fg-secondary">PO # (optional)</label>
                 <Input value={poNumber} onChange={(e) => setPoNumber(e.target.value)}
-                       className={cn(input(false), 'font-mono')} />
+                       className="font-mono" />
               </div>
 
               <div className="flex flex-col gap-1">
@@ -348,8 +337,6 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
             </div>
           </>
         )}
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   )
 }

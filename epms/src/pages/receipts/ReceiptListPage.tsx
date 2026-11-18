@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, Receipt, Plus, CheckCircle2, XCircle, Trash2, Paperclip, AlertTriangle } from 'lucide-react'
-import { SortTh, sortParams, useSort, type Sort, Input, Select, TBody, THead, Table, Td, Tr } from '@uniops/shell'
+import { ChipGroup, Input, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, type Sort, useSort } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, statusLabel } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
@@ -185,20 +185,7 @@ export default function ReceiptListPage() {
           ))}
         </Select>
         <div className="flex flex-wrap gap-1.5">
-          {STATUS_FILTERS.map((f) => (
-            <button
-              key={f.value}
-              onClick={() => { setStatusFilter(f.value); setPage(1) }}
-              className={cn(
-                'px-3 py-1 rounded-full text-xs font-medium transition-colors',
-                statusFilter === f.value
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-surface-sunken text-fg-secondary hover:bg-surface-strong'
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
+          <ChipGroup label="Status" items={STATUS_FILTERS.map((f) => ({ key: f.value, label: f.label }))} value={statusFilter} onChange={(k) => { setStatusFilter(k as typeof statusFilter); setPage(1) }} />
         </div>
       </div>
 
@@ -312,18 +299,6 @@ function SortHead({ label, sortKey, sort, onSort, align = 'left' }: {
   )
 }
 
-function Th({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'right' }) {
-  return (
-    <th
-      className={cn(
-        'px-4 py-3 text-xs font-semibold text-fg-muted whitespace-nowrap',
-        align === 'right' ? 'text-right' : 'text-left'
-      )}
-    >
-      {children}
-    </th>
-  )
-}
 
 function ReceiptRow({
   receipt, receivedByName, canVoid, canReview,

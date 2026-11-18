@@ -9,11 +9,11 @@
    "raw-table": 60
   },
   "epms": {
-   "raw-control": 438,
-   "raw-table": 606,
-   "raw-overlay": 20,
-   "shouting-type": 204,
-   "emoji": 15
+   "raw-control": 263,
+   "raw-table": 339,
+   "raw-overlay": 11,
+   "shouting-type": 112,
+   "emoji": 4
   },
   "finance": {
    "raw-control": 507,
@@ -145,41 +145,11 @@
    "raw-control": 20,
    "shouting-type": 1
   },
-  "epms/src/components/agreements/MilestoneEditor.tsx": {
-   "raw-control": 5,
-   "raw-table": 19
-  },
-  "epms/src/components/agreements/ReceiptEntryForm.tsx": {
-   "raw-control": 3
-  },
-  "epms/src/components/agreements/ReceiptTable.tsx": {
-   "raw-control": 1,
-   "raw-table": 14
-  },
-  "epms/src/components/agreements/ReceiptVendorPicker.tsx": {
-   "raw-control": 3
-  },
-  "epms/src/components/agreements/RecurringFields.tsx": {
-   "raw-control": 6
-  },
-  "epms/src/components/agreements/RejectReceiptDialog.tsx": {
-   "raw-control": 2,
-   "raw-overlay": 1
-  },
-  "epms/src/components/agreements/ScheduleTable.tsx": {
-   "raw-table": 33
-  },
-  "epms/src/components/agreements/UserCombobox.tsx": {
-   "raw-control": 3
-  },
   "epms/src/components/budget/BudgetAccountCascade.tsx": {
    "raw-control": 3
   },
   "epms/src/components/budget/BudgetAccountSelect.tsx": {
    "raw-control": 1
-  },
-  "epms/src/components/pa/DirectPaBudgetPanel.tsx": {
-   "shouting-type": 1
   },
   "epms/src/pages/admin/AdminPanel.tsx": {
    "raw-control": 60,
@@ -190,29 +160,6 @@
   "epms/src/pages/admin/PmsImportPanel.tsx": {
    "raw-control": 3,
    "shouting-type": 3
-  },
-  "epms/src/pages/agreements/AgreementCreatePage.tsx": {
-   "raw-control": 15,
-   "shouting-type": 1,
-   "emoji": 3
-  },
-  "epms/src/pages/agreements/AgreementDetailPage.tsx": {
-   "raw-control": 7,
-   "raw-table": 11,
-   "raw-overlay": 1,
-   "shouting-type": 10,
-   "emoji": 1
-  },
-  "epms/src/pages/agreements/AgreementEditPage.tsx": {
-   "raw-control": 10,
-   "shouting-type": 1,
-   "emoji": 1
-  },
-  "epms/src/pages/agreements/AgreementListPage.tsx": {
-   "raw-control": 3,
-   "raw-table": 17,
-   "shouting-type": 2,
-   "emoji": 1
   },
   "epms/src/pages/budget/BreakdownMatrixModal.tsx": {
    "raw-control": 11,
@@ -317,51 +264,6 @@
   "epms/src/pages/invoices/CourierInvoiceReview.tsx": {
    "shouting-type": 1
   },
-  "epms/src/pages/pa/DerivedPaLinesTable.tsx": {
-   "raw-table": 13,
-   "shouting-type": 4
-  },
-  "epms/src/pages/pa/DirectPaCreate.tsx": {
-   "raw-control": 3,
-   "raw-table": 15,
-   "shouting-type": 2
-  },
-  "epms/src/pages/pa/DirectPaEditForm.tsx": {
-   "raw-control": 3,
-   "shouting-type": 1
-  },
-  "epms/src/pages/pa/FreightPaCreate.tsx": {
-   "raw-control": 4,
-   "raw-table": 29,
-   "shouting-type": 3
-  },
-  "epms/src/pages/pa/FreightPaEditForm.tsx": {
-   "raw-control": 2,
-   "shouting-type": 1
-  },
-  "epms/src/pages/pa/PaCreatePage.tsx": {
-   "raw-control": 22,
-   "raw-table": 17,
-   "shouting-type": 13
-  },
-  "epms/src/pages/pa/PaDetailPage.tsx": {
-   "raw-control": 18,
-   "raw-table": 34,
-   "raw-overlay": 3,
-   "shouting-type": 22,
-   "emoji": 4
-  },
-  "epms/src/pages/pa/PaEditPage.tsx": {
-   "raw-control": 18,
-   "raw-table": 17,
-   "shouting-type": 11
-  },
-  "epms/src/pages/pa/PaListPage.tsx": {
-   "raw-control": 2,
-   "raw-table": 14,
-   "shouting-type": 6,
-   "emoji": 1
-  },
   "epms/src/pages/parts/PartsListPage.tsx": {
    "raw-control": 27,
    "raw-table": 19,
@@ -376,19 +278,6 @@
    "raw-table": 17,
    "shouting-type": 10
   },
-  "epms/src/pages/receipts/ReceiptCreatePage.tsx": {
-   "raw-control": 4,
-   "shouting-type": 1
-  },
-  "epms/src/pages/receipts/ReceiptDetailPage.tsx": {
-   "raw-control": 6,
-   "shouting-type": 5
-  },
-  "epms/src/pages/receipts/ReceiptListPage.tsx": {
-   "raw-control": 3,
-   "raw-table": 19,
-   "shouting-type": 3
-  },
   "epms/src/pages/reports/ReportCentrePage.tsx": {
    "raw-control": 12,
    "shouting-type": 1
@@ -396,21 +285,6 @@
   "epms/src/pages/tasks/TaskInboxPage.tsx": {
    "raw-control": 4,
    "shouting-type": 8
-  },
-  "epms/src/pages/vendorcredits/CreditDetailDrawer.tsx": {
-   "raw-control": 7,
-   "raw-overlay": 1,
-   "shouting-type": 4
-  },
-  "epms/src/pages/vendorcredits/ManualCreditModal.tsx": {
-   "raw-control": 16,
-   "raw-overlay": 2
-  },
-  "epms/src/pages/vendorcredits/VendorCreditsPage.tsx": {
-   "raw-control": 9,
-   "raw-table": 15,
-   "raw-overlay": 1,
-   "shouting-type": 1
   },
   "epms/src/pages/vendors/ErpVendorImportDrawer.tsx": {
    "raw-control": 12,

@@ -43,7 +43,7 @@ import {
 } from '@/services/agreementReceipts'
 import type { DocumentStatus } from '@/types'
 
-import { FileInput, Textarea } from '@uniops/shell'
+import { ChoiceCard, FileInput, Textarea } from '@uniops/shell'
 const TYPE_OPTIONS: ReceiptType[] = ['counter_slip', 'delivery', 'service']
 
 // Why the edit form is locked, in the receipt's own terms. Never just a
@@ -448,20 +448,13 @@ function ReceiptDetail({
                   <label className="text-sm font-medium text-fg-secondary">Receipt type</label>
                   <div className="flex gap-3">
                     {TYPE_OPTIONS.map((t) => (
-                      <button
+                      <ChoiceCard selected={receiptType === t} className="flex-1 items-center px-4 py-2.5 text-sm font-medium"
                         key={t}
                         type="button"
                         onClick={() => touch(setReceiptType)(t)}
-                        disabled={anyPending}
-                        className={cn(
-                          'flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors',
-                          receiptType === t
-                            ? 'border-primary-600 bg-primary-50 text-primary-700'
-                            : 'border-line-strong text-fg-secondary hover:border-fg-faint',
-                        )}
-                      >
+                        disabled={anyPending}>
                         {RECEIPT_TYPE_LABELS[t]}
-                      </button>
+                      </ChoiceCard>
                     ))}
                   </div>
                 </div>
@@ -831,20 +824,15 @@ function ReceiptAttachmentsCard({
                 Download
               </Button>
               {canWrite && (
-                <button
+                <Button variant="danger-ghost" size="icon-xs" aria-label="Delete this file"
                   type="button"
                   onClick={() => handleDelete(att.id, att.filename)}
                   disabled={busy}
-                  title="Delete this file"
-                  className={cn(
-                    'text-fg-faint hover:text-danger-fg',
-                    busy && 'cursor-not-allowed opacity-50',
-                  )}
-                >
+                  title="Delete this file">
                   {pendingDeleteId === att.id
                     ? <span className="text-xs text-fg-muted">Deleting…</span>
                     : <X className="h-3.5 w-3.5" />}
-                </button>
+                </Button>
               )}
             </div>
           ))}

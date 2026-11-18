@@ -3,7 +3,6 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { DirectPaBudgetPanel } from '@/components/pa/DirectPaBudgetPanel'
 import { useDocTabTitle } from '@/components/BackLink'
 import { NotFoundState } from '@/components/shared/NotFoundState'
-import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { financeApi } from '@/lib/api'
 import {
@@ -41,7 +40,7 @@ import type { ApiPa } from '@/services/pa'
 import { historyLine } from '@/lib/approvalHistory'
 import { approvalNodeStates } from '@/lib/approvalTimeline'
 
-import { Checkbox, Select, TBody, TFoot, THead, Table, Td, Textarea, Th, Tr, MenuItem } from '@uniops/shell'
+import { Alert, Checkbox, FormField, MenuItem, Modal, Select, TBody, TFoot, THead, Table, Tabs, Td, Textarea, Th, Tr } from '@uniops/shell'
 // ─── Status config ────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<PaStatus, { label: string; variant: 'neutral' | 'warning' | 'info' | 'success' | 'danger' }> = {
@@ -157,45 +156,38 @@ function ApprovalModal({ action, paNumber, onConfirm, onClose, isPending, error 
   const [comment, setComment] = useState('')
   const needsComment = action !== 'approve'
   const cfg = {
-    approve: { title: 'Approve Payment Application', label: 'Approve', icon: <CheckCircle2 className="h-5 w-5 text-success-fg" />, bg: 'bg-success-soft', btn: 'bg-success-solid hover:bg-success-700 text-white', placeholder: 'Add an optional comment…', commentLabel: 'Comment (optional)' },
-    reject:  { title: 'Reject Payment Application',  label: 'Reject',  icon: <XCircle className="h-5 w-5 text-danger-fg" />,  bg: 'bg-danger-soft',  btn: 'bg-danger-solid hover:bg-danger-700 text-white',   placeholder: 'Explain why this PA is being rejected…', commentLabel: 'Reason for rejection *' },
-    return:  { title: 'Return for Revision',          label: 'Return',  icon: <RotateCcw className="h-5 w-5 text-warning-fg" />, bg: 'bg-warning-soft', btn: 'bg-warning-solid hover:bg-warning-700 text-white', placeholder: 'Describe what needs to be revised…', commentLabel: 'Revision instructions *' },
+    approve: { title: 'Approve Payment Application', label: 'Approve', icon: <CheckCircle2 className="h-5 w-5 text-success-fg" />, variant: 'success' as const, placeholder: 'Add an optional comment…', commentLabel: 'Comment (optional)' },
+    reject:  { title: 'Reject Payment Application',  label: 'Reject',  icon: <XCircle className="h-5 w-5 text-danger-fg" />,  variant: 'danger' as const,  placeholder: 'Explain why this PA is being rejected…', commentLabel: 'Reason for rejection *' },
+    return:  { title: 'Return for Revision',          label: 'Return',  icon: <RotateCcw className="h-5 w-5 text-warning-fg" />, variant: 'warning' as const, placeholder: 'Describe what needs to be revised…', commentLabel: 'Revision instructions *' },
   }[action]
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl">
-        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', cfg.bg)}>{cfg.icon}</div>
-            <div>
-              <h2 className="text-sm font-semibold text-fg">{cfg.title}</h2>
-              <p className="text-xs text-fg-muted">{paNumber}</p>
-            </div>
-          </div>
-          <Button variant="subtle" size="icon-sm" aria-label="Close" onClick={onClose}><X className="h-4 w-4" /></Button>
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      busy={isPending}
+      // Closed only by its buttons, as before: Escape must not drop the comment.
+      closeOnEscape={false}
+      size="sm"
+      icon={cfg.icon}
+      title={cfg.title}
+      description={paNumber}
+      bodyClassName="flex flex-col gap-4"
+      footer={<>
+        <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+        <Button variant={cfg.variant} size="sm" disabled={(needsComment && !comment.trim()) || isPending} onClick={() => onConfirm(comment)}>
+          {cfg.icon}{isPending ? 'Working…' : cfg.label}
+        </Button>
+      </>}
+    >
+      <FormField label={cfg.commentLabel} htmlFor="pa-action-comment">
+        <div className="relative">
+          <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-fg-muted" />
+          <Textarea id="pa-action-comment" rows={3} value={comment} onChange={(e) => setComment(e.target.value)}
+            placeholder={cfg.placeholder} autoFocus className="resize-none pl-8" />
         </div>
-        <div className="px-6 py-5 flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-fg-secondary">{cfg.commentLabel}</label>
-            <div className="relative">
-              <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-fg-muted" />
-              <Textarea rows={3} value={comment} onChange={(e) => setComment(e.target.value)}
-                placeholder={cfg.placeholder} autoFocus
-                className="w-full resize-none pl-8 pr-3 pt-2 pb-2" />
-            </div>
-          </div>
-          {error && <p role="alert" className="text-xs text-danger-fg">{error}</p>}
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-            <button disabled={(needsComment && !comment.trim()) || isPending} onClick={() => onConfirm(comment)}
-              className={cn('inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed', cfg.btn)}>
-              {cfg.icon}{isPending ? 'Working…' : cfg.label}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body
+      </FormField>
+      {error && <Alert tone="danger">{error}</Alert>}
+    </Modal>
   )
 }
 
@@ -270,22 +262,29 @@ function ProcessModal({ paId, paNumber, currency, amount, busy, error, onConfirm
           .filter((c) => !off.has(c.credit_id))
           .map((c) => c.credit_id))
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl">
-        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-50">
-              <CreditCard className="h-5 w-5 text-primary-600" />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-fg">Mark as Processed</h2>
-              <p className="text-xs text-fg-muted">{paNumber} · {formatAmount(net, currency)}</p>
-            </div>
-          </div>
-          <Button variant="subtle" size="icon-sm" aria-label="Close" onClick={onClose}><X className="h-4 w-4" /></Button>
-        </div>
-        <div className="px-6 py-5 flex flex-col gap-4">
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      // Closed only by its buttons, as before.
+      closeOnEscape={false}
+      icon={<CreditCard />}
+      title="Mark as Processed"
+      description={`${paNumber} · ${formatAmount(net, currency)}`}
+      bodyClassName="flex flex-col gap-4"
+      footer={<>
+            <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+            {/* Disabled while the preview is in flight (initial load OR the
+                forced refetch-on-mount): confirming before it lands would put
+                a stale or gross-fallback figure on the button and
+                reintroduce exactly the number this dialog exists to correct. */}
+            <Button size="sm" disabled={!bankId || busy || creditsFetching} onClick={handleConfirm}
+             >
+              <CheckCircle2 className="h-4 w-4" />
+              {busy ? 'Processing…' : creditsFetching ? 'Loading…' : `Pay ${formatAmount(net, currency)}`}
+            </Button>
+      </>}
+    >
           {Number(suggestion?.already_paid ?? 0) > 0 && (
             <p className="rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning-fg">
               {formatAmount(Number(suggestion!.already_paid), currency)} of this PA was already paid in a payment batch.
@@ -299,7 +298,7 @@ function ProcessModal({ paId, paNumber, currency, amount, busy, error, onConfirm
               <option value="">Select a {currency} payment source…</option>
               {options.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.kind === 'credit_card' ? '💳' : '🏦'} {a.bank_name} — {a.name}{a.account_masked ? ` · …${a.account_masked}` : ''}
+                  {a.kind === 'credit_card' ? 'Card' : 'Bank'} · {a.bank_name} — {a.name}{a.account_masked ? ` · …${a.account_masked}` : ''}
                 </option>
               ))}
             </Select>
@@ -372,26 +371,8 @@ function ProcessModal({ paId, paNumber, currency, amount, busy, error, onConfirm
             </div>
           )}
 
-          {error && (
-            <p className="text-xs text-danger-fg">{error}</p>
-          )}
-
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-            {/* Disabled while the preview is in flight (initial load OR the
-                forced refetch-on-mount): confirming before it lands would put
-                a stale or gross-fallback figure on the button and
-                reintroduce exactly the number this dialog exists to correct. */}
-            <Button size="sm" disabled={!bankId || busy || creditsFetching} onClick={handleConfirm}
-             >
-              <CheckCircle2 className="h-4 w-4" />
-              {busy ? 'Processing…' : creditsFetching ? 'Loading…' : `Pay ${formatAmount(net, currency)}`}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body
+          {error && <Alert tone="danger">{error}</Alert>}
+    </Modal>
   )
 }
 
@@ -407,51 +388,30 @@ function HeaderActionConfirm({ action, paNumber, onConfirm, onClose }: {
   onConfirm: () => void
   onClose: () => void
 }) {
-  useCloseOnEscape(true, onClose)
+  // Escape closes via the Shell Modal (as the old useCloseOnEscape did).
   const recall = action === 'recall'
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl" role="dialog" aria-modal="true">
-        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', recall ? 'bg-warning-soft' : 'bg-danger-soft')}>
-              {recall
-                ? <RotateCcw className="h-5 w-5 text-warning-fg" />
-                : <XCircle className="h-5 w-5 text-danger-fg" />}
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-fg">{recall ? 'Recall PA' : 'Withdraw PA'}</h2>
-              <p className="text-xs text-fg-muted">{paNumber}</p>
-            </div>
-          </div>
-          <Button variant="subtle" size="icon-sm" onClick={onClose} aria-label="Close">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-        <div className="px-6 py-5 flex flex-col gap-4">
-          <p className="text-sm text-fg-secondary">
-            {recall
-              ? 'It will be moved back to Draft; the next submit starts from the first approval step.'
-              : 'This will cancel the PA.'}
-          </p>
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-            <button
-              onClick={onConfirm}
-              autoFocus
-              className={cn(
-                'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-white transition-colors',
-                recall ? 'bg-primary-600 hover:bg-primary-700' : 'bg-danger-solid hover:bg-danger-700',
-              )}
-            >
-              {recall ? <RotateCcw className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-              {recall ? 'Recall' : 'Withdraw'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="sm"
+      icon={recall ? <RotateCcw className="text-warning-fg" /> : <XCircle className="text-danger-fg" />}
+      title={recall ? 'Recall PA' : 'Withdraw PA'}
+      description={paNumber}
+      footer={<>
+        <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+        <Button variant={recall ? 'primary' : 'danger'} size="sm" onClick={onConfirm} data-autofocus>
+          {recall ? <RotateCcw className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+          {recall ? 'Recall' : 'Withdraw'}
+        </Button>
+      </>}
+    >
+      <p className="text-sm text-fg-secondary">
+        {recall
+          ? 'It will be moved back to Draft; the next submit starts from the first approval step.'
+          : 'This will cancel the PA.'}
+      </p>
+    </Modal>
   )
 }
 
@@ -752,7 +712,7 @@ export default function PaDetailPage() {
               <h1 className="text-xl font-semibold text-fg">{pa.pa_number}</h1>
               <PaStatusBadge status={pa.status} />
               {pa.pa_type === 'prepayment' && (
-                <span className="inline-flex items-center rounded-full bg-info-soft border border-info-line px-2 py-0.5 text-2xs font-semibold text-info-fg uppercase">Prepayment</span>
+                <Badge variant="blue">Prepayment</Badge>
               )}
             </div>
             <p className="text-sm text-fg-muted mt-0.5">
@@ -856,21 +816,8 @@ export default function PaDetailPage() {
         {/* Main content */}
         <div className="lg:col-span-2 min-w-0 flex flex-col gap-5">
           {/* Tabs */}
-          <div className="flex gap-1 border-b border-line">
-            {(['details', 'attachments', 'history'] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setActiveTab(t)}
-                className={cn(
-                  'px-4 py-2 text-sm font-medium capitalize transition-colors',
-                  activeTab === t
-                    ? 'border-b-2 border-primary-600 text-primary-700'
-                    : 'text-fg-muted hover:text-fg-secondary'
-                )}
-              >
-                {t}
-              </button>
-            ))}
+          <div>
+            <Tabs items={(['details', 'attachments', 'history'] as const).map((t) => ({ key: t, label: t.charAt(0).toUpperCase() + t.slice(1) }))} value={activeTab} onChange={(k) => setActiveTab(k as typeof activeTab)} />
           </div>
 
           {activeTab === 'details' && (
@@ -1002,7 +949,7 @@ export default function PaDetailPage() {
                   {(pa.settlement_status === 'settled' || pa.settlement_status === 'disputed') && (
                     <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
                       {[
-                        { label: 'Status',    value: pa.settlement_status === 'settled' ? '✅ Settled' : '⚠ Disputed' },
+                        { label: 'Status',    value: pa.settlement_status === 'settled' ? 'Settled' : 'Disputed' },
                         { label: 'Settled By', value: pa.settled_by_name ?? pa.settled_by ?? '—' },
                         { label: 'Settled At', value: pa.settled_at ? formatDateTime(pa.settled_at) : '—' },
                         { label: depositPa ? 'Refund − Deposit' : 'Variance', value: pa.settlement_variance !== undefined ? formatAmount(pa.settlement_variance, pa.currency) : '—' },

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { FreightPaCreate } from './FreightPaCreate'
 import { DirectPaCreate } from './DirectPaCreate'
-import { useReplaceTab, Checkbox, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
+import { Checkbox, ChoiceCard, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDot } from 'lucide-react'
@@ -1392,18 +1392,12 @@ function PoPaCreate() {
                         { value: 'regular' as const,     label: 'Regular Payment',  desc: 'Standard payment against invoice / GR' },
                       ]
                   ).map((opt) => (
-                    <button
-                      key={opt.value}
+                    <ChoiceCard selected={paType === opt.value} className="p-3"                      key={opt.value}
                       type="button"
-                      onClick={() => setPaType(opt.value)}
-                      className={cn(
-                        'rounded-xl border-2 p-3 text-left transition-all',
-                        paType === opt.value ? 'border-primary-600 bg-primary-50' : 'border-line hover:border-line-strong'
-                      )}
-                    >
+                      onClick={() => setPaType(opt.value)}>
                       <p className={cn('text-sm font-semibold', paType === opt.value ? 'text-primary-700' : 'text-fg')}>{opt.label}</p>
                       <p className="text-xs text-fg-muted mt-0.5">{opt.desc}</p>
-                    </button>
+                    </ChoiceCard>
                   ))}
                 </div>
                 {isMultiPo && selectedPos.some((p) => p.is_prepaid) && (

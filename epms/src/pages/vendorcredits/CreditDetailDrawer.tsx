@@ -1,13 +1,12 @@
 import { useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, Download, ExternalLink, Paperclip, X } from 'lucide-react'
+import { AlertTriangle, Download, ExternalLink, Paperclip } from 'lucide-react'
 
 import {
   useCreditAttachments, useUploadCreditAttachment, useVendorCreditApplications,
 } from '@/hooks/useVendorCredits'
 import { formatAmount, formatDate } from '@/lib/utils'
-import { FileInput, Button } from '@uniops/shell'
+import { Button, Drawer, FileInput } from '@uniops/shell'
 import {
   CREDIT_EVIDENCE_ACCEPT, creditAttachmentService, type CreditAttachment, type VendorCredit,
 } from '@/services/vendorCredits'
@@ -80,20 +79,52 @@ export function CreditDetailDrawer({
     </div>
   )
 
-  return createPortal(
-    <div className="fixed inset-0 z-40 flex justify-end bg-inverse/30" onClick={onClose}>
-      <aside className="flex h-full w-full max-w-md flex-col bg-surface shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between border-b border-line-subtle px-5 py-4">
-          <div>
-            <h2 className="font-mono text-sm font-semibold text-fg">{credit.credit_number}</h2>
-            <p className="mt-0.5 text-xs text-fg-muted">{SOURCE_LABEL[credit.source]}</p>
-          </div>
-          <Button variant="subtle" size="icon-xs" onClick={onClose} aria-label="Close">
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+  // The footer shows only when there is something to review or void, as before.
+  const showActions = canManage && (credit.status === 'pending_review' || (credit.status === 'available' && Number(credit.applied_amount) === 0))
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      // Backdrop closes, Escape did not: kept.
+      closeOnEscape={false}
+      className="max-w-md"
+      title={<span className="font-mono">{credit.credit_number}</span>}
+      description={SOURCE_LABEL[credit.source]}
+      footer={showActions ? <div className="flex w-full flex-col">
+            {needsEvidence && (
+              <p className="mb-2 flex items-center gap-1.5 text-xs text-warning-fg">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                A manual credit needs the vendor's email attached before it can be approved.
+              </p>
+            )}
+            {approveError && (
+              <p className="mb-2 flex items-center gap-1.5 text-xs text-danger-fg">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                {approveError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              {credit.status === 'pending_review' ? (
+                <>
+                  <Button variant="danger-outline" size="sm" onClick={onReject} disabled={reviewPending}
+                         >
+                    Reject
+                  </Button>
+                  <Button variant="success" size="sm" onClick={onApprove}
+                          disabled={reviewPending || needsEvidence || (credit.source === 'manual' && !atts.isSuccess)}
+                         >
+                    Approve
+                  </Button>
+                </>
+              ) : (
+                <Button variant="secondary" size="sm" onClick={onVoid} disabled={reviewPending}
+                       >
+                  Void
+                </Button>
+              )}
+            </div>
+      </div> : undefined}
+    >
           <div className="divide-y divide-line-subtle">
             {row('Vendor', credit.vendor_name)}
             {row('Vendor reference #', <span className="font-mono">{credit.vendor_credit_number}</span>)}
@@ -111,7 +142,7 @@ export function CreditDetailDrawer({
 
           {credit.notes && (
             <div className="mt-4">
-              <h3 className="text-xs font-semibold uppercase text-fg-muted">
+              <h3 className="text-xs font-semibold text-fg-muted">
                 {credit.source === 'manual' ? 'Basis' : 'Notes'}
               </h3>
               <p className="mt-1 whitespace-pre-wrap text-sm text-fg">{credit.notes}</p>
@@ -119,14 +150,14 @@ export function CreditDetailDrawer({
           )}
           {credit.review_note && (
             <div className="mt-4">
-              <h3 className="text-xs font-semibold uppercase text-fg-muted">Review note</h3>
+              <h3 className="text-xs font-semibold text-fg-muted">Review note</h3>
               <p className="mt-1 whitespace-pre-wrap text-sm text-fg">{credit.review_note}</p>
             </div>
           )}
 
           {credit.status !== 'pending_review' && (
             <div className="mt-5">
-              <h3 className="text-xs font-semibold uppercase text-fg-muted">Usage</h3>
+              <h3 className="text-xs font-semibold text-fg-muted">Usage</h3>
               {usage.isLoading ? (
                 <p className="mt-2 text-xs text-fg-muted">Loading…</p>
               ) : usage.isError ? (
@@ -178,7 +209,7 @@ export function CreditDetailDrawer({
 
           <div className="mt-5">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase text-fg-muted">Evidence</h3>
+              <h3 className="text-xs font-semibold text-fg-muted">Evidence</h3>
               {credit.status !== 'void' && (
                 <label className="flex cursor-pointer items-center gap-1 text-xs font-medium text-primary-700 hover:text-primary-800">
                   <Paperclip className="h-3.5 w-3.5" />
@@ -221,47 +252,6 @@ export function CreditDetailDrawer({
             )}
             {fileError && <p className="mt-2 text-xs text-danger-fg">{fileError}</p>}
           </div>
-        </div>
-
-        {canManage && (credit.status === 'pending_review'
-          || (credit.status === 'available' && Number(credit.applied_amount) === 0)) && (
-          <div className="border-t border-line-subtle px-5 py-3">
-            {needsEvidence && (
-              <p className="mb-2 flex items-center gap-1.5 text-xs text-warning-fg">
-                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                A manual credit needs the vendor's email attached before it can be approved.
-              </p>
-            )}
-            {approveError && (
-              <p className="mb-2 flex items-center gap-1.5 text-xs text-danger-fg">
-                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                {approveError}
-              </p>
-            )}
-            <div className="flex justify-end gap-2">
-              {credit.status === 'pending_review' ? (
-                <>
-                  <Button variant="danger-outline" size="sm" onClick={onReject} disabled={reviewPending}
-                         >
-                    Reject
-                  </Button>
-                  <Button variant="success" size="sm" onClick={onApprove}
-                          disabled={reviewPending || needsEvidence || (credit.source === 'manual' && !atts.isSuccess)}
-                         >
-                    Approve
-                  </Button>
-                </>
-              ) : (
-                <Button variant="secondary" size="sm" onClick={onVoid} disabled={reviewPending}
-                       >
-                  Void
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
-      </aside>
-    </div>,
-    document.body,
+    </Drawer>
   )
 }

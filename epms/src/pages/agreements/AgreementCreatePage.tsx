@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useReplaceTab, FileInput, Select, Textarea, MenuItem } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
-import { ArrowLeft, Search, Upload, X } from 'lucide-react'
+import { ArrowLeft, Search, Upload, X, Paperclip, Check } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -358,7 +358,7 @@ export default function AgreementCreatePage() {
                     )}
                   </DropdownPortal>
                 )}
-                {selectedVendor && <p className="text-xs text-success-fg">✓ {selectedVendor.name} ({selectedVendor.code})</p>}
+                {selectedVendor && <p className="text-xs text-success-fg"><Check aria-hidden className="mr-1 inline h-3 w-3 -mt-0.5" />{selectedVendor.name} ({selectedVendor.code})</p>}
                 {errors.vendor && <p className="text-xs text-danger-fg">{errors.vendor}</p>}
               </div>
 
@@ -675,7 +675,7 @@ export default function AgreementCreatePage() {
             {attachmentError && <p role="alert" className="text-xs text-danger-fg">{attachmentError}</p>}
             {attachments.map((f, i) => (
               <div key={i} className="flex items-center gap-2 rounded-md border border-line bg-surface-subtle px-3 py-2 text-sm">
-                <span className="flex-1 truncate text-fg-secondary">📎 {f.name}</span>
+                <Paperclip aria-hidden className="h-3.5 w-3.5 shrink-0 text-fg-muted" /><span className="flex-1 truncate text-fg-secondary">{f.name}</span>
                 <span className="text-fg-muted text-xs">{formatBytes(f.size)}</span>
                 <Button variant="danger-ghost" size="icon-xs"
                   type="button"
@@ -716,7 +716,7 @@ export default function AgreementCreatePage() {
         {/* Sidebar — Tips */}
         <div className="lg:col-span-3 flex flex-col gap-4">
           <div className="rounded-xl bg-surface shadow-sm p-5 sticky top-6">
-            <h3 className="text-sm font-semibold text-fg-secondary mb-3">💡 Tips</h3>
+            <h3 className="text-sm font-semibold text-fg-secondary mb-3">Tips</h3>
             <ul className="flex flex-col gap-2.5 text-xs text-fg-muted leading-relaxed">
               <li>• An agreement replaces keeping one PO open indefinitely — use it for house-account spend with no PO and no goods receipt.</li>
               <li>• Every invoice matched to this agreement is flagged as a legacy settlement with a mandatory reason, since there is no receipt evidence yet.</li>

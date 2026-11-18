@@ -1,6 +1,6 @@
 import { useState, type ChangeEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Search, FileText, CreditCard, Loader2, Truck, FileInput } from 'lucide-react'
+import { Plus, Search, FileText, CreditCard, Loader2, Truck, FileInput, AlertTriangle } from 'lucide-react'
 import { SortTh, sortParams, useSort, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -226,7 +226,7 @@ export default function PaListPage() {
                   <Td>
                     <span className="font-mono text-xs font-semibold text-primary-700">{pa.pa_number}</span>
                     {pa.pa_type === 'prepayment' && pa.settlement_status === 'pending' && pa.status !== 'cancelled' && (
-                      <div className="text-2xs text-warning-fg font-medium mt-0.5">⚠ Settlement pending</div>
+                      <div className="mt-0.5 flex items-center gap-1 text-2xs font-medium text-warning-fg"><AlertTriangle aria-hidden className="h-3 w-3" />Settlement pending</div>
                     )}
                   </Td>
                   <Td className="font-medium text-fg">{pa.vendor_name}</Td>

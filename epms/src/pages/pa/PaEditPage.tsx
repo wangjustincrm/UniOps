@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
-import { useReplaceTab, Checkbox, Input, TBody, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
+import { Checkbox, Input, MenuItem, TBody, THead, Table, Td, Textarea, Th, Tr, useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDot } from 'lucide-react'
@@ -562,7 +562,7 @@ function PoPaEditPage() {
                         addablePos.map((candidate) => {
                           const blockedReason = poJoinBlockedReason(candidate)
                           return (
-                            <button
+                            <MenuItem className="block border-b border-line-subtle px-4 py-2.5 last:border-0"
                               key={candidate.id}
                               type="button"
                               disabled={Boolean(blockedReason)}
@@ -570,12 +570,7 @@ function PoPaEditPage() {
                                 setEditPoIds([...poIds, candidate.id])
                                 setAddingPo(false)
                                 setPoSearch('')
-                              }}
-                              className={cn(
-                                'w-full px-4 py-2.5 text-left border-b border-line-subtle last:border-0 transition-colors',
-                                blockedReason ? 'cursor-not-allowed bg-surface-subtle opacity-60' : 'hover:bg-primary-50',
-                              )}
-                            >
+                              }}>
                               <div className="flex items-center justify-between gap-2">
                                 <span className="flex items-center gap-2 min-w-0">
                                   <span className="font-mono text-xs font-semibold text-primary-700">{candidate.number}</span>
@@ -588,7 +583,7 @@ function PoPaEditPage() {
                                 <span className="font-mono text-xs text-fg">{formatAmount(candidate.total, candidate.currency)}</span>
                               </div>
                               <div className="text-xs text-fg-muted mt-0.5">{candidate.vendor_name} · {candidate.title}</div>
-                            </button>
+                            </MenuItem>
                           )
                         })
                       )}

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Plus } from 'lucide-react'
+import { Search, Plus, FileText } from 'lucide-react'
 import { SortTh, sortParams, useSort, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -197,7 +197,7 @@ export default function AgreementListPage() {
                 <Tr>
                   <Td align="center" colSpan={9}>
                     <div className="flex flex-col items-center gap-2 text-fg-muted">
-                      <span className="text-3xl">📄</span>
+                      <FileText aria-hidden className="h-8 w-8 stroke-[1.5] text-fg-faint" />
                       <p className="text-sm font-medium">No agreements found</p>
                       <p className="text-xs">Try adjusting your search or filters</p>
                     </div>

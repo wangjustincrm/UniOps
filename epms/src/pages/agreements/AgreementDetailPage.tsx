@@ -1,12 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
-import { createPortal } from 'react-dom'
-import {
-  ArrowLeft, CheckCircle2, RotateCcw, XCircle, MessageSquare, X, FileText, AlertTriangle, ExternalLink, Pencil,
-  CreditCard, Upload, Paperclip, Info, Plus,
-} from 'lucide-react'
-import { SortTh, useSortableRows, FileInput, TBody, THead, Table, Td, Textarea, Tr } from '@uniops/shell'
+import { ArrowLeft, CheckCircle2, RotateCcw, XCircle, MessageSquare, X, FileText, AlertTriangle, ExternalLink, Pencil, CreditCard, Upload, Paperclip, Info, Plus, SearchX } from 'lucide-react'
+import { Alert, FileInput, FormField, Modal, SortTh, TBody, THead, Table, Td, Textarea, Tr, useSortableRows } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
@@ -174,7 +170,7 @@ function ApprovalModal({ action, agreementNumber, onConfirm, onClose, isPending,
       label: 'Approve',
       icon: <CheckCircle2 className="h-5 w-5 text-success-fg" />,
       bgIcon: 'bg-success-soft',
-      btn: 'bg-success-solid hover:bg-success-700 text-white',
+      variant: 'success' as const,
       commentLabel: 'Comment (optional)',
       placeholder: 'Add an optional comment…',
     },
@@ -183,7 +179,7 @@ function ApprovalModal({ action, agreementNumber, onConfirm, onClose, isPending,
       label: 'Return',
       icon: <RotateCcw className="h-5 w-5 text-warning-fg" />,
       bgIcon: 'bg-warning-soft',
-      btn: 'bg-warning-solid hover:bg-warning-700 text-white',
+      variant: 'warning' as const,
       commentLabel: 'Revision instructions *',
       placeholder: 'Describe what needs to be revised…',
     },
@@ -192,63 +188,48 @@ function ApprovalModal({ action, agreementNumber, onConfirm, onClose, isPending,
       label: 'Reject',
       icon: <XCircle className="h-5 w-5 text-danger-fg" />,
       bgIcon: 'bg-danger-soft',
-      btn: 'bg-danger-solid hover:bg-danger-700 text-white',
+      variant: 'danger' as const,
       commentLabel: 'Reason for rejection *',
       placeholder: 'Explain why this agreement is being rejected…',
     },
   }[action]
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl">
-        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', config.bgIcon)}>
-              {config.icon}
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-fg">{config.title}</h2>
-              <p className="text-xs text-fg-muted">{agreementNumber}</p>
-            </div>
-          </div>
-          <Button variant="subtle" size="icon-sm" aria-label="Close" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      busy={isPending}
+      // Closed only by its buttons, as before: Escape must not drop the comment.
+      closeOnEscape={false}
+      size="sm"
+      icon={config.icon}
+      title={config.title}
+      description={agreementNumber}
+      bodyClassName="flex flex-col gap-4"
+      footer={<>
+        <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+        <Button variant={config.variant} size="sm" disabled={!canSubmit || isPending} onClick={() => onConfirm(comment)}>
+          {config.icon}
+          {isPending ? 'Working…' : config.label}
+        </Button>
+      </>}
+    >
+      <FormField label={config.commentLabel} htmlFor="agr-action-comment">
+        <div className="relative">
+          <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-fg-muted" />
+          <Textarea
+            id="agr-action-comment"
+            rows={3}
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder={config.placeholder}
+            autoFocus
+            className="resize-none pl-8"
+          />
         </div>
-        <div className="px-6 py-5 flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-fg-secondary">{config.commentLabel}</label>
-            <div className="relative">
-              <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-fg-muted" />
-              <Textarea
-                rows={3}
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder={config.placeholder}
-                autoFocus
-                className="w-full resize-none pl-8 pr-3 pt-2 pb-2"
-              />
-            </div>
-          </div>
-          {error && <p className="text-xs text-danger-fg">{error}</p>}
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-            <button
-              disabled={!canSubmit || isPending}
-              onClick={() => onConfirm(comment)}
-              className={cn(
-                'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
-                config.btn
-              )}
-            >
-              {config.icon}
-              {isPending ? 'Working…' : config.label}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body
+      </FormField>
+      {error && <Alert tone="danger">{error}</Alert>}
+    </Modal>
   )
 }
 
@@ -487,7 +468,7 @@ export default function AgreementDetailPage() {
   if (!agreement) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <div className="text-5xl mb-4">🔍</div>
+        <SearchX aria-hidden className="mb-4 h-10 w-10 stroke-[1.5] text-fg-faint" />
         <h2 className="text-xl font-semibold text-fg-secondary">Agreement Not Found</h2>
         <p className="mt-2 text-sm text-fg-muted">The agreement you're looking for doesn't exist.</p>
         <BackLink to="/agreements" className="mt-4">

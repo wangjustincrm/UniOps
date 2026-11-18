@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { useReplaceTab, Input, MenuItem } from '@uniops/shell'
+import { ChoiceCard, Input, MenuItem, useReplaceTab } from '@uniops/shell'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { epmsRoutes } from '@/app/routes'
 import { Button } from '@/components/ui/button'
@@ -192,19 +192,12 @@ export default function ReceiptCreatePage() {
             <h2 className="text-base font-semibold text-fg">Receipt Type</h2>
             <div className="flex gap-3">
               {TYPE_OPTIONS.map((t) => (
-                <button
+                <ChoiceCard selected={receiptType === t} className="flex-1 items-center px-4 py-2.5 text-sm font-medium"
                   key={t}
                   type="button"
-                  onClick={() => setReceiptType(t)}
-                  className={cn(
-                    'flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors',
-                    receiptType === t
-                      ? 'border-primary-600 bg-primary-50 text-primary-700'
-                      : 'border-line-strong text-fg-secondary hover:border-fg-faint'
-                  )}
-                >
+                  onClick={() => setReceiptType(t)}>
                   {RECEIPT_TYPE_LABELS[t]}
-                </button>
+                </ChoiceCard>
               ))}
             </div>
           </div>

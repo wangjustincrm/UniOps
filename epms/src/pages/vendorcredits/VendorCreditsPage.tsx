@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { AlertTriangle, Plus } from 'lucide-react'
 
 import { useRolePermissions } from '@/hooks/useConfig'
@@ -7,7 +6,7 @@ import { useReviewVendorCredit, useVendorCredit, useVendorCredits } from '@/hook
 import type { VendorCredit } from '@/services/vendorCredits'
 import { useAuthStore } from '@/stores/auth.store'
 import { formatDate } from '@/lib/utils'
-import { Pagination, SortTh, useSort, sortParams, TBody, THead, Table, Td, Textarea, Th, Tr, Button } from '@uniops/shell'
+import { Alert, Button, Modal, Pagination, SortTh, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr, sortParams, useSort } from '@uniops/shell'
 
 type CreditSortKey =
   | 'credit_number' | 'vendor_name' | 'vendor_credit_number' | 'credit_date'
@@ -94,16 +93,8 @@ export function VendorCreditsPage() {
         </Button>
       </div>
 
-      <div className="mt-4 flex gap-1 border-b border-line">
-        {TABS.map((t) => (
-          <button key={t.key} onClick={() => { setTab(t.key); setPage(1) }}
-                  className={`px-4 py-2 text-sm font-medium ${
-                    tab === t.key
-                      ? 'border-b-2 border-primary-600 text-primary-700'
-                      : 'text-fg-muted hover:text-fg-secondary'}`}>
-            {t.label}
-          </button>
-        ))}
+      <div className="mt-4">
+        <Tabs items={TABS.map((t) => ({ key: t.key, label: t.label }))} value={tab} onChange={(k) => { setTab(k as typeof tab); setPage(1) }} />
       </div>
 
       {approveError && !openCredit && (
@@ -226,23 +217,16 @@ export function VendorCreditsPage() {
         />
       )}
 
-      {noteFor && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md rounded-lg bg-surface p-5">
-            <h2 className="text-base font-semibold">
-              {noteFor.action === 'reject' ? 'Reject' : 'Void'} {noteFor.credit.credit_number}
-            </h2>
-            <Textarea
-              className="mt-3 w-full p-2"
-              rows={3} value={note} onChange={(e) => setNote(e.target.value)}
-              placeholder="Reason (required)" />
-            {review.isError && review.variables?.action === noteFor.action && (
-              <div className="mt-3 flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
-                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                {errorMessage(review.error, `${noteFor.action === 'reject' ? 'Reject' : 'Void'} failed`)}
-              </div>
-            )}
-            <div className="mt-4 flex justify-end gap-2">
+      {noteFor && (
+        <Modal
+          open
+          onClose={() => setNoteFor(null)}
+          // Closed only by its buttons, as before.
+          closeOnEscape={false}
+          size="sm"
+          title={<>{noteFor.action === 'reject' ? 'Reject' : 'Void'} <span className="font-mono">{noteFor.credit.credit_number}</span></>}
+          bodyClassName="flex flex-col gap-3"
+          footer={<>
               <Button variant="secondary" size="sm"
                       onClick={() => setNoteFor(null)}>
                 Cancel
@@ -258,10 +242,17 @@ export function VendorCreditsPage() {
                 }}>
                 Confirm
               </Button>
-            </div>
-          </div>
-        </div>,
-        document.body,
+          </>}
+        >
+            <Textarea
+              aria-label="Reason"
+              rows={3} value={note} onChange={(e) => setNote(e.target.value)}
+              placeholder="Reason (required)" />
+            {review.isError && review.variables?.action === noteFor.action && (
+              <Alert tone="danger">{errorMessage(review.error, `${noteFor.action === 'reject' ? 'Reject' : 'Void'} failed`)}
+              </Alert>
+            )}
+        </Modal>
       )}
     </div>
   )
