@@ -1,7 +1,7 @@
 // Reconciliation table pieces: one material row, its expansion (causes, GL by
 // source, batch groups), and the small GL tables under the main table.
 import { ChevronDown, ChevronRight, Route } from 'lucide-react'
-import { Badge, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Badge, TBody, THead, Table, Td, Th, Tr, Button, Card } from '@uniops/shell'
 import { cn, formatDate } from '@/lib/utils'
 import { absExceeds, addDecimal, formatMoney, formatQty, isNegative, isZero } from '@/lib/number'
 import { MaterialCell, Uom, thCls } from '@/pages/nc/NcUi'
@@ -107,7 +107,7 @@ function Expansion({ r, showAmt, tolQty, date, onShowBatches }: {
       <section className="flex flex-col gap-1.5">
         <h3 className="text-xs font-semibold text-fg-secondary">Causes</h3>
         {r.categories.length === 0 ? <p className="text-xs text-fg-muted">None — no cause rule applied to this material.</p> : (
-          <div className="overflow-x-auto rounded-md border border-line bg-surface">
+          <Card inset className="overflow-x-auto">
             <Table density="compact" className="min-w-full">
               <THead className={thCls}>
                 <Tr>
@@ -128,7 +128,7 @@ function Expansion({ r, showAmt, tolQty, date, onShowBatches }: {
                 ))}
               </TBody>
             </Table>
-          </div>
+          </Card>
         )}
       </section>
 
@@ -136,7 +136,7 @@ function Expansion({ r, showAmt, tolQty, date, onShowBatches }: {
         <section className="flex flex-col gap-1.5">
           <h3 className="text-xs font-semibold text-fg-secondary">GL entries this year not from costing, by source</h3>
           {sources.length === 0 ? <p className="text-xs text-fg-muted">None</p> : (
-            <div className="w-fit overflow-x-auto rounded-md border border-line bg-surface">
+            <Card inset className="w-fit overflow-x-auto">
               <Table density="compact">
                 <THead className={thCls}>
                   <Tr>
@@ -153,7 +153,7 @@ function Expansion({ r, showAmt, tolQty, date, onShowBatches }: {
                   ))}
                 </TBody>
               </Table>
-            </div>
+            </Card>
           )}
         </section>
       )}
@@ -172,7 +172,7 @@ function Expansion({ r, showAmt, tolQty, date, onShowBatches }: {
         ) : r.batches.length === 0 ? (
           <p className="text-xs text-fg-muted">No batch has a balance on this date.</p>
         ) : (
-          <div className="max-h-96 overflow-auto rounded-md border border-line bg-surface">
+          <Card inset className="max-h-96 overflow-auto">
             <Table density="compact" className="min-w-full">
               <THead className={cn(thCls, 'sticky top-0')}>
                 <Tr>
@@ -214,7 +214,7 @@ function Expansion({ r, showAmt, tolQty, date, onShowBatches }: {
                 ))}
               </TBody>
             </Table>
-          </div>
+          </Card>
         )}
       </section>
     </div>
@@ -319,7 +319,7 @@ export function GlExtraTable({ title, hint, rows, showAmt }: {
       <h2 className="text-sm font-semibold text-fg">{title}</h2>
       <p className="text-2xs text-fg-muted">{hint}</p>
       {rows.length === 0 ? <p className="text-xs text-fg-muted">None</p> : (
-        <div className="w-fit max-w-full overflow-x-auto rounded-md border border-line bg-surface">
+        <Card inset className="w-fit max-w-full overflow-x-auto">
           <Table density="compact">
             <THead className={thCls}>
               <Tr>
@@ -340,7 +340,7 @@ export function GlExtraTable({ title, hint, rows, showAmt }: {
               ))}
             </TBody>
           </Table>
-        </div>
+        </Card>
       )}
     </section>
   )

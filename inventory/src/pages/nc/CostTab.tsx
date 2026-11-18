@@ -4,7 +4,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { Badge, SortTh, sortParams, useSort, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Badge, SortTh, sortParams, useSort, TBody, THead, Table, Td, Th, Tr, Button, Card } from '@uniops/shell'
 import { cn, formatDate } from '@/lib/utils'
 import { formatMoney, formatQty, formatUnitPrice, isNegative } from '@/lib/number'
 import { ncApi, type CostRow, type CostSort } from './ncApi'
@@ -27,7 +27,7 @@ function Breakdown({ code, date, uom }: { code: string; date: string; uom: strin
       <h3 className="text-xs font-semibold text-fg-secondary">Quantity by warehouse and batch</h3>
       <p className="text-2xs text-fg-muted">IA costs at material level only — amounts are not split by batch.</p>
       {q.isError ? <ErrorBox error={q.error} fallback="Could not load the breakdown." /> : (
-        <div className="max-h-72 overflow-auto rounded-md border border-line bg-surface">
+        <Card inset className="max-h-72 overflow-auto">
           <Table density="compact" className="min-w-full">
             <THead className={thCls}>
               <Tr>
@@ -50,7 +50,7 @@ function Breakdown({ code, date, uom }: { code: string; date: string; uom: strin
               ))}
             </TBody>
           </Table>
-        </div>
+        </Card>
       )}
     </section>
   )
@@ -70,7 +70,7 @@ function Lines({ code, date }: { code: string; date: string }) {
       <h3 className="text-xs font-semibold text-fg-secondary">Ledger lines</h3>
       {q.isError ? <ErrorBox error={q.error} fallback="Could not load the ledger lines." /> : (
         <>
-          <div className="max-h-96 overflow-auto rounded-md border border-line bg-surface">
+          <Card inset className="max-h-96 overflow-auto">
             <Table density="compact" className="min-w-full">
               <THead className={cn(thCls, 'sticky top-0')}>
                 <Tr>
@@ -121,7 +121,7 @@ function Lines({ code, date }: { code: string; date: string }) {
                 ))}
               </TBody>
             </Table>
-          </div>
+          </Card>
           {q.data && q.data.total > LINES_PAGE_SIZE && (
             <Pager page={page} pageSize={LINES_PAGE_SIZE} total={q.data.total} busy={q.isFetching} onPage={setPage} />
           )}
@@ -265,9 +265,9 @@ export function CostTab({ date, classCode, search }: { date: string; classCode: 
 
 function Tile({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
-    <div className="min-w-[9rem] rounded-lg border border-line bg-surface px-3 py-2" title={title}>
+    <Card inset className="min-w-[9rem] px-3 py-2" title={title}>
       <p className="text-2xs font-medium text-fg-muted">{label}</p>
       <p className="mt-0.5 font-mono text-sm text-fg">{value}</p>
-    </div>
+    </Card>
   )
 }

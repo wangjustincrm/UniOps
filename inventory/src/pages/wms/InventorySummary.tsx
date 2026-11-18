@@ -17,7 +17,7 @@ import { AlertTriangle, Info } from 'lucide-react'
 import { cn, formatDate } from '@/lib/utils'
 import { isPositiveQty, qty, type InventorySummaryLine } from './inventoryApi'
 
-import { CellButton, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { CellButton, TBody, THead, Table, Td, Th, Tr, Card } from '@uniops/shell'
 /** Add whole days to a 'YYYY-MM-DD' on a UTC clock — never through the local
  *  timezone, which shifts a date-only value by a day. */
 function shiftIso(iso: string, days: number): string {
@@ -39,9 +39,9 @@ export function InventorySummary({
 }) {
   if (isLoading) {
     return (
-      <div className="rounded-lg border border-line bg-surface p-4">
+      <Card inset className="p-4">
         <p className="text-xs text-fg-muted">Loading totals…</p>
-      </div>
+      </Card>
     )
   }
   if (summary.length === 0) {
@@ -51,7 +51,7 @@ export function InventorySummary({
   const multiUnit = summary.length > 1
 
   return (
-    <div className="rounded-lg border border-line bg-surface">
+    <Card inset>
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line-subtle px-4 py-2">
         <h2 className="text-sm font-semibold text-fg">
           Totals for what you are looking at
@@ -170,7 +170,7 @@ export function InventorySummary({
           </span>
         </p>
       )}
-    </div>
+    </Card>
   )
 }
 

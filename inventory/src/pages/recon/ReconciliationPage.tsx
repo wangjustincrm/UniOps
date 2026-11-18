@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { Download, Loader2, Search, X } from 'lucide-react'
-import { Button, Checkbox, Chip as ShellChip, ChoiceCard, Input, Select, SortTh, TBody, THead, Table, Th, Tr, nextSort, type Sort } from '@uniops/shell'
+import { Button, Checkbox, Chip as ShellChip, ChoiceCard, Input, Select, SortTh, TBody, THead, Table, Th, Tr, nextSort, type Sort, Card } from '@uniops/shell'
 import { cn, formatDate } from '@/lib/utils'
 import { formatMoney, formatQty } from '@/lib/number'
 import { previousMonthEnd, todayToronto } from '@/lib/time'
@@ -49,11 +49,11 @@ function Chip({ active, onClick, children, title }: {
 
 function Tile({ label, value, sub, title }: { label: string; value: string; sub?: string; title?: string }) {
   return (
-    <div className="min-w-[9rem] rounded-lg border border-line bg-surface px-3 py-2" title={title}>
+    <Card inset className="min-w-[9rem] px-3 py-2" title={title}>
       <p className="text-2xs font-medium text-fg-muted">{label}</p>
       <p className="mt-0.5 font-mono text-sm text-fg">{value}</p>
       {sub && <p className="font-mono text-2xs text-fg-muted">{sub}</p>}
-    </div>
+    </Card>
   )
 }
 
@@ -215,7 +215,7 @@ export default function ReconciliationPage() {
         </Button>
       </header>
 
-      <div className="flex flex-col gap-2.5 rounded-lg border border-line bg-surface px-3 py-3">
+      <Card inset className="flex flex-col gap-2.5 px-3 py-3">
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-xs text-fg-secondary">
             Date
@@ -288,7 +288,7 @@ export default function ReconciliationPage() {
             )}
           </div>
         )}
-      </div>
+      </Card>
 
       {data && (
         <div className="flex flex-col gap-1.5">

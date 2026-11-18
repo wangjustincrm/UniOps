@@ -4,7 +4,7 @@
 // those columns show "—" rather than a number that would be invented.
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Badge, Button, Chip, Segmented, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, type Sort, useSort } from '@uniops/shell'
+import { Badge, Button, Chip, Segmented, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, type Sort, useSort, Card } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import { formatQty, isNegative } from '@/lib/number'
 import {
@@ -39,7 +39,7 @@ function Summary({ rows, residue }: { rows: StockSummaryRow[]; residue: number }
     <div className="flex flex-col gap-1.5">
       <div className="flex flex-wrap gap-2">
         {rows.map((s) => (
-          <div key={s.warehouse_class} className="min-w-[9rem] rounded-lg border border-line bg-surface px-3 py-2">
+          <Card inset className="min-w-[9rem] px-3 py-2" key={s.warehouse_class}>
             <p className="text-2xs font-medium text-fg-muted">
               {CLASS_LABEL[s.warehouse_class] ?? s.warehouse_class}
             </p>
@@ -49,7 +49,7 @@ function Summary({ rows, residue }: { rows: StockSummaryRow[]; residue: number }
             <p className="font-mono text-xs text-fg-muted" title="Summed across units of measure">
               Qty {formatQty(s.qty)}
             </p>
-          </div>
+          </Card>
         ))}
       </div>
       {residue > 0 && (

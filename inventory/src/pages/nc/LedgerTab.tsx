@@ -5,7 +5,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Check, ChevronDown, ChevronRight } from 'lucide-react'
-import { Badge, SortTh, sortParams, useSort, Checkbox, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Badge, SortTh, sortParams, useSort, Checkbox, TBody, THead, Table, Td, Th, Tr, Button, Card } from '@uniops/shell'
 import { cn, formatDate } from '@/lib/utils'
 import { formatMoney, formatQty, isNegative } from '@/lib/number'
 import { ncApi, type LedgerAccountRow, type LedgerRow, type LedgerSort } from './ncApi'
@@ -82,7 +82,7 @@ function VoucherLines({ row, date, includeUnposted }: { row: LedgerRow; date: st
   if (q.isError) return <ErrorBox error={q.error} fallback="Could not load the voucher lines." />
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="max-h-96 overflow-auto rounded-md border border-line bg-surface">
+      <Card inset className="max-h-96 overflow-auto">
         <Table density="compact" className="min-w-full">
           <THead className={cn(thCls, 'sticky top-0')}>
             <Tr>
@@ -119,7 +119,7 @@ function VoucherLines({ row, date, includeUnposted }: { row: LedgerRow; date: st
             ))}
           </TBody>
         </Table>
-      </div>
+      </Card>
       {q.data && q.data.total > LINES_PAGE_SIZE && (
         <Pager page={page} pageSize={LINES_PAGE_SIZE} total={q.data.total} busy={q.isFetching} onPage={setPage} />
       )}

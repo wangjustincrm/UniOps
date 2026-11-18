@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Download, Loader2, Route } from 'lucide-react'
-import { Badge, Button, Checkbox, Input, Skeleton } from '@uniops/shell'
+import { Badge, Button, Checkbox, Input, Skeleton, Card } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
 import { formatQty, isZero } from '@/lib/number'
@@ -233,7 +233,7 @@ function TraceView({ material }: { material: string }) {
         </div>
       </header>
 
-      <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface px-3 py-3">
+      <Card inset className="flex flex-col gap-2 px-3 py-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 text-xs text-fg-secondary">
             <label htmlFor="trace-view-material">Material</label>
@@ -284,7 +284,7 @@ function TraceView({ material }: { material: string }) {
             )}
           </div>
         )}
-      </div>
+      </Card>
 
       {q.isError && <ErrorBox error={q.error} fallback="Could not load the trace." />}
       {batchRefused && (

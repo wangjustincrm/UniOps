@@ -11,7 +11,7 @@ import {
 } from './traceApi'
 import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 
-import { TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { TBody, THead, Table, Td, Th, Tr, Button, Card } from '@uniops/shell'
 const numCls = 'text-right font-mono text-xs tabular-nums whitespace-nowrap'
 
 function qtyTone(v: string | null | undefined): string {
@@ -29,7 +29,7 @@ export function SummaryTable({ t, showHidden }: { t: TraceResponse; showHidden: 
   const lines: TraceSummaryLine[] = t.summary.filter((s) => showHidden || !s.hidden_by_default)
   const hiddenCount = t.summary.length - lines.length
   return (
-    <div className="w-fit max-w-full overflow-x-auto rounded-lg border border-line bg-surface">
+    <Card inset className="w-fit max-w-full overflow-x-auto">
       <Table density="compact">
         <THead className={thCls}>
           <Tr>
@@ -72,7 +72,7 @@ export function SummaryTable({ t, showHidden }: { t: TraceResponse; showHidden: 
           {hiddenCount} internal / state-change {hiddenCount === 1 ? 'category' : 'categories'} hidden
         </p>
       )}
-    </div>
+    </Card>
   )
 }
 
