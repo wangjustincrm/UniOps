@@ -10,7 +10,7 @@ import { useProjects, useCreateProject, useUpdateProject } from '@/hooks/useProj
 import type { ApiProject, CreateProjectBody, UpdateProjectBody, ProjectStatus } from '@/services/projects'
 import { useAuthStore } from '@/stores/auth.store'
 import type { UserRole } from '@/types'
-import { Segmented, Select, SortTh, TBody, THead, Table, Td, Th, Tr, useSortableRows } from '@uniops/shell'
+import { Segmented, Select, SortTh, TBody, THead, Table, Td, Th, Tr, useSortableRows, Badge, type BadgeTone } from '@uniops/shell'
 
 const PROJECT_TH = 'px-4 py-3 text-left text-xs font-semibold text-fg-muted whitespace-nowrap'
 
@@ -47,10 +47,10 @@ const STATUS_LABELS: Record<ProjectStatus, string> = {
   closed: 'Closed',
 }
 
-const STATUS_BADGE: Record<ProjectStatus, string> = {
-  active: 'bg-success-soft text-success-fg',
-  on_hold: 'bg-warning-soft text-warning-fg',
-  closed: 'bg-surface-sunken text-fg-muted',
+const STATUS_TONE: Record<ProjectStatus, BadgeTone> = {
+  active: 'success',
+  on_hold: 'warning',
+  closed: 'dark',
 }
 
 // ─── Form types ───────────────────────────────────────────────────────────────
@@ -579,14 +579,9 @@ export default function ProjectsPage() {
 
                   {/* Status */}
                   <Td>
-                    <span
-                      className={cn(
-                        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                        STATUS_BADGE[project.status]
-                      )}
-                    >
+                    <Badge variant={STATUS_TONE[project.status]}>
                       {STATUS_LABELS[project.status]}
-                    </span>
+                    </Badge>
                   </Td>
 
                   {/* Actions */}

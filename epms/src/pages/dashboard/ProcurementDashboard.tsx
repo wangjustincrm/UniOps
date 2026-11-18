@@ -2,23 +2,23 @@ import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { formatAmount } from '@/lib/utils'
-import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Badge, type BadgeTone } from '@uniops/shell'
 
-const PO_STATUS_STYLES: Record<string, string> = {
-  draft:      'bg-surface-sunken text-fg-secondary',
-  submitted:  'bg-warning-soft text-warning-fg',
-  in_review:  'bg-info-soft text-info-fg',
-  approved:   'bg-success-soft text-success-fg',
-  issued:     'bg-primary-100 text-primary-700',
-  closed:     'bg-surface-sunken text-fg-muted',
-  cancelled:  'bg-danger-soft text-danger-fg',
+const PO_STATUS_TONE: Record<string, BadgeTone> = {
+  draft:      'neutral',
+  submitted:  'warning',
+  in_review:  'blue',
+  approved:   'success',
+  issued:     'accent',
+  closed:     'dark',
+  cancelled:  'danger',
 }
 
 function PoStatusBadge({ status }: { status: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${PO_STATUS_STYLES[status] ?? 'bg-surface-sunken text-fg-secondary'}`}>
+    <Badge variant={PO_STATUS_TONE[status] ?? 'neutral'}>
       {status.replace('_', ' ')}
-    </span>
+    </Badge>
   )
 }
 

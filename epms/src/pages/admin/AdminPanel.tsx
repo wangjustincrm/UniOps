@@ -113,11 +113,9 @@ function ToggleRow({ label, description, checked, onToggle }: {
       <div className="flex flex-col gap-1">
         <span className="text-sm font-medium text-fg">{label}</span>
         <span className="text-xs text-fg-muted">{description}</span>
-        <span className={cn('mt-1 inline-flex w-fit items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium',
-          checked ? 'bg-success-soft text-success-fg' : 'bg-surface-strong text-fg-muted')}>
-          <span className={cn('h-1.5 w-1.5 rounded-full', checked ? 'bg-success-solid' : 'bg-fg-faint')} />
+        <Badge variant={checked ? 'success' : 'neutral'} dot className="mt-1 w-fit">
           {checked ? 'Enabled' : 'Disabled'}
-        </span>
+        </Badge>
       </div>
       <Switch checked={checked} onCheckedChange={() => onToggle()} aria-label={label} className="mt-0.5" />
     </div>
@@ -290,10 +288,9 @@ function MfaPersonalSetup({ currentUserMfaEnabled }: { currentUserMfaEnabled: bo
               : 'Enable to require an email code at each login.'}
           </p>
         </div>
-        <span className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
-          currentUserMfaEnabled ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
-          {currentUserMfaEnabled ? '● Enabled' : '○ Disabled'}
-        </span>
+        <Badge variant={currentUserMfaEnabled ? 'success' : 'neutral'} dot>
+          {currentUserMfaEnabled ? 'Enabled' : 'Disabled'}
+        </Badge>
       </div>
 
       {message && (
@@ -1449,7 +1446,7 @@ function UserManagement() {
                   <Td className="text-fg-secondary">{ROLE_LABELS[user.role as UserRole]}</Td>
                   <Td className="text-fg-secondary">{user.department_name || <span className="text-fg-faint">—</span>}</Td>
                   <Td className="text-fg-secondary text-xs">{user.teams_account || <span className="text-fg-faint">—</span>}</Td>
-                  <Td><span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', user.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>{user.is_active ? '● Active' : '○ Inactive'}</span></Td>
+                  <Td><Badge variant={user.is_active ? 'success' : 'neutral'} dot>{user.is_active ? 'Active' : 'Inactive'}</Badge></Td>
                   <Td>
                     <div className="flex items-center justify-end gap-1">
                       {deleteConfirm === user.id ? (

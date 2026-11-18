@@ -18,7 +18,7 @@ import {
   PRESET_PAYMENT_TERMS, MAX_NET_DAYS, customDaysToTerms, formatPaymentTerms, isPresetTerms, netDays,
 } from '@/lib/paymentTerms'
 import { ErpVendorImportDrawer } from './ErpVendorImportDrawer'
-import { FileInput, Modal, Radio, Segmented, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, useSort } from '@uniops/shell'
+import { FileInput, Modal, Radio, Segmented, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, useSort, Badge } from '@uniops/shell'
 
 type VendorSortKey =
   | 'code' | 'erp_id' | 'name' | 'category' | 'contact'
@@ -832,16 +832,9 @@ export default function VendorsPage() {
 
                   {/* Status */}
                   <Td>
-                    <span
-                      className={cn(
-                        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                        vendor.is_active
-                          ? 'bg-success-soft text-success-fg'
-                          : 'bg-surface-sunken text-fg-muted'
-                      )}
-                    >
-                      {vendor.is_active ? '● Active' : '○ Inactive'}
-                    </span>
+                    <Badge variant={vendor.is_active ? 'success' : 'neutral'} dot>
+                      {vendor.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
                   </Td>
 
                   {/* Actions */}

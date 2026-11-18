@@ -2,15 +2,15 @@ import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { displayTimeZone, formatDate } from '@/lib/utils'
-import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr, Badge } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr, Badge, type BadgeTone } from '@uniops/shell'
 
-const GR_STATUS_STYLES: Record<string, string> = {
-  pending_ack:        'bg-warning-soft text-warning-fg',
-  collection_pending: 'bg-info-soft text-info-fg',
-  collected:          'bg-success-soft text-success-fg',
-  confirmed:          'bg-success-soft text-success-fg',
-  discrepancy:        'bg-danger-soft text-danger-fg',
-  cancelled:          'bg-surface-sunken text-fg-muted',
+const GR_STATUS_TONE: Record<string, BadgeTone> = {
+  pending_ack:        'warning',
+  collection_pending: 'blue',
+  collected:          'success',
+  confirmed:          'success',
+  discrepancy:        'danger',
+  cancelled:          'dark',
 }
 
 const GR_STATUS_LABEL: Record<string, string> = {
@@ -24,9 +24,9 @@ const GR_STATUS_LABEL: Record<string, string> = {
 
 function GrStatusBadge({ status }: { status: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${GR_STATUS_STYLES[status] ?? 'bg-surface-sunken text-fg-secondary'}`}>
+    <Badge variant={GR_STATUS_TONE[status] ?? 'neutral'}>
       {GR_STATUS_LABEL[status] ?? status}
-    </span>
+    </Badge>
   )
 }
 

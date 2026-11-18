@@ -193,12 +193,9 @@ function GrRow({ gr, idx }: { gr: ApiGr; idx: number }) {
       </Td>
       <Td className="text-fg-secondary">{gr.vendor_name}</Td>
       <Td>
-        <span className={cn(
-          'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-          gr.gr_type === 'physical' ? 'bg-info-soft text-info-fg' : 'bg-cat4-soft text-cat4-fg'
-        )}>
+        <Badge variant={gr.gr_type === 'physical' ? 'blue' : 'cat4'}>
           {gr.gr_type === 'physical' ? 'Physical' : 'Service'}
-        </span>
+        </Badge>
       </Td>
       <Td>
         <GrStatusBadge status={gr.status} />

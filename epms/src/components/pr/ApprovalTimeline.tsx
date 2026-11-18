@@ -2,11 +2,17 @@ import { cn, formatDateTime } from '@/lib/utils'
 import { Check, Clock, RotateCcw, SkipForward, X } from 'lucide-react'
 import type { ApprovalStep } from '@/types'
 
-import { Button } from '@uniops/shell'
-const CHANNEL_BADGES: Record<string, string> = {
-  Web: 'bg-primary-50 text-primary-600',
-  Email: 'bg-surface-sunken text-fg-secondary',
-  Teams: 'bg-cat4-soft text-cat4-fg',
+import { Button, Badge, type BadgeTone } from '@uniops/shell'
+const CHANNEL_TONE: Record<string, BadgeTone> = {
+  Web: 'accent',
+  Email: 'neutral',
+  Teams: 'cat4',
+}
+
+const ACTION_TONE: Record<string, BadgeTone> = {
+  Approved: 'success',
+  Returned: 'warning',
+  Rejected: 'danger',
 }
 
 /**
@@ -107,21 +113,14 @@ export function ApprovalTimeline({ steps, onSendReminder, reminder }: ApprovalTi
 
                 <div className="flex items-center gap-1.5 shrink-0">
                   {step.channel && (
-                    <span className={cn('rounded-full px-1.5 py-0.5 text-2xs font-medium', CHANNEL_BADGES[step.channel])}>
+                    <Badge size="sm" variant={CHANNEL_TONE[step.channel] ?? 'neutral'}>
                       {step.channel}
-                    </span>
+                    </Badge>
                   )}
                   {step.action && (
-                    <span
-                      className={cn(
-                        'rounded-full px-1.5 py-0.5 text-2xs font-medium',
-                        step.action === 'Approved' && 'bg-success-soft text-success-fg',
-                        step.action === 'Returned' && 'bg-warning-soft text-warning-fg',
-                        step.action === 'Rejected' && 'bg-danger-soft text-danger-fg'
-                      )}
-                    >
+                    <Badge size="sm" variant={ACTION_TONE[step.action] ?? 'neutral'}>
                       {step.action}
-                    </span>
+                    </Badge>
                   )}
                 </div>
               </div>

@@ -5,7 +5,7 @@ import {
   Upload, Search, AlertTriangle, CheckCircle2, Clock,
   X, FileText, ChevronDown, ChevronUp, ExternalLink, Loader2, Plus, Trash2, UserPlus,
 } from 'lucide-react'
-import { Checkbox, Chip, ChipGroup, DropdownPortal, FileInput, Input, MenuItem, Modal, Radio, Select, SortTh, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr, sortParams, useAnchorRect, useSort } from '@uniops/shell'
+import { Checkbox, Chip, ChipGroup, DropdownPortal, FileInput, Input, MenuItem, Modal, Radio, Select, SortTh, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr, sortParams, useAnchorRect, useSort, type BadgeTone } from '@uniops/shell'
 import { parseInvoiceFile, type ParseFailureKind, type ParsedTotalCheck } from '@/lib/invoice-parser'
 import { EXPENSE_BASE } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -1918,10 +1918,10 @@ function OaInvoicesTab() {
     },
   })
 
-  const OA_STATUS_COLORS: Record<string, string> = {
-    uploaded: 'bg-surface-sunken text-fg-secondary',
-    reviewed: 'bg-info-soft text-info-fg',
-    used:     'bg-success-soft text-success-fg',
+  const OA_STATUS_TONE: Record<string, BadgeTone> = {
+    uploaded: 'neutral',
+    reviewed: 'blue',
+    used:     'success',
   }
 
   return (
@@ -1958,9 +1958,9 @@ function OaInvoicesTab() {
                   <Td className="text-fg max-w-[180px] truncate">{inv.vendor_name ?? '—'}</Td>
                   <Td className="font-mono">{formatAmount(inv.total_amount, inv.currency)}</Td>
                   <Td>
-                    <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium', OA_STATUS_COLORS[inv.status] ?? 'bg-surface-sunken text-fg-secondary')}>
+                    <Badge size="sm" variant={OA_STATUS_TONE[inv.status] ?? 'neutral'}>
                       {inv.status}
-                    </span>
+                    </Badge>
                   </Td>
                   <Td className="font-mono text-xs text-fg-muted">{inv.pa_number ?? '—'}</Td>
                   <Td align="center" className="text-xs text-fg-muted ">

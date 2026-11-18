@@ -1,7 +1,7 @@
 import { useState, type ChangeEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Plus, Search, FileText, CreditCard, Loader2, Truck, FileInput, AlertTriangle } from 'lucide-react'
-import { SortTh, sortParams, useSort, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Select, TBody, THead, Table, Td, Th, Tr, type BadgeTone } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -52,16 +52,16 @@ function PaStatusBadge({ status }: { status: PaStatus }) {
   )
 }
 
-const TYPE_BADGE_CFG: Record<ApiPa['pa_type'], { label: string; cls: string }> = {
-  prepayment: { label: 'Prepayment', cls: 'bg-info-soft border-info-line text-info-fg font-semibold' },
-  settlement: { label: 'Settlement', cls: 'bg-success-soft border-success-line text-success-fg font-semibold' },
-  balance:    { label: 'Balance',    cls: 'bg-warning-soft border-warning-line text-warning-fg font-semibold' },
-  regular:    { label: 'Regular',    cls: 'bg-surface-sunken border-line text-fg-secondary font-medium' },
+const TYPE_BADGE_CFG: Record<ApiPa['pa_type'], { label: string; tone: BadgeTone }> = {
+  prepayment: { label: 'Prepayment', tone: 'blue' },
+  settlement: { label: 'Settlement', tone: 'success' },
+  balance:    { label: 'Balance',    tone: 'warning' },
+  regular:    { label: 'Regular',    tone: 'neutral' },
 }
 
 function TypeBadge({ type }: { type: ApiPa['pa_type'] }) {
   const c = TYPE_BADGE_CFG[type] ?? TYPE_BADGE_CFG.regular
-  return <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-2xs', c.cls)}>{c.label}</span>
+  return <Badge size="sm" variant={c.tone}>{c.label}</Badge>
 }
 
 // GET /pa sort keys (epms-api crud/pa.py SORTABLE). Status sorts status →

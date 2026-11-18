@@ -2,21 +2,21 @@ import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { displayTimeZone, formatAmount, formatDate } from '@/lib/utils'
-import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Badge, type BadgeTone } from '@uniops/shell'
 
-const INV_STATUS_STYLES: Record<string, string> = {
-  unmatched: 'bg-warning-soft text-warning-fg',
-  matched:   'bg-success-soft text-success-fg',
-  exception: 'bg-danger-soft text-danger-fg',
-  approved:  'bg-info-soft text-info-fg',
-  paid:      'bg-surface-sunken text-fg-muted',
+const INV_STATUS_TONE: Record<string, BadgeTone> = {
+  unmatched: 'warning',
+  matched:   'success',
+  exception: 'danger',
+  approved:  'blue',
+  paid:      'dark',
 }
 
 function InvoiceStatusBadge({ status }: { status: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${INV_STATUS_STYLES[status] ?? 'bg-surface-sunken text-fg-secondary'}`}>
+    <Badge variant={INV_STATUS_TONE[status] ?? 'neutral'}>
       {status}
-    </span>
+    </Badge>
   )
 }
 

@@ -26,9 +26,9 @@ const MAX_FACTORS = 3
 
 /** Role label for sort_order position in the matrix layout. */
 const ROLE_BY_INDEX = [
-  { label: 'Primary · Rows',     bg: 'bg-primary-50',  fg: 'text-primary-700',  icon: Rows3 },
-  { label: '2nd · Columns',      bg: 'bg-info-soft',     fg: 'text-info-fg',     icon: Columns3 },
-  { label: '3rd · Sub-Columns',  bg: 'bg-cat4-soft',   fg: 'text-cat4-fg',   icon: CornerDownRight },
+  { label: 'Primary · Rows',     tone: 'accent', icon: Rows3 },
+  { label: '2nd · Columns',      tone: 'blue',   icon: Columns3 },
+  { label: '3rd · Sub-Columns',  tone: 'cat4',   icon: CornerDownRight },
 ] as const
 
 export function FactorConfigPanel({ accountId, canEdit }: Props) {
@@ -187,12 +187,11 @@ function FactorCard({
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 flex-wrap">
           {role && (
-            <span
-              className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-semibold', role.bg, role.fg)}
+            <Badge size="sm" variant={role.tone}
               title={`This factor is the ${role.label} axis in the matrix editor`}
             >
               <role.icon aria-hidden className="h-3 w-3" />{role.label}
-            </span>
+            </Badge>
           )}
           {outOfMatrix && (
             <Badge variant="warning" size="sm">Out of matrix</Badge>

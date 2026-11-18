@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Database, Download, RefreshCw, Paperclip, AlertTriangle, CheckCircle2, Loader2, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn, formatDateTime } from '@/lib/utils'
-import { Checkbox, MenuItem } from '@uniops/shell'
+import { Checkbox, MenuItem, Badge } from '@uniops/shell'
 import {
   pmsImportService as svc,
   type PmsConfig, type PmsRun, type PmsReport,
@@ -86,15 +86,15 @@ function ReportView({ r }: { r: PmsReport }) {
 
 function StatusBadge({ s }: { s: PmsRun['status'] }) {
   const map = {
-    running: ['bg-info-soft text-info-fg', Loader2, 'Running'],
-    success: ['bg-success-soft text-success-fg', CheckCircle2, 'Success'],
-    error: ['bg-danger-soft text-danger-fg', AlertTriangle, 'Error'],
+    running: ['blue', Loader2, 'Running'],
+    success: ['success', CheckCircle2, 'Success'],
+    error: ['danger', AlertTriangle, 'Error'],
   } as const
-  const [cls, Icon, label] = map[s]
+  const [tone, Icon, label] = map[s]
   return (
-    <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium', cls)}>
+    <Badge variant={tone}>
       <Icon className={cn('h-3 w-3', s === 'running' && 'animate-spin')} /> {label}
-    </span>
+    </Badge>
   )
 }
 

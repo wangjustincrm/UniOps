@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, Receipt, Plus, CheckCircle2, XCircle, Trash2, Paperclip, AlertTriangle } from 'lucide-react'
-import { ChipGroup, Input, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, type Sort, useSort } from '@uniops/shell'
+import { ChipGroup, Input, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, type Sort, useSort, Badge } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, statusLabel } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
@@ -363,12 +363,11 @@ function ReceiptRow({
                 master-data row is the normal case, and dressing it as a fault
                 would train people to ignore the amber badge that isn't. */}
             {!receipt.vendor_matched && (
-              <span
-                className="rounded-full bg-surface-sunken px-1.5 py-0.5 text-2xs font-medium text-fg-muted"
+              <Badge size="sm"
                 title={`"${receipt.vendor_name}" is the text recorded from the receipt — it isn't linked to a vendor in the vendor list, so the check against agreement ${receipt.agreement_number} compares names, not records.`}
               >
                 Text only
-              </span>
+              </Badge>
             )}
             {/* A REMINDER, not an error — hence a badge on this one cell and
                 deliberately NOT a red row: a slip from another trading name of
@@ -377,13 +376,12 @@ function ReceiptRow({
                 nothing they can act on. The verdict itself is the server's
                 (vendor_mismatch) — never recomputed here. */}
             {receipt.vendor_mismatch && (
-              <span
-                className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-1.5 py-0.5 text-2xs font-medium text-warning-fg"
+              <Badge variant="warning" size="sm"
                 title={`This receipt is from "${receipt.vendor_name}", but agreement ${receipt.agreement_number} is with "${receipt.agreement_vendor_name}". Check it was charged to the right house account.`}
               >
                 <AlertTriangle className="h-3 w-3" />
                 Different vendor
-              </span>
+              </Badge>
             )}
           </span>
         ) : (

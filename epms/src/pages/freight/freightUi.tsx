@@ -47,27 +47,27 @@ export function FreightInvoiceStatusBadge({ status }: { status: string }) {
 /** Marks a courier invoice (match_route='freight') in the general invoice lists. */
 export function FreightRouteBadge({ className }: { className?: string }) {
   return (
-    <span className={cn('inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-2xs font-semibold text-primary-700', className)}>
+    <Badge variant="accent" size="sm" className={className}>
       Freight
-    </span>
+    </Badge>
   )
 }
 
 /** Marks an invoice matched for a Direct PA (match_route='direct') in the lists. */
 export function DirectRouteBadge({ className }: { className?: string }) {
   return (
-    <span className={cn('inline-flex items-center rounded-full border border-warning-line bg-warning-soft px-2 py-0.5 text-2xs font-semibold text-warning-fg', className)}>
+    <Badge variant="warning" size="sm" className={className}>
       Direct
-    </span>
+    </Badge>
   )
 }
 
 /** Marks a project-related shipment (FRT-019) wherever its department / cost center would show. */
 export function ProjectBadge({ className }: { className?: string }) {
   return (
-    <span className={cn('inline-flex items-center rounded-full border border-info-line bg-info-soft px-2 py-0.5 text-2xs font-semibold text-info-fg', className)}>
+    <Badge variant="blue" size="sm" className={className}>
       Project
-    </span>
+    </Badge>
   )
 }
 

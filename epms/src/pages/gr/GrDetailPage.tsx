@@ -26,11 +26,11 @@ import { Input, Modal, Radio, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr } 
 const GR_PDF_REGENERATABLE_STATUSES: GrStatus[] = ['collection_pending', 'collected', 'confirmed', 'discrepancy']
 
 const CONDITION_CONFIG = {
-  good:        { label: 'Good',        cls: 'bg-success-soft text-success-fg' },
-  discrepancy: { label: 'Discrepancy', cls: 'bg-warning-soft text-warning-fg' },
-  damaged:     { label: 'Damaged',     cls: 'bg-danger-soft text-danger-fg'   },
-}
-const SERVICE_ISSUES_CONDITION = { label: 'Has Issues', cls: 'bg-warning-soft text-warning-fg' }
+  good:        { label: 'Good',        tone: 'success' },
+  discrepancy: { label: 'Discrepancy', tone: 'warning' },
+  damaged:     { label: 'Damaged',     tone: 'danger'  },
+} as const
+const SERVICE_ISSUES_CONDITION = { label: 'Has Issues', tone: 'warning' } as const
 
 // ─── GR Status helpers ────────────────────────────────────────────────────────
 
@@ -590,9 +590,9 @@ function LineDetailRow({ line, idx, currency, serviceIssues }: {
           {formatAmount(line.line_total, currency)}
         </Td>
         <Td>
-          <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', cond.cls)}>
+          <Badge variant={cond.tone}>
             {cond.label}
-          </span>
+          </Badge>
         </Td>
       </Tr>
       {line.discrepancy_notes && (

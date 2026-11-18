@@ -15,7 +15,7 @@ import type { ApiPart, CreatePartBody, UpdatePartBody } from '@/services/parts'
 import { useUomCodes } from '@/hooks/useUoms'
 import { useAuthStore } from '@/stores/auth.store'
 import { useRolePermissions } from '@/hooks/useConfig'
-import { FileInput, Radio, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, useSort } from '@uniops/shell'
+import { FileInput, Radio, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, useSort, Badge } from '@uniops/shell'
 
 type PartSortKey =
   | 'code' | 'category' | 'name' | 'supplier' | 'supplier_part_no'
@@ -655,12 +655,9 @@ export default function PartsListPage() {
                   </Td>
                   <Td className="text-fg-muted">{part.unit}</Td>
                   <Td>
-                    <span className={cn(
-                      'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                      part.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted'
-                    )}>
-                      {part.is_active ? '● Active' : '○ Inactive'}
-                    </span>
+                    <Badge variant={part.is_active ? 'success' : 'neutral'} dot>
+                      {part.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
                   </Td>
                   {canWrite && (
                   <Td>

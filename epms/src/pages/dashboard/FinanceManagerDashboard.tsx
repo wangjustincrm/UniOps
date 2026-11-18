@@ -3,22 +3,22 @@ import { StatCard } from '@/components/dashboard/StatCard'
 import { BudgetOverview } from '@/components/dashboard/BudgetOverview'
 import { useDashboard } from '@/hooks/useDashboard'
 import { formatAmount, formatDate } from '@/lib/utils'
-import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr, Badge, type BadgeTone } from '@uniops/shell'
 
-const PA_STATUS_STYLES: Record<string, string> = {
-  draft:      'bg-surface-sunken text-fg-secondary',
-  submitted:  'bg-warning-soft text-warning-fg',
-  in_review:  'bg-info-soft text-info-fg',
-  approved:   'bg-success-soft text-success-fg',
-  processed:  'bg-success-soft text-success-fg',
-  cancelled:  'bg-surface-sunken text-fg-muted',
+const PA_STATUS_TONE: Record<string, BadgeTone> = {
+  draft:      'neutral',
+  submitted:  'warning',
+  in_review:  'blue',
+  approved:   'success',
+  processed:  'success',
+  cancelled:  'dark',
 }
 
 function PaStatusBadge({ status }: { status: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${PA_STATUS_STYLES[status] ?? 'bg-surface-sunken text-fg-secondary'}`}>
+    <Badge variant={PA_STATUS_TONE[status] ?? 'neutral'}>
       {status.replace('_', ' ')}
-    </span>
+    </Badge>
   )
 }
 
