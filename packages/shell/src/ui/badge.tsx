@@ -24,6 +24,8 @@ const badgeVariants = cva(
         // the token migration — not near-black (white on #4E6070 = 6.6:1).
         dark: 'bg-fg-secondary text-fg-on-accent',
         outline: 'border border-line text-fg-secondary',
+        // Filled accent: the stronger of an accent pair (required vs optional).
+        solid: 'bg-accent text-fg-on-accent',
         // Category colours (a kind, not a state): Prepayment, Service, a factor role …
         // Pick one per category and keep it everywhere in the app.
         cat1: 'bg-cat1-soft text-cat1-fg',
@@ -55,6 +57,7 @@ const dotTone: Record<string, string> = {
   danger: 'bg-danger-solid',
   dark: 'bg-fg-faint',
   outline: 'bg-fg-faint',
+  solid: 'bg-fg-on-accent',
   cat1: 'bg-cat1-fg', cat2: 'bg-cat2-fg', cat3: 'bg-cat3-fg', cat4: 'bg-cat4-fg',
   cat5: 'bg-cat5-fg', cat6: 'bg-cat6-fg', cat7: 'bg-cat7-fg', cat8: 'bg-cat8-fg',
 }
