@@ -2,6 +2,7 @@ import { Download, Eye, ExternalLink, Printer } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { fileKind, formatText, saveFile, type FileData, type FileKind } from '../lib/files'
 import { Dialog } from '../primitives/Dialog'
+import { CopyButton } from '../primitives/Copy'
 import { ErrorLine } from '../primitives/States'
 import { Button, type ButtonProps } from '../primitives/shell'
 
@@ -74,12 +75,16 @@ function Body({ source, onReady }: { source: FileSource; onReady: (v: Ready | nu
   const shown = v.pretty && !asReceived ? v.pretty : v.raw ?? ''
   return (
     <div className="space-y-2">
-      {v.pretty && (
-        <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+        {v.pretty && <>
           <span>{asReceived ? 'As the file is.' : 'Laid out to read (one segment or field per line); the file itself is unchanged.'}</span>
           <Button size="sm" variant="secondary" onClick={() => setAsReceived(!asReceived)}>{asReceived ? 'Laid out' : 'As the file is'}</Button>
-        </div>
-      )}
+        </>}
+        <span className="ml-auto inline-flex items-center gap-1">
+          {v.pretty ? (asReceived ? 'Copy as the file is' : 'Copy as laid out') : 'Copy the text'}
+          <CopyButton text={shown} label={v.pretty ? (asReceived ? 'Copy as the file is' : 'Copy as laid out') : 'Copy the text'} />
+        </span>
+      </div>
       <pre aria-label={`${source.title} contents`} className="max-h-[70vh] overflow-auto whitespace-pre-wrap break-all rounded border border-neutral-200 bg-neutral-50 p-3 font-mono text-xs leading-5 text-neutral-800">{shown}</pre>
       {(v.cut ?? 0) > 0 && <p className="text-xs text-neutral-500">Only the start is shown ({(v.cut ?? 0).toLocaleString()} more characters): download it for all.</p>}
     </div>
