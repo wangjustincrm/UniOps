@@ -12,8 +12,8 @@
 import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, CreditCard, Landmark, Loader2, Pencil, Plus, X } from 'lucide-react'
-import { SortTh, useSortableRows, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Check, CreditCard, Landmark, Loader2, Pencil, Plus } from 'lucide-react'
+import { SortTh, useSortableRows, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -219,82 +219,76 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-fg">{isNew ? 'New account' : 'Edit account'}</h2>
-          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}><X className="h-5 w-5" /></Button>
-        </div>
-        <div className="grid gap-3">
+    <ShellModal open onClose={onClose} title={isNew ? 'New account' : 'Edit account'} closeOnBackdrop closeOnEscape={false} size="full" className="max-w-md">
+      <div className="grid gap-3">
+        <label className="flex min-w-0 flex-col gap-1 text-sm">
+          <span className="text-fg-secondary">Type</span>
+          <Select value={f.kind ?? 'bank'} onChange={(e) => set({ kind: e.target.value })} className={inputCls}>
+            <option value="bank">Bank Account</option>
+            <option value="credit_card">Credit Card</option>
+          </Select>
+        </label>
+        <label className="flex min-w-0 flex-col gap-1 text-sm">
+          <span className="text-fg-secondary">{isCard ? 'Card name' : 'Account name'}</span>
+          <Input value={f.name ?? ''} onChange={(e) => set({ name: e.target.value })}
+                 placeholder={isCard ? 'e.g. Amex Corporate' : 'e.g. RBC Operating'} className={inputCls} />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
           <label className="flex min-w-0 flex-col gap-1 text-sm">
-            <span className="text-fg-secondary">Type</span>
-            <Select value={f.kind ?? 'bank'} onChange={(e) => set({ kind: e.target.value })} className={inputCls}>
-              <option value="bank">Bank Account</option>
-              <option value="credit_card">Credit Card</option>
+            <span className="text-fg-secondary">{isCard ? 'Card issuer' : 'Bank'}</span>
+            <Input value={f.bank_name ?? ''} onChange={(e) => set({ bank_name: e.target.value })}
+                   placeholder={isCard ? 'Visa / MC / Amex' : 'Royal Bank of Canada'} className={inputCls} />
+          </label>
+          <label className="flex min-w-0 flex-col gap-1 text-sm">
+            <span className="text-fg-secondary">{isCard ? 'Card last 4' : 'Account last 4'}</span>
+            <Input value={f.account_masked ?? ''} onChange={(e) => set({ account_masked: e.target.value })} className={inputCls} />
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex min-w-0 flex-col gap-1 text-sm">
+            <span className="text-fg-secondary">Currency</span>
+            <Select value={f.currency ?? 'CAD'} onChange={(e) => set({ currency: e.target.value })} className={inputCls}>
+              {['CAD', 'USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}
             </Select>
           </label>
           <label className="flex min-w-0 flex-col gap-1 text-sm">
-            <span className="text-fg-secondary">{isCard ? 'Card name' : 'Account name'}</span>
-            <Input value={f.name ?? ''} onChange={(e) => set({ name: e.target.value })}
-                   placeholder={isCard ? 'e.g. Amex Corporate' : 'e.g. RBC Operating'} className={inputCls} />
-          </label>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex min-w-0 flex-col gap-1 text-sm">
-              <span className="text-fg-secondary">{isCard ? 'Card issuer' : 'Bank'}</span>
-              <Input value={f.bank_name ?? ''} onChange={(e) => set({ bank_name: e.target.value })}
-                     placeholder={isCard ? 'Visa / MC / Amex' : 'Royal Bank of Canada'} className={inputCls} />
-            </label>
-            <label className="flex min-w-0 flex-col gap-1 text-sm">
-              <span className="text-fg-secondary">{isCard ? 'Card last 4' : 'Account last 4'}</span>
-              <Input value={f.account_masked ?? ''} onChange={(e) => set({ account_masked: e.target.value })} className={inputCls} />
-            </label>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex min-w-0 flex-col gap-1 text-sm">
-              <span className="text-fg-secondary">Currency</span>
-              <Select value={f.currency ?? 'CAD'} onChange={(e) => set({ currency: e.target.value })} className={inputCls}>
-                {['CAD', 'USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}
-              </Select>
-            </label>
-            <label className="flex min-w-0 flex-col gap-1 text-sm">
-              <span className="text-fg-secondary">GL account code</span>
-              <Input value={f.ledger_account_code ?? ''} onChange={(e) => set({ ledger_account_code: e.target.value })}
-                     placeholder={isCard ? '2050 (liability)' : '1010 (cash)'} className={cn(inputCls, 'font-mono')} />
-            </label>
-          </div>
-          {!isCard && (
-            <label className="flex min-w-0 flex-col gap-1 text-sm">
-              <span className="text-fg-secondary">NC bank account</span>
-              <Select value={f.nc_bank_account_code ?? ''}
-                      onChange={(e) => set({ nc_bank_account_code: e.target.value || null })}
-                      className={cn(inputCls, 'truncate')}>
-                <option value="">— not linked —</option>
-                {ncAccounts.map((n) => (
-                  <option key={n.code} value={n.code}>{n.label} · {n.currency}</option>
-                ))}
-              </Select>
-              <span className="text-xs text-fg-muted">
-                {ncHint ?? 'Which account NC\u2019s 100201 calls this one. Bank Reconciliation reads the ledger side through it \u2014 without it there is nothing to reconcile against.'}
-              </span>
-            </label>
-          )}
-          <p className="text-xs text-fg-muted">
-            {isCard
-              ? 'Card payments credit this liability (Credit Card Payable). Pay the card statement later from a bank account.'
-              : 'Bank payments credit this cash asset account.'}
-          </p>
-          <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
-            <Checkbox checked={f.is_active ?? true} onChange={(e) => set({ is_active: e.target.checked })} />
-            Active
+            <span className="text-fg-secondary">GL account code</span>
+            <Input value={f.ledger_account_code ?? ''} onChange={(e) => set({ ledger_account_code: e.target.value })}
+                   placeholder={isCard ? '2050 (liability)' : '1010 (cash)'} className={cn(inputCls, 'font-mono')} />
           </label>
         </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onClose} className={secondaryBtn}>Cancel</button>
-          <button onClick={save} disabled={busy} className={primaryBtn}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save
-          </button>
-        </div>
+        {!isCard && (
+          <label className="flex min-w-0 flex-col gap-1 text-sm">
+            <span className="text-fg-secondary">NC bank account</span>
+            <Select value={f.nc_bank_account_code ?? ''}
+                    onChange={(e) => set({ nc_bank_account_code: e.target.value || null })}
+                    className={cn(inputCls, 'truncate')}>
+              <option value="">— not linked —</option>
+              {ncAccounts.map((n) => (
+                <option key={n.code} value={n.code}>{n.label} · {n.currency}</option>
+              ))}
+            </Select>
+            <span className="text-xs text-fg-muted">
+              {ncHint ?? 'Which account NC\u2019s 100201 calls this one. Bank Reconciliation reads the ledger side through it \u2014 without it there is nothing to reconcile against.'}
+            </span>
+          </label>
+        )}
+        <p className="text-xs text-fg-muted">
+          {isCard
+            ? 'Card payments credit this liability (Credit Card Payable). Pay the card statement later from a bank account.'
+            : 'Bank payments credit this cash asset account.'}
+        </p>
+        <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
+          <Checkbox checked={f.is_active ?? true} onChange={(e) => set({ is_active: e.target.checked })} />
+          Active
+        </label>
       </div>
-    </div>
+      <div className="mt-5 flex justify-end gap-2">
+        <button onClick={onClose} className={secondaryBtn}>Cancel</button>
+        <button onClick={save} disabled={busy} className={primaryBtn}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save
+        </button>
+      </div>
+    </ShellModal>
   )
 }

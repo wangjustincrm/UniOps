@@ -25,8 +25,8 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle2, Download, EyeOff, Loader2, Search, Undo2, X } from 'lucide-react'
-import { SortTh, sortParams, useSort, type Sort, Checkbox, Input, Select, TBody, TFoot, THead, Table, Td, Textarea, Th, Tr, Button } from '@uniops/shell'
+import { AlertTriangle, CheckCircle2, Download, EyeOff, Loader2, Search, Undo2 } from 'lucide-react'
+import { SortTh, sortParams, useSort, type Sort, Checkbox, Input, Select, TBody, TFoot, THead, Table, Td, Textarea, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { invalidateApJudgement } from '@/lib/apJudgement'
@@ -220,52 +220,39 @@ function DismissDialog({ billNos, count, total, currency, onCancel, onDone }: {
   const needsNote = reason === 'other' && !note.trim()
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-6">
-      <div className="w-full max-w-lg rounded-lg bg-surface shadow-xl">
-        <div className="border-b border-line px-5 py-4">
-          <h3 className="text-sm font-semibold text-fg">
-            Ignore {count} {count === 1 ? 'bill' : 'bills'}
-          </h3>
-          <p className="mt-0.5 text-xs text-fg-muted">
-            {money(String(total))} {currency} comes off the working list. NC is not
-            changed — the page keeps showing what NC says and what was set aside,
-            separately, and this can be undone.
-          </p>
+    <ShellModal open onClose={onCancel} title={<>Ignore {count} {count === 1 ? 'bill' : 'bills'}</>} description={<>{money(String(total))} {currency} comes off the working list. NC is not changed — the page keeps showing what NC says and what was set aside, separately, and this can be undone.</>} closeOnEscape={false} stacked size="full" className="max-w-lg"
+      footer={<>
+        <Button variant="secondary" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button size="sm" onClick={() => onDone(reason, note.trim())} disabled={needsNote}
+               >
+          Ignore {count}
+        </Button>
+      </>}>
+      <div className="space-y-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-fg-secondary">Reason</label>
+          <Select value={reason} onChange={(e) => setReason(e.target.value)}
+                  className="w-full">
+            {(data?.reasons ?? []).map((r) => (
+              <option key={r.code} value={r.code}>{r.label}</option>
+            ))}
+          </Select>
         </div>
-        <div className="space-y-3 px-5 py-4">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-fg-secondary">Reason</label>
-            <Select value={reason} onChange={(e) => setReason(e.target.value)}
-                    className="w-full">
-              {(data?.reasons ?? []).map((r) => (
-                <option key={r.code} value={r.code}>{r.label}</option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-fg-secondary">
-              Note {reason === 'other' && <span className="text-warning-fg">(required)</span>}
-            </label>
-            <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
-                      placeholder="e.g. NC went live 2020, period closed, cannot be cleared there"
-                      className="w-full" />
-          </div>
-          <div className="max-h-24 overflow-auto rounded border border-line bg-surface-subtle px-2.5 py-1.5 font-mono text-2xs text-fg-muted">
-            {billNos ? billNos.join(', ') : `Every bill matching the current filter (${count}).`}
-          </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-fg-secondary">
+            Note {reason === 'other' && <span className="text-warning-fg">(required)</span>}
+          </label>
+          <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
+                    placeholder="e.g. NC went live 2020, period closed, cannot be cleared there"
+                    className="w-full" />
         </div>
-        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
-          <Button variant="secondary" size="sm" onClick={onCancel}
-                 >
-            Cancel
-          </Button>
-          <Button size="sm" onClick={() => onDone(reason, note.trim())} disabled={needsNote}
-                 >
-            Ignore {count}
-          </Button>
+        <div className="max-h-24 overflow-auto rounded border border-line bg-surface-subtle px-2.5 py-1.5 font-mono text-2xs text-fg-muted">
+          {billNos ? billNos.join(', ') : `Every bill matching the current filter (${count}).`}
         </div>
       </div>
-    </div>
+    </ShellModal>
   )
 }
 
@@ -343,437 +330,427 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
     (b) => Number(b.paid_against ?? 0) >= Number(b.money_cr ?? 0) && Number(b.money_cr ?? 0) > 0).length
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-6">
-      <div className="w-full max-w-6xl rounded-lg bg-surface shadow-xl">
-        <div className="flex items-start justify-between border-b border-line px-5 py-4">
-          <div>
-            <h2 className="text-base font-semibold text-fg">{name ?? code}</h2>
-            <p className="mt-0.5 text-xs text-fg-muted">
-              {code} · {currency} · {bills.length} bills still flagged open
-              {ignoredBills.length > 0 && hideIgnored && (
-                <span className="text-fg-muted"> (+{ignoredBills.length} ignored)</span>
-              )} · {pays.length} payment lines
-              {paidButOpen > 0 && (
-                <> · <span className="font-medium text-warning-fg">
-                  {paidButOpen} of those are already covered by payments pointing at them
-                </span></>
-              )}
-              {untied > 0 && (
-                <> · <span className="text-fg-muted">{untied} payments applied to no payable</span></>
-              )}
-              {inJv > 0 && (
-                <> · <span className="font-medium text-info-fg">
-                  {inJv} with no payment document found in a JV
-                </span></>
-              )}
-              {twinned > 0 && (
-                <> · <span className="font-medium text-warning-fg">
-                  {twinned} with the same invoice in another currency
-                </span></>
-              )}
-            </p>
-          </div>
-          <Button variant="subtle" size="icon-xs" onClick={onClose} aria-label="Close"
-                 >
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
-
-        {isFetching && !data ? (
-          <div className="py-16 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
-        ) : (
-          <>
-          {/* A voucher that cleared the payable without naming an invoice —
-              e.g. receivable netted against payable — is invisible to the
-              per-bill match. Shown beside the bills for finance to compare,
-              never applied to any of them. */}
-          {(data?.unattributed_clearings.lines.length ?? 0) > 0 && (
-            <div className="mx-5 mt-5 rounded-lg border border-info-line bg-info-soft/60 px-4 py-3 text-xs">
-              <div className="font-semibold text-info-fg">
-                Cleared on the payable account without naming an invoice
-              </div>
-              <p className="mt-0.5 text-info-fg">
-                {data!.unattributed_clearings.unpaid_bills} open bills since{' '}
-                {day(data!.unattributed_clearings.since)} have no payment document,{' '}
-                {money(data!.unattributed_clearings.unpaid_open)} {currency} (not counting ignored ones).
-                These journal lines reduced this supplier&rsquo;s payable in that time and name none
-                of its invoices — {money(data!.unattributed_clearings.total)} {currency} in all.
-                Check which bills they settled; nothing here is applied automatically.
-              </p>
-              <Table density="compact" className="mt-2 text-2xs">
-                <TBody>
-                  {data!.unattributed_clearings.lines.map((l) => (
-                    <Tr key={l.jv_number + l.amount} className="border-info-line">
-                      <Td className="pr-3 font-mono">{l.jv_number}</Td>
-                      <Td className="pr-3 whitespace-nowrap">{day(l.voucher_date)}</Td>
-                      <Td className="pr-3 text-info-fg">{l.subsystem ?? '—'}</Td>
-                      <Td align="right" className="pr-3 font-mono tabular-nums">{money(l.amount)}</Td>
-                      <Td className="text-fg-secondary">{l.summary ?? '—'}</Td>
-                    </Tr>
-                  ))}
-                </TBody>
-              </Table>
+    // No backdrop / Escape close (as before): only the close button.
+    <ShellModal open onClose={onClose} closeOnEscape={false} title={name ?? code} size="full" className="max-w-6xl"
+      description={<>
+      {code} · {currency} · {bills.length} bills still flagged open
+      {ignoredBills.length > 0 && hideIgnored && (
+        <span className="text-fg-muted"> (+{ignoredBills.length} ignored)</span>
+      )} · {pays.length} payment lines
+      {paidButOpen > 0 && (
+        <> · <span className="font-medium text-warning-fg">
+          {paidButOpen} of those are already covered by payments pointing at them
+        </span></>
+      )}
+      {untied > 0 && (
+        <> · <span className="text-fg-muted">{untied} payments applied to no payable</span></>
+      )}
+      {inJv > 0 && (
+        <> · <span className="font-medium text-info-fg">
+          {inJv} with no payment document found in a JV
+        </span></>
+      )}
+      {twinned > 0 && (
+        <> · <span className="font-medium text-warning-fg">
+          {twinned} with the same invoice in another currency
+        </span></>
+      )}
+      </>}>
+      {isFetching && !data ? (
+        <div className="py-16 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
+      ) : (
+        <>
+        {/* A voucher that cleared the payable without naming an invoice —
+            e.g. receivable netted against payable — is invisible to the
+            per-bill match. Shown beside the bills for finance to compare,
+            never applied to any of them. */}
+        {(data?.unattributed_clearings.lines.length ?? 0) > 0 && (
+          <div className="mx-5 mt-5 rounded-lg border border-info-line bg-info-soft/60 px-4 py-3 text-xs">
+            <div className="font-semibold text-info-fg">
+              Cleared on the payable account without naming an invoice
             </div>
-          )}
-          <div className="grid gap-5 p-5 lg:grid-cols-2">
-            <div className="min-w-0">
-              <h3 className="mb-1 text-sm font-semibold text-fg">Bills NC still shows as open</h3>
-              {/* Not every open bill is debt. NC went live in 2020 and the
-                  periods since have been closed at month-end and year-end, so
-                  a leftover from then can no longer be cleared THERE — only
-                  judged here. */}
-              <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs text-fg-muted">
-                {ignoredBills.length > 0 ? (
-                  <label className="inline-flex items-center gap-1.5">
-                    <Checkbox checked={hideIgnored}
-                           onChange={(e) => { setHideIgnored(e.target.checked); setPicked([]) }} />
-                    Hide {ignoredBills.length} ignored
-                    <span className="text-fg-muted">
-                      ({money(data?.open_bills_total.ignored_bal)} {currency})
-                    </span>
-                  </label>
-                ) : (
-                  <span>Select the ones that are not real debt to take them off this list.</span>
-                )}
-                {picked.length > 0 && (
-                  <>
-                    <span className="font-medium text-fg-secondary">
-                      {picked.length} selected · {money(String(pickedTotal))} {currency}
-                    </span>
-                    <Button variant="outline" size="xs" onClick={() => setConfirming(true)}
-                           >
-                      <EyeOff className="h-3 w-3" /> Ignore these
-                    </Button>
-                    <Button variant="subtle" size="xs" onClick={() => setPicked([])}>
-                      clear
-                    </Button>
-                  </>
-                )}
-                {(dismiss.isError || restore.isError) && (
-                  <span className="font-medium text-danger-fg">
-                    Could not save that — you may not have permission to set payables aside.
+            <p className="mt-0.5 text-info-fg">
+              {data!.unattributed_clearings.unpaid_bills} open bills since{' '}
+              {day(data!.unattributed_clearings.since)} have no payment document,{' '}
+              {money(data!.unattributed_clearings.unpaid_open)} {currency} (not counting ignored ones).
+              These journal lines reduced this supplier&rsquo;s payable in that time and name none
+              of its invoices — {money(data!.unattributed_clearings.total)} {currency} in all.
+              Check which bills they settled; nothing here is applied automatically.
+            </p>
+            <Table density="compact" className="mt-2 text-2xs">
+              <TBody>
+                {data!.unattributed_clearings.lines.map((l) => (
+                  <Tr key={l.jv_number + l.amount} className="border-info-line">
+                    <Td className="pr-3 font-mono">{l.jv_number}</Td>
+                    <Td className="pr-3 whitespace-nowrap">{day(l.voucher_date)}</Td>
+                    <Td className="pr-3 text-info-fg">{l.subsystem ?? '—'}</Td>
+                    <Td align="right" className="pr-3 font-mono tabular-nums">{money(l.amount)}</Td>
+                    <Td className="text-fg-secondary">{l.summary ?? '—'}</Td>
+                  </Tr>
+                ))}
+              </TBody>
+            </Table>
+          </div>
+        )}
+        <div className="grid gap-5 p-5 lg:grid-cols-2">
+          <div className="min-w-0">
+            <h3 className="mb-1 text-sm font-semibold text-fg">Bills NC still shows as open</h3>
+            {/* Not every open bill is debt. NC went live in 2020 and the
+                periods since have been closed at month-end and year-end, so
+                a leftover from then can no longer be cleared THERE — only
+                judged here. */}
+            <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs text-fg-muted">
+              {ignoredBills.length > 0 ? (
+                <label className="inline-flex items-center gap-1.5">
+                  <Checkbox checked={hideIgnored}
+                         onChange={(e) => { setHideIgnored(e.target.checked); setPicked([]) }} />
+                  Hide {ignoredBills.length} ignored
+                  <span className="text-fg-muted">
+                    ({money(data?.open_bills_total.ignored_bal)} {currency})
                   </span>
-                )}
-              </div>
-              <div className="max-h-[52vh] overflow-auto rounded-lg border border-line">
-                <Table density="compact" className="min-w-[520px]">
-                  <THead className="sticky top-0">
-                    <Tr className="text-2xs text-fg-muted">
-                      <Th className="w-7">
-                        <Checkbox aria-label="Select all"
-                               checked={selectable.length > 0 && picked.length === selectable.length}
-                               onChange={(e) => setPicked(
-                                 e.target.checked ? selectable.map((b) => b.bill_no) : [])} />
-                      </Th>
-                      <Th>Bill</Th>
-                      <Th>Date</Th>
-                      <Th>Invoice</Th>
-                      <Th align="right">Billed</Th>
-                      <Th align="right">Paid against it</Th>
-                      <Th align="right">Still open</Th>
-                    </Tr>
-                  </THead>
-                  <TBody>
-                    {bills.length === 0 ? (
-                      <Tr><Td align="center" colSpan={7} className="text-fg-muted">
-                        {ignoredBills.length > 0 && hideIgnored
-                          ? <>Nothing left — all {ignoredBills.length} open bills have been ignored.</>
-                          : <>None.</>}
-                      </Td></Tr>
-                    ) : bills.map((b) => {
-                      const covered = Number(b.paid_against ?? 0) >= Number(b.money_cr ?? 0)
-                        && Number(b.money_cr ?? 0) > 0
-                      const gone = !!b.dismissed
-                      return (
-                        <Tr key={b.bill_no}
-                            onClick={() => setLinkedBill(linkedBill === b.bill_no ? null : b.bill_no)}
-                            className={cn('cursor-pointer border-t border-line-subtle',
-                                          covered && !gone && 'bg-warning-soft/60',
-                                          gone && 'text-fg-muted',
-                                          linkedBill === b.bill_no && 'ring-2 ring-inset ring-primary-700')}>
-                          <Td onClick={(e) => e.stopPropagation()}>
-                            {gone ? (
-                              <Button variant="subtle" size="icon-xs" onClick={() => restore.mutate([b.bill_no])}
-                                      title="Put this bill back on the list"
-                                      aria-label={`Restore ${b.bill_no}`}
-                                     >
-                                <Undo2 className="h-3.5 w-3.5" />
-                              </Button>
-                            ) : (
-                              <Checkbox aria-label={`Select ${b.bill_no}`}
-                                     checked={picked.includes(b.bill_no)}
-                                     onChange={(e) => setPicked(
-                                       e.target.checked
-                                         ? [...picked, b.bill_no]
-                                         : picked.filter((x) => x !== b.bill_no))} />
-                            )}
-                          </Td>
-                          <Td className="font-mono">
-                            {b.bill_no}
-                            {b.payment_lines > 0 && (
-                              <span className="ml-1.5 rounded bg-primary-100 px-1 py-0.5 text-2xs font-semibold text-primary-700">
-                                {b.payment_lines} pmt
-                              </span>
-                            )}
-                            {/* Who judged it and why, on the row itself: a
-                                dismissal nobody can trace is worse than none. */}
-                            {b.dismissed && (
-                              <span title={[b.dismissed.note, b.dismissed.by, b.dismissed.at && formatDate(b.dismissed.at)]
-                                      .filter(Boolean).join(' · ')}
-                                    className="ml-1.5 rounded bg-surface-strong px-1 py-0.5 text-2xs font-medium text-fg-muted">
-                                ignored
-                              </span>
-                            )}
-                            <BillEvidence jv={b.jv_matches} other={b.other_currency} />
-                          </Td>
-                          <Td className="whitespace-nowrap text-fg-secondary">{day(b.bill_date)}</Td>
-                          <Td className="font-mono text-fg-secondary"><BillInvoices invoices={b.invoices} /></Td>
-                          <Td align="right" className="font-mono tabular-nums">{money(b.money_cr)}</Td>
-                          <Td className={cn('px-2.5 py-1.5 text-right font-mono tabular-nums',
-                                            covered ? 'font-semibold text-warning-fg' : 'text-fg-muted')}>
-                            {money(b.paid_against)}
-                          </Td>
-                          <Td className={cn('px-2.5 py-1.5 text-right font-mono tabular-nums font-semibold',
-                                            gone && 'font-normal line-through')}>
-                            {money(b.money_bal)}
-                          </Td>
-                        </Tr>
-                      )
-                    })}
-                  </TBody>
-                  {data?.open_bills_total && (
-                    <TFoot className="sticky bottom-0">
-                      {/* NC's own figure stays on screen whatever finance has
-                          set aside, and the subtraction is shown as a line of
-                          its own. A netted total with no working is how a
-                          number here stops being reconcilable to an NC report. */}
-                      <Tr className="border-t-2">
-                        <Td className="text-2xs font-semibold text-fg-secondary" colSpan={4}>
-                          {data.open_bills_total.bills} bills · {currency}
-                        </Td>
-                        <Td className={footCell}>{money(data.open_bills_total.money_cr)}</Td>
-                        <Td className={footCell}>{money(data.open_bills_total.paid_against)}</Td>
-                        <Td className={footCell}>{money(data.open_bills_total.money_bal)}</Td>
-                      </Tr>
-                      {data.open_bills_total.ignored_bills > 0 && (
-                        <>
-                          <Tr className="text-fg-muted">
-                            <Td className="text-2xs" colSpan={6}>
-                              less {data.open_bills_total.ignored_bills} ignored
-                            </Td>
-                            <Td align="right" className="font-mono text-xs tabular-nums">
-                              &minus;{money(data.open_bills_total.ignored_bal)}
-                            </Td>
-                          </Tr>
-                          <Tr className="bg-surface">
-                            <Td className="text-2xs font-semibold text-fg-secondary" colSpan={6}>
-                              Still to work
-                            </Td>
-                            <Td align="right" className="font-mono tabular-nums font-semibold text-primary-700">
-                              {money(data.open_bills_total.money_bal_after_ignored)}
-                            </Td>
-                          </Tr>
-                        </>
-                      )}
-                    </TFoot>
-                  )}
-                </Table>
-              </div>
-            </div>
-
-            <div className="min-w-0">
-              <h3 className="mb-1 text-sm font-semibold text-fg">Payments recorded for this supplier</h3>
-              <p className="mb-2 text-2xs leading-relaxed text-fg-muted">
-                Each payment carries the payable it cleared. Click either side to light up its
-                counterpart.{' '}
-                {paysToOpen === 0
-                  ? <>None of these cleared a bill still listed opposite — expected, since a payment
-                      closes what it pays, so the two lists barely overlap.</>
-                  : <span className="font-medium text-warning-fg">{paysToOpen} of them cleared a bill
-                      that is STILL flagged open — paid, but never applied.</span>}
-              </p>
-              <div className="max-h-[52vh] overflow-auto rounded-lg border border-line">
-                <Table density="compact" className="min-w-[440px]">
-                  <THead className="sticky top-0">
-                    <Tr className="text-2xs text-fg-muted">
-                      <Th>Payment</Th>
-                      <Th>Document date</Th>
-                      <Th align="right">Amount</Th>
-                      <Th>Applied to payable</Th>
-                    </Tr>
-                  </THead>
-                  <TBody>
-                    {pays.length === 0 ? (
-                      <Tr><Td align="center" colSpan={4} className="text-fg-muted">None.</Td></Tr>
-                    ) : pays.map((p, i) => (
-                      <Tr key={p.bill_no + i}
-                          onClick={() => setLinkedBill(
-                            linkedBill === p.applied_to_bill_no ? null : p.applied_to_bill_no)}
-                          className={cn('border-t border-line-subtle',
-                                        p.applied_to_bill_no && 'cursor-pointer',
-                                        linkedBill && p.applied_to_bill_no === linkedBill
-                                          && 'bg-primary-50 ring-2 ring-inset ring-primary-700')}>
-                        <Td className="font-mono">{p.bill_no}</Td>
-                        {/* NC leaves PAYDATE empty on every payment line in this
-                            database, so the document date is the only date there
-                            is — say which one it is rather than showing a dash. */}
-                        <Td className="text-fg-secondary">{day(p.pay_date ?? p.doc_date)}</Td>
-                        <Td align="right" className="font-mono tabular-nums">{money(p.money_de)}</Td>
-                        <Td className="font-mono">
-                          {p.applied_to_bill_no ? (
-                            <>
-                              <span className={cn(p.applied_bill_is_open
-                                                    ? 'font-semibold text-warning-fg' : 'text-fg-secondary')}>
-                                {p.applied_to_bill_no}
-                              </span>
-                              {Number(p.applied_bill_still_open ?? 0) !== 0 && (
-                                <span className="ml-1.5 rounded bg-warning-soft px-1 py-0.5 text-2xs font-semibold text-warning-fg">
-                                  still open
-                                </span>
-                              )}
-                            </>
-                          ) : <span className="text-fg-muted">none</span>}
-                        </Td>
-                      </Tr>
-                    ))}
-                  </TBody>
-                  {data?.payments_total && (
-                    <TFoot className="sticky bottom-0">
-                      <Tr className="border-t-2">
-                        <Td className="text-2xs font-semibold text-fg-secondary" colSpan={2}>
-                          {data.payments_total.lines} payment lines · {currency}
-                        </Td>
-                        <Td className={footCell}>{money(data.payments_total.money_de)}</Td>
-                        <Td></Td>
-                      </Tr>
-                    </TFoot>
-                  )}
-                </Table>
-              </div>
-            </div>
-          </div>
-          </>
-        )}
-
-        {confirming && (
-          <DismissDialog billNos={picked} count={picked.length} total={pickedTotal} currency={currency}
-                         onCancel={() => setConfirming(false)}
-                         onDone={(reason, note) =>
-                           dismiss.mutate({ bill_nos: picked, reason, note })} />
-        )}
-
-        {hasGap && gl && (
-          <div className="border-t border-line px-5 pb-5 pt-4">
-            <h3 className="mb-1 text-sm font-semibold text-fg">
-              Journal entries on this supplier&rsquo;s payable account
-            </h3>
-            <p className="mb-2.5 max-w-3xl text-xs leading-relaxed text-fg-muted">
-              Vouchers that moved the payable without an AP document — where a difference settled
-              by a manual entry shows up. {gl.matching > 0
-                ? <span className="font-medium text-primary-700">{gl.matching} of them is for exactly
-                    the difference.</span>
-                : <>None is for exactly the difference, so it is either the net of several or was
-                    settled another way.</>}
-            </p>
-            {gl.offset_lines > 0 && (
-              <label className="mb-2 inline-flex items-center gap-1.5 text-xs text-fg-secondary">
-                <Checkbox checked={hideOffsets}
-                       onChange={(e) => setHideOffsets(e.target.checked)} />
-                Hide {gl.offset_lines} entries that cancel each other out
-                <span className="text-fg-muted">
-                  ({gl.total - gl.offset_lines} left)
+                </label>
+              ) : (
+                <span>Select the ones that are not real debt to take them off this list.</span>
+              )}
+              {picked.length > 0 && (
+                <>
+                  <span className="font-medium text-fg-secondary">
+                    {picked.length} selected · {money(String(pickedTotal))} {currency}
+                  </span>
+                  <Button variant="outline" size="xs" onClick={() => setConfirming(true)}
+                         >
+                    <EyeOff className="h-3 w-3" /> Ignore these
+                  </Button>
+                  <Button variant="subtle" size="xs" onClick={() => setPicked([])}>
+                    clear
+                  </Button>
+                </>
+              )}
+              {(dismiss.isError || restore.isError) && (
+                <span className="font-medium text-danger-fg">
+                  Could not save that — you may not have permission to set payables aside.
                 </span>
-              </label>
-            )}
-            <div className="max-h-[38vh] overflow-auto rounded-lg border border-line">
-              <Table density="compact" className="min-w-[640px]">
+              )}
+            </div>
+            <div className="max-h-[52vh] overflow-auto rounded-lg border border-line">
+              <Table density="compact" className="min-w-[520px]">
                 <THead className="sticky top-0">
                   <Tr className="text-2xs text-fg-muted">
-                    <Th>Voucher</Th>
+                    <Th className="w-7">
+                      <Checkbox aria-label="Select all"
+                             checked={selectable.length > 0 && picked.length === selectable.length}
+                             onChange={(e) => setPicked(
+                               e.target.checked ? selectable.map((b) => b.bill_no) : [])} />
+                    </Th>
+                    <Th>Bill</Th>
                     <Th>Date</Th>
-                    <Th>Source</Th>
-                    <Th>Account</Th>
-                    <Th align="right">Debit</Th>
-                    <Th align="right">Credit</Th>
-                    <Th>Narration</Th>
+                    <Th>Invoice</Th>
+                    <Th align="right">Billed</Th>
+                    <Th align="right">Paid against it</Th>
+                    <Th align="right">Still open</Th>
                   </Tr>
                 </THead>
                 <TBody>
-                  {gl.items.length === 0 ? (
+                  {bills.length === 0 ? (
                     <Tr><Td align="center" colSpan={7} className="text-fg-muted">
-                      No journal entries on this supplier&rsquo;s payable account.</Td></Tr>
-                  ) : gl.items
-                        .filter((r) => !(hideOffsets && r.offset_group))
-                        .map((r, i) => (
-                    <Tr key={r.jv_number + i}
-                        className={cn('border-t border-line-subtle',
-                                      r.matches_gap && 'bg-primary-50/70',
-                                      r.offset_group && 'text-fg-muted')}>
-                      <Td className="font-mono">
-                        {r.jv_number}
-                        {r.offset_group && (
-                          <span className="ml-1.5 rounded bg-surface-strong px-1 py-0.5 text-2xs font-medium text-fg-muted">
-                            offset
-                          </span>
-                        )}
-                        {r.matches_gap && (
-                          <span className="ml-1.5 rounded bg-primary-700 px-1 py-0.5 text-2xs font-semibold text-white">
-                            matches
-                          </span>
-                        )}
-                      </Td>
-                      <Td className="text-fg-secondary">{day(r.voucher_date)}</Td>
-                      <Td className="font-mono text-fg-muted">{r.subsystem ?? '—'}</Td>
-                      <Td className="font-mono text-fg-secondary">
-                        {r.account_code}
-                        {/* A voucher in another currency against this gap is
-                            worth seeing, not hiding — sometimes it IS the answer. */}
-                        {!r.same_currency && (
-                          <span className="ml-1 text-2xs text-warning-fg">{r.currency}</span>
-                        )}
-                      </Td>
-                      <Td align="right" className="font-mono tabular-nums">{money(r.debit)}</Td>
-                      <Td align="right" className="font-mono tabular-nums">{money(r.credit)}</Td>
-                      <Td className="text-fg-secondary">{r.summary ?? '—'}</Td>
-                    </Tr>
-                  ))}
-                </TBody>
-                {/* One subtotal PER CURRENCY. This list is not filtered by
-                    currency on purpose, so a single combined figure would add
-                    CAD to USD — and for Aptargroup every one of the 66 lines is
-                    USD against a CAD gap, which the split makes obvious. */}
-                {gl.totals.length > 0 && (
-                  <TFoot className="sticky bottom-0">
-                    {gl.totals.map((t) => (
-                      <Tr key={t.currency ?? 'none'} className="border-t-2">
-                        <Td className="text-2xs font-semibold text-fg-secondary" colSpan={3}>
-                          {hideOffsets ? t.lines_after_offsets : t.lines} lines · {t.currency ?? 'no currency'}
-                          {t.same_currency
-                            ? <span className="ml-1.5 text-2xs font-normal text-fg-muted">supplier currency</span>
-                            : <span className="ml-1.5 text-2xs font-normal text-warning-fg">other currency</span>}
-                        </Td>
-                        <Td className="text-2xs text-fg-muted">net</Td>
-                        <Td className={footCell}>{money(t.debit)}</Td>
-                        <Td className={footCell}>{money(t.credit)}</Td>
-                        <Td className={cn('px-2.5 py-2 font-mono tabular-nums font-semibold',
-                                          t.net_matches_gap ? 'text-primary-700' : 'text-fg')}>
-                          {money(hideOffsets ? t.net_after_offsets : t.net)}
-                          {(hideOffsets ? t.net_after_offsets_matches_gap : t.net_matches_gap) && (
-                            <span className="ml-1.5 rounded bg-primary-700 px-1 py-0.5 text-2xs text-white">
-                              = difference
-                            </span>
+                      {ignoredBills.length > 0 && hideIgnored
+                        ? <>Nothing left — all {ignoredBills.length} open bills have been ignored.</>
+                        : <>None.</>}
+                    </Td></Tr>
+                  ) : bills.map((b) => {
+                    const covered = Number(b.paid_against ?? 0) >= Number(b.money_cr ?? 0)
+                      && Number(b.money_cr ?? 0) > 0
+                    const gone = !!b.dismissed
+                    return (
+                      <Tr key={b.bill_no}
+                          onClick={() => setLinkedBill(linkedBill === b.bill_no ? null : b.bill_no)}
+                          className={cn('cursor-pointer border-t border-line-subtle',
+                                        covered && !gone && 'bg-warning-soft/60',
+                                        gone && 'text-fg-muted',
+                                        linkedBill === b.bill_no && 'ring-2 ring-inset ring-primary-700')}>
+                        <Td onClick={(e) => e.stopPropagation()}>
+                          {gone ? (
+                            <Button variant="subtle" size="icon-xs" onClick={() => restore.mutate([b.bill_no])}
+                                    title="Put this bill back on the list"
+                                    aria-label={`Restore ${b.bill_no}`}
+                                   >
+                              <Undo2 className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : (
+                            <Checkbox aria-label={`Select ${b.bill_no}`}
+                                   checked={picked.includes(b.bill_no)}
+                                   onChange={(e) => setPicked(
+                                     e.target.checked
+                                       ? [...picked, b.bill_no]
+                                       : picked.filter((x) => x !== b.bill_no))} />
                           )}
                         </Td>
+                        <Td className="font-mono">
+                          {b.bill_no}
+                          {b.payment_lines > 0 && (
+                            <span className="ml-1.5 rounded bg-primary-100 px-1 py-0.5 text-2xs font-semibold text-primary-700">
+                              {b.payment_lines} pmt
+                            </span>
+                          )}
+                          {/* Who judged it and why, on the row itself: a
+                              dismissal nobody can trace is worse than none. */}
+                          {b.dismissed && (
+                            <span title={[b.dismissed.note, b.dismissed.by, b.dismissed.at && formatDate(b.dismissed.at)]
+                                    .filter(Boolean).join(' · ')}
+                                  className="ml-1.5 rounded bg-surface-strong px-1 py-0.5 text-2xs font-medium text-fg-muted">
+                              ignored
+                            </span>
+                          )}
+                          <BillEvidence jv={b.jv_matches} other={b.other_currency} />
+                        </Td>
+                        <Td className="whitespace-nowrap text-fg-secondary">{day(b.bill_date)}</Td>
+                        <Td className="font-mono text-fg-secondary"><BillInvoices invoices={b.invoices} /></Td>
+                        <Td align="right" className="font-mono tabular-nums">{money(b.money_cr)}</Td>
+                        <Td className={cn('px-2.5 py-1.5 text-right font-mono tabular-nums',
+                                          covered ? 'font-semibold text-warning-fg' : 'text-fg-muted')}>
+                          {money(b.paid_against)}
+                        </Td>
+                        <Td className={cn('px-2.5 py-1.5 text-right font-mono tabular-nums font-semibold',
+                                          gone && 'font-normal line-through')}>
+                          {money(b.money_bal)}
+                        </Td>
                       </Tr>
-                    ))}
+                    )
+                  })}
+                </TBody>
+                {data?.open_bills_total && (
+                  <TFoot className="sticky bottom-0">
+                    {/* NC's own figure stays on screen whatever finance has
+                        set aside, and the subtraction is shown as a line of
+                        its own. A netted total with no working is how a
+                        number here stops being reconcilable to an NC report. */}
+                    <Tr className="border-t-2">
+                      <Td className="text-2xs font-semibold text-fg-secondary" colSpan={4}>
+                        {data.open_bills_total.bills} bills · {currency}
+                      </Td>
+                      <Td className={footCell}>{money(data.open_bills_total.money_cr)}</Td>
+                      <Td className={footCell}>{money(data.open_bills_total.paid_against)}</Td>
+                      <Td className={footCell}>{money(data.open_bills_total.money_bal)}</Td>
+                    </Tr>
+                    {data.open_bills_total.ignored_bills > 0 && (
+                      <>
+                        <Tr className="text-fg-muted">
+                          <Td className="text-2xs" colSpan={6}>
+                            less {data.open_bills_total.ignored_bills} ignored
+                          </Td>
+                          <Td align="right" className="font-mono text-xs tabular-nums">
+                            &minus;{money(data.open_bills_total.ignored_bal)}
+                          </Td>
+                        </Tr>
+                        <Tr className="bg-surface">
+                          <Td className="text-2xs font-semibold text-fg-secondary" colSpan={6}>
+                            Still to work
+                          </Td>
+                          <Td align="right" className="font-mono tabular-nums font-semibold text-primary-700">
+                            {money(data.open_bills_total.money_bal_after_ignored)}
+                          </Td>
+                        </Tr>
+                      </>
+                    )}
                   </TFoot>
                 )}
               </Table>
             </div>
           </div>
-        )}
-      </div>
-    </div>
+
+          <div className="min-w-0">
+            <h3 className="mb-1 text-sm font-semibold text-fg">Payments recorded for this supplier</h3>
+            <p className="mb-2 text-2xs leading-relaxed text-fg-muted">
+              Each payment carries the payable it cleared. Click either side to light up its
+              counterpart.{' '}
+              {paysToOpen === 0
+                ? <>None of these cleared a bill still listed opposite — expected, since a payment
+                    closes what it pays, so the two lists barely overlap.</>
+                : <span className="font-medium text-warning-fg">{paysToOpen} of them cleared a bill
+                    that is STILL flagged open — paid, but never applied.</span>}
+            </p>
+            <div className="max-h-[52vh] overflow-auto rounded-lg border border-line">
+              <Table density="compact" className="min-w-[440px]">
+                <THead className="sticky top-0">
+                  <Tr className="text-2xs text-fg-muted">
+                    <Th>Payment</Th>
+                    <Th>Document date</Th>
+                    <Th align="right">Amount</Th>
+                    <Th>Applied to payable</Th>
+                  </Tr>
+                </THead>
+                <TBody>
+                  {pays.length === 0 ? (
+                    <Tr><Td align="center" colSpan={4} className="text-fg-muted">None.</Td></Tr>
+                  ) : pays.map((p, i) => (
+                    <Tr key={p.bill_no + i}
+                        onClick={() => setLinkedBill(
+                          linkedBill === p.applied_to_bill_no ? null : p.applied_to_bill_no)}
+                        className={cn('border-t border-line-subtle',
+                                      p.applied_to_bill_no && 'cursor-pointer',
+                                      linkedBill && p.applied_to_bill_no === linkedBill
+                                        && 'bg-primary-50 ring-2 ring-inset ring-primary-700')}>
+                      <Td className="font-mono">{p.bill_no}</Td>
+                      {/* NC leaves PAYDATE empty on every payment line in this
+                          database, so the document date is the only date there
+                          is — say which one it is rather than showing a dash. */}
+                      <Td className="text-fg-secondary">{day(p.pay_date ?? p.doc_date)}</Td>
+                      <Td align="right" className="font-mono tabular-nums">{money(p.money_de)}</Td>
+                      <Td className="font-mono">
+                        {p.applied_to_bill_no ? (
+                          <>
+                            <span className={cn(p.applied_bill_is_open
+                                                  ? 'font-semibold text-warning-fg' : 'text-fg-secondary')}>
+                              {p.applied_to_bill_no}
+                            </span>
+                            {Number(p.applied_bill_still_open ?? 0) !== 0 && (
+                              <span className="ml-1.5 rounded bg-warning-soft px-1 py-0.5 text-2xs font-semibold text-warning-fg">
+                                still open
+                              </span>
+                            )}
+                          </>
+                        ) : <span className="text-fg-muted">none</span>}
+                      </Td>
+                    </Tr>
+                  ))}
+                </TBody>
+                {data?.payments_total && (
+                  <TFoot className="sticky bottom-0">
+                    <Tr className="border-t-2">
+                      <Td className="text-2xs font-semibold text-fg-secondary" colSpan={2}>
+                        {data.payments_total.lines} payment lines · {currency}
+                      </Td>
+                      <Td className={footCell}>{money(data.payments_total.money_de)}</Td>
+                      <Td></Td>
+                    </Tr>
+                  </TFoot>
+                )}
+              </Table>
+            </div>
+          </div>
+        </div>
+        </>
+      )}
+
+      {confirming && (
+        <DismissDialog billNos={picked} count={picked.length} total={pickedTotal} currency={currency}
+                       onCancel={() => setConfirming(false)}
+                       onDone={(reason, note) =>
+                         dismiss.mutate({ bill_nos: picked, reason, note })} />
+      )}
+
+      {hasGap && gl && (
+        <div className="border-t border-line px-5 pb-5 pt-4">
+          <h3 className="mb-1 text-sm font-semibold text-fg">
+            Journal entries on this supplier&rsquo;s payable account
+          </h3>
+          <p className="mb-2.5 max-w-3xl text-xs leading-relaxed text-fg-muted">
+            Vouchers that moved the payable without an AP document — where a difference settled
+            by a manual entry shows up. {gl.matching > 0
+              ? <span className="font-medium text-primary-700">{gl.matching} of them is for exactly
+                  the difference.</span>
+              : <>None is for exactly the difference, so it is either the net of several or was
+                  settled another way.</>}
+          </p>
+          {gl.offset_lines > 0 && (
+            <label className="mb-2 inline-flex items-center gap-1.5 text-xs text-fg-secondary">
+              <Checkbox checked={hideOffsets}
+                     onChange={(e) => setHideOffsets(e.target.checked)} />
+              Hide {gl.offset_lines} entries that cancel each other out
+              <span className="text-fg-muted">
+                ({gl.total - gl.offset_lines} left)
+              </span>
+            </label>
+          )}
+          <div className="max-h-[38vh] overflow-auto rounded-lg border border-line">
+            <Table density="compact" className="min-w-[640px]">
+              <THead className="sticky top-0">
+                <Tr className="text-2xs text-fg-muted">
+                  <Th>Voucher</Th>
+                  <Th>Date</Th>
+                  <Th>Source</Th>
+                  <Th>Account</Th>
+                  <Th align="right">Debit</Th>
+                  <Th align="right">Credit</Th>
+                  <Th>Narration</Th>
+                </Tr>
+              </THead>
+              <TBody>
+                {gl.items.length === 0 ? (
+                  <Tr><Td align="center" colSpan={7} className="text-fg-muted">
+                    No journal entries on this supplier&rsquo;s payable account.</Td></Tr>
+                ) : gl.items
+                      .filter((r) => !(hideOffsets && r.offset_group))
+                      .map((r, i) => (
+                  <Tr key={r.jv_number + i}
+                      className={cn('border-t border-line-subtle',
+                                    r.matches_gap && 'bg-primary-50/70',
+                                    r.offset_group && 'text-fg-muted')}>
+                    <Td className="font-mono">
+                      {r.jv_number}
+                      {r.offset_group && (
+                        <span className="ml-1.5 rounded bg-surface-strong px-1 py-0.5 text-2xs font-medium text-fg-muted">
+                          offset
+                        </span>
+                      )}
+                      {r.matches_gap && (
+                        <span className="ml-1.5 rounded bg-primary-700 px-1 py-0.5 text-2xs font-semibold text-white">
+                          matches
+                        </span>
+                      )}
+                    </Td>
+                    <Td className="text-fg-secondary">{day(r.voucher_date)}</Td>
+                    <Td className="font-mono text-fg-muted">{r.subsystem ?? '—'}</Td>
+                    <Td className="font-mono text-fg-secondary">
+                      {r.account_code}
+                      {/* A voucher in another currency against this gap is
+                          worth seeing, not hiding — sometimes it IS the answer. */}
+                      {!r.same_currency && (
+                        <span className="ml-1 text-2xs text-warning-fg">{r.currency}</span>
+                      )}
+                    </Td>
+                    <Td align="right" className="font-mono tabular-nums">{money(r.debit)}</Td>
+                    <Td align="right" className="font-mono tabular-nums">{money(r.credit)}</Td>
+                    <Td className="text-fg-secondary">{r.summary ?? '—'}</Td>
+                  </Tr>
+                ))}
+              </TBody>
+              {/* One subtotal PER CURRENCY. This list is not filtered by
+                  currency on purpose, so a single combined figure would add
+                  CAD to USD — and for Aptargroup every one of the 66 lines is
+                  USD against a CAD gap, which the split makes obvious. */}
+              {gl.totals.length > 0 && (
+                <TFoot className="sticky bottom-0">
+                  {gl.totals.map((t) => (
+                    <Tr key={t.currency ?? 'none'} className="border-t-2">
+                      <Td className="text-2xs font-semibold text-fg-secondary" colSpan={3}>
+                        {hideOffsets ? t.lines_after_offsets : t.lines} lines · {t.currency ?? 'no currency'}
+                        {t.same_currency
+                          ? <span className="ml-1.5 text-2xs font-normal text-fg-muted">supplier currency</span>
+                          : <span className="ml-1.5 text-2xs font-normal text-warning-fg">other currency</span>}
+                      </Td>
+                      <Td className="text-2xs text-fg-muted">net</Td>
+                      <Td className={footCell}>{money(t.debit)}</Td>
+                      <Td className={footCell}>{money(t.credit)}</Td>
+                      <Td className={cn('px-2.5 py-2 font-mono tabular-nums font-semibold',
+                                        t.net_matches_gap ? 'text-primary-700' : 'text-fg')}>
+                        {money(hideOffsets ? t.net_after_offsets : t.net)}
+                        {(hideOffsets ? t.net_after_offsets_matches_gap : t.net_matches_gap) && (
+                          <span className="ml-1.5 rounded bg-primary-700 px-1 py-0.5 text-2xs text-white">
+                            = difference
+                          </span>
+                        )}
+                      </Td>
+                    </Tr>
+                  ))}
+                </TFoot>
+              )}
+            </Table>
+          </div>
+        </div>
+      )}
+    
+    </ShellModal>
   )
 }
 
@@ -1311,8 +1288,7 @@ export default function ApLedgerHealthPage() {
                        placeholder="Search vendor or invoice no." aria-label="Search vendor or invoice number"
                        className="w-64 pl-8 pr-2.5" />
               </div>
-              <Button variant="secondary" size="sm" onClick={exportCsv}
-                     >
+              <Button variant="secondary" size="sm" onClick={exportCsv}>
                 <Download className="h-4 w-4" /> Export CSV
               </Button>
             </div>

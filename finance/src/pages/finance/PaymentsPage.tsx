@@ -641,15 +641,11 @@ export default function PaymentsPage() {
           // docstring).
           onSent={() => setSelectedIds(new Set())}
           scope={{ kind: 'selection', paymentIds: selectionScopeIds }}
-          header={
-            <div>
-              <h2 className="text-base font-semibold text-fg">Send Remittance Advice</h2>
-              <p className="mt-1 text-sm text-fg-muted">
-                {selectionScopeIds.length} payment{selectionScopeIds.length === 1 ? '' : 's'}
-                {dialogPayeeName && <> · {dialogPayeeName}</>}
-              </p>
-            </div>
-          }
+          title="Send Remittance Advice"
+          description={<>
+            {selectionScopeIds.length} payment{selectionScopeIds.length === 1 ? '' : 's'}
+            {dialogPayeeName && <> · {dialogPayeeName}</>}
+          </>}
         />
       )}
     </PortalChromeLayout>
@@ -657,9 +653,8 @@ export default function PaymentsPage() {
 }
 
 /**
- * Uses `RemittanceDialog`'s shared modal shell (backdrop, panel, X button,
- * Close button — see Tasks 12/13) with a payment-specific header slotted in,
- * rather than a second copy of that shell.
+ * Uses `RemittanceDialog` with a payment-specific title and description,
+ * rather than a second copy of that dialog.
  */
 function PaymentDetailModal({ row, onClose }: { row: PaymentRow; onClose: () => void }) {
   return (
@@ -667,13 +662,15 @@ function PaymentDetailModal({ row, onClose }: { row: PaymentRow; onClose: () => 
       open
       onClose={onClose}
       scope={{ kind: 'payment', id: row.id }}
-      header={
+      title={
+        <span className="inline-flex items-center gap-2">
+          {row.doc_number ?? 'Payment'}
+          <PaymentStatusBadge status={row.status} />
+        </span>
+      }
+      description={
         <div>
-          <h2 className="text-base font-semibold text-fg">
-            {row.doc_number ?? 'Payment'}
-            <span className="ml-2"><PaymentStatusBadge status={row.status} /></span>
-          </h2>
-          <p className="mt-1 text-sm text-fg-muted">
+          <p>
             {row.payee_name ?? '—'} · <span className="font-mono">{fmtMoney(row.amount, row.currency)}</span>
             {Number(row.credit_applied ?? 0) > 0 && (
               <span className="text-fg-muted">

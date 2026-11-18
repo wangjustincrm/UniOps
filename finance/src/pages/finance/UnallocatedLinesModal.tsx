@@ -12,11 +12,10 @@
  * cost-centre complaint against a line that plainly has one concludes the
  * report is broken.
  */
-import { useEffect, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, X } from 'lucide-react'
-import { SortTh, sortParams, useSort, TBody, TFoot, THead, Table, Td, Tr, Button } from '@uniops/shell'
+import { Loader2 } from 'lucide-react'
+import { Button, Modal, SortTh, TBody, TFoot, THead, Table, Td, Tr, sortParams, useSort } from '@uniops/shell'
 import { ListPager } from '@/components/ListPager'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -61,12 +60,6 @@ export function UnallocatedLinesModal({ fiscalYear, window: win, windowLabel,
   onOpenJv: (jvId: string) => void
 }) {
   const [from, to] = win
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   // Paged and sorted by the API; the footer total is the API's sum over EVERY
   // matching line, not just the page on screen.
   const [page, setPage] = useState(1)
@@ -84,24 +77,14 @@ export function UnallocatedLinesModal({ fiscalYear, window: win, windowLabel,
   const lineCount = data?.total ?? 0
   const total = Number(data?.debit_total ?? 0)
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 p-6"
-         onClick={onClose}>
-      <div className="flex max-h-[85vh] w-full max-w-5xl flex-col rounded-xl bg-surface shadow-2xl"
-           role="dialog" aria-label={`Lines behind ${label}`}
-           onClick={(e) => e.stopPropagation()}>
-        <header className="flex items-center gap-2 border-b border-line-subtle px-4 py-3">
-          <h2 className="text-sm font-semibold text-fg">{label}</h2>
-          <span className="text-xs text-fg-muted">{windowLabel} {fiscalYear}</span>
-          <span className="ml-auto flex items-center gap-2 text-xs text-fg-muted">
-            {data ? `${lineCount} lines` : <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            <Button variant="subtle" size="icon-sm" onClick={onClose} aria-label="Close"
-                   >
-              <X className="h-4 w-4" />
-            </Button>
-          </span>
-        </header>
-
+  // Backdrop click and Escape close, as before.
+  return (
+    <Modal open onClose={onClose} title={label} closeOnBackdrop size="full" className="max-w-5xl"
+      description={<span className="inline-flex items-center gap-2">
+        {windowLabel} {fiscalYear} ·{' '}
+        {data ? `${lineCount} lines` : <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+      </span>}
+      bodyClassName="flex min-h-0 flex-col overflow-hidden p-0">
         <div className="flex-1 overflow-auto">
           <Table density="compact">
             <THead className="sticky top-0 z-10">
@@ -173,8 +156,6 @@ export function UnallocatedLinesModal({ fiscalYear, window: win, windowLabel,
         </div>
         <ListPager page={page} pageSize={PAGE_SIZE} total={lineCount} noun="lines" onPage={setPage}
                    className="flex items-center justify-between border-t border-line-subtle px-4 py-2 text-sm text-fg-muted" />
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   )
 }

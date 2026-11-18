@@ -15,7 +15,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Check, FileText, HandCoins, Loader2, Plus, Send, Trash2, X,
 } from 'lucide-react'
-import { SortTh, sortParams, useSort, useSortableRows, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { SortTh, sortParams, useSort, useSortableRows, Input, Select, TBody, THead, Table, Td, Th, Tr, Button , Modal as ShellModal } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, mdmApi } from '@/lib/api'
 import { cn, formatDate, todayISO } from '@/lib/utils'
@@ -507,18 +507,11 @@ function ReceiptModal({ invoice, onClose, onSaved, onError }: {
 function Modal({ title, children, onClose, wide }: {
   title: string; children: React.ReactNode; onClose: () => void; wide?: boolean
 }) {
+  // Backdrop click closes, Escape does not — as before.
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className={cn('w-full rounded-xl bg-surface p-5 shadow-xl', wide ? 'max-w-2xl' : 'max-w-md')}
-           onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-fg">{title}</h2>
-          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
-        {children}
-      </div>
-    </div>
+    <ShellModal open onClose={onClose} title={title} closeOnBackdrop closeOnEscape={false}
+      size="full" className={wide ? 'max-w-2xl' : 'max-w-md'}>
+      {children}
+    </ShellModal>
   )
 }

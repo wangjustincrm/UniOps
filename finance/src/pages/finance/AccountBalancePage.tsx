@@ -7,7 +7,7 @@
 import { Fragment, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, Loader2, Scale, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2, Scale } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, currentMonthISO } from '@/lib/utils'
@@ -15,7 +15,7 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { AccountVouchersModal } from './AccountVouchersModal'
 import { JvDetailModal } from './JvDetailModal'
 
-import { Checkbox, Input, TBody, TFoot, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Checkbox, Input, TBody, TFoot, THead, Table, Td, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
@@ -219,40 +219,32 @@ function DimPickerModal({ accountCode, onClose, onApply }: {
   const chosenSupported = chosen.filter((c) => options.some((o) => o.dim_code === c && o.supported))
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-fg">Expand {accountCode} by…</h2>
-          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
-            <X className="h-5 w-5" />
-          </Button>
+    <ShellModal open onClose={onClose} title={<>Expand {accountCode} by…</>} closeOnBackdrop closeOnEscape={false} size="full" className="max-w-sm">
+      {isLoading ? (
+        <div className="py-6 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
+      ) : (
+        <div className="space-y-2">
+          {options.map((o) => (
+            <label key={o.dim_code}
+                   className={cn('flex items-center gap-2 text-sm',
+                     o.supported ? 'text-fg-secondary' : 'cursor-not-allowed text-fg-muted')}>
+              <Checkbox disabled={!o.supported}
+                     checked={chosen.includes(o.dim_code)}
+                     onChange={() => flip(o.dim_code)} />
+              {o.label}
+              {!o.supported && <span className="text-2xs">(no data yet)</span>}
+            </label>
+          ))}
         </div>
-        {isLoading ? (
-          <div className="py-6 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
-        ) : (
-          <div className="space-y-2">
-            {options.map((o) => (
-              <label key={o.dim_code}
-                     className={cn('flex items-center gap-2 text-sm',
-                       o.supported ? 'text-fg-secondary' : 'cursor-not-allowed text-fg-muted')}>
-                <Checkbox disabled={!o.supported}
-                       checked={chosen.includes(o.dim_code)}
-                       onChange={() => flip(o.dim_code)} />
-                {o.label}
-                {!o.supported && <span className="text-2xs">(no data yet)</span>}
-              </label>
-            ))}
-          </div>
-        )}
-        <div className="mt-4 flex justify-end gap-2 border-t border-line-subtle pt-3">
-          <button onClick={onClose} className={secondaryBtn}>Cancel</button>
-          <button onClick={() => onApply(chosenSupported)}
-                  disabled={chosenSupported.length === 0} className={primaryBtn}>
-            Expand
-          </button>
-        </div>
+      )}
+      <div className="mt-4 flex justify-end gap-2 border-t border-line-subtle pt-3">
+        <button onClick={onClose} className={secondaryBtn}>Cancel</button>
+        <button onClick={() => onApply(chosenSupported)}
+                disabled={chosenSupported.length === 0} className={primaryBtn}>
+          Expand
+        </button>
       </div>
-    </div>
+    </ShellModal>
   )
 }
 

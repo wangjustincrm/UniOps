@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Ban, X } from 'lucide-react'
-import { SortTh, useSortableRows, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Plus, Pencil, Ban } from 'lucide-react'
+import { SortTh, useSortableRows, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
 import { mdmApi } from '@/lib/api'
 import { cn, formatDate, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
@@ -198,93 +198,87 @@ export default function TaxSettingsPage() {
       </div>
 
       {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-xl border border-line bg-surface shadow-xl">
-            <div className="flex items-center justify-between border-b border-line-subtle px-5 py-4">
-              <h3 className="font-semibold text-fg">{modal.mode === 'create' ? 'Add Tax Code' : 'Edit Tax Code'}</h3>
-              <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={() => setModal(null)}><X className="h-4 w-4" /></Button>
-            </div>
-            <form onSubmit={handleSave} className="flex flex-col gap-4 p-5">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-fg-secondary">Code</label>
-                  <Input value={form.code} onChange={(e) => setForm((p) => ({ ...p, code: e.target.value }))}
-                    disabled={modal.mode === 'edit'}
-                    className="w-full"
-                    placeholder="HST_ON" required />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-fg-secondary">Type</label>
-                  <Select value={form.tax_type} onChange={(e) => setForm((p) => ({ ...p, tax_type: e.target.value as TaxType }))}
-                    className="w-full">
-                    {TAX_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </Select>
-                </div>
+        <ShellModal open onClose={() => setModal(null)} title={modal.mode === 'create' ? 'Add Tax Code' : 'Edit Tax Code'} closeOnEscape={false} size="full" className="max-w-md">
+          <form onSubmit={handleSave} className="flex flex-col gap-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-fg-secondary">Code</label>
+                <Input value={form.code} onChange={(e) => setForm((p) => ({ ...p, code: e.target.value }))}
+                  disabled={modal.mode === 'edit'}
+                  className="w-full"
+                  placeholder="HST_ON" required />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-fg-secondary">Name</label>
-                <Input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                <label className="mb-1 block text-xs font-medium text-fg-secondary">Type</label>
+                <Select value={form.tax_type} onChange={(e) => setForm((p) => ({ ...p, tax_type: e.target.value as TaxType }))}
+                  className="w-full">
+                  {TAX_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </Select>
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-fg-secondary">Name</label>
+              <Input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                className="w-full"
+                placeholder="HST 13% Ontario" required />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-fg-secondary">Province</label>
+                <Input value={form.province} onChange={(e) => setForm((p) => ({ ...p, province: e.target.value }))}
+                  maxLength={2}
+                  className="w-full uppercase"
+                  placeholder="ON (blank = federal)" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-fg-secondary">Rate (%)</label>
+                <Input type="number" step="0.001" min="0" max="100" value={form.ratePct}
+                  onChange={(e) => setForm((p) => ({ ...p, ratePct: e.target.value }))}
                   className="w-full"
-                  placeholder="HST 13% Ontario" required />
+                  placeholder="13" required />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-fg-secondary">Province</label>
-                  <Input value={form.province} onChange={(e) => setForm((p) => ({ ...p, province: e.target.value }))}
-                    maxLength={2}
-                    className="w-full uppercase"
-                    placeholder="ON (blank = federal)" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-fg-secondary">Rate (%)</label>
-                  <Input type="number" step="0.001" min="0" max="100" value={form.ratePct}
-                    onChange={(e) => setForm((p) => ({ ...p, ratePct: e.target.value }))}
-                    className="w-full"
-                    placeholder="13" required />
-                </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-fg-secondary">Effective From</label>
+                <Input type="date" value={form.effective_from}
+                  onChange={(e) => setForm((p) => ({ ...p, effective_from: e.target.value }))}
+                  disabled={modal.mode === 'edit'}
+                  className="w-full"
+                  required />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-fg-secondary">Effective From</label>
-                  <Input type="date" value={form.effective_from}
-                    onChange={(e) => setForm((p) => ({ ...p, effective_from: e.target.value }))}
-                    disabled={modal.mode === 'edit'}
-                    className="w-full"
-                    required />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-fg-secondary">Effective To</label>
-                  <Input type="date" value={form.effective_to}
-                    onChange={(e) => setForm((p) => ({ ...p, effective_to: e.target.value }))}
-                    className="w-full"
-                    placeholder="blank = open-ended" />
-                </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-fg-secondary">Effective To</label>
+                <Input type="date" value={form.effective_to}
+                  onChange={(e) => setForm((p) => ({ ...p, effective_to: e.target.value }))}
+                  className="w-full"
+                  placeholder="blank = open-ended" />
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-fg-secondary">Recoverable (ITC)</span>
-                <button type="button" onClick={() => setForm((p) => ({ ...p, recoverable: !p.recoverable }))}
-                  className={cn('relative inline-flex h-5 w-9 items-center rounded-full transition-colors', form.recoverable ? 'bg-primary-600' : 'bg-surface-strong')}>
-                  <span className={cn('inline-block h-3.5 w-3.5 rounded-full bg-surface shadow transition-transform', form.recoverable ? 'translate-x-4.5' : 'translate-x-0.5')} />
-                </button>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-fg-secondary">Active</span>
-                <button type="button" onClick={() => setForm((p) => ({ ...p, active: !p.active }))}
-                  className={cn('relative inline-flex h-5 w-9 items-center rounded-full transition-colors', form.active ? 'bg-primary-600' : 'bg-surface-strong')}>
-                  <span className={cn('inline-block h-3.5 w-3.5 rounded-full bg-surface shadow transition-transform', form.active ? 'translate-x-4.5' : 'translate-x-0.5')} />
-                </button>
-              </div>
-              {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-fg">{error}</p>}
-              <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
-                <Button variant="secondary" size="md" type="button" onClick={() => setModal(null)}>Cancel</Button>
-                <Button size="md" type="submit" disabled={saving}
-                 >
-                  {saving ? 'Saving…' : 'Save Changes'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-fg-secondary">Recoverable (ITC)</span>
+              <button type="button" onClick={() => setForm((p) => ({ ...p, recoverable: !p.recoverable }))}
+                className={cn('relative inline-flex h-5 w-9 items-center rounded-full transition-colors', form.recoverable ? 'bg-primary-600' : 'bg-surface-strong')}>
+                <span className={cn('inline-block h-3.5 w-3.5 rounded-full bg-surface shadow transition-transform', form.recoverable ? 'translate-x-4.5' : 'translate-x-0.5')} />
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-fg-secondary">Active</span>
+              <button type="button" onClick={() => setForm((p) => ({ ...p, active: !p.active }))}
+                className={cn('relative inline-flex h-5 w-9 items-center rounded-full transition-colors', form.active ? 'bg-primary-600' : 'bg-surface-strong')}>
+                <span className={cn('inline-block h-3.5 w-3.5 rounded-full bg-surface shadow transition-transform', form.active ? 'translate-x-4.5' : 'translate-x-0.5')} />
+              </button>
+            </div>
+            {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-fg">{error}</p>}
+            <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
+              <Button variant="secondary" size="md" type="button" onClick={() => setModal(null)}>Cancel</Button>
+              <Button size="md" type="submit" disabled={saving}
+               >
+                {saving ? 'Saving…' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
+        </ShellModal>
       )}
       </div>
     </PortalChromeLayout>

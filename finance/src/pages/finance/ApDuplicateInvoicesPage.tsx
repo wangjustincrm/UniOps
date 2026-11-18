@@ -23,7 +23,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Download, Loader2, Undo2 } from 'lucide-react'
-import { SortTh, sortParams, useSort, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Button } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
@@ -109,53 +109,40 @@ function ReviewDialog({ finding, pending, error, onCancel, onDone }: {
   const needsNote = reason === 'other' && !note.trim()
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-6">
-      <div className="w-full max-w-lg rounded-lg bg-surface shadow-xl">
-        <div className="border-b border-line px-5 py-4">
-          <h3 className="text-sm font-semibold text-fg">
-            Mark invoice {finding.invoice_no ?? finding.invoice_no_norm} as reviewed
-          </h3>
-          <p className="mt-0.5 text-xs text-fg-muted">
-            The group leaves the working list and stops counting toward the AP task. NC is
-            not changed. If another bill with this invoice number is entered later, the group
-            comes back.
-          </p>
+    <ShellModal open onClose={onCancel} title={<>Mark invoice {finding.invoice_no ?? finding.invoice_no_norm} as reviewed</>} description="The group leaves the working list and stops counting toward the AP task. NC is not changed. If another bill with this invoice number is entered later, the group comes back." closeOnEscape={false} stacked size="full" className="max-w-lg"
+      footer={<>
+        <Button variant="secondary" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button size="sm" onClick={() => onDone(reason, note.trim())} disabled={needsNote || pending}
+               >
+          {pending ? 'Saving…' : 'Mark reviewed'}
+        </Button>
+      </>}>
+      <div className="space-y-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-fg-secondary">Reason</label>
+          <Select value={reason} onChange={(e) => setReason(e.target.value)}
+                  className="w-full">
+            {(data?.reasons ?? []).map((r) => (
+              <option key={r.code} value={r.code}>{r.label}</option>
+            ))}
+          </Select>
         </div>
-        <div className="space-y-3 px-5 py-4">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-fg-secondary">Reason</label>
-            <Select value={reason} onChange={(e) => setReason(e.target.value)}
-                    className="w-full">
-              {(data?.reasons ?? []).map((r) => (
-                <option key={r.code} value={r.code}>{r.label}</option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-fg-secondary">
-              Note {reason === 'other' && <span className="text-warning-fg">(required)</span>}
-            </label>
-            <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
-                      placeholder="e.g. Supplier issued credit note CN-1042 on 2026-10-02"
-                      className="w-full" />
-          </div>
-          <div className="rounded border border-line bg-surface-subtle px-2.5 py-1.5 font-mono text-2xs text-fg-muted">
-            {finding.bill_nos.join(', ')}
-          </div>
-          {error && <p className="text-xs text-danger-fg">{error}</p>}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-fg-secondary">
+            Note {reason === 'other' && <span className="text-warning-fg">(required)</span>}
+          </label>
+          <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
+                    placeholder="e.g. Supplier issued credit note CN-1042 on 2026-10-02"
+                    className="w-full" />
         </div>
-        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
-          <Button variant="secondary" size="sm" onClick={onCancel}
-                 >
-            Cancel
-          </Button>
-          <Button size="sm" onClick={() => onDone(reason, note.trim())} disabled={needsNote || pending}
-                 >
-            {pending ? 'Saving…' : 'Mark reviewed'}
-          </Button>
+        <div className="rounded border border-line bg-surface-subtle px-2.5 py-1.5 font-mono text-2xs text-fg-muted">
+          {finding.bill_nos.join(', ')}
         </div>
+        {error && <p className="text-xs text-danger-fg">{error}</p>}
       </div>
-    </div>
+    </ShellModal>
   )
 }
 
@@ -370,8 +357,7 @@ export default function ApDuplicateInvoicesPage() {
                  className="w-72" />
           {isFetching && <Loader2 className="h-4 w-4 animate-spin text-fg-muted" />}
           <span className="ml-auto text-xs text-fg-muted">{data ? `${data.total} groups` : ''}</span>
-          <Button variant="secondary" size="xs" onClick={exportCsv} disabled={!rows.length}
-                 >
+          <Button variant="secondary" size="xs" onClick={exportCsv} disabled={!rows.length}>
             <Download className="h-3.5 w-3.5" /> CSV
           </Button>
         </div>

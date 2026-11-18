@@ -22,11 +22,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  Ban, Check, Landmark, Link2, Loader2, Plus, RefreshCw,
-  Undo2, Upload, X,
-} from 'lucide-react'
-import { SortTh, useSortableRows, Checkbox, FileInput, Input, Radio, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Ban, Check, Landmark, Link2, Loader2, Plus, RefreshCw, Undo2, Upload } from 'lucide-react'
+import { SortTh, useSortableRows, Checkbox, FileInput, Input, Radio, Select, TBody, THead, Table, Td, Th, Tr, Button , Modal as ShellModal } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financeUploadFields } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
@@ -665,18 +662,11 @@ function ManualMatchModal({ txn, candidates, onClose, onMatched, onError }: {
 function Modal({ title, children, onClose, wide }: {
   title: string; children: React.ReactNode; onClose: () => void; wide?: boolean
 }) {
+  // Backdrop click closes, Escape does not — as before.
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className={cn('w-full rounded-xl bg-surface p-5 shadow-xl', wide ? 'max-w-2xl' : 'max-w-md')}
-           onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-fg">{title}</h2>
-          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
-        {children}
-      </div>
-    </div>
+    <ShellModal open onClose={onClose} title={title} closeOnBackdrop closeOnEscape={false}
+      size="full" className={wide ? 'max-w-2xl' : 'max-w-md'}>
+      {children}
+    </ShellModal>
   )
 }

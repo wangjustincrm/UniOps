@@ -68,6 +68,9 @@ export interface ModalProps {
   /** false: no close button, Escape and backdrop do nothing (a step the user
    *  must finish, e.g. a forced password change). */
   dismissible?: boolean
+  /** Opened on top of another dialog (a confirm inside a detail modal): one layer
+   *  higher so it covers its parent whatever the DOM order. Dropdowns stay above. */
+  stacked?: boolean
   className?: string
   bodyClassName?: string
   children?: React.ReactNode
@@ -75,7 +78,7 @@ export interface ModalProps {
 
 export function Modal({
   open, onClose, title, description, icon, size = 'md', footer, busy, closeOnBackdrop = false, closeOnEscape = true,
-  dismissible = true, className, bodyClassName, children,
+  dismissible = true, stacked, className, bodyClassName, children,
 }: ModalProps) {
   const panel = useRef<HTMLDivElement>(null)
   const titleId = useId()
@@ -84,7 +87,7 @@ export function Modal({
   if (!open) return null
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 p-4 animate-[overlay-in_150ms_ease-out]"
+      className={cn('fixed inset-0 flex items-center justify-center bg-inverse/40 p-4 animate-[overlay-in_150ms_ease-out]', stacked ? 'z-[55]' : 'z-50')}
       onMouseDown={(e) => { if (closeOnBackdrop && e.target === e.currentTarget) safeClose() }}
     >
       <div

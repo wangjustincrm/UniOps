@@ -1,59 +1,41 @@
 /**
  * Modal wrapper around RemittancePanel — pop it up right after a payment or
  * batch execute completes so the operator can send remittance advice without
- * leaving the flow. Follows the app's modal convention (see
- * PaymentBatchPage.tsx's BatchDetailModal / JvDetailModal.tsx): fixed
- * backdrop, click-outside-to-close, `stopPropagation` on the inner panel.
+ * leaving the flow. Shell Modal; backdrop click closes, Escape does not (as
+ * before).
  *
- * This is the shared modal shell for Tasks 12/13: the default header ("Send
- * Remittance Advice") suits a standalone send flow, but a consumer that
- * already has document-specific context to show (e.g. the Payments hub's
- * detail drawer, which needs the payment's doc number / payee / amount) can
- * override it via `header` instead of copying the backdrop/panel/X-button
- * shell a second time.
+ * The default title ("Send Remittance Advice") suits a standalone send flow; a
+ * consumer that already has document-specific context to show (e.g. the
+ * Payments hub's detail view: doc number / payee / amount) passes its own
+ * `title` and `description` instead of copying the dialog a second time.
  */
 import type { ReactNode } from 'react'
-import { X } from 'lucide-react'
 import { RemittancePanel } from './RemittancePanel'
-import { secondaryBtn } from './buttonStyles'
 import type { RemittanceScope, SendResult } from '@/services/remittance'
 
-import { Button } from '@uniops/shell'
-const DEFAULT_HEADER = (
-  <div>
-    <h2 className="text-base font-semibold text-fg">Send Remittance Advice</h2>
-    <p className="text-sm text-fg-muted">Choose the recipients, preview the emails, then confirm to send.</p>
-  </div>
-)
+import { Button, Modal } from '@uniops/shell'
 
-export function RemittanceDialog({ scope, open, onClose, onSent, header }: {
+export function RemittanceDialog({ scope, open, onClose, onSent, title, description }: {
   scope: RemittanceScope
   open: boolean
   onClose: () => void
   onSent?: (result: SendResult) => void
-  /** Replaces the default "Send Remittance Advice" title/subtitle block —
-   * for consumers that need to show document-specific context (doc number,
-   * payee, amount, status) alongside the send flow. */
-  header?: ReactNode
+  title?: ReactNode
+  description?: ReactNode
 }) {
-  if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-surface p-5 shadow-xl"
-           onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-start justify-between">
-          {header ?? DEFAULT_HEADER}
-          <Button aria-label="Close" variant="subtle" size="icon-xs" type="button" onClick={onClose}>
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
-
-        <RemittancePanel scope={scope} onSent={onSent} />
-
-        <div className="mt-4 flex justify-end">
-          <button type="button" onClick={onClose} className={secondaryBtn}>Close</button>
-        </div>
-      </div>
-    </div>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={title ?? 'Send Remittance Advice'}
+      description={title ? description : (description ?? 'Choose the recipients, preview the emails, then confirm to send.')}
+      closeOnBackdrop
+      closeOnEscape={false}
+      size="full"
+      className="max-w-3xl"
+      footer={<Button variant="secondary" size="sm" onClick={onClose}>Close</Button>}
+    >
+      <RemittancePanel scope={scope} onSent={onSent} />
+    </Modal>
   )
 }

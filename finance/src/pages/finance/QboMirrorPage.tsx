@@ -8,8 +8,8 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ChevronLeft, ChevronRight, Download, Loader2, Mail, RefreshCw, X } from 'lucide-react'
-import { SortTh, sortParams, useSort, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { AlertTriangle, ChevronLeft, ChevronRight, Download, Loader2, Mail, RefreshCw } from 'lucide-react'
+import { SortTh, sortParams, useSort, Input, TBody, THead, Table, Td, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
 import { qboApi, ENTITY_TABS, type QboBackfillResult, type QboDetail } from '@/services/qboApi'
 import { financeDownload } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
@@ -26,7 +26,6 @@ const POST_TRIGGER_POLL_MS = 20000
 
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
-const dangerBtn = 'flex items-center gap-1.5 rounded-lg bg-danger-solid px-3 py-2 text-sm font-medium text-white hover:bg-danger-700 disabled:opacity-50'
 
 export default function QboMirrorPage() {
   const qc = useQueryClient()
@@ -108,20 +107,16 @@ export default function QboMirrorPage() {
         </section>
 
         {confirming && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setConfirming(false)}>
-            <div className="w-full max-w-md space-y-3 rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-              <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
-                <AlertTriangle className="h-4 w-4 text-danger-fg" /> Full reload
-              </h2>
-              <p className="text-sm text-fg-secondary">
-                Re-pulls every entity from QuickBooks. This can take many minutes. Continue?
-              </p>
-              <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
-                <button className={secondaryBtn} onClick={() => setConfirming(false)}>Cancel</button>
-                <button className={dangerBtn} onClick={() => trigger('full')}>Full reload</button>
-              </div>
-            </div>
-          </div>
+          <ShellModal open onClose={() => setConfirming(false)} title="Full reload" closeOnBackdrop closeOnEscape={false}
+            icon={<AlertTriangle className="h-4 w-4 text-danger-fg" />} size="full" className="max-w-md"
+            footer={<>
+              <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
+              <Button variant="danger" size="sm" onClick={() => trigger('full')}>Full reload</Button>
+            </>}>
+            <p className="text-sm text-fg-secondary">
+              Re-pulls every entity from QuickBooks. This can take many minutes. Continue?
+            </p>
+          </ShellModal>
         )}
 
         {/* Entity tabs added in Task 7 */}
@@ -338,87 +333,78 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="max-h-[85vh] w-full max-w-3xl overflow-auto rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between border-b border-line-subtle pb-3">
-          <h2 className="text-base font-semibold text-fg">{entity} · {id}</h2>
-          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
+    <ShellModal open onClose={onClose} title={<>{entity} · {id}</>} closeOnBackdrop closeOnEscape={false} size="full" className="max-w-3xl">
+      {!data && (
+        <div className="py-8 text-center text-fg-muted"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></div>
+      )}
 
-        {!data && (
-          <div className="py-8 text-center text-fg-muted"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></div>
-        )}
+      {data && (
+        <>
+          <Table className="mb-4">
+            <TBody>
+              {Object.entries(data.header).filter(([k]) => k !== 'raw').map(([k, v]) => (
+                <Tr key={k}>
+                  <Td className="pr-4 align-top text-fg-muted">{k}</Td>
+                  <Td className="text-fg">{cell(k, v)}</Td>
+                </Tr>
+              ))}
+            </TBody>
+          </Table>
 
-        {data && (
-          <>
-            <Table className="mb-4">
-              <TBody>
-                {Object.entries(data.header).filter(([k]) => k !== 'raw').map(([k, v]) => (
-                  <Tr key={k}>
-                    <Td className="pr-4 align-top text-fg-muted">{k}</Td>
-                    <Td className="text-fg">{cell(k, v)}</Td>
-                  </Tr>
-                ))}
-              </TBody>
-            </Table>
-
-            {data.lines.length > 0 && (
-              <div className="mb-4">
-                <h3 className="mb-1 text-sm font-semibold text-fg-secondary">Lines</h3>
-                <div className="overflow-hidden rounded-lg border border-line">
-                  <div className="overflow-x-auto">
-                    <Table density="compact">
-                      <THead>
-                        <Tr>
+          {data.lines.length > 0 && (
+            <div className="mb-4">
+              <h3 className="mb-1 text-sm font-semibold text-fg-secondary">Lines</h3>
+              <div className="overflow-hidden rounded-lg border border-line">
+                <div className="overflow-x-auto">
+                  <Table density="compact">
+                    <THead>
+                      <Tr>
+                        {Object.keys(data.lines[0]).filter((c) => c !== 'raw').map((c) => (
+                          <Th key={c}>{c}</Th>
+                        ))}
+                      </Tr>
+                    </THead>
+                    <TBody>
+                      {data.lines.map((ln, i) => (
+                        <Tr key={i}>
                           {Object.keys(data.lines[0]).filter((c) => c !== 'raw').map((c) => (
-                            <Th key={c}>{c}</Th>
+                            <Td key={c} className={cn('whitespace-nowrap px-3 py-2', isAmountCol(c) && 'text-right')}>
+                              {cell(c, ln[c])}
+                            </Td>
                           ))}
                         </Tr>
-                      </THead>
-                      <TBody>
-                        {data.lines.map((ln, i) => (
-                          <Tr key={i}>
-                            {Object.keys(data.lines[0]).filter((c) => c !== 'raw').map((c) => (
-                              <Td key={c} className={cn('whitespace-nowrap px-3 py-2', isAmountCol(c) && 'text-right')}>
-                                {cell(c, ln[c])}
-                              </Td>
-                            ))}
-                          </Tr>
-                        ))}
-                      </TBody>
-                    </Table>
-                  </div>
+                      ))}
+                    </TBody>
+                  </Table>
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-            {data.attachments.length > 0 && (
-              <div>
-                <h3 className="mb-1 text-sm font-semibold text-fg-secondary">Attachments</h3>
-                <ul className="space-y-0.5 text-sm">
-                  {data.attachments.map((a) => (
-                    <li key={a.attachment_qbo_id}>
-                      <Button variant="link"
-                        type="button"
-                        disabled={downloadingId === a.attachment_qbo_id}
-                        onClick={() => downloadAttachment(a.attachment_qbo_id)}
-                       
-                      >
-                        {downloadingId === a.attachment_qbo_id && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                        {a.attachment_qbo_id}
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-                {downloadErr && <p className="mt-1 text-xs text-danger-fg">{downloadErr}</p>}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>,
+          {data.attachments.length > 0 && (
+            <div>
+              <h3 className="mb-1 text-sm font-semibold text-fg-secondary">Attachments</h3>
+              <ul className="space-y-0.5 text-sm">
+                {data.attachments.map((a) => (
+                  <li key={a.attachment_qbo_id}>
+                    <Button variant="link"
+                      type="button"
+                      disabled={downloadingId === a.attachment_qbo_id}
+                      onClick={() => downloadAttachment(a.attachment_qbo_id)}
+                     
+                    >
+                      {downloadingId === a.attachment_qbo_id && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      {a.attachment_qbo_id}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+              {downloadErr && <p className="mt-1 text-xs text-danger-fg">{downloadErr}</p>}
+            </div>
+          )}
+        </>
+      )}
+    </ShellModal>,
     document.body,
   )
 }
@@ -450,93 +436,82 @@ function VendorEmailBackfill() {
       </button>
 
       {confirming && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => !busy && setConfirming(false)}>
-          <div className="w-full max-w-md space-y-3 rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
-              <Mail className="h-4 w-4 text-primary-700" /> Fill Remittance Emails
-            </h2>
+        <ShellModal open onClose={() => setConfirming(false)} busy={busy} title="Fill Remittance Emails" closeOnBackdrop closeOnEscape={false}
+          icon={<Mail className="h-4 w-4" />} size="full" className="max-w-md"
+          footer={<>
+            <Button variant="secondary" size="sm" disabled={busy} onClick={() => setConfirming(false)}>Cancel</Button>
+            <Button size="sm" disabled={busy} onClick={run}>
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />} Fill emails
+            </Button>
+          </>}>
+          <div className="space-y-3">
             <p className="text-sm text-fg-secondary">
               Copies each QuickBooks vendor email into the matching EPMS vendor's
               Remittance Email — only where it is currently empty. Existing values
               are never overwritten.
             </p>
             {error && <p className="text-sm text-danger-fg">{error}</p>}
-            <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
-              <button className={secondaryBtn} disabled={busy} onClick={() => setConfirming(false)}>Cancel</button>
-              <button className={primaryBtn} disabled={busy} onClick={run}>
-                {busy && <Loader2 className="h-4 w-4 animate-spin" />} Fill emails
-              </button>
-            </div>
           </div>
-        </div>
+        </ShellModal>
       )}
 
       {result && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setResult(null)}>
-          <div className="max-h-[85vh] w-full max-w-2xl space-y-4 overflow-auto rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-line-subtle pb-3">
-              <h2 className="text-base font-semibold text-fg">Backfill result</h2>
-              <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={() => setResult(null)}>
-                <X className="h-5 w-5" />
-              </Button>
-            </div>
+        <ShellModal open onClose={() => setResult(null)} title="Backfill result" closeOnBackdrop closeOnEscape={false} size="full" className="max-w-2xl">
+          <p className="text-sm text-fg-secondary">
+            {result.updated.length} filled · {result.skipped_has_value} already had a value ·{' '}
+            {result.ambiguous.length} ambiguous · {result.unmatched_qbo.length} unmatched
+          </p>
 
-            <p className="text-sm text-fg-secondary">
-              {result.updated.length} filled · {result.skipped_has_value} already had a value ·{' '}
-              {result.ambiguous.length} ambiguous · {result.unmatched_qbo.length} unmatched
-            </p>
-
-            {result.updated.length > 0 && (
-              <div>
-                <h3 className="mb-1 text-sm font-semibold text-fg-secondary">Filled</h3>
-                <div className="overflow-hidden rounded-lg border border-line">
-                  <Table density="compact">
-                    <THead>
-                      <Tr>
-                        <Th>Code</Th>
-                        <Th>Vendor</Th>
-                        <Th>Email</Th>
+          {result.updated.length > 0 && (
+            <div>
+              <h3 className="mb-1 text-sm font-semibold text-fg-secondary">Filled</h3>
+              <div className="overflow-hidden rounded-lg border border-line">
+                <Table density="compact">
+                  <THead>
+                    <Tr>
+                      <Th>Code</Th>
+                      <Th>Vendor</Th>
+                      <Th>Email</Th>
+                    </Tr>
+                  </THead>
+                  <TBody>
+                    {result.updated.map((u) => (
+                      <Tr key={u.code}>
+                        <Td className="whitespace-nowrap">{u.code}</Td>
+                        <Td>{u.name}</Td>
+                        <Td>{u.email}</Td>
                       </Tr>
-                    </THead>
-                    <TBody>
-                      {result.updated.map((u) => (
-                        <Tr key={u.code}>
-                          <Td className="whitespace-nowrap">{u.code}</Td>
-                          <Td>{u.name}</Td>
-                          <Td>{u.email}</Td>
-                        </Tr>
-                      ))}
-                    </TBody>
-                  </Table>
-                </div>
+                    ))}
+                  </TBody>
+                </Table>
               </div>
-            )}
+            </div>
+          )}
 
-            {result.ambiguous.length > 0 && (
-              <div>
-                <h3 className="mb-1 text-sm font-semibold text-fg-secondary">
-                  Ambiguous names (skipped — resolve manually)
-                </h3>
-                <ul className="max-h-40 space-y-0.5 overflow-auto text-sm text-fg-secondary">
-                  {result.ambiguous.map((a, i) => (
-                    <li key={i}>{a.name} <span className="text-xs text-fg-muted">({a.side === 'qbo' ? 'duplicate in QuickBooks' : 'duplicate in EPMS'})</span></li>
-                  ))}
-                </ul>
-              </div>
-            )}
+          {result.ambiguous.length > 0 && (
+            <div>
+              <h3 className="mb-1 text-sm font-semibold text-fg-secondary">
+                Ambiguous names (skipped — resolve manually)
+              </h3>
+              <ul className="max-h-40 space-y-0.5 overflow-auto text-sm text-fg-secondary">
+                {result.ambiguous.map((a, i) => (
+                  <li key={i}>{a.name} <span className="text-xs text-fg-muted">({a.side === 'qbo' ? 'duplicate in QuickBooks' : 'duplicate in EPMS'})</span></li>
+                ))}
+              </ul>
+            </div>
+          )}
 
-            {result.unmatched_qbo.length > 0 && (
-              <div>
-                <h3 className="mb-1 text-sm font-semibold text-fg-secondary">
-                  No matching EPMS vendor
-                </h3>
-                <ul className="max-h-40 space-y-0.5 overflow-auto text-sm text-fg-secondary">
-                  {result.unmatched_qbo.map((n) => <li key={n}>{n}</li>)}
-                </ul>
-              </div>
-            )}
-          </div>
-        </div>
+          {result.unmatched_qbo.length > 0 && (
+            <div>
+              <h3 className="mb-1 text-sm font-semibold text-fg-secondary">
+                No matching EPMS vendor
+              </h3>
+              <ul className="max-h-40 space-y-0.5 overflow-auto text-sm text-fg-secondary">
+                {result.unmatched_qbo.map((n) => <li key={n}>{n}</li>)}
+              </ul>
+            </div>
+          )}
+        </ShellModal>
       )}
     </>
   )

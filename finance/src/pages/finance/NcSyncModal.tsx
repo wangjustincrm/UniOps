@@ -5,11 +5,11 @@
  */
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, DatabaseZap, Loader2, X } from 'lucide-react'
+import { AlertTriangle, DatabaseZap, Loader2 } from 'lucide-react'
 import { financeApi } from '@/lib/api'
 import { cn, formatDateTime } from '@/lib/utils'
 
-import { Input, Radio, Button } from '@uniops/shell'
+import { Input, Radio, Modal as ShellModal } from '@uniops/shell'
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
@@ -91,83 +91,72 @@ export function NcSyncModal({ onClose, onSynced }: { onClose: () => void; onSync
   const canStart = !running && !starting && (mode === 'incremental' || confirm === FULL_CONFIRM)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
-            <DatabaseZap className="h-4 w-4 text-fg-muted" /> NC Voucher Sync
-          </h2>
-          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
+    <ShellModal open onClose={onClose} title="NC Voucher Sync" icon={<DatabaseZap className="h-4 w-4" />} closeOnBackdrop closeOnEscape={false} size="full" className="max-w-lg">
+      <div className="space-y-3">
+        {status?.last_run && !running && <RunSummary run={status.last_run} label="Last sync" />}
 
-        <div className="space-y-3">
-          {status?.last_run && !running && <RunSummary run={status.last_run} label="Last sync" />}
-
-          {running ? (
-            <div className="rounded-lg border border-line px-3 py-3 text-sm">
-              <div className="flex items-center gap-2 text-fg-secondary">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Sync in progress ({running.mode})…
-              </div>
-              <div className="mt-2 font-mono text-xs text-fg-muted">
-                {Number(running.vouchers_inserted).toLocaleString()} vouchers ·{' '}
-                {Number(running.lines_inserted).toLocaleString()} lines ·{' '}
-                {Number(running.dims_inserted).toLocaleString()} dims
-              </div>
+        {running ? (
+          <div className="rounded-lg border border-line px-3 py-3 text-sm">
+            <div className="flex items-center gap-2 text-fg-secondary">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Sync in progress ({running.mode})…
             </div>
-          ) : (
-            <>
-              <div className="space-y-2 text-sm">
-                <label className="flex items-start gap-2">
-                  <Radio checked={mode === 'incremental'}
-                         onChange={() => setMode('incremental')} className="mt-0.5" />
-                  <span>
-                    <span className="font-medium">Incremental</span>
-                    <span className="block text-xs text-fg-muted">
-                      Import only vouchers that are new in NC (by source pk, creationtime watermark).
-                      Existing vouchers are never touched.
-                    </span>
+            <div className="mt-2 font-mono text-xs text-fg-muted">
+              {Number(running.vouchers_inserted).toLocaleString()} vouchers ·{' '}
+              {Number(running.lines_inserted).toLocaleString()} lines ·{' '}
+              {Number(running.dims_inserted).toLocaleString()} dims
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2 text-sm">
+              <label className="flex items-start gap-2">
+                <Radio checked={mode === 'incremental'}
+                       onChange={() => setMode('incremental')} className="mt-0.5" />
+                <span>
+                  <span className="font-medium">Incremental</span>
+                  <span className="block text-xs text-fg-muted">
+                    Import only vouchers that are new in NC (by source pk, creationtime watermark).
+                    Existing vouchers are never touched.
                   </span>
-                </label>
-                <label className="flex items-start gap-2">
-                  <Radio checked={mode === 'full'}
-                         onChange={() => setMode('full')} className="mt-0.5" />
-                  <span>
-                    <span className="font-medium">Full reload</span>
-                    <span className="block text-xs text-fg-muted">
-                      Delete ALL NC-sourced vouchers (~39.8k) and re-import everything.
-                    </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2">
+                <Radio checked={mode === 'full'}
+                       onChange={() => setMode('full')} className="mt-0.5" />
+                <span>
+                  <span className="font-medium">Full reload</span>
+                  <span className="block text-xs text-fg-muted">
+                    Delete ALL NC-sourced vouchers (~39.8k) and re-import everything.
                   </span>
-                </label>
-              </div>
+                </span>
+              </label>
+            </div>
 
-              {mode === 'full' && (
-                <div className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2">
-                  <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-danger-fg">
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    Destructive: deletes every NC-sourced voucher before re-importing.
-                    Type {FULL_CONFIRM} to enable.
-                  </div>
-                  <Input value={confirm} onChange={(e) => setConfirm(e.target.value)}
-                         placeholder={FULL_CONFIRM} className={cn(inputCls, 'w-full font-mono')} />
+            {mode === 'full' && (
+              <div className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2">
+                <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-danger-fg">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Destructive: deletes every NC-sourced voucher before re-importing.
+                  Type {FULL_CONFIRM} to enable.
                 </div>
-              )}
-
-              {err && <div className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{err}</div>}
-
-              <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
-                <button onClick={onClose} className={secondaryBtn}>Close</button>
-                <button onClick={start} disabled={!canStart} className={primaryBtn}>
-                  {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <DatabaseZap className="h-4 w-4" />}
-                  Start Sync
-                </button>
+                <Input value={confirm} onChange={(e) => setConfirm(e.target.value)}
+                       placeholder={FULL_CONFIRM} className={cn(inputCls, 'w-full font-mono')} />
               </div>
-            </>
-          )}
-        </div>
+            )}
+
+            {err && <div className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{err}</div>}
+
+            <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
+              <button onClick={onClose} className={secondaryBtn}>Close</button>
+              <button onClick={start} disabled={!canStart} className={primaryBtn}>
+                {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <DatabaseZap className="h-4 w-4" />}
+                Start Sync
+              </button>
+            </div>
+          </>
+        )}
       </div>
-    </div>
+    </ShellModal>
   )
 }

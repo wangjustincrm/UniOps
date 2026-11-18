@@ -12,15 +12,13 @@
 import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  BookOpen, CalendarClock, Check, Loader2, Lock, Plus, Scale, Trash2, X,
-} from 'lucide-react'
+import { BookOpen, CalendarClock, Check, Loader2, Lock, Plus, Scale, Trash2 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, currentMonthISO, formatDate, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-import { Checkbox, Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Checkbox, Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Button , Modal as ShellModal } from '@uniops/shell'
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
@@ -516,20 +514,11 @@ function CloseYearModal({ onClose, onDone, onError }: {
 function Modal({ title, children, onClose, wide }: {
   title: string; children: React.ReactNode; onClose: () => void; wide?: boolean
 }) {
+  // Backdrop click closes, Escape does not — as before.
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className={cn('w-full rounded-xl bg-surface p-5 shadow-xl', wide ? 'max-w-3xl' : 'max-w-md')}
-           onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
-            <BookOpen className="h-4 w-4 text-fg-muted" /> {title}
-          </h2>
-          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
-        {children}
-      </div>
-    </div>
+    <ShellModal open onClose={onClose} title={title} closeOnBackdrop closeOnEscape={false}
+      icon={<BookOpen className="h-4 w-4" />} size="full" className={wide ? 'max-w-3xl' : 'max-w-md'}>
+      {children}
+    </ShellModal>
   )
 }

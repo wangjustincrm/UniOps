@@ -9,8 +9,8 @@
  * an unmarked one reads as a voucher that is already in the ledger.
  */
 import { useQuery } from '@tanstack/react-query'
-import { BookOpen, Loader2, X } from 'lucide-react'
-import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Button } from '@uniops/shell'
+import { BookOpen, Loader2 } from 'lucide-react'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Button, Modal as ShellModal } from '@uniops/shell'
 import { financeApi } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
 
@@ -50,63 +50,52 @@ export function AccountVouchersModal({ accountCode, period, dimsValues, title,
   })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="max-h-[85vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-surface p-5 shadow-xl"
-           onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
-            <BookOpen className="h-4 w-4 text-fg-muted" /> {title}
-          </h2>
-          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
-        {isLoading ? (
-          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-line">
-            <Table density="compact">
-              <THead>
-                <Tr>
-                  <SortTh label="Date" sortKey="date" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
-                  <SortTh label="Voucher" sortKey="voucher" sort={sort} onSort={onSort} className="px-3 py-2 w-36" />
-                  <SortTh label="Account" sortKey="account" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
-                  <SortTh label="Summary" sortKey="summary" sort={sort} onSort={onSort} className="px-3 py-2" />
-                  <SortTh label="Debit" sortKey="debit" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-28" />
-                  <SortTh label="Credit" sortKey="credit" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-28" />
+    <ShellModal open onClose={onClose} title={title} icon={<BookOpen className="h-4 w-4" />} closeOnBackdrop closeOnEscape={false} size="full" className="max-w-4xl">
+      {isLoading ? (
+        <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-line">
+          <Table density="compact">
+            <THead>
+              <Tr>
+                <SortTh label="Date" sortKey="date" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
+                <SortTh label="Voucher" sortKey="voucher" sort={sort} onSort={onSort} className="px-3 py-2 w-36" />
+                <SortTh label="Account" sortKey="account" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
+                <SortTh label="Summary" sortKey="summary" sort={sort} onSort={onSort} className="px-3 py-2" />
+                <SortTh label="Debit" sortKey="debit" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-28" />
+                <SortTh label="Credit" sortKey="credit" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-28" />
+              </Tr>
+            </THead>
+            <TBody>
+              {rows.length === 0 && (
+                <Tr><Td align="center" colSpan={6} className="text-fg-muted">No vouchers.</Td></Tr>
+              )}
+              {rows.map((r, i) => (
+                <Tr key={`${r.jv_id}-${i}`} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
+                  <Td className="whitespace-nowrap font-mono text-xs text-fg-secondary">{formatDate(r.voucher_date)}</Td>
+                  <Td>
+                    <Button variant="link" onClick={() => onOpenJv(r.jv_id)}
+                            className="font-mono text-xs">
+                      {r.jv_number}
+                    </Button>
+                    {r.posted === false && (
+                      <span className="ml-1.5 rounded bg-warning-soft px-1.5 py-0.5 text-2xs font-medium text-warning-fg">
+                        Unposted
+                      </span>
+                    )}
+                  </Td>
+                  <Td className="font-mono text-xs text-fg-secondary">
+                    {r.account_code}{r.account_name ? ` · ${r.account_name}` : ''}
+                  </Td>
+                  <Td className="text-fg-secondary">{r.summary || '—'}</Td>
+                  <Td align="right" className="font-mono">{money(r.local_debit)}</Td>
+                  <Td align="right" className="font-mono">{money(r.local_credit)}</Td>
                 </Tr>
-              </THead>
-              <TBody>
-                {rows.length === 0 && (
-                  <Tr><Td align="center" colSpan={6} className="text-fg-muted">No vouchers.</Td></Tr>
-                )}
-                {rows.map((r, i) => (
-                  <Tr key={`${r.jv_id}-${i}`} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
-                    <Td className="whitespace-nowrap font-mono text-xs text-fg-secondary">{formatDate(r.voucher_date)}</Td>
-                    <Td>
-                      <Button variant="link" onClick={() => onOpenJv(r.jv_id)}
-                              className="font-mono text-xs">
-                        {r.jv_number}
-                      </Button>
-                      {r.posted === false && (
-                        <span className="ml-1.5 rounded bg-warning-soft px-1.5 py-0.5 text-2xs font-medium text-warning-fg">
-                          Unposted
-                        </span>
-                      )}
-                    </Td>
-                    <Td className="font-mono text-xs text-fg-secondary">
-                      {r.account_code}{r.account_name ? ` · ${r.account_name}` : ''}
-                    </Td>
-                    <Td className="text-fg-secondary">{r.summary || '—'}</Td>
-                    <Td align="right" className="font-mono">{money(r.local_debit)}</Td>
-                    <Td align="right" className="font-mono">{money(r.local_credit)}</Td>
-                  </Tr>
-                ))}
-              </TBody>
-            </Table>
-          </div>
-        )}
-      </div>
-    </div>
+              ))}
+            </TBody>
+          </Table>
+        </div>
+      )}
+    </ShellModal>
   )
 }

@@ -20,8 +20,8 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Loader2, Play, Undo2, Wallet, X } from 'lucide-react'
-import { SortTh, sortParams, useOptionalTabStoreApi, useSort, useSortableRows, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { CheckCircle2, Loader2, Play, Undo2, Wallet } from 'lucide-react'
+import { SortTh, sortParams, useOptionalTabStoreApi, useSort, useSortableRows, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
 import { cn, formatDate, todayISO } from '@/lib/utils'
@@ -758,192 +758,181 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
 
   return (
     <>
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-fg">
-            {batch ? `Batch ${batch.batch_number}` : 'Batch'}
-            {batch && <span className="ml-2"><StatusPill status={batch.status} /></span>}
-          </h2>
-          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
-
-        {isLoading ? (
-          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
-        ) : (
-          <>
-            {batch && (
-              <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-fg-secondary">
-                <span>Date: {formatDate(batch.batch_date)}</span>
-                <span>Currency: {batch.currency}</span>
-                <span>Total: <span className="font-mono">{fmtMoney(batch.total, batch.currency)}</span></span>
-                <span>{lines.length} lines</span>
-                {batch.bank_account_id && <span>Bank: {bankLabel(batch.bank_account_id)}</span>}
-              </div>
-            )}
-            <div className="max-h-80 overflow-y-auto rounded-lg border border-line">
-              <Table density="compact">
-                <THead>
-                  <Tr>
-                    <Th>Document</Th>
-                    <Th className="w-40">Invoice No</Th>
-                    <Th className="w-24">Type</Th>
-                    <Th className="w-24">Status</Th>
-                    <Th align="right" className="w-32 ">Amount</Th>
+    <ShellModal open onClose={onClose} title={<>{batch ? `Batch ${batch.batch_number}` : 'Batch'}
+            {batch && <span className="ml-2"><StatusPill status={batch.status} /></span>}</>} closeOnBackdrop closeOnEscape={false} size="full" className="max-w-2xl">
+      {isLoading ? (
+        <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
+      ) : (
+        <>
+          {batch && (
+            <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-fg-secondary">
+              <span>Date: {formatDate(batch.batch_date)}</span>
+              <span>Currency: {batch.currency}</span>
+              <span>Total: <span className="font-mono">{fmtMoney(batch.total, batch.currency)}</span></span>
+              <span>{lines.length} lines</span>
+              {batch.bank_account_id && <span>Bank: {bankLabel(batch.bank_account_id)}</span>}
+            </div>
+          )}
+          <div className="max-h-80 overflow-y-auto rounded-lg border border-line">
+            <Table density="compact">
+              <THead>
+                <Tr>
+                  <Th>Document</Th>
+                  <Th className="w-40">Invoice No</Th>
+                  <Th className="w-24">Type</Th>
+                  <Th className="w-24">Status</Th>
+                  <Th align="right" className="w-32 ">Amount</Th>
+                </Tr>
+              </THead>
+              <TBody>
+                {lines.map((ln) => (
+                  <Tr key={ln.id}>
+                    <Td>
+                      <span className="font-mono text-xs">{ln.doc_number || ln.doc_id.slice(0, 8)}</span>
+                      {ln.invoice_ids && <span className="ml-2 rounded-full bg-warning-soft px-2 py-0.5 text-2xs font-medium text-warning-fg">Part of PA</span>}
+                      {ln.error && <div className="text-xs text-danger-fg">{ln.error}</div>}
+                    </Td>
+                    <Td className="font-mono text-xs text-fg-secondary">{ln.vendor_inv_no || <span className="text-fg-faint">—</span>}</Td>
+                    <Td className="text-xs text-fg-muted">
+                      {ln.doc_kind === 'expense_claim' ? 'Claim' : ln.doc_kind === 'pa_dir' ? 'Direct PA' : 'PA'}
+                    </Td>
+                    <Td><StatusPill status={ln.status} /></Td>
+                    <Td align="right" className="font-mono">{fmtMoney(ln.amount)}</Td>
                   </Tr>
-                </THead>
-                <TBody>
-                  {lines.map((ln) => (
-                    <Tr key={ln.id}>
-                      <Td>
-                        <span className="font-mono text-xs">{ln.doc_number || ln.doc_id.slice(0, 8)}</span>
-                        {ln.invoice_ids && <span className="ml-2 rounded-full bg-warning-soft px-2 py-0.5 text-2xs font-medium text-warning-fg">Part of PA</span>}
-                        {ln.error && <div className="text-xs text-danger-fg">{ln.error}</div>}
-                      </Td>
-                      <Td className="font-mono text-xs text-fg-secondary">{ln.vendor_inv_no || <span className="text-fg-faint">—</span>}</Td>
-                      <Td className="text-xs text-fg-muted">
-                        {ln.doc_kind === 'expense_claim' ? 'Claim' : ln.doc_kind === 'pa_dir' ? 'Direct PA' : 'PA'}
-                      </Td>
-                      <Td><StatusPill status={ln.status} /></Td>
-                      <Td align="right" className="font-mono">{fmtMoney(ln.amount)}</Td>
-                    </Tr>
-                  ))}
-                </TBody>
-              </Table>
-            </div>
+                ))}
+              </TBody>
+            </Table>
+          </div>
 
-            {batch?.status === 'draft' && lines.some((ln) => (suggestions[ln.doc_id]?.suggested.length ?? 0) > 0) && (
-              <div className="mt-4">
-                <h3 className="mb-2 text-sm font-semibold text-fg-secondary">Vendor credits to apply</h3>
-                <div className="space-y-3 rounded-lg border border-line p-3">
-                  {lines
-                    .filter((ln) => (suggestions[ln.doc_id]?.suggested.length ?? 0) > 0)
-                    .map((ln) => {
-                      const s = suggestions[ln.doc_id]!
-                      const off = deselected[ln.doc_id] ?? new Set<string>()
-                      const plan = planFor(ln.doc_id)
-                      // What each still-checked credit would actually take,
-                      // keyed for the per-row figure below. A credit absent
-                      // here contributes nothing: either deselected, or the
-                      // base ran out before FIFO reached it.
-                      const takeById = new Map(plan.map((p) => [p.credit.credit_id, p.take]))
-                      const applied = plannedTotal(plan)
-                      const net = Number(s.gross) - applied
-                      return (
-                        <div key={ln.doc_id} className="border-b border-line-subtle pb-3 last:border-0 last:pb-0 last:pt-0">
-                          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs">
-                            <span className="font-mono text-fg-secondary">{ln.doc_number || ln.doc_id.slice(0, 8)}</span>
-                            <span className="text-fg-secondary">
-                              Gross <span className="font-mono">{fmtMoney(s.gross)}</span>
-                              {'  ·  '}Credits <span className="font-mono">{fmtMoney(String(applied))}</span>
-                              {'  ·  '}Net <span className="font-mono font-semibold text-fg">{fmtMoney(String(net))}</span>
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                            {s.suggested.map((c) => {
-                              const take = takeById.get(c.credit_id)
-                              return (
-                                <label key={c.credit_id} className="flex items-center gap-1.5 text-xs text-fg-secondary">
-                                  <Checkbox checked={!off.has(c.credit_id)}
-                                         onChange={() => toggleCredit(ln.doc_id, c.credit_id)} />
-                                  <span className="font-mono">{c.credit_number}</span>
-                                  {/* The vendor's own credit-note number — AP
-                                      needs both: credit_number to find the
-                                      record here, vendor_credit_number to
-                                      talk to the vendor about it. */}
-                                  <span className="font-mono text-fg-muted">{c.vendor_credit_number}</span>
-                                  <span className="text-fg-muted">{formatDate(c.credit_date)}</span>
-                                  {/* The recomputed take, never c.apply — a
-                                      deselection reshuffles what every later
-                                      credit contributes, so showing the
-                                      preview figure would keep the individual
-                                      rows lying even once the total is right.
-                                      Excluded (or unreached) credits show
-                                      their remaining balance struck through. */}
-                                  {take === undefined
-                                    ? <span className="font-mono text-fg-faint line-through">{fmtMoney(c.remaining)}</span>
-                                    : <span className="font-mono">{fmtMoney(String(take))}</span>}
-                                </label>
-                              )
-                            })}
-                          </div>
+          {batch?.status === 'draft' && lines.some((ln) => (suggestions[ln.doc_id]?.suggested.length ?? 0) > 0) && (
+            <div className="mt-4">
+              <h3 className="mb-2 text-sm font-semibold text-fg-secondary">Vendor credits to apply</h3>
+              <div className="space-y-3 rounded-lg border border-line p-3">
+                {lines
+                  .filter((ln) => (suggestions[ln.doc_id]?.suggested.length ?? 0) > 0)
+                  .map((ln) => {
+                    const s = suggestions[ln.doc_id]!
+                    const off = deselected[ln.doc_id] ?? new Set<string>()
+                    const plan = planFor(ln.doc_id)
+                    // What each still-checked credit would actually take,
+                    // keyed for the per-row figure below. A credit absent
+                    // here contributes nothing: either deselected, or the
+                    // base ran out before FIFO reached it.
+                    const takeById = new Map(plan.map((p) => [p.credit.credit_id, p.take]))
+                    const applied = plannedTotal(plan)
+                    const net = Number(s.gross) - applied
+                    return (
+                      <div key={ln.doc_id} className="border-b border-line-subtle pb-3 last:border-0 last:pb-0 last:pt-0">
+                        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs">
+                          <span className="font-mono text-fg-secondary">{ln.doc_number || ln.doc_id.slice(0, 8)}</span>
+                          <span className="text-fg-secondary">
+                            Gross <span className="font-mono">{fmtMoney(s.gross)}</span>
+                            {'  ·  '}Credits <span className="font-mono">{fmtMoney(String(applied))}</span>
+                            {'  ·  '}Net <span className="font-mono font-semibold text-fg">{fmtMoney(String(net))}</span>
+                          </span>
                         </div>
-                      )
-                    })}
-                </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                          {s.suggested.map((c) => {
+                            const take = takeById.get(c.credit_id)
+                            return (
+                              <label key={c.credit_id} className="flex items-center gap-1.5 text-xs text-fg-secondary">
+                                <Checkbox checked={!off.has(c.credit_id)}
+                                       onChange={() => toggleCredit(ln.doc_id, c.credit_id)} />
+                                <span className="font-mono">{c.credit_number}</span>
+                                {/* The vendor's own credit-note number — AP
+                                    needs both: credit_number to find the
+                                    record here, vendor_credit_number to
+                                    talk to the vendor about it. */}
+                                <span className="font-mono text-fg-muted">{c.vendor_credit_number}</span>
+                                <span className="text-fg-muted">{formatDate(c.credit_date)}</span>
+                                {/* The recomputed take, never c.apply — a
+                                    deselection reshuffles what every later
+                                    credit contributes, so showing the
+                                    preview figure would keep the individual
+                                    rows lying even once the total is right.
+                                    Excluded (or unreached) credits show
+                                    their remaining balance struck through. */}
+                                {take === undefined
+                                  ? <span className="font-mono text-fg-faint line-through">{fmtMoney(c.remaining)}</span>
+                                  : <span className="font-mono">{fmtMoney(String(take))}</span>}
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
               </div>
-            )}
-
-            {batch?.status === 'executed' && (
-              <div className="mt-6">
-                <h3 className="mb-2 text-sm font-semibold text-fg-secondary">Remittance</h3>
-                <RemittancePanel scope={{ kind: 'batch', id: batchId }} />
-              </div>
-            )}
-
-            <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
-              {batch?.status === 'executed' ? (
-                <>
-                  {canPay && lines.some((ln) => ln.status === 'paid') && (
-                    <Button variant="danger-outline" size="md" onClick={() => {
-                      if (reverse.isPending) return
-                      const reason = window.prompt(
-                        `Reverse ${batch.batch_number}?\n\nUse this only when the money was NOT actually sent. `
-                        + 'Every paid line is cancelled, its invoices go back to unpaid, the draft journal '
-                        + 'voucher is removed, and the PAs return to the due list to be paid again. '
-                        + 'If a remittance email already went out, tell the vendor.\n\nReason (required):')
-                      if (reason === null) return
-                      if (!reason.trim()) { onError('A reason is required to reverse a batch'); return }
-                      reverse.mutate(reason.trim())
-                    }} disabled={reverse.isPending}
-                           >
-                      {reverse.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />}
-                      Reverse Batch
-                    </Button>
-                  )}
-                  <span className="flex items-center gap-1.5 text-sm text-success-fg">
-                    <CheckCircle2 className="h-4 w-4" /> Executed
-                  </span>
-                </>
-              ) : batch?.status === 'reversed' ? (
-                <span className="flex items-center gap-1.5 text-sm text-warning-fg">
-                  <Undo2 className="h-4 w-4" /> Reversed — payments cancelled
-                </span>
-              ) : canPay && batch?.status === 'draft' ? (
-                <>
-                  <Button variant="secondary" size="md" onClick={() => {
-                    if (window.confirm(`Cancel draft ${batch.batch_number}? Nothing is paid; its payments go back to unbatched.`)) cancel.mutate()
-                  }} disabled={cancel.isPending || execute.isPending}
-                         >
-                    {cancel.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Cancel Draft
-                  </Button>
-                  <label className="flex items-center gap-2 text-sm text-fg-secondary">
-                    <span>Pay from bank</span>
-                    <Select selectSize="sm" value={bankId} onChange={(e) => setBankId(e.target.value)}
-                           >
-                      <option value="">Select a {batch?.currency} account…</option>
-                      {banksForCcy.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.bank_name} — {a.name}{a.account_masked ? ` · …${a.account_masked}` : ''}
-                        </option>
-                      ))}
-                    </Select>
-                  </label>
-                  <button onClick={() => execute.mutate()} disabled={execute.isPending || !bankId}
-                          title={!bankId ? 'Select a funding bank first' : undefined} className={primaryBtn}>
-                    {execute.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                    Execute Batch
-                  </button>
-                </>
-              ) : null}
             </div>
-          </>
-        )}
-      </div>
-    </div>
+          )}
+
+          {batch?.status === 'executed' && (
+            <div className="mt-6">
+              <h3 className="mb-2 text-sm font-semibold text-fg-secondary">Remittance</h3>
+              <RemittancePanel scope={{ kind: 'batch', id: batchId }} />
+            </div>
+          )}
+
+          <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
+            {batch?.status === 'executed' ? (
+              <>
+                {canPay && lines.some((ln) => ln.status === 'paid') && (
+                  <Button variant="danger-outline" size="md" onClick={() => {
+                    if (reverse.isPending) return
+                    const reason = window.prompt(
+                      `Reverse ${batch.batch_number}?\n\nUse this only when the money was NOT actually sent. `
+                      + 'Every paid line is cancelled, its invoices go back to unpaid, the draft journal '
+                      + 'voucher is removed, and the PAs return to the due list to be paid again. '
+                      + 'If a remittance email already went out, tell the vendor.\n\nReason (required):')
+                    if (reason === null) return
+                    if (!reason.trim()) { onError('A reason is required to reverse a batch'); return }
+                    reverse.mutate(reason.trim())
+                  }} disabled={reverse.isPending}
+                         >
+                    {reverse.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />}
+                    Reverse Batch
+                  </Button>
+                )}
+                <span className="flex items-center gap-1.5 text-sm text-success-fg">
+                  <CheckCircle2 className="h-4 w-4" /> Executed
+                </span>
+              </>
+            ) : batch?.status === 'reversed' ? (
+              <span className="flex items-center gap-1.5 text-sm text-warning-fg">
+                <Undo2 className="h-4 w-4" /> Reversed — payments cancelled
+              </span>
+            ) : canPay && batch?.status === 'draft' ? (
+              <>
+                <Button variant="secondary" size="md" onClick={() => {
+                  if (window.confirm(`Cancel draft ${batch.batch_number}? Nothing is paid; its payments go back to unbatched.`)) cancel.mutate()
+                }} disabled={cancel.isPending || execute.isPending}
+                       >
+                  {cancel.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Cancel Draft
+                </Button>
+                <label className="flex items-center gap-2 text-sm text-fg-secondary">
+                  <span>Pay from bank</span>
+                  <Select selectSize="sm" value={bankId} onChange={(e) => setBankId(e.target.value)}
+                         >
+                    <option value="">Select a {batch?.currency} account…</option>
+                    {banksForCcy.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.bank_name} — {a.name}{a.account_masked ? ` · …${a.account_masked}` : ''}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+                <button onClick={() => execute.mutate()} disabled={execute.isPending || !bankId}
+                        title={!bankId ? 'Select a funding bank first' : undefined} className={primaryBtn}>
+                  {execute.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                  Execute Batch
+                </button>
+              </>
+            ) : null}
+          </div>
+        </>
+      )}
+    </ShellModal>
 
     <RemittanceDialog
       open={showRemittance}

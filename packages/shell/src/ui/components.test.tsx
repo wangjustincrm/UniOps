@@ -165,3 +165,15 @@ describe('Switch', () => {
     expect(seen).toEqual([true])
   })
 })
+
+describe('Modal stacked', () => {
+  it('a stacked modal sits one layer above a normal one, below dropdowns', () => {
+    render(<>
+      <Modal open onClose={() => {}} title="Parent">p</Modal>
+      <Modal open stacked onClose={() => {}} title="Child">c</Modal>
+    </>)
+    const layer = (name: string) => screen.getByRole('dialog', { name }).parentElement!
+    expect(layer('Parent').className).toContain('z-50')
+    expect(layer('Child').className).toContain('z-[55]')
+  })
+})

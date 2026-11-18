@@ -12,10 +12,9 @@
    "shouting-type": 2
   },
   "finance": {
-   "raw-control": 134,
-   "raw-overlay": 22,
-   "raw-color": 12,
+   "raw-control": 128,
    "arbitrary-size": 5,
+   "raw-color": 11,
    "shouting-type": 8
   },
   "inventory": {
@@ -140,15 +139,6 @@
   "finance/src/components/ListPager.tsx": {
    "raw-control": 2
   },
-  "finance/src/components/layout/AppLayout.tsx": {
-   "raw-control": 1,
-   "raw-overlay": 1,
-   "raw-color": 1
-  },
-  "finance/src/components/remittance/RemittanceDialog.tsx": {
-   "raw-control": 1,
-   "raw-overlay": 1
-  },
   "finance/src/components/remittance/RemittanceEmailPreview.tsx": {
    "raw-control": 4
   },
@@ -162,11 +152,7 @@
    "raw-control": 1
   },
   "finance/src/pages/finance/AccountBalancePage.tsx": {
-   "raw-control": 4,
-   "raw-overlay": 1
-  },
-  "finance/src/pages/finance/AccountVouchersModal.tsx": {
-   "raw-overlay": 1
+   "raw-control": 4
   },
   "finance/src/pages/finance/AccountsPayablePage.tsx": {
    "raw-control": 1,
@@ -175,19 +161,16 @@
    "shouting-type": 1
   },
   "finance/src/pages/finance/AccountsReceivablePage.tsx": {
-   "raw-control": 7,
-   "raw-overlay": 1
+   "raw-control": 7
   },
   "finance/src/pages/finance/ApCashFlowPage.tsx": {
    "raw-control": 1
   },
   "finance/src/pages/finance/ApDuplicateInvoicesPage.tsx": {
-   "raw-control": 2,
-   "raw-overlay": 1
+   "raw-control": 2
   },
   "finance/src/pages/finance/ApLedgerHealthPage.tsx": {
-   "raw-control": 3,
-   "raw-overlay": 2
+   "raw-control": 3
   },
   "finance/src/pages/finance/ApReconciliationPage.tsx": {
    "raw-control": 1,
@@ -198,12 +181,10 @@
    "raw-color": 10
   },
   "finance/src/pages/finance/BankSettingsPage.tsx": {
-   "raw-control": 3,
-   "raw-overlay": 1
+   "raw-control": 3
   },
   "finance/src/pages/finance/BankStatementCsvPage.tsx": {
-   "raw-control": 9,
-   "raw-overlay": 1
+   "raw-control": 9
   },
   "finance/src/pages/finance/BatchCostPage.tsx": {
    "raw-control": 3
@@ -218,12 +199,10 @@
    "raw-control": 6
   },
   "finance/src/pages/finance/CoaConfigPage.tsx": {
-   "raw-control": 9,
-   "raw-overlay": 1
+   "raw-control": 9
   },
   "finance/src/pages/finance/CoaSyncModal.tsx": {
-   "raw-control": 4,
-   "raw-overlay": 1
+   "raw-control": 4
   },
   "finance/src/pages/finance/CostAnomaliesPage.tsx": {
    "raw-control": 1
@@ -232,15 +211,13 @@
    "shouting-type": 3
   },
   "finance/src/pages/finance/GeneralLedgerPage.tsx": {
-   "raw-control": 8,
-   "raw-overlay": 1
+   "raw-control": 8
   },
   "finance/src/pages/finance/JournalVouchersPage.tsx": {
    "raw-control": 6
   },
   "finance/src/pages/finance/JvDetailModal.tsx": {
-   "raw-control": 5,
-   "raw-overlay": 1
+   "raw-control": 5
   },
   "finance/src/pages/finance/JvLinesPage.tsx": {
    "raw-control": 2,
@@ -250,12 +227,10 @@
    "raw-control": 5
   },
   "finance/src/pages/finance/NcSyncModal.tsx": {
-   "raw-control": 2,
-   "raw-overlay": 1
+   "raw-control": 2
   },
   "finance/src/pages/finance/PaymentBatchPage.tsx": {
    "raw-control": 5,
-   "raw-overlay": 1,
    "arbitrary-size": 1
   },
   "finance/src/pages/finance/PaymentsPage.tsx": {
@@ -266,16 +241,11 @@
    "raw-control": 3
   },
   "finance/src/pages/finance/QboMirrorPage.tsx": {
-   "raw-control": 11,
-   "raw-overlay": 4
+   "raw-control": 7
   },
   "finance/src/pages/finance/TaxSettingsPage.tsx": {
    "raw-control": 2,
-   "raw-overlay": 1,
    "shouting-type": 1
-  },
-  "finance/src/pages/finance/UnallocatedLinesModal.tsx": {
-   "raw-overlay": 1
   },
   "inventory/src/components/Combobox.tsx": {
    "raw-control": 3

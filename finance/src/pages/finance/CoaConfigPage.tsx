@@ -19,7 +19,7 @@ import {
   AlertCircle, BookOpenCheck, Check, Download, Loader2, Pencil, Plus,
   RefreshCw, Search, Trash2, Upload, X,
 } from 'lucide-react'
-import { SortTh, useSortableRows, Checkbox, FileInput, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, FileInput, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financeDownload, financeUpload } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -102,156 +102,147 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
   // column and its API stay put — retiring them is a separate cleanup (§12).
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-xl bg-surface p-6 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-fg">
-            {isNew ? 'New Account' : `Edit Account ${initial.code}`}
-          </h3>
-          <Button variant="subtle" size="icon-xs" aria-label="Clear" onClick={onClose}><X className="h-5 w-5 text-fg-muted" /></Button>
+    <ShellModal open onClose={onClose} title={<>{isNew ? 'New Account' : `Edit Account ${initial.code}`}</>} closeOnEscape={false} size="full" className="max-w-lg">
+      <div className="grid grid-cols-2 gap-3">
+        <label className="text-sm">
+          <span className="mb-1 block text-fg-secondary">Code</span>
+          <Input value={form.code} disabled={!isNew}
+                 onChange={(e) => set({ code: e.target.value.trim() })}
+                 className={cn(inputCls, 'w-full disabled:bg-surface-sunken')} />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-fg-secondary">Parent</span>
+          <Input value={form.parent_code ?? ''} placeholder="(top level)"
+                 onChange={(e) => set({ parent_code: e.target.value.trim() || null })}
+                 className={cn(inputCls, 'w-full')} />
+        </label>
+        <label className="col-span-2 text-sm">
+          <span className="mb-1 block text-fg-secondary">Name</span>
+          <Input value={form.name} onChange={(e) => set({ name: e.target.value })}
+                 className={cn(inputCls, 'w-full')} />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-fg-secondary">Type</span>
+          <Select value={form.account_type}
+                  onChange={(e) => set({ account_type: e.target.value })}
+                  className={cn(inputCls, 'w-full')}>
+            {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
+          </Select>
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-fg-secondary">Normal Balance</span>
+          <Select value={form.normal_balance}
+                  onChange={(e) => set({ normal_balance: e.target.value })}
+                  className={cn(inputCls, 'w-full')}>
+            <option value="debit">Debit</option>
+            <option value="credit">Credit</option>
+          </Select>
+        </label>
+        <label className="flex items-center gap-2 text-sm text-fg-secondary">
+          <Checkbox checked={form.is_postable}
+                 onChange={(e) => set({ is_postable: e.target.checked })} />
+          Postable (uncheck = summary/header account)
+        </label>
+        <label className="flex items-center gap-2 text-sm text-fg-secondary">
+          <Checkbox checked={form.is_active}
+                 onChange={(e) => set({ is_active: e.target.checked })} />
+          Active
+        </label>
+
+        {/* NC-parity metadata */}
+        <label className="flex items-center gap-2 text-sm text-fg-secondary">
+          <Checkbox checked={form.quantity_accounting}
+                 onChange={(e) => set({ quantity_accounting: e.target.checked })} />
+          Quantity accounting
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-fg-secondary">Default UoM</span>
+          <Input value={form.default_uom ?? ''} placeholder="e.g. kg"
+                 onChange={(e) => set({ default_uom: e.target.value.trim() || null })}
+                 className={cn(inputCls, 'w-full')} />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-fg-secondary">Default Currency</span>
+          <Input value={form.default_currency ?? ''} placeholder="(entity default)"
+                 onChange={(e) => set({ default_currency: e.target.value.trim().toUpperCase() || null })}
+                 className={cn(inputCls, 'w-full')} />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-fg-secondary">Mnemonic</span>
+          <Input value={form.mnemonic ?? ''}
+                 onChange={(e) => set({ mnemonic: e.target.value.trim() || null })}
+                 className={cn(inputCls, 'w-full')} />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-fg-secondary">Effective From</span>
+          <Input type="date" value={form.effective_from ?? ''}
+                 onChange={(e) => set({ effective_from: e.target.value || null })}
+                 className={cn(inputCls, 'w-full')} />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-fg-secondary">Cash Flow Category</span>
+          <Input value={form.cash_flow_category ?? ''} placeholder="operating / investing / financing"
+                 onChange={(e) => set({ cash_flow_category: e.target.value.trim() || null })}
+                 className={cn(inputCls, 'w-full')} />
+        </label>
+        <label className="flex items-center gap-2 text-sm text-fg-secondary">
+          <Checkbox checked={form.is_off_balance}
+                 onChange={(e) => set({ is_off_balance: e.target.checked })} />
+          Off-balance-sheet
+        </label>
+      </div>
+
+      <div className="mt-4">
+        <div className="mb-2 text-sm font-medium text-fg-secondary">
+          Auxiliary Dimensions
+          <span className="ml-2 font-normal text-fg-muted">
+            read-only — managed by NC Sync
+          </span>
         </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <label className="text-sm">
-            <span className="mb-1 block text-fg-secondary">Code</span>
-            <Input value={form.code} disabled={!isNew}
-                   onChange={(e) => set({ code: e.target.value.trim() })}
-                   className={cn(inputCls, 'w-full disabled:bg-surface-sunken')} />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-fg-secondary">Parent</span>
-            <Input value={form.parent_code ?? ''} placeholder="(top level)"
-                   onChange={(e) => set({ parent_code: e.target.value.trim() || null })}
-                   className={cn(inputCls, 'w-full')} />
-          </label>
-          <label className="col-span-2 text-sm">
-            <span className="mb-1 block text-fg-secondary">Name</span>
-            <Input value={form.name} onChange={(e) => set({ name: e.target.value })}
-                   className={cn(inputCls, 'w-full')} />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-fg-secondary">Type</span>
-            <Select value={form.account_type}
-                    onChange={(e) => set({ account_type: e.target.value })}
-                    className={cn(inputCls, 'w-full')}>
-              {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
-            </Select>
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-fg-secondary">Normal Balance</span>
-            <Select value={form.normal_balance}
-                    onChange={(e) => set({ normal_balance: e.target.value })}
-                    className={cn(inputCls, 'w-full')}>
-              <option value="debit">Debit</option>
-              <option value="credit">Credit</option>
-            </Select>
-          </label>
-          <label className="flex items-center gap-2 text-sm text-fg-secondary">
-            <Checkbox checked={form.is_postable}
-                   onChange={(e) => set({ is_postable: e.target.checked })} />
-            Postable (uncheck = summary/header account)
-          </label>
-          <label className="flex items-center gap-2 text-sm text-fg-secondary">
-            <Checkbox checked={form.is_active}
-                   onChange={(e) => set({ is_active: e.target.checked })} />
-            Active
-          </label>
-
-          {/* NC-parity metadata */}
-          <label className="flex items-center gap-2 text-sm text-fg-secondary">
-            <Checkbox checked={form.quantity_accounting}
-                   onChange={(e) => set({ quantity_accounting: e.target.checked })} />
-            Quantity accounting
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-fg-secondary">Default UoM</span>
-            <Input value={form.default_uom ?? ''} placeholder="e.g. kg"
-                   onChange={(e) => set({ default_uom: e.target.value.trim() || null })}
-                   className={cn(inputCls, 'w-full')} />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-fg-secondary">Default Currency</span>
-            <Input value={form.default_currency ?? ''} placeholder="(entity default)"
-                   onChange={(e) => set({ default_currency: e.target.value.trim().toUpperCase() || null })}
-                   className={cn(inputCls, 'w-full')} />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-fg-secondary">Mnemonic</span>
-            <Input value={form.mnemonic ?? ''}
-                   onChange={(e) => set({ mnemonic: e.target.value.trim() || null })}
-                   className={cn(inputCls, 'w-full')} />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-fg-secondary">Effective From</span>
-            <Input type="date" value={form.effective_from ?? ''}
-                   onChange={(e) => set({ effective_from: e.target.value || null })}
-                   className={cn(inputCls, 'w-full')} />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-fg-secondary">Cash Flow Category</span>
-            <Input value={form.cash_flow_category ?? ''} placeholder="operating / investing / financing"
-                   onChange={(e) => set({ cash_flow_category: e.target.value.trim() || null })}
-                   className={cn(inputCls, 'w-full')} />
-          </label>
-          <label className="flex items-center gap-2 text-sm text-fg-secondary">
-            <Checkbox checked={form.is_off_balance}
-                   onChange={(e) => set({ is_off_balance: e.target.checked })} />
-            Off-balance-sheet
-          </label>
-        </div>
-
-        <div className="mt-4">
-          <div className="mb-2 text-sm font-medium text-fg-secondary">
-            Auxiliary Dimensions
-            <span className="ml-2 font-normal text-fg-muted">
-              read-only — managed by NC Sync
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-1.5">
-            {auxTypes.map((d) => {
-              const state = auxOf(d.code)
-              return (
-                <button key={d.code} type="button" disabled
-                        title="Managed by NC Sync — read-only"
-                        className={cn(
-                          'flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-sm cursor-not-allowed opacity-70',
-                          !state && 'border-line text-fg-muted hover:bg-surface-subtle',
-                          state && !state.required && 'border-primary-600/40 bg-primary-50 text-primary-700',
-                          state?.required && 'border-primary-700 bg-primary-700 text-white',
-                        )}>
-                  <span className="flex items-center gap-1.5">
-                    {state && <Check className="h-3.5 w-3.5" />}
-                    {d.name}
+        <div className="grid grid-cols-2 gap-1.5">
+          {auxTypes.map((d) => {
+            const state = auxOf(d.code)
+            return (
+              <button key={d.code} type="button" disabled
+                      title="Managed by NC Sync — read-only"
+                      className={cn(
+                        'flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-sm cursor-not-allowed opacity-70',
+                        !state && 'border-line text-fg-muted hover:bg-surface-subtle',
+                        state && !state.required && 'border-primary-600/40 bg-primary-50 text-primary-700',
+                        state?.required && 'border-primary-700 bg-primary-700 text-white',
+                      )}>
+                <span className="flex items-center gap-1.5">
+                  {state && <Check className="h-3.5 w-3.5" />}
+                  {d.name}
+                </span>
+                {state && (
+                  <span className={cn('text-2xs font-semibold',
+                                      state.required ? 'text-white/90' : 'text-primary-600')}>
+                    {state.required ? 'Required' : 'Optional'}
                   </span>
-                  {state && (
-                    <span className={cn('text-2xs font-semibold',
-                                        state.required ? 'text-white/90' : 'text-primary-600')}>
-                      {state.required ? 'Required' : 'Optional'}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        {error && (
-          <div className="mt-3 flex items-center gap-2 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">
-            <AlertCircle className="h-4 w-4" /> {error}
-          </div>
-        )}
-
-        <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onClose} className={secondaryBtn}>Cancel</button>
-          <button onClick={() => save.mutate()}
-                  disabled={save.isPending || !form.code || !form.name}
-                  className={primaryBtn}>
-            {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            Save
-          </button>
+                )}
+              </button>
+            )
+          })}
         </div>
       </div>
-    </div>
+
+      {error && (
+        <div className="mt-3 flex items-center gap-2 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">
+          <AlertCircle className="h-4 w-4" /> {error}
+        </div>
+      )}
+
+      <div className="mt-5 flex justify-end gap-2">
+        <button onClick={onClose} className={secondaryBtn}>Cancel</button>
+        <button onClick={() => save.mutate()}
+                disabled={save.isPending || !form.code || !form.name}
+                className={primaryBtn}>
+          {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+          Save
+        </button>
+      </div>
+    </ShellModal>
   )
 }
 

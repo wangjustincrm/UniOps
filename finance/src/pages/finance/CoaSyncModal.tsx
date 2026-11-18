@@ -8,7 +8,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { financeApi } from '@/lib/api'
 
-import { TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { Modal, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 export interface CoaSyncStatus {
   can_sync: boolean
   configured: boolean
@@ -60,12 +60,12 @@ export function CoaSyncModal({ onClose, onSynced }:
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-surface p-5 shadow-xl">
-        <h2 className="mb-1 text-lg font-semibold text-fg">Sync Chart of Accounts from NC</h2>
-        <p className="mb-4 text-sm text-fg-muted">
-          NC is the source of truth. Accounts NC no longer returns are deactivated, never deleted.
-        </p>
+    // No backdrop / Escape close (as before). The close button does what the
+    // dialog's own buttons do: Close (refresh) after a sync, Cancel before it.
+    <Modal open onClose={result ? onSynced : onClose} busy={busy !== null} closeOnEscape={false}
+      title="Sync Chart of Accounts from NC"
+      description="NC is the source of truth. Accounts NC no longer returns are deactivated, never deleted."
+      size="full" className="max-w-3xl">
 
         {err && (
           <div className="mb-3 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-fg">{err}</div>
@@ -168,8 +168,7 @@ export function CoaSyncModal({ onClose, onSynced }:
             </div>
           </>
         )}
-      </div>
-    </div>
+    </Modal>
   )
 }
 
