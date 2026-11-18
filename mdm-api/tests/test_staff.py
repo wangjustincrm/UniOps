@@ -195,6 +195,13 @@ async def do_import(client, data, **kw):
     return applied.json()
 
 
+async def follow(client, action="follow"):
+    """IMP-016: an import only records differences; this decides them all."""
+    r = await client.post("/mdm/v1/staff/adp-decisions", json={"action": action, "all": True})
+    assert r.status_code == 200, r.text
+    return r.json()["decided"]
+
+
 async def employee(db, number="000052"):
     await db.flush()
     return (await db.execute(select(Employee).where(Employee.employee_number == number).execution_options(populate_existing=True))).scalar_one()
@@ -243,6 +250,7 @@ async def test_apply_never_touches_the_user(client, db_session, nc):
     u = await add_user(db_session, full_name="Frank Qin")
     await do_import(client, roster(row(name="QIN, PENG FRANK")))
     await do_import(client, roster(row(name="QIN, PENG", title="Director")), roster_date="2026-11-15")
+    await follow(client)
     await db_session.flush()
     fresh = await db_session.get(User, u.id, populate_existing=True)
     assert fresh.full_name == "Frank Qin"
@@ -303,6 +311,8 @@ async def test_left_employee_back_on_the_roster_is_rehired(client, db_session, n
     nc.clear()
     await client.post("/mdm/v1/staff/nc/check")          # terminate closes
     await do_import(client, roster(row()), roster_date="2026-11-15")
+    assert (await employee(db_session)).status == "left"      # waits for a decision
+    await follow(client)
     back = await employee(db_session)
     assert back.status == "active" and back.left_on is None
     assert {t.type for t in await todos(db_session)} == {"rehire"}
@@ -388,6 +398,8 @@ async def test_adp_department_change_applies_the_map_and_raises_a_todo(client, d
     nc.append(person())
     await do_import(client, roster(row()))
     await do_import(client, roster(row(dept="Sales")), roster_date="2026-11-15")
+    assert (await employee(db_session)).department_id == finance.id and not await todos(db_session)
+    await follow(client)
     assert (await employee(db_session)).department_id == sales.id
     [todo] = await todos(db_session)
     assert todo.type == "change_department" and todo.target["nc_department_code"] == "0110"
@@ -425,13 +437,44 @@ async def test_map_needs_a_department_or_choose(client):
 # ── Employee rules ───────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_adp_fields_are_read_only(client, db_session, nc):
+async def test_edit_changes_every_field_of_an_adp_employee_and_the_next_import_puts_adp_back(client, db_session, nc):
     await do_import(client, roster(row()))
     e = await employee(db_session)
-    r = await client.patch(f"/mdm/v1/staff/{e.id}", json={"work_email": "x@example.com"})
-    assert r.status_code == 422
-    ok = await client.patch(f"/mdm/v1/staff/{e.id}", json={"notes": "hello"})
-    assert ok.status_code == 200
+    r = await client.patch(f"/mdm/v1/staff/{e.id}", json={
+        "display_name": "Frank Qin", "payroll_name": "QIN, FRANK", "work_email": "X@Example.com",
+        "job_title": "Director", "adp_department": " ", "status": "on_leave", "notes": "hello"})
+    assert r.status_code == 200, r.text
+    e = await employee(db_session)
+    assert (e.display_name, e.payroll_name, e.work_email, e.job_title, e.adp_department, e.status) == (
+        "Frank Qin", "QIN, FRANK", "x@example.com", "Director", None, "on_leave")
+    again = await do_import(client, roster(row()), roster_date="2026-11-15")
+    assert again["counts"]["changed"] == 1               # listed; waits for Follow ADP / Keep Current
+    assert (await employee(db_session)).display_name == "Frank Qin"
+    await follow(client)
+    e = await employee(db_session)
+    assert (e.display_name, e.work_email, e.job_title, e.status) == ("Peng Frank Qin", "qin@example.com", "Manager", "active")
+    assert e.notes == "hello"
+
+
+@pytest.mark.asyncio
+async def test_edit_refuses_empty_names_and_a_taken_email(client, db_session, nc):
+    await do_import(client, roster(row(), row("000053", email="b@example.com")))
+    e = await employee(db_session)
+    assert (await client.patch(f"/mdm/v1/staff/{e.id}", json={"display_name": None})).status_code == 422
+    assert (await client.patch(f"/mdm/v1/staff/{e.id}", json={"status": None})).status_code == 422
+    assert (await client.patch(f"/mdm/v1/staff/{e.id}", json={"work_email": "b@example.com"})).status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_left_date_is_editable_only_for_someone_who_left(client, db_session, nc):
+    await do_import(client, roster(row()))
+    e = await employee(db_session)
+    assert (await client.patch(f"/mdm/v1/staff/{e.id}", json={"left_on": "2026-10-01"})).status_code == 422
+    await client.post(f"/mdm/v1/staff/{e.id}/leave", json={"left_on": "2026-10-01"})
+    assert (await client.patch(f"/mdm/v1/staff/{e.id}", json={"left_on": "2026-10-03"})).status_code == 200
+    assert (await employee(db_session)).left_on == date(2026, 10, 3)
+    assert (await client.patch(f"/mdm/v1/staff/{e.id}", json={"left_on": None})).status_code == 422
+    assert (await client.patch(f"/mdm/v1/staff/{e.id}", json={"status": "active"})).status_code == 409
 
 
 @pytest.mark.asyncio
@@ -729,3 +772,201 @@ async def test_correct_number_is_system_admin_only(client, db_session, nc):
     app.dependency_overrides[get_token_payload] = lambda: {"sub": str(uuid.uuid4()), "role": "requester"}
     r = await client.post(f"/mdm/v1/staff/{e.id}/correct-number", json={"new_number": "000995", "reason": "x"})
     assert r.status_code == 403
+
+
+# ── Hire date, pay type, Manager (IMP-015, EMP-009) ──────────────────────────
+
+HEADER_HR = HEADER + ["Hire Date", "Pay Type"]
+
+
+def row_hr(number="000052", hire="2024-03-04", pay="Hourly", **kw):
+    return row(number, **kw) + (hire, pay)
+
+
+@pytest.mark.parametrize("raw,expected", [
+    (datetime(2024, 3, 4), "2024-03-04"),
+    (date(2024, 3, 4), "2024-03-04"),
+    ("2024-03-04", "2024-03-04"),
+    ("03/04/2024", "2024-03-04"),            # ADP writes month first
+    (45355, "2024-03-04"),                   # an unformatted Excel date
+    ("", None),
+    (None, None),
+])
+def test_hire_date_formats(raw, expected):
+    [parsed] = adp_roster.parse_roster(roster(row() + (raw, "Hourly"), header=HEADER_HR))
+    assert parsed.errors == [] and parsed.hire_date == expected
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("Hourly", "hourly"), ("HOURLY", "hourly"), ("Salary", "salaried"), ("Salaried", "salaried"), ("", None),
+])
+def test_pay_type_values(raw, expected):
+    [parsed] = adp_roster.parse_roster(roster(row_hr(pay=raw), header=HEADER_HR))
+    assert parsed.errors == [] and parsed.pay_type == expected
+
+
+def test_bad_hire_date_and_pay_type_are_row_errors():
+    [parsed] = adp_roster.parse_roster(roster(row_hr(hire="sometime", pay="Contract"), header=HEADER_HR))
+    assert len(parsed.errors) == 2
+    assert "Hire Date" in parsed.errors[0] and "Pay Type" in parsed.errors[1]
+
+
+def test_alternative_header_names_are_found():
+    header = HEADER + ["Hire/Rehire Date", "Regular Pay Rate Description"]
+    [parsed] = adp_roster.parse_roster(roster(row_hr(pay="Salary"), header=header))
+    assert parsed.optional == ("hire_date", "pay_type")
+    assert parsed.hire_date == "2024-03-04" and parsed.pay_type == "salaried"
+
+
+def test_without_the_columns_nothing_is_compared():
+    [parsed] = adp_roster.parse_roster(roster(row()))
+    assert parsed.optional == ()
+    stored = emp(hire_date="2020-01-01", pay_type="hourly")
+    groups = adp_roster.classify([parsed], [stored], {}, {})
+    assert len(groups["unchanged"]) == 1
+
+
+def test_with_the_columns_a_change_is_listed():
+    [parsed] = adp_roster.parse_roster(roster(row_hr(pay="Salary"), header=HEADER_HR))
+    stored = emp(hire_date=None, pay_type="hourly")
+    [changed] = adp_roster.classify([parsed], [stored], {}, {})["changed"]
+    assert {c["field"]: (c["old"], c["new"]) for c in changed["changes"]} == {
+        "hire_date": (None, "2024-03-04"), "pay_type": ("hourly", "salaried")}
+
+
+@pytest.mark.asyncio
+async def test_import_writes_hire_date_and_pay_type_and_an_older_file_keeps_them(client, db_session, nc):
+    await do_import(client, roster(row_hr(), header=HEADER_HR))
+    e = await employee(db_session)
+    assert e.hire_date == date(2024, 3, 4) and e.pay_type == "hourly"
+    # A roster without the columns leaves them as they are.
+    again = await do_import(client, roster(row()), roster_date="2026-11-15")
+    assert again["counts"]["unchanged"] == 1
+    e = await employee(db_session)
+    assert e.hire_date == date(2024, 3, 4) and e.pay_type == "hourly"
+    # Same file again: nothing changes (IMP-010).
+    assert (await do_import(client, roster(row_hr(), header=HEADER_HR), roster_date="2026-11-16"))["counts"]["unchanged"] == 1
+    changed = await do_import(client, roster(row_hr(pay="Salary"), header=HEADER_HR), roster_date="2026-11-17")
+    assert changed["counts"]["changed"] == 1
+    await follow(client)
+    assert (await employee(db_session)).pay_type == "salaried"
+
+
+@pytest.mark.asyncio
+async def test_manager_tick_is_set_by_hand_and_kept_by_imports(client, db_session, nc):
+    await do_import(client, roster(row_hr(), header=HEADER_HR))
+    e = await employee(db_session)
+    assert e.is_manager is False
+    r = await client.patch(f"/mdm/v1/staff/{e.id}", json={"is_manager": True})
+    assert r.status_code == 200, r.text
+    await do_import(client, roster(row_hr(title="Supervisor"), header=HEADER_HR), roster_date="2026-11-15")
+    await follow(client)
+    e = await employee(db_session)
+    assert e.is_manager is True and e.job_title == "Supervisor"
+    detail = (await client.get(f"/mdm/v1/staff/{e.id}")).json()
+    assert detail["is_manager"] is True and detail["hire_date"] == "2024-03-04" and detail["pay_type"] == "hourly"
+    assert any(h["field"] == "is_manager" and h["new_value"] == "True" for h in detail["history"])
+    assert (await client.patch(f"/mdm/v1/staff/{e.id}", json={"is_manager": None})).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_hire_date_and_pay_type_can_be_edited_on_an_adp_employee(client, db_session, nc):
+    await do_import(client, roster(row()))
+    e = await employee(db_session)
+    r = await client.patch(f"/mdm/v1/staff/{e.id}", json={"hire_date": "2023-05-01", "pay_type": "salaried"})
+    assert r.status_code == 200, r.text
+    e = await employee(db_session)
+    assert e.hire_date == date(2023, 5, 1) and e.pay_type == "salaried"
+    assert (await client.patch(f"/mdm/v1/staff/{e.id}", json={"pay_type": "contract"})).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_list_filters_and_sorts_by_the_new_fields(client, db_session, nc):
+    await do_import(client, roster(row_hr(), row_hr("000053", email="b@example.com", hire="2021-01-01", pay="Salary"),
+                                   row("000054", email="c@example.com") + ("", ""), header=HEADER_HR))
+    b = await employee(db_session, "000053")
+    await client.patch(f"/mdm/v1/staff/{b.id}", json={"is_manager": True})
+
+    async def numbers(qs):
+        r = await client.get(f"/mdm/v1/staff?{qs}")
+        assert r.status_code == 200, r.text
+        return [i["employee_number"] for i in r.json()["items"]]
+
+    assert await numbers("is_manager=true") == ["000053"]
+    assert await numbers("pay_type=hourly") == ["000052"]
+    assert await numbers("pay_type=none") == ["000054"]
+    assert (await numbers("sort=hire_date&dir=asc"))[:2] == ["000053", "000052"]
+    assert (await client.get("/mdm/v1/staff/export")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_non_adp_create_takes_the_new_fields(client, db_session, nc):
+    r = await client.post("/mdm/v1/staff", json={"employee_number": "900001", "display_name": "Head Office",
+                                                  "hire_date": "2022-02-02", "pay_type": "salaried", "is_manager": True})
+    assert r.status_code == 201, r.text
+    e = await employee(db_session, "900001")
+    assert e.hire_date == date(2022, 2, 2) and e.pay_type == "salaried" and e.is_manager is True
+
+
+# ── Follow ADP / Keep Current (IMP-016) ──────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_import_holds_differences_until_someone_decides(client, db_session, nc):
+    await do_import(client, roster(row()))
+    await do_import(client, roster(row(title="Director", email="new@example.com")), roster_date="2026-11-15")
+    e = await employee(db_session)
+    assert e.job_title == "Manager" and e.work_email == "qin@example.com"
+    listed = (await client.get("/mdm/v1/staff?adp_differs=true")).json()
+    assert listed["adp_differs"] == 1 and listed["total"] == 1
+    assert {p["field"]: (p["current"], p["adp"]) for p in listed["items"][0]["adp_pending"]} == {
+        "job_title": ("Manager", "Director"), "work_email": ("qin@example.com", "new@example.com")}
+    r = await client.post("/mdm/v1/staff/adp-decisions", json={"action": "follow", "employee_ids": [str(e.id)]})
+    assert r.json()["decided"] == 1
+    e = await employee(db_session)
+    assert e.job_title == "Director" and e.adp_pending is None
+    assert (await client.get("/mdm/v1/staff?adp_differs=true")).json()["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_keep_current_is_not_asked_again_until_adp_changes(client, db_session, nc):
+    await do_import(client, roster(row()))
+    await do_import(client, roster(row(title="Director")), roster_date="2026-11-15")
+    assert await follow(client, "keep") == 1
+    e = await employee(db_session)
+    assert e.job_title == "Manager" and e.adp_kept == {"job_title": "Director"} and e.adp_pending is None
+    detail = (await client.get(f"/mdm/v1/staff/{e.id}")).json()
+    assert any(h["field"] == "job_title (kept)" for h in detail["history"])
+    # The same ADP value again: nothing to decide.
+    again = await do_import(client, roster(row(title="Director")), roster_date="2026-11-16")
+    assert again["counts"]["unchanged"] == 1 and (await employee(db_session)).adp_pending is None
+    # ADP changes the field again: asked again.
+    third = await do_import(client, roster(row(title="Senior Director")), roster_date="2026-11-17")
+    assert third["counts"]["changed"] == 1
+    assert (await employee(db_session)).adp_pending == {"job_title": "Senior Director"}
+
+
+@pytest.mark.asyncio
+async def test_a_kept_value_is_forgotten_once_adp_agrees_again(client, db_session, nc):
+    await do_import(client, roster(row()))
+    await do_import(client, roster(row(title="Director")), roster_date="2026-11-15")
+    await follow(client, "keep")
+    await do_import(client, roster(row()), roster_date="2026-11-16")            # ADP back to Manager
+    assert (await employee(db_session)).adp_kept == {}
+    later = await do_import(client, roster(row(title="Director")), roster_date="2026-11-17")
+    assert later["counts"]["changed"] == 1                                       # asked, not ignored
+
+
+@pytest.mark.asyncio
+async def test_a_newer_roster_replaces_or_clears_what_waits(client, db_session, nc):
+    await do_import(client, roster(row()))
+    await do_import(client, roster(row(title="Director")), roster_date="2026-11-15")
+    await do_import(client, roster(row(title="VP")), roster_date="2026-11-16")
+    assert (await employee(db_session)).adp_pending == {"job_title": "VP"}
+    await do_import(client, roster(row()), roster_date="2026-11-17")
+    assert (await employee(db_session)).adp_pending is None
+
+
+@pytest.mark.asyncio
+async def test_decision_needs_someone_to_decide_for(client, nc):
+    r = await client.post("/mdm/v1/staff/adp-decisions", json={"action": "follow"})
+    assert r.status_code == 422

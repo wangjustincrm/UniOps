@@ -27,7 +27,17 @@ def employee_dict(e: Employee) -> dict:
         "id": e.id, "employee_number": e.employee_number, "source": e.source,
         "payroll_name": e.payroll_name, "display_name": e.display_name, "work_email": e.work_email,
         "job_title": e.job_title, "adp_department": e.adp_department, "status": e.status,
+        # Same shape as adp_roster.RosterRow, so classify can compare them.
+        "hire_date": e.hire_date and e.hire_date.isoformat(), "pay_type": e.pay_type,
+        "adp_kept": e.adp_kept or {},
     }
+
+
+def _value(field: str, value):
+    """A roster value as it is stored. The roster keeps dates as ISO text."""
+    if field == "hire_date" and value is not None:
+        return date.fromisoformat(value)
+    return value
 
 
 def record(db: AsyncSession, employee: Employee, field: str, old, new, *, by: uuid.UUID | None,
@@ -144,6 +154,48 @@ async def build_preview(db: AsyncSession, data: bytes) -> tuple[dict, dict]:
     return groups, adp_roster.counts(groups)
 
 
+async def follow_adp(db: AsyncSession, employee: Employee, *, by) -> list[str]:
+    """IMP-016 Follow ADP: write what the roster had, as an import used to. Returns
+    the fields written. The department mapping is read now, not at import time."""
+    pending = employee.adp_pending or {}
+    if not pending:
+        return []
+    department_map = (await load_classify_inputs(db))[2]
+    import_id = employee.adp_pending_import_id
+    was_left = employee.status == "left"
+    department_changed = "adp_department" in pending and employee.adp_department != pending["adp_department"]
+    for f, value in pending.items():
+        if f != "status":
+            set_field(db, employee, f, _value(f, value), by=by, import_id=import_id, reason="Follow ADP")
+    if "status" in pending:
+        if was_left:
+            await reinstate(db, employee, by=by, import_id=import_id, status=pending["status"])
+        else:
+            set_field(db, employee, "status", pending["status"], by=by, import_id=import_id, reason="Follow ADP")
+    if department_changed:
+        department_id, needs_department = _mapped_department(department_map, employee.adp_department)
+        employee.needs_department = needs_department
+        if department_id and set_field(db, employee, "department_id", department_id, by=by, import_id=import_id):
+            await raise_change_department(db, employee, by=by, import_id=import_id)
+    employee.adp_kept = {f: v for f, v in (employee.adp_kept or {}).items() if f not in pending}
+    employee.adp_pending = employee.adp_pending_import_id = employee.adp_pending_since = None
+    return list(pending)
+
+
+def keep_current(db: AsyncSession, employee: Employee, *, by) -> list[str]:
+    """IMP-016 Keep Current: nothing on the employee changes; the declined ADP
+    values are remembered and the decision is in the history."""
+    pending = employee.adp_pending or {}
+    if not pending:
+        return []
+    employee.adp_kept = {**(employee.adp_kept or {}), **pending}
+    for f, value in pending.items():
+        record(db, employee, f"{f} (kept)", getattr(employee, f), getattr(employee, f), by=by,
+               import_id=employee.adp_pending_import_id, reason=f"Keep Current; ADP has {value if value is not None else 'empty'}")
+    employee.adp_pending = employee.adp_pending_import_id = employee.adp_pending_since = None
+    return list(pending)
+
+
 def _mapped_department(department_map: dict, adp_department: str | None):
     """(department_id or None, needs_department). MAP-002 / MAP-003."""
     mapping = department_map.get(adp_department or "")
@@ -179,28 +231,34 @@ async def apply_import(db: AsyncSession, imp: AdpImport, *, by: uuid.UUID | None
             id=uuid.uuid4(), employee_number=row.employee_number, source="adp",
             payroll_name=row.payroll_name, display_name=row.display_name, work_email=row.work_email,
             job_title=row.job_title, adp_department=row.adp_department, status=row.status,
+            hire_date=_value("hire_date", row.hire_date), pay_type=row.pay_type,
             department_id=department_id, needs_department=needs_department or department_id is None)
         db.add(employee)
         await db.flush()
         record(db, employee, "created", None, row.employee_number, by=by, import_id=imp.id)
 
+    # IMP-016: an existing employee is never overwritten here. What differs waits
+    # on the employee for Follow ADP or Keep Current; a newer roster replaces it.
     for item in groups["changed"]:
-        row = rows[item["employee_number"]]
         employee = await db.get(Employee, uuid.UUID(item["employee_id"]))
-        was_left = employee.status == "left"
-        department_changed = employee.adp_department != row.adp_department
-        for f in adp_roster.ADP_FIELDS:
-            if f != "status":
-                set_field(db, employee, f, getattr(row, f), by=by, import_id=imp.id)
-        if was_left:
-            await reinstate(db, employee, by=by, import_id=imp.id, status=row.status)
-        else:
-            set_field(db, employee, "status", row.status, by=by, import_id=imp.id)
-        if department_changed:
-            department_id, needs_department = _mapped_department(department_map, row.adp_department)
-            employee.needs_department = needs_department
-            if department_id and set_field(db, employee, "department_id", department_id, by=by, import_id=imp.id):
-                await raise_change_department(db, employee, by=by, import_id=imp.id)
+        employee.adp_pending = {c["field"]: c["new"] for c in item["changes"]}
+        employee.adp_pending_import_id = imp.id
+        employee.adp_pending_since = imp.roster_date
+    changed = {item["employee_number"] for item in groups["changed"]}
+    for item in groups["unchanged"] + groups["changed"]:
+        row = rows[item["employee_number"]]
+        employee = (await db.execute(
+            select(Employee).where(Employee.employee_number == row.employee_number))).scalar_one()
+        if row.employee_number not in changed and employee.adp_pending:
+            employee.adp_pending = employee.adp_pending_import_id = employee.adp_pending_since = None
+        # A kept value is forgotten once ADP agrees with the employee again, so a
+        # later change back to it is asked about, not silently ignored.
+        current = employee_dict(employee)
+        owned = adp_roster.fields(row)
+        kept = {f: v for f, v in (employee.adp_kept or {}).items()
+                if f not in owned or current.get(f) != getattr(row, f)}
+        if kept != (employee.adp_kept or {}):
+            employee.adp_kept = kept
 
     imp.groups = groups
     imp.counts = adp_roster.counts(groups)

@@ -228,6 +228,7 @@ async def list_nodes(db: Db, _: ViewDep):
         "department": department, "adp_department": e.adp_department if e else None,
         "parent_id": str(n.parent_id) if n.parent_id else None, "relation": n.relation, "tone": n.tone,
         "source": n.source, "review": n.review, "sort": n.sort,
+        "is_manager": bool(e and e.is_manager),
     } for n, e, department in rows]
     return {"items": sorted(items, key=lambda i: (i["sort"], (i["name"] or "").lower()))}
 

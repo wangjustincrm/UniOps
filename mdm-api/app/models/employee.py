@@ -28,6 +28,20 @@ class Employee(UUIDPrimaryKey, TimestampMixin, Base):
     needs_department: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="active", index=True)  # active | on_leave | left
     left_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # From the ADP roster when the file has the column (IMP-015); otherwise entered
+    # by hand. Performance reviews use them (PERFORMANCE-REVIEW.md §11.3).
+    hire_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    pay_type: Mapped[str | None] = mapped_column(String(10), nullable=True)   # hourly | salaried
+    # Set by HR, never by an import (EMP-009). Decides who gets the manager review form.
+    is_manager: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # IMP-016: an import never overwrites an existing employee. What ADP has that
+    # differs waits here ({field: ADP value}) for Follow ADP or Keep Current.
+    adp_pending: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    adp_pending_import_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    adp_pending_since: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Keep Current remembers the ADP value it declined ({field: ADP value}), so the
+    # next import does not ask again until ADP changes that field once more.
+    adp_kept: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Last read-back from NC. Shown, never edited.
