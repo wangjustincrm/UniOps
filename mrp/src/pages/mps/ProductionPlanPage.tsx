@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, RefreshCw, Sparkles, AlertTriangle, Download, PackageCheck } from 'lucide-react'
-import { Button, FormField, Input, Select, MenuItem, Modal } from '@uniops/shell'
+import { Button, FormField, Input, Select, MenuItem, Modal, Badge } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { ToastStack } from '@/components/Toast'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -770,11 +770,11 @@ export default function ProductionPlanPage() {
           {diff.baseline_run_no ? (
             <>
               <span className="font-medium">vs {diff.baseline_run_no}</span>
-              <span className="rounded bg-primary-100 px-1.5 py-0.5">
+              <Badge variant="accent">
                 {diff.baseline_kind === 'active' ? 'the plan in force'
                   : diff.baseline_kind === 'previous' ? 'the version this replaced'
                     : 'chosen version'}
-              </span>
+              </Badge>
               <span>·</span>
               <span>
                 {diff.summary.products_changed} product(s) changed across{' '}
