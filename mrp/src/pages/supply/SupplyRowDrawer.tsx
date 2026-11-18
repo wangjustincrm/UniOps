@@ -17,9 +17,8 @@
 // packaging (CP), semi-finished powder (CW/CS) — none of which are finished
 // goods, so the default would have offered an empty list.
 import { useState } from 'react'
-import { createPortal } from 'react-dom'
-import { AlertTriangle, Loader2, X as XIcon } from 'lucide-react'
-import { Button, FormField, Input } from '@uniops/shell'
+import { AlertTriangle, Loader2 } from 'lucide-react'
+import { Button, Checkbox, Drawer, FormField, Input } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { MaterialPicker } from '@/pages/consignment/MaterialPicker'
 import { SupplierPicker } from './SupplierPicker'
@@ -145,20 +144,28 @@ export function SupplyRowDrawer({
     }
   }
 
-  return createPortal(
-    <div className="fixed inset-0 z-[90] flex justify-end bg-black/30">
-      <div className="flex h-full w-full max-w-md flex-col bg-surface shadow-xl">
-        <header className="flex items-center justify-between border-b border-line px-5 py-3">
-          <h2 className="text-sm font-semibold text-fg">
-            {isEdit ? 'Edit supply parameters' : 'Add supply parameters'}
-          </h2>
-          <button type="button" onClick={onClose} aria-label="Close"
-            className="text-fg-muted hover:text-fg-secondary">
-            <XIcon className="h-4 w-4" />
-          </button>
-        </header>
-
-        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+  // No backdrop / Escape close (as before): Cancel or the close button.
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      title={isEdit ? 'Edit supply parameters' : 'Add supply parameters'}
+      closeOnBackdrop={false}
+      closeOnEscape={false}
+      className="max-w-md"
+      footer={<>
+        <Button type="button" variant="secondary" size="sm" className="min-h-[44px]"
+          onClick={onClose} disabled={saving}>
+          Cancel
+        </Button>
+        <Button type="button" size="sm" className="min-h-[44px]"
+          onClick={() => { void handleSubmit() }} disabled={saving}>
+          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {isEdit ? 'Save' : 'Add'}
+        </Button>
+      </>}
+    >
+        <div className="space-y-4">
           <FormField label="Material" required htmlFor="supply-material"
             hint={isEdit ? 'Fixed — add a separate row for another material.' : undefined}>
             {isEdit ? (
@@ -236,9 +243,9 @@ export function SupplyRowDrawer({
           </FormField>
 
           <label className="flex items-start gap-2 text-sm text-fg-secondary">
-            <input type="checkbox" checked={form.is_primary}
+            <Checkbox checked={form.is_primary}
               onChange={(e) => set('is_primary', e.target.checked)} disabled={saving}
-              className="mt-0.5 h-4 w-4 rounded border-line-strong" />
+              className="mt-0.5" />
             <span>
               Primary supplier
               <span className="block text-xs text-fg-muted">
@@ -260,19 +267,6 @@ export function SupplyRowDrawer({
           )}
         </div>
 
-        <footer className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">
-          <Button type="button" variant="secondary" size="sm" className="min-h-[44px]"
-            onClick={onClose} disabled={saving}>
-            Cancel
-          </Button>
-          <Button type="button" size="sm" className="min-h-[44px]"
-            onClick={() => { void handleSubmit() }} disabled={saving}>
-            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {isEdit ? 'Save' : 'Add'}
-          </Button>
-        </footer>
-      </div>
-    </div>,
-    document.body,
+    </Drawer>
   )
 }

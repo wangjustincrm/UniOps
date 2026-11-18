@@ -86,7 +86,8 @@ function Count({ n, collapsed }: { n: number; collapsed?: boolean }) {
 
 export function Sidebar({ brand, sections, collapsed, onToggleCollapse, mobileOpen, onMobileClose, portalUrl, footer, brandHref }: SidebarProps) {
   const location = useLocation()
-  const row = 'group relative flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors duration-150'
+  // Touch screens (factory tablets): 44px rows, the minimum comfortable tap target.
+  const row = 'group relative flex h-9 pointer-coarse:h-11 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors duration-150'
   const isActive = (item: NavItem, linkActive: boolean) => item.active ?? (
     linkActive || location.pathname.startsWith(item.href + '/') || !!item.activePrefixes?.some((p) => location.pathname.startsWith(p)))
   // Collapsible groups: open when the current page is inside, else closed until clicked.

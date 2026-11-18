@@ -14,7 +14,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ClipboardPaste, Loader2, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react'
-import { Button, SortTh, useSortableRows } from '@uniops/shell'
+import { Button, SortTh, useSortableRows, Input, TBody, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { ToastStack } from '@/components/Toast'
@@ -221,18 +221,18 @@ export default function SupplyParametersPage() {
       <div className="flex items-center gap-2">
         <div className="flex h-11 flex-1 items-center gap-2 rounded-lg border border-line-strong bg-surface px-3 sm:max-w-md">
           <Search aria-hidden className="h-4 w-4 shrink-0 text-fg-muted" />
-          <input
+          <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search material or supplier — code or name…"
             aria-label="Search supply parameters"
-            className="w-full text-sm focus:outline-none"
+            className="w-full"
           />
           {query && (
-            <button type="button" onClick={() => setQuery('')} aria-label="Clear search"
-              className="shrink-0 text-fg-muted hover:text-fg-secondary">
+            <Button variant="subtle" size="icon-xs" type="button" onClick={() => setQuery('')} aria-label="Clear search"
+              className="shrink-0">
               <X className="h-4 w-4" />
-            </button>
+            </Button>
           )}
         </div>
         <span className="text-xs text-fg-muted">
@@ -243,93 +243,93 @@ export default function SupplyParametersPage() {
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-line bg-surface">
-        <table className="min-w-full text-sm">
-          <thead className="bg-surface-subtle text-xs uppercase tracking-wide text-fg-muted">
-            <tr>
+        <Table density="compact" className="min-w-full">
+          <THead>
+            <Tr>
               <SortTh label="Material" sortKey="material" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
               <SortTh label="Supplier" sortKey="supplier" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
               <SortTh label="Lead time" sortKey="lead" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
               <SortTh label="MOQ" sortKey="moq" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
               <SortTh label="Order multiple" sortKey="multiple" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
               <SortTh label="Primary" sortKey="primary" sort={sort} onSort={onSort} align="center" className="px-3 py-2" />
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
+              <Th />
+            </Tr>
+          </THead>
+          <TBody>
             {listQuery.isLoading && (
-              <tr><td colSpan={7} className="px-3 py-6 text-center text-fg-muted">Loading…</td></tr>
+              <Tr><Td align="center" colSpan={7} className="text-fg-muted">Loading…</Td></Tr>
             )}
             {!listQuery.isLoading && rows.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-6 text-center text-fg-muted">
+              <Tr><Td align="center" colSpan={7} className="text-fg-muted">
                 {allRows.length === 0
                   ? 'No supply parameters yet — add a row, or paste them from your spreadsheet.'
                   : `Nothing matches "${query}".`}
-              </td></tr>
+              </Td></Tr>
             )}
             {sortedRows.map((row) => (
-              <tr key={row.id} className="border-t border-line-subtle">
-                <td className="px-3 py-2 text-xs">
+              <Tr key={row.id}>
+                <Td className="text-xs">
                   <span className="font-mono">{row.material_code}</span>
                   {materialNameByCode.get(row.material_code) && (
                     <span className="ml-1.5 text-fg-muted">
                       {materialNameByCode.get(row.material_code)}
                     </span>
                   )}
-                </td>
-                <td className="px-3 py-2 text-xs">
+                </Td>
+                <Td className="text-xs">
                   <span className="font-mono">{row.partner_code}</span>
                   {supplierNames.get(row.partner_code) && (
                     <span className="ml-1.5 text-fg-muted">
                       {supplierNames.get(row.partner_code)}
                     </span>
                   )}
-                </td>
-                <td className="px-3 py-2 text-right font-mono">
+                </Td>
+                <Td align="right" className="font-mono">
                   {row.lead_time_days === null
                     ? <span className="text-danger-fg">missing</span>
                     : `${row.lead_time_days} d`}
-                </td>
-                <td className="px-3 py-2 text-right font-mono text-fg-secondary">
+                </Td>
+                <Td align="right" className="font-mono text-fg-secondary">
                   {trimZeros(row.moq)}
                   {row.moq !== null && uomByCode.get(row.material_code) && (
                     <span className="ml-1 text-xs text-fg-muted">
                       {uomByCode.get(row.material_code)}
                     </span>
                   )}
-                </td>
-                <td className="px-3 py-2 text-right font-mono text-fg-secondary">
+                </Td>
+                <Td align="right" className="font-mono text-fg-secondary">
                   {trimZeros(row.order_multiple)}
                   {row.order_multiple !== null && uomByCode.get(row.material_code) && (
                     <span className="ml-1 text-xs text-fg-muted">
                       {uomByCode.get(row.material_code)}
                     </span>
                   )}
-                </td>
-                <td className="px-3 py-2 text-center">
+                </Td>
+                <Td align="center">
                   {row.is_primary && <Star aria-label="Primary supplier" className="mx-auto h-3.5 w-3.5 text-warning-fg" />}
-                </td>
-                <td className="px-3 py-2 text-right">
+                </Td>
+                <Td align="right">
                   {canWrite && (
                     <span className="inline-flex items-center gap-2">
-                      <button type="button" onClick={() => setDrawer({ row })}
+                      <Button variant="subtle" size="icon-xs" type="button" onClick={() => setDrawer({ row })}
                         aria-label={`Edit ${row.material_code} / ${row.partner_code}`}
                         title="Edit"
-                        className="text-fg-muted hover:text-primary-600">
+                       >
                         <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button type="button" onClick={() => setDeleteTarget(row)}
+                      </Button>
+                      <Button variant="danger-ghost" size="icon-xs" type="button" onClick={() => setDeleteTarget(row)}
                         aria-label={`Remove ${row.material_code} / ${row.partner_code}`}
                         title="Remove"
-                        className="text-fg-muted hover:text-danger-fg">
+                       >
                         <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      </Button>
                     </span>
                   )}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </div>
 
       {drawer && (
@@ -360,11 +360,11 @@ export default function SupplyParametersPage() {
               A header row is skipped automatically. Existing rows for the same material and
               supplier are updated; a blank cell leaves that value as it is.
             </p>
-            <textarea
+            <Textarea
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
               rows={8}
-              className="w-full rounded-lg border border-line-strong p-2 font-mono text-xs focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              className="w-full p-2 font-mono"
               placeholder={'CR0001\tSUP-A\t30\t500\t\tyes'}
             />
             {bulkMutation.isPending && (

@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, Check, Lightbulb, Link2, Loader2, Lock, Sparkles, Trash2, X } from 'lucide-react'
-import { Button, Badge } from '@uniops/shell'
+import { Badge, Button } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { MatrixGrid, type GridRow as MatrixRow, type GridCol as MatrixCol } from '@/components/MatrixGrid'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -1152,7 +1152,9 @@ export default function SalesForecastPage() {
                     // already works around, by hanging the tooltip off a
                     // plain, never-disabled wrapping <span> instead.
                     <span title={bindBlocked ? 'Waiting for autosave to finish before this can bind' : 'Bind to material code'}>
-                      <button
+                      <Button
+                        variant="subtle"
+                        size="icon-xs"
                         type="button"
                         onClick={(e) => { e.stopPropagation(); if (!bindBlocked) setBindTarget(intent) }}
                         disabled={bindBlocked}
@@ -1172,12 +1174,12 @@ export default function SalesForecastPage() {
                         // this grid is known to render legibly.
                         className={
                           bindBlocked
-                            ? 'shrink-0 cursor-not-allowed text-fg-faint'
-                            : 'shrink-0 text-fg-muted hover:text-primary-600'
+                            ? 'h-5 w-5 shrink-0 cursor-not-allowed text-fg-faint disabled:opacity-100'
+                            : 'h-5 w-5 shrink-0 text-fg-muted hover:text-accent-fg'
                         }
                       >
                         <Link2 className="h-3.5 w-3.5" />
-                      </button>
+                      </Button>
                     </span>
                   )}
                   {intent && (
@@ -1186,31 +1188,33 @@ export default function SalesForecastPage() {
                     // wrong name stayed on this grid forever. Same
                     // disabled-button tooltip workaround as Bind above.
                     <span title={bindBlocked ? 'Waiting for autosave to finish' : 'Drop this planned product'}>
-                      <button
+                      <Button
+                        variant="subtle"
+                        size="icon-xs"
                         type="button"
                         onClick={(e) => { e.stopPropagation(); if (!bindBlocked) setDropTarget(intent) }}
                         disabled={bindBlocked}
                         aria-label={`Drop ${row.label} — a planned product that was never bound`}
                         className={
                           bindBlocked
-                            ? 'shrink-0 cursor-not-allowed text-fg-faint'
-                            : 'shrink-0 text-fg-muted hover:text-danger-fg'
+                            ? 'h-5 w-5 shrink-0 cursor-not-allowed text-fg-faint disabled:opacity-100'
+                            : 'h-5 w-5 shrink-0 text-fg-muted hover:text-danger-fg'
                         }
                       >
                         <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      </Button>
                     </span>
                   )}
                   {showRemove && (
-                    <button
+                    <Button variant="danger-ghost" size="icon-xs"
                       type="button"
                       onClick={(e) => { e.stopPropagation(); handleRemoveAddedRow(row.id) }}
                       aria-label={`Remove ${row.label} — not yet saved`}
                       title="Remove — not yet saved"
-                      className="shrink-0 text-fg-faint hover:text-danger-fg"
+                      className="shrink-0"
                     >
                       <X className="h-3.5 w-3.5" />
-                    </button>
+                    </Button>
                   )}
                 </span>
               )

@@ -6,9 +6,8 @@
 // the caller) matches AdjustDrawer.tsx (mps/AdjustDrawer.tsx) — this repo's
 // convention for a small create/update form that doesn't need its own page.
 import { useState, type FormEvent } from 'react'
-import { createPortal } from 'react-dom'
-import { AlertTriangle, Lightbulb, Loader2, X as XIcon } from 'lucide-react'
-import { Button, Input, FormField } from '@uniops/shell'
+import { AlertTriangle, Lightbulb, Loader2 } from 'lucide-react'
+import { Button, Input, FormField, Textarea, Modal } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { intentApi, type IntentProduct } from './intentApi'
 
@@ -63,23 +62,17 @@ export function AddIntentProductModal({
     }
   }
 
-  return createPortal(
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">
-      <div role="dialog" aria-modal="true" aria-label="Add intent product" className="w-full max-w-md rounded-xl border border-line bg-surface shadow-xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
-            <Lightbulb className="h-4 w-4 text-warning-fg" /> Add Intent Product
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="-m-2.5 flex min-h-[44px] min-w-[44px] items-center justify-center text-fg-muted hover:text-fg-secondary"
-          >
-            <XIcon className="h-5 w-5" />
-          </button>
-        </div>
-
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Add Intent Product"
+      icon={<Lightbulb className="h-4 w-4 text-warning-fg" />}
+      closeOnEscape={false}
+      size="full"
+      className="max-w-md"
+      bodyClassName="p-0"
+    >
         <form onSubmit={handleSubmit}>
           <div className="px-5 py-4 space-y-4">
             <p className="text-sm text-fg-secondary">
@@ -101,13 +94,13 @@ export function AddIntentProductModal({
             </FormField>
 
             <FormField label="Note" htmlFor="intent-note" hint="Optional — context for whoever binds this later.">
-              <textarea
+              <Textarea
                 id="intent-note"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 disabled={submitting}
                 rows={3}
-                className="w-full rounded-lg border border-line bg-surface-sunken px-3 py-2 text-sm text-fg placeholder:text-fg-faint transition-colors focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-[0_0_0_3px_rgba(10,124,124,0.10)] disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-fg-muted"
+                className="w-full"
               />
             </FormField>
 
@@ -126,8 +119,6 @@ export function AddIntentProductModal({
             </Button>
           </div>
         </form>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   )
 }

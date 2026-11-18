@@ -7,7 +7,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronsDown, ChevronsUp, FileDown, Network, Search, Loader2 } from 'lucide-react'
-import { Button, Input, FormField } from '@uniops/shell'
+import { Button, FormField, Input, Segmented } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn, todayISO } from '@/lib/utils'
 import { ToastStack } from '@/components/Toast'
@@ -143,28 +143,9 @@ export default function BomExplorerPage() {
       </div>
 
       {/* Mode toggle */}
-      <div className="flex gap-1 rounded-lg bg-surface-sunken p-1 w-fit">
-        <button
-          type="button"
-          onClick={() => setMode('explode')}
-          className={cn(
-            'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-            mode === 'explode' ? 'bg-surface text-primary-700 shadow-sm' : 'text-fg-muted hover:text-fg-secondary',
-          )}
-        >
-          Explode
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode('where-used')}
-          className={cn(
-            'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-            mode === 'where-used' ? 'bg-surface text-primary-700 shadow-sm' : 'text-fg-muted hover:text-fg-secondary',
-          )}
-        >
-          Where-used
-        </button>
-      </div>
+      <Segmented size="md" className="self-start"
+        items={[{ key: 'explode', label: 'Explode' }, { key: 'where-used', label: 'Where-used' }]}
+        value={mode} onChange={setMode} />
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg border border-line bg-surface p-3">
@@ -270,7 +251,7 @@ export default function BomExplorerPage() {
                   column. */}
               <div className="overflow-x-auto rounded-lg border border-line">
                 <div className="min-w-[1080px]">
-                  <div className="flex items-center gap-3 border-b border-line bg-surface-subtle px-2 py-2 text-2xs font-semibold uppercase tracking-wide text-fg-muted">
+                  <div className="flex items-center gap-3 border-b border-line bg-surface-subtle px-2 py-2 text-2xs font-semibold text-fg-muted">
                     <div className="min-w-[280px] flex-1">Component</div>
                     <div className="w-28">Type</div>
                     <div className="w-40">Version</div>

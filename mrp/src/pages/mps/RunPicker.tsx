@@ -11,10 +11,9 @@
 // of materials unbought. The picker says so rather than hiding those runs —
 // a planner who cannot find last month's plan assumes the system lost it.
 import { useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { Check, ChevronDown, Lock } from 'lucide-react'
-import { Badge, Button } from '@uniops/shell'
-import { cn, formatDate } from '@/lib/utils'
+import { Badge, Button, DropdownPortal, MenuItem } from '@uniops/shell'
+import { formatDate } from '@/lib/utils'
 import type { MpsRunSummary } from './mpsApi'
 
 function statusVariant(run: MpsRunSummary): 'success' | 'warning' | 'neutral' {
@@ -68,47 +67,39 @@ export function RunPicker({
 
   return (
     <>
-      <button
+      <Button variant="secondary" size="sm"
         type="button"
         disabled={disabled || runs.length === 0}
         onClick={(e) => {
           setAnchor(e.currentTarget.getBoundingClientRect())
           setOpen((v) => !v)
         }}
-        className="flex min-h-[44px] items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm text-fg hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-60"
+        className="min-h-[44px]"
       >
         <span className="font-mono">{selected ? selected.run_no : 'Select a plan'}</span>
         {selected && <Badge variant={statusVariant(selected)}>{statusLabel(selected)}</Badge>}
         <ChevronDown aria-hidden className="h-4 w-4 text-fg-muted" />
-      </button>
+      </Button>
 
       {/* Rendered through a portal, fixed to the trigger: the page's matrix
           is a scroll container with overflow hidden, which would clip an
           in-flow dropdown (the module's standing convention for overlays). */}
-      {open && anchor && createPortal(
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div
-            className="fixed z-50 max-h-[60vh] w-80 overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-lg"
-            style={{ top: anchor.bottom + 4, left: anchor.left }}
-          >
+      {open && anchor && (
+        <DropdownPortal anchorRect={anchor} onClose={() => setOpen(false)} width={320} className="max-h-[60vh]">
             {groups.map(([month, versions]) => (
               <div key={month}>
-                <p className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                <p className="px-3 py-1.5 text-xs font-semibold text-fg-muted">
                   Horizon from {month}
                 </p>
                 {versions.map((run) => (
-                  <button
+                  <MenuItem
                     key={run.id}
-                    type="button"
+                    active={run.id === selectedId}
+                    aria-current={run.id === selectedId ? 'true' : undefined}
                     onClick={() => { onSelect(run.id); setOpen(false) }}
-                    className={cn(
-                      'flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-subtle',
-                      run.id === selectedId && 'bg-primary-50',
-                    )}
                   >
                     {run.id === selectedId
-                      ? <Check aria-hidden className="h-3.5 w-3.5 shrink-0 text-primary-600" />
+                      ? <Check aria-hidden className="h-3.5 w-3.5 shrink-0 text-accent" />
                       : <span className="h-3.5 w-3.5 shrink-0" />}
                     <span className="flex-1 truncate font-mono text-xs">{run.run_no}</span>
                     {run.status === 'superseded' && (
@@ -118,13 +109,11 @@ export function RunPicker({
                     <span className="w-20 shrink-0 text-right text-xs text-fg-muted">
                       {formatStamp(run.released_at ?? run.created_at)}
                     </span>
-                  </button>
+                  </MenuItem>
                 ))}
               </div>
             ))}
-          </div>
-        </>,
-        document.body,
+        </DropdownPortal>
       )}
     </>
   )

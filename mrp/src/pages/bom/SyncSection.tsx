@@ -103,15 +103,15 @@ export function SyncSection({ canSync, toasts }: { canSync: boolean; toasts: Ret
 
       {canSync && result && (
         <div className="mt-1 w-full max-w-sm rounded-md border border-line bg-surface text-xs shadow-sm">
-          <button
+          <Button variant="subtle" size="xs"
             type="button"
             onClick={() => setDetailOpen((v) => !v)}
-            className="flex w-full items-center justify-between px-3 py-1.5 font-medium text-fg-secondary hover:bg-surface-subtle"
+            className="w-full justify-between"
             aria-expanded={detailOpen}
           >
             Last sync result
             {detailOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-          </button>
+          </Button>
           {detailOpen && (
             <div className="border-t border-line-subtle px-3 py-2">
               <dl className="grid grid-cols-2 gap-x-3 gap-y-1">

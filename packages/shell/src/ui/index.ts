@@ -10,6 +10,7 @@ export { Pagination } from './Pagination'
 export {
   TableScroll, Table, THead, TBody, TFoot, Tr, Th, Td, TableMessage, thClass, useTableDensity,
   type TableScrollProps, type TableProps, type TrProps, type ThProps, type TdProps,
+  CellButton, type CellButtonProps,
 } from './table'
 export { Modal, Drawer, ConfirmDialog, Overlay, type ModalProps, type DrawerProps, type ConfirmDialogProps } from './overlay'
 export { PageHeader, PageBody, Section, Toolbar, Eyebrow, type PageHeaderProps } from './page'

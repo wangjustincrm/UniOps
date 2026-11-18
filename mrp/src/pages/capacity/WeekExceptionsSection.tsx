@@ -35,10 +35,9 @@
 // `week_start` by exact equality) — the validation below exists to catch
 // that before save, not to replace the backend's own week math.
 import { useMemo, useState, type FormEvent } from 'react'
-import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Loader2, Plus, X as XIcon } from 'lucide-react'
-import { Button, Input, FormField, SortTh, useSortableRows } from '@uniops/shell'
+import { AlertTriangle, Loader2, Plus } from 'lucide-react'
+import { Button, Input, FormField, SortTh, useSortableRows, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Drawer } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 import {
@@ -285,28 +284,28 @@ export function WeekExceptionsSection({
         <p className="mt-3 text-sm text-fg-muted">No week exceptions yet.</p>
       ) : (
         <div className="mt-3 overflow-x-auto rounded-lg border border-line">
-          <table className="min-w-full text-sm">
-            <thead className="bg-surface-subtle">
-              <tr>
+          <Table density="compact" className="min-w-full">
+            <THead>
+              <Tr>
                 <SortTh label="Week" sortKey="week" sort={sort} onSort={onSort} className="border-b border-line px-3 py-2 text-left text-2xs font-semibold text-fg-secondary" />
                 <SortTh label="Constraint" sortKey="constraint" sort={sort} onSort={onSort} className="border-b border-line px-3 py-2 text-left text-2xs font-semibold text-fg-secondary" />
                 <SortTh label="Value" sortKey="value" sort={sort} onSort={onSort} align="right"
                   className="border-b border-line px-3 py-2 text-2xs font-semibold text-fg-secondary" />
                 <SortTh label="Reason" sortKey="reason" sort={sort} onSort={onSort} className="border-b border-line px-3 py-2 text-left text-2xs font-semibold text-fg-secondary" />
                 <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="border-b border-line px-3 py-2 text-left text-2xs font-semibold text-fg-secondary" />
-                {canWrite && <th className="border-b border-line px-3 py-2 text-right text-2xs font-semibold text-fg-secondary">Actions</th>}
-              </tr>
-            </thead>
-            <tbody>
+                {canWrite && <Th align="right" className="border-b border-line ">Actions</Th>}
+              </Tr>
+            </THead>
+            <TBody>
               {sortedExceptions.map((row) => (
-                <tr key={row.id} className="border-b border-line-subtle last:border-0 odd:bg-surface even:bg-surface-subtle/50">
-                  <td className="px-3 py-2 text-xs text-fg">{formatDate(row.week_start)}</td>
-                  <td className="px-3 py-2 text-fg-secondary">{CONSTRAINT_TYPE_LABEL[row.constraint_type]}</td>
-                  <td className="px-3 py-2 text-right font-mono text-xs text-fg">
+                <Tr key={row.id} className="odd:bg-surface even:bg-surface-subtle/50">
+                  <Td className="text-xs text-fg">{formatDate(row.week_start)}</Td>
+                  <Td className="text-fg-secondary">{CONSTRAINT_TYPE_LABEL[row.constraint_type]}</Td>
+                  <Td align="right" className="font-mono text-xs text-fg">
                     {formatQty(Number(row.limit_value))}{row.uom ? ` ${row.uom}` : ''}
-                  </td>
-                  <td className="max-w-xs truncate px-3 py-2 text-xs text-fg-secondary" title={row.reason ?? undefined}>{row.reason ?? '—'}</td>
-                  <td className="px-3 py-2">
+                  </Td>
+                  <Td className="max-w-xs truncate text-xs text-fg-secondary" title={row.reason ?? undefined}>{row.reason ?? '—'}</Td>
+                  <Td>
                     <span
                       className={
                         row.is_active
@@ -316,44 +315,39 @@ export function WeekExceptionsSection({
                     >
                       {row.is_active ? 'Active' : 'Inactive'}
                     </span>
-                  </td>
+                  </Td>
                   {canWrite && (
-                    <td className="px-1 py-1 text-right">
+                    <Td align="right">
                       {row.is_active && (
-                        <button
+                        <Button variant="subtle" size="xs"
                           type="button"
                           onClick={() => handleDeactivate(row)}
                           disabled={deactivatingId === row.id}
-                          className="flex h-11 items-center gap-1 rounded-md px-3 text-xs font-medium text-fg-muted hover:bg-surface-sunken hover:text-fg disabled:opacity-60"
+                         
                         >
                           {deactivatingId === row.id && <Loader2 className="h-3 w-3 animate-spin" />}
                           Deactivate
-                        </button>
+                        </Button>
                       )}
-                    </td>
+                    </Td>
                   )}
-                </tr>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
       )}
 
-      {formOpen && createPortal(
-        <div className="fixed inset-0 z-[90] flex justify-end bg-black/40">
-          <div role="dialog" aria-modal="true" aria-label="New week exception" className="flex h-full w-full max-w-md flex-col bg-surface shadow-xl">
-            <div className="flex items-center justify-between border-b border-line px-5 py-4">
-              <h2 className="text-base font-semibold text-fg">New Week Exception</h2>
-              <button
-                type="button"
-                onClick={() => setFormOpen(false)}
-                aria-label="Close"
-                className="flex min-h-[44px] min-w-[44px] items-center justify-center text-fg-muted hover:text-fg-secondary"
-              >
-                <XIcon className="h-5 w-5" />
-              </button>
-            </div>
-
+      {formOpen && (
+        <Drawer
+          open
+          onClose={() => setFormOpen(false)}
+          title="New Week Exception"
+          closeOnBackdrop={false}
+          closeOnEscape={false}
+          className="max-w-md"
+          bodyClassName="flex min-h-0 flex-col overflow-hidden p-0"
+        >
             <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-hidden">
               <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
                 <FormField
@@ -375,17 +369,17 @@ export function WeekExceptionsSection({
                 </FormField>
 
                 <FormField label="Constraint" required htmlFor="exception-constraint-type">
-                  <select
+                  <Select
                     id="exception-constraint-type"
                     value={form.constraint_type}
                     onChange={(e) => set('constraint_type', e.target.value as CapacityConstraintType)}
                     disabled={submitting}
-                    className="flex h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex w-full"
                   >
                     {(Object.keys(CONSTRAINT_TYPE_LABEL) as CapacityConstraintType[]).map((k) => (
                       <option key={k} value={k}>{CONSTRAINT_TYPE_LABEL[k]}</option>
                     ))}
-                  </select>
+                  </Select>
                 </FormField>
 
                 <FormField label="Value" required htmlFor="exception-limit-value" error={errors.limit_value} hint="0 marks the week as fully closed (e.g. a maintenance shutdown).">
@@ -405,14 +399,14 @@ export function WeekExceptionsSection({
                 </FormField>
 
                 <FormField label="Reason" required htmlFor="exception-reason" error={errors.reason}>
-                  <textarea
+                  <Textarea
                     id="exception-reason"
                     rows={3}
                     value={form.reason}
                     onChange={(e) => { set('reason', e.target.value); clearError('reason') }}
                     onBlur={() => setErrors((er) => ({ ...er, reason: validateReason(form.reason) }))}
                     disabled={submitting}
-                    className="flex w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex w-full"
                   />
                 </FormField>
 
@@ -442,9 +436,7 @@ export function WeekExceptionsSection({
                 </Button>
               </div>
             </form>
-          </div>
-        </div>,
-        document.body,
+        </Drawer>
       )}
     </section>
   )

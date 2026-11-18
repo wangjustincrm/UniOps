@@ -25,7 +25,7 @@ import {
   type ReactNode, type MouseEvent as ReactMouseEvent,
 } from 'react'
 import { Undo2, Redo2, Lock, AlertTriangle, History } from 'lucide-react'
-import { Button, Badge } from '@uniops/shell'
+import { Button, Badge, Input, TBody, TFoot, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import {
   initHistory, commitCells, commitCellsAndRows, undo as undoHistory, redo as redoHistory,
@@ -592,13 +592,13 @@ export function MatrixGrid({
           className="rounded-md border border-primary-200 bg-primary-50 px-3 py-1.5 text-xs text-primary-800 flex items-center justify-between"
         >
           <span>{report}</span>
-          <button
+          <Button variant="link"
             type="button"
             onClick={() => setReport(null)}
-            className="text-primary-600 hover:text-primary-800 font-medium ml-3"
+            className="ml-3"
           >
             Dismiss
-          </button>
+          </Button>
         </div>
       )}
 
@@ -684,14 +684,14 @@ export function MatrixGrid({
         className="overflow-x-auto overflow-y-auto rounded-lg border border-line"
         style={{ height, maxWidth: '100%' }}
       >
-        <table className="min-w-full border-collapse text-xs" aria-describedby={report ? `${gridId}-report` : undefined}>
-            <thead className="sticky top-0 z-20 bg-surface-subtle">
-              <tr>
-                <th className="sticky left-0 z-30 bg-surface-subtle border-b border-r border-line px-3 py-2 text-left text-2xs font-semibold text-fg-secondary min-w-32">
+        <Table density="compact" className="min-w-full" aria-describedby={report ? `${gridId}-report` : undefined}>
+            <THead className="sticky top-0 z-20">
+              <Tr>
+                <Th className="sticky left-0 z-30 bg-surface-subtle border-b border-r border-line min-w-32">
                   {rowHeaderLabel}
-                </th>
+                </Th>
                 {cols.map((c) => (
-                  <th
+                  <Th
                     key={c.id}
                     className={cn(
                       'border-b border-r border-line px-2 py-2 text-right text-2xs font-semibold min-w-24',
@@ -701,24 +701,24 @@ export function MatrixGrid({
                     )}
                   >
                     {c.label}
-                  </th>
+                  </Th>
                 ))}
-                <th className="border-b border-line px-2 py-2 text-right text-2xs font-semibold text-primary-700 bg-primary-50">
+                <Th align="right" className="border-b border-line text-primary-700 bg-primary-50">
                   {rowTotalLabel}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+                </Th>
+              </Tr>
+            </THead>
+            <TBody>
               {topSpacer > 0 && (
-                <tr aria-hidden style={{ height: topSpacer }}>
-                  <td colSpan={cols.length + 2} className="p-0 border-0" />
-                </tr>
+                <Tr aria-hidden style={{ height: topSpacer }}>
+                  <Td colSpan={cols.length + 2} className="border-0" />
+                </Tr>
               )}
               {rows.slice(startIdx, endIdx).map((row, i) => {
                 const rowIdx = startIdx + i
                 return (
-                  <tr key={row.id} style={{ height: ROW_HEIGHT }}>
-                    <td
+                  <Tr key={row.id} style={{ height: ROW_HEIGHT }}>
+                    <Td
                       className={cn(
                         'sticky left-0 z-10 border-b border-r border-line px-3 py-1.5 text-left font-medium text-fg',
                         tintRowIds?.has(row.id) ? 'bg-warning-soft' : 'bg-surface',
@@ -731,7 +731,7 @@ export function MatrixGrid({
                         </span>
                         {!readOnly && rowActions?.(row)}
                       </div>
-                    </td>
+                    </Td>
                     {cols.map((col, colIdx) => {
                       const key = cellKey(row.id, col.id)
                       const isFrozen = frozen.has(key)
@@ -767,39 +767,39 @@ export function MatrixGrid({
                         />
                       )
                     })}
-                    <td className="border-b border-line px-2 py-1.5 text-right font-mono text-xs bg-primary-50 text-primary-800 font-semibold">
+                    <Td align="right" className="border-b border-line font-mono text-xs bg-primary-50 text-primary-800 font-semibold">
                       {formatValue(rowTotal(rowIdx))}
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 )
               })}
               {bottomSpacer > 0 && (
-                <tr aria-hidden style={{ height: bottomSpacer }}>
-                  <td colSpan={cols.length + 2} className="p-0 border-0" />
-                </tr>
+                <Tr aria-hidden style={{ height: bottomSpacer }}>
+                  <Td colSpan={cols.length + 2} className="border-0" />
+                </Tr>
               )}
-            </tbody>
+            </TBody>
             {/* A real <tfoot> (not a plain <tr> in <tbody>) — sticky-to-viewport
                 positioning only works reliably on thead/tfoot, not on an
                 arbitrary <tr>, so this is what keeps the totals row pinned to
                 the bottom of the scroll container without overlapping the
                 last data row. */}
-            <tfoot className="sticky bottom-0 z-20">
-              <tr className="bg-surface-subtle">
-                <td className="sticky left-0 z-30 bg-surface-subtle border-t border-r border-line px-3 py-2 text-left text-2xs font-semibold uppercase tracking-wide text-fg-secondary">
+            <TFoot className="sticky bottom-0 z-20">
+              <Tr className="bg-surface-subtle">
+                <Td className="sticky left-0 z-30 bg-surface-subtle border-t border-r border-line text-left text-2xs font-semibold text-fg-secondary">
                   {colTotalLabel}
-                </td>
+                </Td>
                 {cols.map((_c, colIdx) => (
-                  <td key={colIdx} className="border-t border-r border-line px-2 py-1.5 text-right font-mono text-xs bg-surface-sunken text-fg font-semibold">
+                  <Td align="right" key={colIdx} className="border-t border-r border-line font-mono text-xs bg-surface-sunken text-fg font-semibold">
                     {formatValue(colTotal(colIdx))}
-                  </td>
+                  </Td>
                 ))}
-                <td className="border-t border-line px-2 py-1.5 text-right font-mono text-xs bg-primary-100 text-primary-900 font-bold">
+                <Td align="right" className="border-t border-line font-mono text-xs bg-primary-100 text-primary-900 font-semibold">
                   {formatValue(grandTotal)}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+                </Td>
+              </Tr>
+            </TFoot>
+          </Table>
       </div>
     </div>
   )
@@ -870,7 +870,7 @@ function MatrixCell({
 
   if (nonEditable) {
     return (
-      <td
+      <Td
         className={cn(
           'relative border-b border-r border-line px-2 py-1.5 text-right font-mono text-xs',
           frozen ? 'bg-surface-sunken text-fg-muted' : 'bg-surface-subtle text-fg-secondary',
@@ -895,22 +895,22 @@ function MatrixCell({
         {frozen && <span className="sr-only">Frozen — not editable.</span>}
         {hasEntry ? formatValue(value) : '—'}
         {onHistoryClick && (
-          <button
+          <Button variant="subtle" size="icon-xs"
             type="button"
             onClick={onHistoryClick}
             aria-label="View change history"
             title="View change history"
-            className="absolute bottom-0 right-0 p-1 text-fg-faint hover:text-primary-600"
+            className="absolute bottom-0 right-0"
           >
             <History aria-hidden className="h-2.5 w-2.5" />
-          </button>
+          </Button>
         )}
-      </td>
+      </Td>
     )
   }
 
   return (
-    <td
+    <Td
       className={cn(
         'relative border-b border-r border-line p-0',
         invalidRaw ? 'bg-danger-soft' : modified ? 'bg-warning-soft' : 'bg-surface',
@@ -926,7 +926,7 @@ function MatrixCell({
       {invalidRaw && (
         <AlertTriangle aria-hidden className="pointer-events-none absolute top-0.5 right-0.5 h-3 w-3 text-danger-fg" />
       )}
-      <input
+      <Input
         type="text"
         inputMode="decimal"
         value={local}
@@ -958,17 +958,17 @@ function MatrixCell({
       />
       {invalidRaw && <span className="sr-only">{`Pasted value "${invalidRaw}" was not a valid number and was not applied.`}</span>}
       {onHistoryClick && (
-        <button
+        <Button variant="subtle" size="icon-xs"
           type="button"
           onClick={onHistoryClick}
           aria-label="View change history"
           title="View change history"
-          className="absolute bottom-0 right-0 p-1 text-fg-faint hover:text-primary-600"
+          className="absolute bottom-0 right-0"
         >
           <History aria-hidden className="h-2.5 w-2.5" />
-        </button>
+        </Button>
       )}
-    </td>
+    </Td>
   )
 }
 

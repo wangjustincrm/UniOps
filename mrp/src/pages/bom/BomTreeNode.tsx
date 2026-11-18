@@ -13,6 +13,7 @@ import { displayBomType } from './bomType'
 import { formatQty, formatNcBatchQty } from './bomQty'
 import type { ExplodeNode } from './bomApi'
 
+import { Button } from '@uniops/shell'
 export function BomTreeRow({
   node, path, ancestorContinues, isLast, expandedPaths, onToggle, topLabel, basis,
 }: {
@@ -63,19 +64,17 @@ export function BomTreeRow({
           {!isRoot && (
             <span className="inline-block w-4 shrink-0 text-fg-faint">{isLast ? '└' : '├'}</span>
           )}
-          <button
-            type="button"
+          <Button
+            variant="subtle"
+            size="icon-xs"
             onClick={() => hasChildren && onToggle(path)}
             disabled={!hasChildren}
             aria-expanded={hasChildren ? expanded : undefined}
             aria-label={hasChildren ? (expanded ? `Collapse ${node.material_code}` : `Expand ${node.material_code}`) : undefined}
-            className={cn(
-              'flex h-5 w-5 shrink-0 items-center justify-center rounded',
-              hasChildren ? 'text-fg-muted hover:bg-surface-strong' : 'text-transparent',
-            )}
+            className={cn('h-5 w-5 shrink-0 rounded disabled:opacity-100', !hasChildren && 'text-transparent')}
           >
             {hasChildren && (expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
-          </button>
+          </Button>
           <span className="shrink-0 font-semibold text-primary-700">{node.material_code}</span>
           <span className="ml-1.5 truncate font-sans text-fg-secondary">{node.name ?? '—'}</span>
         </div>
@@ -88,15 +87,15 @@ export function BomTreeRow({
         {/* Version — click to expand what selection detail is available */}
         <div className="w-40 shrink-0 text-xs">
           {node.version ? (
-            <button
+            <Button variant="subtle" size="xs"
               type="button"
               onClick={() => setVersionOpen((v) => !v)}
-              className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-fg-secondary hover:bg-surface-sunken hover:text-fg"
+             
               aria-expanded={versionOpen}
             >
               {versionOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
               v{node.version} ({node.version_candidates_count} approved)
-            </button>
+            </Button>
           ) : (
             <span className="text-fg-faint">—</span>
           )}

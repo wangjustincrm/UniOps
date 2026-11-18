@@ -20,6 +20,7 @@ import { Search, X as XIcon, Package } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { isFinishedGood, materialsApi, type MaterialOption, isPurchased } from '@/lib/materials'
 
+import { Button, Input, MenuItem, PickerTrigger } from '@uniops/shell'
 // Render cap for the UNBOUNDED (component / all-materials) mode only: an
 // empty/broad query there spans the whole ~2600-row master, too many <button>s
 // to paint at once, so we show the first N and prompt to narrow. Finished-goods
@@ -131,39 +132,33 @@ export function MaterialPicker({
   return (
     <div className="relative w-full">
       <div className="flex items-center gap-1">
-        <button
+        <PickerTrigger
           ref={triggerRef}
-          type="button"
           onClick={openPicker}
           disabled={disabled}
           aria-haspopup="listbox"
           aria-expanded={open}
+          error={hasError}
           // min-w-0 lets this flex child shrink below its content width so
           // the label's `truncate` actually clips — without it a long
           // "CODE — Long Product Name" spills past the field into the next
           // grid column (covers the Lot Number input).
-          className={cn(
-            'flex h-10 w-full min-w-0 flex-1 items-center gap-2 rounded-lg border bg-surface-sunken px-3 text-left text-sm transition-colors',
-            'focus:outline-none focus:bg-surface focus:border-primary-600',
-            'disabled:cursor-not-allowed disabled:opacity-60',
-            hasError ? 'border-danger-solid bg-danger-soft' : 'border-line',
-            open && 'border-primary-600 bg-surface',
-          )}
+          className={cn('flex min-w-0 flex-1 items-center gap-2', open && 'border-accent bg-surface')}
         >
           <Search className="h-3.5 w-3.5 shrink-0 text-fg-muted" />
           <span className={cn('min-w-0 flex-1 truncate', value ? 'text-fg' : 'text-fg-muted')}>
             {value || placeholder}
           </span>
-        </button>
+        </PickerTrigger>
         {value && !disabled && (
-          <button
+          <Button variant="danger-ghost" size="icon-xs"
             type="button"
             onClick={onClear}
             aria-label="Clear selected product"
-            className="shrink-0 text-fg-faint hover:text-danger-fg"
+            className="shrink-0"
           >
             <XIcon className="h-4 w-4" />
-          </button>
+          </Button>
         )}
       </div>
 
@@ -178,13 +173,13 @@ export function MaterialPicker({
           <div className="border-b border-line-subtle p-2">
             <div className="flex items-center gap-2 rounded-md border border-line bg-surface-subtle px-2">
               <Search className="h-3.5 w-3.5 text-fg-muted" />
-              <input
+              <Input bare
                 autoFocus
                 type="text"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search by code or name…"
-                className="h-8 flex-1 bg-transparent text-sm focus:outline-none"
+                className="h-8 flex-1"
               />
             </div>
           </div>
@@ -198,16 +193,13 @@ export function MaterialPicker({
               </div>
             ) : (
               shown.map((m) => (
-                <button
+                <MenuItem
                   key={m.id}
-                  type="button"
                   role="option"
                   aria-selected={m.code === value}
+                  active={m.code === value}
                   onClick={() => handleSelect(m)}
-                  className={cn(
-                    'block w-full border-b border-line-subtle px-3 py-2 text-left transition-colors last:border-0 hover:bg-primary-50',
-                    m.code === value && 'bg-primary-50/60',
-                  )}
+                  className="block border-b border-line-subtle last:border-0"
                 >
                   <div className="flex items-center gap-2">
                     <span className="shrink-0 font-mono text-2xs text-primary-600">{m.code}</span>
@@ -218,7 +210,7 @@ export function MaterialPicker({
                       {[m.spec, m.base_uom].filter(Boolean).join(' · ')}
                     </div>
                   )}
-                </button>
+                </MenuItem>
               ))
             )}
             {overflow > 0 && (

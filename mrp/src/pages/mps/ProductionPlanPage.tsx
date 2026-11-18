@@ -9,10 +9,9 @@
 // nav/routes here — that's Task 7.
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, RefreshCw, Sparkles, AlertTriangle, Download, PackageCheck, X as XIcon } from 'lucide-react'
-import { Button, FormField } from '@uniops/shell'
+import { Loader2, RefreshCw, Sparkles, AlertTriangle, Download, PackageCheck } from 'lucide-react'
+import { Button, FormField, Input, Select, MenuItem, Modal } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { ToastStack } from '@/components/Toast'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -76,39 +75,31 @@ function AdjustCellPicker({
   const code = lines[0]?.material_code ?? ''
   const name = materialsByCode.get(code)?.name
 
-  return createPortal(
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">
-      <div role="dialog" aria-modal="true" aria-label={`Select a line to adjust for ${code}`} className="w-full max-w-sm rounded-xl border border-line bg-surface shadow-xl">
-        <div className="flex items-center justify-between border-b border-line px-5 py-4">
-          <div>
-            <h2 className="text-base font-semibold text-fg">Select a line</h2>
-            <p className="font-mono text-xs text-fg-muted">{code}{name && name !== code ? ` · ${name}` : ''}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center text-fg-muted hover:text-fg-secondary"
-          >
-            <XIcon className="h-5 w-5" />
-          </button>
-        </div>
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Select a line"
+      description={<span className="font-mono text-xs">{code}{name && name !== code ? ` · ${name}` : ''}</span>}
+      closeOnEscape={false}
+      size="full"
+      className="max-w-sm"
+      bodyClassName="p-0"
+    >
         <div className="max-h-80 overflow-y-auto px-2 py-2">
           {lines.map((line) => (
-            <button
+            <MenuItem
               key={line.id}
               type="button"
               onClick={() => onPick(line)}
-              className="flex min-h-[44px] w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-primary-50 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              className="min-h-[44px] justify-between"
             >
               <span className="text-fg-secondary">demand {line.demand_month}</span>
               <span className="font-mono text-fg">{formatValue(Number(line.qty))}</span>
-            </button>
+            </MenuItem>
           ))}
         </div>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   )
 }
 
@@ -565,18 +556,18 @@ export default function ProductionPlanPage() {
             htmlFor="mps-version"
             hint={confirmedVersions.length === 0 ? 'No confirmed forecast version available — confirm one first.' : undefined}
           >
-            <select
+            <Select
               id="mps-version"
               value={selectedVersionId ?? ''}
               onChange={(e) => setManualVersionId(e.target.value || null)}
               disabled={confirmedVersions.length === 0 || generating}
-              className="flex h-10 min-w-[220px] rounded-lg border border-line bg-surface px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex min-w-[220px]"
             >
               {confirmedVersions.length === 0 && <option value="">No confirmed versions</option>}
               {confirmedVersions.map((v) => (
                 <option key={v.id} value={v.id}>{v.version_no} · {v.horizon_start_month} · {v.horizon_months}mo</option>
               ))}
-            </select>
+            </Select>
           </FormField>
 
           <div className="flex items-center gap-2">
@@ -646,7 +637,7 @@ export default function ProductionPlanPage() {
           {canExecute && (
             <>
               <FormField label="Lead (weeks)" htmlFor="mps-lead-weeks">
-                <input
+                <Input
                   id="mps-lead-weeks"
                   type="number"
                   min={0}
@@ -658,7 +649,7 @@ export default function ProductionPlanPage() {
                   }}
                   disabled={generating}
                   title="Applies when you Generate a new run; Recalculate keeps the run's lead."
-                  className="flex h-11 w-20 rounded-lg border border-line bg-surface px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex w-20"
                 />
               </FormField>
               <Button

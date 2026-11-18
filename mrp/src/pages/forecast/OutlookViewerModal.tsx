@@ -9,9 +9,8 @@
 // numbers shown here match what the planner would see live — the underlying
 // snapshot is always stored in kg, same as the live series.
 import { useMemo } from 'react'
-import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, Sparkles, X as XIcon } from 'lucide-react'
+import { Loader2, Sparkles } from 'lucide-react'
 import { ApiError } from '@/lib/api'
 import { formatDateTime } from '@/lib/utils'
 import { MatrixGrid, type GridRow as MatrixRow, type GridCol as MatrixCol } from '@/components/MatrixGrid'
@@ -19,6 +18,7 @@ import { cellKey } from '@/components/matrixGrid/pasteLogic'
 import type { CellValueMap } from '@/components/matrixGrid/history'
 import { forecastApi, type ForecastVersion, type GridResponse } from './forecastApi'
 
+import { Modal } from '@uniops/shell'
 function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
 }
@@ -73,30 +73,18 @@ export function OutlookViewerModal({
     [gridQuery.data],
   )
 
-  return createPortal(
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">
-      <div className="flex max-h-[90vh] w-full max-w-6xl flex-col rounded-xl border border-line bg-surface shadow-xl">
-        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-line">
-          <div className="min-w-0">
-            <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
-              <Sparkles className="h-4 w-4 text-primary-600" /> Outlook {version.version_no}
-            </h2>
-            <p className="text-xs text-fg-muted">
-              Anchor {version.source_anchor_month ?? '—'} · {version.horizon_months}-month horizon
-              {version.confirmed_at && <> · frozen {formatDateTime(version.confirmed_at)}</>}
-              {' '}— read-only snapshot.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="-m-2.5 flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center text-fg-muted hover:text-fg-secondary"
-          >
-            <XIcon className="h-5 w-5" />
-          </button>
-        </div>
-
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Outlook ${version.version_no}`}
+      icon={<Sparkles className="h-4 w-4" />}
+      description={<>Anchor {version.source_anchor_month ?? '—'} · {version.horizon_months}-month horizon{version.confirmed_at && <> · frozen {formatDateTime(version.confirmed_at)}</>}{' '}— read-only snapshot.</>}
+      closeOnEscape={false}
+      size="full"
+      className="max-w-6xl"
+      bodyClassName="flex min-h-0 flex-col p-0"
+    >
         <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
           {gridQuery.isLoading ? (
             <p role="status" className="flex items-center justify-center gap-1.5 py-12 text-sm text-fg-muted">
@@ -124,8 +112,6 @@ export function OutlookViewerModal({
             />
           )}
         </div>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   )
 }

@@ -16,7 +16,7 @@
 import { useState, type FormEvent } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2, Save, CheckCircle2, HelpCircle } from 'lucide-react'
-import { Button, Input, FormField, Badge, Pagination, SortTh, sortParams, useSort, type Sort } from '@uniops/shell'
+import { Button, Input, FormField, Badge, Pagination, SortTh, sortParams, useSort, type Sort, TBody, THead, Table, Td, Tr } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn, formatDate, todayISO, toLocalDate } from '@/lib/utils'
 import { ToastStack } from '@/components/Toast'
@@ -384,9 +384,9 @@ function ConsignmentEntriesTable({ items, sort, onSort }: {
 
   return (
     <div className="overflow-x-auto rounded-lg border border-line">
-      <table className="min-w-full text-sm">
-        <thead className="bg-surface-subtle">
-          <tr>
+      <Table density="compact" className="min-w-full">
+        <THead>
+          <Tr>
             <SortTh label="Product" sortKey="material_code" sort={sort} onSort={onSort} className={entryTh} />
             <SortTh label="Lot No." sortKey="lot_no" sort={sort} onSort={onSort} className={entryTh} />
             <SortTh label="Qty" sortKey="qty" sort={sort} onSort={onSort} align="right"
@@ -394,21 +394,21 @@ function ConsignmentEntriesTable({ items, sort, onSort }: {
             <SortTh label="Count Date" sortKey="count_date" sort={sort} onSort={onSort} className={entryTh} />
             <SortTh label="Expiry Date" sortKey="expiry_date" sort={sort} onSort={onSort} className={entryTh} />
             <SortTh label="Source" sortKey="expiry_source" sort={sort} onSort={onSort} className={entryTh} />
-          </tr>
-        </thead>
-        <tbody>
+          </Tr>
+        </THead>
+        <TBody>
           {items.map((row) => (
-            <tr key={row.id} className="border-b border-line-subtle last:border-0 odd:bg-surface even:bg-surface-subtle/50">
-              <td className="px-3 py-2 font-mono text-xs text-fg">{row.material_code}</td>
-              <td className="px-3 py-2 font-mono text-xs text-fg-secondary">{row.lot_no}</td>
-              <td className="px-3 py-2 text-right font-mono text-xs text-fg">{formatQty(Number(row.qty))}</td>
-              <td className="px-3 py-2 text-xs text-fg-secondary">{formatDate(row.count_date)}</td>
-              <td className="px-3 py-2 text-xs text-fg-secondary">{row.expiry_date ? formatDate(row.expiry_date) : '—'}</td>
-              <td className="px-3 py-2">{expirySourceBadge(row.expiry_source)}</td>
-            </tr>
+            <Tr key={row.id} className="odd:bg-surface even:bg-surface-subtle/50">
+              <Td className="font-mono text-xs text-fg">{row.material_code}</Td>
+              <Td className="font-mono text-xs text-fg-secondary">{row.lot_no}</Td>
+              <Td align="right" className="font-mono text-xs text-fg">{formatQty(Number(row.qty))}</Td>
+              <Td className="text-xs text-fg-secondary">{formatDate(row.count_date)}</Td>
+              <Td className="text-xs text-fg-secondary">{row.expiry_date ? formatDate(row.expiry_date) : '—'}</Td>
+              <Td>{expirySourceBadge(row.expiry_source)}</Td>
+            </Tr>
           ))}
-        </tbody>
-      </table>
+        </TBody>
+      </Table>
     </div>
   )
 }

@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ChevronLeft, ChevronRight, Eye, Search, Trash2, X } from 'lucide-react'
-import { Button, SortTh, sortParams, useSort } from '@uniops/shell'
+import { Button, SortTh, sortParams, useSort, Input, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { formatDateTime } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -116,18 +116,18 @@ export function OutlooksPanel({
         <div className="flex items-center gap-2">
           <div className="flex h-8 items-center gap-1.5 rounded-md border border-line-strong px-2">
             <Search aria-hidden className="h-3.5 w-3.5 shrink-0 text-fg-muted" />
-            <input
+            <Input inputSize="sm"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search version, anchor or note…"
               aria-label="Search outlooks"
-              className="w-48 text-xs focus:outline-none"
+              className="w-48"
             />
             {searchInput && (
-              <button type="button" onClick={() => setSearchInput('')} aria-label="Clear search"
-                className="shrink-0 text-fg-muted hover:text-fg-secondary">
+              <Button variant="subtle" size="icon-xs" type="button" onClick={() => setSearchInput('')} aria-label="Clear search"
+                className="shrink-0">
                 <X className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             )}
           </div>
           {!listQuery.isLoading && (
@@ -156,45 +156,45 @@ export function OutlooksPanel({
       ) : (
         <>
           <div className="overflow-x-auto">
-            <table className="min-w-full text-xs">
-              <thead>
-                <tr className="border-b border-line-subtle text-left text-2xs font-semibold text-fg-muted">
+            <Table density="compact" className="min-w-full">
+              <THead>
+                <Tr className="text-left text-2xs font-semibold text-fg-muted">
                   <SortTh label="Version" sortKey="version_no" sort={sort} onSort={onSort} className="px-2 py-1.5" />
                   <SortTh label="Anchor" sortKey="source_anchor_month" sort={sort} onSort={onSort} className="px-2 py-1.5" />
                   <SortTh label="Horizon" sortKey="horizon_months" sort={sort} onSort={onSort} className="px-2 py-1.5" />
                   <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="px-2 py-1.5" />
-                  <th className="px-2 py-1.5" />
-                </tr>
-              </thead>
-              <tbody>
+                  <Th />
+                </Tr>
+              </THead>
+              <TBody>
                 {items.map((v) => (
-                  <tr key={v.id} className="border-b border-line-subtle last:border-0">
-                    <td className="px-2 py-1.5 font-medium text-fg">{v.version_no}</td>
-                    <td className="px-2 py-1.5 text-fg-secondary">{v.source_anchor_month ?? '—'}</td>
-                    <td className="px-2 py-1.5 text-fg-secondary">{v.horizon_months} mo</td>
-                    <td className="px-2 py-1.5 text-fg-muted">{formatDateTime(v.created_at)}</td>
-                    <td className="px-2 py-1.5">
+                  <Tr key={v.id}>
+                    <Td className="font-medium text-fg">{v.version_no}</Td>
+                    <Td className="text-fg-secondary">{v.source_anchor_month ?? '—'}</Td>
+                    <Td className="text-fg-secondary">{v.horizon_months} mo</Td>
+                    <Td className="text-fg-muted">{formatDateTime(v.created_at)}</Td>
+                    <Td>
                       <div className="flex items-center justify-end gap-1">
                         <Button type="button" size="sm" variant="secondary" onClick={() => onView(v)}>
                           <Eye className="h-3.5 w-3.5" /> View
                         </Button>
                         {canWrite && (
-                          <button
+                          <Button variant="danger-ghost" size="icon-sm"
                             type="button"
                             onClick={() => setDeleteTarget(v)}
                             aria-label={`Delete outlook ${v.version_no}`}
                             title="Delete"
-                            className="rounded p-1.5 text-fg-muted hover:bg-danger-soft hover:text-danger-fg"
+                           
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          </Button>
                         )}
                       </div>
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
 
           {/* The pager stays visible on a single page too, because it also
@@ -205,25 +205,25 @@ export function OutlooksPanel({
               {from}–{to} of {total}
             </span>
             <div className="flex items-center gap-1">
-              <button
+              <Button variant="subtle" size="icon-sm"
                 type="button"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page <= 1 || listQuery.isFetching}
                 aria-label="Previous page"
-                className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40"
+               
               >
                 <ChevronLeft className="h-4 w-4" />
-              </button>
+              </Button>
               <span className="text-2xs text-fg-muted">Page {page} of {pageCount}</span>
-              <button
+              <Button variant="subtle" size="icon-sm"
                 type="button"
                 onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
                 disabled={page >= pageCount || listQuery.isFetching}
                 aria-label="Next page"
-                className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40"
+               
               >
                 <ChevronRight className="h-4 w-4" />
-              </button>
+              </Button>
             </div>
           </div>
         </>

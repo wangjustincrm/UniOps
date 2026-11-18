@@ -168,3 +168,28 @@ export function TableMessage({ colSpan, children, className }: { colSpan: number
 }
 
 export function useTableDensity() { return useContext(DensityCtx) }
+
+export interface CellButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  align?: 'start' | 'center' | 'end'
+}
+
+/** A clickable grid cell (a planning matrix cell or column header): fills the
+ *  cell, no padding or radius of its own beyond a thin inset, always type="button". */
+export const CellButton = React.forwardRef<HTMLButtonElement, CellButtonProps>(function CellButton(
+  { align = 'center', className, type = 'button', ...props }, ref,
+) {
+  return (
+    <button
+      ref={ref}
+      type={type}
+      className={cn(
+        'flex h-full w-full items-center gap-1 px-1.5 transition-colors duration-100',
+        align === 'start' ? 'justify-start text-left' : align === 'end' ? 'justify-end text-right' : 'justify-center',
+        'hover:bg-accent-soft hover:text-accent-fg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent',
+        'disabled:cursor-not-allowed disabled:opacity-50',
+        className,
+      )}
+      {...props}
+    />
+  )
+})

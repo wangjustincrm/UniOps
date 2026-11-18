@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react'
 import { ChevronRight, Info, X } from 'lucide-react'
 import type { MpsRunDetail } from './mpsApi'
 
+import { Button } from '@uniops/shell'
 const STORAGE_KEY = 'mrp.planningRules.open'
 
 /** 0 = Monday, so this plant's Saturday start is 5. */
@@ -53,16 +54,16 @@ export function PlanningRulesPanel({ run }: { run: MpsRunDetail }) {
 
   if (!open) {
     return (
-      <button
+      <Button variant="secondary" size="xs"
         type="button"
         onClick={() => setOpen(true)}
         aria-expanded={false}
         title="Show the rules this plan was built under"
-        className="flex h-fit shrink-0 items-center gap-1 self-start rounded-lg border border-line bg-surface px-2 py-3 text-2xs font-medium text-fg-muted hover:bg-surface-subtle"
+        className="shrink-0 self-start"
       >
         <Info aria-hidden className="h-3.5 w-3.5" />
         <span className="[writing-mode:vertical-rl]">Planning rules</span>
-      </button>
+      </Button>
     )
   }
 
@@ -77,14 +78,14 @@ export function PlanningRulesPanel({ run }: { run: MpsRunDetail }) {
           <Info aria-hidden className="h-3.5 w-3.5 text-fg-muted" />
           How this plan was built
         </h2>
-        <button
+        <Button variant="subtle" size="icon-xs"
           type="button"
           onClick={() => setOpen(false)}
           aria-label="Hide the planning rules"
-          className="text-fg-muted hover:text-fg-secondary"
+         
         >
           <X className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </div>
 
       <ul>

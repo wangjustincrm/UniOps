@@ -13,7 +13,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Pencil, Plus, Trash2, X as XIcon } from 'lucide-react'
-import { Button, SortTh, useSortableRows } from '@uniops/shell'
+import { Button, SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 import { ToastStack } from '@/components/Toast'
@@ -123,14 +123,14 @@ export default function CapacityRulesPage() {
             Capacity rules now read per week. Existing rules were deactivated by the weekly migration —
             please re-enter them.
           </span>
-          <button
+          <Button variant="subtle" size="icon-xs"
             type="button"
             onClick={dismissBanner}
             aria-label="Dismiss this notice"
-            className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center text-warning-fg hover:text-warning-800"
+            className="min-h-[44px] min-w-[44px] shrink-0"
           >
             <XIcon className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       )}
 
@@ -215,29 +215,29 @@ function RulesTable({
 
   return (
     <div className="overflow-x-auto rounded-lg border border-line">
-      <table className="min-w-full text-sm">
-        <thead className="bg-surface-subtle">
-          <tr>
+      <Table density="compact" className="min-w-full">
+        <THead>
+          <Tr>
             <SortTh label="Scope" sortKey="scope" sort={sort} onSort={onSort} className={RULE_TH} />
             <SortTh label="Constraint" sortKey="constraint" sort={sort} onSort={onSort} className={RULE_TH} />
             <SortTh label="Limit" sortKey="limit" sort={sort} onSort={onSort} align="right" className="border-b border-line px-3 py-2 text-2xs font-semibold text-fg-secondary" />
             <SortTh label="Unit" sortKey="uom" sort={sort} onSort={onSort} className={RULE_TH} />
             <SortTh label="Effective" sortKey="effective" sort={sort} onSort={onSort} className={RULE_TH} />
             <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={RULE_TH} />
-            {canWrite && <th className="border-b border-line px-3 py-2 text-right text-2xs font-semibold text-fg-secondary">Actions</th>}
-          </tr>
-        </thead>
-        <tbody>
+            {canWrite && <Th align="right" className="border-b border-line ">Actions</Th>}
+          </Tr>
+        </THead>
+        <TBody>
           {sortedRules.map((rule) => (
-            <tr key={rule.id} className="border-b border-line-subtle last:border-0 odd:bg-surface even:bg-surface-subtle/50">
-              <td className="px-3 py-2 text-fg">{scopeLabel(rule)}</td>
-              <td className="px-3 py-2 text-fg-secondary">{CONSTRAINT_TYPE_LABEL[rule.constraint_type]}</td>
-              <td className="px-3 py-2 text-right font-mono text-xs text-fg">{formatQty(Number(rule.limit_value))}</td>
-              <td className="px-3 py-2 text-xs text-fg-secondary">{rule.uom ?? '—'}</td>
-              <td className="px-3 py-2 text-xs text-fg-secondary">
+            <Tr key={rule.id} className="odd:bg-surface even:bg-surface-subtle/50">
+              <Td className="text-fg">{scopeLabel(rule)}</Td>
+              <Td className="text-fg-secondary">{CONSTRAINT_TYPE_LABEL[rule.constraint_type]}</Td>
+              <Td align="right" className="font-mono text-xs text-fg">{formatQty(Number(rule.limit_value))}</Td>
+              <Td className="text-xs text-fg-secondary">{rule.uom ?? '—'}</Td>
+              <Td className="text-xs text-fg-secondary">
                 {formatDate(rule.effective_from)} – {rule.effective_to ? formatDate(rule.effective_to) : 'open-ended'}
-              </td>
-              <td className="px-3 py-2">
+              </Td>
+              <Td>
                 <span
                   className={
                     rule.is_active
@@ -247,37 +247,37 @@ function RulesTable({
                 >
                   {rule.is_active ? 'Active' : 'Inactive'}
                 </span>
-              </td>
+              </Td>
               {canWrite && (
-                <td className="px-1 py-1 text-right">
+                <Td align="right">
                   {/* Design spec §6.6 mandates >=44x44px interactive targets.
                       The buttons are h-11 w-11 (44px) so the clickable area
                       itself meets that, even though the glyph inside stays
                       small (h-3.5 w-3.5) to match the table's density. */}
                   <div className="flex justify-end">
-                    <button
+                    <Button variant="subtle" size="icon-xs"
                       type="button"
                       onClick={() => onEdit(rule)}
                       aria-label={`Edit ${scopeLabel(rule)} rule`}
-                      className="flex h-11 w-11 items-center justify-center rounded-md text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary"
+                     
                     >
                       <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
+                    </Button>
+                    <Button variant="danger-ghost" size="icon-xs"
                       type="button"
                       onClick={() => onDelete(rule)}
                       aria-label={`Delete ${scopeLabel(rule)} rule`}
-                      className="flex h-11 w-11 items-center justify-center rounded-md text-fg-muted hover:bg-danger-soft hover:text-danger-fg"
+                     
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    </Button>
                   </div>
-                </td>
+                </Td>
               )}
-            </tr>
+            </Tr>
           ))}
-        </tbody>
-      </table>
+        </TBody>
+      </Table>
     </div>
   )
 }

@@ -102,7 +102,7 @@ RULES = [
 ]
 
 
-LAYOUT = re.compile(r'^(?:-?m[trblxy]?-[\w.]+|self-[\w-]+|shrink-0|grow|flex-1|w-full|w-\d+|max-w-[\w\[\].-]+|min-w-[\w\[\].-]+|'
+LAYOUT = re.compile(r'^(?:-?m[trblxy]?-[\w.]+|self-[\w-]+|shrink-0|grow|flex-1|w-full|w-\d+|max-w-[\w\[\].-]+|min-w-[\w\[\].-]+|min-h-[\w\[\].-]+|'
                     r'absolute|relative|top-[\w/.-]+|left-[\w/.-]+|right-[\w/.-]+|bottom-[\w/.-]+|-?translate-[xy]-[\w/.-]+|'
                     r'truncate|ml-auto|mr-auto|order-[\w-]+|hidden|(?:sm|md|lg):[\w-]+|justify-[\w-]+|z-[\w\[\]-]+)$')
 

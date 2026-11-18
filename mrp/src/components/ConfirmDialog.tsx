@@ -1,9 +1,7 @@
-// Generic confirm dialog — portal to body (overlay convention, see
-// booking/src/pages/admin/RoomImportModal.tsx). Used for "Confirm version"
+// Generic confirm dialog (Shell Modal). Used for "Confirm version"
 // (summarise what's being locked) and the import wizard's apply step.
-import { createPortal } from 'react-dom'
-import { AlertTriangle, Loader2, X as XIcon } from 'lucide-react'
-import { Button } from '@uniops/shell'
+import { AlertTriangle, Loader2 } from 'lucide-react'
+import { Button, Modal } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 
 export interface ConfirmDialogProps {
@@ -19,39 +17,38 @@ export interface ConfirmDialogProps {
 export function ConfirmDialog({
   title, children, confirmLabel, onConfirm, onCancel, busy = false, danger = false,
 }: ConfirmDialogProps) {
-  return createPortal(
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">
-      <div role="alertdialog" aria-label={title} className="w-full max-w-md rounded-xl border border-line bg-surface shadow-xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
-            {danger && <AlertTriangle className="h-4 w-4 text-warning-fg" />}
-            {title}
-          </h2>
-          <button type="button" onClick={onCancel} aria-label="Close" className="text-fg-muted hover:text-fg-secondary">
-            <XIcon className="h-5 w-5" />
-          </button>
-        </div>
-        <div className="px-5 py-4 text-sm text-fg-secondary space-y-2">
-          {children}
-        </div>
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-line">
-          <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={busy}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={danger ? 'destructive' : 'primary'}
-            onClick={onConfirm}
-            disabled={busy}
-            className={cn(busy && 'cursor-wait')}
-          >
-            {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {confirmLabel}
-          </Button>
-        </div>
+  // `stacked`: it can ask from inside a drawer. Closes by Cancel / the close
+  // button only (no Escape, no backdrop), as before.
+  return (
+    <Modal
+      open
+      stacked
+      onClose={onCancel}
+      title={title}
+      icon={danger ? <AlertTriangle className="h-4 w-4 text-warning-fg" /> : undefined}
+      closeOnEscape={false}
+      size="full"
+      className="max-w-md"
+      footer={<>
+        <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={busy}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={danger ? 'destructive' : 'primary'}
+          onClick={onConfirm}
+          disabled={busy}
+          className={cn(busy && 'cursor-wait')}
+        >
+          {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {confirmLabel}
+        </Button>
+      </>}
+    >
+      <div className="space-y-2 text-sm text-fg-secondary">
+        {children}
       </div>
-    </div>,
-    document.body,
+    </Modal>
   )
 }

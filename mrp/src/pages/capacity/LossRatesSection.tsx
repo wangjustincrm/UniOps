@@ -13,7 +13,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2 } from 'lucide-react'
-import { Button } from '@uniops/shell'
+import { Button, Input } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { capacityApi } from './capacityApi'
 
@@ -93,13 +93,13 @@ export function LossRatesSection({ canWrite }: { canWrite: boolean }) {
       <div key={key} className="flex flex-col gap-1">
         <label htmlFor={key} className="text-sm font-medium text-fg">{label}</label>
         <div className="flex items-center gap-2">
-          <input
+          <Input
             id={key}
             inputMode="decimal"
             value={value}
             onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
             disabled={!canWrite || paramsQuery.isLoading || mutation.isPending}
-            className="h-11 w-24 rounded-lg border border-line-strong px-3 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-surface-subtle"
+            className="w-24"
           />
           <span className="text-sm text-fg-muted">%</span>
           {canWrite && (

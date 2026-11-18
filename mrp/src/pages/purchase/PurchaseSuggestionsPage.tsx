@@ -12,7 +12,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CalendarClock, Download, Loader2, RefreshCw } from 'lucide-react'
-import { Badge, Button, SortTh, useSortableRows } from '@uniops/shell'
+import { Badge, Button, SortTh, useSortableRows, Checkbox, Select, TBody, THead, Table, Td, Tr } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { saveBlob } from '@/pages/forecast/forecastApi'
 import { cn, formatDate, formatDateTime, todayISO, toLocalDate } from '@/lib/utils'
@@ -133,17 +133,17 @@ export default function PurchaseSuggestionsPage() {
         </div>
         <div className="flex items-center gap-2">
           {runs.length > 1 && (
-            <select
+            <Select
               value={activeId ?? ''}
               onChange={(e) => setRunId(e.target.value)}
-              className="h-11 rounded-lg border border-line-strong px-3 text-sm"
+             
             >
               {runs.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.run_no} · {formatDate(r.created_at)}
                 </option>
               ))}
-            </select>
+            </Select>
           )}
           {run && (
             <Button type="button" size="sm" variant="secondary" className="min-h-[44px]"
@@ -194,17 +194,17 @@ export default function PurchaseSuggestionsPage() {
 
       {run && (
         <label className="flex items-center gap-2 text-xs text-fg-secondary">
-          <input type="checkbox" checked={hideDone}
+          <Checkbox checked={hideDone}
             onChange={(e) => setHideDone(e.target.checked)}
-            className="h-4 w-4 rounded border-line-strong" />
+            />
           Show only lines still to deal with
         </label>
       )}
 
       <div className="overflow-x-auto rounded-lg border border-line bg-surface">
-        <table className="min-w-full text-sm">
-          <thead className="bg-surface-subtle text-xs uppercase tracking-wide text-fg-muted">
-            <tr>
+        <Table density="compact" className="min-w-full">
+          <THead>
+            <Tr>
               <SortTh label="Order by" sortKey="order_date" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
               <SortTh label="Material" sortKey="material" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
               <SortTh label="Supplier" sortKey="supplier" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
@@ -214,26 +214,26 @@ export default function PurchaseSuggestionsPage() {
               <SortTh label="Net" sortKey="net" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
               <SortTh label="Suggested" sortKey="suggested" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
               <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} align="center" className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
+            </Tr>
+          </THead>
+          <TBody>
             {runQuery.isLoading && (
-              <tr><td colSpan={9} className="px-3 py-6 text-center text-fg-muted">Loading…</td></tr>
+              <Tr><Td align="center" colSpan={9} className="text-fg-muted">Loading…</Td></Tr>
             )}
             {!runQuery.isLoading && !run && (
-              <tr><td colSpan={9} className="px-3 py-6 text-center text-fg-muted">
+              <Tr><Td align="center" colSpan={9} className="text-fg-muted">
                 No calculation yet — press Calculate to work out what to buy for the plan in force.
-              </td></tr>
+              </Td></Tr>
             )}
             {run && lines.length === 0 && (
-              <tr><td colSpan={9} className="px-3 py-6 text-center text-fg-muted">
+              <Tr><Td align="center" colSpan={9} className="text-fg-muted">
                 {hideDone ? 'Everything here has been dealt with.' : 'This calculation produced no suggestions.'}
-              </td></tr>
+              </Td></Tr>
             )}
             {sortedLines.map((line) => (
-              <tr key={line.id} className={cn('border-t border-line-subtle',
+              <Tr key={line.id} className={cn('border-t border-line-subtle',
                 line.order_date_passed && 'bg-danger-50/40')}>
-                <td className="px-3 py-2 font-mono text-xs"
+                <Td className="font-mono text-xs"
                   title={line.order_date_passed
                     ? `Overdue — this should have been ordered on ${formatDate(line.order_date)}`
                       + `${daysAgo(line.order_date)}. Ordered now, it arrives after it is `
@@ -248,9 +248,9 @@ export default function PurchaseSuggestionsPage() {
                     )}
                     {formatDate(line.order_date)}
                   </span>
-                </td>
-                <td className="px-3 py-2 font-mono text-xs">{line.material_code}</td>
-                <td className="px-3 py-2 text-xs">
+                </Td>
+                <Td className="font-mono text-xs">{line.material_code}</Td>
+                <Td className="text-xs">
                   {line.partner_code ?? (
                     <span title="No supplier on record for this material — set one in Supply Parameters"
                       className="text-danger-fg">none</span>
@@ -259,41 +259,41 @@ export default function PurchaseSuggestionsPage() {
                     <span title="No lead time on record — the order date assumes the goods arrive instantly"
                       className="ml-1 text-danger-fg">?</span>
                   )}
-                </td>
-                <td className="px-3 py-2 text-right font-mono text-xs text-fg-muted">{formatDate(line.need_week)}</td>
-                <td className="px-3 py-2 text-right font-mono text-fg-secondary">{fmt(line.gross_qty)}</td>
-                <td className="px-3 py-2 text-right font-mono text-fg-secondary">{fmt(line.available_qty)}</td>
-                <td className="px-3 py-2 text-right font-mono">{fmt(line.net_qty)}</td>
-                <td className="px-3 py-2 text-right font-mono font-bold">
+                </Td>
+                <Td align="right" className="font-mono text-xs text-fg-muted">{formatDate(line.need_week)}</Td>
+                <Td align="right" className="font-mono text-fg-secondary">{fmt(line.gross_qty)}</Td>
+                <Td align="right" className="font-mono text-fg-secondary">{fmt(line.available_qty)}</Td>
+                <Td align="right" className="font-mono">{fmt(line.net_qty)}</Td>
+                <Td align="right" className="font-mono font-semibold">
                   <span title={Number(line.raised_to_moq) > 0
                     ? `Includes ${fmt(line.raised_to_moq)} added to reach the minimum order quantity`
                     : undefined}>
                     {fmt(line.suggested_qty)}
                     {Number(line.raised_to_moq) > 0 && <span className="ml-1 text-warning-fg">▲</span>}
                   </span>
-                </td>
-                <td className="px-3 py-2 text-center">
+                </Td>
+                <Td align="center">
                   {canExecute ? (
-                    <select
+                    <Select selectSize="sm"
                       value={line.status}
                       disabled={setStatus.isPending}
                       onChange={(e) => setStatus.mutate({
                         line, status: e.target.value as PurchaseLineStatus,
                       })}
-                      className="rounded border border-line-strong px-1 py-0.5 text-xs"
+                     
                     >
                       <option value="pending">Pending</option>
                       <option value="ordered">Ordered</option>
                       <option value="ignored">Ignored</option>
-                    </select>
+                    </Select>
                   ) : (
                     <Badge variant={STATUS_VARIANT[line.status]}>{line.status}</Badge>
                   )}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </div>
 
       {run && lines.length > 0 && (

@@ -115,7 +115,7 @@ export function Modal({
               onClick={safeClose}
               disabled={busy}
               aria-label="Close"
-              className="-mr-1 rounded-md p-1.5 text-fg-faint transition-colors hover:bg-surface-sunken hover:text-fg-secondary disabled:opacity-40"
+              className="-mr-1 flex items-center justify-center rounded-md p-1.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-fg-faint transition-colors hover:bg-surface-sunken hover:text-fg-secondary disabled:opacity-40"
             >
               <X className="h-4 w-4" />
             </button>
@@ -168,7 +168,7 @@ export function Drawer({
             </div>
           </div>
           <button type="button" onClick={safeClose} disabled={busy} aria-label="Close"
-            className="-mr-1 rounded-md p-1.5 text-fg-faint transition-colors hover:bg-surface-sunken hover:text-fg-secondary disabled:opacity-40">
+            className="-mr-1 flex items-center justify-center rounded-md p-1.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-fg-faint transition-colors hover:bg-surface-sunken hover:text-fg-secondary disabled:opacity-40">
             <X className="h-4 w-4" />
           </button>
         </div>

@@ -8,12 +8,11 @@
 // Same portal/fixed overlay convention as MaterialPicker — a plain absolute
 // panel gets clipped by the page's scroll containers.
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, Loader2, Search, X } from 'lucide-react'
 import { mdmApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
 
+import { Button, DropdownPortal, Input, MenuItem, PickerTrigger } from '@uniops/shell'
 export interface PartnerOption {
   code: string
   name: string
@@ -56,46 +55,40 @@ export function SupplierPicker({
   return (
     <>
       <div className="flex items-center gap-1">
-        <button
-          type="button"
+        <PickerTrigger
           disabled={disabled}
+          error={hasError}
+          aria-haspopup="listbox"
+          aria-expanded={open}
           onClick={(e) => {
             setAnchor(e.currentTarget.getBoundingClientRect())
             setOpen((v) => !v)
           }}
-          className={cn(
-            'flex h-11 flex-1 items-center justify-between gap-2 rounded-lg border bg-surface px-3 text-left text-sm disabled:cursor-not-allowed disabled:bg-surface-subtle',
-            hasError ? 'border-danger-400' : 'border-line-strong',
-          )}
+          className="flex h-11 flex-1 items-center justify-between gap-2"
         >
           <span className={value ? 'font-mono text-xs' : 'text-fg-muted'}>
             {value || 'Search suppliers…'}
           </span>
           <ChevronDown aria-hidden className="h-4 w-4 shrink-0 text-fg-muted" />
-        </button>
+        </PickerTrigger>
         {value && !disabled && (
-          <button type="button" onClick={onClear} aria-label="Clear supplier"
-            className="text-fg-muted hover:text-danger-fg">
+          <Button variant="danger-ghost" size="icon-xs" type="button" onClick={onClear} aria-label="Clear supplier"
+           >
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         )}
       </div>
 
-      {open && anchor && createPortal(
-        <>
-          <div className="fixed inset-0 z-[95]" onClick={() => setOpen(false)} />
-          <div
-            className="fixed z-[96] w-80 rounded-lg border border-line bg-surface shadow-lg"
-            style={{ top: anchor.bottom + 4, left: anchor.left }}
-          >
+      {open && anchor && (
+        <DropdownPortal anchorRect={anchor} onClose={() => setOpen(false)} width={320} className="max-h-none overflow-visible py-0">
             <div className="flex items-center gap-2 border-b border-line-subtle px-3 py-2">
               <Search aria-hidden className="h-3.5 w-3.5 text-fg-muted" />
-              <input
+              <Input
                 ref={inputRef}
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Code or name…"
-                className="w-full text-sm focus:outline-none"
+                className="w-full"
               />
               {searchQuery.isFetching && <Loader2 className="h-3.5 w-3.5 animate-spin text-fg-muted" />}
             </div>
@@ -106,20 +99,18 @@ export function SupplierPicker({
                 </p>
               )}
               {options.map((partner) => (
-                <button
+                <MenuItem
                   key={partner.code}
                   type="button"
                   onClick={() => { onSelect(partner); setOpen(false); setQ('') }}
-                  className="flex w-full items-baseline gap-2 px-3 py-2 text-left text-sm hover:bg-surface-subtle"
+                 
                 >
                   <span className="font-mono text-xs text-fg-muted">{partner.code}</span>
                   <span className="truncate">{partner.name}</span>
-                </button>
+                </MenuItem>
               ))}
             </div>
-          </div>
-        </>,
-        document.body,
+        </DropdownPortal>
       )}
     </>
   )

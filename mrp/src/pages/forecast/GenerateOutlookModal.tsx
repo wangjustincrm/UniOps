@@ -7,9 +7,8 @@
 // only produces a point-in-time copy. Portal modal, same shape as
 // NewVersionModal.tsx.
 import { useState } from 'react'
-import { createPortal } from 'react-dom'
-import { Loader2, Sparkles, X as XIcon } from 'lucide-react'
-import { Button, Input, FormField } from '@uniops/shell'
+import { Loader2, Sparkles } from 'lucide-react'
+import { Button, Input, FormField, Modal } from '@uniops/shell'
 import { currentMonthISO } from '@/lib/utils'
 
 /** The plant's current month (company time zone), 'YYYY-MM'. */
@@ -50,23 +49,17 @@ export function GenerateOutlookModal({
     onGenerate(anchorMonth, horizonMonths)
   }
 
-  return createPortal(
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-xl border border-line bg-surface shadow-xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
-            <Sparkles className="h-4 w-4 text-primary-600" /> Generate Outlook
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="-m-2.5 flex min-h-[44px] min-w-[44px] items-center justify-center text-fg-muted hover:text-fg-secondary"
-          >
-            <XIcon className="h-5 w-5" />
-          </button>
-        </div>
-
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Generate Outlook"
+      icon={<Sparkles className="h-4 w-4" />}
+      closeOnEscape={false}
+      size="full"
+      className="max-w-md"
+      bodyClassName="p-0"
+    >
         <div className="px-5 py-4 space-y-4">
           <p className="text-sm text-fg-secondary">
             Freezes a read-only snapshot of the forecast for Production Plan to run MPS against. The live grid keeps
@@ -116,8 +109,6 @@ export function GenerateOutlookModal({
             Generate
           </Button>
         </div>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   )
 }

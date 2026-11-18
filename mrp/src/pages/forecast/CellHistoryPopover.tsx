@@ -15,6 +15,7 @@ import { ApiError } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 import { seriesApi } from './seriesApi'
 
+import { Button } from '@uniops/shell'
 function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
 }
@@ -81,14 +82,14 @@ export function CellHistoryPopover({
           <p className="truncate text-xs font-semibold text-fg">{materialLabel}</p>
           <p className="text-2xs text-fg-muted">{month}</p>
         </div>
-        <button
+        <Button variant="subtle" size="icon-xs"
           type="button"
           onClick={onClose}
           aria-label="Close history"
-          className="-m-2.5 flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center text-fg-muted hover:text-fg-secondary"
+          className="-m-2.5 min-h-[44px] min-w-[44px] shrink-0"
         >
           <XIcon className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </div>
       <div className="overflow-y-auto px-3 py-2">
         {query.isLoading ? (

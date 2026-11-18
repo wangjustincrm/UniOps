@@ -17,9 +17,8 @@
 // `monthsWithData`/`totalQtyKg` — see task-5-report.md for why that's an
 // accepted, documented gap rather than a second network round trip.
 import { useState, type FormEvent } from 'react'
-import { createPortal } from 'react-dom'
-import { AlertTriangle, Link2, Loader2, X as XIcon } from 'lucide-react'
-import { Button, FormField } from '@uniops/shell'
+import { AlertTriangle, Link2, Loader2 } from 'lucide-react'
+import { Button, FormField, Modal } from '@uniops/shell'
 import { MaterialPicker } from '@/pages/consignment/MaterialPicker'
 import type { MaterialOption } from '@/lib/materials'
 import type { IntentProduct } from './intentApi'
@@ -57,27 +56,19 @@ export function BindIntentModal({
     onConfirm(material.code)
   }
 
-  return createPortal(
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">
-      <div role="dialog" aria-modal="true" aria-label={`Bind ${intent.name} to a material code`} className="w-full max-w-md rounded-xl border border-line bg-surface shadow-xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
-          <div>
-            <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
-              <Link2 className="h-4 w-4 text-primary-600" /> Bind to Material Code
-            </h2>
-            <p className="font-mono text-xs text-fg-muted">{intent.code} · {intent.name}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            aria-label="Close"
-            className="-m-2.5 flex min-h-[44px] min-w-[44px] items-center justify-center text-fg-muted hover:text-fg-secondary disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <XIcon className="h-5 w-5" />
-          </button>
-        </div>
-
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      busy={busy}
+      title="Bind to Material Code"
+      icon={<Link2 className="h-4 w-4" />}
+      description={<span className="font-mono text-xs">{intent.code} · {intent.name}</span>}
+      closeOnEscape={false}
+      size="full"
+      className="max-w-md"
+      bodyClassName="p-0"
+    >
         <form onSubmit={handleSubmit}>
           <div className="px-5 py-4 space-y-4">
             <FormField label="Material code" required error={pickError}>
@@ -113,8 +104,6 @@ export function BindIntentModal({
             </Button>
           </div>
         </form>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   )
 }

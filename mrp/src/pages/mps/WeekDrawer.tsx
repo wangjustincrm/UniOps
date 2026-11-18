@@ -87,9 +87,8 @@
 // TRUE state of the max_output_qty row so nothing is misrepresented while
 // it is disabled.
 import { useState, type FormEvent } from 'react'
-import { createPortal } from 'react-dom'
-import { AlertTriangle, Info, Loader2, Wrench, X as XIcon } from 'lucide-react'
-import { Button, FormField } from '@uniops/shell'
+import { AlertTriangle, Info, Loader2, Wrench } from 'lucide-react'
+import { Button, FormField, Checkbox, Textarea, Drawer } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import type { ToastAction } from '@/hooks/useToasts'
 import type { WeekGridEntry } from './mpsApi'
@@ -301,27 +300,18 @@ export function WeekDrawer({
     }
   }
 
-  return createPortal(
-    <div className="fixed inset-0 z-[90] flex justify-end bg-black/40">
-      <div role="dialog" aria-modal="true" aria-label={`Week ${weekShort}`} className="flex h-full w-full max-w-md flex-col bg-surface shadow-xl">
-        <div className="flex items-center justify-between border-b border-line px-5 py-4">
-          <div>
-            <h2 className="flex items-center gap-1.5 text-base font-semibold text-fg">
-              {maintenance && <Wrench aria-hidden className="h-4 w-4 text-fg-muted" />}
-              {weekShort}
-            </h2>
-            {weekRange && <p className="text-xs text-fg-muted">{weekRange}</p>}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center text-fg-muted hover:text-fg-secondary"
-          >
-            <XIcon className="h-5 w-5" />
-          </button>
-        </div>
-
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      title={weekShort}
+      icon={maintenance ? <Wrench aria-hidden className="h-4 w-4" /> : undefined}
+      description={weekRange || undefined}
+      closeOnBackdrop={false}
+      closeOnEscape={false}
+      className="max-w-md"
+      bodyClassName="flex min-h-0 flex-col overflow-hidden p-0"
+    >
         <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-hidden">
           <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
             {existingExceptionLoading && (
@@ -362,15 +352,15 @@ export function WeekDrawer({
             )}
 
             <label className="flex min-h-[44px] cursor-pointer items-start gap-2 text-sm text-fg-secondary">
-              <input
-                type="checkbox"
+              <Checkbox
+               
                 checked={maintenance}
                 onChange={(e) => {
                   setMaintenance(e.target.checked)
                   setReasonError(validateReason(e.target.checked, reason))
                 }}
                 disabled={formDisabled}
-                className="mt-0.5 h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-500 disabled:cursor-not-allowed"
+                className="mt-0.5 disabled:cursor-not-allowed"
               />
               <span>
                 Maintenance week (no production)
@@ -394,7 +384,7 @@ export function WeekDrawer({
                     : undefined
               }
             >
-              <textarea
+              <Textarea
                 id="week-drawer-reason"
                 rows={3}
                 value={reason}
@@ -405,7 +395,7 @@ export function WeekDrawer({
                 onBlur={() => setReasonError(validateReason(maintenance, reason))}
                 disabled={formDisabled}
                 placeholder="e.g. annual maintenance shutdown"
-                className="flex w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:bg-surface-subtle disabled:opacity-80"
+                className="flex w-full"
               />
             </FormField>
 
@@ -428,8 +418,6 @@ export function WeekDrawer({
             )}
           </div>
         </form>
-      </div>
-    </div>,
-    document.body,
+    </Drawer>
   )
 }

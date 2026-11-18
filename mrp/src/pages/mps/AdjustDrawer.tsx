@@ -50,9 +50,8 @@
 // `locked_manual_adjusted` OR-not-overwrite line almost verbatim: "two
 // locked rows can share a slot only if a planner moved one onto another".
 import { useMemo, useState, type FormEvent } from 'react'
-import { createPortal } from 'react-dom'
-import { AlertTriangle, CheckCircle2, Loader2, X as XIcon } from 'lucide-react'
-import { Button, Input, FormField } from '@uniops/shell'
+import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react'
+import { Button, Input, FormField, Checkbox, Select, Drawer } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { todayISO } from '@/lib/utils'
 import { mpsApi, type MpsLine, type WeekGridEntry } from './mpsApi'
@@ -257,24 +256,17 @@ export function AdjustDrawer({
     }
   }
 
-  return createPortal(
-    <div className="fixed inset-0 z-[90] flex justify-end bg-black/40">
-      <div role="dialog" aria-modal="true" aria-label={`Adjust ${line.material_code}`} className="flex h-full w-full max-w-md flex-col bg-surface shadow-xl">
-        <div className="flex items-center justify-between border-b border-line px-5 py-4">
-          <div>
-            <h2 className="text-base font-semibold text-fg">Adjust Line</h2>
-            <p className="font-mono text-xs text-fg-muted">{line.material_code} · demand {line.demand_month}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center text-fg-muted hover:text-fg-secondary"
-          >
-            <XIcon className="h-5 w-5" />
-          </button>
-        </div>
-
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      title="Adjust Line"
+      description={<span className="font-mono text-xs">{line.material_code} · demand {line.demand_month}</span>}
+      closeOnBackdrop={false}
+      closeOnEscape={false}
+      className="max-w-md"
+      bodyClassName="flex min-h-0 flex-col overflow-hidden p-0"
+    >
         {saveResult ? (
           // Post-save shelf-life result panel (design §5.2: "保存后显示保质期
           // 校验结果") — replaces the form once a week MOVE has succeeded,
@@ -331,17 +323,17 @@ export function AdjustDrawer({
                     : '')
                 }
               >
-                <select
+                <Select
                   id="adjust-plan-week"
                   value={weekStart}
                   onChange={(e) => { setWeekStart(e.target.value); setErrors((er) => ({ ...er, week: undefined })) }}
                   disabled={submitting}
-                  className="flex h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex w-full"
                 >
                   {selectableWeeks.map((w) => (
                     <option key={w.week_start} value={w.week_start}>{weekOptionLabel(w)}</option>
                   ))}
-                </select>
+                </Select>
               </FormField>
 
               <div>
@@ -376,12 +368,12 @@ export function AdjustDrawer({
               </div>
 
               <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm text-fg-secondary">
-                <input
-                  type="checkbox"
+                <Checkbox
+                 
                   checked={locked}
                   onChange={(e) => setLocked(e.target.checked)}
                   disabled={submitting}
-                  className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-500"
+                 
                 />
                 Locked (excluded from the next Recalculate)
               </label>
@@ -402,8 +394,6 @@ export function AdjustDrawer({
             </div>
           </form>
         )}
-      </div>
-    </div>,
-    document.body,
+    </Drawer>
   )
 }

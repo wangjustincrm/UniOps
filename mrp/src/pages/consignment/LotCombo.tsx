@@ -20,6 +20,7 @@ import { ChevronDown, Loader2, PackageSearch } from 'lucide-react'
 import { cn, formatDate } from '@/lib/utils'
 import { consignmentApi, type LotHistoryItem } from './consignmentApi'
 
+import { Button, Input, MenuItem } from '@uniops/shell'
 const MAX_RENDERED = 200
 
 export function LotCombo({
@@ -94,7 +95,7 @@ export function LotCombo({
   return (
     <div className="relative w-full">
       <div className="relative flex items-center">
-        <input
+        <Input
           ref={inputRef}
           type="text"
           value={value}
@@ -111,16 +112,16 @@ export function LotCombo({
             hasError ? 'border-danger-solid bg-danger-soft' : 'border-line',
           )}
         />
-        <button
+        <Button variant="subtle" size="icon-xs"
           type="button"
           tabIndex={-1}
           onClick={() => (open ? setOpen(false) : openPanel())}
           disabled={disabled || !materialCode}
           aria-label="Show lot suggestions"
-          className="absolute right-2 text-fg-faint hover:text-fg-muted disabled:opacity-40"
+          className="absolute right-2"
         >
           <ChevronDown className={cn('h-4 w-4 transition-transform', open && 'rotate-180')} />
-        </button>
+        </Button>
       </div>
 
       {open && rect && createPortal(
@@ -145,25 +146,22 @@ export function LotCombo({
               </div>
             ) : (
               shown.map((item) => (
-                <button
+                <MenuItem
                   key={item.lot_no}
-                  type="button"
                   role="option"
                   aria-selected={item.lot_no === value}
                   // onMouseDown (not onClick) so the pick registers before the
                   // input's onBlur fires and would otherwise run a redundant
                   // lot-lookup / close the panel first.
                   onMouseDown={(e) => { e.preventDefault(); handlePick(item) }}
-                  className={cn(
-                    'flex w-full items-center justify-between gap-3 border-b border-line-subtle px-3 py-2 text-left transition-colors last:border-0 hover:bg-primary-50',
-                    item.lot_no === value && 'bg-primary-50/60',
-                  )}
+                  active={item.lot_no === value}
+                  className="justify-between gap-3 border-b border-line-subtle last:border-0"
                 >
                   <span className="truncate font-mono text-xs text-fg">{item.lot_no}</span>
                   <span className="shrink-0 text-2xs text-fg-muted">
                     {item.expiry_date ? `exp ${formatDate(item.expiry_date)}` : 'no expiry'}
                   </span>
-                </button>
+                </MenuItem>
               ))
             )}
             {overflow > 0 && (

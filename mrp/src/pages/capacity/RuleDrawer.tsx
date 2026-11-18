@@ -22,9 +22,8 @@
 // resolve_effective_rules() overlap the brief describes is a planning-time
 // concern for the MPS engine, not a create-time hard constraint here).
 import { useMemo, useState, type FormEvent } from 'react'
-import { createPortal } from 'react-dom'
-import { AlertTriangle, Loader2, X as XIcon } from 'lucide-react'
-import { Button, Input, FormField } from '@uniops/shell'
+import { AlertTriangle, Loader2 } from 'lucide-react'
+import { Button, Input, FormField, Checkbox, Select, Drawer } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { formatDate, todayISO } from '@/lib/utils'
 import { MaterialPicker } from '@/pages/consignment/MaterialPicker'
@@ -270,35 +269,31 @@ export function RuleDrawer({
     }
   }
 
-  return createPortal(
-    <div className="fixed inset-0 z-[90] flex justify-end bg-black/40">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={isEdit ? 'Edit capacity rule' : 'New capacity rule'}
-        className="flex h-full w-full max-w-md flex-col bg-surface shadow-xl"
-      >
-        <div className="flex items-center justify-between border-b border-line px-5 py-4">
-          <h2 className="text-base font-semibold text-fg">{isEdit ? 'Edit Capacity Rule' : 'New Capacity Rule'}</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-fg-muted hover:text-fg-secondary">
-            <XIcon className="h-5 w-5" />
-          </button>
-        </div>
-
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      title={isEdit ? 'Edit Capacity Rule' : 'New Capacity Rule'}
+      // No backdrop / Escape close, as before.
+      closeOnBackdrop={false}
+      closeOnEscape={false}
+      className="max-w-md"
+      bodyClassName="flex min-h-0 flex-col overflow-hidden p-0"
+    >
         <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-hidden">
           <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
             <FormField label="Scope" required htmlFor="rule-scope-type">
-              <select
+              <Select
                 id="rule-scope-type"
                 value={form.scope_type}
                 onChange={(e) => handleScopeTypeChange(e.target.value as CapacityScopeType)}
                 disabled={submitting}
-                className="flex h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex w-full"
               >
                 {(Object.keys(SCOPE_TYPE_LABEL) as CapacityScopeType[]).map((k) => (
                   <option key={k} value={k}>{SCOPE_TYPE_LABEL[k]}</option>
                 ))}
-              </select>
+              </Select>
             </FormField>
 
             {form.scope_type === 'product' && (
@@ -339,17 +334,17 @@ export function RuleDrawer({
             )}
 
             <FormField label="Constraint" required htmlFor="rule-constraint-type">
-              <select
+              <Select
                 id="rule-constraint-type"
                 value={form.constraint_type}
                 onChange={(e) => handleConstraintTypeChange(e.target.value as CapacityConstraintType)}
                 disabled={submitting}
-                className="flex h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex w-full"
               >
                 {(Object.keys(CONSTRAINT_TYPE_LABEL) as CapacityConstraintType[]).map((k) => (
                   <option key={k} value={k}>{CONSTRAINT_TYPE_LABEL[k]}</option>
                 ))}
-              </select>
+              </Select>
             </FormField>
 
             <div className="grid grid-cols-2 gap-3">
@@ -415,12 +410,12 @@ export function RuleDrawer({
             </div>
 
             <label className="flex items-center gap-2 text-sm text-fg-secondary">
-              <input
-                type="checkbox"
+              <Checkbox
+               
                 checked={form.is_active}
                 onChange={(e) => set('is_active', e.target.checked)}
                 disabled={submitting}
-                className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-500"
+               
               />
               Active
             </label>
@@ -454,8 +449,6 @@ export function RuleDrawer({
             </Button>
           </div>
         </form>
-      </div>
-    </div>,
-    document.body,
+    </Drawer>
   )
 }

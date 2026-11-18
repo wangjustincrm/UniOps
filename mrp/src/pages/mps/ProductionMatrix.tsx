@@ -57,7 +57,7 @@
 // builds the per-(product, column) contributions and renders the result.
 import { useMemo, useState } from 'react'
 import { Lock, AlertTriangle, Clock, ChevronDown, ChevronRight, Wrench } from 'lucide-react'
-import { Badge } from '@uniops/shell'
+import { Badge, CellButton, TBody, TFoot, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { cn, todayISO, toLocalDate } from '@/lib/utils'
 import type { MaterialOption } from '@/lib/materials'
 import type { MpsLine, WeekGridEntry } from './mpsApi'
@@ -485,7 +485,7 @@ export function ProductionMatrix({
       className="overflow-auto rounded-lg border border-line"
       style={{ maxHeight: MAX_HEIGHT, maxWidth: '100%' }}
     >
-      <table className="min-w-full border-collapse text-xs">
+      <Table density="compact" className="min-w-full">
         {/* The WHOLE <thead> is the sticky-top unit (not each row/cell
             individually) — same technique the pre-week single-row header
             used (see this file's header comment): a `position: sticky`
@@ -495,27 +495,27 @@ export function ProductionMatrix({
             get their own extra `sticky left-*` — a cell can be sticky on
             one axis via its own rule while inheriting the other axis from
             an ancestor's sticky box. */}
-        <thead className="sticky top-0 z-20 bg-surface-subtle">
-          <tr>
-            <th
+        <THead className="sticky top-0 z-20">
+          <Tr>
+            <Th
               rowSpan={2}
-              className="sticky left-0 z-30 border-b border-r border-line bg-surface-subtle px-3 py-2 text-left text-2xs font-semibold text-fg-secondary"
+              className="sticky left-0 z-30 border-b border-r border-line bg-surface-subtle"
               style={{ width: PRODUCT_COL_WIDTH, minWidth: PRODUCT_COL_WIDTH }}
             >
               Product
-            </th>
-            <th
+            </Th>
+            <Th
               rowSpan={2}
-              className="sticky z-30 border-b border-r border-line bg-surface-subtle px-3 py-2 text-left text-2xs font-semibold text-fg-secondary"
+              className="sticky z-30 border-b border-r border-line bg-surface-subtle"
               style={{ left: PRODUCT_COL_WIDTH, width: 90, minWidth: 90 }}
             >
               Metric
-            </th>
+            </Th>
             {orderedMonths.map((month) => {
               const expanded = expandedMonths.has(month)
               const changed = diffCountByMonth.get(month) ?? 0
               return (
-                <th
+                <Th
                   key={month}
                   colSpan={monthSpans.get(month) ?? 1}
                   className={cn(
@@ -528,8 +528,7 @@ export function ProductionMatrix({
                       : 'bg-surface-subtle text-fg-secondary',
                   )}
                 >
-                  <button
-                    type="button"
+                  <CellButton
                     onClick={() => toggleMonth(month)}
                     aria-expanded={expanded}
                     title={changed > 0
@@ -537,8 +536,8 @@ export function ProductionMatrix({
                         + (expanded ? 'collapse this month' : 'expand to see which weeks')
                       : expanded ? 'Collapse this month' : 'Expand this month into weeks'}
                     className={cn(
-                      'flex h-9 w-full items-center justify-center gap-1 px-2 focus:outline-none focus:ring-1 focus:ring-primary-500',
-                      changed > 0 ? 'hover:bg-primary-200' : 'hover:bg-surface-sunken',
+                      'h-9 px-2',
+                      changed > 0 ? 'hover:bg-primary-200' : 'hover:bg-surface-sunken hover:text-current',
                     )}
                   >
                     {expanded ? <ChevronDown aria-hidden className="h-3 w-3 shrink-0" /> : <ChevronRight aria-hidden className="h-3 w-3 shrink-0" />}
@@ -549,21 +548,21 @@ export function ProductionMatrix({
                       // decides which month to open on exactly that.
                       <span
                         aria-label={`${changed} changed cell(s)`}
-                        className="rounded-full bg-primary-600 px-1.5 text-2xs font-bold leading-4 text-white"
+                        className="rounded-full bg-primary-600 px-1.5 text-2xs font-semibold leading-4 text-white"
                       >
                         {changed}
                       </span>
                     )}
-                  </button>
-                </th>
+                  </CellButton>
+                </Th>
               )
             })}
-          </tr>
-          <tr>
+          </Tr>
+          <Tr>
             {columns.map((col) => {
               const isMaintenance = col.kind === 'week' && maintenanceWeeks.has(col.week_start)
               return (
-                <th
+                <Th
                   key={col.id}
                   className={cn(
                     'h-7 border-b border-r border-line p-0 text-center text-2xs font-medium text-fg-muted',
@@ -572,29 +571,28 @@ export function ProductionMatrix({
                   style={{ minWidth: WEEK_COL_MIN_WIDTH }}
                 >
                   {col.kind === 'week' && onOpenWeekDrawer ? (
-                    <button
-                      type="button"
+                    <CellButton
                       onClick={() => {
                         const week = weekGridByStart.get(col.week_start)
                         if (week) onOpenWeekDrawer(week)
                       }}
                       title={`${col.label ?? col.week_start}${isMaintenance ? ' — maintenance week (click to view/edit)' : ' — click to mark as a maintenance week'}`}
-                      className="flex h-7 w-full min-w-[44px] items-center justify-center gap-1 px-1.5 hover:bg-primary-50 hover:text-primary-700 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      className="h-7 min-w-[44px]"
                     >
                       {isMaintenance && <Wrench aria-hidden className="h-3 w-3 shrink-0 text-fg-muted" />}
                       {weekColumnShortLabel(col)}
-                    </button>
+                    </CellButton>
                   ) : (
                     <span className="flex h-7 items-center justify-center px-1.5" title={col.kind === 'week' ? (col.label ?? col.week_start) : undefined}>
                       {col.kind === 'week' ? weekColumnShortLabel(col) : ''}
                     </span>
                   )}
-                </th>
+                </Th>
               )
             })}
-          </tr>
-        </thead>
-        <tbody>
+          </Tr>
+        </THead>
+        <TBody>
           {products.map((product) => (
             <ProductRows
               key={product.code}
@@ -614,7 +612,7 @@ export function ProductionMatrix({
               diffByCell={diffByCell}
             />
           ))}
-        </tbody>
+        </TBody>
         {/* Pinned weekly-total footer (design §5.1's last bullet, "★底部锁死
             的周合计行") — mirrors the header's own sticky technique exactly:
             the WHOLE `<tfoot>` is the sticky-bottom unit (`sticky bottom-0`),
@@ -627,23 +625,23 @@ export function ProductionMatrix({
             the two z-tiers the header already established (z-20 for the
             sticky unit itself, z-30 for the bit that's ALSO pinned
             horizontally) rather than inventing a third. */}
-        <tfoot className="sticky bottom-0 z-20 bg-surface-subtle">
-          <tr>
-            <td
-              className="sticky left-0 z-30 border-t-2 border-r border-t-line-strong border-line bg-surface-subtle px-3 py-1.5 text-left text-2xs font-semibold text-fg-secondary"
+        <TFoot className="sticky bottom-0 z-20">
+          <Tr>
+            <Td
+              className="sticky left-0 z-30 border-t-2 border-r border-t-line-strong border-line bg-surface-subtle text-left text-2xs font-semibold text-fg-secondary"
               style={{ width: PRODUCT_COL_WIDTH, minWidth: PRODUCT_COL_WIDTH }}
             />
-            <td
-              className="sticky z-30 border-t-2 border-r border-t-line-strong border-line bg-surface-subtle px-3 py-1.5 text-left text-2xs font-semibold text-fg-secondary"
+            <Td
+              className="sticky z-30 border-t-2 border-r border-t-line-strong border-line bg-surface-subtle text-left text-2xs font-semibold text-fg-secondary"
               style={{ left: PRODUCT_COL_WIDTH, width: 90, minWidth: 90 }}
             >
               Total
-            </td>
+            </Td>
             {columns.map((col) => {
               const total = weekTotals.get(col.id) ?? 0
               const isMonthBoundary = monthBoundaryColumnIds.has(col.id)
               return (
-                <td
+                <Td
                   key={col.id}
                   className={cn(
                     'h-8 border-t-2 border-t-line-strong bg-surface-subtle px-2 text-right font-mono text-xs font-semibold text-fg-secondary',
@@ -651,12 +649,12 @@ export function ProductionMatrix({
                   )}
                 >
                   {total === 0 ? <span className="text-fg-faint">—</span> : formatValue(total)}
-                </td>
+                </Td>
               )
             })}
-          </tr>
-        </tfoot>
-      </table>
+          </Tr>
+        </TFoot>
+      </Table>
     </div>
   )
 }
@@ -728,9 +726,9 @@ function ProductRows({
   diffByCell?: Map<string, { before: number; after: number; delta: number }>
 }) {
   const productCell = (
-    <td
+    <Td
       rowSpan={3}
-      className="sticky left-0 z-10 border-b border-r border-t-2 border-t-line-strong border-line bg-surface px-3 py-1.5 align-top text-left font-medium text-fg"
+      className="sticky left-0 z-10 border-b border-r border-t-2 border-t-line-strong border-line bg-surface align-top text-left font-medium text-fg"
       style={{ width: PRODUCT_COL_WIDTH, minWidth: PRODUCT_COL_WIDTH }}
     >
       <span className="flex items-center gap-1.5">
@@ -748,12 +746,12 @@ function ProductRows({
       {product.name !== product.code && (
         <span className="block truncate text-2xs font-normal text-fg-muted">{product.name}</span>
       )}
-    </td>
+    </Td>
   )
 
   function metricLabelCell(metric: MetricRow, borderTop: boolean) {
     return (
-      <td
+      <Td
         className={cn(
           'sticky z-10 border-b border-r border-line bg-surface-subtle px-3 py-1.5 text-left text-2xs font-medium text-fg-muted',
           borderTop && 'border-t-2 border-t-line-strong',
@@ -761,7 +759,7 @@ function ProductRows({
         style={{ left: PRODUCT_COL_WIDTH, width: 90, minWidth: 90 }}
       >
         {metric}
-      </td>
+      </Td>
     )
   }
 
@@ -769,7 +767,7 @@ function ProductRows({
     <>
       {/* Demand — monthly, spans + centres over that month's week columns
           (or its single collapsed summary column). */}
-      <tr className="border-b border-line-subtle">
+      <Tr>
         {productCell}
         {metricLabelCell('Demand', true)}
         {orderedMonths.map((month) => (
@@ -782,10 +780,10 @@ function ProductRows({
             formatValue={formatValue}
           />
         ))}
-      </tr>
+      </Tr>
 
       {/* Available — monthly, same spanning rule as Demand. */}
-      <tr className="border-b border-line-subtle">
+      <Tr>
         {metricLabelCell('Available', false)}
         {orderedMonths.map((month) => (
           <MonthMetricCell
@@ -797,11 +795,11 @@ function ProductRows({
             formatValue={formatValue}
           />
         ))}
-      </tr>
+      </Tr>
 
       {/* Planned — the only per-week row: one cell per column, whether that
           column is a real week or a collapsed month's summary. */}
-      <tr className="border-b-0">
+      <Tr className="border-b-0">
         {metricLabelCell('Planned', false)}
         {columns.map((col) => (
           <PlannedCell
@@ -824,7 +822,7 @@ function ProductRows({
               : undefined}
           />
         ))}
-      </tr>
+      </Tr>
     </>
   )
 }
@@ -848,7 +846,7 @@ function MonthMetricCell({
     ? `Includes ${formatValue(cell.carriedIn)} carried from an earlier minimum-lot batch`
     : undefined
   return (
-    <td
+    <Td
       title={title}
       colSpan={span}
       className={cn(
@@ -866,7 +864,7 @@ function MonthMetricCell({
       )}
     >
       <MetricValue value={value} hasData={hasData} formatValue={formatValue} />
-    </td>
+    </Td>
   )
 }
 
@@ -948,16 +946,16 @@ function PlannedCell({
 
   if (!showCell) {
     return (
-      <td
+      <Td
         title={isFrozen ? 'Frozen — materials for this month are already purchased' : undefined}
         className={cn('h-10 border-b border-b-line-subtle px-2 text-right font-mono text-fg-faint', borderRClass, isMaintenance || isFrozen ? 'bg-surface-strong' : 'bg-success-soft')}
-      >—</td>
+      >—</Td>
     )
   }
 
   if (!hasProduction && !cell.gap && !cell.covered && diff) {
     return (
-      <td
+      <Td
         title={`Was ${formatValue(diff.before)} in the compared version — nothing is planned here now`}
         className={cn(
           'h-10 border-b border-b-line-subtle px-2 text-right font-mono text-sm text-danger-fg line-through',
@@ -965,13 +963,13 @@ function PlannedCell({
         )}
       >
         {formatValue(diff.before)}
-      </td>
+      </Td>
     )
   }
 
   if (!hasProduction && !cell.gap && cell.covered) {
     return (
-      <td
+      <Td
         title={`Covered by an earlier minimum-lot batch${title ? ` (${title})` : ''}`}
         className={cn(
           'h-10 border-b border-b-line-subtle px-2 text-right font-mono text-xs italic text-fg-muted',
@@ -979,7 +977,7 @@ function PlannedCell({
         )}
       >
         covered
-      </td>
+      </Td>
     )
   }
 
@@ -993,7 +991,7 @@ function PlannedCell({
       {diff && (
         <span
           aria-hidden
-          className={cn('shrink-0 text-2xs font-bold',
+          className={cn('shrink-0 text-2xs font-semibold',
             diff.delta > 0 ? 'text-success-fg' : 'text-danger-fg')}
         >
           {diff.delta > 0 ? '▲' : '▼'}
@@ -1026,9 +1024,9 @@ function PlannedCell({
   const cellTitle = [baseTitle, lotNote, diffNote].filter(Boolean).join(' · ') || undefined
 
   return (
-    <td
+    <Td
       className={cn(
-        'h-10 border-b border-b-line-subtle px-2 text-right font-mono text-sm font-bold',
+        'h-10 border-b border-b-line-subtle px-2 text-right font-mono text-sm font-semibold',
         borderRClass,
         cell.gap
           ? 'bg-danger-soft text-danger-fg'
@@ -1042,15 +1040,15 @@ function PlannedCell({
       {readOnly ? (
         <span title={cellTitle}>{valueNode}</span>
       ) : (
-        <button
-          type="button"
+        <CellButton
+          align="end"
           onClick={() => onAdjustCell(cell.cellLines)}
           title={cellTitle}
-          className="inline-flex h-full w-full items-center justify-end rounded px-1 hover:bg-primary-50 hover:text-primary-700 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          className="rounded px-1"
         >
           {valueNode}
-        </button>
+        </CellButton>
       )}
-    </td>
+    </Td>
   )
 }

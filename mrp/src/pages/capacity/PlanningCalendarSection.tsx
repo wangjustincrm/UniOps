@@ -15,7 +15,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2 } from 'lucide-react'
-import { Button } from '@uniops/shell'
+import { Button, Radio, Select } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import {
   capacityApi, WEEK_CALENDAR_MODES, WEEK_CALENDAR_MODE_DESCRIPTION, WEEK_START_DOWS,
@@ -132,14 +132,14 @@ export function PlanningCalendarSection({ canWrite }: { canWrite: boolean }) {
             key={mode}
             className="flex min-h-[44px] cursor-pointer items-start gap-2 rounded-md border border-line px-3 py-2 text-sm has-[:checked]:border-primary-300 has-[:checked]:bg-primary-50"
           >
-            <input
-              type="radio"
+            <Radio
+             
               name="week-calendar-mode"
               value={mode}
               checked={displayedMode === mode}
               onChange={() => { setSelected(mode); setSavedNote(null) }}
               disabled={!canWrite || paramsQuery.isLoading || mutation.isPending}
-              className="mt-0.5 h-4 w-4 border-line-strong text-primary-600 focus:ring-primary-500"
+              className="mt-0.5"
             />
             <span>
               <span className="block font-medium text-fg">{MODE_LABEL[mode]}</span>
@@ -179,7 +179,7 @@ export function PlanningCalendarSection({ canWrite }: { canWrite: boolean }) {
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <label className="sr-only" htmlFor="week-start-dow">Week starts on</label>
-          <select
+          <Select
             id="week-start-dow"
             value={displayedDow}
             onChange={(e) => {
@@ -187,12 +187,12 @@ export function PlanningCalendarSection({ canWrite }: { canWrite: boolean }) {
               setDowNote(null)
             }}
             disabled={!canWrite || paramsQuery.isLoading || dowMutation.isPending}
-            className="min-h-[44px] rounded-md border border-line-strong px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-surface-subtle"
+            className="min-h-[44px]"
           >
             {WEEK_START_DOWS.map((dow) => (
               <option key={dow} value={dow}>{WEEK_START_DOW_LABEL[dow]}</option>
             ))}
-          </select>
+          </Select>
 
           {canWrite && (
             <Button
