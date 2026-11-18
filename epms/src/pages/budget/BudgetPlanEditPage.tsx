@@ -29,7 +29,7 @@ import type { DocumentStatus } from '@/types'
 import { BreakdownMatrixModal } from './BreakdownMatrixModal'
 import { ActionMessage, useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
-import { Drawer, FileInput, Input, Modal, Textarea } from '@uniops/shell'
+import { Drawer, FileInput, Input, Modal, Textarea, Badge } from '@uniops/shell'
 const MONTHS = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
@@ -253,13 +253,13 @@ export default function BudgetPlanEditPage() {
                 v{plan.version}
               </span>
               {plan.is_current ? (
-                <span className="rounded-full bg-primary-50 text-primary-700 px-2 py-0.5 text-2xs font-semibold">
+                <Badge variant="accent" size="sm">
                   Current
-                </span>
+                </Badge>
               ) : plan.status === 'approved' ? (
-                <span className="rounded-full bg-surface-sunken text-fg-muted px-2 py-0.5 text-2xs font-semibold">
+                <Badge size="sm">
                   Superseded
-                </span>
+                </Badge>
               ) : null}
             </div>
             <p className="text-sm text-fg-secondary mt-1">Cost Center: <span className="font-medium">{ccLabel}</span></p>
@@ -771,14 +771,14 @@ function VersionHistoryDrawer({
                       <span className="font-mono text-sm font-semibold">v{v.version}</span>
                       <StatusBadge status={v.status as DocumentStatus} />
                       {v.is_current && (
-                        <span className="rounded-full bg-primary-100 text-primary-700 px-2 py-0.5 text-2xs font-semibold">
+                        <Badge variant="accent" size="sm">
                           Current
-                        </span>
+                        </Badge>
                       )}
                       {isViewing && (
-                        <span className="rounded-full bg-warning-soft text-warning-fg px-2 py-0.5 text-2xs font-semibold">
+                        <Badge variant="warning" size="sm">
                           Viewing
-                        </span>
+                        </Badge>
                       )}
                     </div>
                     {v.revision_notes && (

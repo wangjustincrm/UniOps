@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { FreightPaCreate } from './FreightPaCreate'
 import { DirectPaCreate } from './DirectPaCreate'
-import { Checkbox, ChoiceCard, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, useReplaceTab } from '@uniops/shell'
+import { Checkbox, ChoiceCard, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, useReplaceTab, Badge } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDot } from 'lucide-react'
@@ -1135,14 +1135,14 @@ function PoPaCreate() {
                               <span className="flex items-center gap-2 min-w-0">
                                 <span className="font-mono text-xs font-semibold text-primary-700">{po.number}</span>
                                 {isPrimary && selectedPoIds.length > 1 && (
-                                  <span className="shrink-0 inline-flex items-center rounded-full bg-primary-100 px-1.5 py-0.5 text-2xs font-medium text-primary-700">
+                                  <Badge variant="accent" size="sm" className="shrink-0">
                                     Primary
-                                  </span>
+                                  </Badge>
                                 )}
                                 {blockedReason && (
-                                  <span className="shrink-0 inline-flex items-center rounded-full bg-surface-strong px-1.5 py-0.5 text-2xs font-medium text-fg-secondary">
+                                  <Badge size="sm" className="shrink-0">
                                     {blockedReason}
-                                  </span>
+                                  </Badge>
                                 )}
                               </span>
                               <span className="font-mono text-xs font-semibold text-fg">{formatAmount(po.total, po.currency)}</span>

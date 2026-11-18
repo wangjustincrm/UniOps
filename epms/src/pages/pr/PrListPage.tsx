@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Search, Plus, Filter, Copy } from 'lucide-react'
-import { SortTh, sortParams, useSort, Checkbox, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Checkbox, Select, TBody, THead, Table, Td, Th, Tr, Badge } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/ui/badge'
@@ -273,9 +273,9 @@ export default function PrListPage() {
                   <Td className="text-fg-muted whitespace-nowrap">{TYPE_LABELS[pr.type] ?? `Type ${pr.type}`}</Td>
                   <Td>
                     {pr.is_prepaid && (
-                      <span className="inline-flex items-center rounded-full bg-warning-soft px-2 py-0.5 text-2xs font-semibold text-warning-fg border border-warning-line">
+                      <Badge variant="warning" size="sm">
                         Prepaid
-                      </span>
+                      </Badge>
                     )}
                   </Td>
                   <Td>

@@ -2,17 +2,17 @@ import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { displayTimeZone, formatAmount, formatDate, todayISO } from '@/lib/utils'
-import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr, Badge } from '@uniops/shell'
 
 function PaTypeBadge({ type }: { type: string }) {
   return type === 'prepayment' ? (
-    <span className="inline-flex items-center rounded-full bg-cat4-soft px-2 py-0.5 text-xs font-medium text-cat4-fg">
+    <Badge variant="cat4">
       Prepayment
-    </span>
+    </Badge>
   ) : (
-    <span className="inline-flex items-center rounded-full bg-surface-sunken px-2 py-0.5 text-xs font-medium text-fg-secondary">
+    <Badge>
       Regular
-    </span>
+    </Badge>
   )
 }
 

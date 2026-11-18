@@ -994,9 +994,9 @@ export default function InvoiceDetailPage() {
                         Goods Receipts
                         <span className="ml-1 font-normal text-fg-muted">(PO: {inv.po_number})</span>
                         {editGrIds.length > 0 && (
-                          <span className="ml-2 rounded-full bg-primary-100 px-1.5 py-0.5 text-2xs font-semibold text-primary-700">
+                          <Badge variant="accent" size="sm" className="ml-2">
                             {editGrIds.length} selected
-                          </span>
+                          </Badge>
                         )}
                       </label>
                       {poGrs.filter((g) => g.status !== 'cancelled').length === 0 ? (

@@ -4,6 +4,7 @@ import { StatusBadge } from '@/components/ui/badge'
 import { Link } from 'react-router-dom'
 import { CheckCircle2, XCircle, RotateCcw } from 'lucide-react'
 import type { DocumentStatus } from '@/types'
+import { Badge } from '@uniops/shell'
 
 export interface ApprovalItem {
   id: string
@@ -69,9 +70,9 @@ export function PendingApprovals({
                   </Link>
                   <StatusBadge status={item.status} />
                   {item.extraBadge && (
-                    <span className="rounded-full bg-success-soft px-2 py-0.5 text-xs text-success-fg font-medium">
+                    <Badge variant="success">
                       {item.extraBadge}
-                    </span>
+                    </Badge>
                   )}
                 </div>
                 <p className="mt-0.5 text-sm text-fg-secondary">{item.title}</p>

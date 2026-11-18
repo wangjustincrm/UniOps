@@ -77,20 +77,20 @@ function SlaBadge({ uploadedAt }: { uploadedAt: string }) {
   const { days, status } = computeSla(uploadedAt)
   if (status === 'overdue')
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger-fg">
+      <Badge variant="danger">
         <AlertTriangle className="h-3 w-3" /> {days}d overdue
-      </span>
+      </Badge>
     )
   if (status === 'warning')
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning-fg">
+      <Badge variant="warning">
         <Clock className="h-3 w-3" /> Due today
-      </span>
+      </Badge>
     )
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success-fg">
+    <Badge variant="success">
       <CheckCircle2 className="h-3 w-3" /> On time
-    </span>
+    </Badge>
   )
 }
 
@@ -1489,10 +1489,10 @@ function UnmatchedTab() {
                         // still assign the matching to someone, like any invoice.
                         <>
                           {inv.match_assignee_name && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 border border-primary-200 px-2 py-0.5 text-2xs font-medium text-primary-700">
+                            <Badge variant="accent" size="sm">
                               <UserPlus className="h-3 w-3" />
                               {inv.match_assignee_name}
-                            </span>
+                            </Badge>
                           )}
                           <Link to={`/invoices/${inv.id}`}
                             className="inline-flex items-center gap-1.5 rounded-lg border border-primary-300 bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100 transition-colors">
@@ -1526,10 +1526,10 @@ function UnmatchedTab() {
                       ) : (
                         <>
                           {inv.match_assignee_name && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 border border-primary-200 px-2 py-0.5 text-2xs font-medium text-primary-700">
+                            <Badge variant="accent" size="sm">
                               <UserPlus className="h-3 w-3" />
                               {inv.match_assignee_name}
-                            </span>
+                            </Badge>
                           )}
                           {canMatchInvoice(inv) && (
                             <Button variant="outline" size="xs"

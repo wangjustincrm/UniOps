@@ -14,7 +14,7 @@ import { BUDGET_BASE } from '@/lib/api'
 import { FactorConfigPanel } from './FactorConfigPanel'
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
-import { Checkbox, FileInput, MenuItem, Modal, Textarea } from '@uniops/shell'
+import { Checkbox, FileInput, MenuItem, Modal, Textarea, Badge } from '@uniops/shell'
 const WRITE_ROLES = new Set(['system_admin', 'finance_manager', 'finance_bp'])
 
 export default function BudgetCatalogPage() {
@@ -198,7 +198,7 @@ export default function BudgetCatalogPage() {
                     <h2 className="text-sm font-semibold text-fg">{selectedL1.name}</h2>
                     <span className="font-mono text-xs text-fg-muted">{selectedL1.code}</span>
                     {!selectedL1.is_active && (
-                      <span className="text-xs rounded-full bg-surface-sunken px-2 py-0.5 text-fg-muted">Inactive</span>
+                      <Badge>Inactive</Badge>
                     )}
                   </div>
                   {selectedL1.description && (
@@ -326,12 +326,12 @@ function AccountListRow({
             <span className="font-mono text-xs text-fg-secondary">{account.code}</span>
             <span className="text-sm font-medium text-fg truncate">{account.name}</span>
             {account.decomposition_enabled && (
-              <span className="text-2xs rounded-full bg-primary-50 text-primary-700 px-2 py-0.5 font-medium">
+              <Badge variant="accent" size="sm">
                 Decomposition
-              </span>
+              </Badge>
             )}
             {!account.is_active && (
-              <span className="text-2xs rounded-full bg-surface-sunken text-fg-muted px-2 py-0.5">Inactive</span>
+              <Badge size="sm">Inactive</Badge>
             )}
           </div>
           {account.description && (

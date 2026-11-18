@@ -681,10 +681,10 @@ export default function AgreementDetailPage() {
                 <div className="flex items-center gap-2 text-xs">
                   <span className="text-fg-muted">{periodReceived} of {periodRows.length} periods received</span>
                   {periodOverdue > 0 && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-danger-soft border border-danger-line px-2 py-0.5 font-semibold text-danger-fg">
+                    <Badge variant="danger">
                       <AlertTriangle className="h-3 w-3" />
                       {periodOverdue} overdue
-                    </span>
+                    </Badge>
                   )}
                 </div>
               </div>

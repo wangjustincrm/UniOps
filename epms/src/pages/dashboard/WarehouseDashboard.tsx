@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { displayTimeZone, formatDate } from '@/lib/utils'
-import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr, Badge } from '@uniops/shell'
 
 const GR_STATUS_STYLES: Record<string, string> = {
   pending_ack:        'bg-warning-soft text-warning-fg',
@@ -121,9 +121,9 @@ export default function WarehouseDashboard() {
                     </Td>
                     <Td className="pr-3">
                       {gr.gr_type === 'physical' ? (
-                        <span className="inline-flex items-center rounded-full bg-info-soft px-2 py-0.5 text-xs font-medium text-info-fg">Physical</span>
+                        <Badge variant="blue">Physical</Badge>
                       ) : (
-                        <span className="inline-flex items-center rounded-full bg-cat4-soft px-2 py-0.5 text-xs font-medium text-cat4-fg">Service</span>
+                        <Badge variant="cat4">Service</Badge>
                       )}
                     </Td>
                     <Td className="pr-3">

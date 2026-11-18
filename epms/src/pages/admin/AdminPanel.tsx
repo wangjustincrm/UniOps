@@ -31,7 +31,7 @@ import { TEMPLATE_VARIABLE_DOCS } from '@/lib/email-template'
 import type { UserRole, Currency, CurrencyDef } from '@/types'
 import { CURRENCIES } from '@/types'
 
-import { Checkbox, ChoiceCard, DropdownPortal, FileInput, MenuItem, Modal, Radio, Select, Switch, TBody, THead, Table, Td, Textarea, Th, Tr, useAnchorRect } from '@uniops/shell'
+import { Checkbox, ChoiceCard, DropdownPortal, FileInput, MenuItem, Modal, Radio, Select, Switch, TBody, THead, Table, Td, Textarea, Th, Tr, useAnchorRect, Badge } from '@uniops/shell'
 // Roles that may only ever be held as ADDITIONAL roles (granted per-user via
 // identity's user_roles), never as a user's primary/base login role. Keep in
 // step with ApiUserRole in services/users.ts, which deliberately excludes them.
@@ -502,8 +502,8 @@ function SecuritySettings() {
               {EXPIRY_OPTIONS.map((o) => (<option key={String(o.value)} value={o.value ?? ''}>{o.label}</option>))}
             </Select>
             {passwordExpiryDays
-              ? <span className="inline-flex items-center gap-1.5 rounded-full bg-warning-soft px-2.5 py-0.5 text-xs font-medium text-warning-fg"><span className="h-1.5 w-1.5 rounded-full bg-warning-solid" />Expires every {passwordExpiryDays} days</span>
-              : <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-sunken px-2.5 py-0.5 text-xs font-medium text-fg-muted">No expiry</span>
+              ? <Badge variant="warning" dot>Expires every {passwordExpiryDays} days</Badge>
+              : <Badge>No expiry</Badge>
             }
           </div>
         </div>
@@ -529,7 +529,7 @@ function CurrencyRow({ c, isDefault, isEnabled, canToggle, onSetDefault, onToggl
           <p className="text-sm font-medium text-fg">{c.value}</p>
           <p className="text-xs text-fg-muted truncate">{c.label}</p>
         </div>
-        {isDefault && <span className="ml-1 inline-flex items-center rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700 shrink-0">Default</span>}
+        {isDefault && <Badge variant="accent" className="ml-1 shrink-0">Default</Badge>}
       </div>
       <div className="flex items-center gap-2 shrink-0">
         {isEnabled && !isDefault && <Button variant="link" size="xs" onClick={onSetDefault} className="whitespace-nowrap">Set as default</Button>}

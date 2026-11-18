@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Search, Plus, ExternalLink, RefreshCw, Package } from 'lucide-react'
-import { SortTh, sortParams, useSort, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Select, TBody, THead, Table, Td, Th, Tr, Badge } from '@uniops/shell'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -274,9 +274,9 @@ export default function PoListPage() {
                   <Td className="text-xs text-fg-muted">{formatDate(po.created_at)}</Td>
                   <Td>
                     {po.is_prepaid && (
-                      <span className="inline-flex items-center rounded-full bg-warning-soft px-2 py-0.5 text-2xs font-semibold text-warning-fg border border-warning-line">
+                      <Badge variant="warning" size="sm">
                         Prepaid
-                      </span>
+                      </Badge>
                     )}
                   </Td>
                   <Td className="text-xs text-fg-muted">{formatDate(po.expected_delivery ?? '')}</Td>

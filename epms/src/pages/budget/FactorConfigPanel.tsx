@@ -14,7 +14,7 @@ import {
   useFactorTemplates, useCreateFactorFromTemplate,
 } from '@/hooks/useBudget'
 import type { ApiFactor, ApiFactorTemplate, ApiFactorValue } from '@/services/budget'
-import { MenuItem } from '@uniops/shell'
+import { MenuItem, Badge } from '@uniops/shell'
 
 interface Props {
   accountId: string
@@ -195,12 +195,12 @@ function FactorCard({
             </span>
           )}
           {outOfMatrix && (
-            <span className="text-2xs rounded-full bg-warning-soft text-warning-fg px-2 py-0.5">Out of matrix</span>
+            <Badge variant="warning" size="sm">Out of matrix</Badge>
           )}
           <span className="font-mono text-xs text-fg-muted">{factor.factor_code}</span>
           <span className="text-sm font-medium text-fg">{factor.factor_name}</span>
           {!factor.is_active && (
-            <span className="text-2xs rounded-full bg-surface-sunken text-fg-muted px-2 py-0.5">Inactive</span>
+            <Badge size="sm">Inactive</Badge>
           )}
         </div>
         {canEdit && (
@@ -501,9 +501,9 @@ function FactorLibraryPicker({
                         {t.values.filter((v) => v.is_active).length} values
                       </span>
                       {codeUsedAlready && (
-                        <span className="rounded-full bg-warning-soft px-1.5 py-0.5 text-2xs text-warning-fg" title="This code already exists on this account — override the code below to attach anyway">
+                        <Badge variant="warning" size="sm" title="This code already exists on this account — override the code below to attach anyway">
                           code in use
-                        </span>
+                        </Badge>
                       )}
                     </MenuItem>
                   </li>

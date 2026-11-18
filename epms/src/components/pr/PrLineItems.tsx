@@ -11,7 +11,7 @@ import { PartThumbnail } from '@/pages/parts/PartsListPage'
 import { useQuery } from '@tanstack/react-query'
 import { mdmApi } from '@/lib/api'
 
-import { Input, MenuItem, PickerTrigger, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { Input, MenuItem, PickerTrigger, Select, TBody, THead, Table, Td, Th, Tr, Badge } from '@uniops/shell'
 function newLine(): PrLineItem {
   return {
     id: crypto.randomUUID(),
@@ -396,10 +396,10 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
             Line Items <span className="text-danger-fg">*</span>
           </h3>
           {isType3 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 px-2 py-0.5 text-2xs font-medium text-primary-700">
+            <Badge variant="accent" size="sm">
               <Package className="h-3 w-3" />
               Spare Parts — select from catalog
-            </span>
+            </Badge>
           )}
         </div>
         <span className="text-xs text-fg-muted">{items.length} line{items.length !== 1 ? 's' : ''}</span>

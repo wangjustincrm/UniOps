@@ -11,7 +11,7 @@ import type { TaskType } from '@/lib/taskTypes'
 import type { ApiTask } from '@/services/tasks'
 import { groupTasks } from '@/lib/groupTasks'
 
-import { Segmented, Select } from '@uniops/shell'
+import { Segmented, Select, Badge } from '@uniops/shell'
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 type TabValue = 'all' | 'urgent' | 'normal' | 'completed'
@@ -131,10 +131,10 @@ function FullTaskCard({ task }: FullTaskCardProps) {
                 : taskCardLabel(task)}
             </p>
             {isDone && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-2xs font-medium text-success-fg">
+              <Badge variant="success" size="sm">
                 <Check className="h-3 w-3" />
                 Done
-              </span>
+              </Badge>
             )}
           </div>
 

@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Plus, Save, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, statusLabel } from '@/components/ui/badge'
-import { Checkbox, Modal, Select, SortTh, TBody, THead, Table, TableMessage, Td, Textarea, Th, Tr, useSortableRows } from '@uniops/shell'
+import { Checkbox, Modal, Select, SortTh, TBody, THead, Table, TableMessage, Td, Textarea, Th, Tr, useSortableRows, Badge } from '@uniops/shell'
 import { cn, formatDate, todayISO } from '@/lib/utils'
 import { usePlans, useCreatePlan, useDeletePlan, useAvailableFiscalYears } from '@/hooks/useBudget'
 import { useCostCenters } from '@/hooks/useCostCenters'
@@ -179,13 +179,13 @@ export default function BudgetPlanListPage() {
                     <Td>
                       <span className="font-mono text-xs">v{p.version}</span>
                       {p.is_current ? (
-                        <span className="ml-2 rounded-full bg-primary-50 text-primary-700 px-2 py-0.5 text-2xs font-semibold">
+                        <Badge variant="accent" size="sm" className="ml-2">
                           Current
-                        </span>
+                        </Badge>
                       ) : isSuperseded ? (
-                        <span className="ml-2 rounded-full bg-surface-sunken text-fg-muted px-2 py-0.5 text-2xs font-semibold">
+                        <Badge size="sm" className="ml-2">
                           Superseded
-                        </span>
+                        </Badge>
                       ) : null}
                     </Td>
                     <Td>

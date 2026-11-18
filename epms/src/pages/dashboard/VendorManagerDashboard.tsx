@@ -3,7 +3,7 @@ import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { formatDate } from '@/lib/utils'
 import { formatPaymentTerms } from '@/lib/paymentTerms'
-import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr, Badge } from '@uniops/shell'
 
 export default function VendorManagerDashboard() {
   const { data } = useDashboard()
@@ -74,9 +74,9 @@ export default function VendorManagerDashboard() {
                     <Td className="pr-3 text-fg-muted">{formatDate(vendor.created_at)}</Td>
                     <Td className="pr-3">
                       {vendor.is_active ? (
-                        <span className="inline-flex items-center rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success-fg">Active</span>
+                        <Badge variant="success">Active</Badge>
                       ) : (
-                        <span className="inline-flex items-center rounded-full bg-surface-sunken px-2 py-0.5 text-xs font-medium text-fg-muted">Inactive</span>
+                        <Badge>Inactive</Badge>
                       )}
                     </Td>
                     <Td>

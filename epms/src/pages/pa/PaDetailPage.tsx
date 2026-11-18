@@ -102,24 +102,24 @@ function TimelineStep({
         <p className={cn('text-sm font-semibold text-fg', status === 'skipped' && 'line-through text-fg-muted')}>{actor ? `${label} — ${actor}` : label}</p>
         {date && <p className="text-xs text-fg-muted mt-0.5">{dateOnly ? formatDate(date) : formatDateTime(date)}</p>}
         {isAutoApproved && (
-          <span className="inline-flex items-center mt-1 rounded-full bg-surface-sunken border border-line px-2 py-0.5 text-2xs font-medium text-fg-muted">
+          <Badge size="sm" className="mt-1">
             Auto-approved
-          </span>
+          </Badge>
         )}
         {status === 'skipped' && (
-          <span className="inline-flex items-center mt-1 rounded-full bg-surface-sunken border border-line px-2 py-0.5 text-2xs font-medium text-fg-muted">
+          <Badge size="sm" className="mt-1">
             Auto-skipped
-          </span>
+          </Badge>
         )}
         {status === 'returned' && (
-          <span className="inline-flex items-center mt-1 rounded-full bg-warning-soft px-2 py-0.5 text-2xs font-medium text-warning-fg">
+          <Badge variant="warning" size="sm" className="mt-1">
             Returned
-          </span>
+          </Badge>
         )}
         {status === 'rejected' && (
-          <span className="inline-flex items-center mt-1 rounded-full bg-danger-soft px-2 py-0.5 text-2xs font-medium text-danger-fg">
+          <Badge variant="danger" size="sm" className="mt-1">
             Rejected
-          </span>
+          </Badge>
         )}
         {/* Quoted for a real comment somebody typed; unquoted for a skip
             reason, which is the system explaining itself, not a person. */}

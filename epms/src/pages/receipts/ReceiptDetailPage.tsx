@@ -43,7 +43,7 @@ import {
 } from '@/services/agreementReceipts'
 import type { DocumentStatus } from '@/types'
 
-import { ChoiceCard, FileInput, Textarea } from '@uniops/shell'
+import { ChoiceCard, FileInput, Textarea, Badge } from '@uniops/shell'
 const TYPE_OPTIONS: ReceiptType[] = ['counter_slip', 'delivery', 'service']
 
 // Why the edit form is locked, in the receipt's own terms. Never just a
@@ -587,9 +587,9 @@ function ReceiptDetail({
                   <span className="text-fg font-medium break-words">
                     {receipt.vendor_name ?? '—'}
                     {receipt.vendor_name && !receipt.vendor_matched && (
-                      <span className="ml-2 rounded-full bg-surface-sunken px-1.5 py-0.5 text-2xs font-medium text-fg-muted">
+                      <Badge size="sm" className="ml-2">
                         not in vendor list
-                      </span>
+                      </Badge>
                     )}
                   </span>
                 </div>

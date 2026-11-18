@@ -10,12 +10,12 @@ import { shipmentAttachmentService, type ShipmentAttachment } from '@/services/f
 import { errorMessage } from './freightUi'
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
-import { FileInput } from '@uniops/shell'
+import { FileInput, Badge } from '@uniops/shell'
 export function ShippingLabelBadge() {
   return (
-    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary-50 px-2 py-0.5 text-2xs font-medium text-primary-700">
+    <Badge variant="accent" size="sm" className="shrink-0">
       <ScanLine className="h-3 w-3" /> Shipping label
-    </span>
+    </Badge>
   )
 }
 

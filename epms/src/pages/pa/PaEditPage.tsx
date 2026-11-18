@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
-import { Checkbox, Input, MenuItem, TBody, THead, Table, Td, Textarea, Th, Tr, useReplaceTab } from '@uniops/shell'
+import { Checkbox, Input, MenuItem, TBody, THead, Table, Td, Textarea, Th, Tr, useReplaceTab, Badge } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDot } from 'lucide-react'
@@ -517,9 +517,9 @@ function PoPaEditPage() {
                       <p className="font-mono text-xs font-semibold text-primary-700">
                         {p.number}
                         {i === 0 && isMultiPo && (
-                          <span className="ml-2 inline-flex items-center rounded-full bg-primary-100 px-1.5 py-0.5 text-2xs font-medium text-primary-700">
+                          <Badge variant="accent" size="sm" className="ml-2">
                             Primary
-                          </span>
+                          </Badge>
                         )}
                       </p>
                       <p className="text-xs text-fg-muted mt-0.5">{p.vendor_name} · {p.title}</p>
@@ -575,9 +575,9 @@ function PoPaEditPage() {
                                 <span className="flex items-center gap-2 min-w-0">
                                   <span className="font-mono text-xs font-semibold text-primary-700">{candidate.number}</span>
                                   {blockedReason && (
-                                    <span className="shrink-0 inline-flex items-center rounded-full bg-surface-strong px-1.5 py-0.5 text-2xs font-medium text-fg-secondary">
+                                    <Badge size="sm" className="shrink-0">
                                       {blockedReason}
-                                    </span>
+                                    </Badge>
                                   )}
                                 </span>
                                 <span className="font-mono text-xs text-fg">{formatAmount(candidate.total, candidate.currency)}</span>

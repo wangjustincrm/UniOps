@@ -1,3 +1,5 @@
+import { Badge } from '@uniops/shell'
+
 // The "this value came from the document, not from you" marker.
 //
 // Lived as a private function inside InvoiceListPage until Task 14, which
@@ -11,8 +13,8 @@
 // after it.
 export function AiBadge() {
   return (
-    <span className="inline-flex items-center rounded-full bg-primary-50 border border-primary-200 px-1.5 py-0.5 text-2xs font-medium text-primary-600 ml-1.5">
+    <Badge variant="accent" size="sm" className="ml-1.5">
       AI
-    </span>
+    </Badge>
   )
 }

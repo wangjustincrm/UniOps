@@ -24,7 +24,7 @@ import { useCostCenters } from '@/hooks/useCostCenters'
 import type { ApiAccountSummary, ApiMonthlyAccountSummary } from '@/services/budget'
 import { downloadFinanceFile } from '@/lib/api'
 
-import { Button, Checkbox, Select, TBody, TFoot, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { Button, Checkbox, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Badge } from '@uniops/shell'
 /** The plant's calendar year (company time zone), read when used. */
 const currentYear = () => Number(todayISO().slice(0, 4))
 
@@ -211,10 +211,10 @@ export default function BudgetDashboard() {
           <p className="text-sm text-fg-muted mt-0.5">
             Plan vs Actual · FY {fiscalYear}
             {scopeLabel && (
-              <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-primary-50 border border-primary-200 px-2 py-0.5 text-xs text-primary-700 font-medium">
+              <Badge variant="accent" className="ml-2">
                 <Building2 className="h-3 w-3" />
                 {scopeLabel}
-              </span>
+              </Badge>
             )}
           </p>
           {!scopeLoading && !scopeError && scope && !scope.full_access && scope.cost_centers.length === 0 && (

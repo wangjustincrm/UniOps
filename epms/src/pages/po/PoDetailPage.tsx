@@ -675,9 +675,9 @@ export default function PoDetailPage() {
                 </span>
               )}
               {po.is_prepaid && (
-                <span className="inline-flex items-center rounded-full bg-warning-soft px-2.5 py-0.5 text-xs font-medium text-warning-fg">
+                <Badge variant="warning">
                   Prepayment
-                </span>
+                </Badge>
               )}
             </div>
             <p className="mt-1 text-fg-secondary">{po.title} — {po.vendor_name}</p>
@@ -849,9 +849,9 @@ export default function PoDetailPage() {
                     <dt className="text-xs font-medium text-fg-muted">Prepayment PO</dt>
                     <dd>
                       {po.is_prepaid ? (
-                        <span className="inline-flex items-center rounded-full bg-warning-soft px-2.5 py-0.5 text-xs font-medium text-warning-fg">
+                        <Badge variant="warning">
                           Yes — Prepayment required
-                        </span>
+                        </Badge>
                       ) : (
                         <span className="text-sm text-fg">No</span>
                       )}

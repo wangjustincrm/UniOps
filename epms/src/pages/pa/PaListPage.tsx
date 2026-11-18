@@ -236,11 +236,11 @@ export default function PaListPage() {
                         than the header's primary one, which on its own reads as
                         though the other orders were not being paid. */}
                     {pa.source === 'freight' && (
-                      <span className="inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-2xs font-semibold text-primary-700">Freight</span>
+                      <Badge variant="accent" size="sm">Freight</Badge>
                     )}
                     {pa.source === 'direct' && (
                       <>
-                        <span className="inline-flex items-center rounded-full border border-warning-line bg-warning-soft px-2 py-0.5 text-2xs font-semibold text-warning-fg">Direct</span>
+                        <Badge variant="warning" size="sm">Direct</Badge>
                         {pa.cost_center_code && (
                           <div className="font-mono text-2xs text-fg-muted mt-0.5">{pa.cost_center_code} · {pa.budget_account_code}</div>
                         )}
