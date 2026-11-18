@@ -142,6 +142,13 @@ const TRUST_CHIP: Record<string, BadgeTone> = {
   amounts: 'warning',
   manual: 'blue',
 }
+/** The same three trust levels as a tint for the matched-group cards (a card,
+ *  not a badge — so colour classes, kept as they were before the Badge move). */
+const TRUST_CARD: Record<string, string> = {
+  evidence: 'border-success-line bg-success-soft text-success-fg',
+  amounts: 'border-warning-line bg-warning-soft text-warning-fg',
+  manual: 'border-info-line bg-info-soft text-info-fg',
+}
 const TRUST_WORD: Record<string, string> = {
   evidence: 'backed by a document',
   amounts: 'amounts only — no document',
@@ -964,15 +971,15 @@ export default function BankReconciliationPage() {
                 the group you are looking at
               </span>
               <span className="ml-auto flex items-center gap-2">
-                <span className={cn('rounded border px-1.5 py-0.5', TRUST_CHIP.evidence)}>
+                <Badge variant={TRUST_CHIP.evidence}>
                   backed by a document
-                </span>
-                <span className={cn('rounded border px-1.5 py-0.5', TRUST_CHIP.amounts)}>
+                </Badge>
+                <Badge variant={TRUST_CHIP.amounts}>
                   amounts only
-                </span>
-                <span className={cn('rounded border px-1.5 py-0.5', TRUST_CHIP.manual)}>
+                </Badge>
+                <Badge variant={TRUST_CHIP.manual}>
                   by a person
-                </span>
+                </Badge>
               </span>
             </div>
 
@@ -1221,7 +1228,7 @@ export default function BankReconciliationPage() {
                             className={cn('block rounded-lg px-2 py-1 text-xs',
                               g.id === focusGroup
                                 ? 'bg-primary-100 text-accent-fg'
-                                : TRUST_CHIP[METHOD_TRUST[g.method] ?? 'manual']
+                                : TRUST_CARD[METHOD_TRUST[g.method] ?? 'manual']
                                   ?? 'border-line bg-surface text-fg-secondary')}>
                       {/* Stacked and left-aligned: in a fixed column the three parts
                           on one line push each other around and nothing lines up
