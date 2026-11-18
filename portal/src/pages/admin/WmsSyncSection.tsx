@@ -25,7 +25,6 @@ import { mrpApi } from '@/lib/api'
 import { formatDateTime } from '@/lib/utils'
 
 import { Input, Button } from '@uniops/shell'
-const inputCls = 'h-9 w-24 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 const INTERVAL_KEY = 'wms_sync_interval_minutes'
 const MAX_INTERVAL_MINUTES = 1440
@@ -190,7 +189,7 @@ export function WmsSyncSection() {
             type="number" min={0} max={MAX_INTERVAL_MINUTES} step={1}
             value={intervalInput}
             onChange={(e) => setIntervalInput(e.target.value)}
-            className={inputCls}
+            className="w-24"
           />
         </label>
         <Button size="md" type="button" onClick={saveInterval} disabled={saving}>

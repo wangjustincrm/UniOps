@@ -9,10 +9,9 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, DatabaseZap, Loader2 } from 'lucide-react'
 import { epmsApi } from '@/lib/api'
-import { cn, formatDate, formatDateTime } from '@/lib/utils'
+import { formatDate, formatDateTime } from '@/lib/utils'
 
 import { Input, Radio, Button } from '@uniops/shell'
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 const FULL_CONFIRM = 'FULL RELOAD'
 
@@ -261,7 +260,7 @@ export function NcPurchaseSyncSection() {
                       Type {FULL_CONFIRM} to enable.
                     </div>
                     <Input value={confirm} onChange={(e) => setConfirm(e.target.value)}
-                           placeholder={FULL_CONFIRM} className={cn(inputCls, 'w-full font-mono')} />
+                           placeholder={FULL_CONFIRM} className="font-mono" />
                   </div>
                 )}
 

@@ -13,13 +13,12 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, DatabaseZap, Loader2 } from 'lucide-react'
 import { financeApi } from '@/lib/api'
-import { cn, formatDateTime } from '@/lib/utils'
+import { formatDateTime } from '@/lib/utils'
 import { NcPurchaseSyncSection } from '../NcPurchaseSyncSection'
 import { ScheduleCard, type ScheduleEndpoint } from './ScheduleCard'
 
 import { Button, Input, Radio, Tabs } from '@uniops/shell'
 const FULL_CONFIRM = 'FULL RELOAD'
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 type Tab = 'purchase' | 'jv' | 'mdm'
 
@@ -162,7 +161,7 @@ function JvManualSync() {
                 Destructive: re-imports every NC voucher. Type {FULL_CONFIRM} to enable.
               </div>
               <Input value={confirm} onChange={(e) => setConfirm(e.target.value)}
-                     placeholder={FULL_CONFIRM} className={cn(inputCls, 'w-full font-mono')} />
+                     placeholder={FULL_CONFIRM} className="font-mono" />
             </div>
           )}
           {err && <div className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{err}</div>}

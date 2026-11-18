@@ -2523,7 +2523,6 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
                               aria-label={`Email for ${p.person_name}`}
                               value={selected[p.erp_person_code]?.email || ''}
                               onChange={e => setSelected(prev => ({ ...prev, [p.erp_person_code]: { email: e.target.value } }))}
-                              className="text-xs"
                             />
                           </Td>
                         </Tr>

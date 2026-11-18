@@ -15,7 +15,6 @@
 import { useState } from 'react'
 import { Eye, EyeOff, KeyRound, CheckCircle2 } from 'lucide-react'
 import { epmsApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
 
 import { Input, Button } from '@uniops/shell'
 export function PwdField({
@@ -32,10 +31,7 @@ export function PwdField({
           type={show ? 'text' : 'password'}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className={cn(
-            'h-10 w-full rounded-lg border bg-surface px-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors',
-            error ? 'border-danger-solid' : 'border-line-strong',
-          )}
+          error={!!error} className="pr-10"
           placeholder={placeholder}
           autoFocus={autoFocus}
         />
