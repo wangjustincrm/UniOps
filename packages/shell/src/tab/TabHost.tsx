@@ -50,6 +50,9 @@ export function TabHost({ routes, pageClassName }: TabHostProps) {
           <div
             key={t.key}
             hidden={t.key !== activeKey}
+            // Print: tokens.css puts this page and every ancestor back into
+            // normal flow, so a long page prints in full, not one screen.
+            data-print-page={t.key === activeKey ? '' : undefined}
             className="absolute inset-0 overflow-y-auto"
           >
             {t.kind === 'iframe' ? (

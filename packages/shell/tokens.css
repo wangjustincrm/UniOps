@@ -317,3 +317,18 @@
   from { opacity: 0; }
   to   { opacity: 1; }
 }
+
+/* Print: the app frame is a screen-tall box whose page scrolls inside it, so
+   Ctrl+P printed only the visible screen. Put the active tab page and all of
+   its ancestors back into normal flow (Sidebar / Topbar / TabBar are
+   print:hidden). VMS badge printing does the same for its own pages. */
+@media print {
+  *:has([data-print-page]),
+  [data-print-page] {
+    position: static !important;
+    inset: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+}
