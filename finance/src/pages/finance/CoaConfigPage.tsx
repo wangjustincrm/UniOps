@@ -19,7 +19,7 @@ import {
   AlertCircle, BookOpenCheck, Check, Download, Loader2, Pencil, Plus,
   RefreshCw, Search, Trash2, Upload, X,
 } from 'lucide-react'
-import { SortTh, useSortableRows, Checkbox, FileInput, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal as ShellModal, Badge } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, FileInput, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal as ShellModal, Badge, Card } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financeDownload, financeUpload } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -275,7 +275,7 @@ function MappingsTab({ accounts, canManage }: { accounts: Account[]; canManage: 
     <div className="flex flex-col gap-6">
       {error && <div className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{error}</div>}
       {groups.map(([mtype, title, rows]) => (
-        <div key={mtype} className="rounded-lg border border-line bg-surface p-4">
+        <Card inset className="p-4" key={mtype}>
           <h3 className="mb-3 text-2xs font-semibold text-fg-muted">{title}</h3>
           {rows.length === 0 && <div className="mb-2 text-sm text-fg-muted">No mappings yet.</div>}
           <div className="flex flex-col gap-2">
@@ -304,7 +304,7 @@ function MappingsTab({ accounts, canManage }: { accounts: Account[]; canManage: 
               </div>
             )}
           </div>
-        </div>
+        </Card>
       ))}
     </div>
   )

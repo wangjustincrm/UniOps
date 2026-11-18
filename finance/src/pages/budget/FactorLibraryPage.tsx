@@ -13,7 +13,7 @@ import {
   Layers, Plus, Pencil, Trash2, X, Check, Search,
   ChevronDown, ChevronRight, AlertCircle,
 } from 'lucide-react'
-import { Button, Checkbox, Input, SortTh, TBody, THead, Table, Td, Th, Tr, useSortableRows, Badge } from '@uniops/shell'
+import { Button, Checkbox, Input, SortTh, TBody, THead, Table, Td, Th, Tr, useSortableRows, Badge, Card } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { budgetApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -125,7 +125,7 @@ function FactorLibrary() {
     })
 
   return (
-    <section className="rounded-xl border border-line bg-surface p-5">
+    <Card as="section" className="p-5">
       <div className="mb-4 flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
           <Layers className="h-4 w-4" />
@@ -295,7 +295,7 @@ function FactorLibrary() {
           {filtered.length} of {templates.length} template{templates.length !== 1 ? 's' : ''}
         </div>
       </div>
-    </section>
+    </Card>
   )
 }
 

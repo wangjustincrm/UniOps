@@ -5,7 +5,7 @@ import { financeApi } from '@/lib/api'
 import { cn, formatDate, formatDateTime, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-import { Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Badge } from '@uniops/shell'
+import { Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Badge, Card } from '@uniops/shell'
 /**
  * Exchange Rates — Finance's one history of FX rates (finance-api /fx).
  *
@@ -133,7 +133,7 @@ export default function ExchangeRatesPage() {
                         subtitle="Bank of Canada daily rates — a document takes its own date's rate; a weekend or holiday takes the previous business day">
       <div className="mx-auto max-w-6xl space-y-4">
         <div className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-line bg-surface p-3 text-sm">
+          <Card inset className="p-3 text-sm">
             <div className="text-xs font-medium text-fg-muted">Last fetch</div>
             {last ? (
               <div className="mt-1">
@@ -143,8 +143,8 @@ export default function ExchangeRatesPage() {
                 {last.message && <div className="mt-1 text-xs text-danger-fg">{last.message}</div>}
               </div>
             ) : <div className="mt-1 text-fg-muted">Never</div>}
-          </div>
-          <div className="rounded-lg border border-line bg-surface p-3 text-sm">
+          </Card>
+          <Card inset className="p-3 text-sm">
             <div className="text-xs font-medium text-fg-muted">Latest rate per currency</div>
             <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
               {(status?.currencies ?? []).map((c) => (
@@ -152,8 +152,8 @@ export default function ExchangeRatesPage() {
               ))}
               {(status?.currencies ?? []).length === 0 && <span className="text-fg-muted">No rates yet</span>}
             </div>
-          </div>
-          <div className="rounded-lg border border-line bg-surface p-3 text-sm">
+          </Card>
+          <Card inset className="p-3 text-sm">
             <div className="text-xs font-medium text-fg-muted">Rate for a document dated</div>
             <div className="mt-1 flex items-center gap-2">
               <Select value={probe.currency} onChange={(e) => setProbe({ ...probe, currency: e.target.value })}
@@ -168,7 +168,7 @@ export default function ExchangeRatesPage() {
                 ? <>{probeHit.rate} <span className="text-xs text-fg-muted">({formatDate(probeHit.effective_date)}, {probeHit.source})</span></>
                 : <span className="text-danger-fg">No rate — Push to NC would refuse</span>}
             </div>
-          </div>
+          </Card>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -203,7 +203,7 @@ export default function ExchangeRatesPage() {
         )}
 
         {edit && (
-          <div className="rounded-lg border border-line bg-surface p-4">
+          <Card inset className="p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="text-sm font-medium text-fg">Set a rate by hand (kept as manual; the daily fetch will not overwrite it)</div>
               <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={() => setEdit(null)}><X className="h-4 w-4" /></Button>
@@ -227,7 +227,7 @@ export default function ExchangeRatesPage() {
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
               </Button>
             </div>
-          </div>
+          </Card>
         )}
 
         <div className="overflow-hidden rounded-lg border border-line">

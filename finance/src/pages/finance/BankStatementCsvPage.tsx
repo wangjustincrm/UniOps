@@ -23,7 +23,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Ban, Check, Landmark, Link2, Loader2, Plus, RefreshCw, Undo2, Upload } from 'lucide-react'
-import { SortTh, useSortableRows, Checkbox, FileInput, Input, Radio, Select, TBody, THead, Table, Td, Th, Tr, Button , Modal as ShellModal, Badge, type BadgeTone } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, FileInput, Input, Radio, Select, TBody, THead, Table, Td, Th, Tr, Button , Modal as ShellModal, Badge, type BadgeTone, Card } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financeUploadFields } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
@@ -405,10 +405,10 @@ export default function BankStatementCsvPage() {
 function SummaryCard({ label, value, tone }: { label: string; value: string; tone?: 'pos' | 'neg' | 'warn' }) {
   const c = tone === 'pos' ? 'text-success-fg' : tone === 'neg' ? 'text-danger-fg' : tone === 'warn' ? 'text-warning-fg' : 'text-fg'
   return (
-    <div className="rounded-lg border border-line bg-surface px-4 py-3">
+    <Card inset className="px-4 py-3">
       <div className="text-xs text-fg-muted">{label}</div>
       <div className={cn('mt-0.5 font-mono text-lg', c)}>{value}</div>
-    </div>
+    </Card>
   )
 }
 

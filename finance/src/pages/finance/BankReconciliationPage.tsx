@@ -37,7 +37,7 @@ import {
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-import { Button, Checkbox, ChoiceCard, FileInput, Input, Select, TBody, THead, Table, Td, Th, Tr, Badge, type BadgeTone } from '@uniops/shell'
+import { Button, Checkbox, ChoiceCard, FileInput, Input, Select, TBody, THead, Table, Td, Th, Tr, Badge, type BadgeTone, Card } from '@uniops/shell'
 
 interface Account {
   id: string; name: string; bank_name: string; account_masked: string | null
@@ -218,13 +218,13 @@ function Stat({ label, value, tone, hint }: {
   label: string; value: string; tone?: 'pos' | 'neg' | 'warn'; hint?: string
 }) {
   return (
-    <div className="rounded-lg border border-line bg-surface px-3 py-2">
+    <Card inset className="px-3 py-2">
       <div className="text-2xs text-fg-muted">{label}</div>
       <div className={cn('font-mono text-sm font-semibold tabular-nums',
         tone === 'neg' && 'text-danger-fg', tone === 'pos' && 'text-success-fg',
         tone === 'warn' && 'text-warning-fg')}>{value}</div>
       {hint && <div className="mt-0.5 text-2xs text-fg-muted">{hint}</div>}
-    </div>
+    </Card>
   )
 }
 
@@ -544,7 +544,7 @@ export default function BankReconciliationPage() {
             its id. The reconciliations a period produces ARE the audit record —
             each keeps its own frozen snapshot and PDF — so they need a way in. */}
         {accountId && history.length > 0 && (
-          <div className="mb-4 rounded-lg border border-line bg-surface">
+          <Card inset className="mb-4">
             <div className="flex items-center gap-2 border-b border-line-subtle px-3 py-2">
               <History className="h-4 w-4 text-fg-muted" />
               <span className="text-xs font-semibold text-fg-muted">
@@ -589,7 +589,7 @@ export default function BankReconciliationPage() {
                 </TBody>
               </Table>
             </div>
-          </div>
+          </Card>
         )}
 
 
@@ -830,7 +830,7 @@ export default function BankReconciliationPage() {
                 set. So it hands the line to a person — and until now handed it over
                 with 74 rows and no help. This is the ranking it already computes. */}
             {soleBankPick && !frozen && (
-              <div className="mb-3 rounded-lg border border-primary-700/30 bg-surface">
+              <Card inset className="mb-3 border-primary-700/30">
                 <div className="flex items-center gap-2 border-b border-line-subtle px-3 py-2 text-xs">
                   <Link2 className="h-4 w-4 text-fg-muted" />
                   <span className="font-semibold text-fg-muted">
@@ -892,12 +892,12 @@ export default function BankReconciliationPage() {
                     </Table>
                   </div>
                 )}
-              </div>
+              </Card>
             )}
 
             {/* ── every document behind this reconciliation ───────────────── */}
             {showDocs && (
-              <div className="mb-3 rounded-lg border border-line bg-surface">
+              <Card inset className="mb-3">
                 <div className="flex items-center gap-2 border-b border-line-subtle px-3 py-2">
                   <Paperclip className="h-4 w-4 text-fg-muted" />
                   <span className="text-xs font-semibold text-fg-muted">
@@ -949,7 +949,7 @@ export default function BankReconciliationPage() {
                     </TBody>
                   </Table>
                 )}
-              </div>
+              </Card>
             )}
 
             {/* ── how to read the two sides ─────────────────────────────── */}
@@ -1146,7 +1146,7 @@ export default function BankReconciliationPage() {
 
             {/* ── what a cleared line is made of ────────────────────────── */}
             {focused && (
-              <div className="mt-4 rounded-lg border border-primary-700/30 bg-surface p-3">
+              <Card inset className="mt-4 border-primary-700/30 p-3">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   <Pill tone={TRUST_CHIP[METHOD_TRUST[focused.method] ?? 'manual']}>
                     {METHOD_LABEL[focused.method] ?? focused.method}
@@ -1206,7 +1206,7 @@ export default function BankReconciliationPage() {
                     </TBody>
                   </Table>
                 )}
-              </div>
+              </Card>
             )}
 
             {/* ── every group, for review ───────────────────────────────── */}
@@ -1254,12 +1254,12 @@ function Side({ title, subtitle, children }: {
   title: string; subtitle?: string; children: React.ReactNode
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-line bg-surface">
+    <Card inset className="overflow-hidden">
       <div className="border-b border-line bg-surface-subtle/60 px-3 py-2">
         <div className="text-sm font-semibold text-fg-secondary">{title}</div>
         {subtitle && <div className="text-2xs text-fg-muted">{subtitle}</div>}
       </div>
       <div className="max-h-[30rem] overflow-auto">{children}</div>
-    </div>
+    </Card>
   )
 }

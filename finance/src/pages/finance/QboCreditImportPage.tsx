@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check, Loader2, Search } from 'lucide-react'
-import { Button, Input, MenuItem, SortTh, TBody, THead, Table, Td, Th, Tr, useSortableRows, Badge } from '@uniops/shell'
+import { Button, Input, MenuItem, SortTh, TBody, THead, Table, Td, Th, Tr, useSortableRows, Badge, Card } from '@uniops/shell'
 import {
   qboCreditImportApi,
   type ImportRunResponse,
@@ -210,7 +210,7 @@ export default function QboCreditImportPage() {
           </section>
         )}
 
-        <section className="overflow-auto rounded-lg border border-line bg-surface">
+        <Card inset as="section" className="overflow-auto">
           <Table density="compact">
             <THead>
               <Tr>
@@ -270,7 +270,7 @@ export default function QboCreditImportPage() {
               })}
             </TBody>
           </Table>
-        </section>
+        </Card>
 
         <section className="flex flex-wrap items-center gap-3">
           <Button variant="secondary" size="md"
@@ -314,7 +314,7 @@ export default function QboCreditImportPage() {
 
 function RunSummary({ run }: { run: ImportRunResponse }) {
   return (
-    <section className="space-y-3 rounded-lg border border-line bg-surface p-4">
+    <Card inset as="section" className="space-y-3 p-4">
       <h2 className="text-sm font-semibold text-fg">
         {run.dry_run ? 'Preview — nothing has been written' : 'Import complete'}
       </h2>
@@ -366,7 +366,7 @@ function RunSummary({ run }: { run: ImportRunResponse }) {
           </Table>
         </div>
       )}
-    </section>
+    </Card>
   )
 }
 

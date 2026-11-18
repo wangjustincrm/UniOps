@@ -15,7 +15,7 @@ import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Load
 import { financeApi } from '@/lib/api'
 import { cn, currentMonthISO, formatDateTime } from '@/lib/utils'
 
-import { TBody, Table, Td, Tr, Button, Badge } from '@uniops/shell'
+import { TBody, Table, Td, Tr, Button, Badge, Card } from '@uniops/shell'
 export interface SyncRun {
   id: string; status: string; started_at: string | null; finished_at: string | null
   counts: Record<string, number> | null; tie_out_ok: boolean | null
@@ -116,7 +116,7 @@ export function SyncBar() {
   const last = data.last_success
   const failed = data.last_run && data.last_run.status === 'failed' ? data.last_run : null
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-2.5 text-xs text-fg-secondary">
+    <Card inset className="mb-4 flex flex-wrap items-center gap-3 px-4 py-2.5 text-xs text-fg-secondary">
       {!data.configured ? (
         <span className="text-fg-muted">NC connection is not configured on this server.</span>
       ) : last ? (
@@ -147,7 +147,7 @@ export function SyncBar() {
         </Button>
       )}
       {sync.error && <span className="text-danger-fg">{(sync.error as Error).message}</span>}
-    </div>
+    </Card>
   )
 }
 

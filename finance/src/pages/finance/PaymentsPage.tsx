@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Button, Checkbox, Input, MenuItem, Select, SortTh, TBody, THead, Table, Td, Th, Tr, deriveTabMeta, sortParams, useOptionalTabStoreApi, useSort, Badge, type BadgeTone } from '@uniops/shell'
+import { Button, Checkbox, Input, MenuItem, Select, SortTh, TBody, THead, Table, Td, Th, Tr, deriveTabMeta, sortParams, useOptionalTabStoreApi, useSort, Badge, type BadgeTone, Card } from '@uniops/shell'
 import { Download, Receipt, Send, X } from 'lucide-react'
 import { financeRoutes } from '@/app/routes'
 import { financeApi, financeDownload, mdmApi } from '@/lib/api'
@@ -428,13 +428,13 @@ export default function PaymentsPage() {
         <AwaitingClaimsBanner />
         <div className="mb-4 flex flex-wrap gap-4">
           {summary.map((s) => (
-            <div key={s.currency} className="rounded-lg border border-line bg-surface px-5 py-4">
+            <Card inset className="px-5 py-4" key={s.currency}>
               <p className="text-xs text-fg-muted">Total Paid ({s.currency})</p>
               <p className="mt-1 font-mono text-2xl font-semibold text-fg">
                 {Number(s.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
               <p className="text-xs text-fg-muted">{s.count} payment{s.count === 1 ? '' : 's'}</p>
-            </div>
+            </Card>
           ))}
           {summary.length === 0 && (
             <div className="rounded-lg border border-dashed border-line px-5 py-4 text-sm text-fg-muted">

@@ -9,7 +9,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ChevronLeft, ChevronRight, Download, Loader2, Mail, RefreshCw } from 'lucide-react'
-import { Button, Input, Modal as ShellModal, SortTh, TBody, THead, Table, Tabs, Td, Th, Tr, sortParams, useSort } from '@uniops/shell'
+import { Button, Input, Modal as ShellModal, SortTh, TBody, THead, Table, Tabs, Td, Th, Tr, sortParams, useSort, Card } from '@uniops/shell'
 import { qboApi, ENTITY_TABS, type QboBackfillResult, type QboDetail } from '@/services/qboApi'
 import { financeDownload } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
@@ -51,7 +51,7 @@ export default function QboMirrorPage() {
       subtitle="Read-only copy of the QuickBooks Online company, synced into UniOps."
     >
       <div className="space-y-6">
-        <section className="space-y-3 rounded-lg border border-line bg-surface p-4">
+        <Card inset as="section" className="space-y-3 p-4">
           <div className="flex flex-wrap items-center gap-3">
             {/* Sync and full reload are System Admin only (ISS-0164) — the
                 server refuses anyone else and reports it as can_sync. */}
@@ -101,7 +101,7 @@ export default function QboMirrorPage() {
               {status.last_run.error ? <span className="text-danger-fg"> · {status.last_run.error}</span> : null}
             </div>
           )}
-        </section>
+        </Card>
 
         {confirming && (
           <ShellModal open onClose={() => setConfirming(false)} title="Full reload" closeOnBackdrop closeOnEscape={false}

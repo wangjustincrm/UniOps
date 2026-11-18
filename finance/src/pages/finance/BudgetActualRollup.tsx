@@ -23,7 +23,7 @@ import { cn, currentMonthISO } from '@/lib/utils'
 import { UnallocatedLinesModal } from './UnallocatedLinesModal'
 import { JvDetailModal } from './JvDetailModal'
 
-import { Button, Checkbox, MenuItem, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Badge } from '@uniops/shell'
+import { Button, Checkbox, MenuItem, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Badge, Card } from '@uniops/shell'
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -147,7 +147,7 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
   const windowLabel = from === to ? MONTHS[from - 1] : `${MONTHS[from - 1]}–${MONTHS[to - 1]}`
 
   return (
-    <div className="mb-6 rounded-lg border border-line bg-surface">
+    <Card inset className="mb-6">
       {/* controls */}
       <div className="flex flex-wrap items-center gap-2 border-b border-line-subtle px-3 py-2.5">
         <Select value={fiscalYear} onChange={(e) => onFiscalYearChange(Number(e.target.value))}
@@ -392,7 +392,7 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
       {jvId && (
         <JvDetailModal jvId={jvId} canAct={false} onClose={() => setJvId(null)} />
       )}
-    </div>
+    </Card>
   )
 }
 

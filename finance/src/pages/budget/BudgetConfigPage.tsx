@@ -7,7 +7,7 @@ import {
   Calendar, Plus, X, Search, Pencil, Trash2, Building2,
   Wallet, Upload, Download,
 } from 'lucide-react'
-import { SortTh, useSortableRows, Checkbox, FileInput, Input, Radio, Select, TBody, THead, Table, Td, Th, Tr, Button, Badge } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, FileInput, Input, Radio, Select, TBody, THead, Table, Td, Th, Tr, Button, Badge, Card } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, mdmApi, budgetApi, budgetUpload, EPMS_URL, encodeSession } from '@/lib/api'
 import { cn, todayISO } from '@/lib/utils'
@@ -71,7 +71,7 @@ function SectionCard({
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-xl border border-line bg-surface p-5">
+    <Card as="section" className="p-5">
       <div className="mb-4 flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
           <Icon className="h-4.5 w-4.5" />
@@ -82,7 +82,7 @@ function SectionCard({
         </div>
       </div>
       <div className="pl-12">{children}</div>
-    </section>
+    </Card>
   )
 }
 
@@ -796,7 +796,7 @@ function CostCentersSection() {
   })
 
   return (
-    <section className="rounded-xl border border-line bg-surface p-5">
+    <Card as="section" className="p-5">
       <div className="mb-4 flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
           <Layers className="h-4 w-4" />
@@ -929,7 +929,7 @@ function CostCentersSection() {
           {filtered.length} of {ccs.length} cost center{ccs.length !== 1 ? 's' : ''}
         </div>
       </div>
-    </section>
+    </Card>
   )
 }
 

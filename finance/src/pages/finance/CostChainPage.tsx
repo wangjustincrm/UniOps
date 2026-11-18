@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { AccessMessage, num, qty, SyncBar, thisMonth, traceLink } from '@/lib/costAnalysis'
 
-import { Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Input, TBody, THead, Table, Td, Th, Tr, Button, Card } from '@uniops/shell'
 interface Node {
   material_code: string; material_name: string | null; period: string; made_in_house: boolean
   qty?: number; amount?: number; unit?: number | null; abnormal?: boolean
@@ -59,7 +59,7 @@ function CompositionSection({ material, period }: { material: string; period: st
   return (
     <div className="mb-6">
       <p className="mb-2 text-sm font-semibold text-fg">What a unit of {data.material} is made of ({data.period}) — down to purchased materials</p>
-      <div className="mb-3 rounded-lg border border-line bg-surface p-3">
+      <Card inset className="mb-3 p-3">
         <p className="text-sm font-semibold text-fg">{data.headline}</p>
         {(data.because ?? []).length > 0 && (
           <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm leading-relaxed text-fg-secondary">
@@ -71,7 +71,7 @@ function CompositionSection({ material, period }: { material: string; period: st
             {pos.map((b) => <div key={b.bucket} className={GROUP_CLS[b.group]} style={{ width: `${(b.amount / posTotal) * 100}%`, opacity: 0.45 + 0.55 * (b.amount / posTotal) }} title={`${b.bucket} ${num(b.per_unit, 4)}/unit`} />)}
           </div>
         )}
-      </div>
+      </Card>
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="overflow-x-auto rounded-lg border border-line">
           <Table density="compact">

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Ban } from 'lucide-react'
-import { Button, Input, Modal as ShellModal, Select, SortTh, Switch, TBody, THead, Table, Td, Th, Tr, useSortableRows, Badge } from '@uniops/shell'
+import { Button, Input, Modal as ShellModal, Select, SortTh, Switch, TBody, THead, Table, Td, Th, Tr, useSortableRows, Badge, Card } from '@uniops/shell'
 import { mdmApi } from '@/lib/api'
 import { cn, formatDate, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
@@ -145,7 +145,7 @@ export default function TaxSettingsPage() {
           <span className="text-sm text-fg-muted">Read-only — tax codes are maintained by System Admin.</span>
         )}
       </div>
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         {isLoading ? (
           <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
         ) : !data?.length ? (
@@ -195,7 +195,7 @@ export default function TaxSettingsPage() {
             </TBody>
           </Table>
         )}
-      </div>
+      </Card>
 
       {modal && (
         <ShellModal open onClose={() => setModal(null)} title={modal.mode === 'create' ? 'Add Tax Code' : 'Edit Tax Code'} closeOnEscape={false} size="full" className="max-w-md">
