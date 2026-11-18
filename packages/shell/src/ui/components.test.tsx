@@ -204,3 +204,20 @@ describe('control state', () => {
     expect(screen.getByLabelText('s').className).toContain('border-warning-line')
   })
 })
+
+describe('Badge size / category / passthrough', () => {
+  it('sm is the dense size, catN uses the category tokens, span props pass through', () => {
+    render(<>
+      <Badge size="sm" variant="cat4" data-testid="b" aria-label="Prepayment" dot>Prepayment</Badge>
+      <Badge data-testid="m">Regular</Badge>
+    </>)
+    const b = screen.getByTestId('b')
+    expect(b.className).toContain('text-2xs')
+    expect(b.className).toContain('bg-cat4-soft')
+    expect(b).toHaveAttribute('aria-label', 'Prepayment')
+    expect(b.firstElementChild?.className).toContain('bg-cat4-fg')
+    const m = screen.getByTestId('m')
+    expect(m.className).toContain('text-xs')
+    expect(m.className).not.toContain('text-2xs')
+  })
+})
