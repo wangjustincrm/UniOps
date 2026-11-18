@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Circle, TriangleAlert, XCircle } from 'lucide-react'
 import {
   ActionButton, Badge, Callout, DateTimeInput, Hint, LocalTable, Section, ask, formatDateTime, queryKeys, type ColumnDef,
@@ -50,7 +50,6 @@ const folderColumns: ColumnDef<FolderRow, unknown>[] = [
 /** Shopify / Authorize.Net: the pull cursor, read-only; a person resets it (audited). */
 function Cursor({ c, onDone }: { c: ConnectionRead; onDone: () => void }) {
   const [value, setValue] = useState<string | null>(null)  // ISO with its zone
-  const reset = useMutation({ mutationFn: (v: string | null) => resetCursor(c.id, v), onSuccess: () => { setValue(null); onDone() } })
   return (
     <div className="flex flex-col gap-1">
       <p>{c.kind === 'AUTHORIZE_NET' ? 'Next read: batches settled from ' : 'Next pull from: '}<span className="font-medium">{c.cursor_updated_at ? formatDateTime(c.cursor_updated_at) : 'not set: nothing is pulled'}</span></p>
@@ -58,7 +57,7 @@ function Cursor({ c, onDone }: { c: ConnectionRead; onDone: () => void }) {
       <div className="flex flex-wrap items-center gap-2">
         <DateTimeInput aria-label="New cursor" value={value} onChange={setValue} className="h-8 max-w-[14rem] text-xs" />
         <ActionButton size="sm" variant="secondary" permission={CONFIG} disabled={!value} disabledReason="Choose the new date and time first."
-          done="Cursor reset: the next pass reads from there" onAction={() => reset.mutateAsync(value)}>Reset cursor</ActionButton>
+          done="Cursor reset: the next pass reads from there" after={() => { setValue(null); onDone() }} onAction={() => resetCursor(c.id, value)}>Reset cursor</ActionButton>
       </div>
     </div>
   )
@@ -71,14 +70,8 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
   const qc = useQueryClient()
   const refresh = () => qc.invalidateQueries({ queryKey: queryKeys.list(connectionsClient) })
   const [result, setResult] = useState<ConnectionTest | null>(null)
-  const test = useMutation({ mutationFn: () => testConnection(c.id), onSuccess: setResult })
-  const pin = useMutation({ mutationFn: (line: string) => pinHostKey(c, line), onSuccess: () => { setResult(null); refresh() } })
-  const clear = useMutation({ mutationFn: () => clearAuthLatch(c.id), onSuccess: refresh })
+  const changed = [queryKeys.list(connectionsClient)]  // what a change here reads again
   // Read / Write on or off right here, after a question that says what it will do (user 2026-11-12).
-  const tick = useMutation({
-    mutationFn: (change: { can_read: boolean } | { can_write: boolean }) => connectionsClient.update(c.id, change, c.version),
-    onSuccess: refresh,
-  })
   const toggle = async (which: 'can_read' | 'can_write') => {
     const turnOn = !c[which]
     const sftpFolder = which === 'can_read' ? c.inbound_folder : c.outbound_folder
@@ -94,12 +87,12 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
         description: which === 'can_read' ? 'Nothing will be read from this connection.' : 'Nothing will be written; what it would send is kept, not sent (Suppressed).',
         confirmLabel: 'Turn off' })
     if (!ok) return null
-    return tick.mutateAsync(which === 'can_read' ? { can_read: turnOn } : { can_write: turnOn })
+    return connectionsClient.update(c.id, which === 'can_read' ? { can_read: turnOn } : { can_write: turnOn }, c.version)
   }
   const tickButton = (which: 'can_read' | 'can_write') => (
     <ActionButton size="sm" variant="secondary" permission={CONFIG} errorMessages={TICK_ERRORS}
       done={(r) => (r ? `${which === 'can_read' ? 'Reading' : 'Writing'} turned ${c[which] ? 'off' : 'on'}` : null)}
-      onAction={() => toggle(which)}>
+      invalidates={changed} onAction={() => toggle(which)}>
       {c[which] ? 'Turn off' : 'Turn on'}
     </ActionButton>
   )
@@ -107,10 +100,10 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
   const anet = c.kind === 'AUTHORIZE_NET'
   const key = result?.host_key
   const testButton = (
-    <ActionButton size="sm" variant="secondary" permission={CONFIG} onAction={() => test.mutateAsync()}>Test connection</ActionButton>
+    <ActionButton size="sm" variant="secondary" permission={CONFIG} refreshes={false} after={(r) => setResult(r as ConnectionTest)} onAction={() => testConnection(c.id)}>Test connection</ActionButton>
   )
   const pinButton = key && !key.matches && (
-    <ActionButton size="sm" permission={CONFIG} done="Host key pinned" onAction={() => pin.mutateAsync(key.line)}>
+    <ActionButton size="sm" permission={CONFIG} done="Host key pinned" invalidates={changed} after={() => setResult(null)} onAction={() => pinHostKey(c, key.line)}>
       {key.pinned ? 'Replace the pinned key with this one' : 'Pin this key'}
     </ActionButton>
   )
@@ -138,7 +131,7 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
         )}
         <Step label="Login OK" status={c.auth_failed_at ? 'problem' : 'done'}
           action={c.auth_failed_at && (
-            <ActionButton size="sm" permission={CONFIG} done="Cleared: it is tried again on the next cycle" onAction={() => clear.mutateAsync()}>
+            <ActionButton size="sm" permission={CONFIG} done="Cleared: it is tried again on the next cycle" invalidates={changed} onAction={() => clearAuthLatch(c.id)}>
               Clear and try again next cycle
             </ActionButton>
           )}>

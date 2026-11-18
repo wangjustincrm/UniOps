@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
   ActionButton, Button, DateInput, Dialog, ErrorMessage, FormField, MasterDetailForm, Skeleton, numberColumn, queryKeys, readColumn,
-  todayDate, useCan, type FieldSpec, useNotices,
+  todayDate, useCan, type ActionDone, type FieldSpec,
 } from '@/platform-ui'
 import { useTestRunRefusal } from '@/features/common/testRun'
 import { OrderList } from '@/features/orders/OrdersPage'
@@ -72,19 +72,22 @@ function ConfirmShown({ rows, refresh }: { rows: OrderRead[]; refresh: () => Pro
   const [open, setOpen] = useState(false)
   const [date, setDate] = useState('')
   const canSend = useCan(MANAGE)
-  const notices = useNotices()
-  const m = useMutation({
-    mutationFn: (send: boolean) => confirmBulk(rows.map((r) => r.id), date || null, send),
-    onSuccess: async (r: ConfirmResult[]) => {
-      // The outcome in the list's status row: a warning while some were not confirmed.
+  const [error, setError] = useState<unknown>(null)  // a refusal of the whole request: said in the dialog too
+  // The outcome in the list's status row: a warning while some were not confirmed; the dialog closes.
+  const confirmed = {
+    done: (res: unknown): ActionDone => {
+      const r = res as ConfirmResult[]
       const failed = r.filter((x) => !x.ok)
       const sent = r.filter((x) => x.sent).length
-      notices.notify({ key: 'confirm', tone: failed.length ? 'warning' : 'success',
-        text: `${r.length - failed.length} confirmed${sent ? `, ${sent} sent` : ''}${failed.length ? `, ${failed.length} not: ${failed.map((f) => `#${f.order_id} ${f.error}`).join('; ')}` : ''}` })
-      setOpen(false)
-      await refresh()
+      return { key: 'confirm', tone: failed.length ? 'warning' : 'success',
+        text: `${r.length - failed.length} confirmed${sent ? `, ${sent} sent` : ''}${failed.length ? `, ${failed.length} not: ${failed.map((f) => `#${f.order_id} ${f.error}`).join('; ')}` : ''}` }
     },
-  })
+    after: async () => { setOpen(false); await refresh() },
+  }
+  const run = (send: boolean) => async () => {
+    setError(null)
+    try { return await confirmBulk(rows.map((r) => r.id), date || null, send) } catch (e) { setError(e); throw e }
+  }
   return (
     <>
       <ActionButton size="sm" permission={OPERATE} disabled={rows.length === 0} disabledReason="No order is shown to confirm." onAction={() => setOpen(true)}>
@@ -94,11 +97,11 @@ function ConfirmShown({ rows, refresh }: { rows: OrderRead[]; refresh: () => Pro
         description="Each order shown, delivered in full (its shipped quantity). Leave the date empty to use each order's Delivery due date. The date becomes the invoice date."
         footer={<>
           <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-          {canSend && <ActionButton variant="secondary" permission={OPERATE} onAction={() => m.mutateAsync(true).catch(() => {})}>Confirm and send</ActionButton>}
-          <ActionButton permission={OPERATE} onAction={() => m.mutateAsync(false).catch(() => {})}>Confirm</ActionButton>
+          {canSend && <ActionButton variant="secondary" permission={OPERATE} {...confirmed} onAction={run(true)}>Confirm and send</ActionButton>}
+          <ActionButton permission={OPERATE} {...confirmed} onAction={run(false)}>Confirm</ActionButton>
         </>}>
         <FormField label="Delivered on (optional)" htmlFor="bulk-date"><DateInput id="bulk-date" value={date} onChange={(e) => setDate(e.target.value)} /></FormField>
-        <ErrorMessage error={m.error} />
+        <ErrorMessage error={error} />
       </Dialog>
     </>
   )

@@ -1,11 +1,11 @@
 import { useCallback, useContext, useRef, useState } from 'react'
 import { QueryClientContext, type QueryKey } from '@tanstack/react-query'
 import { errorText } from '../resource/businessError'
-import { useNotices, type NoticeTone } from './notices'
+import { useNotices, type NoticeInput } from './notices'
 
-/** What a finished action says: a text (success), or a text with its own tone (e.g. a warning when only
- *  part of it worked); null says nothing. */
-export type ActionDone = string | { tone: NoticeTone; text: string } | null
+/** What a finished action says: a text (success), or a notice of its own (a tone, e.g. a warning when only
+ *  part of it worked; a key, so a repeat replaces it); null says nothing. */
+export type ActionDone = string | NoticeInput | null
 
 export interface ActionOptions {
   /** What to say when it worked (the status row of the list or sheet it is in); a function reads the result. */

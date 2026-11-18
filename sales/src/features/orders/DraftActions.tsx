@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ActionButton, ConfirmAction, Skeleton, queryKeys } from '@/platform-ui'
 import { ManualOrderForm } from './ManualOrderForm'
 import { cancelManual, fetchOrder, ordersClient, submitManual, type OrderRead } from './ordersApi'
@@ -19,8 +19,8 @@ export function DraftActions({ o, close }: { o: OrderRead; close: () => void }) 
   const [editing, setEditing] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const detail = useQuery({ queryKey: queryKeys.detail(ordersClient, o.id), queryFn: () => fetchOrder(o.id), enabled: editing })
-  const done = async () => { await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) }); close() }
-  const submit = useMutation({ mutationFn: () => submitManual(o.id, o.version), onSuccess: done })
+  // Submitted or cancelled: the list reads again and the sheet closes.
+  const closes = { invalidates: [queryKeys.list(ordersClient)], after: close }
   if (editing) {
     if (!detail.data) return <Skeleton className="h-40 w-full" />
     return (
@@ -35,24 +35,22 @@ export function DraftActions({ o, close }: { o: OrderRead; close: () => void }) 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex gap-2">
-        <ActionButton size="sm" permission={OPERATE} errorMessages={SUBMIT_ERRORS} onAction={() => submit.mutateAsync()}>Submit</ActionButton>
+        <ActionButton size="sm" permission={OPERATE} errorMessages={SUBMIT_ERRORS} {...closes} onAction={() => submitManual(o.id, o.version)}>Submit</ActionButton>
         <ActionButton size="sm" variant="secondary" permission={OPERATE} onAction={() => setEditing(true)}>Edit draft</ActionButton>
         <ActionButton size="sm" variant="secondary" permission={OPERATE} onAction={() => setCancelling(true)}>Cancel draft</ActionButton>
       </div>
       <ConfirmAction open={cancelling} onOpenChange={setCancelling} title="Cancel this draft?" destructive confirmLabel="Cancel draft"
-        description="The draft is kept as Cancelled; it is never sent." onConfirm={async () => { await cancelManual(o.id, o.version); await done() }} />
+        description="The draft is kept as Cancelled; it is never sent." {...closes} onConfirm={() => cancelManual(o.id, o.version)} />
     </div>
   )
 }
 
 /** Submit from the list row (a Draft). */
 export function SubmitDraft({ o }: { o: OrderRead }) {
-  const qc = useQueryClient()
-  const m = useMutation({ mutationFn: () => submitManual(o.id, o.version),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) }) })
   return (
     <span className="inline-flex flex-col gap-1">
-      <ActionButton size="sm" variant="secondary" permission={OPERATE} errorMessages={SUBMIT_ERRORS} done={`${o.source_reference ?? `#${o.order_number}`} submitted`} onAction={() => m.mutateAsync()}>Submit</ActionButton>
+      <ActionButton size="sm" variant="secondary" permission={OPERATE} errorMessages={SUBMIT_ERRORS} done={`${o.source_reference ?? `#${o.order_number}`} submitted`}
+        invalidates={[queryKeys.list(ordersClient)]} onAction={() => submitManual(o.id, o.version)}>Submit</ActionButton>
     </span>
   )
 }

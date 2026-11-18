@@ -1,4 +1,3 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ActionButton, AddressView, Badge, Button, DateCell, DateTimeCell, Tooltip, LocalTable, StatusCell, TrackingLink, ViewFileButton, queryKeys, useOpenRecord,
   type ColumnDef, Hint, columnsOf
@@ -76,15 +75,10 @@ function LineItems({ s, numbers, orderId, lines }: { s: ShipmentRead; numbers: M
 }
 
 function Retry({ s, orderId }: { s: ShipmentRead; orderId: number }) {
-  const qc = useQueryClient()
-  const m = useMutation({
-    mutationFn: () => retryShopify(s.id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.detail(ordersClient, orderId) }),
-  })
   return (
     <span className="inline-flex flex-col gap-1">
       <ActionButton size="sm" variant="secondary" permission="sales.order.operate" errorMessages={errorMessages} done="Shopify write queued again"
-        onAction={() => m.mutateAsync()}>
+        invalidates={[queryKeys.detail(ordersClient, orderId)]} onAction={() => retryShopify(s.id)}>
         Retry in Shopify
       </ActionButton>
     </span>

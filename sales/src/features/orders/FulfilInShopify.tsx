@@ -1,6 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, queryKeys, useNotices } from '@/platform-ui'
-import { useTestRunRefusal } from '@/features/common/testRun'
+import { ActionButton, queryKeys } from '@/platform-ui'
 import { fulfilInShopify, ordersClient, type OrderDetail } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
@@ -15,20 +13,11 @@ const errorMessages: Record<string, string> = {
  *  accepted — e.g. when the store's Write was off at the 997. The whole order is fulfilled without tracking
  *  (the customer is not told) and archived; its 945 adds the tracking. Never a second fulfillment. */
 export function FulfilInShopify({ o }: { o: OrderDetail }) {
-  const qc = useQueryClient()
-  const notices = useNotices()
-  const refused = useTestRunRefusal()
-  const m = useMutation({
-    mutationFn: () => fulfilInShopify(o.id),
-    onSuccess: async () => {
-      notices.notify({ key: `fulfil:${o.id}`, tone: 'success', text: 'Queued: Shopify is fulfilled and the order archived on the next outbox pass.' })
-      await qc.invalidateQueries({ queryKey: queryKeys.detail(ordersClient, o.id) })
-    },
-  })
   if (o.source_type !== 'SHOPIFY' || o.fulfillment_status !== '940 Accepted') return null
   return (
     <ActionButton size="sm" variant="secondary" permission={OPERATE} errorMessages={errorMessages}
-      onAction={() => m.mutateAsync().catch(refused)}>
+      done={{ key: `fulfil:${o.id}`, tone: 'success', text: 'Queued: Shopify is fulfilled and the order archived on the next outbox pass.' }}
+      invalidates={[queryKeys.detail(ordersClient, o.id)]} onAction={() => fulfilInShopify(o.id)}>
       {o.shopify_fulfillment_id ? 'Archive in Shopify now' : 'Fulfil in Shopify now'}
     </ActionButton>
   )

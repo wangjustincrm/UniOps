@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   ActionButton, Badge, Button, DetailList, ErrorMessage, ErrorView, LocalTable, PageHeader, Section, Skeleton, StatCard, TourScope, formatDateTime,
@@ -27,11 +27,15 @@ const CARDS: [string, string, string?][] = [
 /** "Test" on a connection's check: reads only (the connection test of Configuration → Connections). */
 function TestConnection({ id }: { id: number }) {
   const [result, setResult] = useState<ConnectionTest | null>(null)
-  const m = useMutation({ mutationFn: () => testConnection(id), onSuccess: setResult })
+  const [error, setError] = useState<unknown>(null)  // a test refused: said beside it too
+  const test = async () => {
+    setError(null)
+    try { return await testConnection(id) } catch (e) { setError(e); throw e }
+  }
   const ok = result && !result.error && result.folders.every((f) => f.ok) && (result.host_key?.matches ?? true)
   return (
     <span className="flex flex-col gap-1">
-      <ActionButton size="sm" variant="secondary" permission="sales.config" onAction={() => m.mutateAsync().catch(() => {})}>
+      <ActionButton size="sm" variant="secondary" permission="sales.config" refreshes={false} after={(r) => setResult(r as ConnectionTest)} onAction={test}>
         Test
       </ActionButton>
       {result && (
@@ -39,7 +43,7 @@ function TestConnection({ id }: { id: number }) {
           {ok ? 'reachable' : (result.error ?? result.folders.find((f) => !f.ok)?.error ?? 'host key does not match the pinned one')}
         </span>
       )}
-      <ErrorMessage error={m.error} />
+      <ErrorMessage error={error} />
     </span>
   )
 }

@@ -1,7 +1,6 @@
+import { isTestRunRefusal } from '@/features/common/testRun'
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, Autocomplete, ConfirmAction, FormSheet, Hint, queryKeys, useNotices, type ComboOption } from '@/platform-ui'
-import { useTestRunRefusal } from '@/features/common/testRun'
+import { ActionButton, Autocomplete, ConfirmAction, FormSheet, Hint, queryKeys, type ComboOption } from '@/platform-ui'
 import { ordersClient, resolveRow, type LineRead, type ShipmentRowRead } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
@@ -16,21 +15,12 @@ const errorMessages: Record<string, string> = {
  *  there, and on the invoice), or accept it with a reason (a different or substituted item adds
  *  nothing). Which lines match is the server's. Once none is left, the invoice it blocked follows. */
 export function ResolveRow({ r, shipmentId, orderId, lines }: { r: ShipmentRowRead; shipmentId: number; orderId: number; lines: LineRead[] }) {
-  const qc = useQueryClient()
-  const notices = useNotices()
-  const refused = useTestRunRefusal()
   const [open, setOpen] = useState(false)
   const [accepting, setAccepting] = useState(false)
   const [line, setLine] = useState<string | null>(null)
-  const m = useMutation({
-    mutationFn: ({ lineId, why }: { lineId: number | null; why: string | null }) => resolveRow(shipmentId, r.id, lineId, why),
-    onSuccess: async () => {
-      notices.notify({ key: `row:${r.id}`, tone: 'success', text: `945 row ${r.item_code ?? ''} resolved.` })
-      setOpen(false)
-      await qc.invalidateQueries({ queryKey: queryKeys.detail(ordersClient, orderId) })
-      await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
-    },
-  })
+  // A link or an acceptance: said in the order's status row, the sheet closes; the order and the list read again.
+  const resolved = { done: `945 row ${r.item_code ?? ''} resolved.`, after: () => setOpen(false),
+    invalidates: [queryKeys.detail(ordersClient, orderId), queryKeys.list(ordersClient)] }
   const matching = lines.filter((l) => !l.removed && (r.matching_lines ?? []).includes(l.id))
   const options = async (q: string): Promise<ComboOption[]> => matching
     .map((l) => ({ value: String(l.id), label: `Line ${l.line_no} · ${l.item_code ?? '?'}`, hint: `${l.qty_ea ?? '?'} EA` }))
@@ -50,7 +40,7 @@ export function ResolveRow({ r, shipmentId, orderId, lines }: { r: ShipmentRowRe
               <Hint as="p">Linked: its quantity counts on that line and on the invoice.</Hint>
               <div>
                 <ActionButton size="sm" permission={OPERATE} disabled={!line} disabledReason="Choose the order line first." errorMessages={errorMessages}
-                  onAction={() => m.mutateAsync({ lineId: Number(line), why: null })}>Link to this line</ActionButton>
+                  {...resolved} onAction={() => resolveRow(shipmentId, r.id, Number(line), null)}>Link to this line</ActionButton>
               </div>
             </>
           ) : <Hint as="p">No line of this order is the same item, so it can only be accepted.</Hint>}
@@ -61,7 +51,7 @@ export function ResolveRow({ r, shipmentId, orderId, lines }: { r: ShipmentRowRe
         </div>
       </FormSheet>
       <ConfirmAction open={accepting} onOpenChange={setAccepting} title="Accept this row without a line?" confirmLabel="Accept"
-        reason={{ label: 'Why it is accepted' }} errorMessages={errorMessages} onConfirm={(why) => m.mutateAsync({ lineId: null, why }).catch(refused)} />
+        reason={{ label: 'Why it is accepted' }} errorMessages={errorMessages} toStatusRow={isTestRunRefusal} {...resolved} onConfirm={(why) => resolveRow(shipmentId, r.id, null, why)} />
     </>
   )
 }

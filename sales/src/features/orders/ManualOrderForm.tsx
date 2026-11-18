@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { z } from 'zod'
 import {
@@ -67,7 +67,11 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
   const codes = [...new Set(lines.map((l) => l.item_code).filter(Boolean))]
   const unitQueries = useQueries({ queries: codes.map((c) => ({ queryKey: ['sales', 'lookup', 'units', c], queryFn: () => itemUnits(c), staleTime: 60_000 })) })
   const units: Record<string, { value: string; label: string }[]> = Object.fromEntries(codes.map((c, i) => [c, unitQueries[i]?.data ?? []]))
-  const check = useMutation({ mutationFn: (ls: ManualLine[]) => previewManual(ls), onSuccess: setPreview })
+  const [checkError, setCheckError] = useState<unknown>(null)  // a preview refused: said under its button too
+  const check = (ls: ManualLine[]) => async () => {
+    setCheckError(null)
+    try { return await previewManual(ls) } catch (e) { setCheckError(e); throw e }
+  }
   const settings = useQuery({ queryKey: EDI_KEY, queryFn: fetchEdiSettings })
   const fields = fieldsFor(carriersFor(settings.data?.express_offered ?? true))
 
@@ -107,9 +111,9 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
       preview={(st) => (
         <div className="flex flex-col gap-1">
           <ActionButton size="sm" variant="secondary" permission={OPERATE}
-            onAction={() => check.mutateAsync(st.lines).catch(() => {})}>Preview EA</ActionButton>
+            refreshes={false} after={(r) => setPreview(r as LinePreview[])} onAction={check(st.lines)}>Preview EA</ActionButton>
           {preview && <WeightHint preview={preview} ltlFromLb={settings.data?.ltl_from_lb ?? 150} />}
-          <ErrorMessage error={check.error} />
+          <ErrorMessage error={checkError} />
         </div>
       )}
       submitLabel={draft ? 'Save changes' : 'Save draft'}

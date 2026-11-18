@@ -1,6 +1,6 @@
 import { factTone } from '@/features/common/statusTones'
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
   ActionButton, Autocomplete, ConfirmAction, DateCell, DetailList, ListPage, LocalTable, ViewFileButton,
@@ -200,8 +200,6 @@ function Detail({ row }: { row: TransferRead }) {
     qc.setQueryData(queryKeys.detail(transfersClient, id), d)
     await qc.invalidateQueries({ queryKey: queryKeys.list(transfersClient) })
   }
-  const ready = useMutation({ mutationFn: () => readyTransfer(id, q.data!.version), onSuccess: done })
-  const resend = useMutation({ mutationFn: () => resendTransfer(id, q.data!.version), onSuccess: done })
   const t = q.data
   const sent = t ? t.lines.reduce((n, l) => n + l.qty_ea, 0) : 0
   const received = t ? t.lines.reduce((n, l) => n + l.received_ea, 0) : 0
@@ -292,9 +290,9 @@ function Detail({ row }: { row: TransferRead }) {
         ] : undefined}
         actions={t && !editing ? (
           <>
-            {t.status === 'Draft' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done="Ready to send: the 943 goes on the next pass" onAction={() => ready.mutateAsync()}>Ready to send</ActionButton>}
+            {t.status === 'Draft' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done="Ready to send: the 943 goes on the next pass" onAction={() => readyTransfer(id, t.version)} after={(d) => done(d as TransferDetail)}>Ready to send</ActionButton>}
             {t.status === 'Draft' && <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setEditing(true)}>Edit draft</ActionButton>}
-            {t.status === 'Failed' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done="943 queued again" onAction={() => resend.mutateAsync()}>Resend 943</ActionButton>}
+            {t.status === 'Failed' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done="943 queued again" onAction={() => resendTransfer(id, t.version)} after={(d) => done(d as TransferDetail)}>Resend 943</ActionButton>}
             {t.status === 'On Hold' && <ActionButton size="sm" permission={MANAGE} onAction={() => setReleasing(true)}>Release hold…</ActionButton>}
             {AMENDABLE.includes(t.status) && t.receipts.every((r) => !r.applied) && !amending && !settling && (
               <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setAmending(true)}>Amend and send again…</ActionButton>)}

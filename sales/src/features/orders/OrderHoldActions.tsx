@@ -1,7 +1,6 @@
+import { isTestRunRefusal } from '@/features/common/testRun'
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, ConfirmAction, DiffTable, FormSheet, Hint, queryKeys, useNotices } from '@/platform-ui'
-import { useTestRunRefusal } from '@/features/common/testRun'
+import { ActionButton, ConfirmAction, DiffTable, FormSheet, Hint, queryKeys } from '@/platform-ui'
 import { cancelOrder, ordersClient, releaseHold, type OrderDetail } from './ordersApi'
 import { compare945 } from './orderStatus'
 
@@ -15,13 +14,8 @@ const errorMessages: Record<string, string> = {
   'auth.forbidden': 'You do not have permission to do this.',
 }
 
-function useRefreshOrder(id: number) {
-  const qc = useQueryClient()
-  return async () => {
-    await qc.invalidateQueries({ queryKey: queryKeys.detail(ordersClient, id) })
-    await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
-  }
-}
+/** What an order's change reads again: the order and the list. */
+const orderKeys = (id: number) => [queryKeys.detail(ordersClient, id), queryKeys.list(ordersClient)]
 
 // What each way out of a hold is called, and what it does.
 function exitOf(to: string, conflict: boolean): { label: string; text: string; destructive?: boolean } {
@@ -34,22 +28,10 @@ function exitOf(to: string, conflict: boolean): { label: string; text: string; d
 /** Cancel order, and Release hold or the 945 comparison (PRD 9.1, FR-OB-18, FR-OB-25). What is
  *  open comes from the server, as in production; a shadow order is refused there. */
 export function OrderHoldActions({ o }: { o: OrderDetail }) {
-  const refresh = useRefreshOrder(o.id)
-  const notices = useNotices()
-  const refused = useTestRunRefusal()
   const [cancelling, setCancelling] = useState(false)
   const [sheet, setSheet] = useState(false)
   const [choice, setChoice] = useState<string | null>(null)
   const name = o.source_reference ?? o.order_number
-  const cancel = useMutation({ mutationFn: (why: string) => cancelOrder(o.id, o.version, why), onSuccess: async () => {
-    notices.notify({ key: `cancel:${o.id}`, tone: 'success', text: `Order ${name} cancelled.` })
-    await refresh()
-  } })
-  const release = useMutation({ mutationFn: ({ to, why }: { to: string; why: string }) => releaseHold(o.id, o.version, to, why), onSuccess: async (_, v) => {
-    notices.notify({ key: `release:${o.id}`, tone: 'success', text: `Order ${name}: hold released to ${v.to}.` })
-    setSheet(false)
-    await refresh()
-  } })
   const exits = o.hold_exits ?? []
   const conflict = o.on_hold_reason === '945 Conflict'
   const applied = o.shipments.find((s) => s.applied)
@@ -64,7 +46,8 @@ export function OrderHoldActions({ o }: { o: OrderDetail }) {
         <ActionButton size="sm" permission={OPERATE} onAction={() => setSheet(true)}>{conflict ? 'Compare the 945s' : 'Release hold'}</ActionButton>
       )}
       <ConfirmAction open={cancelling} onOpenChange={setCancelling} title={`Cancel order ${name}?`} description={NOTHING_WRITTEN} destructive
-        confirmLabel="Cancel order" reason={{ label: 'Why it is cancelled' }} errorMessages={errorMessages} onConfirm={(why) => cancel.mutateAsync(why).catch(refused)} />
+        confirmLabel="Cancel order" reason={{ label: 'Why it is cancelled' }} errorMessages={errorMessages} done={{ key: `cancel:${o.id}`, tone: 'success', text: `Order ${name} cancelled.` }} invalidates={orderKeys(o.id)}
+        toStatusRow={isTestRunRefusal} onConfirm={(why) => cancelOrder(o.id, o.version, why)} />
       <FormSheet open={sheet} onOpenChange={setSheet} title={conflict ? 'Two 945s for this order' : 'Release hold'}
         description={conflict ? 'The applied 945 set the quantities; the second is stored and changed nothing.'
           : 'This order was cancelled at source after its 940. Decide where it goes.'}>
@@ -86,7 +69,8 @@ export function OrderHoldActions({ o }: { o: OrderDetail }) {
       </FormSheet>
       <ConfirmAction open={choice !== null} onOpenChange={(v) => { if (!v) setChoice(null) }} title={picked ? `${picked.label}?` : ''} description={picked?.text}
         destructive={picked?.destructive} confirmLabel={picked?.label} reason={{ label: 'Why' }} errorMessages={errorMessages}
-        onConfirm={(why) => release.mutateAsync({ to: choice!, why }).catch(refused)} />
+        done={{ key: `release:${o.id}`, tone: 'success', text: `Order ${name}: hold released to ${choice}.` }} invalidates={orderKeys(o.id)}
+        toStatusRow={isTestRunRefusal} after={() => setSheet(false)} onConfirm={(why) => releaseHold(o.id, o.version, choice!, why)} />
     </>
   )
 }

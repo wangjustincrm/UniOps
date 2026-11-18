@@ -1,7 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, Badge, CrudPage, DetailList, ErrorMessage, formatDateTime, queryKeys, type ColumnDef, type FieldSpec, Hint,
+  ActionButton, Badge, CrudPage, DetailList, formatDateTime, queryKeys, type ColumnDef, type FieldSpec, Hint,
 } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import {
@@ -43,20 +44,19 @@ const errorMessages = {
 
 /** "Send test" (AC-OB-71): through the rule as it is; recorded on the rule. */
 function TestRule({ rule }: { rule: NotificationRuleRead }) {
-  const qc = useQueryClient()
-  const m = useMutation({ mutationFn: () => sendTest(rule.id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.list(rulesClient) }) })
+  const [result, setResult] = useState<string | null>(null)  // the test just sent, until the list reads it again
   return (
     <div className="flex flex-col gap-2 text-sm">
       <DetailList items={[
         ['Last test', rule.tested_at ? formatDateTime(rule.tested_at) : 'never'],
-        ['Result', m.data?.result ?? rule.test_result],
+        ['Result', result ?? rule.test_result],
       ]} />
       <span>
         <ActionButton size="sm" variant="secondary" permission="sales.config" disabled={!rule.active} disabledReason="The rule is inactive: activate it to test it."
-          onAction={() => m.mutateAsync().catch(() => {})}>Send test notification</ActionButton>
+          errorMessages={errorMessages} invalidates={[queryKeys.list(rulesClient)]}
+          after={(r) => setResult((r as Awaited<ReturnType<typeof sendTest>>).result)}
+          onAction={() => sendTest(rule.id)}>Send test notification</ActionButton>
       </span>
-      <ErrorMessage error={m.error} messages={errorMessages} />
     </div>
   )
 }

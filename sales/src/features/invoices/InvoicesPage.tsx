@@ -1,6 +1,6 @@
 import { factTone } from '@/features/common/statusTones'
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
   ActionButton, ConfirmAction, DetailList, ListPage, LocalTable, MasterDetailForm, MoneyCell,
@@ -125,7 +125,6 @@ function Detail({ row }: { row: InvoiceRead }) {
     await qc.invalidateQueries({ queryKey: queryKeys.detail(invoicesClient, id) })
     await qc.invalidateQueries({ queryKey: queryKeys.list(invoicesClient) })
   }
-  const send = useMutation({ mutationFn: () => sendInvoice(id), onSuccess: refresh })
   const inv = q.data
   const sendable = inv && (inv.status === 'Ready' || inv.status === 'Failed' || inv.status === 'Sent')
   const tabs: RecordTab[] = !inv ? [] : editing ? [{
@@ -176,7 +175,7 @@ function Detail({ row }: { row: InvoiceRead }) {
           <>
             {sendable && (
               <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done={`Invoice ${inv.invoice_number} queued to send`}
-                onAction={() => send.mutateAsync()}>
+                invalidates={[queryKeys.detail(invoicesClient, id), queryKeys.list(invoicesClient)]} onAction={() => sendInvoice(id)}>
                 {inv.status === 'Sent' ? 'Send again' : 'Send'}
               </ActionButton>
             )}

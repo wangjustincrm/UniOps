@@ -14,3 +14,9 @@ export function useTestRunRefusal() {
     return undefined
   }
 }
+
+/** A test-run refusal (ConfirmAction `toStatusRow`): it ends the dialog and is said in the status row. */
+export const isTestRunRefusal = (e: unknown): boolean => {
+  const be = businessErrorOf(e)
+  return !!be && CODES.includes(be.code)
+}

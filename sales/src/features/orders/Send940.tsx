@@ -1,7 +1,6 @@
+import { isTestRunRefusal } from '@/features/common/testRun'
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, ConfirmAction, queryKeys, useNotices } from '@/platform-ui'
-import { useTestRunRefusal } from '@/features/common/testRun'
+import { ActionButton, ConfirmAction, queryKeys, type ActionDone } from '@/platform-ui'
 import { ordersClient, send940, type OrderDetail, type Send940Result } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
@@ -18,21 +17,17 @@ const errorMessages: Record<string, string> = {
  *  queued and put by the next outbox pass; its file and 997 status show
  *  under Warehouse 940s. */
 export function Send940({ o }: { o: OrderDetail }) {
-  const qc = useQueryClient()
   const [confirming, setConfirming] = useState(false)
-  const notices = useNotices()
-  const refused = useTestRunRefusal()
-  const m = useMutation({
-    mutationFn: (replace: boolean) => send940(o.id, replace),
-    onSuccess: async (r: Send940Result) => {
-      // What happened, in the sheet's (or list's) status row.
-      notices.notify(r.errors.length > 0
+  // What happened, in the sheet's (or list's) status row: queued, or the checks it failed; the order reads again.
+  const sent = {
+    done: (res: unknown): ActionDone => {
+      const r = res as Send940Result
+      return r.errors.length > 0
         ? { key: `send940:${o.id}`, tone: 'error', text: `The 940 failed its checks and was not sent: ${r.errors.join('; ')}` }
-        : { key: `send940:${o.id}`, tone: 'success', text: `940 ${r.control} queued: it is sent on the next outbox pass.` })
-      await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
-      await qc.invalidateQueries({ queryKey: queryKeys.detail(ordersClient, o.id) })
+        : { key: `send940:${o.id}`, tone: 'success', text: `940 ${r.control} queued: it is sent on the next outbox pass.` }
     },
-  })
+    invalidates: [queryKeys.list(ordersClient), queryKeys.detail(ordersClient, o.id)],
+  }
   // sales-api says what is offered (app/domain/order_rules.py send_940_action): never once a 945 came.
   if (!o.send_940) return null
   const replace = o.send_940 === 'replace'
@@ -50,11 +45,11 @@ export function Send940({ o }: { o: OrderDetail }) {
             confirmLabel="Replace 940"
             destructive
             errorMessages={errorMessages}
-            onConfirm={() => m.mutateAsync(true).catch(refused)}
+            toStatusRow={isTestRunRefusal} {...sent} onConfirm={() => send940(o.id, true)}
           />
         </>
       ) : (
-        <ActionButton size="sm" permission={OPERATE} errorMessages={errorMessages} onAction={() => m.mutateAsync(false)}>Send 940 now</ActionButton>
+        <ActionButton size="sm" permission={OPERATE} errorMessages={errorMessages} {...sent} onAction={() => send940(o.id, false)}>Send 940 now</ActionButton>
       )}
     </section>
   )

@@ -5,6 +5,7 @@ import { Dialog } from '../primitives/Dialog'
 import { errorText } from '../resource/businessError'
 import { DisabledReason } from '../help'
 import { useAfterAction, type ActionOptions } from './useAction'
+import { useNotices } from './notices'
 
 export interface ConfirmActionProps {
   open: boolean
@@ -26,13 +27,17 @@ export interface ConfirmActionProps {
   refreshes?: boolean
   invalidates?: ActionOptions['invalidates']
   after?: ActionOptions['after']
+  /** Failures that end the dialog and are said in the status row instead of in it (e.g. a refusal that no
+   *  change to the dialog's input can fix). Anything else stays in the dialog. */
+  toStatusRow?: (error: unknown) => boolean
 }
 
 export function ConfirmAction({
   open, onOpenChange, title, description, confirmLabel = 'Confirm', destructive, onConfirm, errorMessages, reason,
-  done, refreshes, invalidates, after,
+  done, refreshes, invalidates, after, toStatusRow,
 }: ConfirmActionProps) {
   const afterAction = useAfterAction()
+  const notices = useNotices()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [text, setText] = useState('')
@@ -52,6 +57,12 @@ export function ConfirmAction({
       onOpenChange(false)
       await afterAction(result, { done, refreshes, invalidates, after })
     } catch (e) {
+      if (toStatusRow?.(e)) {
+        setText('')
+        onOpenChange(false)
+        notices.notify({ tone: 'error', text: errorText(e, errorMessages) })
+        return
+      }
       setError(errorText(e, errorMessages))
     } finally {
       inFlight.current = false
