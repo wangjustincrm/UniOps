@@ -103,7 +103,10 @@ values:
       the deposit and a recurring one for the rent.
     notes:
       - >-
-        The deposit amount is required on the agreement. Its deposit PA is a
+        The deposit amount is required on the agreement, and so is at least one
+        attachment before it can be submitted for approval; once submitted, its
+        last attachment cannot be removed (upload the replacement first).
+        Its deposit PA is a
         Prepayment whose amount is that deposit — it cannot be typed or edited,
         and carries no tax or freight.
       - >-

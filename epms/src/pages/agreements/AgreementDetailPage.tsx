@@ -461,6 +461,14 @@ export default function AgreementDetailPage() {
 
   const { data: attachmentsData, isLoading: attachmentsLoading } = useAgreementAttachments(agreement?.id ?? '')
   const attachments = attachmentsData ?? []
+  // OneTime (Deposit): the attachments are the deposit's only evidence —
+  // required to submit, and the last one cannot be removed once submitted
+  // (agreements.py / agreement_attachments.py enforce both).
+  const missingDepositAttachment =
+    isDeposit && !attachmentsLoading && attachments.length === 0
+  const lockLastDepositAttachment =
+    isDeposit && !!agreement && !['draft', 'returned', 'cancelled'].includes(agreement.status)
+    && attachments.length === 1
   const uploadAttachment = useUploadAgreementAttachment(agreement?.id ?? '')
   const confirmDlg = useConfirmDialog()
   // A picked file the upload rule refuses (ISS-0093), shown under the button.
@@ -542,14 +550,21 @@ export default function AgreementDetailPage() {
                   variant="secondary"
                   size="sm"
                   onClick={() => { agreementAction.reset(); agreementAction.mutate({ action: 'submit' }) }}
-                  disabled={agreementAction.isPending || missingOwner}
-                  title={missingOwner ? 'Set an Owner on this agreement before submitting it' : undefined}
+                  disabled={agreementAction.isPending || missingOwner || missingDepositAttachment}
+                  title={missingOwner ? 'Set an Owner on this agreement before submitting it'
+                    : missingDepositAttachment ? 'Upload the signed agreement or deposit request under Attachments first'
+                    : undefined}
                 >
                   Submit for Approval
                 </Button>
                 {missingOwner && (
                   <span className="text-xs text-danger-600">
                     Set an Owner (Edit) before submitting — the owner confirms each period.
+                  </span>
+                )}
+                {!missingOwner && missingDepositAttachment && (
+                  <span className="text-xs text-danger-600">
+                    Upload the signed agreement or deposit request under Attachments before submitting — it is the deposit’s only evidence.
                   </span>
                 )}
               </>
@@ -916,7 +931,7 @@ export default function AgreementDetailPage() {
                     >
                       Download
                     </button>
-                    {canWrite && (
+                    {canWrite && !lockLastDepositAttachment && (
                       <button
                         type="button"
                         onClick={() => { uploadAttachment.reset(); deleteAttachment.mutate(att.id) }}

@@ -172,6 +172,13 @@ export default function AgreementCreatePage() {
 
   const handleSubmit = async (submitForApproval: boolean) => {
     if (!validate()) return
+    // A deposit agreement cannot be submitted without its evidence — the
+    // server refuses it; say so here instead of creating a draft that then
+    // fails to submit. Saving as a draft without one is fine.
+    if (submitForApproval && agreementType === 'deposit' && attachments.length === 0) {
+      setAttachmentError('Attach the signed agreement or deposit request — a deposit agreement cannot be submitted without it. (Save as Draft does not need it.)')
+      return
+    }
     setIsSubmitting(true)
     setSaveError(null)
     try {

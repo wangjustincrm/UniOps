@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.60
+**Version:** 2.61
 **Date:** 2026-11-17
 **Status:** In Production
+
+> **v2.61 (2026-11-17)** — A OneTime (Deposit) agreement needs an attachment to be **submitted**, not only to raise its deposit PA, and its last attachment cannot be removed once submitted (AGR-090). Found in DEV1 testing: an agreement with no attachment was approved through every step and stopped only at Create Deposit PA.
 
 > **v2.60 (2026-11-17)** — When the approval engine answers too slowly, EPMS checks whether the action was recorded anyway before reporting it failed (§3.3.3).
 
@@ -2470,7 +2472,7 @@ A deposit is money that goes out with no invoice behind it and is expected to co
 
 | FR ID | Requirement |
 |---|---|
-| **AGR-090** | Type `deposit`, labelled *OneTime (Deposit)*. **Deposit Amount** is required (> 0) and is the deposit PA's amount. It has no billing schedule, milestones or Not-to-Exceed. Approval is the ordinary agreement approval (AGR-010). |
+| **AGR-090** | Type `deposit`, labelled *OneTime (Deposit)*. **Deposit Amount** is required (> 0) and is the deposit PA's amount. It has no billing schedule, milestones or Not-to-Exceed. Approval is the ordinary agreement approval (AGR-010). **At least one attachment is required to submit** (422; Agreement Detail greys out *Submit for Approval* and says why, New Agreement refuses *Submit* without a file — a draft may be saved without one), and once submitted the agreement's **last attachment cannot be removed** (409; upload the replacement first). |
 | **AGR-091** | A deposit agreement takes **no invoices**: it is not offered as a match candidate and matching an invoice to it is refused. |
 | **AGR-092** | **Deposit PA.** Raised from Agreement Detail → *Deposit* → *Create Deposit PA* (created and submitted in one step). It is a `prepayment` with no PO and no invoice; its amount is the agreement's Deposit Amount in the agreement's currency, with no tax, freight or other charges, whatever the client sends, and cannot be edited (only title, notes and expected refund date). Refused (422) unless the agreement is admissible (AGR-012) **and has at least one attachment** — the signed agreement or deposit request is its only evidence. One per agreement: a second is refused (409) while the first is not `cancelled`/`rejected`. It follows the normal PA approval and is paid by Finance (PAY-001); its remittance reference is "Deposit - <agreement number>" (REM-003). It pushes nothing to NC. |
 | **AGR-093** | **Record Refund.** On the paid (`processed`) deposit PA whose settlement is pending, *Record Refund* (`epms.pa.write` and the PA visible to the user) records, in one step: the **amount refunded**, 0 up to the deposit paid (more is refused, 422); the **refund evidence**, at least one file (422 without); and, when less than the deposit came back, the **reason it was retained** (422 without). It creates a Settlement PA of that agreement (`payment_amount` 0 — nothing is paid) in status `submitted`, and a *Confirm Deposit Refund* (`confirm_settlement`) task for the Finance BP pool. The agreement's validity window does **not** apply — a refund comes after the agreement has ended. Only one live refund per deposit (409). |

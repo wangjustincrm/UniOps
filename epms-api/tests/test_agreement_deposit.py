@@ -327,3 +327,69 @@ async def test_refund_endpoint_refuses_po_prepayment(admin_client, test_engine):
         "subtotal": "10.00"})).json()
     r = await _refund(admin_client, pa["id"], "1.00")
     assert r.status_code == 409, r.text
+
+
+# ── Evidence must exist before approval (DEV1 finding 2026-11-17) ────────────
+
+async def _att(test_engine, agreement_id, name="lease.pdf"):
+    async with _factory(test_engine)() as db:
+        a = AgreementAttachment(agreement_id=agreement_id, filename=name,
+                                content_type="application/pdf", file_size=10,
+                                storage_key=uuid.uuid4())
+        db.add(a)
+        await db.commit()
+        return a.id
+
+
+async def test_deposit_agreement_cannot_be_submitted_without_attachment(
+        admin_client, test_engine, monkeypatch):
+    calls: list[str] = []
+
+    async def _fake_delegate(doc_type, doc_id, action, comment, token, expected_step=None):
+        calls.append(action)
+        return {"new_status": "submitted"}
+
+    monkeypatch.setattr("app.api.v1.agreements.delegate_action", _fake_delegate)
+    agr, _ = await _deposit_agreement(test_engine, attach=False, status="draft",
+                                      owner_id=None)
+    async with _factory(test_engine)() as db:
+        from app.models.agreement import PurchaseAgreement
+        a = await db.get(PurchaseAgreement, agr.id)
+        a.owner_id = a.created_by
+        await db.commit()
+    r = await admin_client.post(f"{AGR_URL}/{agr.id}/action", json={"action": "submit"})
+    assert r.status_code == 422, r.text
+    assert "Attachments" in r.text
+    assert calls == []
+    # the positive half: with the evidence attached it goes to the engine
+    await _att(test_engine, agr.id)
+    r = await admin_client.post(f"{AGR_URL}/{agr.id}/action", json={"action": "submit"})
+    assert r.status_code == 200, r.text
+    assert calls == ["submit"]
+
+
+async def test_last_attachment_of_submitted_deposit_cannot_be_removed(
+        admin_client, test_engine, monkeypatch):
+    async def _noop(*a, **k):
+        return None
+    monkeypatch.setattr("app.api.v1.agreement_attachments.delete_from_file_server", _noop)
+    agr, _ = await _deposit_agreement(test_engine, attach=False)   # status active
+    first = await _att(test_engine, agr.id, "lease.pdf")
+    r = await admin_client.delete(f"{AGR_URL}/{agr.id}/attachments/{first}")
+    assert r.status_code == 409, r.text
+    second = await _att(test_engine, agr.id, "lease-v2.pdf")
+    r = await admin_client.delete(f"{AGR_URL}/{agr.id}/attachments/{first}")
+    assert r.status_code == 204, r.text
+    r = await admin_client.delete(f"{AGR_URL}/{agr.id}/attachments/{second}")
+    assert r.status_code == 409, r.text
+
+
+async def test_draft_deposit_attachment_can_still_be_removed(
+        admin_client, test_engine, monkeypatch):
+    async def _noop(*a, **k):
+        return None
+    monkeypatch.setattr("app.api.v1.agreement_attachments.delete_from_file_server", _noop)
+    agr, _ = await _deposit_agreement(test_engine, attach=False, status="draft")
+    only = await _att(test_engine, agr.id)
+    r = await admin_client.delete(f"{AGR_URL}/{agr.id}/attachments/{only}")
+    assert r.status_code == 204, r.text
