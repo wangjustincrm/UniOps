@@ -80,3 +80,48 @@ def test_the_engine_list_names_classes_that_exist():
         mod = importlib.import_module(f"app.services.{m.name}")
         names |= {f"{m.name}.{c}" for c, k in inspect.getmembers(mod, inspect.isclass) if k.__module__ == mod.__name__}
     assert sorted(set(ENGINES) - names) == []
+
+
+# ── one base (step 3, 2026-11-18): every service a request reaches is a platform Service ──────────────────────
+def _unbased(module_classes) -> list[str]:
+    """Classes with a public coroutine (an operation a request may call) that are neither an engine nor built on
+    platform Service. Data holders (dataclasses, no coroutine) and the platform's other bases are not services."""
+    import dataclasses
+    from app.platform.services import Service
+    out = []
+    for qual, cls in module_classes:
+        if qual in ENGINES or dataclasses.is_dataclass(cls) or issubclass(cls, Service):
+            continue
+        ops = [n for n, f in cls.__dict__.items() if not n.startswith("_") and inspect.iscoroutinefunction(getattr(f, "__func__", f))]
+        if ops:
+            out.append(qual)
+    return sorted(out)
+
+
+def _service_classes():
+    for m in pkgutil.iter_modules(services.__path__):
+        mod = importlib.import_module(f"app.services.{m.name}")
+        for cname, cls in inspect.getmembers(mod, inspect.isclass):
+            if cls.__module__ == mod.__name__:
+                yield f"{m.name}.{cname}", cls
+
+
+# Platform bases of their own (a settings group, the saved views, the task gateway, a scheduled job): each
+# checks its permission in the base, as the first test proves.
+OTHER_BASES = ("SettingsGroup", "ViewService", "TaskService", "ScheduledJob")
+
+
+def test_every_service_a_request_reaches_is_a_platform_service():
+    classes = [(q, c) for q, c in _service_classes() if not any(b.__name__ in OTHER_BASES for b in c.__mro__[1:])]
+    assert _unbased(classes) == []
+
+
+def test_the_base_check_catches_a_service_built_by_hand():
+    from app.platform.services import Service
+
+    class Planted:
+        async def do(self) -> None: ...
+
+    class Based(Service):
+        async def do(self) -> None: ...
+    assert _unbased([("x.Planted", Planted), ("x.Based", Based)]) == ["x.Planted"]

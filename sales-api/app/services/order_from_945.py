@@ -37,6 +37,7 @@ from app.models.orders import Order, OrderLine
 from app.models.shadow import ShadowMatch
 from app.models.shipments import Shipment, ShipmentRow
 from app.platform.authorization import requires
+from app.platform.services import Service
 from app.platform.errors import BusinessError, InvalidInput
 from app.services import oplog
 from app.services.orders import Catalog, order_ref
@@ -120,10 +121,9 @@ class Plan:
     refused_message: str | None = None
 
 
-class OrderFrom945:
+class OrderFrom945(Service):
     def __init__(self, uow) -> None:
-        self.uow = uow
-        self.s = uow.session
+        super().__init__(uow)
 
     # ── reading ──────────────────────────────────────────────────────────────
     @requires(READ, system=True)

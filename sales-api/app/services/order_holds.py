@@ -28,6 +28,7 @@ from app.models.invoices import OrderReturn
 from app.models.orders import Order, OrderLine
 from app.models.shipments import Shipment, ShipmentRow
 from app.platform.authorization import requires
+from app.platform.services import Service
 from app.platform.commands import (
     ANY_VERSION,
     VersionArg,
@@ -56,9 +57,10 @@ ORDER_PROBLEMS = (ORDER_REVIEW, ORDER_ARCHIVED, EDI_940_FAILED, EDI_940_REJECTED
 RELEASED_BY_THE_ROW = (Inv.PENDING.value, Inv.AWAITING_REQUESTED_DATE.value)  # blocked by advance(), before any confirmation
 
 
-class OrderActions:
+class OrderActions(Service):
     def __init__(self, uow, tasks) -> None:
-        self.uow, self.s, self.tasks = uow, uow.session, tasks
+        super().__init__(uow)
+        self.tasks = tasks
 
     async def _order(self, id: int, version: VersionArg) -> Order:
         o = await load_for_command(self.s, Order, id, version=ANY_VERSION, what="this order")

@@ -33,6 +33,7 @@ from app.models.records import OutboxRecord
 from app.models.shipments import Shipment, ShipmentRow
 from app.models.transfers import Receipt
 from app.platform.authorization import requires
+from app.platform.services import Service
 from app.platform.query import Filter, QuerySpec
 from app.domain.schedule import describe, is_overdue
 from app.schemas.health import CardRead, CheckRead, DashboardRead, HealthRead, JobRead, RunBrief, TaskCount
@@ -293,9 +294,9 @@ class Health:
                            error=r.error) for r in runs])
 
 
-class HealthService:
+class HealthService(Service):
     def __init__(self, uow) -> None:
-        self.uow = uow
+        super().__init__(uow)
 
     @requires(READ)
     async def health(self, settings) -> HealthRead:

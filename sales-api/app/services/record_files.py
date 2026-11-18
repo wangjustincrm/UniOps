@@ -19,7 +19,7 @@ from app.models.documents import Document, DocumentLink
 from app.models.orders import Order, OrderLine
 from app.models.records import AuditRecord
 from app.models.transfers import Transfer, TransferLine
-from app.platform.authorization import authorize
+from app.platform.services import Service
 from app.platform.errors import BusinessError
 from app.schemas.orders import TimelineEntry
 from app.schemas.records import AttachmentRead, RecordDocumentRead
@@ -83,11 +83,11 @@ async def timeline_of(s, entity_type: str, entity_id: int, *, limit: int = 200) 
                           reason=a.reason) for a in trail]
 
 
-class Attachments:
+class Attachments(Service):
     """A person's files on an order or a transfer."""
 
     def __init__(self, uow) -> None:
-        self.uow, self.s = uow, uow.session
+        super().__init__(uow)
 
     async def _record(self, k: RecordKind, entity_id: int):
         rec = await self.s.get(k.model, entity_id)
@@ -97,13 +97,13 @@ class Attachments:
 
     async def list(self, entity_type: str, entity_id: int) -> list[AttachmentRead]:
         k = kind_of(entity_type)
-        await authorize(self.uow, k.read)
+        await self._authorize(k.read)
         await self._record(k, entity_id)
         return [AttachmentRead(**d.model_dump()) for d in await documents_of(self.s, entity_type, entity_id) if d.kind == "ATTACHMENT"]
 
     async def attach(self, entity_type: str, entity_id: int, *, name: str, data: bytes, note: str | None) -> AttachmentRead:
         k = kind_of(entity_type)
-        await authorize(self.uow, k.change)
+        await self._authorize(k.change)
         rec = await self._record(k, entity_id)
         name = re.sub(r"[\\/\x00-\x1f]+", "_", (name or "").strip())[:200] or "file"
         if not data:
@@ -136,7 +136,7 @@ class Attachments:
 
     async def remove(self, entity_type: str, entity_id: int, document_id: int, reason: str) -> None:
         k = kind_of(entity_type)
-        await authorize(self.uow, k.change)
+        await self._authorize(k.change)
         rec = await self._record(k, entity_id)
         doc = await self.s.get(Document, document_id)
         link = (await self.s.execute(select(DocumentLink).where(DocumentLink.document_id == document_id, DocumentLink.entity_type == k.entity_type,

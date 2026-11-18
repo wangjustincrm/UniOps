@@ -53,22 +53,47 @@ MAX_IMPORT_BYTES = 2 * 1024 * 1024
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 
 
-class ReadOnlyService(Generic[T, R]):
+class Service:
+    """THE root of every request-scoped application service (design §13.5): lists and CRUD tables
+    (ReadOnlyService, CrudService), commands (CommandService), and the operations a page asks for directly (a
+    record's actions, a facade over an engine). Holds the unit of work, its session and actor;
+    each public operation checks its permission first (@requires, or self._authorize in its body) — the
+    authorization-coverage test refuses one that does not. It never commits: the caller that opened the unit of
+    work does, once."""
+    # The system actor (jobs) may use this service's operations.
+    system_allowed: ClassVar[bool] = False
+
+    def __init__(self, uow) -> None:
+        self.uow = uow
+
+    @property
+    def s(self):
+        """The unit of work's session (read when used: a helper built without a unit of work still works)."""
+        return self.uow.session
+
+    @property
+    def actor(self) -> Actor:
+        return self.uow.actor
+
+    async def _authorize(self, key: str) -> None:
+        await authorize(self.uow, key, system=self.system_allowed)
+
+    def audit_reason(self, text: str) -> None:
+        """Why: kept with the audit rows this operation writes."""
+        self.uow.set_reason(text)
+
+
+class ReadOnlyService(Service, Generic[T, R]):
     repo_cls: ClassVar[type[Repository]]
     read_schema: ClassVar[type[BaseModel]]
     read_permission: ClassVar[str]
-    # The system actor (jobs) may use this service's operations.
-    system_allowed: ClassVar[bool] = False
     # The zone a "Visible columns" export writes date-times in, as people read them ("2026-11-17 15:54",
     # the zone named in the header); None: as stored (ISO, UTC). The business code sets it once.
     export_timezone: ClassVar[str | None] = None
 
     def __init__(self, uow) -> None:
-        self.uow = uow
+        super().__init__(uow)
         self.repo = self.repo_cls(uow)
-
-    async def _authorize(self, key: str) -> None:
-        await authorize(self.uow, key, system=self.system_allowed)
 
     # ── CSV export: every row the spec selects (a read model: its list columns) ──
     @staticmethod
@@ -537,7 +562,7 @@ class Command:
     reason: str | None = None
 
 
-class CommandService(Generic[T]):
+class CommandService(Service, Generic[T]):
     """A state change on one aggregate. Aggregates are never edited by a
     generic PUT: each change is a command that checks its permission, locks
     the row, re-checks its rule, transitions through the machine and flushes
@@ -551,10 +576,9 @@ class CommandService(Generic[T]):
     repo_cls: ClassVar[type[Repository]]
     machine: ClassVar[StateMachine]
     permission: ClassVar[str]
-    system_allowed: ClassVar[bool] = False
 
     def __init__(self, uow) -> None:
-        self.uow = uow
+        super().__init__(uow)
         self.repo = self.repo_cls(uow)
 
     def target(self, agg: T, cmd: Command) -> Any:
@@ -566,12 +590,8 @@ class CommandService(Generic[T]):
     async def apply(self, agg: T, cmd: Command) -> None:
         """Further changes and events after the transition."""
 
-    @property
-    def actor(self) -> Actor:
-        return self.uow.actor
-
     async def execute(self, cmd: Command) -> T:
-        await authorize(self.uow, self.permission, system=self.system_allowed)
+        await self._authorize(self.permission)
         agg = await self.repo.get(cmd.aggregate_id, for_update=True)  # SELECT … FOR UPDATE
         self.check(agg, cmd)
         self.uow.set_reason(cmd.reason or type(cmd).__name__)

@@ -62,7 +62,7 @@ from app.platform.commands import check_version
 from app.platform.errors import BusinessError, InvalidInput, NotFound
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
-from app.platform.services import ReadOnlyService
+from app.platform.services import ReadOnlyService, Service
 from app.platform.views import Preset
 from app.schemas.orders import (
     InvoicePricesIn,
@@ -661,13 +661,12 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         return BarcodeLookup(shopify, ConnectionSnapshot.of(conn)) if conn else None
 
 
-class ManualOrderService:
+class ManualOrderService(Service):
     """FR-OB-19a. Draft is never eligible; Submit makes it Pending and it
     follows the same flows as any other order. Every step is audited."""
 
     def __init__(self, uow) -> None:
-        self.uow = uow
-        self.s = uow.session
+        super().__init__(uow)
 
     async def _partner(self, code: str) -> Partner:
         p = (await self.s.execute(select(Partner).where(Partner.code == code))).scalar_one_or_none()

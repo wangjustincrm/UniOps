@@ -25,12 +25,12 @@ from app.models.shipments import (
     Shipment,  # noqa: F401 — maps Document.shipments_without_order
 )
 from app.models.transfers import Receipt, Transfer
-from app.platform.authorization import authorize, requires
+from app.platform.authorization import requires
 from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError, NotFound
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
-from app.platform.services import ReadOnlyService
+from app.platform.services import ReadOnlyService, Service
 from app.platform.views import Preset
 from app.schemas.operations import DocumentRead, EntityRef, LogRead, RunRead
 from app.services.problems import ORDER_FILE_UNREADABLE, UNREADABLE_FILE
@@ -199,14 +199,13 @@ class LogService(ReadOnlyService[LogEntry, LogRead]):
     read_permission = READ
 
 
-class DocumentActions:
+class DocumentActions(Service):
     """The file register's actions (FR-OB-24 / 54 / 62; sales.file.retry): read a received file again,
     mark it ignored, or send a sent file again. A resend goes through the same rules as sending from its
     order, transfer or invoice, so it also needs that permission."""
 
     def __init__(self, uow) -> None:
-        self.uow = uow
-        self.s = uow.session
+        super().__init__(uow)
 
     async def _doc(self, id: int) -> Document:
         doc = await self.s.get(Document, id, with_for_update=True)
@@ -267,18 +266,18 @@ class DocumentActions:
         if doc.direction != "OUT":
             raise BusinessError("document.not_outbound", "only a file we send can be sent again")
         if doc.kind == "940_EDI":
-            await authorize(self.uow, "sales.order.operate")
+            await self._authorize("sales.order.operate")
             order_id = (await self.s.execute(select(DocumentLink.entity_id).where(
                 DocumentLink.document_id == doc.id, DocumentLink.entity_type == "order"))).scalar_one()
             new = await rt.outbound.send_now(self.uow, order_id)
             return f"940 {new.st02} queued for the order"
         if doc.kind == "943_EDI":
-            await authorize(self.uow, "sales.transfer.manage")
+            await self._authorize("sales.transfer.manage")
             await rt.transfers.resend(self.uow, int((doc.body_json or {})["transfer_id"]), ANY_VERSION)  # what is there now
             return "943 queued for the transfer"
         inv = (await self.s.execute(select(Invoice).where(Invoice.document_id == doc.id))).scalar_one_or_none()
         if inv is not None:
-            await authorize(self.uow, "sales.invoice.manage")
+            await self._authorize("sales.invoice.manage")
             await rt.invoicing.send(self.uow, inv.id)
             return f"invoice {inv.invoice_number} queued"
         raise BusinessError("document.not_resendable", f"a {doc.kind} is not sent again from here")

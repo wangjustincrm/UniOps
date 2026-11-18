@@ -12,6 +12,7 @@ from app.models.records import OutboxRecord
 from app.models.shipments import Shipment
 from app.models.transfers import Receipt
 from app.platform.authorization import requires
+from app.platform.services import Service
 from app.platform.errors import InvalidInput
 from app.schemas.health import InboxTarget
 from app.services.problems import PREFIX
@@ -47,10 +48,9 @@ def _target(where: tuple[str, str], id: int | None, tab: str | None = None) -> I
     return InboxTarget(page=where[0], resource=where[1], id=id, tab=tab)
 
 
-class InboxService:
+class InboxService(Service):
     def __init__(self, uow) -> None:
-        self.uow = uow
-        self.s = uow.session
+        super().__init__(uow)
 
     @requires(READ)
     async def resolve(self, key: str) -> InboxTarget:
