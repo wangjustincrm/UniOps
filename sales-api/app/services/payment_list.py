@@ -37,6 +37,8 @@ class PaymentRowRepository(Repository[PaymentRow]):
     summable = ("sales_amount", "refund_amount", "net_amount")
     sum_currency = "currency"
     money_fields = ("amount", "sales_amount", "refund_amount", "net_amount", "discount", "shipping", "order_total")
+    # Amount: a refund is not negative here, so its sum mixes signs; the order's values repeat on each payment.
+    unsummed = ("amount", "discount", "shipping", "order_total")
     presets = (
         Preset("all", "All"),
         Preset("authorize_net", "Authorize.Net — transactions", {

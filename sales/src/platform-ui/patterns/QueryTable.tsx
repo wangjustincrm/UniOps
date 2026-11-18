@@ -209,6 +209,9 @@ function QueryTableView<T>({
   const exportIds = visible.map(columnId).filter((id) => fields.get(id)?.in_row).join(',')
   useEffect(() => { onExportColumns?.(exportIds ? exportIds.split(',') : []) }, [exportIds])  // eslint-disable-line react-hooks/exhaustive-deps
 
+  const shownKey = visible.map(columnId).join(',')
+  const shownIds = shownKey.split(',')
+
   // The summed fields, in the response's order; labelled when there are several.
   const summed = useMemo(() => [...new Set((totals ?? []).flatMap((t) => Object.keys(t.sums)))], [totals])
 
@@ -225,11 +228,13 @@ function QueryTableView<T>({
         if (g.totals) sums.set(k, [...(sums.get(k) ?? []), g.totals])
       }
     }
-    const label = (f: string) => summed.length > 1 ? `${fields.get(f)?.label ?? f} ` : 'Total '
+    // A group's header: the list's declared sums, and any other amount the user shows as a column.
+    const inHeader = summed.filter((f) => fields.get(f)?.summable || shownIds.includes(f))
+    const label = (f: string) => inHeader.length > 1 ? `${fields.get(f)?.label ?? f} ` : 'Total '
     const summary = new Map<string, ReactNode>()
     for (const [k, lists] of sums) {
       const merged = mergeTotals(lists)
-      summary.set(k, summed.map((f) => `${label(f)}${sumText(merged, f)}`).join(' · '))
+      summary.set(k, inHeader.map((f) => `${label(f)}${sumText(merged, f)}`).join(' · '))
     }
     return {
       summary,
@@ -243,7 +248,7 @@ function QueryTableView<T>({
         return f ? formatValue(f, v) : String(v)
       },
     }
-  }, [spec.group, groups, groupsTruncated, fields, summed])
+  }, [spec.group, groups, groupsTruncated, fields, summed, shownKey])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // The footer: each visible summed column's total over the whole filtered
   // result (one line per currency); the first column says what the row is.

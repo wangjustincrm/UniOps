@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
 import { type ColumnDef, type QuerySpec } from './index'
+import type { ListTotal } from './resource/querySpec'
 import { QueryTable } from './patterns/QueryTable'
 import { type FieldMeta, type ListMeta } from './resource/listMeta'
 
@@ -25,9 +26,10 @@ type Row = { id: number; ref: string; partner: string; currency: string; net: st
 const rows: Row[] = [{ id: 1, ref: 'A-1', partner: 'Acme', currency: 'CAD', net: '254.40', state: 'Open', weight: '12.50' }]
 const columns: ColumnDef<Row, unknown>[] = [{ accessorKey: 'ref', header: 'Code' }, { accessorKey: 'partner', header: 'Partner' }]
 
+const totals: ListTotal[] = [{ currency: 'CAD', count: 1, sums: { net: '254.40' } }]
 function Harness() {
   const [spec, setSpec] = useState<QuerySpec>({ page: 1, pageSize: 50 })
-  return <QueryTable<Row> ariaLabel="Things" columns={columns} rows={rows} total={1} spec={spec} onSpecChange={setSpec}
+  return <QueryTable<Row> ariaLabel="Things" columns={columns} rows={rows} total={1} spec={spec} onSpecChange={setSpec} totals={totals}
     resource={{ basePath: '/things', meta: async () => meta }} rowKey={(r) => r.id} />
 }
 const open = async () => {
@@ -55,7 +57,7 @@ describe('the column chooser: every field of the row', () => {
     fireEvent.click(box('Net'))
     fireEvent.click(box('State'))
     fireEvent.click(box('Weight'))
-    expect(within(t).getByText(/254\.40/).textContent).toContain('CAD')
+    expect(within(t.querySelector('tbody')!).getByText(/254\.40/).textContent).toContain('CAD')
     expect(within(t).getByText('Open')).toBeInTheDocument()
     expect(within(t).getByText('12.5').textContent).not.toContain('CAD')
   })
@@ -80,5 +82,12 @@ describe('the column chooser: every field of the row', () => {
     fireEvent.click(box('Show or hide all columns'))                     // only "Net" matches among the hidden
     expect(header(t).join('|')).toContain('Net')
     expect(header(t).join('|')).not.toContain('Weight')
+  })
+
+  it('an amount added as a column shows its total under it', async () => {
+    const t = await open()
+    expect(t.querySelector('tfoot')).toBeNull()                         // the amount hidden: no footer
+    fireEvent.click(box('Net'))
+    expect(t.querySelector('[data-total="net"]')?.textContent).toContain('254.40')
   })
 })

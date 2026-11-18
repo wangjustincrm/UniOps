@@ -71,3 +71,20 @@ async def test_the_csv_follows_the_view_columns_labels_currency_and_refuses_what
     assert row.split(",")[:4] == [row.split(",")[0], "90.00", "CAD", "store"] and row.split(",")[0].endswith("9301")
     assert "'=HYPERLINK" in row                                    # the formula guard stays
     assert full.splitlines()[0].startswith("order_number,")
+
+
+def test_amounts_are_totalled_unless_repeated_per_row():
+    from app.services.order_views import OrderRepository
+    from app.services.payment_list import PaymentRowRepository
+    assert {"subtotal", "tax", "shipping", "discount", "total_amount"} <= set(OrderRepository.totalled)
+    assert set(PaymentRowRepository.totalled) == {"sales_amount", "refund_amount", "net_amount"}  # order values repeat per payment
+    assert all(f in r.sortable for r in (OrderRepository, PaymentRowRepository) for f in r.totalled)
+
+
+async def test_an_added_amount_has_its_total_per_currency(env):  # noqa: F811
+    env.shop.orders = [shopify_order(1, 9301), shopify_order(2, 9302)]
+    await env.pull()
+    async with env.factory(OP) as u:
+        page = await OrderService(u).list(QuerySpec())
+    [t] = page.totals
+    assert (t.currency, t.sums["subtotal"], t.sums["tax"]) == ("CAD", "180.00", "20.00")

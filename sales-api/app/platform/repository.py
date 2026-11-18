@@ -77,6 +77,10 @@ class Repository(Generic[T]):
     # weight, a quantity or a factor can have two decimals too.
     money_fields: ClassVar[tuple[str, ...]] = ()
     money_currency: ClassVar[str | None] = None
+    # Amounts are totalled too (footer and group headers, per currency), like `summable` — except these:
+    # a value repeated on each row (e.g. an order's total on each of its payments) would add up wrong.
+    unsummed: ClassVar[tuple[str, ...]] = ()
+    totalled: ClassVar[tuple[str, ...]] = ()  # set at class definition: summable + the amounts
     # System views (design §13.19): named partial view states, in /meta.
     presets: ClassVar[tuple[Preset, ...]] = ()
     default_sort: ClassVar[tuple[str, ...]] = ()  # sortable keys, "-" for descending
@@ -97,6 +101,11 @@ class Repository(Generic[T]):
             raise TypeError(f"{cls.__name__}.suggestable: not filterable: {missing}")
         if cls.money_fields and not (cls.money_currency or cls.sum_currency):
             raise TypeError(f"{cls.__name__}.money_fields: no currency field (money_currency or sum_currency)")
+        if cls.money_fields and cls.sum_currency is None:
+            cls.sum_currency = cls.money_currency  # the totals of the amounts, per their currency
+        # What the totals add up: the declared sums, then every amount that is a column of the query.
+        cls.totalled = tuple(dict.fromkeys([*cls.summable, *(f for f in cls.money_fields
+                                                             if f in cls.sortable and f not in cls.unsummed)]))
 
     def __init__(self, uow) -> None:
         self.uow = uow
@@ -131,7 +140,7 @@ class Repository(Generic[T]):
             select(func.count()).select_from(self._only(q, pk).order_by(None).subquery())
         )).scalar_one()
         groups, truncated = (await self._groups(q, spec)) if spec.group else (None, False)
-        totals = (await self._totals(q)) if self.summable else None
+        totals = (await self._totals(q)) if self.totalled else None
         q = self._order(q, spec)
         offset = (spec.page - 1) * spec.page_size
         if offset:
@@ -161,11 +170,11 @@ class Repository(Generic[T]):
     # ── totals (the list footer) ─────────────────────────────────────────────
     def _sum_columns(self) -> tuple[Any, list[Any]]:
         cur = self.sortable[self.sum_currency] if self.sum_currency else None
-        return cur, [func.sum(self.sortable[f]) for f in self.summable]
+        return cur, [func.sum(self.sortable[f]) for f in self.totalled]
 
     def _total_of(self, currency: Any, count: int, sums: Sequence[Any]) -> Total:
         return Total(currency=currency, count=count,
-                     sums={f: str(v if v is not None else 0) for f, v in zip(self.summable, sums)})
+                     sums={f: str(v if v is not None else 0) for f, v in zip(self.totalled, sums)})
 
     async def _totals(self, q: Select) -> list[Total]:
         """The summable fields' sums over the whole filtered result, per currency."""
@@ -205,7 +214,7 @@ class Repository(Generic[T]):
               .order_by(*(o for _, o in order)).limit(MAX_GROUPS + 1))
         rows = (await self.session.execute(gq)).all()
         groups = [Group(key=[_json_key(v) for v in r[:-1]], count=r[-1]) for r in rows[:MAX_GROUPS]]
-        if self.summable and groups:
+        if self.totalled and groups:
             await self._group_totals(q, cols, groups)
         return groups, len(rows) > MAX_GROUPS
 
