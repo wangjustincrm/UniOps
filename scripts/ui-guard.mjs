@@ -50,6 +50,12 @@ export const METRICS = {
   // draws a second box around the select. Only layout classes belong there.
   'select-chrome': new RegExp(
     String.raw`<Select\b(?:(?!</?[A-Za-z])[\s\S])*?className=(?:"[^"]*(?<![\w-])(?:border(?:-[\w-]+)?|rounded(?:-\w+)?|h-(?:9|10|11))(?![\w-])[^"]*"|\{[^}]*(?:(?:[Cc]ls|Class|CLS)\b|\b[A-Z][A-Z0-9_]{2,}\b))`, 'g'),
+  // Same for Shell <Input>/<Textarea>/<SearchInput>: border, radius, fill, focus ring or a
+  // control height in className (or a style constant) overrides the Shell control look.
+  // Size → inputSize="sm", error look → error={…}. `bare` inputs (inside a composite
+  // control that draws the frame) are exempt.
+  'input-chrome': new RegExp(
+    String.raw`<(?:Input|Textarea|SearchInput)\b(?!(?:[^>{]|\{[^{}]*\})*\bbare\b)(?:(?!</?[A-Za-z])[\s\S])*?className=(?:"[^"]*(?<![\w-])(?:border(?:-[\w-]+)?|rounded(?:-\w+)?|bg-[\w-]+|focus:ring(?:-[\w-]+)?|h-(?:7|8|9|10|11))(?![\w-])[^"]*"|\{[^}]*(?:(?:[Cc]ls|Class|CLS)\b|\b[A-Z][A-Z0-9_]{2,}\b|\brounded\b|\bborder-))`, 'g'),
   // emoji as icons / decoration
   'emoji': /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}\u{2705}\u{274C}\u{2B06}\u{27A1}]/gu,
 }
