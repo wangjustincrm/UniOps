@@ -281,9 +281,9 @@ function MappingsTab({ accounts, canManage }: { accounts: Account[]; canManage: 
           <div className="flex flex-col gap-2">
             {rows.map((m) => (
               <div key={m.id} className="flex items-center gap-3 text-sm">
-                <span className="inline-flex w-48 items-center rounded-md bg-surface-sunken px-2 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">
+                <Badge size="sm" className="w-48 font-mono">
                   {m.source_code}
-                </span>
+                </Badge>
                 <span className="text-fg-muted">→</span>
                 {acctSelect(m.account_code, (v) =>
                   v && upsert.mutate({ mtype, src: m.source_code, acct: v }))}
@@ -499,9 +499,9 @@ export default function CoaConfigPage() {
                                         i % 2 === 1 ? 'bg-surface-subtle' : 'bg-surface',
                                         !a.is_active && 'opacity-50')}>
                         <Td className={cn('px-4 py-2.5', a.parent_code && 'pl-8')}>
-                          <span className="inline-flex items-center rounded-md bg-surface-sunken px-2 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">
+                          <Badge size="sm" className="font-mono">
                             {a.code}
-                          </span>
+                          </Badge>
                         </Td>
                         <Td className={cn('px-4 py-2.5 text-fg', !a.is_postable && 'font-semibold')}>
                           {a.name}

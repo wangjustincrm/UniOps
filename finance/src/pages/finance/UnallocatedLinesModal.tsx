@@ -15,7 +15,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
-import { Button, Modal, SortTh, TBody, TFoot, THead, Table, Td, Tr, sortParams, useSort } from '@uniops/shell'
+import { Button, Modal, SortTh, TBody, TFoot, THead, Table, Td, Tr, sortParams, useSort, Badge } from '@uniops/shell'
 import { ListPager } from '@/components/ListPager'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -117,9 +117,9 @@ export function UnallocatedLinesModal({ fiscalYear, window: win, windowLabel,
                     </Button>
                     <span className="ml-1 text-xs text-fg-muted">#{r.line_no}</span>
                     {r.posted === false && (
-                      <span className="ml-1.5 rounded bg-warning-soft px-1.5 py-0.5 text-2xs font-medium text-warning-fg">
+                      <Badge variant="warning" size="sm" className="ml-1.5">
                         Unposted
-                      </span>
+                      </Badge>
                     )}
                     <div className="text-xs text-fg-muted">{r.fiscal_period}</div>
                   </Td>

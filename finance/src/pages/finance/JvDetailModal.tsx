@@ -256,9 +256,8 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
 
 function Dim({ label, title }: { label: string; title?: string | null }) {
   return (
-    <span title={title ?? undefined}
-          className="inline-flex rounded bg-surface-sunken px-1.5 py-0.5 text-2xs text-fg-secondary">
+    <Badge size="sm" title={title ?? undefined}>
       {label}
-    </span>
+    </Badge>
   )
 }

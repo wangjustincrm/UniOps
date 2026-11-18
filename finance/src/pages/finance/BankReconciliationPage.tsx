@@ -881,9 +881,9 @@ export default function BankReconciliationPage() {
                               {/* Named, not just ranked first: "same amount to the cent"
                                   is a different kind of claim from "nearby and plausible". */}
                               {c.exact && (
-                                <span className="rounded bg-success-soft px-1.5 py-0.5 text-2xs text-success-fg">
+                                <Badge variant="success" size="sm">
                                   exact amount
-                                </span>
+                                </Badge>
                               )}
                             </Td>
                           </Tr>
@@ -1098,9 +1098,9 @@ export default function BankReconciliationPage() {
                             <div className="font-mono text-2xs text-fg-muted">
                               {b.jv_number}
                               {b.posted === false && (
-                                <span className="ml-1.5 rounded bg-warning-soft px-1.5 py-0.5 font-sans text-2xs font-medium text-warning-fg">
+                                <Badge variant="warning" size="sm" className="ml-1.5 font-sans">
                                   Unposted
-                                </span>
+                                </Badge>
                               )}
                             </div>
                           </Td>

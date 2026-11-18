@@ -8,7 +8,7 @@ import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronLeft, ChevronRight, DatabaseZap, Loader2, Search, Send, SlidersHorizontal, X } from 'lucide-react'
-import { SortTh, sortParams, useSort, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Badge } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, currentMonthISO, formatDate } from '@/lib/utils'
@@ -455,11 +455,11 @@ export default function JournalVouchersPage() {
                             would be pure noise — but a discarded one must be
                             impossible to miss, since it used to be invisible. */}
                         {v.nc_voucher_state && v.nc_voucher_state !== 'normal' && (
-                          <span className="mt-1 block w-fit rounded bg-warning-soft px-1.5 py-0.5 text-2xs font-medium text-warning-fg">
+                          <Badge variant="warning" size="sm" className="mt-1 block w-fit">
                             {v.nc_voucher_state === 'discarded' ? 'Discarded'
                               : v.nc_voucher_state === 'tempsave' ? 'Temp-saved'
                               : v.nc_voucher_state === 'deleted' ? 'Deleted in NC' : 'Error'}
-                          </span>
+                          </Badge>
                         )}
                       </Td>
                     </Tr>

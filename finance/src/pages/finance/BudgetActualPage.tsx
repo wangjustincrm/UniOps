@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
-import { SortTh, useSortableRows, Input, TBody, TFoot, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { SortTh, useSortableRows, Input, TBody, TFoot, THead, Table, Td, Th, Tr, Button, Badge } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, currentMonthISO } from '@/lib/utils'
@@ -172,10 +172,9 @@ export default function BudgetActualPage() {
                   <span className="text-sm font-semibold text-fg-secondary">
                     {CATEGORY_LABEL[cat.category] ?? cat.category} ({cat.account_code})
                   </span>
-                  <span className={cn('rounded px-2 py-0.5 text-xs font-medium',
-                    cat.tie_ok ? 'bg-success-soft text-success-fg' : 'bg-danger-soft text-danger-fg')}>
+                  <Badge variant={cat.tie_ok ? 'success' : 'danger'}>
                     {cat.tie_ok ? 'Tied to NC' : 'Tie-out OFF'}
-                  </span>
+                  </Badge>
                 </div>
                 <div className="overflow-x-auto">
                   <Table density="compact">

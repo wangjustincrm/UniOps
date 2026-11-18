@@ -15,7 +15,7 @@ import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Load
 import { financeApi } from '@/lib/api'
 import { cn, currentMonthISO, formatDateTime } from '@/lib/utils'
 
-import { TBody, Table, Td, Tr, Button } from '@uniops/shell'
+import { TBody, Table, Td, Tr, Button, Badge } from '@uniops/shell'
 export interface SyncRun {
   id: string; status: string; started_at: string | null; finished_at: string | null
   counts: Record<string, number> | null; tie_out_ok: boolean | null
@@ -80,21 +80,17 @@ export function when(v: string | null | undefined): string {
 
 export function SeverityBadge({ severity }: { severity: string }) {
   return (
-    <span className={cn('inline-block rounded border px-1.5 py-0.5 text-2xs font-medium',
-      severity === 'high' ? 'border-danger-line bg-danger-soft text-danger-fg'
-        : severity === 'info' ? 'border-line bg-surface-subtle text-fg-secondary'
-        : 'border-warning-line bg-warning-soft text-warning-fg')}>
+    <Badge size="sm" variant={severity === 'high' ? 'danger' : severity === 'info' ? 'outline' : 'warning'}>
       {severity === 'high' ? 'High' : severity === 'info' ? 'Info' : 'Medium'}
-    </span>
+    </Badge>
   )
 }
 
 export function OpenPeriodBadge() {
   return (
-    <span title="NC has not closed this month yet — its figures can still change."
-          className="ml-1 inline-block rounded border border-line bg-surface-subtle px-1.5 py-0.5 text-2xs text-fg-muted">
+    <Badge variant="outline" size="sm" className="ml-1" title="NC has not closed this month yet — its figures can still change.">
       Not closed in NC
-    </span>
+    </Badge>
   )
 }
 

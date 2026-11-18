@@ -483,11 +483,9 @@ export default function ApReconciliationPage() {
                   className="text-sm">
             <Scale className="h-4 w-4" />
             Matched, but NC billed a different amount
-            <span className={cn('rounded px-1.5 py-0.5 text-2xs font-semibold',
-                                (gaps?.total ?? 0) > 0
-                                  ? 'bg-danger-soft text-danger-fg' : 'bg-surface-sunken text-fg-muted')}>
+            <Badge size="sm" variant={(gaps?.total ?? 0) > 0 ? 'danger' : 'neutral'}>
               {gaps?.total ?? 0}
-            </span>
+            </Badge>
           </Button>
           {showGaps && (
             <>
@@ -550,9 +548,9 @@ export default function ApReconciliationPage() {
                         </Td>
                         <Td className="text-xs">
                           {r.is_credit ? (
-                            <span className="rounded bg-surface-strong px-1.5 py-0.5 text-2xs font-semibold text-fg-secondary">
+                            <Badge size="sm">
                               credit note
-                            </span>
+                            </Badge>
                           ) : r.category === 'in_nc_open' ? (
                             <span className="text-fg-secondary">open · {money(r.nc_money_bal)}</span>
                           ) : (
@@ -578,11 +576,9 @@ export default function ApReconciliationPage() {
                   className="text-sm">
             <CalendarX2 className="h-4 w-4" />
             Impossible invoice dates
-            <span className={cn('rounded px-1.5 py-0.5 text-2xs font-semibold',
-                                (anomalies?.total ?? 0) > 0
-                                  ? 'bg-warning-soft text-warning-fg' : 'bg-surface-sunken text-fg-muted')}>
+            <Badge size="sm" variant={(anomalies?.total ?? 0) > 0 ? 'warning' : 'neutral'}>
               {anomalies?.total ?? 0}
-            </span>
+            </Badge>
           </Button>
           {showAnomalies && (
             <>

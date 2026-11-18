@@ -897,7 +897,7 @@ function CostCentersSection() {
                         {cc.name}
                       </div>
                     </Td>
-                    <Td><span className="inline-flex items-center rounded-md bg-surface-sunken px-2 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">{cc.code}</span></Td>
+                    <Td><Badge size="sm" className="font-mono">{cc.code}</Badge></Td>
                     <Td className="text-xs text-fg-secondary">{dept ? dept.name : cc.department_name || <span className="text-fg-faint">—</span>}</Td>
                     <Td>
                       <Badge size="sm" variant={cc.is_active ? 'success' : 'neutral'}>

@@ -630,7 +630,7 @@ function ManualMatchModal({ txn, candidates, onClose, onMatched, onError }: {
                     <Td>{c.doc_number || c.payment_record_id.slice(0, 8)}</Td>
                     <Td align="right" className="font-mono">
                       {fmtMoney(c.amount, c.currency)}
-                      {exact && <span className="ml-2 rounded bg-success-soft px-1.5 py-0.5 text-xs text-success-fg">exact</span>}
+                      {exact && <Badge variant="success" className="ml-2">exact</Badge>}
                     </Td>
                     <Td align="right">
                       <Button variant="secondary" size="md" onClick={() => match(c.payment_record_id)} disabled={!!busy}

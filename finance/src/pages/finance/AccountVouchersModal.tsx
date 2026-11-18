@@ -10,7 +10,7 @@
  */
 import { useQuery } from '@tanstack/react-query'
 import { BookOpen, Loader2 } from 'lucide-react'
-import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Button, Modal as ShellModal } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Button, Modal as ShellModal, Badge } from '@uniops/shell'
 import { financeApi } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
 
@@ -79,9 +79,9 @@ export function AccountVouchersModal({ accountCode, period, dimsValues, title,
                       {r.jv_number}
                     </Button>
                     {r.posted === false && (
-                      <span className="ml-1.5 rounded bg-warning-soft px-1.5 py-0.5 text-2xs font-medium text-warning-fg">
+                      <Badge variant="warning" size="sm" className="ml-1.5">
                         Unposted
-                      </span>
+                      </Badge>
                     )}
                   </Td>
                   <Td className="font-mono text-xs text-fg-secondary">

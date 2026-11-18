@@ -26,7 +26,7 @@ import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, Download, EyeOff, Loader2, Search, Undo2 } from 'lucide-react'
-import { Button, Checkbox, ChoiceCard, Input, Modal as ShellModal, Segmented, Select, SortTh, TBody, TFoot, THead, Table, Td, Textarea, Th, Tr, sortParams, type Sort, useSort } from '@uniops/shell'
+import { Button, Checkbox, ChoiceCard, Input, Modal as ShellModal, Segmented, Select, SortTh, TBody, TFoot, THead, Table, Td, Textarea, Th, Tr, sortParams, type Sort, useSort, Badge } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { invalidateApJudgement } from '@/lib/apJudgement'
@@ -488,18 +488,16 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                         <Td className="font-mono">
                           {b.bill_no}
                           {b.payment_lines > 0 && (
-                            <span className="ml-1.5 rounded bg-primary-100 px-1 py-0.5 text-2xs font-semibold text-primary-700">
+                            <Badge variant="accent" size="sm" className="ml-1.5">
                               {b.payment_lines} pmt
-                            </span>
+                            </Badge>
                           )}
                           {/* Who judged it and why, on the row itself: a
                               dismissal nobody can trace is worse than none. */}
                           {b.dismissed && (
-                            <span title={[b.dismissed.note, b.dismissed.by, b.dismissed.at && formatDate(b.dismissed.at)]
-                                    .filter(Boolean).join(' · ')}
-                                  className="ml-1.5 rounded bg-surface-strong px-1 py-0.5 text-2xs font-medium text-fg-muted">
+                            <Badge size="sm" className="ml-1.5" title={[b.dismissed.note, b.dismissed.by, b.dismissed.at && formatDate(b.dismissed.at)] .filter(Boolean).join(' · ')}>
                               ignored
-                            </span>
+                            </Badge>
                           )}
                           <BillEvidence jv={b.jv_matches} other={b.other_currency} />
                         </Td>
@@ -604,9 +602,9 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                               {p.applied_to_bill_no}
                             </span>
                             {Number(p.applied_bill_still_open ?? 0) !== 0 && (
-                              <span className="ml-1.5 rounded bg-warning-soft px-1 py-0.5 text-2xs font-semibold text-warning-fg">
+                              <Badge variant="warning" size="sm" className="ml-1.5">
                                 still open
-                              </span>
+                              </Badge>
                             )}
                           </>
                         ) : <span className="text-fg-muted">none</span>}
@@ -689,14 +687,14 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                     <Td className="font-mono">
                       {r.jv_number}
                       {r.offset_group && (
-                        <span className="ml-1.5 rounded bg-surface-strong px-1 py-0.5 text-2xs font-medium text-fg-muted">
+                        <Badge size="sm" className="ml-1.5">
                           offset
-                        </span>
+                        </Badge>
                       )}
                       {r.matches_gap && (
-                        <span className="ml-1.5 rounded bg-primary-700 px-1 py-0.5 text-2xs font-semibold text-white">
+                        <Badge variant="solid" size="sm" className="ml-1.5">
                           matches
-                        </span>
+                        </Badge>
                       )}
                     </Td>
                     <Td className="text-fg-secondary">{day(r.voucher_date)}</Td>
@@ -736,9 +734,9 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                                         t.net_matches_gap ? 'text-primary-700' : 'text-fg')}>
                         {money(hideOffsets ? t.net_after_offsets : t.net)}
                         {(hideOffsets ? t.net_after_offsets_matches_gap : t.net_matches_gap) && (
-                          <span className="ml-1.5 rounded bg-primary-700 px-1 py-0.5 text-2xs text-white">
+                          <Badge variant="solid" size="sm" className="ml-1.5">
                             = difference
-                          </span>
+                          </Badge>
                         )}
                       </Td>
                     </Tr>
@@ -1017,11 +1015,9 @@ function BillsByDate({ currency }: { currency: string }) {
                   <Td className="font-mono text-xs">
                     {b.bill_no}
                     {b.dismissed && (
-                      <span title={[b.dismissed.note, b.dismissed.by, b.dismissed.at && formatDate(b.dismissed.at)]
-                              .filter(Boolean).join(' · ')}
-                            className="ml-1.5 rounded bg-surface-strong px-1 py-0.5 text-2xs font-medium text-fg-muted">
+                      <Badge size="sm" className="ml-1.5" title={[b.dismissed.note, b.dismissed.by, b.dismissed.at && formatDate(b.dismissed.at)] .filter(Boolean).join(' · ')}>
                         ignored
-                      </span>
+                      </Badge>
                     )}
                     <BillEvidence jv={b.jv_matches} other={b.other_currency} />
                   </Td>
@@ -1329,9 +1325,9 @@ export default function ApLedgerHealthPage() {
                       {/* The cheapest ones to clear: an approved bill already
                           carries this supplier, amount and invoice number. */}
                       {r.superseded && (
-                        <span className="ml-1.5 rounded bg-warning-soft px-1.5 py-0.5 text-2xs font-semibold text-warning-fg">
+                        <Badge variant="warning" size="sm" className="ml-1.5">
                           duplicate
-                        </span>
+                        </Badge>
                       )}
                     </Td>
                   </Tr>
@@ -1379,9 +1375,9 @@ export default function ApLedgerHealthPage() {
                     <div className={cn(cleared ? 'text-fg-muted' : 'text-fg')}>
                       {r.supplier_name ?? '—'}
                       {cleared && (
-                        <span className="ml-1.5 rounded bg-surface-strong px-1.5 py-0.5 text-2xs font-medium text-fg-muted">
+                        <Badge size="sm" className="ml-1.5">
                           all ignored
-                        </span>
+                        </Badge>
                       )}
                     </div>
                     <div className="font-mono text-2xs text-fg-muted">{r.supplier_code ?? '—'}</div>

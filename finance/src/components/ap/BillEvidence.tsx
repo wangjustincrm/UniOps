@@ -11,6 +11,7 @@
  */
 
 import { formatDate } from '@/lib/utils'
+import { Badge } from '@uniops/shell'
 
 export interface JvMatch {
   jv_number: string; voucher_date: string | null; subsystem: string | null
@@ -45,7 +46,7 @@ export function BillEvidence({ jv, other }: { jv?: JvMatch[]; other?: OtherCurre
         <div key={`jv${k}`}
              title={[m.summary, m.subsystem && `source: ${m.subsystem}`].filter(Boolean).join(' · ')}
              className={m.amount_matches ? 'text-success-fg' : 'text-info-fg'}>
-          <span className="rounded bg-info-soft px-1 py-px font-semibold">In JV</span>{' '}
+          <Badge variant="blue" size="sm">In JV</Badge>{' '}
           <span className="font-mono">{m.jv_number}</span> · {formatDate(m.voucher_date)} ·{' '}
           {money(m.amount)} {m.currency} · inv {m.invoice_no}
           {m.amount_matches && <span className="font-semibold"> · amount matches</span>}
@@ -54,7 +55,7 @@ export function BillEvidence({ jv, other }: { jv?: JvMatch[]; other?: OtherCurre
       {other?.map((o) => (
         <div key={o.bill_no} className="text-warning-fg"
              title={`Invoice ${o.invoice_nos.join(', ')} is also on ${o.bill_no} (${o.currency}), billed ${money(o.money_cr)}`}>
-          <span className="rounded bg-warning-soft px-1 py-px font-semibold">Also in {o.currency}</span>{' '}
+          <Badge variant="warning" size="sm">Also in {o.currency}</Badge>{' '}
           <span className="font-mono">{o.bill_no}</span> · {formatDate(o.bill_date)} · inv {o.invoice_nos.join(', ')} ·{' '}
           {Number(o.money_bal) === 0 ? 'settled' : `open ${money(o.money_bal)}`}
         </div>

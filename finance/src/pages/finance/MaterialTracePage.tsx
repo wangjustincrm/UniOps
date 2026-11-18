@@ -14,7 +14,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
-import { SortTh, useSortableRows, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { SortTh, useSortableRows, Input, TBody, THead, Table, Td, Th, Tr, Button, Badge } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
@@ -420,10 +420,7 @@ export default function MaterialTracePage() {
                           <Td className="font-mono">{v.voucher?.period ?? ''}</Td>
                           <Td>
                             {!v.voucher ? <span className="text-fg-muted">No voucher yet</span>
-                              : <span className={cn('inline-block rounded border px-1.5 py-0.5 text-2xs font-medium',
-                                  v.voucher.status === 'posted' ? 'border-line bg-surface-subtle text-fg-secondary'
-                                  : v.voucher.status === 'unposted' ? 'border-warning-line bg-warning-soft text-warning-fg'
-                                  : 'border-danger-line bg-danger-soft text-danger-fg')}>{v.voucher.status_label}</span>}
+                              : <Badge size="sm" variant={v.voucher.status === 'posted' ? 'outline' : v.voucher.status === 'unposted' ? 'warning' : 'danger'}>{v.voucher.status_label}</Badge>}
                           </Td>
                           <Td className="text-fg-muted">{v.voucher?.explanation ?? ''}</Td>
                         </Tr>

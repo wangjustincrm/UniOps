@@ -34,7 +34,7 @@ import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, Download, HelpCircle, Loader2, Search } from 'lucide-react'
-import { Button, ChoiceCard, Input, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, useSort, useSortableRows } from '@uniops/shell'
+import { Button, ChoiceCard, Input, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, useSort, useSortableRows, Badge } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
@@ -473,9 +473,9 @@ export default function ApCashFlowPage() {
                     <Tr key={r.doc_key} className="hover:bg-surface-subtle/60">
                       <Td className="font-mono text-xs">
                         {r.bill_no ?? (
-                          <span className="rounded bg-surface-strong px-1.5 py-0.5 font-sans text-2xs font-semibold text-fg-secondary">
+                          <Badge size="sm" className="font-sans">
                             {DOC_KIND_LABEL[r.doc_kind]}
-                          </span>
+                          </Badge>
                         )}
                       </Td>
                       <Td>
@@ -595,13 +595,13 @@ export default function ApCashFlowPage() {
                       </Td>
                       <Td className="text-xs">
                         {r.reason === 'no_vendor_record' ? (
-                          <span className="rounded bg-warning-soft px-1.5 py-0.5 text-2xs font-semibold text-warning-fg">
+                          <Badge variant="warning" size="sm">
                             no vendor record
-                          </span>
+                          </Badge>
                         ) : (
-                          <span className="rounded bg-surface-strong px-1.5 py-0.5 text-2xs font-semibold text-fg-secondary">
+                          <Badge size="sm">
                             term &ldquo;{r.payment_terms}&rdquo; not recognised
-                          </span>
+                          </Badge>
                         )}
                       </Td>
                       <Td className={cell}>{r.bills}</Td>

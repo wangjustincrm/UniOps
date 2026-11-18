@@ -23,7 +23,7 @@ import { cn, currentMonthISO } from '@/lib/utils'
 import { UnallocatedLinesModal } from './UnallocatedLinesModal'
 import { JvDetailModal } from './JvDetailModal'
 
-import { Button, Checkbox, MenuItem, Select, TBody, TFoot, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { Button, Checkbox, MenuItem, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Badge } from '@uniops/shell'
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -441,9 +441,9 @@ function Row({ node, isOpen, onToggle, tab, months, scope, onScopeChange }: {
             {/* In the department tree, say which expense centre a cost centre
                 belongs to — that is exactly what the department spans. */}
             {tab === 'department' && (
-              <span className="ml-1.5 rounded bg-surface-strong/70 px-1.5 py-0.5 text-2xs text-fg-secondary">
+              <Badge size="sm" className="ml-1.5">
                 {c.expense_centre}
-              </span>
+              </Badge>
             )}
           </Td>
           <Cells m={c} overspent={Number(c.variance_period) < 0} months={months} small />

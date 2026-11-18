@@ -19,7 +19,7 @@ import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Download, Loader2 } from 'lucide-react'
-import { SortTh, sortParams, useSort, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Input, TBody, THead, Table, Td, Th, Tr, Button, Badge } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, todayISO } from '@/lib/utils'
@@ -226,18 +226,16 @@ export default function JvValidationPage() {
                     <Td align="right" className="font-mono">{r.vouchers.toLocaleString()}</Td>
                     <Td align="right" className="font-mono">{money(r.debit)}</Td>
                     <Td>
-                      <span className={cn('rounded px-2 py-0.5 text-xs font-medium',
-                        r.drops_from_dashboard ? 'bg-danger-soft text-danger-fg'
-                          : 'bg-warning-soft text-warning-fg')}>
+                      <Badge variant={r.drops_from_dashboard ? 'danger' : 'warning'}>
                         {r.drops_from_dashboard ? 'Dropped from dashboard' : 'Check placement'}
-                      </span>
+                      </Badge>
                       {/* A mapping gap is fixed by adding a row; a missing
                           placement rule is not fixable at all until a person
                           decides where the spend belongs. Different queue. */}
                       {r.needs_decision && r.lines > 0 && (
-                        <span className="ml-1.5 rounded bg-cat4-soft px-2 py-0.5 text-xs font-medium text-cat4-fg">
+                        <Badge variant="cat4" className="ml-1.5">
                           Needs a decision
-                        </span>
+                        </Badge>
                       )}
                     </Td>
                   </Tr>

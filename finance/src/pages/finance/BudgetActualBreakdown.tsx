@@ -16,7 +16,7 @@ import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { Scope } from './BudgetActualRollup'
 
-import { TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { TBody, THead, Table, Td, Th, Tr, Button, Badge } from '@uniops/shell'
 interface Metrics {
   plan_period: string; actual_period: string
   variance_period: string; variance_period_pct: string | null
@@ -98,9 +98,9 @@ export function BudgetActualBreakdown({ fiscalYear, window: win, windowLabel, sc
 
       <header className="flex flex-wrap items-center gap-2 px-4 pb-2.5">
         <h2 className="text-sm font-semibold text-fg">Composition</h2>
-        <span className="rounded-md bg-primary-50 px-2 py-0.5 text-xs font-semibold text-primary-800 ring-1 ring-primary-100">
+        <Badge variant="accent">
           {scope.label}
-        </span>
+        </Badge>
         <span className="text-xs text-fg-muted">
           {windowLabel} {fiscalYear} · by budget account
         </span>

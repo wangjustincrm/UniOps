@@ -245,7 +245,7 @@ function FactorLibrary() {
                           {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         </Button>
                       </Td>
-                      <Td><span className="inline-flex items-center rounded-md bg-surface-sunken px-2 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">{t.factor_code}</span></Td>
+                      <Td><Badge size="sm" className="font-mono">{t.factor_code}</Badge></Td>
                       <Td className="font-medium text-fg">
                         <div className="flex flex-col">
                           <span>{t.factor_name}</span>
@@ -428,7 +428,7 @@ function TemplateValuesEditor({
       <ul className="flex flex-col gap-1">
         {template.values.map((v) => (
           <li key={v.id} className="flex items-center gap-2 rounded border border-line bg-surface px-2.5 py-1.5">
-            <span className="inline-flex items-center rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">{v.value_code}</span>
+            <Badge size="sm" className="font-mono">{v.value_code}</Badge>
             <span className="flex-1 text-sm text-fg">{v.value_name}</span>
             <Button
               variant="subtle"
