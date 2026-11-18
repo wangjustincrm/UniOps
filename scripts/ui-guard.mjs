@@ -62,6 +62,11 @@ export const METRICS = {
   // mark it data-chip and it is exempt.
   'hand-badge': new RegExp(
     String.raw`<(?:span|div|p)\b(?!(?:[^>{]|\{(?:[^{}]|\{[^{}]*\})*\})*\bdata-chip\b)(?:[^<>{}]|\{(?:[^{}]|\{[^{}]*\})*\})*?className=(?:"|\{)(?=[^>]{0,400}?(?<![\w-])rounded(?:-full|-md|-sm)?(?![\w-]))(?=[^>]{0,400}?(?<![\w-])px-(?:1|1\.5|2|2\.5)(?![\w-]))(?=[^>]{0,400}?(?<![\w-])py-(?:0|0\.5|px)(?![\w-]))(?=[^>]{0,400}?(?:(?<![\w-])bg-(?:success|warning|danger|info|cat\d|primary-\d+|accent-soft|surface-(?:sunken|strong|subtle))|\b\w*(?:STYLE|CLS|COLORS)\b|\b(?:cls|style|tone|badge)\b\s*[\])}]))`, 'g'),
+  // A pill with only horizontal padding (px-1…2.5, no py-*, no fixed height) — the shape
+  // hand-badge misses (Org Chart "Manager", trace tier pills). Count bubbles carry h-*/min-w-*
+  // and are not matched.
+  'pill-no-py': new RegExp(
+    String.raw`<(?:span|div|p)\b(?!(?:[^>{]|\{(?:[^{}]|\{[^{}]*\})*\})*\bdata-chip\b)(?:[^<>{}]|\{(?:[^{}]|\{[^{}]*\})*\})*?className=(?:"|\{)(?=[^>]{0,400}?(?<![\w-])rounded(?:-full|-md|-sm)?(?![\w-]))(?=[^>]{0,400}?(?<![\w-])px-(?:1|1\.5|2|2\.5)(?![\w-]))(?![^>]{0,400}?(?<![\w-])(?:py-[\d.]+|py-px|h-\d+|min-w-\d+)(?![\w-]))(?=[^>]{0,400}?(?<![\w-])bg-(?:success|warning|danger|info|cat\d|primary-\d+|accent-soft)-?(?:soft|\d+)?(?![\w-]))`, 'g'),
   // The same badge chrome kept in a string constant and joined later
   // (const cls = 'rounded-full px-1.5 py-0.5 text-2xs'; <span className={cn(cls, tint)}>)
   // — invisible to hand-badge, which only reads className. Any '…' / "…" / `…` literal

@@ -92,6 +92,15 @@ describe('ui-guard ratchet', () => {
     expect(str("const panel = 'rounded-xl border border-line bg-surface p-6'")).toBe(1)
     expect(str("const menu = 'rounded-lg border bg-surface shadow-lg'")).toBe(0)
   })
+  it('pill-no-py: a tinted px-only pill; not count bubbles or padded boxes', async () => {
+    const guard = await import(/* @vite-ignore */ guardPath)
+    const hit = (src: string) => src.match(guard.METRICS['pill-no-py'])?.length ?? 0
+    expect(hit('<span className="mr-1 rounded bg-primary-50 px-1 font-medium text-primary-700">Manager</span>')).toBe(1)
+    expect(hit('<span className="rounded-full bg-danger-soft px-1.5 text-2xs text-danger-fg">NC only</span>')).toBe(1)
+    expect(hit('<span className="inline-flex h-5 min-w-5 rounded-full bg-warning-solid px-1 text-2xs">3</span>')).toBe(0)
+    expect(hit('<p className="rounded bg-warning-soft px-2 py-1 text-2xs">note</p>')).toBe(0)
+    expect(hit('<Badge variant="danger" size="sm">NC only</Badge>')).toBe(0)
+  })
   it('a "/*" inside a string is not a comment (accept="image/*")', async () => {
     const guard = await import(/* @vite-ignore */ guardPath)
     const src = '<FileInput accept="image/*" />\n<button>x</button>\n/* gone */<input />'
