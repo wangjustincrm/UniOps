@@ -276,7 +276,8 @@ export function DataTable<T>({
               const badges = cells.filter((c) => role(c) === 'badge')
               const lines = cells.filter((c) => c !== title && !role(c))
               const showAll = !onRowClick || lines.length <= cardLines + 1 || allLines.has(r.id)
-              const shownLines = showAll ? lines : lines.slice(0, cardLines)
+              let kept = 0  // a column the user added is always a line; the page's own fold after cardLines
+              const shownLines = showAll ? lines : lines.filter((c) => c.column.columnDef.meta?.chosen || kept++ < cardLines)
               const { heads, rowHidden } = groupsAt(i, all)
               return (
                 <Fragment key={r.id}>

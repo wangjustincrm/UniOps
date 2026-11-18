@@ -9,9 +9,11 @@
         enums = {"channel": CHANNELS}                          # an enum field and its values
         groupable = ("channel", "active")                      # fields rows can be grouped by
         summable = ("total",); sum_currency = "currency"       # list totals, per currency
+        money_fields = ("total",)                              # amounts: shown with the row's currency
 
 The same declaration drives the list query and `/meta` (field_meta), from
-which the client builds its column menus and search panel.
+which the client builds its column menus and search panel, and offers every
+field the rows carry (`in_row`) as a column.
 
 There is deliberately no `delete`: config rows are deactivated, documents are
 never removed. Models that opt in to SoftDeletable get `soft_delete`.
@@ -70,6 +72,11 @@ class Repository(Generic[T]):
     # the list footer and the group headers — per value of `sum_currency`.
     summable: ClassVar[tuple[str, ...]] = ()
     sum_currency: ClassVar[str | None] = None
+    # Fields that are amounts of money, shown with the currency in `money_currency` (else
+    # `sum_currency`) of the same row. Declared, never guessed from the column's type: a
+    # weight, a quantity or a factor can have two decimals too.
+    money_fields: ClassVar[tuple[str, ...]] = ()
+    money_currency: ClassVar[str | None] = None
     # System views (design §13.19): named partial view states, in /meta.
     presets: ClassVar[tuple[Preset, ...]] = ()
     default_sort: ClassVar[tuple[str, ...]] = ()  # sortable keys, "-" for descending
@@ -88,6 +95,8 @@ class Repository(Generic[T]):
         missing = [n for n in cls.suggestable if n not in cls.filterable]
         if missing:
             raise TypeError(f"{cls.__name__}.suggestable: not filterable: {missing}")
+        if cls.money_fields and not (cls.money_currency or cls.sum_currency):
+            raise TypeError(f"{cls.__name__}.money_fields: no currency field (money_currency or sum_currency)")
 
     def __init__(self, uow) -> None:
         self.uow = uow
@@ -292,6 +301,8 @@ class Repository(Generic[T]):
         for name, info in (read_schema.model_fields.items() if read_schema else ()):
             if _scalar(info.annotation):
                 names.append(name)
+        in_row = set(names)  # each row carries these: a client may show them as columns
+        currency = cls.money_currency or cls.sum_currency
         names = [n for n in dict.fromkeys([*names, *cls.filterable, *cls.sortable]) if n not in cls.meta_hidden]  # each once, schema order first
         out = []
         for n in names:
@@ -299,8 +310,10 @@ class Repository(Generic[T]):
                 "name": n, "label": cls.labels.get(n) or _humanise(n), "type": cls.field_kind(n),
                 "enum_values": list(cls.enums.get(n, ())), "filterable": n in cls.filterable,
                 "sortable": n in cls.sortable, "groupable": n in cls.groupable, "operators": list(cls.field_ops(n)),
+                "in_row": n in in_row,  # else a key to filter or sort on only: never offered as a column
                 **({"suggestable": True} if n in cls.suggestable else {}),
                 **({"summable": True} if n in cls.summable else {}),
+                **({"money": True, "currency_field": currency} if n in cls.money_fields else {}),
             })
         return out
 

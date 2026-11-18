@@ -37,6 +37,14 @@ class OrderRead(BaseModel):
     ship_to: dict[str, Any] | None
     currency: str
     total: Decimal | None
+    # The source's own amounts, kind and department, and the connection by name (list columns, user 2026-11-18).
+    subtotal: Decimal | None = None
+    tax: Decimal | None = None
+    shipping: Decimal | None = None
+    discount: Decimal | None = None
+    order_type: str | None = None
+    department: str | None = None
+    connection_name: str | None = None
     total_amount: Decimal | None = None  # the source's total, else the lines at the PO price
     delivery_due_date: date | None = None  # the requested date; dc routing: do-not-deliver-after
     fulfillment_status: str
@@ -293,12 +301,7 @@ class OrderDetail(OrderRead):
     bill_to: dict[str, Any] | None = None
     contact: dict[str, Any] | None = None
     notes: str | None = None
-    subtotal: Decimal | None = None
-    tax: Decimal | None = None
-    shipping: Decimal | None = None
-    discount: Decimal | None = None
-    department: str | None = None
-    order_type: str | None = None
+    # subtotal, tax, shipping, discount, department, order_type: OrderRead's (the list's row has them too)
     edi_mailbox: str | None = None  # the buyer's TrueCommerce mailbox (850 EDIMailbox), sent back in the 810
     agreement_id: str | None = None  # the 850's "Agreement ID", sent back in the 810 (2026-11-13)
     lines: list[LineRead] = []

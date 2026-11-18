@@ -152,6 +152,22 @@ async function run(name, viewport) {
     await shot('order-lines')
     await page.keyboard.press('Escape')
   })
+  await step('more fields', async () => {
+    // Any field of the rows as a column (user 2026-11-18): the eye lists "More fields"; one ticked shows in the table / card.
+    await open('/orders')
+    await page.getByRole('button', { name: 'Show, hide or move columns' }).first().click()
+    const more = page.getByRole('group', { name: 'More fields' })
+    await more.waitFor({ timeout: 5000 })
+    const box = await page.locator('[data-radix-popper-content-wrapper]').last().boundingBox()
+    check(!!box && box.x >= 0 && box.x + box.width <= viewport.width + 1, `${name} column chooser: fits the screen`)
+    check(await page.getByRole('searchbox', { name: 'Find a field' }).count() === 1, `${name} column chooser: has its find box`)
+    await shot('more-fields')
+    await page.getByRole('checkbox', { name: 'Subtotal' }).click()
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(300)
+    await shot('more-fields-added')
+    check(await page.getByText(/110\.00/).count() > 0, `${name} column chooser: the field ticked shows (Subtotal 110.00)`)
+  })
   await step('page help', async () => {
     await open('/orders')
     await page.getByRole('button', { name: 'Help: Orders' }).click()

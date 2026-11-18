@@ -125,7 +125,7 @@ def test_field_meta_comes_from_the_declaration():
     assert list(meta)[:6] == ["id", "code", "name", "email", "price", "active"]  # the read schema's order first
     assert meta["code"] | {"operators": None} == {
         "name": "code", "label": "Code", "type": "enum", "enum_values": ["A1", "B2", "C3", "N4"], "filterable": True,
-        "sortable": True, "groupable": False, "operators": None}
+        "sortable": True, "groupable": False, "operators": None, "in_row": True}
     assert (meta["active"]["groupable"], meta["price"]["groupable"]) == (True, True)
     assert meta["code"]["operators"] == ["eq", "ne", "in", "not_in", "is_null", "not_null"]
     assert (meta["email"]["label"], meta["email"]["type"]) == ("E-mail", "text")

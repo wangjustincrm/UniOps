@@ -14,7 +14,8 @@ const orderRow = (n) => ({
   delay_starts_at: '2026-11-05T12:00:00Z', delay_minutes: 30, settlement_mode: 'PREPAID',
   status_detail: 'Since Nov 5, 2026', status_detail_at: '2026-11-05T12:00:00Z', fulfillment_status: null, invoice_status: null,
   shopify_financial_status: 'paid', shopify_fulfillment_status: null, hold_reason: null, on_hold_reason: null, review_reason: null,
-  currency: 'CAD', total: '120.00', total_amount: '120.00', original_total: '120.00', net_amount: '120.00', total_refunded: '0.00',
+  currency: 'CAD', subtotal: '110.00', tax: '10.00', shipping: '0.00', discount: '0.00', order_type: null, department: null,
+  connection_name: 'Sample store', total: '120.00', total_amount: '120.00', original_total: '120.00', net_amount: '120.00', total_refunded: '0.00',
   backordered_ea: 0, short_shipped: false, shadow: false, historical: false, archive_suppressed: false, archived_in_shopify_at: null,
   source_cancelled_at: null, tags: [], ship_to: addr, payments: [], refunds: [], documents: [], timeline: [],
 })

@@ -140,7 +140,7 @@ class OrderRepository(Repository[Order]):
               "order_status": "Status", "on_hold_reason": "On Hold reason", "first_received_at": "Received", "paid_at": "Paid",
               "shopify_financial_status": "Shopify Payment", "shopify_fulfillment_status": "Shopify Fulfillment",
               "archived_in_shopify_at": "Archived", "source_cancelled_at": "Cancelled",
-              "source_name": "Sales channel", "tags": "Tags", "original_total": "Original total",
+              "source_name": "Sales channel", "connection_name": "Connection", "tags": "Tags", "original_total": "Original total",
               "total_refunded": "Refunded", "net_amount": "Net", "returned_ea": "Returned EA",
               "delivery_due_date": "Delivery due"}
     enums = {"source_type": SOURCE_TYPES, "fulfillment_status": tuple(s.value for s in F),
@@ -148,26 +148,28 @@ class OrderRepository(Repository[Order]):
              "order_state": ORDER_STATES, "order_status": ORDER_STATUSES, "on_hold_reason": ON_HOLD_REASONS}
     # The internal lines stay filterable and sortable, so a saved view on them still lists,
     # but no list offers them any more: they show on the order page, for diagnosis.
-    meta_hidden = ("order_status_label", "short_shipped", "status_detail", "status_detail_at", "next_step", "next_step_who", "delay_starts_at", "delay_minutes", "settlement_mode", "shadow", "to_confirm",
+    meta_hidden = ("connection_id", "order_status_label", "short_shipped", "status_detail", "status_detail_at", "next_step", "next_step_who", "delay_starts_at", "delay_minutes", "settlement_mode", "shadow", "to_confirm",
                    "fulfillment_status", "invoice_status", "order_state", "hold_reason",
                    # what the 945 left unshipped: no column any more (user 2026-11-12), only the Short shipped mark
                    "backordered_ea")
     sortable = {"order_state": ORDER_STATE_SQL, "order_status": ORDER_STATUS_SQL, "on_hold_reason": ON_HOLD_REASON_SQL, "partner_name": Order.partner_name_sql,
-                "total_amount": Order.total_amount_sql, "backordered_ea": BACKORDERED_SQL, "returned_ea": Order.returned_ea_sql,
+                "connection_name": Order.connection_name_sql, "total_amount": Order.total_amount_sql, "backordered_ea": BACKORDERED_SQL, "returned_ea": Order.returned_ea_sql,
                 "delivery_due_date": Order.delivery_due_sql}
     filterable = {"order_state": FilterRule(ORDER_STATE_SQL, kind="text"),
                   "order_status": FilterRule(ORDER_STATUS_SQL, kind="text"),
                   "on_hold_reason": FilterRule(ON_HOLD_REASON_SQL, kind="text"),
                   "partner_name": FilterRule(Order.partner_name_sql, kind="text"),
+                  "connection_name": FilterRule(Order.connection_name_sql, kind="text"),
                   "total_amount": FilterRule(Order.total_amount_sql, kind="number", cast=lambda v: Decimal(str(v))),
                   "backordered_ea": FilterRule(BACKORDERED_SQL, kind="number", cast=int),
                   "returned_ea": FilterRule(Order.returned_ea_sql, kind="number", cast=int),
                   "to_confirm": FilterRule(TO_CONFIRM_SQL, kind="bool", cast=lambda v: str(v).lower() == "true")}
     summable = ("total_amount", "net_amount", "total_refunded")
     sum_currency = "currency"
+    money_fields = ("total_amount", "total", "subtotal", "tax", "shipping", "discount", "original_total", "total_refunded", "net_amount")
     default_sort = ("-order_number",)
     suggestable = ("partner_name", "source_order_number", "source_reference")
-    groupable = ("order_status", "on_hold_reason", "order_state", "partner_name", "partner_code", "source_type", "fulfillment_status", "invoice_status", "hold_reason", "order_date",
+    groupable = ("order_status", "on_hold_reason", "order_state", "partner_name", "connection_name", "partner_code", "source_type", "fulfillment_status", "invoice_status", "hold_reason", "order_date",
                  "currency", "historical", "archive_suppressed", "shopify_financial_status", "source_name")
     # System views (§13.19). Review reason is shown where it says something.
     presets = (
@@ -314,8 +316,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         base = self.to_read(o).model_dump()
         shipments = await self._shipments(id)
         return OrderDetail(
-            **base, **{k: getattr(o, k) for k in ("bill_to", "contact", "notes", "subtotal", "tax", "shipping",
-                                                   "discount", "department", "order_type")},
+            **base, **{k: getattr(o, k) for k in ("bill_to", "contact", "notes")},  # the amounts, type and department: in the row
             lines=await self._lifecycle(lines), has_invoice=has_invoice,
             documents=[OrderDocumentRead(**d._asdict()) for d in docs],
             shipments=shipments,

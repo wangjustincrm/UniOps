@@ -1,4 +1,4 @@
-import { BooleanCell, DateCell, NumberCell, StackedDateTimeCell } from '../primitives/cells'
+import { BooleanCell, DateCell, MoneyCell, NumberCell, StackedDateTimeCell, StatusCell } from '../primitives/cells'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button } from '../primitives/shell'
 import { TourMark } from '../help'
@@ -75,12 +75,17 @@ export interface QueryTableProps<T> {
   picker?: ViewPickerModel
 }
 
+/** The chooser's two groups: the page's own columns, then every other field of the row. */
+const COLUMN_GROUPS = [{ id: 'page', label: 'On this list' }, { id: 'more', label: 'More fields' }]
+
 const headerText = <T,>(c: ColumnDef<T, unknown>, field?: FieldMeta): string =>
   typeof c.header === 'string' ? c.header : field?.label ?? columnId(c)
 
-function formatValue(field: FieldMeta, v: unknown): ReactNode {
+function formatValue(field: FieldMeta, v: unknown, row?: Record<string, unknown>): ReactNode {
   if (v === null || v === undefined || v === '') return ''
   // A field added from the chooser looks like the same kind of value in any list.
+  if (field.money) return <MoneyCell amount={v as string | number} currency={field.currency_field && row ? row[field.currency_field] as string | null : undefined} />
+  if (field.type === 'enum') return <StatusCell value={String(v)} />
   if (field.type === 'bool') return <BooleanCell value={Boolean(v)} />
   if (field.type === 'datetime') return <StackedDateTimeCell value={String(v)} />
   if (field.type === 'date') return <DateCell value={String(v)} />
@@ -147,8 +152,10 @@ function QueryTableView<T>({
   }, [meta, pageIds])  // eslint-disable-line react-hooks/exhaustive-deps
   const allColumns = useMemo<ColumnDef<T, unknown>[]>(() => [
     ...columns,
-    ...(meta?.fields ?? []).filter((f) => !pageIds.has(f.name)).map((f): ColumnDef<T, unknown> => ({
-      id: f.name, header: f.label, cell: ({ row }) => formatValue(f, (row.original as Record<string, unknown>)[f.name]),
+    // Only what each row carries (`in_row`): a key the list only filters or sorts on would be an empty column.
+    ...(meta?.fields ?? []).filter((f) => !pageIds.has(f.name) && f.in_row !== false).map((f): ColumnDef<T, unknown> => ({
+      id: f.name, header: f.label,
+      cell: ({ row }) => formatValue(f, (row.original as Record<string, unknown>)[f.name], row.original as Record<string, unknown>),
     })),
   ], [columns, meta, pageIds])
   // Layout (resource/viewState.ts): no `columns` = the page's order, its own
@@ -190,7 +197,10 @@ function QueryTableView<T>({
   const sortableIds = [...sortable, ...(meta?.fields ?? []).filter((f) => f.sortable).map((f) => f.name)]
   const panelFields = (meta?.fields ?? []).filter((f) => f.filterable && !locked.includes(f.name))
   const byId = new Map(allColumns.map((c) => [columnId(c), c]))
-  const visible = order.filter((id) => !isHidden(id)).map((id) => byId.get(id)!)
+  // A field the user added (not one the page shows by default): marked, so a phone card always shows it.
+  // The same object each render (a new column definition would remount its cells).
+  const asChosen = useMemo(() => new Map(allColumns.map((c) => [columnId(c), { ...c, meta: { ...c.meta, chosen: true } }])), [allColumns])
+  const visible = order.filter((id) => !isHidden(id)).map((id) => (shownByDefault(id) ? byId.get(id)! : asChosen.get(id)!))
 
   // The summed fields, in the response's order; labelled when there are several.
   const summed = useMemo(() => [...new Set((totals ?? []).flatMap((t) => Object.keys(t.sums)))], [totals])
@@ -296,7 +306,8 @@ function QueryTableView<T>({
         }}
         leadingHeader={meta ? (
           <ColumnChooser
-            columns={order.map((id) => ({ id, label: headerText(byId.get(id)!, fields.get(id)) }))}
+            columns={order.map((id) => ({ id, label: headerText(byId.get(id)!, fields.get(id)), group: pageIds.has(id) ? 'page' : 'more' }))}
+            groups={COLUMN_GROUPS}
             hidden={hidden}
             onChange={setHidden}
             onMove={(id, delta) => move(id, order.indexOf(id) + delta)}

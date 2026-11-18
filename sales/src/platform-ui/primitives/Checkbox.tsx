@@ -1,10 +1,11 @@
 import * as RC from '@radix-ui/react-checkbox'
-import { Check } from 'lucide-react'
+import { Check, Minus } from 'lucide-react'
 import { useId, type ReactNode } from 'react'
 import { cn } from '../lib/cn'
 
 export interface CheckboxProps {
-  checked: boolean
+  /** 'indeterminate': some of what it stands for (e.g. a group's boxes) — shown as a dash. */
+  checked: boolean | 'indeterminate'
   onCheckedChange: (checked: boolean) => void
   /** Visible label (linked with htmlFor, so the whole text is clickable). */
   label?: ReactNode
@@ -34,11 +35,12 @@ export function Checkbox({ checked, onCheckedChange, label, id, name, disabled, 
         'flex h-4 w-4 shrink-0 items-center justify-center rounded border border-neutral-300 bg-white',
         'focus:outline-none focus-visible:shadow-[0_0_0_3px_rgba(10,124,124,0.15)]',
         'data-[state=checked]:border-primary-600 data-[state=checked]:bg-primary-600 data-[state=checked]:text-white',
+        'data-[state=indeterminate]:border-primary-600 data-[state=indeterminate]:bg-primary-600 data-[state=indeterminate]:text-white',
         'disabled:cursor-not-allowed disabled:opacity-50',
         !label && className,
       )}
     >
-      <RC.Indicator><Check className="h-3 w-3" strokeWidth={3} /></RC.Indicator>
+      <RC.Indicator>{checked === 'indeterminate' ? <Minus className="h-3 w-3" strokeWidth={3} /> : <Check className="h-3 w-3" strokeWidth={3} />}</RC.Indicator>
     </RC.Root>
   )
   if (!label) return box

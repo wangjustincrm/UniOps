@@ -10,7 +10,8 @@
     "filterable": false,
     "sortable": false,
     "groupable": false,
-    "operators": []
+    "operators": [],
+    "in_row": true
    },
    {
     "name": "order_number",
@@ -32,7 +33,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "partner_code",
@@ -53,7 +55,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "partner_name",
@@ -75,6 +78,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "suggestable": true
    },
    {
@@ -97,7 +101,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "shipping_method",
@@ -107,7 +112,8 @@
     "filterable": false,
     "sortable": false,
     "groupable": false,
-    "operators": []
+    "operators": [],
+    "in_row": true
    },
    {
     "name": "source_order_id",
@@ -128,7 +134,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "source_order_number",
@@ -150,6 +157,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "suggestable": true
    },
    {
@@ -172,6 +180,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "suggestable": true
    },
    {
@@ -194,7 +203,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "requested_delivery_date",
@@ -216,7 +226,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "cancel_date",
@@ -238,7 +249,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "do_not_deliver_after",
@@ -260,7 +272,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "currency",
@@ -281,7 +294,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "total",
@@ -303,7 +317,176 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true,
+    "money": true,
+    "currency_field": "currency"
+   },
+   {
+    "name": "subtotal",
+    "label": "Subtotal",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "money": true,
+    "currency_field": "currency"
+   },
+   {
+    "name": "tax",
+    "label": "Tax",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "money": true,
+    "currency_field": "currency"
+   },
+   {
+    "name": "shipping",
+    "label": "Shipping",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "money": true,
+    "currency_field": "currency"
+   },
+   {
+    "name": "discount",
+    "label": "Discount",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "money": true,
+    "currency_field": "currency"
+   },
+   {
+    "name": "order_type",
+    "label": "Order type",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true
+   },
+   {
+    "name": "department",
+    "label": "Department",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true
+   },
+   {
+    "name": "connection_name",
+    "label": "Connection",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true
    },
    {
     "name": "total_amount",
@@ -326,7 +509,10 @@
      "is_null",
      "not_null"
     ],
-    "summable": true
+    "in_row": true,
+    "summable": true,
+    "money": true,
+    "currency_field": "currency"
    },
    {
     "name": "delivery_due_date",
@@ -336,7 +522,8 @@
     "filterable": false,
     "sortable": true,
     "groupable": false,
-    "operators": []
+    "operators": [],
+    "in_row": true
    },
    {
     "name": "order_status",
@@ -363,7 +550,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "on_hold_reason",
@@ -392,7 +580,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "status_detail_kind",
@@ -402,7 +591,8 @@
     "filterable": false,
     "sortable": false,
     "groupable": false,
-    "operators": []
+    "operators": [],
+    "in_row": true
    },
    {
     "name": "review_reason",
@@ -423,7 +613,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "historical",
@@ -438,7 +629,8 @@
      "ne",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "first_received_at",
@@ -460,7 +652,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "paid_at",
@@ -482,7 +675,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "archived_in_shopify_at",
@@ -504,7 +698,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "archive_suppressed",
@@ -519,7 +714,8 @@
      "ne",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "shopify_financial_status",
@@ -540,7 +736,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "shopify_fulfillment_status",
@@ -561,7 +758,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "shopify_fulfillment_id",
@@ -571,7 +769,8 @@
     "filterable": false,
     "sortable": false,
     "groupable": false,
-    "operators": []
+    "operators": [],
+    "in_row": true
    },
    {
     "name": "source_cancelled_at",
@@ -593,7 +792,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "source_name",
@@ -614,7 +814,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "tags",
@@ -635,7 +836,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "original_total",
@@ -657,7 +859,10 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true,
+    "money": true,
+    "currency_field": "currency"
    },
    {
     "name": "total_refunded",
@@ -680,7 +885,10 @@
      "is_null",
      "not_null"
     ],
-    "summable": true
+    "in_row": true,
+    "summable": true,
+    "money": true,
+    "currency_field": "currency"
    },
    {
     "name": "net_amount",
@@ -703,7 +911,10 @@
      "is_null",
      "not_null"
     ],
-    "summable": true
+    "in_row": true,
+    "summable": true,
+    "money": true,
+    "currency_field": "currency"
    },
    {
     "name": "returned_ea",
@@ -725,7 +936,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "source_updated_at",
@@ -747,7 +959,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "version",
@@ -757,7 +970,8 @@
     "filterable": false,
     "sortable": false,
     "groupable": false,
-    "operators": []
+    "operators": [],
+    "in_row": true
    },
    {
     "name": "created_at",
@@ -779,7 +993,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "updated_at",
@@ -801,159 +1016,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
-   },
-   {
-    "name": "connection_id",
-    "label": "Connection ID",
-    "type": "number",
-    "enum_values": [],
-    "filterable": true,
-    "sortable": true,
-    "groupable": false,
-    "operators": [
-     "eq",
-     "ne",
-     "gt",
-     "gte",
-     "lt",
-     "lte",
-     "between",
-     "in",
-     "not_in",
-     "is_null",
-     "not_null"
-    ]
-   },
-   {
-    "name": "order_type",
-    "label": "Order type",
-    "type": "text",
-    "enum_values": [],
-    "filterable": true,
-    "sortable": true,
-    "groupable": false,
-    "operators": [
-     "contains",
-     "not_contains",
-     "starts_with",
-     "ends_with",
-     "eq",
-     "ne",
-     "in",
-     "not_in",
-     "is_null",
-     "not_null"
-    ]
-   },
-   {
-    "name": "department",
-    "label": "Department",
-    "type": "text",
-    "enum_values": [],
-    "filterable": true,
-    "sortable": true,
-    "groupable": false,
-    "operators": [
-     "contains",
-     "not_contains",
-     "starts_with",
-     "ends_with",
-     "eq",
-     "ne",
-     "in",
-     "not_in",
-     "is_null",
-     "not_null"
-    ]
-   },
-   {
-    "name": "subtotal",
-    "label": "Subtotal",
-    "type": "number",
-    "enum_values": [],
-    "filterable": true,
-    "sortable": true,
-    "groupable": false,
-    "operators": [
-     "eq",
-     "ne",
-     "gt",
-     "gte",
-     "lt",
-     "lte",
-     "between",
-     "in",
-     "not_in",
-     "is_null",
-     "not_null"
-    ]
-   },
-   {
-    "name": "tax",
-    "label": "Tax",
-    "type": "number",
-    "enum_values": [],
-    "filterable": true,
-    "sortable": true,
-    "groupable": false,
-    "operators": [
-     "eq",
-     "ne",
-     "gt",
-     "gte",
-     "lt",
-     "lte",
-     "between",
-     "in",
-     "not_in",
-     "is_null",
-     "not_null"
-    ]
-   },
-   {
-    "name": "shipping",
-    "label": "Shipping",
-    "type": "number",
-    "enum_values": [],
-    "filterable": true,
-    "sortable": true,
-    "groupable": false,
-    "operators": [
-     "eq",
-     "ne",
-     "gt",
-     "gte",
-     "lt",
-     "lte",
-     "between",
-     "in",
-     "not_in",
-     "is_null",
-     "not_null"
-    ]
-   },
-   {
-    "name": "discount",
-    "label": "Discount",
-    "type": "number",
-    "enum_values": [],
-    "filterable": true,
-    "sortable": true,
-    "groupable": false,
-    "operators": [
-     "eq",
-     "ne",
-     "gt",
-     "gte",
-     "lt",
-     "lte",
-     "between",
-     "in",
-     "not_in",
-     "is_null",
-     "not_null"
-    ]
+    ],
+    "in_row": true
    }
   ],
   "searchable": true,
@@ -1217,7 +1281,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "payment_row_id",
@@ -1227,7 +1292,8 @@
     "filterable": false,
     "sortable": false,
     "groupable": false,
-    "operators": []
+    "operators": [],
+    "in_row": true
    },
    {
     "name": "order_id",
@@ -1249,7 +1315,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "order_ref",
@@ -1271,6 +1338,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "suggestable": true
    },
    {
@@ -1292,7 +1360,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "processed_at",
@@ -1314,7 +1383,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "processed_week",
@@ -1336,7 +1406,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "processed_month",
@@ -1358,7 +1429,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "method",
@@ -1380,7 +1452,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "gateway",
@@ -1401,7 +1474,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "kind",
@@ -1425,7 +1499,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "status",
@@ -1447,7 +1522,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "amount",
@@ -1469,7 +1545,10 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true,
+    "money": true,
+    "currency_field": "currency"
    },
    {
     "name": "currency",
@@ -1490,7 +1569,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "sales_amount",
@@ -1513,7 +1593,10 @@
      "is_null",
      "not_null"
     ],
-    "summable": true
+    "in_row": true,
+    "summable": true,
+    "money": true,
+    "currency_field": "currency"
    },
    {
     "name": "refund_amount",
@@ -1536,7 +1619,10 @@
      "is_null",
      "not_null"
     ],
-    "summable": true
+    "in_row": true,
+    "summable": true,
+    "money": true,
+    "currency_field": "currency"
    },
    {
     "name": "net_amount",
@@ -1559,7 +1645,10 @@
      "is_null",
      "not_null"
     ],
-    "summable": true
+    "in_row": true,
+    "summable": true,
+    "money": true,
+    "currency_field": "currency"
    },
    {
     "name": "gateway_ref",
@@ -1580,7 +1669,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "shopify_payment_id",
@@ -1601,7 +1691,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "order_source",
@@ -1621,7 +1712,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "financial_status",
@@ -1646,7 +1738,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "order_cancelled",
@@ -1661,7 +1754,8 @@
      "ne",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "issue",
@@ -1672,7 +1766,10 @@
      "Cancelled, not fully refunded",
      "Partially paid",
      "Failed on an open order",
-     "Paid, no payment"
+     "Paid, no payment",
+     "Not settled in the gateway",
+     "In the gateway, not in Shopify",
+     "Details not available from the gateway"
     ],
     "filterable": true,
     "sortable": true,
@@ -1684,7 +1781,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "discount",
@@ -1706,7 +1804,10 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true,
+    "money": true,
+    "currency_field": "currency"
    },
    {
     "name": "shipping",
@@ -1728,7 +1829,10 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true,
+    "money": true,
+    "currency_field": "currency"
    },
    {
     "name": "order_total",
@@ -1750,7 +1854,10 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true,
+    "money": true,
+    "currency_field": "currency"
    },
    {
     "name": "test",
@@ -1765,7 +1872,182 @@
      "ne",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
+   },
+   {
+    "name": "gateway_status",
+    "label": "Gateway status",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true
+   },
+   {
+    "name": "card_type",
+    "label": "Card type",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true
+   },
+   {
+    "name": "match_method",
+    "label": "Matched by",
+    "type": "enum",
+    "enum_values": [
+     "Transaction ID",
+     "Shopify payment ID",
+     "Order number",
+     "Amount and time (probable)"
+    ],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true
+   },
+   {
+    "name": "settlement_id",
+    "label": "Settlement no.",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true
+   },
+   {
+    "name": "settlement_ref",
+    "label": "Batch ID",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true
+   },
+   {
+    "name": "settled_at",
+    "label": "Settled",
+    "type": "datetime",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true
+   },
+   {
+    "name": "settled_date",
+    "label": "Settlement date",
+    "type": "date",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true
+   },
+   {
+    "name": "voided",
+    "label": "Voided in the gateway",
+    "type": "bool",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true
    }
   ],
   "searchable": true,
@@ -1797,6 +2079,41 @@
        "field": "status",
        "op": "eq",
        "value": "success"
+      }
+     ],
+     "sort": [
+      {
+       "field": "processed_at",
+       "desc": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "authorize_net_settlements",
+    "name": "Authorize.Net \u2014 by settlement",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "method",
+       "op": "eq",
+       "value": "Authorize.Net"
+      },
+      {
+       "field": "settlement_id",
+       "op": "not_null",
+       "value": null
+      }
+     ],
+     "group": [
+      {
+       "field": "settled_date",
+       "desc": true
+      },
+      {
+       "field": "settlement_id",
+       "desc": true
       }
      ],
      "sort": [
@@ -1911,7 +2228,8 @@
     "filterable": false,
     "sortable": false,
     "groupable": false,
-    "operators": []
+    "operators": [],
+    "in_row": true
    },
    {
     "name": "item_code",
@@ -1933,6 +2251,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "suggestable": true
    },
    {
@@ -1954,7 +2273,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "received_ea",
@@ -1977,6 +2297,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2000,6 +2321,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2023,6 +2345,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2046,6 +2369,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2069,6 +2393,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2092,6 +2417,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2115,6 +2441,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2138,6 +2465,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2161,6 +2489,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2184,6 +2513,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2207,6 +2537,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2230,6 +2561,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2252,7 +2584,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "first_expiry",
@@ -2274,7 +2607,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "days_to_first_expiry",
@@ -2296,7 +2630,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "last_move_at",
@@ -2318,7 +2653,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    }
   ],
   "searchable": true,
@@ -2339,7 +2675,8 @@
     "filterable": false,
     "sortable": false,
     "groupable": false,
-    "operators": []
+    "operators": [],
+    "in_row": true
    },
    {
     "name": "item_code",
@@ -2361,6 +2698,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "suggestable": true
    },
    {
@@ -2383,6 +2721,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "suggestable": true
    },
    {
@@ -2405,7 +2744,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "days_to_expiry",
@@ -2427,7 +2767,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "received_ea",
@@ -2450,6 +2791,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2473,6 +2815,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2496,6 +2839,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2519,6 +2863,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2542,6 +2887,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2565,6 +2911,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2588,6 +2935,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2611,6 +2959,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2634,6 +2983,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2657,6 +3007,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2680,6 +3031,7 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true,
     "summable": true
    },
    {
@@ -2702,7 +3054,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "first_move_at",
@@ -2724,7 +3077,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    },
    {
     "name": "last_move_at",
@@ -2746,7 +3100,8 @@
      "not_in",
      "is_null",
      "not_null"
-    ]
+    ],
+    "in_row": true
    }
   ],
   "searchable": true,
@@ -2975,7 +3330,16 @@
     "body": "Successful transactions only: payments, refunds, and payments \u2212 refunds."
    },
    "Gateway transaction ID": {
-    "body": "The payment provider's own ID. Authorize.Net payments since Sep 18, 2025 have none in Shopify: use the Shopify payment ID."
+    "body": "The payment provider's own ID. Authorize.Net payments since Sep 18, 2025 have none in Shopify: it comes from Authorize.Net once the payment is matched there."
+   },
+   "Settlement": {
+    "body": "A deposit the payment provider paid to the bank: for Authorize.Net, one settled batch, about one a day. The payments in it are the money in that deposit."
+   },
+   "Matched by": {
+    "body": "How the provider's transaction was found to be this Shopify payment: its transaction ID, the Shopify payment ID, the order number, or only the same amount and time (probable: check it)."
+   },
+   "Difference": {
+    "body": "The deposit's net \u2212 the Shopify payments matched to it. Not zero: some money in the deposit is no Shopify payment, or a transaction is not matched yet."
    }
   }
  }

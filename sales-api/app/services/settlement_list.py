@@ -38,6 +38,7 @@ class SettlementRowRepository(Repository[SettlementRow]):
     groupable = ("gateway", "settled_week", "settled_month", "state", "issue", "currency")
     summable = ("sales_amount", "refund_amount", "net_amount", "matched_net", "difference")
     sum_currency = "currency"
+    money_fields = ("sales_amount", "refund_amount", "fee_amount", "net_amount", "chargeback_amount", "returned_amount", "matched_net", "difference")
     presets = (
         Preset("all", "All"),
         Preset("monthly", "By month", {"group": [{"field": "settled_month", "desc": True}], "sort": _NEWEST}),

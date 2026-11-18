@@ -21,6 +21,11 @@ export interface FieldMeta {
   summable?: boolean
   /** Values of other records are offered while typing (`GET <resource>/suggest`). */
   suggestable?: boolean
+  /** Each row carries it: it can be shown as a column. False: a key to filter or sort on only. */
+  in_row?: boolean
+  /** An amount of money (declared by the list), in the currency of the row's `currency_field`. */
+  money?: boolean
+  currency_field?: string | null
 }
 
 /** A system view: declared with the list on the server, not editable. */

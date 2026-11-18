@@ -44,6 +44,7 @@ class InvoiceRepository(Repository[Invoice]):
     groupable = ("partner_name", "method", "currency")
     summable = ("total",)
     sum_currency = "currency"
+    money_fields = ("subtotal", "total")
     presets = (Preset("all", "All"),
                Preset("not_sent", "Not sent", {"filters": [{"field": "sent_at", "op": "null", "value": None}]}),
                Preset("failed", "Failed", {"filters": [{"field": "error", "op": "not_null", "value": None}]}))

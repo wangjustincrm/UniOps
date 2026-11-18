@@ -12,6 +12,9 @@ declare module '@tanstack/react-table' {
      *  at its top right, or left out. Unset: a "label: value" line (the first such column is
      *  the title when no column claims it). */
     card?: 'title' | 'badge' | 'hide'
+    /** A column the user chose to add (a field beyond the page's own): on a card it is always a line,
+     *  never folded under "N more fields" — they asked for it. */
+    chosen?: boolean
     /** A help id: a ? beside the header (and the card's label) that says what the column holds. */
     help?: HelpId
   }

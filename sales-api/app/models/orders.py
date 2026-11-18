@@ -25,7 +25,7 @@ from sqlalchemy.orm import Mapped, column_property, mapped_column, undefer_group
 from app.db.base import Base
 from app.domain.orders import HOLD_REASONS, LINE_STATUSES, SOURCE_TYPES
 from app.domain.status import FULFILLMENT, INVOICE, Fulfillment, Invoice
-from app.models.config import Partner, one_of
+from app.models.config import Connection, Partner, one_of
 from app.platform.entities import Audited, Versioned
 
 ORDER_NUMBER_SEQ = Sequence("sales_order_number_seq", start=1)  # P9 sets it above Zoho's highest
@@ -128,6 +128,11 @@ class Order(Audited, Versioned, Base):
         return self.__dict__.get("partner_name_sql")
 
     @property
+    def connection_name(self) -> str | None:
+        """The connection's name as loaded with the row (`connection_name_sql`); never a lazy load."""
+        return self.__dict__.get("connection_name_sql")
+
+    @property
     def total_amount(self) -> Decimal | None:
         """The order's amount as loaded with the row (`total_amount_sql`); never a lazy load."""
         return self.__dict__.get("total_amount_sql")
@@ -176,6 +181,10 @@ WITH_FACTS = undefer_group("facts")
 # The partner's name on the order's row (lists sort, filter, group and search by it).
 Order.partner_name_sql = order_fact(
     select(Partner.name).where(Partner.code == Order.partner_code).correlate_except(Partner).scalar_subquery())
+
+# The connection the order came by, by name (a list column, user 2026-11-18).
+Order.connection_name_sql = order_fact(
+    select(Connection.name).where(Connection.id == Order.connection_id).correlate_except(Connection).scalar_subquery())
 
 # What the Status and its Detail read of the partner (app/domain/order_status.py).
 def _partner_value(column):
