@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2, UserCheck, Users } from 'lucide-react'
-import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Button } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Button, Badge } from '@uniops/shell'
 import { useActiveVisits, useAreaRules, useBatchCheckOut } from '@/services/api'
 import { AccessAreaBadge, OverdueBadge, accessAreaLabel, isVisitOverdue } from '@/components/StatusBadge'
 import { formatDateTime, timeAgo } from '@/lib/utils'
@@ -50,9 +50,9 @@ export default function ActiveVisitsPage() {
           <UserCheck className="h-6 w-6 text-primary-600" />
           <h1 className="text-2xl font-semibold text-fg">On-Site Now</h1>
           {!isLoading && (
-            <span className="rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-semibold text-success-fg ring-1 ring-inset ring-success-line">
+            <Badge variant="success">
               {items.length}
-            </span>
+            </Badge>
           )}
         </div>
 

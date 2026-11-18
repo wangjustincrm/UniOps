@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils'
 import { useAreaRules, type VisitStatus, type AccessArea, type AreaRule } from '@/services/api'
 import { zoneName } from '@/lib/visitOptions'
 
+import { Badge, type BadgeTone } from '@uniops/shell'
 const STATUS_LABEL: Record<VisitStatus, string> = {
   pending_approval: 'Pending Approval',
   confirmed:        'Confirmed',
@@ -11,23 +12,20 @@ const STATUS_LABEL: Record<VisitStatus, string> = {
   no_show:          'No Show',
 }
 
-const STATUS_STYLE: Record<VisitStatus, string> = {
-  pending_approval: 'bg-warning-soft text-warning-fg ring-warning-line',
-  confirmed:        'bg-primary-50 text-primary-700 ring-primary-200',
-  checked_in:       'bg-success-soft text-success-fg ring-success-line',
-  checked_out:      'bg-surface-sunken text-fg-secondary ring-line',
-  cancelled:        'bg-surface-sunken text-fg-muted ring-line',
-  no_show:          'bg-danger-soft text-danger-fg ring-danger-line',
+const STATUS_STYLE: Record<VisitStatus, BadgeTone> = {
+  pending_approval: 'warning',
+  confirmed:        'accent',
+  checked_in:       'success',
+  checked_out:      'neutral',
+  cancelled:        'outline',
+  no_show:          'danger',
 }
 
 export function StatusBadge({ status }: { status: VisitStatus }) {
   return (
-    <span className={cn(
-      'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset',
-      STATUS_STYLE[status],
-    )}>
+    <Badge variant={STATUS_STYLE[status]}>
       {STATUS_LABEL[status]}
-    </span>
+    </Badge>
   )
 }
 
@@ -46,9 +44,9 @@ export function isVisitOverdue(visit: {
 
 export function OverdueBadge() {
   return (
-    <span className="inline-flex items-center rounded-full bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger-fg ring-1 ring-inset ring-danger-line">
+    <Badge variant="danger">
       Overdue
-    </span>
+    </Badge>
   )
 }
 

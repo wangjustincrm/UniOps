@@ -12,6 +12,7 @@ import { useMyVmsTasks } from '@/services/api'
 import { timeAgo } from '@/lib/utils'
 import { groupTasks } from '@/lib/groupTasks'
 
+import { Badge } from '@uniops/shell'
 function taskHref(docType: string, docId: string): string {
   if (docType === 'vms_train' || docType === 'vms_ppe') {
     return `/visitor/${docId}/compliance`
@@ -105,9 +106,9 @@ export default function TaskInboxPage() {
                                 {timeAgo(t.created_at)}
                               </span>
                               {t.priority === 'urgent' && (
-                                <span className="rounded-full bg-danger-soft px-1.5 py-0.5 text-2xs font-semibold text-danger-fg">
+                                <Badge variant="danger" size="sm">
                                   URGENT
-                                </span>
+                                </Badge>
                               )}
                             </p>
                           </div>

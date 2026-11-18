@@ -11,7 +11,7 @@
  */
 import { useState } from 'react'
 import { Loader2, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
-import { Button, Checkbox, Input, MenuItem, Modal, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { Button, Checkbox, Input, MenuItem, Modal, TBody, THead, Table, Td, Th, Tr, Badge } from '@uniops/shell'
 import {
   useCreateZone, useDeleteZone, useUpdateZone, useUserDirectory, useZones,
   type UserBrief, type Zone,
@@ -79,10 +79,10 @@ export default function ZonesPage() {
                     : (
                       <div className="flex flex-wrap gap-1">
                         {z.managers.map((m) => (
-                          <span key={m.id} title={m.email}
-                            className={`rounded-full px-2 py-0.5 text-xs ${m.is_active ? 'bg-primary-50 text-primary-700' : 'bg-danger-soft text-danger-fg line-through'}`}>
+                          <Badge key={m.id} title={m.email}
+                            variant={m.is_active ? 'accent' : 'danger'} className={m.is_active ? undefined : 'line-through'}>
                             {m.name}
-                          </span>
+                          </Badge>
                         ))}
                         {z.managers.every((m) => !m.is_active) && (
                           <span className="text-xs text-danger-fg">No active manager — visits cannot be submitted</span>

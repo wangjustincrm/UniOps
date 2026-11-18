@@ -5,7 +5,7 @@
  * unauthorized users see a clean message instead of a stack of 403s.
  */
 import { useState } from 'react'
-import { Button, Input, Select, SortTh, TBody, THead, Table, TableMessage, TableScroll, Td, Tr, sortParams, useSort } from '@uniops/shell'
+import { Button, Input, Select, SortTh, TBody, THead, Table, TableMessage, TableScroll, Td, Tr, sortParams, useSort, Badge } from '@uniops/shell'
 import {
   Download, FileSearch, Filter, Loader2, AlertCircle, ChevronLeft, ChevronRight,
 } from 'lucide-react'
@@ -117,9 +117,9 @@ export default function AuditLogPage() {
       <div className="flex items-center gap-2.5">
         <FileSearch className="h-6 w-6 text-primary-600" />
         <h1 className="text-2xl font-semibold text-fg">Audit log</h1>
-        <span className="rounded-full bg-surface-sunken px-2.5 py-0.5 text-xs font-semibold text-fg-secondary">
+        <Badge>
           {total}
-        </span>
+        </Badge>
       </div>
       <p className="mt-1 text-sm text-fg-muted">
         Immutable record of every VMS change. Restricted to auditor / admin roles
