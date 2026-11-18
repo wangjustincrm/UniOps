@@ -12,6 +12,9 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
+    // One React for the app and @uniops/shell: this app's own node_modules can
+    // hold a second copy, and two Reacts break every Shell hook ("reading useRef").
+    dedupe: ['react', 'react-dom', 'react-router', 'react-router-dom'],
   },
   // Serve @uniops/shell as live source instead of a pre-bundled dep, so edits to
   // the shared package are picked up without a stale optimize cache.
