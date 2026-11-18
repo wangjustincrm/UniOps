@@ -221,3 +221,19 @@ describe('Badge size / category / passthrough', () => {
     expect(m.className).not.toContain('text-2xs')
   })
 })
+
+describe('StatusBadge size / dot', () => {
+  const { StatusBadge } = createStatusBadge({ paid: { label: 'Paid', tone: 'dark' } })
+  it('keeps the dot by default; dot={false} drops it; size="sm" is the dense size', () => {
+    render(<>
+      <StatusBadge status="paid" />
+      <StatusBadge status="paid" label="Paid (sm)" size="sm" dot={false} />
+    </>)
+    const plain = screen.getByText('Paid')
+    expect(plain.querySelector('[aria-hidden]')).not.toBeNull()
+    expect(plain.className).toContain('text-xs')
+    const sm = screen.getByText('Paid (sm)')
+    expect(sm.querySelector('[aria-hidden]')).toBeNull()
+    expect(sm.className).toContain('text-2xs')
+  })
+})

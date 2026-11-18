@@ -95,9 +95,15 @@ export function createStatusBadge<S extends string>(table: Record<S, StatusDef>)
   function statusTone(status: string): BadgeTone {
     return lookup(status)?.tone ?? 'neutral'
   }
-  function StatusBadge({ status, label, className }: { status: S | string; label?: string; className?: string }) {
+  function StatusBadge({ status, label, className, size, dot = true }: {
+    status: S | string; label?: string; className?: string
+    /** sm for dense rows / timelines. */
+    size?: 'sm' | 'md'
+    /** Status dot before the text (default on). */
+    dot?: boolean
+  }) {
     return (
-      <Badge variant={statusTone(status)} dot className={className}>
+      <Badge variant={statusTone(status)} size={size} dot={dot} className={className}>
         {label ?? statusLabel(status)}
       </Badge>
     )
