@@ -1,7 +1,7 @@
 export { Button, IconButton, buttonVariants, type ButtonProps, type IconButtonProps } from './button'
 export { Card, CardHeader, CardContent, CardFooter, CardTitle, CardDescription } from './card'
 export { Input, controlClass, type InputProps } from './input'
-export { Textarea, Select, SearchInput, Checkbox, Radio, FileInput, PickerTrigger, type PickerTriggerProps, type TextareaProps, type SelectProps, type SearchInputProps } from './controls'
+export { Textarea, Select, SearchInput, Checkbox, Radio, Switch, FileInput, PickerTrigger, type PickerTriggerProps, type TextareaProps, type SelectProps, type SearchInputProps, type SwitchProps } from './controls'
 export { Label } from './label'
 export { Skeleton, SkeletonRow } from './skeleton'
 export { FormField } from './form-field'

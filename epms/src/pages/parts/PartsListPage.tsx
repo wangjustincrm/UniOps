@@ -15,7 +15,7 @@ import type { ApiPart, CreatePartBody, UpdatePartBody } from '@/services/parts'
 import { useUomCodes } from '@/hooks/useUoms'
 import { useAuthStore } from '@/stores/auth.store'
 import { useRolePermissions } from '@/hooks/useConfig'
-import { SortTh, useSort, sortParams, FileInput, Radio, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { FileInput, Radio, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, useSort } from '@uniops/shell'
 
 type PartSortKey =
   | 'code' | 'category' | 'name' | 'supplier' | 'supplier_part_no'
@@ -187,9 +187,9 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
     <div className="rounded-xl border border-primary-200 bg-primary-50/60 p-5 mb-4">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-fg">{title}</h3>
-        <button onClick={onCancel} className="text-fg-muted hover:text-fg-secondary">
+        <Button size="icon-xs" variant="subtle" onClick={onCancel} aria-label="Close">
           <X className="h-4 w-4" />
-        </button>
+        </Button>
       </div>
 
       <div className="flex gap-5">
@@ -730,12 +730,10 @@ export default function PartsListPage() {
               const start = Math.max(1, Math.min(page - 2, totalPages - 4))
               const p = start + i
               return (
-                <button key={p} onClick={() => setPage(p)}
-                  className={cn('flex h-7 w-7 items-center justify-center rounded text-xs',
-                    p === page ? 'bg-primary-600 text-white font-semibold' : 'hover:bg-surface-strong'
-                  )}>
+                <Button key={p} size="icon-xs" variant={p === page ? 'primary' : 'subtle'} onClick={() => setPage(p)}
+                  aria-current={p === page ? 'page' : undefined} className="text-xs">
                   {p}
-                </button>
+                </Button>
               )
             })}
             <Button variant="subtle" size="icon-xs" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}

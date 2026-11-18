@@ -1,8 +1,7 @@
 import { useState, useRef } from 'react'
-import { createPortal } from 'react-dom'
 import {
   Search, Plus, Pencil, X, Check, Filter,
-  Building2, ToggleLeft, ToggleRight, Download, Upload, Database,
+  Building2, ToggleLeft, ToggleRight, Download, Upload, Database, AlertTriangle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,7 +19,7 @@ import {
   PRESET_PAYMENT_TERMS, MAX_NET_DAYS, customDaysToTerms, formatPaymentTerms, isPresetTerms, netDays,
 } from '@/lib/paymentTerms'
 import { ErpVendorImportDrawer } from './ErpVendorImportDrawer'
-import { SortTh, useSort, sortParams, FileInput, Radio, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { FileInput, Modal, Radio, Segmented, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, useSort } from '@uniops/shell'
 
 type VendorSortKey =
   | 'code' | 'erp_id' | 'name' | 'category' | 'contact'
@@ -126,21 +125,25 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
   const set = (k: keyof VendorFormData, v: string | boolean) =>
     onChange({ ...form, [k]: v })
 
-  const inputCls = (err?: string) =>
-    cn(
-      'h-10 w-full rounded-lg border bg-surface-sunken px-3 text-sm focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-focus transition-colors',
-      err ? 'border-danger-solid bg-danger-soft' : 'border-line'
-    )
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4 animate-[overlay-in_0.15s_ease-out]">
-      <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-primary-200 bg-surface shadow-xl p-5">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-fg">{title}</h3>
-        <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onCancel}>
-          <X className="h-4 w-4" />
+  return (
+    <Modal
+      open
+      onClose={onCancel}
+      // Closed only by its buttons, as before.
+      closeOnEscape={false}
+      size="full"
+      className="max-w-4xl"
+      title={title}
+      footer={<>
+        <Button variant="secondary" size="sm" onClick={onCancel} disabled={saving}>
+          Cancel
         </Button>
-      </div>
+        <Button size="sm" onClick={onSave} disabled={saving}>
+          <Check className="h-3.5 w-3.5" />
+          {saving ? 'Saving…' : 'Save Vendor'}
+        </Button>
+      </>}
+    >
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {/* POID */}
@@ -149,7 +152,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
             POID <span className="text-danger-fg">*</span>
           </label>
           <Input
-            className={inputCls(errors.code)}
+            error={!!errors.code}
             value={form.code}
             onChange={(e) => set('code', e.target.value.toUpperCase())}
             placeholder="ABC"
@@ -162,7 +165,6 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">ERP ID</label>
           <Input
-            className={inputCls()}
             value={form.erpId}
             onChange={(e) => set('erpId', e.target.value)}
             placeholder="ERP system reference"
@@ -176,7 +178,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
             Vendor Name <span className="text-danger-fg">*</span>
           </label>
           <Input
-            className={inputCls(errors.name)}
+            error={!!errors.name}
             value={form.name}
             onChange={(e) => set('name', e.target.value)}
             placeholder="Acme Supplies Inc."
@@ -190,7 +192,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
             Category <span className="text-danger-fg">*</span>
           </label>
           <Select
-            className={inputCls(errors.category)}
+            error={!!errors.category}
             value={form.category}
             onChange={(e) => set('category', e.target.value)}
           >
@@ -206,7 +208,6 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Contact Name</label>
           <Input
-            className={inputCls()}
             value={form.contactName}
             onChange={(e) => set('contactName', e.target.value)}
             placeholder="Jane Smith"
@@ -218,7 +219,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
           <label className="text-xs font-medium text-fg-secondary">Contact Email</label>
           <Input
             type="text"
-            className={inputCls(errors.contactEmail)}
+            error={!!errors.contactEmail}
             value={form.contactEmail}
             onChange={(e) => set('contactEmail', e.target.value)}
             placeholder="jane@vendor.com, ap@vendor.com"
@@ -231,7 +232,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
           <label className="text-xs font-medium text-fg-secondary">Remittance Email</label>
           <Input
             type="text"
-            className={inputCls(errors.remittanceEmail)}
+            error={!!errors.remittanceEmail}
             value={form.remittanceEmail}
             onChange={(e) => set('remittanceEmail', e.target.value)}
             placeholder="ap@vendor.com, remit@vendor.com"
@@ -248,7 +249,6 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Phone</label>
           <Input
-            className={inputCls()}
             value={form.phone}
             onChange={(e) => set('phone', e.target.value)}
             placeholder="(416) 555-0100"
@@ -259,7 +259,6 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-3">
           <label className="text-xs font-medium text-fg-secondary">Address</label>
           <Input
-            className={inputCls()}
             value={form.address}
             onChange={(e) => set('address', e.target.value)}
             placeholder="123 Main St, Toronto, ON M5V 2T6"
@@ -271,7 +270,6 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
           <label className="text-xs font-medium text-fg-secondary">Payment Terms</label>
           <div className="flex gap-2">
             <Select
-              className={inputCls()}
               value={form.paymentTerms}
               onChange={(e) => set('paymentTerms', e.target.value)}
             >
@@ -291,7 +289,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
                   step={1}
                   inputMode="numeric"
                   aria-label="Net days"
-                  className={cn(inputCls(errors.customDays), 'pr-11')}
+                  error={!!errors.customDays} className="pr-11"
                   value={form.customDays}
                   onChange={(e) => set('customDays', e.target.value)}
                   placeholder="21"
@@ -321,7 +319,6 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
               min={1}
               max={100}
               step={1}
-              className={inputCls()}
               value={form.maxPrepaymentPct}
               onChange={(e) => set('maxPrepaymentPct', e.target.value)}
               placeholder="e.g. 50"
@@ -333,7 +330,6 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Currency</label>
           <Select
-            className={inputCls()}
             value={form.currency}
             onChange={(e) => set('currency', e.target.value)}
           >
@@ -365,7 +361,6 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-3">
           <label className="text-xs font-medium text-fg-secondary">Notes</label>
           <Input
-            className={inputCls()}
             value={form.notes}
             onChange={(e) => set('notes', e.target.value)}
             placeholder="Optional notes about this vendor"
@@ -387,19 +382,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
           </Button>
         </div>
       )}
-
-      <div className="mt-4 flex justify-end gap-2 border-t border-primary-200 pt-4">
-        <Button variant="secondary" size="sm" onClick={onCancel} disabled={saving}>
-          Cancel
-        </Button>
-        <Button size="sm" onClick={onSave} disabled={saving}>
-          <Check className="h-3.5 w-3.5" />
-          {saving ? 'Saving…' : 'Save Vendor'}
-        </Button>
-      </div>
-      </div>
-    </div>,
-    document.body
+    </Modal>
   )
 }
 
@@ -688,7 +671,7 @@ export default function VendorsPage() {
             </p>
             {importResult.errors.length > 0 && (
               <ul className="mt-1 space-y-0.5 text-xs text-warning-fg">
-                {importResult.errors.map((e, i) => <li key={i}>⚠ {e}</li>)}
+                {importResult.errors.map((e, i) => <li key={i} className="flex items-start gap-1.5"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />{e}</li>)}
               </ul>
             )}
           </div>
@@ -731,22 +714,7 @@ export default function VendorsPage() {
           </Select>
         </div>
         {/* Active/All/Inactive tabs */}
-        <div className="flex rounded-lg border border-line overflow-hidden">
-          {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTabAndReset(tab.key)}
-              className={cn(
-                'px-3.5 py-2 text-xs font-medium transition-colors',
-                activeTab === tab.key
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-surface text-fg-secondary hover:bg-surface-subtle'
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        <Segmented items={TABS.map((tab) => ({ key: tab.key, label: tab.label }))} value={activeTab} onChange={setActiveTabAndReset} />
       </div>
 
       {/* Add / Edit form */}
@@ -891,15 +859,17 @@ export default function VendorsPage() {
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <button
+                        <Button
+                          size="icon-xs"
+                          variant="subtle"
+                          aria-label={vendor.is_active ? 'Deactivate vendor' : 'Activate vendor'}
                           onClick={() => {
                             updateVendor.mutate({
                               id: vendor.id,
                               body: { is_active: !vendor.is_active },
                             })
                           }}
-                          className={cn(
-                            'flex h-7 w-7 items-center justify-center rounded text-fg-muted',
+                          className={cn('text-fg-muted',
                             vendor.is_active
                               ? 'hover:bg-warning-soft hover:text-warning-fg'
                               : 'hover:bg-success-soft hover:text-success-fg'
@@ -911,7 +881,7 @@ export default function VendorsPage() {
                           ) : (
                             <ToggleLeft className="h-3.5 w-3.5" />
                           )}
-                        </button>
+                        </Button>
                       </div>
                     </Td>
                   )}
@@ -952,16 +922,13 @@ export default function VendorsPage() {
               const start = Math.max(1, Math.min(page - 2, totalPages - 4))
               const p = start + i
               return (
-                <button
+                <Button
                   key={p}
+                  size="icon-sm"
+                  variant={p === page ? 'primary' : 'secondary'}
+                  aria-current={p === page ? 'page' : undefined}
                   onClick={() => setPage(p)}
-                  className={cn(
-                    'h-8 w-8 rounded-md border text-sm transition-colors',
-                    p === page
-                      ? 'border-primary-600 bg-primary-600 text-white'
-                      : 'border-line bg-surface text-fg-secondary hover:bg-surface-subtle'
-                  )}
-                >{p}</button>
+                >{p}</Button>
               )
             })}
             <Button variant="secondary" size="icon-sm"

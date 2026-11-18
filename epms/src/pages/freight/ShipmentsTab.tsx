@@ -19,7 +19,7 @@ import {
 import {
   CostCenterSelect, Modal, ProjectBadge, SELECT_CLS, ShipmentStatusBadge, TH_CLS, daysSince, errorMessage,
 } from './freightUi'
-import { SortTh, useSort, sortParams, Checkbox, FileInput, Radio, Select, TBody, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
+import { Checkbox, Chip, FileInput, Radio, Select, SortTh, TBody, THead, Table, Td, Textarea, Th, Tr, sortParams, useSort } from '@uniops/shell'
 import { ShipmentAttachmentsPanel, StagedShipmentAttachments } from './ShipmentAttachments'
 import { useConfirmDialog, useNoticeDialog } from '@/components/ui/ConfirmDialog'
 
@@ -197,13 +197,14 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
                             >
                               <Pencil className="h-3.5 w-3.5" /> Edit
                             </Button>
-                            <button
+                            <Button
+                              variant="danger-ghost"
+                              size="xs"
                               onClick={() => handleVoid(s)}
                               disabled={voidShipment.isPending}
-                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-danger-fg hover:bg-danger-soft disabled:opacity-40"
                             >
                               <Ban className="h-3.5 w-3.5" /> Void
-                            </button>
+                            </Button>
                           </>)}
                         </div>
                       </Td>
@@ -474,11 +475,9 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
               <span className="text-fg-muted">Several numbers found — pick one:</span>
               {scanChoices.map((n) => (
-                <button key={n} type="button" onClick={() => setTracking(n)}
-                  className={cn('rounded-md border px-2 py-0.5 font-mono',
-                    tracking === n ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-line text-fg-secondary hover:bg-surface-subtle')}>
+                <Chip key={n} pressed={tracking === n} onClick={() => setTracking(n)} className="font-mono">
                   {n}
-                </button>
+                </Chip>
               ))}
             </div>
           )}

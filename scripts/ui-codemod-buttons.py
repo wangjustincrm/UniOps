@@ -123,7 +123,7 @@ def heuristic(cls, icon_only):
     size = 'xs' if small else 'md' if medium else 'sm'
     def solid(v):
         return v, f'size="{size}"'
-    if sq and not (pre('bg-primary-6') or has('bg-success-solid', 'bg-danger-solid', 'bg-warning-solid')):
+    if sq and not (pre('bg-primary-6') or pre('bg-primary-7') or has('bg-success-solid', 'bg-danger-solid', 'bg-warning-solid')):
         isz = 'icon' if sq in ('9', '10') else 'icon-sm' if sq == '8' else 'icon-xs'
         keep_sq = ' '.join(x for x in keep.split() if not re.fullmatch(r'w-\d+|justify-center', x))
         if has('border'):
@@ -135,7 +135,7 @@ def heuristic(cls, icon_only):
         if any(x.startswith('hover:text-danger') or x.startswith('hover:bg-danger') for x in c):
             return 'Button', f'variant="danger-ghost" size="{isz}"', keep_sq, 'Remove'
         return 'Button', f'variant="subtle" size="{isz}"', keep_sq, None
-    if pre('bg-primary-6') or pre('bg-accent') and (has('text-white') or pre('text-fg-on')):
+    if pre('bg-primary-6') or pre('bg-primary-7') or pre('bg-accent') and (has('text-white') or pre('text-fg-on')):
         v, sz = solid('primary')
     elif has('bg-success-solid'):
         v, sz = solid('success')

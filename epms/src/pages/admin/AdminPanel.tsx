@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react'
-import { createPortal } from 'react-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { authService } from '@/services/auth'
 import { configService } from '@/services/config'
@@ -32,7 +31,7 @@ import { TEMPLATE_VARIABLE_DOCS } from '@/lib/email-template'
 import type { UserRole, Currency, CurrencyDef } from '@/types'
 import { CURRENCIES } from '@/types'
 
-import { Checkbox, FileInput, Radio, Select, TBody, THead, Table, Td, Textarea, Th, Tr, MenuItem } from '@uniops/shell'
+import { Checkbox, ChoiceCard, DropdownPortal, FileInput, MenuItem, Modal, Radio, Select, Switch, TBody, THead, Table, Td, Textarea, Th, Tr, useAnchorRect } from '@uniops/shell'
 // Roles that may only ever be held as ADDITIONAL roles (granted per-user via
 // identity's user_roles), never as a user's primary/base login role. Keep in
 // step with ApiUserRole in services/users.ts, which deliberately excludes them.
@@ -126,12 +125,7 @@ function ToggleRow({ label, description, checked, onToggle }: {
           {checked ? 'Enabled' : 'Disabled'}
         </span>
       </div>
-      <button type="button" role="switch" aria-checked={checked} onClick={onToggle}
-        className={cn('relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2',
-          checked ? 'bg-primary-600' : 'bg-line-strong')}>
-        <span className={cn('absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-surface shadow transition-transform',
-          checked ? 'translate-x-5' : 'translate-x-0')} />
-      </button>
+      <Switch checked={checked} onCheckedChange={() => onToggle()} aria-label={label} className="mt-0.5" />
     </div>
   )
 }
@@ -317,10 +311,9 @@ function MfaPersonalSetup({ currentUserMfaEnabled }: { currentUserMfaEnabled: bo
 
       <div className="flex gap-2">
         {currentUserMfaEnabled ? (
-          <button onClick={toggle} disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-danger-line bg-surface px-3 py-1.5 text-xs font-medium text-danger-fg hover:bg-danger-soft disabled:opacity-50">
+          <Button size="sm" variant="danger-outline" onClick={toggle} disabled={loading}>
             <X className="h-3.5 w-3.5" />{loading ? 'Disabling…' : 'Disable MFA'}
-          </button>
+          </Button>
         ) : (
           <Button size="sm" onClick={toggle} disabled={loading}>
             <Mail className="h-3.5 w-3.5" />{loading ? 'Enabling…' : 'Enable Email MFA'}
@@ -407,7 +400,6 @@ function SecuritySettings() {
     }
   }
 
-  const inputCls = 'h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
   const labelCls = 'text-xs font-medium text-fg-secondary'
 
   return (
@@ -433,47 +425,44 @@ function SecuritySettings() {
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <label className={labelCls}>SMTP Host</label>
-              <input className={inputCls} placeholder="smtp.example.com" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} />
+              <Input placeholder="smtp.example.com" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} />
             </div>
             <div className="flex flex-col gap-1.5">
               <label className={labelCls}>Port</label>
-              <input className={inputCls} type="number" placeholder="587" value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} />
+              <Input type="number" placeholder="587" value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <label className={labelCls}>Username</label>
-              <input className={inputCls} placeholder="user@example.com" autoComplete="off" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} />
+              <Input placeholder="user@example.com" autoComplete="off" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} />
             </div>
             <div className="flex flex-col gap-1.5">
               <label className={labelCls}>Password</label>
               <div className="relative">
-                <input
-                  className={cn(inputCls, 'pr-9')}
+                <Input
+                  className="pr-9"
                   type={showSmtpPassword ? 'text' : 'password'}
                   placeholder="••••••••"
                   autoComplete="new-password"
                   value={smtpPassword}
                   onChange={(e) => setSmtpPassword(e.target.value)}
                 />
-                <button type="button" onClick={() => setShowSmtpPassword((p) => !p)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
+                <Button size="icon-xs" variant="ghost" onClick={() => setShowSmtpPassword((p) => !p)}
+                  aria-label={showSmtpPassword ? 'Hide password' : 'Show password'}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2">
                   {showSmtpPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
+                </Button>
               </div>
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
             <label className={labelCls}>From Address</label>
-            <input className={inputCls} placeholder="noreply@example.com" value={smtpFrom} onChange={(e) => setSmtpFrom(e.target.value)} />
+            <Input placeholder="noreply@example.com" value={smtpFrom} onChange={(e) => setSmtpFrom(e.target.value)} />
           </div>
           <div className="flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer select-none">
-              <button type="button" role="switch" aria-checked={smtpUseTls} onClick={() => setSmtpUseTls((p) => !p)}
-                className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2',
-                  smtpUseTls ? 'bg-primary-600' : 'bg-line-strong')}>
-                <span className={cn('absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-surface shadow transition-transform', smtpUseTls ? 'translate-x-4' : 'translate-x-0')} />
-              </button>
+              <Switch size="sm" checked={smtpUseTls} onCheckedChange={setSmtpUseTls} />
               <span className="text-sm text-fg-secondary">Use TLS/SSL</span>
             </label>
             <div className="flex items-center gap-3">
@@ -485,8 +474,8 @@ function SecuritySettings() {
           <div className="border-t border-line pt-4 flex flex-col gap-2">
             <p className="text-xs font-medium text-fg-secondary">Test Connection</p>
             <div className="flex gap-2">
-              <input
-                className={cn(inputCls, 'flex-1')}
+              <Input
+                className="flex-1"
                 type="email"
                 placeholder="recipient@example.com"
                 value={testTo}
@@ -514,10 +503,10 @@ function SecuritySettings() {
             <span className="text-xs text-fg-muted">Users will be forced to change their password after this period.</span>
           </div>
           <div className="flex items-center gap-3">
-            <select value={passwordExpiryDays ?? ''} onChange={(e) => { const val = e.target.value === '' ? null : Number(e.target.value); save({ password_expiry_days: val }) }}
-              className="h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
+            <Select value={passwordExpiryDays ?? ''} onChange={(e) => { const val = e.target.value === '' ? null : Number(e.target.value); save({ password_expiry_days: val }) }}
+              className="w-auto" aria-label="Password expiry">
               {EXPIRY_OPTIONS.map((o) => (<option key={String(o.value)} value={o.value ?? ''}>{o.label}</option>))}
-            </select>
+            </Select>
             {passwordExpiryDays
               ? <span className="inline-flex items-center gap-1.5 rounded-full bg-warning-soft px-2.5 py-0.5 text-xs font-medium text-warning-fg"><span className="h-1.5 w-1.5 rounded-full bg-warning-solid" />Expires every {passwordExpiryDays} days</span>
               : <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-sunken px-2.5 py-0.5 text-xs font-medium text-fg-muted">No expiry</span>
@@ -549,14 +538,11 @@ function CurrencyRow({ c, isDefault, isEnabled, canToggle, onSetDefault, onToggl
         {isDefault && <span className="ml-1 inline-flex items-center rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700 shrink-0">Default</span>}
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        {isEnabled && !isDefault && <button type="button" onClick={onSetDefault} className="text-xs text-primary-600 hover:underline whitespace-nowrap">Set as default</button>}
-        {onEdit && <button type="button" onClick={onEdit} className="flex h-6 w-6 items-center justify-center rounded text-fg-muted hover:text-primary-600 hover:bg-primary-50 transition-colors"><Pencil className="h-3.5 w-3.5" /></button>}
-        {onDelete && <button type="button" onClick={onDelete} className="flex h-6 w-6 items-center justify-center rounded text-fg-faint hover:text-danger-fg hover:bg-danger-soft transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>}
+        {isEnabled && !isDefault && <Button variant="link" size="xs" onClick={onSetDefault} className="whitespace-nowrap">Set as default</Button>}
+        {onEdit && <Button size="icon-xs" variant="ghost" onClick={onEdit} aria-label={`Edit ${c.value}`}><Pencil className="h-3.5 w-3.5" /></Button>}
+        {onDelete && <Button size="icon-xs" variant="danger-ghost" onClick={onDelete} aria-label={`Delete ${c.value}`}><Trash2 className="h-3.5 w-3.5" /></Button>}
         {canToggle && (
-          <button type="button" role="switch" aria-checked={isEnabled} disabled={isDefault} onClick={onToggle}
-            className={cn('relative h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50', isEnabled ? 'bg-primary-600' : 'bg-line-strong')}>
-            <span className={cn('absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-surface shadow transition-transform', isEnabled ? 'translate-x-5' : 'translate-x-0')} />
-          </button>
+          <Switch checked={isEnabled} disabled={isDefault} onCheckedChange={() => onToggle()} aria-label={`Enable ${c.value}`} />
         )}
       </div>
     </div>
@@ -577,39 +563,38 @@ function CurrencyEditForm({ form, onChange, onSave, onCancel, error, isNew }: {
       <div className="grid grid-cols-3 gap-3">
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-fg-secondary">Code <span className="text-danger-fg">*</span></label>
-          <input
+          <Input
             value={form.value}
             onChange={(e) => onChange({ ...form, value: e.target.value.toUpperCase().slice(0, 10) })}
             placeholder="e.g. GBP"
             disabled={!isNew}
-            className="h-9 px-3 rounded-lg border border-line-strong text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted uppercase"
+            className="font-mono"
           />
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-fg-secondary">Symbol <span className="text-danger-fg">*</span></label>
-          <input
+          <Input
             value={form.symbol}
             onChange={(e) => onChange({ ...form, symbol: e.target.value.slice(0, 5) })}
             placeholder="e.g. £"
-            className="h-9 px-3 rounded-lg border border-line-strong text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="font-mono"
           />
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-fg-secondary">Name <span className="text-danger-fg">*</span></label>
-          <input
+          <Input
             value={form.label}
             onChange={(e) => onChange({ ...form, label: e.target.value })}
             placeholder="e.g. British Pound"
-            className="h-9 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
           />
         </div>
       </div>
       {error && <p className="text-xs text-danger-fg">{error}</p>}
       <div className="flex gap-2 justify-end">
-        <button type="button" onClick={onCancel} className="px-3 py-1.5 text-xs font-medium text-fg-secondary hover:text-fg rounded-lg hover:bg-surface-sunken transition-colors">Cancel</button>
-        <button type="button" onClick={onSave} className="px-3 py-1.5 text-xs font-semibold text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors">
+        <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button size="sm" onClick={onSave}>
           {isNew ? 'Add Currency' : 'Save Changes'}
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -1312,6 +1297,8 @@ function UserManagement() {
   const [importRows, setImportRows] = useState<ImportRow[] | null>(null)
   const [importDone, setImportDone] = useState<number | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const exportAnchorRef = useRef<HTMLDivElement>(null)
+  const exportRect = useAnchorRect(showExportMenu, exportAnchorRef)
   const [saveError, setSaveError] = useState<string | null>(null)
   const importRef = useRef<HTMLInputElement>(null)
 
@@ -1375,17 +1362,15 @@ function UserManagement() {
         </div>
         <div className="flex items-center gap-2">
           {/* Export dropdown */}
-          <div className="relative">
+          <div className="relative" ref={exportAnchorRef}>
             <Button variant="secondary" size="md"
               onClick={() => setShowExportMenu((v) => !v)}
              
             >
               <Download className="h-4 w-4" />Export<ChevronDown className="h-3.5 w-3.5 text-fg-muted" />
             </Button>
-            {showExportMenu && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 z-20 w-52 rounded-xl border border-line bg-surface shadow-lg overflow-hidden">
+            {showExportMenu && exportRect && (
+              <DropdownPortal anchorRect={exportRect} onClose={() => setShowExportMenu(false)} align="end" width={208}>
                   <MenuItem
                     onClick={() => { exportUsersCsv(users as ApiUser[]); setShowExportMenu(false) }}>
                     <Download className="h-4 w-4 text-fg-muted" />
@@ -1396,8 +1381,7 @@ function UserManagement() {
                     <FileText className="h-4 w-4 text-fg-muted" />
                     Download import template
                   </MenuItem>
-                </div>
-              </>
+              </DropdownPortal>
             )}
           </div>
           {/* Import */}
@@ -1512,24 +1496,18 @@ function UserManagement() {
     </div>
 
     {/* Reset Password Modal */}
-    {resetTargetUser && createPortal(
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
-        <div className="w-full max-w-sm rounded-2xl bg-surface shadow-2xl">
-          <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-warning-soft">
-                <KeyRound className="h-5 w-5 text-warning-fg" />
-              </div>
-              <div>
-                <h2 className="text-sm font-semibold text-fg">Reset Password</h2>
-                <p className="text-xs text-fg-muted">{resetTargetUser.full_name} · {resetTargetUser.email}</p>
-              </div>
-            </div>
-            <Button variant="subtle" size="icon-sm" aria-label="Close" type="button" onClick={() => { setResetTarget(null); setTempPwd(''); setShowTempPwd(false); setResetDone(null) }}>
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="px-6 py-5 flex flex-col gap-4">
+    {resetTargetUser && (
+      <Modal
+        open
+        onClose={() => { setResetTarget(null); setTempPwd(''); setShowTempPwd(false); setResetDone(null) }}
+        // Closed only by its buttons, as before.
+        closeOnEscape={false}
+        size="sm"
+        icon={<KeyRound className="text-warning-fg" />}
+        title="Reset Password"
+        description={`${resetTargetUser.full_name} · ${resetTargetUser.email}`}
+        bodyClassName="flex flex-col gap-4"
+      >
             {resetDone ? (
               <p className="flex items-center gap-2 text-sm text-success-fg font-medium">
                 <Check className="h-4 w-4" />Password reset. User must change on next login.
@@ -1549,7 +1527,7 @@ function UserManagement() {
                       autoFocus
                       className="w-full pr-10"
                     />
-                    <Button variant="subtle" size="icon-xs" type="button" onClick={() => setShowTempPwd((v) => !v)} className="absolute right-1.5 top-1/2 -translate-y-1/2">
+                    <Button variant="subtle" size="icon-xs" type="button" aria-label={showTempPwd ? 'Hide password' : 'Show password'} onClick={() => setShowTempPwd((v) => !v)} className="absolute right-1.5 top-1/2 -translate-y-1/2">
                       {showTempPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
@@ -1568,10 +1546,7 @@ function UserManagement() {
                 </div>
               </>
             )}
-          </div>
-        </div>
-      </div>,
-      document.body
+      </Modal>
     )}
     </>
   )
@@ -2060,14 +2035,11 @@ function NotificationSettingsSection() {
         <p className="text-sm text-fg-muted">Applied to all users who have not set a personal preference.</p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {NOTIF_CHANNEL_OPTIONS.map(({ value, label }) => (
-            <button key={value} type="button"
+            <ChoiceCard key={value} selected={settings.default_channel === value}
               onClick={() => setSettings((p) => ({ ...p, default_channel: value as NotificationSettings['default_channel'] }))}
-              className={cn('rounded-lg border px-3 py-2.5 text-xs font-medium text-left transition-colors',
-                settings.default_channel === value
-                  ? 'border-primary-600 bg-primary-50 text-primary-700'
-                  : 'border-line bg-surface text-fg-secondary hover:bg-surface-subtle')}>
+              className={cn('rounded-lg px-3 py-2.5 text-xs font-medium', settings.default_channel === value ? 'text-accent-fg' : 'text-fg-secondary')}>
               {label}
-            </button>
+            </ChoiceCard>
           ))}
         </div>
       </section>
@@ -2245,12 +2217,13 @@ export default function AdminPanel() {
           {NAV.map((entry) => {
             const Icon = entry.icon
             return (
-              <button key={entry.id} onClick={() => setActiveSection(entry.id)}
-                className={cn('w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors text-left border-b border-line-subtle last:border-0',
-                  activeSection === entry.id ? 'bg-primary-50 text-primary-700 font-medium border-l-2 border-l-primary-600 pl-[14px]' : 'text-fg-secondary hover:bg-surface-subtle')}>
-                <Icon className={cn('h-4 w-4 shrink-0', activeSection === entry.id ? 'text-primary-600' : 'text-fg-muted')} />
+              <MenuItem key={entry.id} active={activeSection === entry.id} onClick={() => setActiveSection(entry.id)}
+                aria-current={activeSection === entry.id ? 'page' : undefined}
+                className={cn('gap-3 px-4 py-3 border-b border-line-subtle last:border-0',
+                  activeSection === entry.id ? 'text-accent-fg font-medium border-l-2 border-l-accent pl-3.5' : 'text-fg-secondary')}>
+                <Icon className={cn('h-4 w-4 shrink-0', activeSection === entry.id ? 'text-accent' : 'text-fg-muted')} />
                 {entry.label}
-              </button>
+              </MenuItem>
             )
           })}
         </nav>

@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, X, Save, Trash2 } from 'lucide-react'
+import { Plus, Save, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, statusLabel } from '@/components/ui/badge'
-import { SortTh, useSortableRows, Checkbox, Select, TBody, THead, Table, Textarea, Tr } from '@uniops/shell'
+import { Checkbox, Modal, Select, SortTh, TBody, THead, Table, TableMessage, Td, Textarea, Th, Tr, useSortableRows } from '@uniops/shell'
 import { cn, formatDate, todayISO } from '@/lib/utils'
 import { usePlans, useCreatePlan, useDeletePlan, useAvailableFiscalYears } from '@/hooks/useBudget'
 import { useCostCenters } from '@/hooks/useCostCenters'
@@ -144,21 +144,21 @@ export default function BudgetPlanListPage() {
         <Table>
           <THead>
             <Tr>
-              <SortTh label="Cost Center" sortKey="cost_center" sort={sort} onSort={onSort} className={TH_CLASS} />
-              <SortTh label="Fiscal Year" sortKey="fiscal_year" sort={sort} onSort={onSort} className={TH_CLASS} />
-              <SortTh label="Version" sortKey="version" sort={sort} onSort={onSort} className={TH_CLASS} />
-              <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={TH_CLASS} />
-              <SortTh label="Submitted" sortKey="submitted_at" sort={sort} onSort={onSort} className={TH_CLASS} />
-              <SortTh label="Approved" sortKey="approved_at" sort={sort} onSort={onSort} className={TH_CLASS} />
-              <SortTh label="Last Updated" sortKey="updated_at" sort={sort} onSort={onSort} className={TH_CLASS} />
+              <SortTh label="Cost Center" sortKey="cost_center" sort={sort} onSort={onSort} />
+              <SortTh label="Fiscal Year" sortKey="fiscal_year" sort={sort} onSort={onSort} />
+              <SortTh label="Version" sortKey="version" sort={sort} onSort={onSort} />
+              <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} />
+              <SortTh label="Submitted" sortKey="submitted_at" sort={sort} onSort={onSort} />
+              <SortTh label="Approved" sortKey="approved_at" sort={sort} onSort={onSort} />
+              <SortTh label="Last Updated" sortKey="updated_at" sort={sort} onSort={onSort} />
               <Th className="w-24"></Th>
             </Tr>
           </THead>
           <TBody>
             {isLoading ? (
-              <Tr><td colSpan={8} className="py-12 text-center text-sm text-fg-muted">Loading…</td></Tr>
+              <TableMessage colSpan={8} className="py-12">Loading…</TableMessage>
             ) : shownPlans.length === 0 ? (
-              <Tr><td colSpan={8} className="py-12 text-center text-sm text-fg-muted">No plans match the current filters</td></Tr>
+              <TableMessage colSpan={8} className="py-12">No plans match the current filters</TableMessage>
             ) : (
               shownPlans.map((p) => {
                 const cc = ccById.get(p.cost_center_id)
@@ -261,12 +261,17 @@ function CreatePlanModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-surface rounded-xl shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-line">
-          <h3 className="text-sm font-semibold">New Budget Plan</h3>
-          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}><X className="h-4 w-4" /></Button>
-        </div>
+    <Modal
+      open
+      onClose={onClose}
+      // Backdrop closes, Escape did not: kept.
+      closeOnBackdrop
+      closeOnEscape={false}
+      size="full"
+      className="max-w-md"
+      title="New Budget Plan"
+      bodyClassName="p-0"
+    >
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 p-5">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Cost Center <span className="text-danger-fg">*</span></label>
@@ -306,17 +311,7 @@ function CreatePlanModal({ onClose }: { onClose: () => void }) {
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
-const TH_CLASS = 'text-left px-4 py-2.5 text-xs font-semibold text-fg-muted'
-
-function Th({ children, className }: { children?: React.ReactNode; className?: string }) {
-  return <th className={cn(TH_CLASS, className)}>{children}</th>
-}
-
-function Td({ children, className }: { children?: React.ReactNode; className?: string }) {
-  return <td className={cn('px-4 py-2.5 text-sm', className)}>{children}</td>
-}

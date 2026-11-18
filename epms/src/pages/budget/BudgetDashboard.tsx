@@ -24,7 +24,7 @@ import { useCostCenters } from '@/hooks/useCostCenters'
 import type { ApiAccountSummary, ApiMonthlyAccountSummary } from '@/services/budget'
 import { downloadFinanceFile } from '@/lib/api'
 
-import { Checkbox, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Button, Checkbox, Select, TBody, TFoot, THead, Table, Td, Th, Tr } from '@uniops/shell'
 /** The plant's calendar year (company time zone), read when used. */
 const currentYear = () => Number(todayISO().slice(0, 4))
 
@@ -590,11 +590,12 @@ function PartnerRows({ account, fiscalYear, costCenterId, includeUnposted }: {
                 return (
                   <Td align="right" key={m}>
                     {v ? (
-                      <button className={cn('font-mono text-2xs hover:underline',
-                        voucherKey === key ? 'font-semibold text-success-fg' : 'text-success-fg')}
+                      <Button variant="link" size="xs"
+                        className={cn('h-auto font-mono text-2xs text-success-fg', voucherKey === key && 'font-semibold')}
+                        aria-expanded={voucherKey === key}
                         onClick={() => setVoucherKey((k) => (k === key ? null : key))}>
                         <CompactAmount value={v} />
-                      </button>
+                      </Button>
                     ) : <span className="text-2xs text-fg-faint">–</span>}
                   </Td>
                 )

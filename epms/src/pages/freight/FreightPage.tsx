@@ -1,9 +1,9 @@
 import { useSearchParams } from 'react-router-dom'
 import { Loader2, Truck } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import { useFreightAccess } from '@/hooks/useFreight'
 import { ShipmentsTab } from './ShipmentsTab'
 import { CarriersTab } from './CarriersTab'
+import { Tabs } from '@uniops/shell'
 
 type TabKey = 'shipments' | 'carriers'
 
@@ -56,22 +56,7 @@ export default function FreightPage() {
       </div>
 
       {tabs.length > 1 && (
-        <div className="flex gap-1 border-b border-line">
-          {tabs.map((t) => (
-            <button
-              key={t}
-              onClick={() => selectTab(t)}
-              className={cn(
-                'px-4 py-2 text-sm font-medium transition-colors',
-                active === t
-                  ? 'border-b-2 border-primary-600 text-primary-700'
-                  : 'text-fg-muted hover:text-fg-secondary',
-              )}
-            >
-              {TAB_LABEL[t]}
-            </button>
-          ))}
-        </div>
+        <Tabs items={tabs.map((t) => ({ key: t, label: TAB_LABEL[t] }))} value={active} onChange={selectTab} />
       )}
 
       {active === 'shipments' && canRegister && <ShipmentsTab canManage={canManage} />}

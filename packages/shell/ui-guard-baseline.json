@@ -2,18 +2,14 @@
  "$comment": "UI ratchet baseline — counts may only go down. Regenerate with: node scripts/ui-guard.mjs --update",
  "totals": {
   "booking": {
-   "raw-control": 136,
+   "raw-control": 137,
    "shouting-type": 27,
    "raw-overlay": 6,
    "raw-color": 5,
    "raw-table": 60
   },
   "epms": {
-   "raw-control": 263,
-   "raw-table": 339,
-   "raw-overlay": 11,
-   "shouting-type": 112,
-   "emoji": 4
+   "shouting-type": 2
   },
   "finance": {
    "raw-control": 507,
@@ -41,9 +37,9 @@
    "arbitrary-size": 1
   },
   "oa": {
-   "raw-control": 132,
+   "raw-control": 134,
    "raw-overlay": 6,
-   "shouting-type": 55,
+   "shouting-type": 57,
    "emoji": 2,
    "raw-color": 2,
    "raw-table": 122,
@@ -128,7 +124,7 @@
    "shouting-type": 2
   },
   "booking/src/pages/admin/RoomFormModal.tsx": {
-   "raw-control": 17,
+   "raw-control": 18,
    "raw-overlay": 1
   },
   "booking/src/pages/admin/RoomImportModal.tsx": {
@@ -145,159 +141,11 @@
    "raw-control": 20,
    "shouting-type": 1
   },
-  "epms/src/components/budget/BudgetAccountCascade.tsx": {
-   "raw-control": 3
-  },
-  "epms/src/components/budget/BudgetAccountSelect.tsx": {
-   "raw-control": 1
-  },
   "epms/src/pages/admin/AdminPanel.tsx": {
-   "raw-control": 60,
-   "raw-table": 60,
-   "raw-overlay": 2,
-   "shouting-type": 22
-  },
-  "epms/src/pages/admin/PmsImportPanel.tsx": {
-   "raw-control": 3,
-   "shouting-type": 3
-  },
-  "epms/src/pages/budget/BreakdownMatrixModal.tsx": {
-   "raw-control": 11,
-   "raw-table": 28,
-   "raw-overlay": 2,
-   "shouting-type": 9
-  },
-  "epms/src/pages/budget/BudgetCatalogPage.tsx": {
-   "raw-control": 10,
-   "raw-overlay": 1,
    "shouting-type": 1
-  },
-  "epms/src/pages/budget/BudgetDashboard.tsx": {
-   "raw-control": 11,
-   "raw-table": 45,
-   "shouting-type": 8
-  },
-  "epms/src/pages/budget/BudgetPlanEditPage.tsx": {
-   "raw-control": 7,
-   "raw-overlay": 2,
-   "shouting-type": 7
-  },
-  "epms/src/pages/budget/BudgetPlanListPage.tsx": {
-   "raw-control": 9,
-   "raw-table": 11,
-   "raw-overlay": 1,
-   "shouting-type": 4
-  },
-  "epms/src/pages/budget/FactorConfigPanel.tsx": {
-   "raw-control": 10,
-   "shouting-type": 1,
-   "emoji": 3
-  },
-  "epms/src/pages/dashboard/ApClerkDashboard.tsx": {
-   "raw-table": 11,
-   "shouting-type": 1
-  },
-  "epms/src/pages/dashboard/ApproverDashboard.tsx": {
-   "shouting-type": 1
-  },
-  "epms/src/pages/dashboard/AuditorDashboard.tsx": {
-   "shouting-type": 1
-  },
-  "epms/src/pages/dashboard/CfoDashboard.tsx": {
-   "raw-table": 11,
-   "shouting-type": 1
-  },
-  "epms/src/pages/dashboard/FinanceBpDashboard.tsx": {
-   "raw-table": 13,
-   "shouting-type": 2
-  },
-  "epms/src/pages/dashboard/FinanceManagerDashboard.tsx": {
-   "raw-table": 12,
-   "shouting-type": 2
-  },
-  "epms/src/pages/dashboard/PaymentOfficerDashboard.tsx": {
-   "raw-table": 13,
-   "shouting-type": 2
-  },
-  "epms/src/pages/dashboard/ProcurementDashboard.tsx": {
-   "raw-table": 10,
-   "shouting-type": 1
-  },
-  "epms/src/pages/dashboard/RequesterDashboard.tsx": {
-   "shouting-type": 1
-  },
-  "epms/src/pages/dashboard/SystemAdminDashboard.tsx": {
-   "raw-table": 7,
-   "shouting-type": 1
-  },
-  "epms/src/pages/dashboard/VendorManagerDashboard.tsx": {
-   "raw-table": 14,
-   "shouting-type": 1
-  },
-  "epms/src/pages/dashboard/WarehouseDashboard.tsx": {
-   "raw-table": 13,
-   "shouting-type": 1
-  },
-  "epms/src/pages/freight/CarriersTab.tsx": {
-   "raw-control": 3,
-   "raw-table": 13
-  },
-  "epms/src/pages/freight/FreightPage.tsx": {
-   "raw-control": 1,
-   "shouting-type": 1
-  },
-  "epms/src/pages/freight/ShipmentAttachments.tsx": {
-   "raw-control": 5
-  },
-  "epms/src/pages/freight/ShipmentDetailPage.tsx": {
-   "shouting-type": 2
-  },
-  "epms/src/pages/freight/ShipmentsTab.tsx": {
-   "raw-control": 13,
-   "raw-table": 15
-  },
-  "epms/src/pages/freight/freightUi.tsx": {
-   "raw-control": 3,
-   "raw-overlay": 1,
-   "shouting-type": 4
   },
   "epms/src/pages/invoices/CourierInvoiceReview.tsx": {
    "shouting-type": 1
-  },
-  "epms/src/pages/parts/PartsListPage.tsx": {
-   "raw-control": 27,
-   "raw-table": 19,
-   "shouting-type": 2
-  },
-  "epms/src/pages/profile/ProfilePage.tsx": {
-   "raw-control": 13,
-   "shouting-type": 2
-  },
-  "epms/src/pages/projects/ProjectsPage.tsx": {
-   "raw-control": 16,
-   "raw-table": 17,
-   "shouting-type": 10
-  },
-  "epms/src/pages/reports/ReportCentrePage.tsx": {
-   "raw-control": 12,
-   "shouting-type": 1
-  },
-  "epms/src/pages/tasks/TaskInboxPage.tsx": {
-   "raw-control": 4,
-   "shouting-type": 8
-  },
-  "epms/src/pages/vendors/ErpVendorImportDrawer.tsx": {
-   "raw-control": 12,
-   "raw-table": 10,
-   "raw-overlay": 1,
-   "shouting-type": 3
-  },
-  "epms/src/pages/vendors/VendorsPage.tsx": {
-   "raw-control": 29,
-   "raw-table": 17,
-   "raw-overlay": 1,
-   "shouting-type": 8,
-   "emoji": 1
   },
   "finance/src/components/ListPager.tsx": {
    "raw-control": 2
@@ -815,8 +663,8 @@
    "shouting-type": 1
   },
   "oa/src/pages/expenses/TrvCreatePage.tsx": {
-   "raw-control": 21,
-   "shouting-type": 11
+   "raw-control": 23,
+   "shouting-type": 13
   },
   "oa/src/pages/tasks/TaskListPage.tsx": {
    "raw-control": 3,

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Upload, Loader2, Info, X } from 'lucide-react'
+import { Upload, Loader2, Info, X, Paperclip } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
@@ -451,10 +451,11 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
           </label>
         ) : (
           <div className="flex items-center gap-2 rounded-md border border-line bg-surface-subtle px-3 py-2 text-sm">
-            <span className="flex-1 truncate text-fg-secondary">📎 {file.name}</span>
-            <button type="button" onClick={clearFile} className="text-fg-muted hover:text-danger-fg" aria-label="Remove attachment">
+            <Paperclip className="h-3.5 w-3.5 shrink-0 text-fg-muted" />
+            <span className="flex-1 truncate text-fg-secondary">{file.name}</span>
+            <Button size="icon-xs" variant="danger-ghost" onClick={clearFile} aria-label="Remove attachment">
               <X className="h-3.5 w-3.5" />
-            </button>
+            </Button>
           </div>
         )}
 

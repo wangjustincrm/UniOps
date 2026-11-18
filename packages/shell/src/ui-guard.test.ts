@@ -23,4 +23,11 @@ describe('ui-guard ratchet', () => {
     expect(src.match(guard.METRICS['raw-control'])?.length).toBe(1)
     expect(src.match(guard.METRICS['raw-color'])?.length).toBe(2)
   })
+  it('a "/*" inside a string is not a comment (accept="image/*")', async () => {
+    const guard = await import(/* @vite-ignore */ guardPath)
+    const src = '<FileInput accept="image/*" />\n<button>x</button>\n/* gone */<input />'
+    const stripped = guard.code(src)
+    expect(stripped.match(guard.METRICS['raw-control'])?.length).toBe(2)
+    expect(stripped).not.toContain('gone')
+  })
 })

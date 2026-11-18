@@ -19,7 +19,7 @@ function CountGrid({ title, data }: { title: string; data: Record<string, number
   if (!entries.length) return null
   return (
     <div className="rounded-lg border border-line p-3">
-      <div className="text-xs font-semibold text-fg-muted uppercase mb-1.5">{title}</div>
+      <div className="text-xs font-medium text-fg-muted mb-1.5">{title}</div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
         {entries.map(([k, v]) => (
           <span key={k} className="tabular-nums"><b>{v}</b> <span className="text-fg-muted">{k}</span></span>
@@ -60,14 +60,14 @@ function ReportView({ r }: { r: PmsReport }) {
       ) : null}
       {r.doc_attachments && (
         <div className="rounded-lg border border-line p-3">
-          <div className="text-xs font-semibold text-fg-muted uppercase mb-1.5">Document attachments</div>
+          <div className="text-xs font-medium text-fg-muted mb-1.5">Document attachments</div>
           <div className="flex flex-col gap-0.5 text-sm text-fg-secondary">
             {(['pr', 'po', 'pa'] as const).map((k) => {
               const a = r.doc_attachments![k]
               if (!a) return null
               return (
                 <span key={k} className="tabular-nums">
-                  <b className="uppercase">{k}</b> — {a.uploaded} uploaded, {a.skipped_existing} existing
+                  <span className="font-medium text-fg">{k.toUpperCase()}</span> — {a.uploaded} uploaded, {a.skipped_existing} existing
                   {a.no_doc ? `, ${a.no_doc} no-doc` : ''}{a.failed ? `, ${a.failed} failed` : ''}
                 </span>
               )

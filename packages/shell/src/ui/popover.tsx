@@ -25,12 +25,18 @@ export function useAnchorRect<T extends HTMLElement>(open: boolean, anchorRef: R
   return rect
 }
 
-export function DropdownPortal({ anchorRect, onClose, children, className }: {
+export function DropdownPortal({ anchorRect, onClose, children, className, align = 'start', width }: {
   anchorRect: DOMRect
   onClose: () => void
   children: React.ReactNode
   className?: string
+  /** end: right edges line up (a menu under a right-hand button). */
+  align?: 'start' | 'end'
+  /** Fixed width in px; default = the anchor's width. */
+  width?: number
 }) {
+  const w = width ?? anchorRect.width
+  const left = align === 'end' ? anchorRect.right - w : anchorRect.left
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
@@ -43,7 +49,7 @@ export function DropdownPortal({ anchorRect, onClose, children, className }: {
           its dialog is inserted before it), so the layer is explicitly higher. */}
       <div className="fixed inset-0 z-[60]" data-testid="dropdown-dismiss" onClick={onClose} />
       <div
-        style={{ position: 'fixed', top: anchorRect.bottom + 4, left: anchorRect.left, width: anchorRect.width }}
+        style={{ position: 'fixed', top: anchorRect.bottom + 4, left, width: w }}
         className={cn('z-[60] max-h-64 overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-md', className)}
       >
         {children}

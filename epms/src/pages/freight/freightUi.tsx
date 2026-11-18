@@ -1,13 +1,11 @@
 /** Small shared pieces for the Freight pages (badges, modal, selects, dates). */
-import { createPortal } from 'react-dom'
-import { X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn, formatDate } from '@/lib/utils'
 import type { ApiCostCenter } from '@/services/cost_centers'
 import type { ApiDepartment } from '@/services/departments'
 import type { MatchStatus } from '@/services/freight'
 
-import { Select, Button } from '@uniops/shell'
+import { Select, Modal as ShellModal } from '@uniops/shell'
 export const SELECT_CLS =
   'h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-subtle disabled:text-fg-muted'
 export const SELECT_SM_CLS =
@@ -110,22 +108,19 @@ export const CHARGE_TYPE_LABEL: Record<string, string> = {
 export function Modal({ title, subtitle, onClose, children, wide = false }: {
   title: string; subtitle?: string; onClose: () => void; children: React.ReactNode; wide?: boolean
 }) {
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
-      <div className={cn('flex max-h-[92vh] w-full flex-col rounded-2xl bg-surface shadow-2xl', wide ? 'max-w-6xl' : 'max-w-lg')}>
-        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
-          <div>
-            <h2 className="text-sm font-semibold text-fg">{title}</h2>
-            {subtitle && <p className="text-xs text-fg-muted">{subtitle}</p>}
-          </div>
-          <Button variant="subtle" size="icon-sm" onClick={onClose} aria-label="Close">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-        <div className="overflow-y-auto px-6 py-5">{children}</div>
-      </div>
-    </div>,
-    document.body,
+  return (
+    <ShellModal
+      open
+      onClose={onClose}
+      // Closed only by its buttons, as before.
+      closeOnEscape={false}
+      size="full"
+      className={wide ? 'max-w-6xl' : 'max-w-lg'}
+      title={title}
+      description={subtitle}
+    >
+      {children}
+    </ShellModal>
   )
 }
 

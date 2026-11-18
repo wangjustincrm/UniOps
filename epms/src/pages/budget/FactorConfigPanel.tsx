@@ -3,7 +3,7 @@
  * in BudgetCatalogPage. Shows the current factor list and supports add/edit/delete.
  */
 import { useState, useMemo } from 'react'
-import { Plus, Trash2, X, Save, Pencil, RotateCcw, Check, Library } from 'lucide-react'
+import { Plus, Trash2, X, Save, Pencil, RotateCcw, Check, Library, Rows3, Columns3, CornerDownRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -14,6 +14,7 @@ import {
   useFactorTemplates, useCreateFactorFromTemplate,
 } from '@/hooks/useBudget'
 import type { ApiFactor, ApiFactorTemplate, ApiFactorValue } from '@/services/budget'
+import { MenuItem } from '@uniops/shell'
 
 interface Props {
   accountId: string
@@ -25,9 +26,9 @@ const MAX_FACTORS = 3
 
 /** Role label for sort_order position in the matrix layout. */
 const ROLE_BY_INDEX = [
-  { label: 'Primary · Rows',     bg: 'bg-primary-50',  fg: 'text-primary-700',  icon: '🔻' },
-  { label: '2nd · Columns',      bg: 'bg-info-soft',     fg: 'text-info-fg',     icon: '➡' },
-  { label: '3rd · Sub-Columns',  bg: 'bg-cat4-soft',   fg: 'text-cat4-fg',   icon: '⬇' },
+  { label: 'Primary · Rows',     bg: 'bg-primary-50',  fg: 'text-primary-700',  icon: Rows3 },
+  { label: '2nd · Columns',      bg: 'bg-info-soft',     fg: 'text-info-fg',     icon: Columns3 },
+  { label: '3rd · Sub-Columns',  bg: 'bg-cat4-soft',   fg: 'text-cat4-fg',   icon: CornerDownRight },
 ] as const
 
 export function FactorConfigPanel({ accountId, canEdit }: Props) {
@@ -127,7 +128,7 @@ function FactorCard({
 }: {
   factor: ApiFactor
   canEdit: boolean
-  role: { label: string; bg: string; fg: string; icon: string } | null
+  role: (typeof ROLE_BY_INDEX)[number] | null
   outOfMatrix: boolean
 }) {
   const updateMut = useUpdateFactor()
@@ -147,7 +148,7 @@ function FactorCard({
     const dup = factor.values.find((v) => v.value_code === requestedCode)
     if (dup && !dup.is_active) {
       setValueError(
-        `Code "${requestedCode}" exists but was deactivated. Click the ↺ icon on its chip to reactivate, then rename via ✎.`,
+        `Code "${requestedCode}" exists but was deactivated. Use the restore button on its chip to reactivate it, then rename it with the edit button.`,
       )
       return
     }
@@ -190,7 +191,7 @@ function FactorCard({
               className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-semibold', role.bg, role.fg)}
               title={`This factor is the ${role.label} axis in the matrix editor`}
             >
-              <span aria-hidden>{role.icon}</span>{role.label}
+              <role.icon aria-hidden className="h-3 w-3" />{role.label}
             </span>
           )}
           {outOfMatrix && (
@@ -481,18 +482,16 @@ function FactorLibraryPicker({
                 const codeUsedAlready = existingCodes.includes(t.factor_code.toLowerCase())
                 return (
                   <li key={t.id}>
-                    <button
-                      type="button"
+                    <MenuItem
+                      active={selectedId === t.id}
+                      aria-pressed={selectedId === t.id}
                       onClick={() => {
                         setSelectedId(t.id)
                         setOverrideCode('')
                         setOverrideName('')
                         setError(null)
                       }}
-                      className={cn(
-                        'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-primary-50',
-                        selectedId === t.id && 'bg-primary-100',
-                      )}
+                      className="px-2.5 py-1.5 text-xs"
                     >
                       <span className="inline-flex items-center rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">
                         {t.factor_code}
@@ -506,7 +505,7 @@ function FactorLibraryPicker({
                           code in use
                         </span>
                       )}
-                    </button>
+                    </MenuItem>
                   </li>
                 )
               })}

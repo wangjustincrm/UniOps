@@ -13,7 +13,7 @@ import { authService, type ApiUser } from '@/services/auth'
 import { api } from '@/lib/api'
 import { SignaturePad, type SignaturePadHandle } from '@/components/shared/SignaturePad'
 
-import { FileInput, Input } from '@uniops/shell'
+import { ChoiceCard, FileInput, Input, Segmented, Switch } from '@uniops/shell'
 const ROLE_LABELS: Record<string, string> = {
   system_admin: 'System Admin',
   dept_manager: 'Department Manager',
@@ -143,19 +143,14 @@ function PersonalInfoSection({ profile }: { profile: ApiUser }) {
           </label>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {Object.entries(NOTIFICATION_CHANNEL_LABELS).map(([value, label]) => (
-              <button
+              <ChoiceCard
                 key={value}
-                type="button"
+                selected={notifChannel === value}
                 onClick={() => setNotifChannel(value)}
-                className={cn(
-                  'rounded-lg border px-3 py-2.5 text-xs font-medium text-left transition-colors',
-                  notifChannel === value
-                    ? 'border-primary-600 bg-primary-50 text-primary-700'
-                    : 'border-line bg-surface text-fg-secondary hover:bg-surface-subtle',
-                )}
+                className={cn('rounded-lg px-3 py-2.5 text-xs font-medium', notifChannel === value ? 'text-accent-fg' : 'text-fg-secondary')}
               >
                 {label}
-              </button>
+              </ChoiceCard>
             ))}
           </div>
           <p className="text-xs text-fg-muted">
@@ -292,23 +287,14 @@ function SignatureSection({ profile }: { profile: ApiUser }) {
         </div>
       )}
 
-      <div className="flex gap-1 self-start rounded-lg bg-surface-sunken p-1">
-        {([['draw', 'Draw', PenLine], ['upload', 'Upload', Upload]] as const).map(
-          ([value, label, Icon]) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => { setMode(value); setError('') }}
-              className={cn(
-                'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                mode === value ? 'bg-surface text-fg shadow-sm' : 'text-fg-muted hover:text-fg-secondary',
-              )}
-            >
-              <Icon className="h-3.5 w-3.5" /> {label}
-            </button>
-          ),
-        )}
-      </div>
+      <Segmented
+        className="self-start"
+        items={([['draw', 'Draw', PenLine], ['upload', 'Upload', Upload]] as const).map(([key, label, Icon]) => ({
+          key, label: <span className="inline-flex items-center gap-1.5"><Icon className="h-3.5 w-3.5" /> {label}</span>,
+        }))}
+        value={mode}
+        onChange={(v) => { setMode(v); setError('') }}
+      />
 
       {mode === 'draw' ? (
         <SignaturePad ref={padRef} onChange={setPadEmpty} />
@@ -501,20 +487,12 @@ function MfaSection({ mfaEnabled }: { mfaEnabled: boolean }) {
             </p>
           </div>
         </div>
-        <button
-          onClick={() => mutation.mutate(!isEnabled)}
+        <Switch
+          checked={isEnabled}
+          onCheckedChange={(next) => mutation.mutate(next)}
           disabled={mutation.isPending}
-          className={cn(
-            'relative h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none disabled:opacity-50',
-            isEnabled ? 'bg-primary-600' : 'bg-line-strong'
-          )}
           aria-label={isEnabled ? 'Disable MFA' : 'Enable MFA'}
-        >
-          <span className={cn(
-            'absolute top-1 left-1 h-4 w-4 rounded-full bg-surface shadow transition-transform',
-            isEnabled ? 'translate-x-5' : 'translate-x-0'
-          )} />
-        </button>
+        />
       </div>
 
       {msg && (

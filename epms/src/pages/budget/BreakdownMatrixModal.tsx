@@ -14,18 +14,15 @@
  * Workday Adaptive Planning (Reference sidebar with last year + actuals),
  * and Vena (Excel paste compatibility, keyboard navigation).
  */
-import { useState, useMemo, useEffect, useCallback } from 'react'
-import {
-  X, Save, RotateCcw, Sparkles, ChevronDown, Copy, Info,
-  Undo2, Redo2, MessageSquare,
-} from 'lucide-react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { Save, RotateCcw, Sparkles, ChevronDown, Copy, Info, Undo2, Redo2, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn, formatAmount } from '@/lib/utils'
 import { useFactors, useReplaceBreakdowns, useBaseline } from '@/hooks/useBudget'
 import type { ApiBreakdown, ApiFactor, ApiFactorValue } from '@/services/budget'
 import { spreadEvenly, spreadProportional, spreadFill } from './spreadUtils'
 
-import { Checkbox, Input, TBody, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
+import { Checkbox, DropdownPortal, Input, Modal, TBody, THead, Table, Td, Textarea, Th, Tr, useAnchorRect } from '@uniops/shell'
 const MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const MAX_FACTORS_IN_MATRIX = 3
 
@@ -133,6 +130,8 @@ export function BreakdownMatrixModal({
 
   const [focusedKey, setFocusedKey] = useState<CellKey | null>(null)
   const [spreadOpen, setSpreadOpen] = useState(false)
+  const spreadAnchorRef = useRef<HTMLDivElement>(null)
+  const spreadRect = useAnchorRect(spreadOpen, spreadAnchorRef)
   const [saveError, setSaveError] = useState<string | null>(null)
 
   const commitSnapshot = useCallback((updater: (prev: Snapshot) => Snapshot) => {
@@ -573,7 +572,7 @@ export function BreakdownMatrixModal({
             <div className="flex-1" />
             {editable && (
               <>
-                <div className="relative">
+                <div className="relative" ref={spreadAnchorRef}>
                   <Button variant="secondary" size="xs"
                     type="button"
                     onClick={() => setSpreadOpen((v) => !v)}
@@ -583,8 +582,9 @@ export function BreakdownMatrixModal({
                     <Sparkles className="h-3.5 w-3.5" /> Spread
                     <ChevronDown className="h-3 w-3" />
                   </Button>
-                  {spreadOpen && (
+                  {spreadOpen && spreadRect && (
                     <SpreadMenu
+                      anchorRect={spreadRect}
                       onClose={() => setSpreadOpen(false)}
                       onApply={applySpread}
                       hasFocus={!!focusedKey}
@@ -743,26 +743,21 @@ function ModalShell({
   wide?: boolean
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div
-        className={cn(
-          'bg-surface rounded-xl shadow-xl max-h-[92vh] flex flex-col overflow-hidden',
-          wide ? 'w-full max-w-6xl' : 'w-full max-w-md',
-        )}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-5 py-3 border-b border-line shrink-0">
-          <div>
-            <h3 className="text-sm font-semibold text-fg">{title}</h3>
-            <p className="text-xs text-fg-muted mt-0.5">{subtitle}</p>
-          </div>
-          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-        {children}
-      </div>
-    </div>
+    <Modal
+      open
+      onClose={onClose}
+      // Backdrop closes, Escape did not: kept.
+      closeOnBackdrop
+      closeOnEscape={false}
+      size="full"
+      className={wide ? 'max-w-6xl' : 'max-w-md'}
+      title={title}
+      description={subtitle}
+      // The matrix and forms keep their own scroll area and footer.
+      bodyClassName="flex min-h-0 flex-col overflow-hidden p-0"
+    >
+      {children}
+    </Modal>
   )
 }
 
@@ -1064,8 +1059,9 @@ function EditableCell({
 // ── Spread menu ──────────────────────────────────────────────────────────────
 
 function SpreadMenu({
-  onClose, onApply, hasFocus, hasColAxis,
+  anchorRect, onClose, onApply, hasFocus, hasColAxis,
 }: {
+  anchorRect: DOMRect
   onClose: () => void
   onApply: (scope: 'row' | 'col' | 'all', method: 'evenly' | 'proportional' | 'fill', target: number) => void
   hasFocus: boolean
@@ -1082,9 +1078,9 @@ function SpreadMenu({
   }
 
   return (
-    <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="absolute right-0 top-full mt-1 w-72 rounded-lg border border-line bg-surface shadow-lg z-50 p-3 flex flex-col gap-2.5">
+    // Portalled above the matrix dialog (z-50) so an outside click inside it closes the menu.
+    <DropdownPortal anchorRect={anchorRect} onClose={onClose} align="end" width={288}
+      className="flex max-h-none flex-col gap-2.5 overflow-visible p-3">
         <div className="flex flex-col gap-1">
           <label className="text-2xs text-fg-muted font-semibold">Scope</label>
           <div className="grid grid-cols-3 gap-1">
@@ -1130,8 +1126,7 @@ function SpreadMenu({
           <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
           <Button size="sm" onClick={submit} disabled={!value || ((scope !== 'all') && !hasFocus)}>Apply</Button>
         </div>
-      </div>
-    </>
+    </DropdownPortal>
   )
 }
 
@@ -1144,20 +1139,16 @@ function ScopeBtn({
   children: React.ReactNode
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      size="xs"
+      variant={active ? 'primary' : 'subtle'}
       onClick={onClick}
       disabled={disabled}
-      className={cn(
-        'h-7 rounded text-2xs font-medium transition-colors',
-        active
-          ? 'bg-primary-600 text-white'
-          : 'bg-surface-sunken text-fg-secondary hover:bg-surface-strong',
-        disabled && 'opacity-40 cursor-not-allowed',
-      )}
+      aria-pressed={active}
+      className={cn('w-full px-1 text-2xs', !active && 'bg-surface-sunken hover:bg-surface-strong')}
     >
       {children}
-    </button>
+    </Button>
   )
 }
 

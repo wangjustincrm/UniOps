@@ -1,8 +1,5 @@
 import { useState, useRef, useMemo } from 'react'
-import {
-  ChevronDown, ChevronRight, Plus, Upload, Download, Edit2, Trash2, X,
-  Power, Settings as SettingsIcon, Save, AlertTriangle,
-} from 'lucide-react'
+import { ChevronDown, ChevronRight, Plus, Upload, Download, Edit2, Trash2, Power, Settings as SettingsIcon, Save, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -17,7 +14,7 @@ import { BUDGET_BASE } from '@/lib/api'
 import { FactorConfigPanel } from './FactorConfigPanel'
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
-import { Checkbox, FileInput, Textarea } from '@uniops/shell'
+import { Checkbox, FileInput, MenuItem, Modal, Textarea } from '@uniops/shell'
 const WRITE_ROLES = new Set(['system_admin', 'finance_manager', 'finance_bp'])
 
 export default function BudgetCatalogPage() {
@@ -163,13 +160,15 @@ export default function BudgetCatalogPage() {
               <ul>
                 {l1List.map((l1) => (
                   <li key={l1.id}>
-                    <button
+                    <MenuItem
+                      active={selectedL1Id === l1.id}
+                      aria-current={selectedL1Id === l1.id ? 'true' : undefined}
                       onClick={() => setSelectedL1Id(l1.id)}
                       className={cn(
-                        'w-full flex items-center justify-between px-4 py-2.5 text-left text-sm border-l-2 transition-colors',
+                        'justify-between px-4 py-2.5 border-l-2',
                         selectedL1Id === l1.id
-                          ? 'bg-primary-50 border-l-primary-600 text-primary-700 font-medium'
-                          : 'border-l-transparent text-fg-secondary hover:bg-surface-subtle',
+                          ? 'border-l-accent text-accent-fg font-medium'
+                          : 'border-l-transparent text-fg-secondary',
                         !l1.is_active && 'opacity-50',
                       )}
                     >
@@ -180,7 +179,7 @@ export default function BudgetCatalogPage() {
                       <span className="text-xs text-fg-muted ml-2 shrink-0">
                         {(l1.accounts ?? []).filter((a) => a.is_active).length}
                       </span>
-                    </button>
+                    </MenuItem>
                   </li>
                 ))}
               </ul>
@@ -308,16 +307,20 @@ function AccountListRow({
   return (
     <li className={cn(!account.is_active && 'opacity-50')}>
       <div className="flex items-center px-5 py-3 hover:bg-surface-subtle transition-colors">
-        <button
+        <Button
+          size="icon-xs"
+          variant="subtle"
           onClick={onToggle}
-          className="mr-2 p-1 rounded hover:bg-surface-sunken"
+          className="mr-2"
           disabled={!account.decomposition_enabled}
           title={account.decomposition_enabled ? 'Show factors' : 'No decomposition'}
+          aria-label={account.decomposition_enabled ? (expanded ? 'Hide factors' : 'Show factors') : 'No decomposition'}
+          aria-expanded={account.decomposition_enabled ? expanded : undefined}
         >
           {account.decomposition_enabled
             ? (expanded ? <ChevronDown className="h-4 w-4 text-fg-muted" /> : <ChevronRight className="h-4 w-4 text-fg-muted" />)
             : <span className="block h-4 w-4" />}
-        </button>
+        </Button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-mono text-xs text-fg-secondary">{account.code}</span>
@@ -510,17 +513,19 @@ function AccountFormModal({
 
 function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-surface rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-line">
-          <h3 className="text-sm font-semibold text-fg">{title}</h3>
-          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-        {children}
-      </div>
-    </div>
+    <Modal
+      open
+      onClose={onClose}
+      // Backdrop closes, Escape did not: kept.
+      closeOnBackdrop
+      closeOnEscape={false}
+      size="full"
+      className="max-w-md"
+      title={title}
+      bodyClassName="p-0"
+    >
+      {children}
+    </Modal>
   )
 }
 

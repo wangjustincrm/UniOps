@@ -10,7 +10,7 @@ import { useProjects, useCreateProject, useUpdateProject } from '@/hooks/useProj
 import type { ApiProject, CreateProjectBody, UpdateProjectBody, ProjectStatus } from '@/services/projects'
 import { useAuthStore } from '@/stores/auth.store'
 import type { UserRole } from '@/types'
-import { SortTh, useSortableRows, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { Segmented, Select, SortTh, TBody, THead, Table, Td, Th, Tr, useSortableRows } from '@uniops/shell'
 
 const PROJECT_TH = 'px-4 py-3 text-left text-xs font-semibold text-fg-muted whitespace-nowrap'
 
@@ -479,32 +479,14 @@ export default function ProjectsPage() {
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-fg-muted" />
           {/* Status tabs */}
-          <div className="flex rounded-lg border border-line overflow-hidden">
-            {STATUS_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setStatusTab(tab.key)}
-                className={cn(
-                  'px-3.5 py-2 text-xs font-medium transition-colors',
-                  statusTab === tab.key
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-surface text-fg-secondary hover:bg-surface-subtle'
-                )}
-              >
-                {tab.label}
-                <span
-                  className={cn(
-                    'ml-1.5 rounded-full px-1.5 py-0.5 text-2xs font-semibold',
-                    statusTab === tab.key
-                      ? 'bg-white/20 text-white'
-                      : 'bg-surface-sunken text-fg-muted'
-                  )}
-                >
-                  {tab.count}
-                </span>
-              </button>
-            ))}
-          </div>
+          <Segmented
+            items={STATUS_TABS.map((tab) => ({
+              key: tab.key,
+              label: <>{tab.label}<span className="ml-1.5 font-mono tabular-nums text-fg-muted">{tab.count}</span></>,
+            }))}
+            value={statusTab}
+            onChange={setStatusTab}
+          />
         </div>
       </div>
 

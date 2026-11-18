@@ -29,7 +29,7 @@ import type { DocumentStatus } from '@/types'
 import { BreakdownMatrixModal } from './BreakdownMatrixModal'
 import { ActionMessage, useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
-import { FileInput, Input, Textarea } from '@uniops/shell'
+import { Drawer, FileInput, Input, Modal, Textarea } from '@uniops/shell'
 const MONTHS = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
@@ -679,12 +679,17 @@ function ReviseModal({
   const [notes, setNotes] = useState('')
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-surface rounded-xl shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-line">
-          <h3 className="text-sm font-semibold">Revise Approved Plan</h3>
-          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}><X className="h-4 w-4" /></Button>
-        </div>
+    <Modal
+      open
+      onClose={onClose}
+      // Backdrop closes, Escape did not: kept.
+      closeOnBackdrop
+      closeOnEscape={false}
+      size="full"
+      className="max-w-md"
+      title="Revise Approved Plan"
+      bodyClassName="p-0"
+    >
         <div className="flex flex-col gap-4 p-5">
           <p className="text-sm text-fg-secondary">
             This will create a new draft <span className="font-mono font-semibold">v{version + 1}</span> for
@@ -713,8 +718,7 @@ function ReviseModal({
             </Button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -731,18 +735,17 @@ function VersionHistoryDrawer({
   const { data: versions = [], isLoading } = usePlanVersions(costCenterId, fiscalYear)
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
-      <aside
-        className="w-full max-w-md h-full bg-surface shadow-xl overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header className="sticky top-0 z-10 flex items-center justify-between bg-surface border-b border-line px-5 py-3">
-          <div className="flex items-center gap-2">
-            <History className="h-4 w-4 text-fg-muted" />
-            <h3 className="text-sm font-semibold">Version History — FY {fiscalYear}</h3>
-          </div>
-          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}><X className="h-4 w-4" /></Button>
-        </header>
+    <Drawer
+      open
+      onClose={onClose}
+      // Backdrop closes, Escape did not: kept.
+      // (Drawer closes on its backdrop by default.)
+      closeOnEscape={false}
+      className="max-w-md"
+      icon={<History />}
+      title={<>Version History — FY {fiscalYear}</>}
+      bodyClassName="p-0"
+    >
         <div className="flex flex-col gap-2 p-4">
           {isLoading ? (
             <p className="text-sm text-fg-muted">Loading…</p>
@@ -794,8 +797,7 @@ function VersionHistoryDrawer({
             })
           )}
         </div>
-      </aside>
-    </div>
+    </Drawer>
   )
 }
 

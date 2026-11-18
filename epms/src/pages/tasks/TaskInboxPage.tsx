@@ -11,7 +11,7 @@ import type { TaskType } from '@/lib/taskTypes'
 import type { ApiTask } from '@/services/tasks'
 import { groupTasks } from '@/lib/groupTasks'
 
-import { Select } from '@uniops/shell'
+import { Segmented, Select } from '@uniops/shell'
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 type TabValue = 'all' | 'urgent' | 'normal' | 'completed'
@@ -380,27 +380,19 @@ export default function TaskInboxPage() {
       {/* ── Filter controls ── */}
       <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
         {/* Tab strip */}
-        <div className="flex items-center gap-1 rounded-lg bg-surface-sunken p-1">
-          {TABS.map((tab) => (
-            <button
-              key={tab.value}
-              onClick={() => setActiveTab(tab.value)}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                activeTab === tab.value
-                  ? 'bg-surface text-fg shadow-sm'
-                  : 'text-fg-muted hover:text-fg-secondary'
-              )}
-            >
-              {tab.label}
-              {tab.value === 'urgent' && urgentCount > 0 && (
-                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-solid px-1 text-2xs font-semibold text-white">
-                  {urgentCount}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          size="md"
+          items={TABS.map((tab) => ({
+            key: tab.value,
+            label: <>{tab.label}{tab.value === 'urgent' && urgentCount > 0 && (
+              <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-solid px-1 text-2xs font-semibold text-fg-on-accent">
+                {urgentCount}
+              </span>
+            )}</>,
+          }))}
+          value={activeTab}
+          onChange={setActiveTab}
+        />
       </div>
 
       {/* ── Search + type filter (client-side) ── */}
@@ -443,11 +435,12 @@ export default function TaskInboxPage() {
             const items = showAll.has(group.key) ? group.items : group.items.slice(0, GROUP_PREVIEW)
             return (
             <section key={group.key}>
-              <button
-                type="button"
+              <Button
+                variant="subtle"
+                size="sm"
                 onClick={() => setCollapsed((s) => toggleIn(s, group.key))}
                 aria-expanded={!isCollapsed}
-                className="mb-2 flex items-center gap-2 text-left"
+                className="-ml-2 mb-2 gap-2 px-2"
               >
                 {isCollapsed
                   ? <ChevronRight className="h-4 w-4 text-fg-muted" />
@@ -456,7 +449,7 @@ export default function TaskInboxPage() {
                 <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-surface-sunken px-1.5 text-2xs font-semibold text-fg-muted">
                   {group.items.length}
                 </span>
-              </button>
+              </Button>
               {!isCollapsed && (
                 <div className="flex flex-col gap-3">
                   {items.map((task) => (

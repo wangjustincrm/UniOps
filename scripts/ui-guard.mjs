@@ -73,9 +73,11 @@ function walk(dir, out = []) {
 }
 
 /** Strip comments so prose like "the old <button>" does not count. */
-function code(src) {
+export function code(src) {
   return src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
+    // A block comment starts after whitespace or punctuation, never mid-string:
+    // accept="image/*" must not swallow the rest of the file.
+    .replace(/(^|[\s{(,;=])\/\*[\s\S]*?\*\//g, '$1')
     .replace(/(^|[^:"'`\\])\/\/[^\n]*/g, '$1')
     .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
 }

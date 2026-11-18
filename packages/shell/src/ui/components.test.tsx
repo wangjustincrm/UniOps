@@ -4,7 +4,7 @@ import { Badge, createStatusBadge } from './badge'
 import { Button } from './button'
 import { ConfirmDialog, Modal } from './overlay'
 import { Table, TableScroll, TBody, Td, Th, THead, Tr } from './table'
-import { Select } from './controls'
+import { Select, Switch } from './controls'
 
 describe('Button', () => {
   it('loading disables it so a double click cannot fire twice', () => {
@@ -148,5 +148,20 @@ describe('DropdownPortal inside a Modal', () => {
     expect(z(layer)).toBeGreaterThan(z(dialogRoot))
     fireEvent.click(layer)
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Switch', () => {
+  it('reports the next value, is type=button and respects disabled', () => {
+    const seen: boolean[] = []
+    const { rerender } = render(<form onSubmit={() => seen.push(true)}><Switch checked={false} onCheckedChange={(v) => seen.push(v)} aria-label="TLS" /></form>)
+    const sw = screen.getByRole('switch', { name: 'TLS' })
+    expect(sw).toHaveAttribute('type', 'button')
+    expect(sw).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(sw)
+    expect(seen).toEqual([true])
+    rerender(<form><Switch checked onCheckedChange={(v) => seen.push(v)} aria-label="TLS" disabled /></form>)
+    fireEvent.click(screen.getByRole('switch', { name: 'TLS' }))
+    expect(seen).toEqual([true])
   })
 })

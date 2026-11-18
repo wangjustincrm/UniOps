@@ -93,6 +93,42 @@ export const Radio = React.forwardRef<HTMLInputElement, CheckProps>(
 )
 Radio.displayName = 'Radio'
 
+export interface SwitchProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onChange' | 'type'> {
+  checked: boolean
+  /** Called with the new value. */
+  onCheckedChange?: (next: boolean) => void
+  size?: 'sm' | 'md'
+}
+
+/** On/off toggle (role="switch"). Settings rows, not form submits: always type="button". */
+export const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
+  ({ checked, onCheckedChange, onClick, size = 'md', className, disabled, ...props }, ref) => (
+    <button
+      ref={ref}
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={(e) => { onClick?.(e); if (!e.defaultPrevented) onCheckedChange?.(!checked) }}
+      className={cn(
+        'relative shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:shadow-focus',
+        'disabled:cursor-not-allowed disabled:opacity-50',
+        size === 'sm' ? 'h-5 w-9' : 'h-6 w-11',
+        checked ? 'bg-accent' : 'bg-line-strong',
+        className,
+      )}
+      {...props}
+    >
+      <span className={cn(
+        'absolute left-0.5 top-0.5 rounded-full bg-surface shadow-xs transition-transform',
+        size === 'sm' ? 'h-4 w-4' : 'h-5 w-5',
+        checked && (size === 'sm' ? 'translate-x-4' : 'translate-x-5'),
+      )} />
+    </button>
+  )
+)
+Switch.displayName = 'Switch'
+
 /** File picker: hidden native input behind a styled trigger. */
 export const FileInput = React.forwardRef<HTMLInputElement, Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'>>(
   ({ className, ...props }, ref) => (
