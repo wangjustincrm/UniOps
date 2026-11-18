@@ -23,3 +23,4 @@ export {
   SortTh, useSort, useSortableRows, sortRows, nextSort, sortParams,
   type Sort, type SortDir, type SortValue, type SortGetters, type SortThProps,
 } from './sortable'
+export { AuthLayout, AuthHeading, type AuthLayoutProps, type AuthModule } from './auth'
