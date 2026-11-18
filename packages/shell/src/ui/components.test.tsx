@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { Badge, createStatusBadge } from './badge'
-import { Card } from './card'
+import { Card, cardClass } from './card'
 import { Button } from './button'
 import { ConfirmDialog, Modal } from './overlay'
 import { Table, TableScroll, TBody, Td, Th, THead, Tr } from './table'
@@ -256,6 +256,11 @@ describe('Card', () => {
     expect(i).toHaveAttribute('aria-label', 'box')
     expect(i.className.split(' ')).toContain('rounded-lg')
     expect(i.className).not.toContain('shadow')
+  })
+  it('cardClass is exactly the Card frame', () => {
+    render(<><Card data-testid="a">a</Card><Card inset data-testid="b">b</Card></>)
+    expect(screen.getByTestId('a').className).toBe(cardClass())
+    expect(screen.getByTestId('b').className).toBe(cardClass({ inset: true }))
   })
   it('ref reaches the rendered element', () => {
     let el: HTMLElement | null = null

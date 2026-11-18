@@ -23,17 +23,25 @@ export interface CardRootProps extends React.HTMLAttributes<HTMLElement> {
  * `inset` is the nested box (a group inside a card, a summary tile, a row
  * block): same surface and hairline, smaller radius, flat.
  */
+/**
+ * The card frame as classes, for an element that must stay what it is — a
+ * router Link, a <form>, a <p>, a frame whose classes switch with state — so it
+ * still re-skins with packages/shell. Prefer <Card> where the element is free.
+ */
+export function cardClass({ inset = false }: { inset?: boolean } = {}) {
+  return cn(
+    'border bg-surface',
+    // border-line (not -subtle): white cards sit on a near-white canvas and in
+    // white modals; the subtle hairline all but vanished there (2026-11-18).
+    inset ? 'rounded-lg border-line' : 'rounded-xl border-line shadow-xs',
+  )
+}
+
 export function Card({ className, children, inset, as = 'div', ...rest }: CardRootProps) {
   const Tag = as as React.ElementType
   return (
     <Tag
-      className={cn(
-        'border bg-surface',
-        // border-line (not -subtle): white cards sit on a near-white canvas and in
-        // white modals; the subtle hairline all but vanished there (2026-11-18).
-        inset ? 'rounded-lg border-line' : 'rounded-xl border-line shadow-xs',
-        className,
-      )}
+      className={cn(cardClass({ inset }), className)}
       {...rest}
     >
       {children}
