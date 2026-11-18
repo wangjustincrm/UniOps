@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { Badge, createStatusBadge } from './badge'
+import { Card } from './card'
 import { Button } from './button'
 import { ConfirmDialog, Modal } from './overlay'
 import { Table, TableScroll, TBody, Td, Th, THead, Tr } from './table'
@@ -239,5 +240,27 @@ describe('StatusBadge size / dot', () => {
     const sm = screen.getByText('Paid (sm)')
     expect(sm.querySelector('[aria-hidden]')).toBeNull()
     expect(sm.className).toContain('text-2xs')
+  })
+})
+
+describe('Card', () => {
+  it('raised by default; inset is flat with the smaller radius; as + props pass through', () => {
+    render(<>
+      <Card data-testid="c">x</Card>
+      <Card inset as="section" aria-label="box" data-testid="i">y</Card>
+    </>)
+    const c = screen.getByTestId('c').className.split(' ')
+    expect(c).toContain('rounded-xl'); expect(c).toContain('shadow-xs')
+    const i = screen.getByTestId('i')
+    expect(i.tagName).toBe('SECTION')
+    expect(i).toHaveAttribute('aria-label', 'box')
+    expect(i.className.split(' ')).toContain('rounded-lg')
+    expect(i.className).not.toContain('shadow')
+  })
+  it('ref reaches the rendered element', () => {
+    let el: HTMLElement | null = null
+    render(<Card ref={(n) => { el = n }} as="aside">z</Card>)
+    expect(el).not.toBeNull()
+    expect((el as unknown as HTMLElement).tagName).toBe('ASIDE')
   })
 })
