@@ -38,16 +38,16 @@ type PendingConfirm = { emails: RenderedEmail[]; recipients: Recipient[]; paymen
 export type RemittanceStatus = 'ready' | 'blocked' | 'sent' | 'failed' | 'skipped' | 'not_sent'
 
 const STATUS_STYLE: Record<RemittanceStatus, string> = {
-  ready: 'bg-neutral-100 text-neutral-600',
-  blocked: 'bg-amber-50 text-amber-700',
-  sent: 'bg-green-50 text-green-700',
-  failed: 'bg-red-50 text-red-700',
-  skipped: 'bg-neutral-100 text-neutral-500',
+  ready: 'bg-surface-sunken text-fg-secondary',
+  blocked: 'bg-warning-soft text-warning-fg',
+  sent: 'bg-success-soft text-success-fg',
+  failed: 'bg-danger-soft text-danger-fg',
+  skipped: 'bg-surface-sunken text-fg-muted',
   // Deliberately the same muted grey as 'ready' but a different label: this
   // is the hub list's existence-check state (see `_remittance_status` in
   // finance-api/app/api/v1/payments.py) and must never read as "verified
   // sendable" the way 'ready' does in the live preview below.
-  not_sent: 'bg-neutral-100 text-neutral-500',
+  not_sent: 'bg-surface-sunken text-fg-muted',
 }
 
 const STATUS_LABEL: Record<RemittanceStatus, string> = {
@@ -262,12 +262,12 @@ export function RemittancePanel({ scope, onSent }: {
   }
 
   if (isLoading) {
-    return <div className="py-8 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
+    return <div className="py-8 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
   }
 
   if (error) {
     return (
-      <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+      <div className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">
         {(error as Error).message || 'Failed to load remittance preview'}
       </div>
     )
@@ -277,7 +277,7 @@ export function RemittancePanel({ scope, onSent }: {
 
   if (!preview.enabled) {
     return (
-      <p className="text-sm text-neutral-500">
+      <p className="text-sm text-fg-muted">
         Remittance email is not configured. Ask an administrator to enable it in Company Settings.
       </p>
     )
@@ -288,7 +288,7 @@ export function RemittancePanel({ scope, onSent }: {
   if (confirm) {
     return (
       <div className="space-y-3">
-        {sendError && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{sendError}</div>}
+        {sendError && <div className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{sendError}</div>}
         <RemittanceEmailPreview emails={confirm.emails} sending={sending}
           onBack={() => { setConfirm(null); setSendError(null) }}
           onConfirm={() => void handleConfirmSend()} />
@@ -299,18 +299,18 @@ export function RemittancePanel({ scope, onSent }: {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm text-neutral-600">
+        <div className="text-sm text-fg-secondary">
           Reference: <span className="font-mono">{preview.reference}</span>
-          <span className="mx-2 text-neutral-300">·</span>
+          <span className="mx-2 text-fg-faint">·</span>
           {preview.payment_method}
         </div>
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-2 text-sm text-neutral-600">
+          <label className="flex items-center gap-2 text-sm text-fg-secondary">
             Payment date
             <input type="date" value={paymentDate} max={todayLocal()}
               onChange={(e) => setPaymentDate(e.target.value)}
               title="The date the advice tells the payee the funds left. Defaults to today — back-date it if the payment actually cleared earlier."
-              className="rounded-md border border-neutral-300 px-2 py-1 text-sm" />
+              className="rounded-md border border-line-strong px-2 py-1 text-sm" />
           </label>
           <button type="button" onClick={() => void refetch()} disabled={isFetching} className={secondaryBtn}>
             <RefreshCw className={cn('h-4 w-4', isFetching && 'animate-spin')} />
@@ -319,13 +319,13 @@ export function RemittancePanel({ scope, onSent }: {
         </div>
       </div>
 
-      {sendError && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{sendError}</div>}
+      {sendError && <div className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{sendError}</div>}
 
       {lastResult && (
-        <div className="rounded-md bg-neutral-50 px-3 py-2 text-sm text-neutral-700">
+        <div className="rounded-md bg-surface-subtle px-3 py-2 text-sm text-fg-secondary">
           Sent {lastResult.sent}, failed {lastResult.failed}, skipped {lastResult.skipped}.
           {lastResult.results.filter((r) => r.status === 'failed').map((r) => (
-            <div key={payeeKey(r.recipient_kind, r.party_id)} className="text-xs text-red-600">
+            <div key={payeeKey(r.recipient_kind, r.party_id)} className="text-xs text-danger-fg">
               {r.party_name}: {r.error}
             </div>
           ))}
@@ -333,11 +333,11 @@ export function RemittancePanel({ scope, onSent }: {
       )}
 
       {preview.groups.length === 0 ? (
-        <p className="py-4 text-center text-sm text-neutral-400">No payees to email for this {scope.kind}.</p>
+        <p className="py-4 text-center text-sm text-fg-muted">No payees to email for this {scope.kind}.</p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-neutral-200">
+        <div className="overflow-hidden rounded-lg border border-line">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+            <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
               <tr>
                 <th className="w-8 px-3 py-2" />
                 <th className="px-3 py-2">Payee</th>
@@ -354,7 +354,7 @@ export function RemittancePanel({ scope, onSent }: {
                 const isExpanded = expanded.has(key)
                 return (
                   <Fragment key={key}>
-                    <tr className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40', blocked && 'text-neutral-400')}>
+                    <tr className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40', blocked && 'text-fg-muted')}>
                       <td className="px-3 py-2">
                         <input type="checkbox" disabled={blocked} checked={selected.has(key)}
                           title={status === 'sent' ? 'Already sent — check to resend' : undefined}
@@ -367,22 +367,22 @@ export function RemittancePanel({ scope, onSent }: {
                       </td>
                       <td className="px-3 py-2">
                         <button type="button" onClick={() => toggleExpanded(key)}
-                          className="mr-1 inline-flex align-middle text-neutral-400 hover:text-neutral-600"
+                          className="mr-1 inline-flex align-middle text-fg-muted hover:text-fg-secondary"
                           aria-label={isExpanded ? 'Collapse lines' : 'Expand lines'}>
                           {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                         </button>
                         {g.party_name}
-                        <span className="ml-1 text-xs text-neutral-400">
+                        <span className="ml-1 text-xs text-fg-muted">
                           ({g.recipient_kind === 'vendor' ? 'Vendor' : 'Employee'})
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-xs text-neutral-600">
-                        {g.email || <span className="text-neutral-300">—</span>}
+                      <td className="px-3 py-2 text-xs text-fg-secondary">
+                        {g.email || <span className="text-fg-faint">—</span>}
                       </td>
                       <td className="px-3 py-2 text-right font-mono">{fmtMoney(g.total, g.currency)}</td>
                       <td className="px-3 py-2">
                         <RemittanceStatusBadge status={status} />
-                        {blocked && <div className="mt-1 text-xs text-amber-700">{blockReasonText(g.block_reasons)}</div>}
+                        {blocked && <div className="mt-1 text-xs text-warning-fg">{blockReasonText(g.block_reasons)}</div>}
                         {/* Fix 6 (Round 2): show whenever an error is persisted, not only
                             when status === 'failed'. The backend's CASE refuses to downgrade
                             a row from `sent` back to `failed` (a failed RESEND must not undo
@@ -392,7 +392,7 @@ export function RemittancePanel({ scope, onSent }: {
                             read as a clean "Sent" with nothing wrong. Wording says the advice
                             already went out — this is not a "your payee never got it" alarm. */}
                         {!blocked && g.last_send?.error && (
-                          <div className="mt-1 text-xs text-red-600">
+                          <div className="mt-1 text-xs text-danger-fg">
                             {status === 'sent'
                               ? `Advice was delivered earlier, but the latest resend attempt failed: ${g.last_send.error}`
                               : g.last_send.error}
@@ -409,7 +409,7 @@ export function RemittancePanel({ scope, onSent }: {
                         mirrors. A line with no credit renders as a single amount, same as
                         today. */}
                     {isExpanded && (
-                      <tr className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
+                      <tr className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
                         <td className="px-3 py-2" />
                         <td colSpan={4} className="px-3 py-2">
                           <table className="w-full text-xs">
@@ -417,19 +417,19 @@ export function RemittancePanel({ scope, onSent }: {
                               {g.lines.map((l, li) => {
                                 const hasCredit = Number(l.credit_applied) > 0
                                 return (
-                                  <tr key={li} className={cn(li > 0 && 'border-t border-neutral-100')}>
-                                    <td className="py-1 pr-3 align-top text-neutral-600">{l.reference}</td>
+                                  <tr key={li} className={cn(li > 0 && 'border-t border-line-subtle')}>
+                                    <td className="py-1 pr-3 align-top text-fg-secondary">{l.reference}</td>
                                     {/* The date the advice will carry, not the date recorded
                                         against the payment — those differ whenever the operator
                                         back-dates above, and this detail exists so AP is reading
                                         exactly what the payee will read. */}
-                                    <td className="py-1 pr-3 align-top text-neutral-500">{formatDate(paymentDate || l.payment_date)}</td>
+                                    <td className="py-1 pr-3 align-top text-fg-muted">{formatDate(paymentDate || l.payment_date)}</td>
                                     <td className="py-1 text-right align-top font-mono">
                                       {hasCredit ? (
                                         <div className="space-y-0.5">
                                           <div>{fmtMoney(l.gross, g.currency)}</div>
                                           {l.credit_notes.map((note, ci) => (
-                                            <div key={ci} className="text-neutral-500">
+                                            <div key={ci} className="text-fg-muted">
                                               less credit {note.vendor_credit_number} {fmtMoney(note.applied_amount, g.currency)}
                                             </div>
                                           ))}

@@ -65,8 +65,8 @@ interface FormState {
 // ── Form field helpers ────────────────────────────────────────────────────────
 
 const inputCls =
-  'w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm ' +
-  'outline-none focus:border-[#085E5E]/60 focus:ring-1 focus:ring-[#085E5E]/30'
+  'w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm ' +
+  'outline-none focus:border-primary-700/60 focus:ring-1 focus:ring-primary-700/30'
 
 function Field({ label, required, children, hint }: {
   label: string
@@ -76,11 +76,11 @@ function Field({ label, required, children, hint }: {
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-neutral-700">
-        {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+      <label className="block text-sm font-medium text-fg-secondary">
+        {label}{required && <span className="text-danger-fg ml-0.5">*</span>}
       </label>
       <div className="mt-1">{children}</div>
-      {hint && <p className="mt-1 text-xs text-neutral-500">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-fg-muted">{hint}</p>}
     </div>
   )
 }
@@ -88,7 +88,7 @@ function Field({ label, required, children, hint }: {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">{title}</h2>
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-fg-muted">{title}</h2>
       <div className="space-y-4">{children}</div>
     </section>
   )
@@ -306,7 +306,7 @@ export default function BookingCreatePage() {
   // ── Render: loading / error for room ───────────────────────────────────────
   if (roomLoading) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-neutral-500">
+      <div className="flex h-full items-center justify-center text-sm text-fg-muted">
         <Loader2 className="h-4 w-4 animate-spin mr-2" />
         Loading room…
       </div>
@@ -317,7 +317,7 @@ export default function BookingCreatePage() {
     return (
       <div className="h-full overflow-y-auto">
         <div className="mx-auto max-w-2xl px-4 py-6">
-          <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4" />
             Room not found.
           </div>
@@ -331,7 +331,7 @@ export default function BookingCreatePage() {
       <div className="mx-auto max-w-2xl px-4 py-6 sm:px-6 space-y-6">
         {/* Back nav */}
         <BackLink to={`/rooms/${roomId}`}
-          className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 transition-colors"
+          className="flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg-secondary transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to {room.name}
@@ -342,8 +342,8 @@ export default function BookingCreatePage() {
           <div className={cn(
             'flex items-center gap-2 rounded-md border px-4 py-3 text-sm',
             toast.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-red-200 bg-red-50 text-red-600',
+              ? 'border-success-line bg-success-soft text-success-fg'
+              : 'border-danger-line bg-danger-soft text-danger-fg',
           )}>
             {toast.type === 'success'
               ? <CheckCircle2 className="h-4 w-4 shrink-0" />
@@ -354,7 +354,7 @@ export default function BookingCreatePage() {
 
         {/* Truncated series notice */}
         {truncatedNotice && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+          <div className="flex items-start gap-2 rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-fg">
             <Info className="h-4 w-4 shrink-0 mt-0.5" />
             Series shortened to fit the booking window.
           </div>
@@ -362,15 +362,15 @@ export default function BookingCreatePage() {
 
         {/* Page title */}
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Book {room.name}</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <h1 className="text-2xl font-bold text-fg">Book {room.name}</h1>
+          <p className="mt-1 text-sm text-fg-muted">
             {[room.floor, room.area].filter(Boolean).join(' · ')}
             {room.capacity > 0 && ` · Capacity: ${room.capacity}`}
           </p>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm space-y-6">
+        <form onSubmit={handleSubmit} className="rounded-xl border border-line bg-surface p-6 shadow-sm space-y-6">
           <Section title="Details">
             <Field label="Title" required>
               <input
@@ -435,13 +435,13 @@ export default function BookingCreatePage() {
           {hasWindow && (
             <div>
               {precheck.isPending && (
-                <div className="flex items-center gap-2 text-xs text-neutral-500">
+                <div className="flex items-center gap-2 text-xs text-fg-muted">
                   <Loader2 className="h-3 w-3 animate-spin" />
                   Checking availability…
                 </div>
               )}
               {!precheck.isPending && precheckAvailable && !conflictResult && (
-                <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                <div className="flex items-center gap-2 rounded-md border border-success-line bg-success-soft px-3 py-2 text-sm text-success-fg">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
                   Room is available for the selected time.
                 </div>
@@ -474,16 +474,16 @@ export default function BookingCreatePage() {
                 className="mt-0.5 accent-[#085E5E] h-4 w-4 rounded"
               />
               <span>
-                <span className={cn('text-sm font-medium', !roomHasVideo ? 'text-neutral-400' : 'text-neutral-700')}>
+                <span className={cn('text-sm font-medium', !roomHasVideo ? 'text-fg-muted' : 'text-fg-secondary')}>
                   Needs video conference
                 </span>
                 {!roomHasVideo && (
-                  <span className="ml-2 text-xs text-neutral-400">(room has no video equipment)</span>
+                  <span className="ml-2 text-xs text-fg-muted">(room has no video equipment)</span>
                 )}
               </span>
             </label>
             {videoConflict && (
-              <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+              <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
                 <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                 This room does not have video conferencing. Please uncheck or choose a room with video equipment.
               </div>
@@ -496,7 +496,7 @@ export default function BookingCreatePage() {
 
           {/* Form-level error */}
           {formError && (
-            <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+            <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
               <AlertCircle className="h-4 w-4 shrink-0" />
               {formError}
             </div>
@@ -507,7 +507,7 @@ export default function BookingCreatePage() {
             <button
               type="button"
               onClick={() => navigate(`/rooms/${roomId}`)}
-              className="rounded-md border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+              className="rounded-md border border-line-strong px-4 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
             >
               Cancel
             </button>
@@ -517,8 +517,8 @@ export default function BookingCreatePage() {
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold transition-colors',
                 canSubmit
-                  ? 'bg-[#085E5E] text-white hover:bg-[#074f4f]'
-                  : 'bg-neutral-100 text-neutral-400 cursor-not-allowed',
+                  ? 'bg-primary-700 text-white hover:bg-[#074f4f]'
+                  : 'bg-surface-sunken text-fg-muted cursor-not-allowed',
               )}
             >
               {create.isPending && <Loader2 className="h-4 w-4 animate-spin" />}

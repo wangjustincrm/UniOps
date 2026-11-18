@@ -403,13 +403,13 @@ export default function AgreementEditPage() {
   }
 
   if (isLoading) {
-    return <div className="p-8 text-sm text-neutral-400">Loading…</div>
+    return <div className="p-8 text-sm text-fg-muted">Loading…</div>
   }
 
   if (!agreement || !EDITABLE_STATUSES.includes(agreement.status)) {
     return (
       <div className="p-8">
-        <p className="text-sm text-neutral-500">This agreement cannot be edited in its current status.</p>
+        <p className="text-sm text-fg-muted">This agreement cannot be edited in its current status.</p>
         <BackLink to={`/agreements/${id}`} className="mt-3 inline-block text-sm text-primary-600 hover:underline">← Back to Agreement</BackLink>
       </div>
     )
@@ -422,8 +422,8 @@ export default function AgreementEditPage() {
           <Button variant="ghost" size="icon-sm"><ArrowLeft className="h-4 w-4" /></Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Edit Agreement</h1>
-          <p className="text-sm text-neutral-400 mt-0.5">{agreement.number}</p>
+          <h1 className="text-2xl font-bold text-fg">Edit Agreement</h1>
+          <p className="text-sm text-fg-muted mt-0.5">{agreement.number}</p>
         </div>
       </div>
 
@@ -431,8 +431,8 @@ export default function AgreementEditPage() {
         <div className="lg:col-span-9 flex flex-col gap-6">
 
           {/* Basic details */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
-            <h2 className="text-base font-semibold text-neutral-900">Agreement Details</h2>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+            <h2 className="text-base font-semibold text-fg">Agreement Details</h2>
 
             <FormField label="Title" required htmlFor="title" error={errors.title}>
               <Input
@@ -448,14 +448,14 @@ export default function AgreementEditPage() {
                   category means a new agreement, not an edit (backend AgreementUpdate
                   has no vendor_id/agreement_type field). Shown read-only for context. */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">Vendor</label>
-                <div className="flex h-10 items-center rounded-md border border-neutral-200 bg-neutral-100 px-3 text-sm text-neutral-600">
+                <label className="text-sm font-medium text-fg-secondary">Vendor</label>
+                <div className="flex h-10 items-center rounded-md border border-line bg-surface-sunken px-3 text-sm text-fg-secondary">
                   {agreement.vendor_name}
                 </div>
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">Type</label>
-                <div className="flex h-10 items-center rounded-md border border-neutral-200 bg-neutral-100 px-3 text-sm text-neutral-600">
+                <label className="text-sm font-medium text-fg-secondary">Type</label>
+                <div className="flex h-10 items-center rounded-md border border-line bg-surface-sunken px-3 text-sm text-fg-secondary">
                   {TYPE_LABELS[agreement.agreement_type]}
                 </div>
               </div>
@@ -480,30 +480,30 @@ export default function AgreementEditPage() {
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">Valid From <span className="text-danger-600">*</span></label>
+                <label className="text-sm font-medium text-fg-secondary">Valid From <span className="text-danger-fg">*</span></label>
                 <input
                   type="date"
                   value={validFrom}
                   onChange={(e) => { setValidFrom(e.target.value); setErrors((p) => ({ ...p, validFrom: '' })) }}
                   className={cn(
-                    'h-10 w-full rounded-md border bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                    errors.validFrom ? 'border-danger-600' : 'border-neutral-300'
+                    'h-10 w-full rounded-md border bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
+                    errors.validFrom ? 'border-danger-solid' : 'border-line-strong'
                   )}
                 />
-                {errors.validFrom && <p className="text-xs text-danger-600">{errors.validFrom}</p>}
+                {errors.validFrom && <p className="text-xs text-danger-fg">{errors.validFrom}</p>}
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">Valid To <span className="text-danger-600">*</span></label>
+                <label className="text-sm font-medium text-fg-secondary">Valid To <span className="text-danger-fg">*</span></label>
                 <input
                   type="date"
                   value={validTo}
                   onChange={(e) => { setValidTo(e.target.value); setErrors((p) => ({ ...p, validTo: '' })) }}
                   className={cn(
-                    'h-10 w-full rounded-md border bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                    errors.validTo ? 'border-danger-600' : 'border-neutral-300'
+                    'h-10 w-full rounded-md border bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
+                    errors.validTo ? 'border-danger-solid' : 'border-line-strong'
                   )}
                 />
-                {errors.validTo && <p className="text-xs text-danger-600">{errors.validTo}</p>}
+                {errors.validTo && <p className="text-xs text-danger-fg">{errors.validTo}</p>}
               </div>
               <FormField label="Grace Days" htmlFor="graceDays">
                 <Input
@@ -519,8 +519,8 @@ export default function AgreementEditPage() {
           </div>
 
           {/* Financial terms */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
-            <h2 className="text-base font-semibold text-neutral-900">Financial Terms</h2>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+            <h2 className="text-base font-semibold text-fg">Financial Terms</h2>
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               <FormField
@@ -540,8 +540,8 @@ export default function AgreementEditPage() {
               </FormField>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">Currency</label>
-                <div className="flex h-10 items-center rounded-md border border-neutral-200 bg-neutral-100 px-3 text-sm text-neutral-600">
+                <label className="text-sm font-medium text-fg-secondary">Currency</label>
+                <div className="flex h-10 items-center rounded-md border border-line bg-surface-sunken px-3 text-sm text-fg-secondary">
                   {agreement.currency}
                 </div>
               </div>
@@ -549,7 +549,7 @@ export default function AgreementEditPage() {
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">Tax Code</label>
+                <label className="text-sm font-medium text-fg-secondary">Tax Code</label>
                 <select
                   value={taxCode ?? ''}
                   onChange={(e) => {
@@ -557,7 +557,7 @@ export default function AgreementEditPage() {
                     setTaxCode(c?.code ?? null)
                     setTaxRate(c ? Number(c.rate) : null)
                   }}
-                  className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 >
                   <option value="">No tax</option>
                   {taxCode && !taxCodes.some((c) => c.code === taxCode) && (
@@ -574,11 +574,11 @@ export default function AgreementEditPage() {
               {/* Department — drives the Budget Account cascade below it, same
                   as PrCreatePage: pick department first, cascade filters on it. */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">Department</label>
+                <label className="text-sm font-medium text-fg-secondary">Department</label>
                 <select
                   value={departmentId}
                   onChange={(e) => setDepartmentId(e.target.value)}
-                  className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 >
                   <option value="">No department</option>
                   {departments.map((d) => (
@@ -590,7 +590,7 @@ export default function AgreementEditPage() {
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">Budget Account</label>
+                <label className="text-sm font-medium text-fg-secondary">Budget Account</label>
                 <BudgetAccountCascade
                   departmentId={departmentId || undefined}
                   costCenterId={costCenterId}
@@ -598,17 +598,17 @@ export default function AgreementEditPage() {
                   onChange={(next) => { setCostCenterId(next.costCenterId); setBudgetCode(next.budgetCode) }}
                 />
                 {!departmentId && (
-                  <p className="text-xs text-neutral-400">Select a department first to enable the budget account picker.</p>
+                  <p className="text-xs text-fg-muted">Select a department first to enable the budget account picker.</p>
                 )}
               </div>
 
               {/* Owner */}
               <div ref={ownerAnchorRef} className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">
-                  Owner <span className="text-danger-600">*</span>
+                <label className="text-sm font-medium text-fg-secondary">
+                  Owner <span className="text-danger-fg">*</span>
                 </label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
                   <input
                     type="text"
                     placeholder={agreement.owner_id && !selectedOwner ? 'Search to change owner…' : 'Search people by name…'}
@@ -616,15 +616,15 @@ export default function AgreementEditPage() {
                     onFocus={() => { setOwnerOpen(true); if (selectedOwner) setOwnerQuery('') }}
                     onChange={(e) => { setOwnerQuery(e.target.value); setSelectedOwner(null); setOwnerOpen(true); setErrors((p) => ({ ...p, owner: '' })) }}
                     className={cn(
-                      'h-10 w-full rounded-md border bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      errors.owner ? 'border-danger-600' : 'border-neutral-300'
+                      'h-10 w-full rounded-md border bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
+                      errors.owner ? 'border-danger-solid' : 'border-line-strong'
                     )}
                   />
                   {selectedOwner && (
                     <button
                       type="button"
                       onClick={() => { setSelectedOwner(null); setOwnerTouched(true); setOwnerQuery('') }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -640,20 +640,20 @@ export default function AgreementEditPage() {
                         onClick={() => { setSelectedOwner(u); setOwnerTouched(true); setOwnerOpen(false); setOwnerQuery(''); setErrors((p) => ({ ...p, owner: '' })) }}
                       >
                         <span>{u.full_name}</span>
-                        {u.department_name && <span className="text-xs text-neutral-400">{u.department_name}</span>}
+                        {u.department_name && <span className="text-xs text-fg-muted">{u.department_name}</span>}
                       </button>
                     ))}
                     {owners.length === 0 && (
-                      <p className="px-3 py-2 text-sm text-neutral-400">No people found</p>
+                      <p className="px-3 py-2 text-sm text-fg-muted">No people found</p>
                     )}
                   </DropdownPortal>
                 )}
                 {agreement.owner_id && !selectedOwner && !ownerTouched && (
-                  <p className="text-xs text-neutral-400">
+                  <p className="text-xs text-fg-muted">
                     An owner is already set. Leave blank to keep it, or search to replace it.
                   </p>
                 )}
-                {errors.owner && <p className="text-xs text-danger-600">{errors.owner}</p>}
+                {errors.owner && <p className="text-xs text-danger-fg">{errors.owner}</p>}
               </div>
             </div>
           </div>
@@ -661,17 +661,17 @@ export default function AgreementEditPage() {
           {/* Recurring cycle — agreement_type is locked post-creation, so this
               renders only when the loaded agreement already is 'recurring'. */}
           {agreement.agreement_type === 'recurring' && (
-            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
-              <h2 className="text-base font-semibold text-neutral-900">Recurring Cycle</h2>
+            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+              <h2 className="text-base font-semibold text-fg">Recurring Cycle</h2>
               <RecurringFields value={recurringValue} validFrom={validFrom} onChange={setRecurringValue} />
-              {errors.recurring && <p className="text-xs text-danger-600">{errors.recurring}</p>}
+              {errors.recurring && <p className="text-xs text-danger-fg">{errors.recurring}</p>}
             </div>
           )}
 
           {/* Milestone stages — same lock as above, keyed off the existing type. */}
           {agreement.agreement_type === 'milestone' && (
-            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
-              <h2 className="text-base font-semibold text-neutral-900">Milestone Stages</h2>
+            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+              <h2 className="text-base font-semibold text-fg">Milestone Stages</h2>
               {milestonesLoading ? (
                 // Not "no stages" — the schedule query hasn't resolved yet.
                 // Rendering MilestoneEditor with rows=[] here would look
@@ -680,7 +680,7 @@ export default function AgreementEditPage() {
                 // this query settled (review finding 1). Show a distinct
                 // loading state instead, and Save stays disabled below until
                 // this clears.
-                <p className="text-sm text-neutral-400">Loading stages…</p>
+                <p className="text-sm text-fg-muted">Loading stages…</p>
               ) : milestonesErrored ? (
                 // Round 2 finding 1: a persistently failing schedule fetch
                 // must not read as "there are no stages", and must not brick
@@ -688,8 +688,8 @@ export default function AgreementEditPage() {
                 // (handleSave simply omits `milestones` from the PATCH,
                 // which is "leave stages alone", the safe default when they
                 // couldn't be read at all).
-                <div className="flex flex-col items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-4 py-3">
-                  <p className="text-sm text-warning-700">
+                <div className="flex flex-col items-start gap-2 rounded-lg border border-warning-line bg-warning-soft px-4 py-3">
+                  <p className="text-sm text-warning-fg">
                     Could not load the stage schedule. Saving now will leave the existing stages unchanged.
                   </p>
                   <Button type="button" variant="secondary" size="sm" onClick={() => refetchSchedule()}>
@@ -704,48 +704,48 @@ export default function AgreementEditPage() {
                   onChange={setMilestoneRows}
                 />
               )}
-              {errors.milestones && <p className="text-xs text-danger-600">{errors.milestones}</p>}
+              {errors.milestones && <p className="text-xs text-danger-fg">{errors.milestones}</p>}
             </div>
           )}
 
           {/* Notes */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
-            <h2 className="text-base font-semibold text-neutral-900">Notes</h2>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+            <h2 className="text-base font-semibold text-fg">Notes</h2>
             <FormField label="Internal Notes" htmlFor="notes">
               <textarea
                 id="notes"
                 rows={3}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="w-full resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               />
             </FormField>
           </div>
 
           {/* Attachments */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
-            <h2 className="text-base font-semibold text-neutral-900">Attachments</h2>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+            <h2 className="text-base font-semibold text-fg">Attachments</h2>
             <label
               htmlFor="agreement-file-upload"
-              className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-neutral-300 p-6 text-center hover:border-primary-400 hover:bg-primary-50 transition-colors"
+              className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-line-strong p-6 text-center hover:border-primary-400 hover:bg-primary-50 transition-colors"
             >
-              <Upload className="h-8 w-8 text-neutral-400" />
+              <Upload className="h-8 w-8 text-fg-muted" />
               <div>
-                <p className="text-sm font-medium text-neutral-700">Drag &amp; drop or click to upload</p>
-                <p className="text-xs text-neutral-400 mt-1">Contract copies, signed schedules, etc.</p>
-                <p className="text-xs text-neutral-400 mt-1">{ATTACHMENT_RULE.hint}</p>
+                <p className="text-sm font-medium text-fg-secondary">Drag &amp; drop or click to upload</p>
+                <p className="text-xs text-fg-muted mt-1">Contract copies, signed schedules, etc.</p>
+                <p className="text-xs text-fg-muted mt-1">{ATTACHMENT_RULE.hint}</p>
               </div>
               <input id="agreement-file-upload" type="file" multiple accept={ATTACHMENT_RULE.accept} className="sr-only" onChange={handleFileInput} />
             </label>
-            {attachmentError && <p role="alert" className="text-xs text-danger-600">{attachmentError}</p>}
+            {attachmentError && <p role="alert" className="text-xs text-danger-fg">{attachmentError}</p>}
             {attachments.map((f, i) => (
-              <div key={i} className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
-                <span className="flex-1 truncate text-neutral-700">📎 {f.name}</span>
-                <span className="text-neutral-400 text-xs">{formatBytes(f.size)}</span>
+              <div key={i} className="flex items-center gap-2 rounded-md border border-line bg-surface-subtle px-3 py-2 text-sm">
+                <span className="flex-1 truncate text-fg-secondary">📎 {f.name}</span>
+                <span className="text-fg-muted text-xs">{formatBytes(f.size)}</span>
                 <button
                   type="button"
                   onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-                  className="text-neutral-400 hover:text-danger-600"
+                  className="text-fg-muted hover:text-danger-fg"
                   aria-label="Remove file"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -755,15 +755,15 @@ export default function AgreementEditPage() {
           </div>
 
           {/* Footer actions */}
-          <div className="flex items-center justify-between rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-6 py-4">
+          <div className="flex items-center justify-between rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-6 py-4">
             <Link to={`/agreements/${id}`}>
               <Button variant="ghost">Cancel</Button>
             </Link>
             <div className="flex items-center gap-3">
               {milestonesLoading && (
-                <p className="text-xs text-neutral-400">Loading stages before Save can be used…</p>
+                <p className="text-xs text-fg-muted">Loading stages before Save can be used…</p>
               )}
-              {saveError && <p role="alert" className="text-sm text-danger-600">{saveError}</p>}
+              {saveError && <p role="alert" className="text-sm text-danger-fg">{saveError}</p>}
               <Button
                 variant="secondary"
                 onClick={() => handleSave(false)}
@@ -780,16 +780,16 @@ export default function AgreementEditPage() {
 
         {/* Sidebar */}
         <div className="lg:col-span-3">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
-            <h3 className="text-sm font-semibold text-neutral-700 mb-3">Agreement Info</h3>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
+            <h3 className="text-sm font-semibold text-fg-secondary mb-3">Agreement Info</h3>
             <dl className="flex flex-col gap-2 text-xs">
               <div className="flex justify-between">
-                <dt className="text-neutral-500">Number</dt>
-                <dd className="font-mono text-neutral-700">{agreement.number}</dd>
+                <dt className="text-fg-muted">Number</dt>
+                <dd className="font-mono text-fg-secondary">{agreement.number}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-neutral-500">Status</dt>
-                <dd className="capitalize text-neutral-700">{agreement.status}</dd>
+                <dt className="text-fg-muted">Status</dt>
+                <dd className="capitalize text-fg-secondary">{agreement.status}</dd>
               </div>
             </dl>
           </div>

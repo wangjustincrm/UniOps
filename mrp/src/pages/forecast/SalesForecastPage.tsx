@@ -108,13 +108,13 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
 function SaveIndicator({ state }: { state: SaveState }) {
   if (state === 'saving') {
-    return <span className="flex items-center gap-1 text-xs text-neutral-500"><Loader2 className="h-3 w-3 animate-spin" /> Saving…</span>
+    return <span className="flex items-center gap-1 text-xs text-fg-muted"><Loader2 className="h-3 w-3 animate-spin" /> Saving…</span>
   }
   if (state === 'saved') {
-    return <span className="flex items-center gap-1 text-xs text-success-700"><Check className="h-3 w-3" /> Saved</span>
+    return <span className="flex items-center gap-1 text-xs text-success-fg"><Check className="h-3 w-3" /> Saved</span>
   }
   if (state === 'error') {
-    return <span className="flex items-center gap-1 text-xs text-danger-600"><AlertCircle className="h-3 w-3" /> Save failed — edit again to retry</span>
+    return <span className="flex items-center gap-1 text-xs text-danger-fg"><AlertCircle className="h-3 w-3" /> Save failed — edit again to retry</span>
   }
   return null
 }
@@ -952,8 +952,8 @@ export default function SalesForecastPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-neutral-900">Sales Forecast</h1>
-          <p className="text-xs text-neutral-500">
+          <h1 className="text-lg font-semibold text-fg">Sales Forecast</h1>
+          <p className="text-xs text-fg-muted">
             A continuous, always-current forecast — edits save automatically. Months before {currentMonth} are locked.
           </p>
         </div>
@@ -968,7 +968,7 @@ export default function SalesForecastPage() {
       </div>
 
       {gridQuery.isError && (
-        <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+        <p role="alert" className="rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           {errMsg(gridQuery.error, 'Could not load the forecast grid.')}
         </p>
       )}
@@ -978,7 +978,7 @@ export default function SalesForecastPage() {
           locked (gridReadOnly), so the planner needs a standing explanation
           plus the one action that resolves it. */}
       {bindRefreshFailed && (
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           <span>
             The bind was saved, but this page could not reload the forecast afterwards — the
             numbers below are out of date, so editing is locked. Reload to continue.
@@ -1008,8 +1008,8 @@ export default function SalesForecastPage() {
             </Button>
           )}
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-medium text-neutral-500">Unit</span>
-            <div role="group" aria-label="Display unit" className="inline-flex overflow-hidden rounded-lg border border-neutral-200">
+            <span className="text-2xs font-medium text-fg-muted">Unit</span>
+            <div role="group" aria-label="Display unit" className="inline-flex overflow-hidden rounded-lg border border-line">
               <Button
                 type="button"
                 size="sm"
@@ -1026,15 +1026,15 @@ export default function SalesForecastPage() {
                 variant={displayUnit === 't' ? 'primary' : 'secondary'}
                 aria-pressed={displayUnit === 't'}
                 onClick={() => setDisplayUnit('t')}
-                className="h-11 min-w-11 rounded-none border-0 border-l border-neutral-200"
+                className="h-11 min-w-11 rounded-none border-0 border-l border-line"
               >
                 Tonne
               </Button>
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-4 text-[11px] text-neutral-500">
-          <span className="flex items-center gap-1"><Lock className="h-3 w-3 text-neutral-400" /> Past months are locked</span>
+        <div className="flex flex-wrap items-center gap-4 text-2xs text-fg-muted">
+          <span className="flex items-center gap-1"><Lock className="h-3 w-3 text-fg-muted" /> Past months are locked</span>
           <span className="flex items-center gap-1">
             <span className="h-2.5 w-2.5 rounded-sm border border-primary-300 bg-primary-100" />
             Outlook window ({currentMonth} – {addMonths(currentMonth, OUTLOOK_HORIZON_MONTHS - 1)})
@@ -1043,11 +1043,11 @@ export default function SalesForecastPage() {
       </div>
 
       {gridQuery.isLoading ? (
-        <p role="status" className="py-12 text-center text-sm text-neutral-400">Loading grid…</p>
+        <p role="status" className="py-12 text-center text-sm text-fg-muted">Loading grid…</p>
       ) : gridQuery.data && (
         <div ref={gridSectionRef} className="flex flex-col gap-2">
           {matrixRows.length === 0 && (
-            <p className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+            <p className="rounded-md border border-line bg-surface-subtle px-3 py-2 text-xs text-fg-secondary">
               {/* Two distinct empty states share matrixRows.length===0: genuinely
                   no products loaded/added yet (the material master itself is
                   empty for this range) vs. every existing product having been
@@ -1163,17 +1163,17 @@ export default function SalesForecastPage() {
                         }
                         // Disabled must read as LESS prominent than
                         // enabled, and still stay legible. Fix round 2
-                        // over-corrected `text-neutral-200` (nearly
-                        // invisible) all the way to `text-neutral-500`,
-                        // which is DARKER than the enabled `text-neutral-400`
+                        // over-corrected `text-fg-faint` (nearly
+                        // invisible) all the way to `text-fg-muted`,
+                        // which is DARKER than the enabled `text-fg-muted`
                         // — the affordance read backwards. neutral-300 is one
                         // step lighter than enabled and is the tone the
                         // remove-X below already rests at, so it is a value
                         // this grid is known to render legibly.
                         className={
                           bindBlocked
-                            ? 'shrink-0 cursor-not-allowed text-neutral-300'
-                            : 'shrink-0 text-neutral-400 hover:text-primary-600'
+                            ? 'shrink-0 cursor-not-allowed text-fg-faint'
+                            : 'shrink-0 text-fg-muted hover:text-primary-600'
                         }
                       >
                         <Link2 className="h-3.5 w-3.5" />
@@ -1193,8 +1193,8 @@ export default function SalesForecastPage() {
                         aria-label={`Drop ${row.label} — a planned product that was never bound`}
                         className={
                           bindBlocked
-                            ? 'shrink-0 cursor-not-allowed text-neutral-300'
-                            : 'shrink-0 text-neutral-400 hover:text-danger-600'
+                            ? 'shrink-0 cursor-not-allowed text-fg-faint'
+                            : 'shrink-0 text-fg-muted hover:text-danger-fg'
                         }
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -1207,7 +1207,7 @@ export default function SalesForecastPage() {
                       onClick={(e) => { e.stopPropagation(); handleRemoveAddedRow(row.id) }}
                       aria-label={`Remove ${row.label} — not yet saved`}
                       title="Remove — not yet saved"
-                      className="shrink-0 text-neutral-300 hover:text-danger-500"
+                      className="shrink-0 text-fg-faint hover:text-danger-fg"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>

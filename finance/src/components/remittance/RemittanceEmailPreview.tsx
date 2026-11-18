@@ -28,7 +28,7 @@ function EmailBody({ html }: { html: string }) {
       sandbox="allow-same-origin"
       srcDoc={html}
       style={{ height }}
-      className="w-full rounded-md border border-neutral-200 bg-white"
+      className="w-full rounded-md border border-line bg-surface"
       onLoad={(e) => {
         const doc = e.currentTarget.contentDocument
         if (doc) setHeight(Math.min(Math.max(doc.documentElement.scrollHeight + 16, 200), 800))
@@ -40,8 +40,8 @@ function EmailBody({ html }: { html: string }) {
 function HeaderRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex gap-2">
-      <span className="w-16 shrink-0 text-neutral-400">{label}</span>
-      <span className="break-all text-neutral-700">{value}</span>
+      <span className="w-16 shrink-0 text-fg-muted">{label}</span>
+      <span className="break-all text-fg-secondary">{value}</span>
     </div>
   )
 }
@@ -59,13 +59,13 @@ export function RemittanceEmailPreview({ emails, sending, onBack, onConfirm }: {
 
   return (
     <div className="space-y-3">
-      <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+      <div className="rounded-md bg-warning-soft px-3 py-2 text-sm text-warning-fg">
         Nothing has been sent yet. Review {readyCount === 1 ? 'the email' : `the ${readyCount} emails`} below,
         then click Confirm &amp; Send.
       </div>
 
       {notSent.length > 0 && (
-        <div className="rounded-md bg-neutral-50 px-3 py-2 text-sm text-neutral-600">
+        <div className="rounded-md bg-surface-subtle px-3 py-2 text-sm text-fg-secondary">
           Will not be sent:
           {notSent.map((e) => (
             <div key={`${e.recipient_kind}:${e.party_id}`} className="text-xs">
@@ -82,7 +82,7 @@ export function RemittanceEmailPreview({ emails, sending, onBack, onConfirm }: {
             <ChevronLeft className="h-4 w-4" />
           </button>
           <select value={index} onChange={(e) => setIndex(Number(e.target.value))}
-            className="min-w-0 flex-1 rounded-md border border-neutral-300 px-2 py-1.5 text-sm">
+            className="min-w-0 flex-1 rounded-md border border-line-strong px-2 py-1.5 text-sm">
             {emails.map((e, i) => (
               <option key={`${e.recipient_kind}:${e.party_id}`} value={i}>
                 {i + 1} / {emails.length} — {e.party_name}{e.status !== 'ready' ? ' (not sent)' : ''}
@@ -98,7 +98,7 @@ export function RemittanceEmailPreview({ emails, sending, onBack, onConfirm }: {
 
       {current && (current.status === 'ready' ? (
         <div className="space-y-2">
-          <div className="space-y-0.5 rounded-md border border-neutral-200 px-3 py-2 text-sm">
+          <div className="space-y-0.5 rounded-md border border-line px-3 py-2 text-sm">
             <HeaderRow label="From" value={current.from} />
             <HeaderRow label="To" value={current.to} />
             {current.cc && <HeaderRow label="Cc" value={current.cc} />}
@@ -108,7 +108,7 @@ export function RemittanceEmailPreview({ emails, sending, onBack, onConfirm }: {
         </div>
       ) : (
         <p className={cn('rounded-md px-3 py-4 text-center text-sm',
-          current.status === 'failed' ? 'bg-red-50 text-red-700' : 'bg-neutral-50 text-neutral-500')}>
+          current.status === 'failed' ? 'bg-danger-soft text-danger-fg' : 'bg-surface-subtle text-fg-muted')}>
           {current.party_name} will not be emailed: {current.error}
         </p>
       ))}

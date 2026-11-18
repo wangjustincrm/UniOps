@@ -24,9 +24,9 @@ import { AlertTriangle, Loader2, RefreshCw, Warehouse } from 'lucide-react'
 import { mrpApi } from '@/lib/api'
 import { formatDateTime } from '@/lib/utils'
 
-const inputCls = 'h-9 w-24 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
+const inputCls = 'h-9 w-24 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
+const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 const INTERVAL_KEY = 'wms_sync_interval_minutes'
 const MAX_INTERVAL_MINUTES = 1440
@@ -47,9 +47,9 @@ export interface WmsSyncStatus {
 
 function SectionHeader({ title, description }: { title: string; description: string }) {
   return (
-    <div className="mb-6 border-b border-neutral-100 pb-4">
-      <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
-      <p className="mt-0.5 text-sm text-neutral-500">{description}</p>
+    <div className="mb-6 border-b border-line-subtle pb-4">
+      <h2 className="text-lg font-semibold text-fg">{title}</h2>
+      <p className="mt-0.5 text-sm text-fg-muted">{description}</p>
     </div>
   )
 }
@@ -129,14 +129,14 @@ export function WmsSyncSection() {
   const failed = status?.status === 'failed'
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-6">
+    <div className="rounded-xl border border-line bg-surface p-6">
       <SectionHeader
         title="WMS Sync"
         description="Flux warehouse stock is mirrored into UniOps and read by Inventory → WMS Inventory, aging and MRP purchase suggestions. This is how often that mirror refreshes."
       />
 
       {status && !status.configured && (
-        <p className="mb-4 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <p className="mb-4 flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning-fg">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           The WMS connection is not configured for this deployment (WMS_* is
           blank), so nothing can be synced. The schedule below is still saved
@@ -146,28 +146,28 @@ export function WmsSyncSection() {
 
       {/* ── Freshness ─────────────────────────────────────────────────── */}
       <dl className="mb-6 grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-        <div className="flex justify-between gap-3 border-b border-neutral-100 py-1.5">
-          <dt className="text-neutral-500">Snapshot on screen</dt>
+        <div className="flex justify-between gap-3 border-b border-line-subtle py-1.5">
+          <dt className="text-fg-muted">Snapshot on screen</dt>
           {/* last_success_at, not last_synced_at: with WMS down the two
               diverge, and that is exactly when this must not read as fresh. */}
-          <dd className="font-medium text-neutral-900">{when(status?.last_success_at ?? null)}</dd>
+          <dd className="font-medium text-fg">{when(status?.last_success_at ?? null)}</dd>
         </div>
-        <div className="flex justify-between gap-3 border-b border-neutral-100 py-1.5">
-          <dt className="text-neutral-500">Batches in it</dt>
-          <dd className="font-medium text-neutral-900">
+        <div className="flex justify-between gap-3 border-b border-line-subtle py-1.5">
+          <dt className="text-fg-muted">Batches in it</dt>
+          <dd className="font-medium text-fg">
             {status ? status.row_count.toLocaleString() : '—'}
           </dd>
         </div>
-        <div className="flex justify-between gap-3 border-b border-neutral-100 py-1.5">
-          <dt className="text-neutral-500">Last attempt</dt>
-          <dd className={failed ? 'font-medium text-red-600' : 'font-medium text-neutral-900'}>
+        <div className="flex justify-between gap-3 border-b border-line-subtle py-1.5">
+          <dt className="text-fg-muted">Last attempt</dt>
+          <dd className={failed ? 'font-medium text-danger-fg' : 'font-medium text-fg'}>
             {when(status?.last_synced_at ?? null)}
-            {status?.status && <span className="ml-1 text-neutral-500">· {status.status}</span>}
+            {status?.status && <span className="ml-1 text-fg-muted">· {status.status}</span>}
           </dd>
         </div>
-        <div className="flex justify-between gap-3 border-b border-neutral-100 py-1.5">
-          <dt className="text-neutral-500">Next automatic run</dt>
-          <dd className="font-medium text-neutral-900">
+        <div className="flex justify-between gap-3 border-b border-line-subtle py-1.5">
+          <dt className="text-fg-muted">Next automatic run</dt>
+          <dd className="font-medium text-fg">
             {status?.running
               ? 'running now'
               : status?.interval_minutes === 0
@@ -178,14 +178,14 @@ export function WmsSyncSection() {
       </dl>
 
       {status?.last_error && (
-        <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+        <p className="mb-4 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger-fg">
           {status.last_error}
         </p>
       )}
 
       {/* ── The schedule ──────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-sm text-neutral-700">
+        <label className="flex flex-col gap-1 text-sm text-fg-secondary">
           Sync every (minutes)
           <input
             type="number" min={0} max={MAX_INTERVAL_MINUTES} step={1}
@@ -207,14 +207,14 @@ export function WmsSyncSection() {
         </button>
       </div>
 
-      <p className="mt-2 text-xs text-neutral-500">
+      <p className="mt-2 text-xs text-fg-muted">
         One sync reads the whole warehouse and takes about five seconds. 0 turns
         automatic sync off — the mirror then only moves when somebody presses
         Sync now, which is how a three-week-old snapshot goes unnoticed.
       </p>
 
-      {note && <p className="mt-3 text-sm text-emerald-700">{note}</p>}
-      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      {note && <p className="mt-3 text-sm text-success-fg">{note}</p>}
+      {err && <p className="mt-3 text-sm text-danger-fg">{err}</p>}
     </div>
   )
 }

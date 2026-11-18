@@ -33,9 +33,9 @@ import { fetchPreview, scopeKey } from '@/services/remittance'
 import { planApplications, plannedTotal, suggestCredits,
          type CreditSuggestResponse } from '@/services/vendorCredits'
 
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
-const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
+const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
+const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 interface Due {
   doc_kind: string; doc_id: string; doc_number: string | null
@@ -97,8 +97,8 @@ const matchesSearch = (d: Due, term: string) =>
     .some((v) => v?.toLowerCase().includes(term))
 
 // Keeps a long list's header in view: the list scrolls in its own box.
-const listBox = 'max-h-[calc(100vh-15rem)] overflow-auto rounded-lg border border-neutral-200'
-const listHead = 'sticky top-0 z-10 bg-neutral-50 text-left text-xs text-neutral-500 shadow-[0_1px_0_#e5e5e5]'
+const listBox = 'max-h-[calc(100vh-15rem)] overflow-auto rounded-lg border border-line'
+const listHead = 'sticky top-0 z-10 bg-surface-subtle text-left text-xs text-fg-muted shadow-[0_1px_0_#e5e5e5]'
 
 type PageTab = 'due' | 'batches'
 
@@ -145,12 +145,12 @@ function dueTypeLabel(d: Due): string {
 
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, string> = {
-    draft: 'bg-neutral-100 text-neutral-600', executed: 'bg-green-50 text-green-700',
-    cancelled: 'bg-neutral-100 text-neutral-400', reversed: 'bg-orange-50 text-orange-700',
-    paid: 'bg-green-50 text-green-700', failed: 'bg-red-50 text-red-700',
-    pending: 'bg-amber-50 text-amber-700',
+    draft: 'bg-surface-sunken text-fg-secondary', executed: 'bg-success-soft text-success-fg',
+    cancelled: 'bg-surface-sunken text-fg-muted', reversed: 'bg-warning-soft text-warning-fg',
+    paid: 'bg-success-soft text-success-fg', failed: 'bg-danger-soft text-danger-fg',
+    pending: 'bg-warning-soft text-warning-fg',
   }
-  return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-neutral-100 text-neutral-600')}>{status}</span>
+  return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-surface-sunken text-fg-secondary')}>{status}</span>
 }
 
 export default function PaymentBatchPage() {
@@ -327,19 +327,19 @@ export default function PaymentBatchPage() {
       <div className="mx-auto max-w-6xl">
         {banner && (
           <div className={cn('mb-3 rounded-md px-3 py-2 text-sm',
-            banner.kind === 'err' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>
+            banner.kind === 'err' ? 'bg-danger-soft text-danger-fg' : 'bg-success-soft text-success-fg')}>
             {banner.text}
           </div>
         )}
 
-        <div role="tablist" className="mb-4 flex gap-6 border-b border-neutral-200">
+        <div role="tablist" className="mb-4 flex gap-6 border-b border-line">
           {([['due', 'Due for Payment', dueAll.length], ['batches', 'Batches', batchResp?.total]] as const).map(([key, label, count]) => (
             <button key={key} role="tab" aria-selected={pageTab === key} onClick={() => setPageTab(key)}
                     className={cn('-mb-px border-b-2 px-1 pb-2 text-sm font-medium',
                       pageTab === key
-                        ? 'border-[#085E5E] text-[#085E5E]'
-                        : 'border-transparent text-neutral-500 hover:text-neutral-700')}>
-              {label} {count !== undefined && <span className="ml-1 text-xs text-neutral-400">{count}</span>}
+                        ? 'border-primary-700 text-primary-700'
+                        : 'border-transparent text-fg-muted hover:text-fg-secondary')}>
+              {label} {count !== undefined && <span className="ml-1 text-xs text-fg-muted">{count}</span>}
             </button>
           ))}
         </div>
@@ -355,15 +355,15 @@ export default function PaymentBatchPage() {
               <button key={t.key} onClick={() => setFilter('type', t.key)}
                       className={cn('rounded-full border px-3 py-1 text-xs font-medium',
                         dueType === t.key
-                          ? 'border-[#085E5E] bg-[#085E5E] text-white'
-                          : 'border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50')}>
-                {t.label} <span className={dueType === t.key ? 'text-white/80' : 'text-neutral-400'}>{typeCounts[t.key]}</span>
+                          ? 'border-primary-700 bg-primary-700 text-white'
+                          : 'border-line-strong bg-surface text-fg-secondary hover:bg-surface-subtle')}>
+                {t.label} <span className={dueType === t.key ? 'text-white/80' : 'text-fg-muted'}>{typeCounts[t.key]}</span>
               </button>
             ))}
           </div>
           <div className="ml-auto flex items-center gap-3">
             {selected.size > 0 && (
-              <span className="text-sm text-neutral-600">
+              <span className="text-sm text-fg-secondary">
                 {selected.size} selected · <span className="font-mono">{fmtMoney(String(selectedTotal), currency)}</span>
               </span>
             )}
@@ -415,7 +415,7 @@ export default function PaymentBatchPage() {
             </thead>
             <tbody>
               {due.length === 0 && (
-                <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-fg-muted">
                   {term ? `Nothing matches "${search.trim()}".`
                     : dueType === 'claim'
                     ? `No approved ${currency} expense claims awaiting payment.`
@@ -427,7 +427,7 @@ export default function PaymentBatchPage() {
                 const owed = Number(d.amount) !== Number(d.payment_amount)
                 return (
                 <Fragment key={d.doc_id}>
-                <tr className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
+                <tr className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
                   <td className="px-3 py-2">
                     <input type="checkbox" aria-label={`Select ${d.doc_number ?? 'document'}`}
                            checked={!!picked && !partial} onChange={() => toggle(d)}
@@ -435,73 +435,73 @@ export default function PaymentBatchPage() {
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">
                     {d.doc_kind === 'expense_claim' ? (
-                      <button onClick={() => openClaim(d)} className="text-[#085E5E] underline hover:text-[#064A4A]">
+                      <button onClick={() => openClaim(d)} className="text-primary-700 underline hover:text-primary-800">
                         {d.doc_number || d.doc_id.slice(0, 8)}
                       </button>
                     ) : (d.doc_number || d.doc_id.slice(0, 8))}
                     {d.in_draft_batches && d.in_draft_batches.length > 0 && (
-                      <div className="mt-0.5 font-sans text-[10px] text-amber-700"
+                      <div className="mt-0.5 font-sans text-2xs text-warning-fg"
                            title="Already in a draft batch — it can still be selected, but is paid only once">
                         In draft {d.in_draft_batches.join(', ')}
                       </div>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-xs text-neutral-600">
-                    {d.submitted_at ? formatDate(d.submitted_at) : <span className="text-neutral-300">—</span>}
+                  <td className="px-3 py-2 text-xs text-fg-secondary">
+                    {d.submitted_at ? formatDate(d.submitted_at) : <span className="text-fg-faint">—</span>}
                   </td>
                   <td className="px-3 py-2">{d.payee}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-neutral-600">
+                  <td className="px-3 py-2 font-mono text-xs text-fg-secondary">
                     {d.splittable ? (
-                      <span className="font-sans text-neutral-500">{d.invoices!.length} invoices</span>
+                      <span className="font-sans text-fg-muted">{d.invoices!.length} invoices</span>
                     ) : d.invoices?.length ? d.invoices.map((inv, k) => (
                       <span key={inv.id}>
                         {k > 0 && ', '}
-                        <button onClick={() => openInvoice(inv)} className="text-[#085E5E] underline hover:text-[#064A4A]">
+                        <button onClick={() => openInvoice(inv)} className="text-primary-700 underline hover:text-primary-800">
                           {inv.number || 'Invoice'}
                         </button>
                       </span>
-                    )) : (d.vendor_inv_no || <span className="text-neutral-300">—</span>)}
+                    )) : (d.vendor_inv_no || <span className="text-fg-faint">—</span>)}
                     {!d.splittable && (d.invoices?.length ?? 0) > 1 && (
-                      <div className="mt-0.5 font-sans text-[10px] text-neutral-400"
+                      <div className="mt-0.5 font-sans text-2xs text-fg-muted"
                            title="These invoices do not add up to the PA amount, so their share of it is not known">
                         Paid as a whole
                       </div>
                     )}
                   </td>
-                  <td className={cn('px-3 py-2 text-xs', d.due_date && d.due_date < today ? 'font-medium text-red-600' : 'text-neutral-600')}>
-                    {d.due_date ? formatDate(d.due_date) : <span className="text-neutral-300">—</span>}
+                  <td className={cn('px-3 py-2 text-xs', d.due_date && d.due_date < today ? 'font-medium text-danger-fg' : 'text-fg-secondary')}>
+                    {d.due_date ? formatDate(d.due_date) : <span className="text-fg-faint">—</span>}
                   </td>
                   <td className="px-3 py-2 text-xs"><NcPaidCell d={d} /></td>
-                  <td className="px-3 py-2 text-xs text-neutral-500">{dueTypeLabel(d)}</td>
+                  <td className="px-3 py-2 text-xs text-fg-muted">{dueTypeLabel(d)}</td>
                   <td className="px-3 py-2 text-right font-mono">
                     {fmtMoney(d.amount, d.currency)}
                     {owed && (
-                      <div className="font-sans text-[10px] text-neutral-400">
+                      <div className="font-sans text-2xs text-fg-muted">
                         left of {fmtMoney(d.payment_amount)}
                       </div>
                     )}
                   </td>
                 </tr>
                 {d.splittable && d.invoices!.map((inv) => (
-                  <tr key={inv.id} className={cn('text-xs', i % 2 && 'bg-neutral-50/40', inv.paid && 'text-neutral-400')}>
+                  <tr key={inv.id} className={cn('text-xs', i % 2 && 'bg-surface-subtle/40', inv.paid && 'text-fg-muted')}>
                     <td className="py-1.5 pl-6 pr-3">
                       <input type="checkbox" aria-label={`Select invoice ${inv.number}`} disabled={inv.paid}
                              checked={!!picked?.has(inv.id)} onChange={() => toggleInvoice(d, inv.id)} />
                     </td>
-                    <td colSpan={3} className="py-1.5 pr-3 text-right text-[10px] text-amber-700">
+                    <td colSpan={3} className="py-1.5 pr-3 text-right text-2xs text-warning-fg">
                       {inv.in_draft_batches.length > 0 && `In draft ${inv.in_draft_batches.join(', ')}`}
                     </td>
                     <td className="px-3 py-1.5 font-mono">
-                      <button onClick={() => openInvoice(inv)} className="text-[#085E5E] underline hover:text-[#064A4A]">
+                      <button onClick={() => openInvoice(inv)} className="text-primary-700 underline hover:text-primary-800">
                         {inv.number || 'Invoice'}
                       </button>
                     </td>
-                    <td className={cn('px-3 py-1.5', !inv.paid && inv.due_date && inv.due_date < today ? 'font-medium text-red-600' : 'text-neutral-500')}>
-                      {inv.due_date ? formatDate(inv.due_date) : <span className="text-neutral-300">—</span>}
+                    <td className={cn('px-3 py-1.5', !inv.paid && inv.due_date && inv.due_date < today ? 'font-medium text-danger-fg' : 'text-fg-muted')}>
+                      {inv.due_date ? formatDate(inv.due_date) : <span className="text-fg-faint">—</span>}
                     </td>
                     <td className="px-3 py-1.5"><NcInvoiceBadge nc={inv.nc} /></td>
-                    <td className="px-3 py-1.5 text-neutral-500">{inv.paid ? <StatusPill status="paid" /> : 'Invoice'}</td>
-                    <td className="px-3 py-1.5 text-right font-mono text-neutral-600">{fmtMoney(inv.amount, d.currency)}</td>
+                    <td className="px-3 py-1.5 text-fg-muted">{inv.paid ? <StatusPill status="paid" /> : 'Invoice'}</td>
+                    <td className="px-3 py-1.5 text-right font-mono text-fg-secondary">{fmtMoney(inv.amount, d.currency)}</td>
                   </tr>
                 ))}
                 </Fragment>
@@ -528,14 +528,14 @@ export default function PaymentBatchPage() {
             </thead>
             <tbody>
               {batches.length === 0 && (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">No batches yet.</td></tr>
+                <tr><td colSpan={6} className="px-3 py-6 text-center text-fg-muted">No batches yet.</td></tr>
               )}
               {batches.map((b, i) => (
-                <tr key={b.id} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
+                <tr key={b.id} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
                   <td className="px-3 py-2 font-mono text-xs">{b.batch_number}</td>
-                  <td className="px-3 py-2 text-xs text-neutral-600">{formatDate(b.batch_date)}</td>
+                  <td className="px-3 py-2 text-xs text-fg-secondary">{formatDate(b.batch_date)}</td>
                   <td className="px-3 py-2"><StatusPill status={b.status} /></td>
-                  <td className="px-3 py-2 text-xs text-neutral-500">{b.payment_method}</td>
+                  <td className="px-3 py-2 text-xs text-fg-muted">{b.payment_method}</td>
                   <td className="px-3 py-2 text-right font-mono">{fmtMoney(b.total, b.currency)}</td>
                   <td className="px-3 py-2 text-right">
                     <button onClick={() => setOpenBatch(b.id)} className={secondaryBtn}>Open</button>
@@ -759,23 +759,23 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
   return (
     <>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-neutral-800">
+          <h2 className="text-base font-semibold text-fg">
             {batch ? `Batch ${batch.batch_number}` : 'Batch'}
             {batch && <span className="ml-2"><StatusPill status={batch.status} /></span>}
           </h2>
-          <button onClick={onClose} className="rounded p-1 text-neutral-400 hover:text-neutral-700">
+          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {isLoading ? (
-          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
+          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
         ) : (
           <>
             {batch && (
-              <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-neutral-600">
+              <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-fg-secondary">
                 <span>Date: {formatDate(batch.batch_date)}</span>
                 <span>Currency: {batch.currency}</span>
                 <span>Total: <span className="font-mono">{fmtMoney(batch.total, batch.currency)}</span></span>
@@ -783,9 +783,9 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
                 {batch.bank_account_id && <span>Bank: {bankLabel(batch.bank_account_id)}</span>}
               </div>
             )}
-            <div className="max-h-80 overflow-y-auto rounded-lg border border-neutral-200">
+            <div className="max-h-80 overflow-y-auto rounded-lg border border-line">
               <table className="w-full text-sm">
-                <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+                <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
                   <tr>
                     <th className="px-3 py-2">Document</th>
                     <th className="px-3 py-2 w-40">Invoice No</th>
@@ -796,14 +796,14 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
                 </thead>
                 <tbody>
                   {lines.map((ln) => (
-                    <tr key={ln.id} className="border-t border-neutral-100">
+                    <tr key={ln.id} className="border-t border-line-subtle">
                       <td className="px-3 py-2">
                         <span className="font-mono text-xs">{ln.doc_number || ln.doc_id.slice(0, 8)}</span>
-                        {ln.invoice_ids && <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">Part of PA</span>}
-                        {ln.error && <div className="text-xs text-red-600">{ln.error}</div>}
+                        {ln.invoice_ids && <span className="ml-2 rounded-full bg-warning-soft px-2 py-0.5 text-2xs font-medium text-warning-fg">Part of PA</span>}
+                        {ln.error && <div className="text-xs text-danger-fg">{ln.error}</div>}
                       </td>
-                      <td className="px-3 py-2 font-mono text-xs text-neutral-600">{ln.vendor_inv_no || <span className="text-neutral-300">—</span>}</td>
-                      <td className="px-3 py-2 text-xs text-neutral-500">
+                      <td className="px-3 py-2 font-mono text-xs text-fg-secondary">{ln.vendor_inv_no || <span className="text-fg-faint">—</span>}</td>
+                      <td className="px-3 py-2 text-xs text-fg-muted">
                         {ln.doc_kind === 'expense_claim' ? 'Claim' : ln.doc_kind === 'pa_dir' ? 'Direct PA' : 'PA'}
                       </td>
                       <td className="px-3 py-2"><StatusPill status={ln.status} /></td>
@@ -816,8 +816,8 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
 
             {batch?.status === 'draft' && lines.some((ln) => (suggestions[ln.doc_id]?.suggested.length ?? 0) > 0) && (
               <div className="mt-4">
-                <h3 className="mb-2 text-sm font-semibold text-neutral-700">Vendor credits to apply</h3>
-                <div className="space-y-3 rounded-lg border border-neutral-200 p-3">
+                <h3 className="mb-2 text-sm font-semibold text-fg-secondary">Vendor credits to apply</h3>
+                <div className="space-y-3 rounded-lg border border-line p-3">
                   {lines
                     .filter((ln) => (suggestions[ln.doc_id]?.suggested.length ?? 0) > 0)
                     .map((ln) => {
@@ -832,20 +832,20 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
                       const applied = plannedTotal(plan)
                       const net = Number(s.gross) - applied
                       return (
-                        <div key={ln.doc_id} className="border-b border-neutral-100 pb-3 last:border-0 last:pb-0 last:pt-0">
+                        <div key={ln.doc_id} className="border-b border-line-subtle pb-3 last:border-0 last:pb-0 last:pt-0">
                           <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs">
-                            <span className="font-mono text-neutral-700">{ln.doc_number || ln.doc_id.slice(0, 8)}</span>
-                            <span className="text-neutral-600">
+                            <span className="font-mono text-fg-secondary">{ln.doc_number || ln.doc_id.slice(0, 8)}</span>
+                            <span className="text-fg-secondary">
                               Gross <span className="font-mono">{fmtMoney(s.gross)}</span>
                               {'  ·  '}Credits <span className="font-mono">{fmtMoney(String(applied))}</span>
-                              {'  ·  '}Net <span className="font-mono font-semibold text-neutral-800">{fmtMoney(String(net))}</span>
+                              {'  ·  '}Net <span className="font-mono font-semibold text-fg">{fmtMoney(String(net))}</span>
                             </span>
                           </div>
                           <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                             {s.suggested.map((c) => {
                               const take = takeById.get(c.credit_id)
                               return (
-                                <label key={c.credit_id} className="flex items-center gap-1.5 text-xs text-neutral-600">
+                                <label key={c.credit_id} className="flex items-center gap-1.5 text-xs text-fg-secondary">
                                   <input type="checkbox" checked={!off.has(c.credit_id)}
                                          onChange={() => toggleCredit(ln.doc_id, c.credit_id)} />
                                   <span className="font-mono">{c.credit_number}</span>
@@ -853,8 +853,8 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
                                       needs both: credit_number to find the
                                       record here, vendor_credit_number to
                                       talk to the vendor about it. */}
-                                  <span className="font-mono text-neutral-400">{c.vendor_credit_number}</span>
-                                  <span className="text-neutral-400">{formatDate(c.credit_date)}</span>
+                                  <span className="font-mono text-fg-muted">{c.vendor_credit_number}</span>
+                                  <span className="text-fg-muted">{formatDate(c.credit_date)}</span>
                                   {/* The recomputed take, never c.apply — a
                                       deselection reshuffles what every later
                                       credit contributes, so showing the
@@ -863,7 +863,7 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
                                       Excluded (or unreached) credits show
                                       their remaining balance struck through. */}
                                   {take === undefined
-                                    ? <span className="font-mono text-neutral-300 line-through">{fmtMoney(c.remaining)}</span>
+                                    ? <span className="font-mono text-fg-faint line-through">{fmtMoney(c.remaining)}</span>
                                     : <span className="font-mono">{fmtMoney(String(take))}</span>}
                                 </label>
                               )
@@ -878,7 +878,7 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
 
             {batch?.status === 'executed' && (
               <div className="mt-6">
-                <h3 className="mb-2 text-sm font-semibold text-neutral-700">Remittance</h3>
+                <h3 className="mb-2 text-sm font-semibold text-fg-secondary">Remittance</h3>
                 <RemittancePanel scope={{ kind: 'batch', id: batchId }} />
               </div>
             )}
@@ -898,17 +898,17 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
                       if (!reason.trim()) { onError('A reason is required to reverse a batch'); return }
                       reverse.mutate(reason.trim())
                     }} disabled={reverse.isPending}
-                            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-red-300 px-3 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50">
+                            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-danger-line px-3 text-sm text-danger-fg hover:bg-danger-soft disabled:opacity-50">
                       {reverse.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />}
                       Reverse Batch
                     </button>
                   )}
-                  <span className="flex items-center gap-1.5 text-sm text-green-700">
+                  <span className="flex items-center gap-1.5 text-sm text-success-fg">
                     <CheckCircle2 className="h-4 w-4" /> Executed
                   </span>
                 </>
               ) : batch?.status === 'reversed' ? (
-                <span className="flex items-center gap-1.5 text-sm text-orange-700">
+                <span className="flex items-center gap-1.5 text-sm text-warning-fg">
                   <Undo2 className="h-4 w-4" /> Reversed — payments cancelled
                 </span>
               ) : canPay && batch?.status === 'draft' ? (
@@ -916,14 +916,14 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
                   <button onClick={() => {
                     if (window.confirm(`Cancel draft ${batch.batch_number}? Nothing is paid; its payments go back to unbatched.`)) cancel.mutate()
                   }} disabled={cancel.isPending || execute.isPending}
-                          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm text-neutral-600 hover:bg-neutral-50 disabled:opacity-50">
+                          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line-strong px-3 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50">
                     {cancel.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                     Cancel Draft
                   </button>
-                  <label className="flex items-center gap-2 text-sm text-neutral-600">
+                  <label className="flex items-center gap-2 text-sm text-fg-secondary">
                     <span>Pay from bank</span>
                     <select value={bankId} onChange={(e) => setBankId(e.target.value)}
-                            className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
+                            className="h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
                       <option value="">Select a {batch?.currency} account…</option>
                       {banksForCcy.map((a) => (
                         <option key={a.id} value={a.id}>
@@ -962,8 +962,8 @@ const NC_LABEL: Record<NcStatus, string> = {
   paid: 'Paid', closed: 'Closed', partial: 'Part paid', open: 'Unpaid', not_in_nc: 'Not in NC',
 }
 const NC_CLS: Record<NcStatus, string> = {
-  paid: 'bg-green-100 text-green-800', closed: 'bg-teal-50 text-teal-800',
-  partial: 'bg-amber-100 text-amber-800', open: 'text-neutral-500', not_in_nc: 'text-neutral-400',
+  paid: 'bg-success-soft text-success-fg', closed: 'bg-primary-50 text-primary-800',
+  partial: 'bg-warning-soft text-warning-fg', open: 'text-fg-muted', not_in_nc: 'text-fg-muted',
 }
 const ncTitle = (nc: NcInvoice): string => {
   if (nc.status === 'not_in_nc') return 'No approved NC AP bill carries this invoice number for this vendor'
@@ -985,12 +985,12 @@ function NcPill({ status, label, title }: { status: NcStatus; label?: string; ti
 }
 
 function NcInvoiceBadge({ nc }: { nc?: NcInvoice }) {
-  if (!nc) return <span className="text-neutral-300">—</span>
+  if (!nc) return <span className="text-fg-faint">—</span>
   return (
     <div>
       <NcPill status={nc.status} title={ncTitle(nc)} />
       {nc.payment_no && (nc.status === 'paid' || nc.status === 'partial') && (
-        <div className="mt-0.5 font-mono text-[10px] text-neutral-500">
+        <div className="mt-0.5 font-mono text-2xs text-fg-muted">
           {nc.payment_no}{nc.paid_on && ` · ${formatDate(nc.paid_on)}`}
         </div>
       )}
@@ -1000,7 +1000,7 @@ function NcInvoiceBadge({ nc }: { nc?: NcInvoice }) {
 
 function NcPaidCell({ d }: { d: Due }) {
   const invs = (d.invoices ?? []).filter((i) => i.nc)
-  if (!d.nc_paid || invs.length === 0) return <span className="text-neutral-300">—</span>
+  if (!d.nc_paid || invs.length === 0) return <span className="text-fg-faint">—</span>
   // A splittable PA shows each invoice's NC state on its own row below.
   if (invs.length === 1 && !d.splittable) return <NcInvoiceBadge nc={invs[0].nc} />
   const title = invs.map((i) => `${i.number || 'Invoice'}: ${NC_LABEL[i.nc!.status]} — ${ncTitle(i.nc!)}`).join('\n')
@@ -1011,7 +1011,7 @@ function NcPaidCell({ d }: { d: Due }) {
     <div>
       <NcPill status={d.nc_paid} label={label} title={title} />
       {pays.length > 0 && d.nc_paid !== 'open' && (
-        <div className="mt-0.5 font-mono text-[10px] text-neutral-500" title={pays.join(', ')}>
+        <div className="mt-0.5 font-mono text-2xs text-fg-muted" title={pays.join(', ')}>
           {pays.length === 1 ? pays[0] : `${pays.length} NC payments`}
         </div>
       )}

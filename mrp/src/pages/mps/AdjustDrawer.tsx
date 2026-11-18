@@ -259,17 +259,17 @@ export function AdjustDrawer({
 
   return createPortal(
     <div className="fixed inset-0 z-[90] flex justify-end bg-black/40">
-      <div role="dialog" aria-modal="true" aria-label={`Adjust ${line.material_code}`} className="flex h-full w-full max-w-md flex-col bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
+      <div role="dialog" aria-modal="true" aria-label={`Adjust ${line.material_code}`} className="flex h-full w-full max-w-md flex-col bg-surface shadow-xl">
+        <div className="flex items-center justify-between border-b border-line px-5 py-4">
           <div>
-            <h2 className="text-base font-semibold text-neutral-900">Adjust Line</h2>
-            <p className="font-mono text-xs text-neutral-500">{line.material_code} · demand {line.demand_month}</p>
+            <h2 className="text-base font-semibold text-fg">Adjust Line</h2>
+            <p className="font-mono text-xs text-fg-muted">{line.material_code} · demand {line.demand_month}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center text-neutral-400 hover:text-neutral-600"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center text-fg-muted hover:text-fg-secondary"
           >
             <XIcon className="h-5 w-5" />
           </button>
@@ -283,7 +283,7 @@ export function AdjustDrawer({
           // away.
           <div className="flex flex-1 flex-col overflow-hidden">
             <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
-              <div role="status" className="flex items-start gap-1.5 rounded-md border border-success-200 bg-success-50 px-3 py-2 text-sm text-success-800">
+              <div role="status" className="flex items-start gap-1.5 rounded-md border border-success-line bg-success-soft px-3 py-2 text-sm text-success-fg">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>
                   Shelf life check passed — now planned for <strong>{saveResult.week_label}</strong>
@@ -291,12 +291,12 @@ export function AdjustDrawer({
                 </span>
               </div>
               {saveResult.is_prebuild && saveResult.prebuild_reason && (
-                <p className="rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-800">
+                <p className="rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-fg">
                   {saveResult.prebuild_reason}
                 </p>
               )}
             </div>
-            <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-4">
+            <div className="flex justify-end gap-2 border-t border-line px-5 py-4">
               <Button type="button" size="sm" className="min-h-[44px]" onClick={onClose}>Done</Button>
             </div>
           </div>
@@ -336,7 +336,7 @@ export function AdjustDrawer({
                   value={weekStart}
                   onChange={(e) => { setWeekStart(e.target.value); setErrors((er) => ({ ...er, week: undefined })) }}
                   disabled={submitting}
-                  className="flex h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {selectableWeeks.map((w) => (
                     <option key={w.week_start} value={w.week_start}>{weekOptionLabel(w)}</option>
@@ -345,7 +345,7 @@ export function AdjustDrawer({
               </FormField>
 
               <div>
-                <p className="mb-1.5 text-[11px] font-medium text-neutral-500">Merge into adjacent week</p>
+                <p className="mb-1.5 text-2xs font-medium text-fg-muted">Merge into adjacent week</p>
                 <div className="flex gap-2">
                   <Button
                     type="button" variant="secondary" size="sm" className="min-h-[44px] flex-1"
@@ -364,7 +364,7 @@ export function AdjustDrawer({
                     Next{nextWeek ? ` (${weekOptionLabel(nextWeek)})` : ''} &rarr;
                   </Button>
                 </div>
-                <p className="mt-1 text-[11px] text-neutral-400">
+                <p className="mt-1 text-2xs text-fg-muted">
                   {!canMerge
                     ? 'A capacity-gap line is unmet demand, not committed production, and cannot be merged.'
                     : qtyDirty
@@ -375,25 +375,25 @@ export function AdjustDrawer({
                 </p>
               </div>
 
-              <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm text-neutral-700">
+              <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm text-fg-secondary">
                 <input
                   type="checkbox"
                   checked={locked}
                   onChange={(e) => setLocked(e.target.checked)}
                   disabled={submitting}
-                  className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+                  className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-500"
                 />
                 Locked (excluded from the next Recalculate)
               </label>
 
               {submitError && (
-                <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+                <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
                   <AlertTriangle className="h-4 w-4 shrink-0" /> {submitError}
                 </p>
               )}
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-4">
+            <div className="flex justify-end gap-2 border-t border-line px-5 py-4">
               <Button type="button" variant="secondary" size="sm" className="min-h-[44px]" onClick={onClose} disabled={submitting}>Cancel</Button>
               <Button type="submit" size="sm" className="min-h-[44px]" disabled={submitting || mergingDirection !== null}>
                 {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}

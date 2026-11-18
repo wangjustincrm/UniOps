@@ -20,8 +20,8 @@ import { BudgetActualRollup, type Scope } from './BudgetActualRollup'
 import { BudgetActualBreakdown } from './BudgetActualBreakdown'
 import { JvDetailModal } from './JvDetailModal'
 
-const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const linkBtn = 'text-xs font-medium text-[#085E5E] hover:underline'
+const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const linkBtn = 'text-xs font-medium text-primary-700 hover:underline'
 
 const CATEGORY_LABEL: Record<string, string> = {
   MOH: 'Manufacturing Overhead', RD: 'R&D', SELL: 'Selling', GA: 'G&A', FN: 'Financial',
@@ -149,10 +149,10 @@ export default function BudgetActualPage() {
             do: open the vouchers behind a figure. It is a different question
             ("which documents") at a different grain (one month), so it is
             collapsed rather than removed. */}
-        <details className="mb-4 rounded-lg border border-neutral-200 bg-white [&[open]>summary]:border-b [&[open]>summary]:border-neutral-100">
-          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-neutral-800 transition-colors hover:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+        <details className="mb-4 rounded-lg border border-line bg-surface [&[open]>summary]:border-b [&[open]>summary]:border-line-subtle">
+          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-fg transition-colors hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
             Monthly detail with vouchers
-            <span className="ml-2 text-xs font-normal text-neutral-500">
+            <span className="ml-2 text-xs font-normal text-fg-muted">
               one month, drills into the documents behind each figure
             </span>
           </summary>
@@ -160,30 +160,30 @@ export default function BudgetActualPage() {
         <div className="mb-3 flex items-center gap-2">
           <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)}
                  className={cn(inputCls, 'w-40')} />
-          <span className="text-xs text-neutral-400">
+          <span className="text-xs text-fg-muted">
             Per cost centre × budget account, with a Vouchers drill on every row
           </span>
         </div>
 
         {isFetching && !data ? (
-          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
+          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
         ) : (
           <div className="space-y-5">
             {(data?.categories ?? []).map((cat) => (
-              <div key={cat.account_code} className="overflow-hidden rounded-lg border border-neutral-200">
-                <div className="flex items-center justify-between bg-neutral-50 px-3 py-2">
-                  <span className="text-sm font-semibold text-neutral-700">
+              <div key={cat.account_code} className="overflow-hidden rounded-lg border border-line">
+                <div className="flex items-center justify-between bg-surface-subtle px-3 py-2">
+                  <span className="text-sm font-semibold text-fg-secondary">
                     {CATEGORY_LABEL[cat.category] ?? cat.category} ({cat.account_code})
                   </span>
                   <span className={cn('rounded px-2 py-0.5 text-xs font-medium',
-                    cat.tie_ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700')}>
+                    cat.tie_ok ? 'bg-success-soft text-success-fg' : 'bg-danger-soft text-danger-fg')}>
                     {cat.tie_ok ? 'Tied to NC' : 'Tie-out OFF'}
                   </span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-neutral-100 text-xs text-neutral-500">
+                      <tr className="border-b border-line-subtle text-xs text-fg-muted">
                         <th className="px-3 py-2 text-left font-medium">Cost Center</th>
                         <th className="px-3 py-2 text-left font-medium">Income / Expense</th>
                         <th className="px-3 py-2 text-right font-medium">Budget</th>
@@ -194,25 +194,25 @@ export default function BudgetActualPage() {
                     </thead>
                     <tbody>
                       {cat.detail.length === 0 && (
-                        <tr><td colSpan={6} className="px-3 py-4 text-center text-xs text-neutral-400">No actuals this period.</td></tr>
+                        <tr><td colSpan={6} className="px-3 py-4 text-center text-xs text-fg-muted">No actuals this period.</td></tr>
                       )}
                       {cat.detail.map((r, i) => (
                         <tr key={`${r.cost_center_id ?? 'none'}-${r.income_expense_item_id ?? i}`}
-                            className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
+                            className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
                           <td className="px-3 py-2">
                             {r.cost_center_code
-                              ? <><span className="font-mono text-xs">{r.cost_center_code}</span><span className="ml-1 text-neutral-600">{r.cost_center_name}</span></>
-                              : <span className="text-neutral-400">(no cost center)</span>}
+                              ? <><span className="font-mono text-xs">{r.cost_center_code}</span><span className="ml-1 text-fg-secondary">{r.cost_center_name}</span></>
+                              : <span className="text-fg-muted">(no cost center)</span>}
                           </td>
                           <td className="px-3 py-2">
                             {r.income_expense_code
-                              ? <><span className="font-mono text-xs">{r.income_expense_code}</span><span className="ml-1 text-neutral-600">{r.income_expense_name}</span></>
-                              : <span className="text-neutral-400">—</span>}
+                              ? <><span className="font-mono text-xs">{r.income_expense_code}</span><span className="ml-1 text-fg-secondary">{r.income_expense_name}</span></>
+                              : <span className="text-fg-muted">—</span>}
                           </td>
-                          <td className="px-3 py-2 text-right font-mono text-neutral-600">{money(r.budget)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-fg-secondary">{money(r.budget)}</td>
                           <td className="px-3 py-2 text-right font-mono">{money(r.actual)}</td>
                           <td className={cn('px-3 py-2 text-right font-mono',
-                            Number(r.variance) < 0 && 'text-red-600')}>{money(r.variance)}</td>
+                            Number(r.variance) < 0 && 'text-danger-fg')}>{money(r.variance)}</td>
                           <td className="px-3 py-2 text-right">
                             <button className={linkBtn} onClick={() => openDetailDrill(cat.account_code, r)}>Vouchers</button>
                           </td>
@@ -228,7 +228,7 @@ export default function BudgetActualPage() {
                             { prefix: 'CRM004', label: 'Depreciation', actual: cat.depreciation_actual }])
                         .filter((x) => Number(x.actual) !== 0)
                         .map((x) => (
-                          <tr key={x.prefix} className="border-t border-neutral-100 bg-neutral-50 text-neutral-500">
+                          <tr key={x.prefix} className="border-t border-line-subtle bg-surface-subtle text-fg-muted">
                             <td className="px-3 py-2 italic" colSpan={2}>{x.label} (category-level)</td>
                             <td className="px-3 py-2 text-right">—</td>
                             <td className="px-3 py-2 text-right font-mono">{money(x.actual)}</td>
@@ -238,7 +238,7 @@ export default function BudgetActualPage() {
                         ))}
                     </tbody>
                     <tfoot>
-                      <tr className="border-t border-neutral-200 bg-neutral-50 font-semibold">
+                      <tr className="border-t border-line bg-surface-subtle font-semibold">
                         <td className="px-3 py-2" colSpan={3}>Category total</td>
                         <td className="px-3 py-2 text-right font-mono">{money(cat.category_actual_total)}</td>
                         <td colSpan={2}></td>
@@ -250,13 +250,13 @@ export default function BudgetActualPage() {
             ))}
 
             {unmapped.length > 0 && (
-              <div className="overflow-hidden rounded-lg border border-amber-200">
-                <div className="bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
+              <div className="overflow-hidden rounded-lg border border-warning-line">
+                <div className="bg-warning-soft px-3 py-2 text-sm font-semibold text-warning-fg">
                   Exceptions — {includeUnposted ? 'lines' : 'posted lines'} with no cost center ({unmapped.length}). Fix in NC or add to the mapping.
                 </div>
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-neutral-100 text-xs text-neutral-500">
+                    <tr className="border-b border-line-subtle text-xs text-fg-muted">
                       <SortTh label="Account" sortKey="account" sort={unmappedSort.sort} onSort={unmappedSort.onSort} className="px-3 py-2 font-medium text-left" />
                       <SortTh label="NC Cost Center" sortKey="nc_cc" sort={unmappedSort.sort} onSort={unmappedSort.onSort} className="px-3 py-2 font-medium text-left" />
                       <SortTh label="Income / Expense" sortKey="income_expense" sort={unmappedSort.sort} onSort={unmappedSort.onSort} className="px-3 py-2 font-medium text-left" />
@@ -268,16 +268,16 @@ export default function BudgetActualPage() {
                   <tbody>
                     {unmapped.map((u, i) => (
                       <tr key={`${u.account_code}-${u.nc_cc_code}-${i}`}
-                          className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
+                          className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
                         <td className="px-3 py-2 font-mono text-xs">{u.account_code}</td>
                         <td className="px-3 py-2 font-mono text-xs">{u.nc_cc_code ?? '—'}</td>
                         <td className="px-3 py-2">
                           {u.income_expense_code
-                            ? <><span className="font-mono text-xs">{u.income_expense_code}</span><span className="ml-1 text-neutral-600">{u.income_expense_name}</span></>
-                            : <span className="text-neutral-400">—</span>}
+                            ? <><span className="font-mono text-xs">{u.income_expense_code}</span><span className="ml-1 text-fg-secondary">{u.income_expense_name}</span></>
+                            : <span className="text-fg-muted">—</span>}
                         </td>
                         <td className="px-3 py-2 text-right font-mono">{money(u.actual)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-neutral-500">{u.line_count}</td>
+                        <td className="px-3 py-2 text-right font-mono text-fg-muted">{u.line_count}</td>
                         <td className="px-3 py-2 text-right">
                           <button className={linkBtn}
                                   onClick={() => setDrill({

@@ -303,20 +303,20 @@ export function WeekDrawer({
 
   return createPortal(
     <div className="fixed inset-0 z-[90] flex justify-end bg-black/40">
-      <div role="dialog" aria-modal="true" aria-label={`Week ${weekShort}`} className="flex h-full w-full max-w-md flex-col bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
+      <div role="dialog" aria-modal="true" aria-label={`Week ${weekShort}`} className="flex h-full w-full max-w-md flex-col bg-surface shadow-xl">
+        <div className="flex items-center justify-between border-b border-line px-5 py-4">
           <div>
-            <h2 className="flex items-center gap-1.5 text-base font-semibold text-neutral-900">
-              {maintenance && <Wrench aria-hidden className="h-4 w-4 text-neutral-500" />}
+            <h2 className="flex items-center gap-1.5 text-base font-semibold text-fg">
+              {maintenance && <Wrench aria-hidden className="h-4 w-4 text-fg-muted" />}
               {weekShort}
             </h2>
-            {weekRange && <p className="text-xs text-neutral-500">{weekRange}</p>}
+            {weekRange && <p className="text-xs text-fg-muted">{weekRange}</p>}
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center text-neutral-400 hover:text-neutral-600"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center text-fg-muted hover:text-fg-secondary"
           >
             <XIcon className="h-5 w-5" />
           </button>
@@ -325,13 +325,13 @@ export function WeekDrawer({
         <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-hidden">
           <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
             {existingExceptionLoading && (
-              <p role="status" className="flex items-center gap-2 text-sm text-neutral-500">
+              <p role="status" className="flex items-center gap-2 text-sm text-fg-muted">
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading this week's current state…
               </p>
             )}
 
             {existingExceptionError && (
-              <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+              <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
                 <AlertTriangle className="h-4 w-4 shrink-0" /> {existingExceptionError}
               </p>
             )}
@@ -361,7 +361,7 @@ export function WeekDrawer({
               </p>
             )}
 
-            <label className="flex min-h-[44px] cursor-pointer items-start gap-2 text-sm text-neutral-700">
+            <label className="flex min-h-[44px] cursor-pointer items-start gap-2 text-sm text-fg-secondary">
               <input
                 type="checkbox"
                 checked={maintenance}
@@ -370,11 +370,11 @@ export function WeekDrawer({
                   setReasonError(validateReason(e.target.checked, reason))
                 }}
                 disabled={formDisabled}
-                className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 disabled:cursor-not-allowed"
+                className="mt-0.5 h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-500 disabled:cursor-not-allowed"
               />
               <span>
                 Maintenance week (no production)
-                <span className="block text-xs text-neutral-400">
+                <span className="block text-xs text-fg-muted">
                   Writes a Max output / week exception of 0 for this week — the engine schedules zero
                   production here and re-levels the rest of the month around it.
                 </span>
@@ -405,18 +405,18 @@ export function WeekDrawer({
                 onBlur={() => setReasonError(validateReason(maintenance, reason))}
                 disabled={formDisabled}
                 placeholder="e.g. annual maintenance shutdown"
-                className="flex w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:opacity-80"
+                className="flex w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:bg-surface-subtle disabled:opacity-80"
               />
             </FormField>
 
             {submitError && (
-              <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+              <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
                 <AlertTriangle className="h-4 w-4 shrink-0" /> {submitError}
               </p>
             )}
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-4">
+          <div className="flex justify-end gap-2 border-t border-line px-5 py-4">
             <Button type="button" variant="secondary" size="sm" className="min-h-[44px]" onClick={onClose} disabled={submitting}>
               {canWrite && !readOnlySlot ? 'Cancel' : 'Close'}
             </Button>

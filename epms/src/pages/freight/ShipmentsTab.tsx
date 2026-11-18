@@ -70,10 +70,10 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
 
   return (
     <>
-      <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex flex-wrap items-center gap-3 border-b border-neutral-200 px-5 py-3">
+      <div className="rounded-xl border border-line bg-surface shadow-sm overflow-hidden">
+        <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
           <div className="relative flex-1 min-w-48">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
             <Input
               placeholder="Search tracking number…"
               value={search}
@@ -92,12 +92,12 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
             {carriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           {canManage && (
-            <label className="flex items-center gap-2 text-sm text-neutral-600">
+            <label className="flex items-center gap-2 text-sm text-fg-secondary">
               <input type="checkbox" checked={mineOnly} onChange={(e) => { setMineOnly(e.target.checked); setPage(1) }} />
               Mine only
             </label>
           )}
-          <span className="text-sm text-neutral-400">
+          <span className="text-sm text-fg-muted">
             {isPending ? 'Loading…' : `${total} result${total !== 1 ? 's' : ''}`}
           </span>
           <Button onClick={() => setDialog({ mode: 'create' })} className="gap-2 ml-auto">
@@ -107,20 +107,20 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
 
         {isPending ? (
           <div className="flex flex-col items-center justify-center py-16">
-            <Loader2 className="h-8 w-8 text-neutral-300 mb-3 animate-spin" />
-            <p className="text-sm text-neutral-400">Loading shipments…</p>
+            <Loader2 className="h-8 w-8 text-fg-faint mb-3 animate-spin" />
+            <p className="text-sm text-fg-muted">Loading shipments…</p>
           </div>
         ) : rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <Package className="h-10 w-10 text-neutral-200 mb-3" />
-            <p className="text-sm font-medium text-neutral-500">No shipments found</p>
-            <p className="text-xs text-neutral-400 mt-1">Register a shipment when you hand a parcel to the courier</p>
+            <Package className="h-10 w-10 text-fg-faint mb-3" />
+            <p className="text-sm font-medium text-fg-muted">No shipments found</p>
+            <p className="text-xs text-fg-muted mt-1">Register a shipment when you hand a parcel to the courier</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-neutral-100 bg-neutral-50">
+                <tr className="border-b border-line-subtle bg-surface-subtle">
                   <SortTh label="Carrier" sortKey="carrier" sort={sort} onSort={onSort} className={TH_CLS} />
                   <SortTh label="Tracking No" sortKey="tracking_no" sort={sort} onSort={onSort} className={TH_CLS} />
                   <SortTh label="Direction" sortKey="direction" sort={sort} onSort={onSort} className={TH_CLS} />
@@ -137,42 +137,42 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
                   const age = daysSince(s.created_at)
                   const stale = s.status === 'pending' && age > AGEING_DAYS
                   return (
-                    <tr key={s.id} className={cn('border-b border-neutral-100', stale ? 'bg-danger-50/60' : 'bg-white')}>
-                      <td className="px-3 py-2.5 font-medium text-neutral-800">{s.carrier_code ?? '—'}</td>
+                    <tr key={s.id} className={cn('border-b border-line-subtle', stale ? 'bg-danger-50/60' : 'bg-surface')}>
+                      <td className="px-3 py-2.5 font-medium text-fg">{s.carrier_code ?? '—'}</td>
                       <td className="px-3 py-2.5">
-                        <span className="font-mono text-xs text-neutral-800">{s.tracking_no}</span>
+                        <span className="font-mono text-xs text-fg">{s.tracking_no}</span>
                         {s.attachment_count > 0 && (
-                          <span className="ml-1.5 inline-flex items-center gap-0.5 text-[10px] text-neutral-400"
+                          <span className="ml-1.5 inline-flex items-center gap-0.5 text-2xs text-fg-muted"
                             title={`${s.attachment_count} attachment${s.attachment_count !== 1 ? 's' : ''}`}>
                             <Paperclip className="h-3 w-3" />{s.attachment_count}
                           </span>
                         )}
                         {s.source === 'from_invoice' && (
-                          <div className="text-[10px] text-neutral-400">Added from invoice</div>
+                          <div className="text-2xs text-fg-muted">Added from invoice</div>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-xs text-neutral-600 capitalize">{s.direction}</td>
+                      <td className="px-3 py-2.5 text-xs text-fg-secondary capitalize">{s.direction}</td>
                       <td className="px-3 py-2.5 text-xs">
                         {s.is_project ? (
                           <>
                             <ProjectBadge />
-                            <div className="mt-0.5 max-w-56 truncate text-neutral-600" title={s.project_info ?? ''}>
+                            <div className="mt-0.5 max-w-56 truncate text-fg-secondary" title={s.project_info ?? ''}>
                               {s.project_info}
                             </div>
                           </>
                         ) : (
                           <>
-                            <div className="text-neutral-800">{s.department_name ?? '—'}</div>
-                            <div className="text-neutral-500">
+                            <div className="text-fg">{s.department_name ?? '—'}</div>
+                            <div className="text-fg-muted">
                               {s.cost_center_code ? `${s.cost_center_code} — ${s.cost_center_name ?? ''}` : '—'}
                             </div>
                           </>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-xs text-neutral-600">{s.created_by_name ?? '—'}</td>
-                      <td className="px-3 py-2.5 text-xs text-neutral-500 whitespace-nowrap">
+                      <td className="px-3 py-2.5 text-xs text-fg-secondary">{s.created_by_name ?? '—'}</td>
+                      <td className="px-3 py-2.5 text-xs text-fg-muted whitespace-nowrap">
                         {formatDate(s.created_at)}
-                        {stale && <div className="text-[10px] font-medium text-danger-600">{age} days, not billed yet</div>}
+                        {stale && <div className="text-2xs font-medium text-danger-fg">{age} days, not billed yet</div>}
                       </td>
                       <td className="px-3 py-2.5"><ShipmentStatusBadge status={s.status} /></td>
                       <td className="px-3 py-2.5 text-xs">
@@ -180,13 +180,13 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
                           <Link to={`/invoices/${s.invoice_id}`} className="font-mono text-primary-700 hover:underline">
                             {s.invoice_number ?? 'Invoice'}
                           </Link>
-                        ) : <span className="text-neutral-300">—</span>}
+                        ) : <span className="text-fg-faint">—</span>}
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap text-right">
                         <div className="inline-flex gap-1">
                           <Link
                             to={`/freight/shipments/${s.id}`}
-                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100"
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-fg-secondary hover:bg-surface-sunken"
                           >
                             <Eye className="h-3.5 w-3.5" /> View
                           </Link>
@@ -200,7 +200,7 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
                             <button
                               onClick={() => handleVoid(s)}
                               disabled={voidShipment.isPending}
-                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-danger-600 hover:bg-danger-50 disabled:opacity-40"
+                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-danger-fg hover:bg-danger-soft disabled:opacity-40"
                             >
                               <Ban className="h-3.5 w-3.5" /> Void
                             </button>
@@ -446,13 +446,13 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
     <Modal title={isEdit ? 'Edit Shipment' : 'New Shipment'} subtitle={isEdit ? shipment?.tracking_no : 'Register a parcel handed to the courier'} onClose={onClose}>
       <div className="flex flex-col gap-4">
         {savedCount > 0 && (
-          <div className="rounded-lg border border-success-200 bg-success-50 px-3 py-2 text-xs text-success-700">
+          <div className="rounded-lg border border-success-line bg-success-soft px-3 py-2 text-xs text-success-fg">
             {savedCount} shipment{savedCount !== 1 ? 's' : ''} saved. Enter the next one.
           </div>
         )}
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Carrier *</label>
+          <label className="text-xs font-medium text-fg-secondary">Carrier *</label>
           <select value={carrierId} onChange={(e) => setCarrierId(e.target.value)} disabled={isEdit} className={SELECT_CLS}>
             <option value="">Select carrier…</option>
             {activeCarriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -460,7 +460,7 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Tracking number *</label>
+          <label className="text-xs font-medium text-fg-secondary">Tracking number *</label>
           <div className="flex gap-2">
             <Input ref={trackingInput} value={tracking} onChange={(e: ChangeEvent<HTMLInputElement>) => setTracking(e.target.value)}
               placeholder="e.g. 1Z999AA10123456784" className="font-mono flex-1" autoFocus />
@@ -472,25 +472,25 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
           </div>
           {scanChoices.length > 1 && (
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
-              <span className="text-neutral-500">Several numbers found — pick one:</span>
+              <span className="text-fg-muted">Several numbers found — pick one:</span>
               {scanChoices.map((n) => (
                 <button key={n} type="button" onClick={() => setTracking(n)}
                   className={cn('rounded-md border px-2 py-0.5 font-mono',
-                    tracking === n ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50')}>
+                    tracking === n ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-line text-fg-secondary hover:bg-surface-subtle')}>
                   {n}
                 </button>
               ))}
             </div>
           )}
-          {scanMsg && <p className="text-xs text-warning-600">{scanMsg}</p>}
+          {scanMsg && <p className="text-xs text-warning-fg">{scanMsg}</p>}
         </div>
 
-        <label className="flex items-start gap-2 text-sm text-neutral-700">
+        <label className="flex items-start gap-2 text-sm text-fg-secondary">
           <input type="checkbox" className="mt-0.5" checked={isProject}
             onChange={(e) => setIsProject(e.target.checked)} />
           <span>
             Project related
-            <span className="block text-xs text-neutral-400">
+            <span className="block text-xs text-fg-muted">
               The freight belongs to a project — no department or cost center; the cost center is set when the carrier's invoice is matched.
             </span>
           </span>
@@ -498,23 +498,23 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
 
         {isProject ? (
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Project *</label>
+            <label className="text-xs font-medium text-fg-secondary">Project *</label>
             <textarea rows={2} value={projectInfo} onChange={(e) => setProjectInfo(e.target.value)}
               maxLength={1000}
               placeholder="Project name / number, and what was sent for it"
-              className="w-full resize-none rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+              className="w-full resize-none rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
           </div>
         ) : (<>
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Department *</label>
+            <label className="text-xs font-medium text-fg-secondary">Department *</label>
             <select value={departmentId} onChange={(e) => changeDepartment(e.target.value)} className={SELECT_CLS}>
               <option value="">Select department…</option>
               {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Cost center *</label>
+            <label className="text-xs font-medium text-fg-secondary">Cost center *</label>
             <CostCenterSelect
               value={costCenterId} onChange={setCostCenterId}
               costCenters={costCenters} departments={departments}
@@ -523,16 +523,16 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
           </div>
         </div>
         {defaultInfo?.reason === 'freight_budget' && costCenterId === defaultInfo.cost_center_id && (
-          <p className="-mt-2 text-xs text-neutral-500">Default: the department's freight budget cost center</p>
+          <p className="-mt-2 text-xs text-fg-muted">Default: the department's freight budget cost center</p>
         )}
         {ccOutsideBudget && (
-          <p className="-mt-2 text-xs text-warning-600">This cost center has no freight budget this year.</p>
+          <p className="-mt-2 text-xs text-warning-fg">This cost center has no freight budget this year.</p>
         )}
         </>)}
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Direction</label>
-          <div className="flex gap-4 text-sm text-neutral-700">
+          <label className="text-xs font-medium text-fg-secondary">Direction</label>
+          <div className="flex gap-4 text-sm text-fg-secondary">
             {(['outbound', 'inbound'] as const).map((d) => (
               <label key={d} className="flex items-center gap-1.5">
                 <input type="radio" name="freight-direction" checked={direction === d} onChange={() => setDirection(d)} />
@@ -543,14 +543,14 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Note</label>
+          <label className="text-xs font-medium text-fg-secondary">Note</label>
           <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)}
             placeholder="What was sent, to whom (optional)"
-            className="w-full resize-none rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+            className="w-full resize-none rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Attachments</label>
+          <label className="text-xs font-medium text-fg-secondary">Attachments</label>
           {isEdit && shipment ? (
             <ShipmentAttachmentsPanel shipmentId={shipment.id} editable />
           ) : (
@@ -561,7 +561,7 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
           )}
         </div>
 
-        {error && <p className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-600">{error}</p>}
+        {error && <p className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">{error}</p>}
 
         <div className="flex justify-end gap-2">
           <Button variant="secondary" size="sm" onClick={onClose}>{savedCount > 0 ? 'Done' : 'Cancel'}</Button>

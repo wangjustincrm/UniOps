@@ -31,7 +31,7 @@ function AgreementCandidateRow({
     <label
       className={cn(
         'flex items-start gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors',
-        selected ? 'border-primary-400 bg-primary-50' : 'border-neutral-200 bg-white hover:bg-neutral-50',
+        selected ? 'border-primary-400 bg-primary-50' : 'border-line bg-surface hover:bg-surface-subtle',
       )}
     >
       <input
@@ -43,17 +43,17 @@ function AgreementCandidateRow({
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="flex items-center gap-2 font-mono text-sm font-medium text-neutral-900">
+          <span className="flex items-center gap-2 font-mono text-sm font-medium text-fg">
             {agreement.number}
             <StatusBadge status={agreement.status as DocumentStatus} />
           </span>
-          <span className={cn('shrink-0 text-xs font-medium', overCeiling ? 'text-danger-600' : 'text-neutral-500')}>
+          <span className={cn('shrink-0 text-xs font-medium', overCeiling ? 'text-danger-fg' : 'text-fg-muted')}>
             Consumed {formatAmount(consumed, agreement.currency)}
             {ceiling !== null ? ` / NTE ${formatAmount(ceiling, agreement.currency)}` : ' / No ceiling'}
           </span>
         </div>
-        <p className="truncate text-sm text-neutral-700">{agreement.title}</p>
-        <p className="text-[11px] text-neutral-400">
+        <p className="truncate text-sm text-fg-secondary">{agreement.title}</p>
+        <p className="text-2xs text-fg-muted">
           Valid {formatDate(agreement.valid_from)} – {formatDate(agreement.valid_to)}
           {agreement.status === 'expired' && ' · expired, still within its grace window'}
         </p>
@@ -92,7 +92,7 @@ function RecurringPeriodPreview({
 }) {
   if (loading) {
     return (
-      <p className="rounded-lg border border-neutral-200 bg-white px-3 py-2.5 text-xs text-neutral-400">
+      <p className="rounded-lg border border-line bg-surface px-3 py-2.5 text-xs text-fg-muted">
         Loading the payment schedule…
       </p>
     )
@@ -108,7 +108,7 @@ function RecurringPeriodPreview({
   // exactly as if nothing had been previewed at all.
   if (error) {
     return (
-      <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
+      <div className="flex items-start gap-2 rounded-lg border border-warning-line bg-warning-soft px-3 py-2.5 text-xs text-warning-fg">
         <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
         <p>Couldn't load the payment schedule — you may not have permission to view it. You can still submit; the server will assign a period or send this to review.</p>
       </div>
@@ -116,7 +116,7 @@ function RecurringPeriodPreview({
   }
   if (!row) {
     return (
-      <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
+      <div className="flex items-start gap-2 rounded-lg border border-warning-line bg-warning-soft px-3 py-2.5 text-xs text-warning-fg">
         <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
         <p>No period is available to claim on this agreement — this invoice will go to review for manual assignment, unless you assign one below.</p>
       </div>
@@ -131,19 +131,19 @@ function RecurringPeriodPreview({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="rounded-lg border border-primary-200 bg-white px-3 py-2.5 text-xs text-neutral-700">
-        This invoice will be claimed against <span className="font-medium text-neutral-900">{label}</span>
+      <div className="rounded-lg border border-primary-200 bg-surface px-3 py-2.5 text-xs text-fg-secondary">
+        This invoice will be claimed against <span className="font-medium text-fg">{label}</span>
         {expected !== null && <> (expected {formatAmount(expected, currency)})</>}
-        {row.status === 'overdue' && <span className="ml-1.5 font-medium text-warning-700">· overdue</span>}
+        {row.status === 'overdue' && <span className="ml-1.5 font-medium text-warning-fg">· overdue</span>}
         {joining > 0 && (
-          <span className="block mt-0.5 text-neutral-500">
+          <span className="block mt-0.5 text-fg-muted">
             It joins {joining} invoice{joining === 1 ? '' : 's'} already in this period
             {expected !== null && <> ({formatAmount(alreadyInPeriod, currency)} pre-tax so far)</>}.
           </span>
         )}
       </div>
       {outOfTolerance && (
-        <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
+        <div className="flex items-start gap-2 rounded-lg border border-warning-line bg-warning-soft px-3 py-2.5 text-xs text-warning-fg">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
           <p>
             {joining > 0
@@ -173,7 +173,7 @@ function PeriodOverrideRow({
     <label
       className={cn(
         'flex items-start gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors',
-        selected ? 'border-primary-400 bg-primary-50' : 'border-neutral-200 bg-white hover:bg-neutral-50',
+        selected ? 'border-primary-400 bg-primary-50' : 'border-line bg-surface hover:bg-surface-subtle',
       )}
     >
       <input
@@ -184,11 +184,11 @@ function PeriodOverrideRow({
         className="mt-1 h-4 w-4 text-primary-600 focus:ring-primary-500"
       />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-neutral-900">
+        <p className="text-sm font-medium text-fg">
           {row.period_label ?? `Period #${row.sequence}`}
-          {row.status === 'overdue' && <span className="ml-1.5 font-medium text-warning-700">· overdue</span>}
+          {row.status === 'overdue' && <span className="ml-1.5 font-medium text-warning-fg">· overdue</span>}
         </p>
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-fg-muted">
           {row.expected_date ? `Expected ${formatDate(row.expected_date)}` : 'No expected date'}
           {expected !== null && ` · expected ${formatAmount(expected, currency)}`}
           {(row.invoices ?? []).length > 0 &&
@@ -209,7 +209,7 @@ function MilestoneStageRow({
     <label
       className={cn(
         'flex items-start gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors',
-        selected ? 'border-primary-400 bg-primary-50' : 'border-neutral-200 bg-white hover:bg-neutral-50',
+        selected ? 'border-primary-400 bg-primary-50' : 'border-line bg-surface hover:bg-surface-subtle',
       )}
     >
       <input
@@ -220,8 +220,8 @@ function MilestoneStageRow({
         className="mt-1 h-4 w-4 text-primary-600 focus:ring-primary-500"
       />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-neutral-900">{row.milestone_name ?? `Stage #${row.sequence}`}</p>
-        <p className="text-xs text-neutral-500">
+        <p className="text-sm font-medium text-fg">{row.milestone_name ?? `Stage #${row.sequence}`}</p>
+        <p className="text-xs text-fg-muted">
           {row.expected_timing ?? 'No timing specified'}
           {expected !== null && ` · Expected ${formatAmount(expected, currency)}`}
         </p>
@@ -437,7 +437,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
     <div className="mt-2 rounded-xl border border-primary-200 bg-primary-50 p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-primary-700">Match Invoice</p>
-        <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600">
+        <button onClick={onClose} className="text-fg-muted hover:text-fg-secondary">
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -451,7 +451,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
           onClick={() => setRoute('po')}
           className={cn(
             'px-1 pb-2 text-xs font-medium border-b-2 -mb-px transition-colors',
-            route === 'po' ? 'border-primary-600 text-primary-700' : 'border-transparent text-neutral-500 hover:text-neutral-700',
+            route === 'po' ? 'border-primary-600 text-primary-700' : 'border-transparent text-fg-muted hover:text-fg-secondary',
           )}
         >
           Purchase Orders ({rawPoCandidates.length})
@@ -461,7 +461,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
           onClick={() => setRoute('agreement')}
           className={cn(
             'px-1 pb-2 text-xs font-medium border-b-2 -mb-px transition-colors',
-            route === 'agreement' ? 'border-primary-600 text-primary-700' : 'border-transparent text-neutral-500 hover:text-neutral-700',
+            route === 'agreement' ? 'border-primary-600 text-primary-700' : 'border-transparent text-fg-muted hover:text-fg-secondary',
           )}
         >
           Agreements ({agreementCandidates.length})
@@ -471,7 +471,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
           onClick={() => setRoute('direct')}
           className={cn(
             'px-1 pb-2 text-xs font-medium border-b-2 -mb-px transition-colors',
-            route === 'direct' ? 'border-primary-600 text-primary-700' : 'border-transparent text-neutral-500 hover:text-neutral-700',
+            route === 'direct' ? 'border-primary-600 text-primary-700' : 'border-transparent text-fg-muted hover:text-fg-secondary',
           )}
         >
           Direct PA
@@ -479,8 +479,8 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
       </div>
 
       {route === 'direct' && (
-        <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-3">
-          <div className="flex items-start gap-2 text-xs text-neutral-600">
+        <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-3">
+          <div className="flex items-start gap-2 text-xs text-fg-secondary">
             <FileInput className="h-4 w-4 shrink-0 text-primary-600 mt-px" />
             <p>
               No purchase order or agreement behind this invoice. It will be paid by a <span className="font-medium">Direct PA</span>:
@@ -489,7 +489,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
             </p>
           </div>
           {markDirect.isError && (
-            <p className="flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+            <p className="flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
               {markDirect.error instanceof Error ? markDirect.error.message : 'Could not match the invoice'}
             </p>
@@ -509,22 +509,22 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
         <>
           {/* PO search — narrows the candidate POs shown as drop targets */}
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-400 pointer-events-none" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-fg-muted pointer-events-none" />
             <input
               type="text"
               placeholder="Filter candidate POs by number or vendor..."
               value={poSearch}
               onChange={(e) => setPoSearch(e.target.value)}
-              className="w-full h-8 pl-7 pr-3 rounded-lg border border-neutral-300 bg-white text-xs focus:outline-none focus:ring-1 focus:ring-primary-600"
+              className="w-full h-8 pl-7 pr-3 rounded-lg border border-line-strong bg-surface text-xs focus:outline-none focus:ring-1 focus:ring-primary-600"
             />
           </div>
 
           {candLoading ? (
-            <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
+            <p className="rounded-lg border border-line bg-surface px-3 py-4 text-center text-xs text-fg-muted">
               Loading candidate purchase orders…
             </p>
           ) : matchablePOs.length === 0 ? (
-            <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
+            <p className="rounded-lg border border-line bg-surface px-3 py-4 text-center text-xs text-fg-muted">
               No open purchase orders found for this vendor.
             </p>
           ) : (
@@ -539,11 +539,11 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
       ) : (
         <div className="flex flex-col gap-3">
           {agrCandLoading ? (
-            <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
+            <p className="rounded-lg border border-line bg-surface px-3 py-4 text-center text-xs text-fg-muted">
               Loading candidate agreements…
             </p>
           ) : agreementCandidates.length === 0 ? (
-            <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
+            <p className="rounded-lg border border-line bg-surface px-3 py-4 text-center text-xs text-fg-muted">
               No agreements found for this vendor within their admission window.
             </p>
           ) : (
@@ -591,14 +591,14 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
               {showPeriodOverride && (
                 <div className="flex flex-col gap-1">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-neutral-700">
+                    <label className="text-xs font-medium text-fg-secondary">
                       Assign a specific period instead (optional)
                     </label>
                     {selectedScheduleId && (
                       <button
                         type="button"
                         onClick={() => setSelectedScheduleId('')}
-                        className="text-[11px] text-primary-600 hover:underline"
+                        className="text-2xs text-primary-600 hover:underline"
                       >
                         Clear
                       </button>
@@ -606,7 +606,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
                   </div>
                   {claimablePeriodRows.length === 0 ? (
                     !scheduleErrored && (
-                      <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
+                      <p className="rounded-lg border border-line bg-surface px-3 py-4 text-center text-xs text-fg-muted">
                         No periods on this agreement can take an invoice.
                       </p>
                     )
@@ -633,11 +633,11 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
               here). Only unclaimed stages (invoice_id === null) are listed. */}
           {isMilestone && (
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-700">
-                Which stage does this invoice pay for? <span className="text-danger-600">*</span>
+              <label className="text-xs font-medium text-fg-secondary">
+                Which stage does this invoice pay for? <span className="text-danger-fg">*</span>
               </label>
               {scheduleLoading ? (
-                <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
+                <p className="rounded-lg border border-line bg-surface px-3 py-4 text-center text-xs text-fg-muted">
                   Loading stages…
                 </p>
               ) : scheduleErrored ? (
@@ -646,12 +646,12 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
                 // Submit is not disabled (see canSubmitAgreement); the
                 // backend's own "Pick the milestone stage" error surfaces
                 // instead if they submit without one.
-                <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
+                <div className="flex items-start gap-2 rounded-lg border border-warning-line bg-warning-soft px-3 py-2.5 text-xs text-warning-fg">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                   <p>Couldn't load the stages for this agreement — you may not have permission to view them.</p>
                 </div>
               ) : milestoneRows.length === 0 ? (
-                <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
+                <p className="rounded-lg border border-line bg-surface px-3 py-4 text-center text-xs text-fg-muted">
                   No unclaimed stages on this agreement.
                 </p>
               ) : (
@@ -679,7 +679,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
       )}
 
       {matchInvoiceMutation.isError && (
-        <div className="flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+        <div className="flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
           {matchInvoiceMutation.error instanceof Error ? matchInvoiceMutation.error.message : 'Match failed'}
         </div>
@@ -688,18 +688,18 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
       {/* Assignee escape hatch — bounce the assignment back to the assigner */}
       {isMyAssignment && (
         declining ? (
-          <div className="flex flex-col gap-2 rounded-lg border border-warning-200 bg-warning-50 p-3">
-            <p className="text-xs font-medium text-warning-800">
+          <div className="flex flex-col gap-2 rounded-lg border border-warning-line bg-warning-soft p-3">
+            <p className="text-xs font-medium text-warning-fg">
               Decline this assignment — it will go back to the person who assigned it, with your note.
             </p>
             <textarea
               rows={2} autoFocus value={declineNote}
               onChange={(e) => setDeclineNote(e.target.value)}
               placeholder="Why can't you match this invoice? (required)"
-              className="px-3 py-2 rounded-lg border border-neutral-300 bg-white text-xs resize-none focus:outline-none focus:ring-1 focus:ring-warning-500"
+              className="px-3 py-2 rounded-lg border border-line-strong bg-surface text-xs resize-none focus:outline-none focus:ring-1 focus:ring-warning-solid"
             />
             {declineMutation.isError && (
-              <p className="text-xs text-danger-600">
+              <p className="text-xs text-danger-fg">
                 {declineMutation.error instanceof Error ? declineMutation.error.message : 'Decline failed'}
               </p>
             )}
@@ -713,7 +713,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
         ) : (
           <button
             onClick={() => setDeclining(true)}
-            className="self-start text-xs text-warning-700 underline-offset-2 hover:underline"
+            className="self-start text-xs text-warning-fg underline-offset-2 hover:underline"
           >
             Can't match this invoice? Decline the assignment
           </button>

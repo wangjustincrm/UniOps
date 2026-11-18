@@ -75,11 +75,11 @@ export function RunPicker({
           setAnchor(e.currentTarget.getBoundingClientRect())
           setOpen((v) => !v)
         }}
-        className="flex min-h-[44px] items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-800 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex min-h-[44px] items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm text-fg hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-60"
       >
         <span className="font-mono">{selected ? selected.run_no : 'Select a plan'}</span>
         {selected && <Badge variant={statusVariant(selected)}>{statusLabel(selected)}</Badge>}
-        <ChevronDown aria-hidden className="h-4 w-4 text-neutral-400" />
+        <ChevronDown aria-hidden className="h-4 w-4 text-fg-muted" />
       </button>
 
       {/* Rendered through a portal, fixed to the trigger: the page's matrix
@@ -89,12 +89,12 @@ export function RunPicker({
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
-            className="fixed z-50 max-h-[60vh] w-80 overflow-y-auto rounded-lg border border-neutral-200 bg-white py-1 shadow-lg"
+            className="fixed z-50 max-h-[60vh] w-80 overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-lg"
             style={{ top: anchor.bottom + 4, left: anchor.left }}
           >
             {groups.map(([month, versions]) => (
               <div key={month}>
-                <p className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                <p className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-fg-muted">
                   Horizon from {month}
                 </p>
                 {versions.map((run) => (
@@ -103,7 +103,7 @@ export function RunPicker({
                     type="button"
                     onClick={() => { onSelect(run.id); setOpen(false) }}
                     className={cn(
-                      'flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-50',
+                      'flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-subtle',
                       run.id === selectedId && 'bg-primary-50',
                     )}
                   >
@@ -112,10 +112,10 @@ export function RunPicker({
                       : <span className="h-3.5 w-3.5 shrink-0" />}
                     <span className="flex-1 truncate font-mono text-xs">{run.run_no}</span>
                     {run.status === 'superseded' && (
-                      <Lock aria-hidden className="h-3 w-3 shrink-0 text-neutral-400" />
+                      <Lock aria-hidden className="h-3 w-3 shrink-0 text-fg-muted" />
                     )}
                     <Badge variant={statusVariant(run)}>{statusLabel(run)}</Badge>
-                    <span className="w-20 shrink-0 text-right text-xs text-neutral-400">
+                    <span className="w-20 shrink-0 text-right text-xs text-fg-muted">
                       {formatStamp(run.released_at ?? run.created_at)}
                     </span>
                   </button>

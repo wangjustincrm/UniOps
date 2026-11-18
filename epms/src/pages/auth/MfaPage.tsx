@@ -111,7 +111,7 @@ export default function MfaPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center p-4">
       <div className="w-full max-w-[420px]">
-        <div className="rounded-xl bg-white shadow-xl px-8 py-10">
+        <div className="rounded-xl bg-surface shadow-xl px-8 py-10">
           <div className="mb-8 flex flex-col items-center gap-3">
             {branding?.logo_data_url ? (
               <img src={branding.logo_data_url} alt="Company logo" className="h-12 w-12 rounded-xl object-contain" />
@@ -121,8 +121,8 @@ export default function MfaPage() {
               </div>
             )}
             <div className="text-center">
-              <h1 className="text-xl font-bold text-neutral-900">Email Verification</h1>
-              <p className="text-sm text-neutral-500 mt-1">A 6-digit code has been sent to your registered email address</p>
+              <h1 className="text-xl font-bold text-fg">Email Verification</h1>
+              <p className="text-sm text-fg-muted mt-1">A 6-digit code has been sent to your registered email address</p>
             </div>
           </div>
 
@@ -145,14 +145,14 @@ export default function MfaPage() {
                   className={[
                     'h-12 w-11 rounded-md border text-center text-xl font-semibold',
                     'focus:outline-none focus:ring-2 focus:ring-primary-600',
-                    error ? 'border-danger-600' : 'border-neutral-300',
+                    error ? 'border-danger-solid' : 'border-line-strong',
                   ].join(' ')}
                   aria-label={`Digit ${i + 1}`}
                 />
               ))}
             </div>
 
-            {error && <p className="text-sm text-danger-600" role="alert">{error}</p>}
+            {error && <p className="text-sm text-danger-fg" role="alert">{error}</p>}
 
             <Button
               onClick={() => handleVerify()}

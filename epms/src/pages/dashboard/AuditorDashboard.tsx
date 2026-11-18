@@ -7,8 +7,8 @@ function StatusCountList({ counts }: { counts: [string, number][] }) {
     <div className="flex flex-col gap-1.5 mt-3">
       {counts.map(([status, count]) => (
         <div key={status} className="flex justify-between text-sm">
-          <span className="capitalize text-neutral-600">{status.replace(/_/g, ' ')}</span>
-          <span className="font-mono font-semibold text-neutral-900">{count}</span>
+          <span className="capitalize text-fg-secondary">{status.replace(/_/g, ' ')}</span>
+          <span className="font-mono font-semibold text-fg">{count}</span>
         </div>
       ))}
     </div>
@@ -31,8 +31,8 @@ export default function AuditorDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-neutral-900">Auditor Dashboard</h1>
-      <p className="text-sm text-neutral-500">Read-only overview of all procurement documents and statuses.</p>
+      <h1 className="text-2xl font-bold text-fg">Auditor Dashboard</h1>
+      <p className="text-sm text-fg-muted">Read-only overview of all procurement documents and statuses.</p>
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -44,23 +44,23 @@ export default function AuditorDashboard() {
 
       {/* Status breakdown cards */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl bg-white shadow p-5">
-          <h2 className="text-base font-semibold text-neutral-900">Purchase Requisitions</h2>
+        <div className="rounded-xl bg-surface shadow p-5">
+          <h2 className="text-base font-semibold text-fg">Purchase Requisitions</h2>
           <StatusCountList counts={prCounts} />
           <Link to="/pr" className="mt-4 block text-xs text-primary-600 hover:underline">View all PRs →</Link>
         </div>
-        <div className="rounded-xl bg-white shadow p-5">
-          <h2 className="text-base font-semibold text-neutral-900">Purchase Orders</h2>
+        <div className="rounded-xl bg-surface shadow p-5">
+          <h2 className="text-base font-semibold text-fg">Purchase Orders</h2>
           <StatusCountList counts={poCounts} />
           <Link to="/po" className="mt-4 block text-xs text-primary-600 hover:underline">View all POs →</Link>
         </div>
-        <div className="rounded-xl bg-white shadow p-5">
-          <h2 className="text-base font-semibold text-neutral-900">Goods Receipts</h2>
+        <div className="rounded-xl bg-surface shadow p-5">
+          <h2 className="text-base font-semibold text-fg">Goods Receipts</h2>
           <StatusCountList counts={grCounts} />
           <Link to="/gr" className="mt-4 block text-xs text-primary-600 hover:underline">View all GRs →</Link>
         </div>
-        <div className="rounded-xl bg-white shadow p-5">
-          <h2 className="text-base font-semibold text-neutral-900">Payment Applications</h2>
+        <div className="rounded-xl bg-surface shadow p-5">
+          <h2 className="text-base font-semibold text-fg">Payment Applications</h2>
           <StatusCountList counts={paCounts} />
           <Link to="/pa" className="mt-4 block text-xs text-primary-600 hover:underline">View all PAs →</Link>
         </div>

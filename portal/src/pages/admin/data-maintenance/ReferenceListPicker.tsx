@@ -64,17 +64,17 @@ export function ReferenceListPicker({ system, source, value, onChange }: Props) 
   return (
     <div className="flex flex-col gap-1.5">
       {value.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-neutral-300 px-3 py-2 text-xs text-neutral-400">
+        <p className="rounded-lg border border-dashed border-line-strong px-3 py-2 text-xs text-fg-muted">
           Nothing linked
         </p>
       ) : (
         <ul className="flex flex-col gap-1">
           {value.map((v) => (
             <li key={v.id}
-              className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-2.5 py-1.5">
+              className="flex items-center gap-2 rounded-lg border border-line bg-surface-subtle px-2.5 py-1.5">
               <span className="min-w-0 flex-1 truncate text-xs" title={v.label}>{v.label}</span>
               <button type="button" onClick={() => remove(v.id)}
-                className="shrink-0 rounded px-1.5 text-xs text-neutral-500 hover:bg-red-50 hover:text-red-600"
+                className="shrink-0 rounded px-1.5 text-xs text-fg-muted hover:bg-danger-soft hover:text-danger-fg"
                 aria-label={`Remove ${v.label}`}>✕</button>
             </li>
           ))}
@@ -82,30 +82,30 @@ export function ReferenceListPicker({ system, source, value, onChange }: Props) 
       )}
 
       <button ref={triggerRef} type="button" onClick={toggle}
-        className="h-8 self-start rounded-lg border border-neutral-300 px-3 text-xs hover:bg-neutral-50">
+        className="h-8 self-start rounded-lg border border-line-strong px-3 text-xs hover:bg-surface-subtle">
         + Link {source === 'invoices' ? 'invoice' : source === 'grs' ? 'goods receipt' : source}
       </button>
 
       {open && rect && createPortal(
         <div ref={popRef}
           style={{ position: 'fixed', top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 420) }}
-          className="z-[60] rounded-lg border border-neutral-200 bg-white shadow-lg">
+          className="z-[60] rounded-lg border border-line bg-surface shadow-lg">
           <input autoFocus value={q} onChange={(e) => setQ(e.target.value)}
             placeholder="Search by number, vendor, PO…"
-            className="m-2 h-8 w-[calc(100%-1rem)] rounded border border-neutral-300 px-2 text-sm" />
+            className="m-2 h-8 w-[calc(100%-1rem)] rounded border border-line-strong px-2 text-sm" />
           <ul className="max-h-64 overflow-y-auto pb-1">
             {hits.map((h) => {
               const already = value.some((v) => v.id === h.id)
               return (
                 <li key={h.id}>
                   <button type="button" disabled={already} onClick={() => add(h)}
-                    className="block w-full truncate px-3 py-1.5 text-left text-xs hover:bg-primary-50 disabled:cursor-default disabled:bg-neutral-50 disabled:text-neutral-400">
+                    className="block w-full truncate px-3 py-1.5 text-left text-xs hover:bg-primary-50 disabled:cursor-default disabled:bg-surface-subtle disabled:text-fg-muted">
                     {h.label}{already && ' · already linked'}
                   </button>
                 </li>
               )
             })}
-            {hits.length === 0 && <li className="px-3 py-2 text-xs text-neutral-400">No matches</li>}
+            {hits.length === 0 && <li className="px-3 py-2 text-xs text-fg-muted">No matches</li>}
           </ul>
         </div>, document.body)}
     </div>

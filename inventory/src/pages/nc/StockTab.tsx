@@ -26,7 +26,7 @@ const CLASS_BADGE: Record<string, 'info' | 'neutral' | 'warning' | 'dark'> = {
 
 function QtyCell({ value, uom }: { value: string | null; uom?: string | null }) {
   return (
-    <td className={cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(value) && 'text-danger-600')}>
+    <td className={cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(value) && 'text-danger-fg')}>
       {formatQty(value)}
       {uom !== undefined && <Uom uom={uom} />}
     </td>
@@ -39,21 +39,21 @@ function Summary({ rows, residue }: { rows: StockSummaryRow[]; residue: number }
     <div className="flex flex-col gap-1.5">
       <div className="flex flex-wrap gap-2">
         {rows.map((s) => (
-          <div key={s.warehouse_class} className="min-w-[9rem] rounded-lg border border-neutral-200 bg-white px-3 py-2">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+          <div key={s.warehouse_class} className="min-w-[9rem] rounded-lg border border-line bg-surface px-3 py-2">
+            <p className="text-2xs font-medium uppercase tracking-wide text-fg-muted">
               {CLASS_LABEL[s.warehouse_class] ?? s.warehouse_class}
             </p>
-            <p className="mt-0.5 text-sm text-neutral-800">
+            <p className="mt-0.5 text-sm text-fg">
               {s.materials.toLocaleString('en-US')} materials · {s.lines.toLocaleString('en-US')} lines
             </p>
-            <p className="font-mono text-xs text-neutral-500" title="Summed across units of measure">
+            <p className="font-mono text-xs text-fg-muted" title="Summed across units of measure">
               Qty {formatQty(s.qty)}
             </p>
           </div>
         ))}
       </div>
       {residue > 0 && (
-        <p className="text-[11px] text-neutral-400">
+        <p className="text-2xs text-fg-muted">
           {residue.toLocaleString('en-US')} locked rows with zero on-hand are not listed (NC residue).
         </p>
       )}
@@ -73,7 +73,7 @@ function BatchTable({ items, stateAvailable, sort, onSort, loading, emptyText }:
   emptyText: string
 }) {
   const cols = 10
-  const dash = <span className="text-neutral-300">—</span>
+  const dash = <span className="text-fg-faint">—</span>
   return (
     <table className="min-w-full text-sm">
       <thead className={stickyHeadCls}>
@@ -92,9 +92,9 @@ function BatchTable({ items, stateAvailable, sort, onSort, loading, emptyText }:
             <SortTh label="Available" sortKey="available" sort={sort} onSort={onSort} align="right" className={thR} />
             <SortTh label="State" sortKey="state" sort={sort} onSort={onSort} className={thL} />
           </> : <>
-            <th className="px-3 py-2 text-right text-neutral-300">Locked</th>
-            <th className="px-3 py-2 text-right text-neutral-300">Available</th>
-            <th className="px-3 py-2 text-left text-neutral-300">State</th>
+            <th className="px-3 py-2 text-right text-fg-faint">Locked</th>
+            <th className="px-3 py-2 text-right text-fg-faint">Available</th>
+            <th className="px-3 py-2 text-left text-fg-faint">State</th>
           </>}
         </tr>
       </thead>
@@ -103,25 +103,25 @@ function BatchTable({ items, stateAvailable, sort, onSort, loading, emptyText }:
         {!loading && items.length === 0 && <EmptyRow cols={cols}>{emptyText}</EmptyRow>}
         {!loading && items.map((r, i) => (
           <tr key={`${r.warehouse_code}|${r.material_code}|${r.batch ?? ''}|${r.state ?? ''}|${i}`}
-            className="border-t border-neutral-100 align-top">
+            className="border-t border-line-subtle align-top">
             <td className="px-3 py-2">
               <span className="font-mono text-xs" title={r.warehouse_name ?? undefined}>{r.warehouse_code ?? '—'}</span>
               <span className="ml-1.5 inline-flex flex-wrap gap-1">
-                <Badge variant={CLASS_BADGE[r.warehouse_class] ?? 'neutral'} className="text-[10px]">
+                <Badge variant={CLASS_BADGE[r.warehouse_class] ?? 'neutral'} className="text-2xs">
                   {CLASS_LABEL[r.warehouse_class] ?? r.warehouse_class}
                 </Badge>
-                {r.costed === false && <Badge variant="warning" className="text-[10px]">Not costed</Badge>}
+                {r.costed === false && <Badge variant="warning" className="text-2xs">Not costed</Badge>}
               </span>
             </td>
             <td className="px-3 py-2"><MaterialCell code={r.material_code} name={r.material_name} /></td>
-            <td className="px-3 py-2 font-mono text-xs">{r.batch ?? <span className="font-sans text-neutral-400">no batch</span>}</td>
-            <td className="px-3 py-2 font-mono text-xs text-neutral-600">{r.supplier_batch ?? '—'}</td>
-            <td className="px-3 py-2 text-xs text-neutral-600">{r.produced ?? '—'}</td>
-            <td className="px-3 py-2 text-xs text-neutral-600">{r.expires ?? '—'}</td>
+            <td className="px-3 py-2 font-mono text-xs">{r.batch ?? <span className="font-sans text-fg-muted">no batch</span>}</td>
+            <td className="px-3 py-2 font-mono text-xs text-fg-secondary">{r.supplier_batch ?? '—'}</td>
+            <td className="px-3 py-2 text-xs text-fg-secondary">{r.produced ?? '—'}</td>
+            <td className="px-3 py-2 text-xs text-fg-secondary">{r.expires ?? '—'}</td>
             <QtyCell value={r.qty} uom={r.uom} />
             {stateAvailable ? <QtyCell value={r.locked} /> : <td className="px-3 py-2 text-right">{dash}</td>}
             {stateAvailable ? <QtyCell value={r.available} /> : <td className="px-3 py-2 text-right">{dash}</td>}
-            <td className="px-3 py-2 text-xs text-neutral-600">{stateAvailable ? (r.state ?? '—') : dash}</td>
+            <td className="px-3 py-2 text-xs text-fg-secondary">{stateAvailable ? (r.state ?? '—') : dash}</td>
           </tr>
         ))}
       </tbody>
@@ -157,7 +157,7 @@ function MaterialTable({ items, stateAvailable, sort, onSort, loading, emptyText
         {loading && <LoadingRows cols={cols} />}
         {!loading && items.length === 0 && <EmptyRow cols={cols}>{emptyText}</EmptyRow>}
         {!loading && items.map((r, i) => (
-          <tr key={`${r.material_code}|${i}`} className="border-t border-neutral-100">
+          <tr key={`${r.material_code}|${i}`} className="border-t border-line-subtle">
             <td className="px-3 py-2"><MaterialCell code={r.material_code} name={r.material_name} /></td>
             <QtyCell value={r.qty} uom={r.uom} />
             <QtyCell value={r.qty_wms} />
@@ -211,11 +211,11 @@ export function StockTab({ date, classCode, search }: { date: string; classCode:
       {shown && <Summary rows={shown.summary} residue={shown.lock_residue_rows} />}
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div role="group" aria-label="Group rows" className="inline-flex rounded-lg border border-neutral-300 bg-white p-0.5">
+        <div role="group" aria-label="Group rows" className="inline-flex rounded-lg border border-line-strong bg-surface p-0.5">
           {(['batch', 'material'] as const).map((g) => (
             <button key={g} type="button" onClick={() => setGroup(g)} aria-pressed={group === g}
               className={cn('rounded-md px-3 py-1 text-xs font-medium',
-                group === g ? 'bg-primary-600 text-white' : 'text-neutral-600 hover:bg-neutral-100')}>
+                group === g ? 'bg-primary-600 text-white' : 'text-fg-secondary hover:bg-surface-sunken')}>
               {g === 'batch' ? 'By batch' : 'By material'}
             </button>
           ))}
@@ -223,13 +223,13 @@ export function StockTab({ date, classCode, search }: { date: string; classCode:
 
         <fieldset className="flex flex-wrap items-center gap-1.5">
           <legend className="sr-only">Warehouse class</legend>
-          <span className="text-xs text-neutral-600">Warehouses:</span>
+          <span className="text-xs text-fg-secondary">Warehouses:</span>
           {WAREHOUSE_CLASSES.map((c) => {
             const on = classes.includes(c.key)
             return (
               <button key={c.key} type="button" onClick={() => toggleClass(c.key)} aria-pressed={on}
                 className={cn('rounded-full border px-2.5 py-0.5 text-xs',
-                  on ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50')}>
+                  on ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-line-strong bg-surface text-fg-secondary hover:bg-surface-subtle')}>
                 {c.label}
               </button>
             )
@@ -238,14 +238,14 @@ export function StockTab({ date, classCode, search }: { date: string; classCode:
             <button type="button" onClick={() => setClasses([])} className="text-xs text-primary-600 hover:underline">
               All
             </button>
-          ) : <span className="text-[11px] text-neutral-400">(all)</span>}
+          ) : <span className="text-2xs text-fg-muted">(all)</span>}
         </fieldset>
       </div>
 
       {q.isError && <ErrorBox error={q.error} fallback="Could not load NC stock." />}
 
       {!stateAvailable && (
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-fg-muted">
           Historical date: NC keeps stock state and locks only for today — quantities only.
         </p>
       )}

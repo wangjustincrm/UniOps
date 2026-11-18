@@ -57,14 +57,14 @@ export function AttachmentsEditor({
     <div className="flex flex-col gap-2">
       <label
         htmlFor={inputId}
-        className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-neutral-300 p-6 text-center hover:border-primary-400 hover:bg-primary-50 transition-colors"
+        className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-line-strong p-6 text-center hover:border-primary-400 hover:bg-primary-50 transition-colors"
       >
-        <Upload className={`h-8 w-8 text-neutral-400 ${isUploading ? 'animate-pulse' : ''}`} />
+        <Upload className={`h-8 w-8 text-fg-muted ${isUploading ? 'animate-pulse' : ''}`} />
         <div>
-          <p className="text-sm font-medium text-neutral-700">
+          <p className="text-sm font-medium text-fg-secondary">
             {isUploading ? 'Uploading…' : 'Drag & drop or click to upload'}
           </p>
-          <p className="text-xs text-neutral-400 mt-1">{ATTACHMENT_RULE.hint}</p>
+          <p className="text-xs text-fg-muted mt-1">{ATTACHMENT_RULE.hint}</p>
         </div>
         <input
           id={inputId}
@@ -77,16 +77,16 @@ export function AttachmentsEditor({
         />
       </label>
 
-      {error && <p className="text-xs text-danger-600">{error}</p>}
+      {error && <p className="text-xs text-danger-fg">{error}</p>}
 
       {attachments.map((att) => (
         <div
           key={att.id}
-          className="flex items-center gap-3 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm"
+          className="flex items-center gap-3 rounded-md border border-line bg-surface-subtle px-3 py-2 text-sm"
         >
-          <Paperclip className="h-4 w-4 shrink-0 text-neutral-400" />
-          <span className="flex-1 truncate text-neutral-700">{att.filename}</span>
-          <span className="text-xs text-neutral-400">{formatBytes(att.file_size)}</span>
+          <Paperclip className="h-4 w-4 shrink-0 text-fg-muted" />
+          <span className="flex-1 truncate text-fg-secondary">{att.filename}</span>
+          <span className="text-xs text-fg-muted">{formatBytes(att.file_size)}</span>
           <button
             type="button"
             onClick={() => onDownload(att)}
@@ -98,7 +98,7 @@ export function AttachmentsEditor({
             type="button"
             disabled={isDeleting}
             onClick={() => { setError(null); onDelete(att.id) }}
-            className="text-neutral-400 hover:text-danger-600 disabled:opacity-50"
+            className="text-fg-muted hover:text-danger-fg disabled:opacity-50"
             aria-label={`Remove ${att.filename}`}
           >
             <X className="h-3.5 w-3.5" />

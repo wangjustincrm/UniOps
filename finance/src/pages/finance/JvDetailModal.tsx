@@ -11,9 +11,9 @@ import { BookOpen, Check, Loader2, RotateCcw, Send, Undo2, X } from 'lucide-reac
 import { financeApi } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
 
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
-const dangerBtn = 'flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50'
+const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
+const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
+const dangerBtn = 'flex items-center gap-1.5 rounded-lg border border-danger-line bg-surface px-3 py-2 text-sm font-medium text-danger-fg hover:bg-danger-soft disabled:opacity-50'
 
 function money(v: string | null | undefined) {
   const n = Number(v ?? 0)
@@ -58,16 +58,16 @@ interface JvLine {
 interface JvDetail { voucher: JvHeader; lines: JvLine[] }
 
 export const JV_STATUS_STYLE: Record<string, string> = {
-  draft: 'bg-neutral-100 text-neutral-600',
-  reviewed: 'bg-blue-50 text-blue-700',
-  posted: 'bg-green-50 text-green-700',
-  reversed: 'bg-red-50 text-red-700',
+  draft: 'bg-surface-sunken text-fg-secondary',
+  reviewed: 'bg-info-soft text-info-fg',
+  posted: 'bg-success-soft text-success-fg',
+  reversed: 'bg-danger-soft text-danger-fg',
 }
 
 export function JvStatusBadge({ status }: { status: string }) {
   return (
     <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize',
-      JV_STATUS_STYLE[status] ?? 'bg-neutral-100 text-neutral-600')}>
+      JV_STATUS_STYLE[status] ?? 'bg-surface-sunken text-fg-secondary')}>
       {status}
     </span>
   )
@@ -75,8 +75,8 @@ export function JvStatusBadge({ status }: { status: string }) {
 
 function Stamp({ label, name, at }: { label: string; name?: string | null; at?: string | null }) {
   return (
-    <div className="text-xs text-neutral-500">
-      <span className="font-medium text-neutral-600">{label}:</span>{' '}
+    <div className="text-xs text-fg-muted">
+      <span className="font-medium text-fg-secondary">{label}:</span>{' '}
       {name || '—'}{at ? ` · ${formatDateTime(at)}` : ''}
     </div>
   )
@@ -118,28 +118,28 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
   // says what is actually meant: the voucher is the child overlay.
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl"
+      <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-xl bg-surface p-5 shadow-xl"
            onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-neutral-800">
-            <BookOpen className="h-4 w-4 text-neutral-400" />
+          <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
+            <BookOpen className="h-4 w-4 text-fg-muted" />
             {v ? `${v.voucher_word} · ${v.jv_number}` : 'Journal Voucher'}
             {v && <JvStatusBadge status={v.status} />}
           </h2>
-          <button onClick={onClose} className="rounded p-1 text-neutral-400 hover:text-neutral-700">
+          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        {isLoading && <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>}
+        {isLoading && <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>}
 
         {v && (
           <>
-            <div className="mb-3 grid grid-cols-2 gap-x-6 gap-y-1 rounded-lg bg-neutral-50 px-4 py-3 md:grid-cols-3">
-              <div className="text-xs text-neutral-500"><span className="font-medium text-neutral-600">Date:</span> {formatDate(v.voucher_date)} · {v.fiscal_period}</div>
-              <div className="text-xs text-neutral-500 md:col-span-2"><span className="font-medium text-neutral-600">Summary:</span> {v.summary || '—'}</div>
-              <div className="text-xs text-neutral-500 md:col-span-3">
-                <span className="font-medium text-neutral-600">Source:</span>{' '}
+            <div className="mb-3 grid grid-cols-2 gap-x-6 gap-y-1 rounded-lg bg-surface-subtle px-4 py-3 md:grid-cols-3">
+              <div className="text-xs text-fg-muted"><span className="font-medium text-fg-secondary">Date:</span> {formatDate(v.voucher_date)} · {v.fiscal_period}</div>
+              <div className="text-xs text-fg-muted md:col-span-2"><span className="font-medium text-fg-secondary">Summary:</span> {v.summary || '—'}</div>
+              <div className="text-xs text-fg-muted md:col-span-3">
+                <span className="font-medium text-fg-secondary">Source:</span>{' '}
                 {v.source_doc_type ? `${v.source_doc_type} · ${v.source_doc_number ?? v.source_doc_id}` : (v.nc_source_pk ? `NC65 import · ${v.nc_source_pk}` : '—')}
               </div>
               {/* NC-sourced vouchers have NO UniOps lifecycle stamps — their
@@ -161,8 +161,8 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
               )}
               {(v.nc_voucher_type_name || v.nc_voucher_kind_label
                 || (v.nc_voucher_state && v.nc_voucher_state !== 'normal')) && (
-                <div className="text-xs text-neutral-500 md:col-span-3">
-                  <span className="font-medium text-neutral-600">NC:</span>{' '}
+                <div className="text-xs text-fg-muted md:col-span-3">
+                  <span className="font-medium text-fg-secondary">NC:</span>{' '}
                   {[v.nc_voucher_type_name,
                     v.nc_num != null ? `No. ${v.nc_num}` : null,
                     v.nc_voucher_kind_label,
@@ -174,11 +174,11 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
               )}
             </div>
 
-            {err && <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
+            {err && <div className="mb-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{err}</div>}
 
-            <div className="overflow-x-auto rounded-lg border border-neutral-200">
+            <div className="overflow-x-auto rounded-lg border border-line">
               <table className="w-full text-sm">
-                <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+                <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
                   <tr>
                     <th className="px-3 py-2 w-8">#</th>
                     <th className="px-3 py-2">Account</th>
@@ -192,14 +192,14 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
                 </thead>
                 <tbody>
                   {data.lines.map((l, i) => (
-                    <tr key={l.line_no} className={cn('border-t border-neutral-100 align-top', i % 2 && 'bg-neutral-50/40')}>
-                      <td className="px-3 py-2 font-mono text-xs text-neutral-400">{l.line_no}</td>
+                    <tr key={l.line_no} className={cn('border-t border-line-subtle align-top', i % 2 && 'bg-surface-subtle/40')}>
+                      <td className="px-3 py-2 font-mono text-xs text-fg-muted">{l.line_no}</td>
                       <td className="px-3 py-2">
                         <span className="font-mono text-xs">{l.account_code ?? '—'}</span>
-                        {l.account_name && <span className="ml-1 text-neutral-600">{l.account_name}</span>}
+                        {l.account_name && <span className="ml-1 text-fg-secondary">{l.account_name}</span>}
                       </td>
                       <td className="px-3 py-2">
-                        {l.summary && <div className="text-neutral-700">{l.summary}</div>}
+                        {l.summary && <div className="text-fg-secondary">{l.summary}</div>}
                         <div className="mt-0.5 flex flex-wrap gap-1">
                           {/* UniOps' own mapping — only for lines NC gave no
                               auxiliaries (internal vouchers); on NC lines the
@@ -214,11 +214,11 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
                       </td>
                       {/* Reads like NC's own Aux. Acctg cell:
                           【Department: 0106/Engineering】【Cost Center: E04】 */}
-                      <td className="px-3 py-2 text-xs text-neutral-700">
-                        {l.dims.length === 0 ? <span className="text-neutral-300">—</span>
+                      <td className="px-3 py-2 text-xs text-fg-secondary">
+                        {l.dims.length === 0 ? <span className="text-fg-faint">—</span>
                           : l.dims.map((d, j) => (
                             <span key={j} className="mr-1 inline-block whitespace-nowrap">
-                              【<span className="text-neutral-500">{d.label}:</span> {d.display}】
+                              【<span className="text-fg-muted">{d.label}:</span> {d.display}】
                             </span>
                           ))}
                       </td>
@@ -230,7 +230,7 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t-2 border-neutral-200 bg-neutral-50 font-semibold">
+                  <tr className="border-t-2 border-line bg-surface-subtle font-semibold">
                     <td className="px-3 py-2" colSpan={multiCurrency ? 6 : 4}>Totals (CAD)</td>
                     <td className="px-3 py-2 text-right font-mono">{money(v.total_local_debit)}</td>
                     <td className="px-3 py-2 text-right font-mono">{money(v.total_local_credit)}</td>
@@ -240,7 +240,7 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
             </div>
 
             {canAct && (
-              <div className="mt-4 flex justify-end gap-2 border-t border-neutral-100 pt-3">
+              <div className="mt-4 flex justify-end gap-2 border-t border-line-subtle pt-3">
                 {v.status === 'draft' && !v.nc_source_pk && (
                   <button onClick={() => act('review')} disabled={!!busy} className={primaryBtn}>
                     {busy === 'review' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Review
@@ -281,7 +281,7 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
 function Dim({ label, title }: { label: string; title?: string | null }) {
   return (
     <span title={title ?? undefined}
-          className="inline-flex rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] text-neutral-600">
+          className="inline-flex rounded bg-surface-sunken px-1.5 py-0.5 text-2xs text-fg-secondary">
       {label}
     </span>
   )

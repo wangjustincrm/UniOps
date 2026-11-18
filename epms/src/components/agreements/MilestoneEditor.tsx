@@ -9,7 +9,7 @@ function newMilestoneRow(): MilestoneRowIn {
 }
 
 const cellInputClass =
-  'h-8 w-full rounded border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400'
+  'h-8 w-full rounded border border-line-strong bg-surface px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted'
 
 /**
  * `milestone` agreement stage editor. Rendered only by the parent when
@@ -140,17 +140,17 @@ export function MilestoneEditor(props: {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="overflow-x-auto rounded-lg border border-neutral-200">
+      <div className="overflow-x-auto rounded-lg border border-line">
         <table className="w-full min-w-[640px] text-sm">
           <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50">
-              <th className="w-8 px-2 py-2.5 text-left text-xs font-semibold text-neutral-400">#</th>
-              <th className="px-3 py-2.5 text-left text-xs font-semibold text-neutral-600">
-                Stage name <span className="text-danger-600">*</span>
+            <tr className="border-b border-line bg-surface-subtle">
+              <th className="w-8 px-2 py-2.5 text-left text-xs font-semibold text-fg-muted">#</th>
+              <th className="px-3 py-2.5 text-left text-xs font-semibold text-fg-secondary">
+                Stage name <span className="text-danger-fg">*</span>
               </th>
-              <th className="px-3 py-2.5 text-left text-xs font-semibold text-neutral-600">Timing</th>
-              <th className="w-32 px-3 py-2.5 text-right text-xs font-semibold text-neutral-600">Amount</th>
-              <th className="w-28 px-3 py-2.5 text-right text-xs font-semibold text-neutral-600">% of NTE</th>
+              <th className="px-3 py-2.5 text-left text-xs font-semibold text-fg-secondary">Timing</th>
+              <th className="w-32 px-3 py-2.5 text-right text-xs font-semibold text-fg-secondary">Amount</th>
+              <th className="w-28 px-3 py-2.5 text-right text-xs font-semibold text-fg-secondary">% of NTE</th>
               <th className="w-8 px-2 py-2.5" />
             </tr>
           </thead>
@@ -160,9 +160,9 @@ export function MilestoneEditor(props: {
               return (
               <tr
                 key={i}
-                className={cn('border-b border-neutral-100 last:border-0', i % 2 === 1 ? 'bg-neutral-50/50' : 'bg-white')}
+                className={cn('border-b border-line-subtle last:border-0', i % 2 === 1 ? 'bg-surface-subtle/50' : 'bg-surface')}
               >
-                <td className="px-2 py-2 text-xs text-neutral-400">{i + 1}</td>
+                <td className="px-2 py-2 text-xs text-fg-muted">{i + 1}</td>
                 <td className="px-3 py-2">
                   <input
                     type="text"
@@ -217,7 +217,7 @@ export function MilestoneEditor(props: {
                     type="button"
                     onClick={() => removeRow(i)}
                     disabled={disabled}
-                    className="flex h-7 w-7 items-center justify-center rounded text-neutral-300 hover:bg-danger-50 hover:text-danger-500 disabled:cursor-not-allowed disabled:opacity-30"
+                    className="flex h-7 w-7 items-center justify-center rounded text-fg-faint hover:bg-danger-soft hover:text-danger-fg disabled:cursor-not-allowed disabled:opacity-30"
                     aria-label={`Remove stage ${i + 1}`}
                   >
                     <X className="h-3.5 w-3.5" />
@@ -228,7 +228,7 @@ export function MilestoneEditor(props: {
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-sm text-neutral-400">
+                <td colSpan={6} className="px-3 py-6 text-center text-sm text-fg-muted">
                   No stages yet — add one below.
                 </td>
               </tr>
@@ -236,16 +236,16 @@ export function MilestoneEditor(props: {
           </tbody>
         </table>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-200 bg-neutral-50 px-3 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-surface-subtle px-3 py-2.5">
           <Button type="button" variant="ghost" size="sm" onClick={addRow} disabled={disabled}>
             <Plus className="h-3.5 w-3.5" />
             Add Stage
           </Button>
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-neutral-500">Total</span>
-            <span className="amount font-semibold text-neutral-900">{formatAmount(total, currency)}</span>
+            <span className="text-fg-muted">Total</span>
+            <span className="amount font-semibold text-fg">{formatAmount(total, currency)}</span>
             {nte !== null && (
-              <span className={cn('font-medium', total > nte ? 'text-danger-600' : 'text-neutral-400')}>
+              <span className={cn('font-medium', total > nte ? 'text-danger-fg' : 'text-fg-muted')}>
                 / {formatAmount(nte, currency)} NTE
               </span>
             )}
@@ -254,8 +254,8 @@ export function MilestoneEditor(props: {
       </div>
 
       {staleAfterNteChange && (
-        <div className="rounded-lg border border-warning-200 bg-warning-50 px-4 py-3">
-          <p className="text-sm text-warning-700">
+        <div className="rounded-lg border border-warning-line bg-warning-soft px-4 py-3">
+          <p className="text-sm text-warning-fg">
             The not-to-exceed ceiling changed. Stage amounts calculated from a percentage were calculated against the
             previous ceiling and may no longer match it — re-enter any percentage you want recalculated.
           </p>
@@ -263,9 +263,9 @@ export function MilestoneEditor(props: {
       )}
 
       {pctEnabled ? (
-        <p className="text-xs text-neutral-500">Enter an amount or a %; the other is calculated.</p>
+        <p className="text-xs text-fg-muted">Enter an amount or a %; the other is calculated.</p>
       ) : (
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-fg-muted">
           Set a not-to-exceed ceiling on the agreement to enter percentages
         </p>
       )}

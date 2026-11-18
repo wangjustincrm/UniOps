@@ -177,13 +177,13 @@ export function Combobox<T>({
         position: 'fixed', left: pos.left, width: pos.width,
         ...(pos.above ? { bottom: window.innerHeight - pos.top } : { top: pos.top }),
       }}
-      className="z-[80] overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-lg">
+      className="z-[80] overflow-hidden rounded-lg border border-line bg-surface shadow-lg">
       <ul ref={listRef} id={listId} role="listbox" aria-labelledby={inputId}
         style={{ maxHeight: pos.maxHeight }} className="overflow-y-auto py-1 text-sm">
         {errorText ? (
-          <li role="presentation" className="px-3 py-2 text-xs text-danger-700">{errorText}</li>
+          <li role="presentation" className="px-3 py-2 text-xs text-danger-fg">{errorText}</li>
         ) : options.length === 0 ? (
-          <li role="presentation" className="px-3 py-2 text-xs text-neutral-400">
+          <li role="presentation" className="px-3 py-2 text-xs text-fg-muted">
             {loading ? 'Loading…' : emptyText}
           </li>
         ) : options.map((o, i) => {
@@ -194,7 +194,7 @@ export function Combobox<T>({
               onMouseDown={(e) => e.preventDefault() /* keep focus in the input */}
               onMouseMove={() => { if (active !== i) setActive(i) }}
               onClick={() => pick(i)}
-              className={cn('cursor-pointer px-3 py-1.5', i === active ? 'bg-primary-50' : 'hover:bg-neutral-50',
+              className={cn('cursor-pointer px-3 py-1.5', i === active ? 'bg-primary-50' : 'hover:bg-surface-subtle',
                 selected && 'font-medium')}>
               {renderOption(o, { active: i === active, selected })}
             </li>
@@ -202,7 +202,7 @@ export function Combobox<T>({
         })}
       </ul>
       {footer && !errorText && (
-        <div className="border-t border-neutral-100 px-3 py-1.5 text-[11px] text-neutral-500">{footer}</div>
+        <div className="border-t border-line-subtle px-3 py-1.5 text-2xs text-fg-muted">{footer}</div>
       )}
     </div>,
     document.body,
@@ -230,23 +230,23 @@ export function Combobox<T>({
         onClick={() => { if (!disabled && !open) setOpen(true) }}
         onKeyDown={onKeyDown}
         className={cn(
-          'h-9 w-full rounded-lg border border-neutral-300 bg-white pl-2 pr-12 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-400',
+          'h-9 w-full rounded-lg border border-line-strong bg-surface pl-2 pr-12 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-fg-muted',
           inputClassName)}
       />
-      <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center gap-0.5 text-neutral-400">
+      <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center gap-0.5 text-fg-muted">
         {loading && open && <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" />}
         {onClear && inputValue && !disabled && (
           <button type="button" aria-label="Clear" tabIndex={-1}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => { onClear(); inputRef.current?.focus() }}
-            className="pointer-events-auto rounded p-0.5 hover:text-neutral-700">
+            className="pointer-events-auto rounded p-0.5 hover:text-fg-secondary">
             <X className="h-3.5 w-3.5" />
           </button>
         )}
         <button type="button" aria-label={open ? 'Close list' : 'Open list'} tabIndex={-1} disabled={disabled}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => { setOpen(!open); inputRef.current?.focus() }}
-          className="pointer-events-auto rounded p-0.5 hover:text-neutral-700 disabled:cursor-not-allowed">
+          className="pointer-events-auto rounded p-0.5 hover:text-fg-secondary disabled:cursor-not-allowed">
           <ChevronDown className="h-4 w-4" />
         </button>
       </span>

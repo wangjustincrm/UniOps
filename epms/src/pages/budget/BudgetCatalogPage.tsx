@@ -85,18 +85,18 @@ export default function BudgetCatalogPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Budget Account Catalog</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">
+          <h1 className="text-2xl font-bold text-fg">Budget Account Catalog</h1>
+          <p className="text-sm text-fg-muted mt-0.5">
             Shared L1/L2 account template — applies to all Cost Centers
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-2 text-sm text-neutral-600">
+          <label className="flex items-center gap-2 text-sm text-fg-secondary">
             <input
               type="checkbox"
               checked={showInactive}
               onChange={(e) => setShowInactive(e.target.checked)}
-              className="h-4 w-4 rounded border-neutral-300 text-primary-600"
+              className="h-4 w-4 rounded border-line-strong text-primary-600"
             />
             Show inactive
           </label>
@@ -121,11 +121,11 @@ export default function BudgetCatalogPage() {
 
       {/* Import result banner */}
       {importBudget.data && (
-        <div className="rounded-md border border-success-200 bg-success-50 px-4 py-3 text-sm text-success-700">
+        <div className="rounded-md border border-success-line bg-success-soft px-4 py-3 text-sm text-success-fg">
           Import complete: {importBudget.data.l1_created} L1 created, {importBudget.data.l1_updated} updated,{' '}
           {importBudget.data.accounts_created} accounts created, {importBudget.data.accounts_updated} updated
           {importBudget.data.errors.length > 0 && (
-            <div className="mt-2 text-xs text-danger-700">
+            <div className="mt-2 text-xs text-danger-fg">
               {importBudget.data.errors.length} errors:
               <ul className="ml-4 list-disc">
                 {importBudget.data.errors.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
@@ -135,7 +135,7 @@ export default function BudgetCatalogPage() {
         </div>
       )}
       {importBudget.isError && (
-        <div className="rounded-md border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+        <div className="rounded-md border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
           <AlertTriangle className="inline h-4 w-4 mr-1" />
           Import failed: {String(importBudget.error)}
         </div>
@@ -144,9 +144,9 @@ export default function BudgetCatalogPage() {
       {/* Body: 2-column layout */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 flex-1 min-h-0">
         {/* ─ Left: L1 list ─ */}
-        <aside className="md:col-span-4 lg:col-span-3 rounded-xl border border-neutral-200 bg-white overflow-hidden flex flex-col">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200">
-            <h2 className="text-sm font-semibold text-neutral-800">L1 Categories</h2>
+        <aside className="md:col-span-4 lg:col-span-3 rounded-xl border border-line bg-surface overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-line">
+            <h2 className="text-sm font-semibold text-fg">L1 Categories</h2>
             {canEdit && (
               <Button size="icon-sm" variant="ghost" onClick={() => { setEditingL1(null); setShowL1Form(true) }} title="New L1">
                 <Plus className="h-4 w-4" />
@@ -155,9 +155,9 @@ export default function BudgetCatalogPage() {
           </div>
           <div className="flex-1 overflow-y-auto">
             {isLoading ? (
-              <p className="px-4 py-6 text-sm text-neutral-400">Loading…</p>
+              <p className="px-4 py-6 text-sm text-fg-muted">Loading…</p>
             ) : l1List.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-neutral-400">No L1 categories yet</p>
+              <p className="px-4 py-6 text-sm text-fg-muted">No L1 categories yet</p>
             ) : (
               <ul>
                 {l1List.map((l1) => (
@@ -168,15 +168,15 @@ export default function BudgetCatalogPage() {
                         'w-full flex items-center justify-between px-4 py-2.5 text-left text-sm border-l-2 transition-colors',
                         selectedL1Id === l1.id
                           ? 'bg-primary-50 border-l-primary-600 text-primary-700 font-medium'
-                          : 'border-l-transparent text-neutral-700 hover:bg-neutral-50',
+                          : 'border-l-transparent text-fg-secondary hover:bg-surface-subtle',
                         !l1.is_active && 'opacity-50',
                       )}
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="font-mono text-xs text-neutral-500">{l1.code}</p>
+                        <p className="font-mono text-xs text-fg-muted">{l1.code}</p>
                         <p className="truncate">{l1.name}</p>
                       </div>
-                      <span className="text-xs text-neutral-400 ml-2 shrink-0">
+                      <span className="text-xs text-fg-muted ml-2 shrink-0">
                         {(l1.accounts ?? []).filter((a) => a.is_active).length}
                       </span>
                     </button>
@@ -188,21 +188,21 @@ export default function BudgetCatalogPage() {
         </aside>
 
         {/* ─ Right: Account list for selected L1 ─ */}
-        <main className="md:col-span-8 lg:col-span-9 rounded-xl border border-neutral-200 bg-white overflow-hidden flex flex-col">
+        <main className="md:col-span-8 lg:col-span-9 rounded-xl border border-line bg-surface overflow-hidden flex flex-col">
           {selectedL1 ? (
             <>
               {/* L1 header */}
-              <div className="flex items-center justify-between px-5 py-3 border-b border-neutral-200">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-line">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-semibold text-neutral-900">{selectedL1.name}</h2>
-                    <span className="font-mono text-xs text-neutral-500">{selectedL1.code}</span>
+                    <h2 className="text-sm font-semibold text-fg">{selectedL1.name}</h2>
+                    <span className="font-mono text-xs text-fg-muted">{selectedL1.code}</span>
                     {!selectedL1.is_active && (
-                      <span className="text-xs rounded-full bg-neutral-100 px-2 py-0.5 text-neutral-500">Inactive</span>
+                      <span className="text-xs rounded-full bg-surface-sunken px-2 py-0.5 text-fg-muted">Inactive</span>
                     )}
                   </div>
                   {selectedL1.description && (
-                    <p className="text-xs text-neutral-500 mt-0.5">{selectedL1.description}</p>
+                    <p className="text-xs text-fg-muted mt-0.5">{selectedL1.description}</p>
                   )}
                 </div>
                 {canEdit && (
@@ -223,7 +223,7 @@ export default function BudgetCatalogPage() {
                       onClick={() => handleDeleteL1(selectedL1)} disabled={deleteL1Mut.isPending}
                       title="Delete L1 (and all its accounts, if never referenced)"
                     >
-                      <Trash2 className="h-4 w-4 text-red-500" />
+                      <Trash2 className="h-4 w-4 text-danger-fg" />
                     </Button>
                   </div>
                 )}
@@ -232,9 +232,9 @@ export default function BudgetCatalogPage() {
               {/* Account list */}
               <div className="flex-1 overflow-y-auto">
                 {(selectedL1.accounts ?? []).length === 0 ? (
-                  <p className="px-5 py-8 text-sm text-neutral-400">No accounts in this L1 yet</p>
+                  <p className="px-5 py-8 text-sm text-fg-muted">No accounts in this L1 yet</p>
                 ) : (
-                  <ul className="divide-y divide-neutral-100">
+                  <ul className="divide-y divide-line-subtle">
                     {selectedL1.accounts!.map((a) => (
                       <AccountListRow
                         key={a.id}
@@ -250,7 +250,7 @@ export default function BudgetCatalogPage() {
               </div>
             </>
           ) : (
-            <div className="flex flex-col items-center justify-center flex-1 text-neutral-400">
+            <div className="flex flex-col items-center justify-center flex-1 text-fg-muted">
               <SettingsIcon className="h-12 w-12 mb-3 opacity-30" />
               <p className="text-sm">Select an L1 category to view its accounts</p>
             </div>
@@ -306,32 +306,32 @@ function AccountListRow({
   }
   return (
     <li className={cn(!account.is_active && 'opacity-50')}>
-      <div className="flex items-center px-5 py-3 hover:bg-neutral-50 transition-colors">
+      <div className="flex items-center px-5 py-3 hover:bg-surface-subtle transition-colors">
         <button
           onClick={onToggle}
-          className="mr-2 p-1 rounded hover:bg-neutral-100"
+          className="mr-2 p-1 rounded hover:bg-surface-sunken"
           disabled={!account.decomposition_enabled}
           title={account.decomposition_enabled ? 'Show factors' : 'No decomposition'}
         >
           {account.decomposition_enabled
-            ? (expanded ? <ChevronDown className="h-4 w-4 text-neutral-500" /> : <ChevronRight className="h-4 w-4 text-neutral-500" />)
+            ? (expanded ? <ChevronDown className="h-4 w-4 text-fg-muted" /> : <ChevronRight className="h-4 w-4 text-fg-muted" />)
             : <span className="block h-4 w-4" />}
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-xs text-neutral-600">{account.code}</span>
-            <span className="text-sm font-medium text-neutral-900 truncate">{account.name}</span>
+            <span className="font-mono text-xs text-fg-secondary">{account.code}</span>
+            <span className="text-sm font-medium text-fg truncate">{account.name}</span>
             {account.decomposition_enabled && (
-              <span className="text-[10px] rounded-full bg-primary-50 text-primary-700 px-2 py-0.5 font-medium">
+              <span className="text-2xs rounded-full bg-primary-50 text-primary-700 px-2 py-0.5 font-medium">
                 Decomposition
               </span>
             )}
             {!account.is_active && (
-              <span className="text-[10px] rounded-full bg-neutral-100 text-neutral-500 px-2 py-0.5">Inactive</span>
+              <span className="text-2xs rounded-full bg-surface-sunken text-fg-muted px-2 py-0.5">Inactive</span>
             )}
           </div>
           {account.description && (
-            <p className="text-xs text-neutral-500 mt-0.5">{account.description}</p>
+            <p className="text-xs text-fg-muted mt-0.5">{account.description}</p>
           )}
         </div>
         {canEdit && (
@@ -343,19 +343,19 @@ function AccountListRow({
               size="icon-sm" variant="ghost" onClick={toggleActive} disabled={updateMut.isPending}
               title={account.is_active ? 'Deactivate' : 'Activate'}
             >
-              <Power className={cn('h-3.5 w-3.5', !account.is_active && 'text-neutral-400')} />
+              <Power className={cn('h-3.5 w-3.5', !account.is_active && 'text-fg-muted')} />
             </Button>
             <Button
               size="icon-sm" variant="ghost" onClick={handleDelete} disabled={deleteMut.isPending}
               title="Delete (only if never referenced)"
             >
-              <Trash2 className="h-3.5 w-3.5 text-red-500" />
+              <Trash2 className="h-3.5 w-3.5 text-danger-fg" />
             </Button>
           </div>
         )}
       </div>
       {expanded && account.decomposition_enabled && (
-        <div className="bg-neutral-50 border-t border-neutral-100 px-5 py-4">
+        <div className="bg-surface-subtle border-t border-line-subtle px-5 py-4">
           <FactorConfigPanel accountId={account.id} canEdit={canEdit} />
         </div>
       )}
@@ -404,7 +404,7 @@ function L1FormModal({ existing, onClose }: { existing: ApiBudgetL1 | null; onCl
         </Field>
         <Field label="Description">
           <textarea value={description ?? ''} onChange={(e) => setDescription(e.target.value)}
-            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm min-h-16 focus:outline-none focus:ring-2 focus:ring-primary-600" />
+            className="w-full rounded-md border border-line-strong px-3 py-2 text-sm min-h-16 focus:outline-none focus:ring-2 focus:ring-primary-600" />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Sort order">
@@ -414,13 +414,13 @@ function L1FormModal({ existing, onClose }: { existing: ApiBudgetL1 | null; onCl
             <Field label="Status">
               <label className="flex items-center gap-2 h-10">
                 <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)}
-                  className="h-4 w-4 rounded border-neutral-300 text-primary-600" />
+                  className="h-4 w-4 rounded border-line-strong text-primary-600" />
                 <span className="text-sm">Active</span>
               </label>
             </Field>
           )}
         </div>
-        {error && <p className="text-sm text-danger-600">{error}</p>}
+        {error && <p className="text-sm text-danger-fg">{error}</p>}
         <ModalActions onCancel={onClose} pending={createMut.isPending || updateMut.isPending} />
       </form>
     </ModalShell>
@@ -475,7 +475,7 @@ function AccountFormModal({
         </Field>
         <Field label="Description">
           <textarea value={description ?? ''} onChange={(e) => setDescription(e.target.value)}
-            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm min-h-16 focus:outline-none focus:ring-2 focus:ring-primary-600" />
+            className="w-full rounded-md border border-line-strong px-3 py-2 text-sm min-h-16 focus:outline-none focus:ring-2 focus:ring-primary-600" />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Sort order">
@@ -484,7 +484,7 @@ function AccountFormModal({
           <Field label="Decomposition">
             <label className="flex items-center gap-2 h-10">
               <input type="checkbox" checked={decomp} onChange={(e) => setDecomp(e.target.checked)}
-                className="h-4 w-4 rounded border-neutral-300 text-primary-600" />
+                className="h-4 w-4 rounded border-line-strong text-primary-600" />
               <span className="text-sm">Enable factor breakdown</span>
             </label>
           </Field>
@@ -493,12 +493,12 @@ function AccountFormModal({
           <Field label="Status">
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)}
-                className="h-4 w-4 rounded border-neutral-300 text-primary-600" />
+                className="h-4 w-4 rounded border-line-strong text-primary-600" />
               <span className="text-sm">Active</span>
             </label>
           </Field>
         )}
-        {error && <p className="text-sm text-danger-600">{error}</p>}
+        {error && <p className="text-sm text-danger-fg">{error}</p>}
         <ModalActions onCancel={onClose} pending={createMut.isPending || updateMut.isPending} />
       </form>
     </ModalShell>
@@ -510,10 +510,10 @@ function AccountFormModal({
 function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-neutral-200">
-          <h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
-          <button onClick={onClose} className="p-1 rounded hover:bg-neutral-100">
+      <div className="bg-surface rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-line">
+          <h3 className="text-sm font-semibold text-fg">{title}</h3>
+          <button onClick={onClose} className="p-1 rounded hover:bg-surface-sunken">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -526,8 +526,8 @@ function ModalShell({ title, onClose, children }: { title: string; onClose: () =
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-medium text-neutral-700">
-        {label} {required && <span className="text-danger-600">*</span>}
+      <label className="text-xs font-medium text-fg-secondary">
+        {label} {required && <span className="text-danger-fg">*</span>}
       </label>
       {children}
     </div>
@@ -536,7 +536,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
 
 function ModalActions({ onCancel, pending }: { onCancel: () => void; pending: boolean }) {
   return (
-    <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
+    <div className="flex items-center justify-end gap-2 pt-2 border-t border-line-subtle">
       <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
       <Button type="submit" disabled={pending}>
         <Save className="h-4 w-4" />

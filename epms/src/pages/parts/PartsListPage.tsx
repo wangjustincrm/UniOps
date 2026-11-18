@@ -20,7 +20,7 @@ import { SortTh, useSort, sortParams } from '@uniops/shell'
 type PartSortKey =
   | 'code' | 'category' | 'name' | 'supplier' | 'supplier_part_no'
   | 'unit_price' | 'unit' | 'status'
-const PART_TH = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap'
+const PART_TH = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap'
 
 // ─── Part form ────────────────────────────────────────────────────────────────
 
@@ -88,21 +88,21 @@ function ImageUpload({ value, onChange }: ImageUploadProps) {
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-xs font-medium text-neutral-700">
-        Part Image <span className="text-neutral-400 font-normal">(optional)</span>
+      <label className="text-xs font-medium text-fg-secondary">
+        Part Image <span className="text-fg-muted font-normal">(optional)</span>
       </label>
 
       {value ? (
         /* Preview */
         <div className="flex items-center gap-3">
-          <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
+          <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-line bg-surface-subtle">
             <img src={value} alt="Part" className="h-full w-full object-contain p-1" />
           </div>
           <div className="flex flex-col gap-1.5">
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-50"
+              className="flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-xs text-fg-secondary hover:bg-surface-subtle"
             >
               <ImagePlus className="h-3.5 w-3.5" />
               Replace
@@ -110,7 +110,7 @@ function ImageUpload({ value, onChange }: ImageUploadProps) {
             <button
               type="button"
               onClick={() => onChange(null)}
-              className="flex items-center gap-1.5 rounded-lg border border-danger-200 bg-danger-50 px-3 py-1.5 text-xs text-danger-600 hover:bg-danger-100"
+              className="flex items-center gap-1.5 rounded-lg border border-danger-line bg-danger-soft px-3 py-1.5 text-xs text-danger-fg hover:bg-danger-soft"
             >
               <X className="h-3.5 w-3.5" />
               Remove
@@ -133,11 +133,11 @@ function ImageUpload({ value, onChange }: ImageUploadProps) {
             'flex h-20 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed transition-colors',
             dragging
               ? 'border-primary-400 bg-primary-50'
-              : 'border-neutral-200 bg-neutral-50 hover:border-primary-300 hover:bg-primary-50/40'
+              : 'border-line bg-surface-subtle hover:border-primary-300 hover:bg-primary-50/40'
           )}
         >
-          <ImagePlus className={cn('h-5 w-5', dragging ? 'text-primary-500' : 'text-neutral-300')} />
-          <span className="text-[10px] text-neutral-400">Click or drag image here</span>
+          <ImagePlus className={cn('h-5 w-5', dragging ? 'text-primary-500' : 'text-fg-faint')} />
+          <span className="text-2xs text-fg-muted">Click or drag image here</span>
         </div>
       )}
 
@@ -179,15 +179,15 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
 
   const inputCls = (err?: string) =>
     cn(
-      'h-10 w-full rounded-lg border bg-neutral-100 px-3 text-sm focus:outline-none focus:bg-white focus:border-primary-600 focus:shadow-[0_0_0_3px_rgba(10,124,124,0.10)] transition-colors',
-      err ? 'border-danger-600 bg-danger-50' : 'border-neutral-200'
+      'h-10 w-full rounded-lg border bg-surface-sunken px-3 text-sm focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-[0_0_0_3px_rgba(10,124,124,0.10)] transition-colors',
+      err ? 'border-danger-solid bg-danger-soft' : 'border-line'
     )
 
   return (
     <div className="rounded-xl border border-primary-200 bg-primary-50/60 p-5 mb-4">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
-        <button onClick={onCancel} className="text-neutral-400 hover:text-neutral-600">
+        <h3 className="text-sm font-semibold text-fg">{title}</h3>
+        <button onClick={onCancel} className="text-fg-muted hover:text-fg-secondary">
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -205,18 +205,18 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
         <div className="flex-1 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {/* Code */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">
-              Part Code <span className="text-danger-600">*</span>
+            <label className="text-xs font-medium text-fg-secondary">
+              Part Code <span className="text-danger-fg">*</span>
             </label>
             <input className={inputCls(errors.code)} value={form.code}
               onChange={(e) => set('code', e.target.value)} placeholder="PART-0001" />
-            {errors.code && <p className="text-xs text-danger-600">{errors.code}</p>}
+            {errors.code && <p className="text-xs text-danger-fg">{errors.code}</p>}
           </div>
 
           {/* Category */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">
-              Category <span className="text-danger-600">*</span>
+            <label className="text-xs font-medium text-fg-secondary">
+              Category <span className="text-danger-fg">*</span>
             </label>
             <input
               className={inputCls(errors.category)} list="cat-list"
@@ -226,22 +226,22 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
             <datalist id="cat-list">
               {categories.map((c) => <option key={c} value={c} />)}
             </datalist>
-            {errors.category && <p className="text-xs text-danger-600">{errors.category}</p>}
+            {errors.category && <p className="text-xs text-danger-fg">{errors.category}</p>}
           </div>
 
           {/* Name */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">
-              Part Name <span className="text-danger-600">*</span>
+            <label className="text-xs font-medium text-fg-secondary">
+              Part Name <span className="text-danger-fg">*</span>
             </label>
             <input className={inputCls(errors.name)} value={form.name}
               onChange={(e) => set('name', e.target.value)} placeholder="Ball Bearing 6205-2RS" />
-            {errors.name && <p className="text-xs text-danger-600">{errors.name}</p>}
+            {errors.name && <p className="text-xs text-danger-fg">{errors.name}</p>}
           </div>
 
           {/* Description */}
           <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-3">
-            <label className="text-xs font-medium text-neutral-700">Description</label>
+            <label className="text-xs font-medium text-fg-secondary">Description</label>
             <input className={inputCls()} value={form.description}
               onChange={(e) => set('description', e.target.value)}
               placeholder="Optional technical description" />
@@ -249,17 +249,17 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
 
           {/* Supplier */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">
-              Supplier <span className="text-danger-600">*</span>
+            <label className="text-xs font-medium text-fg-secondary">
+              Supplier <span className="text-danger-fg">*</span>
             </label>
             <input className={inputCls(errors.supplier)} value={form.supplier}
               onChange={(e) => set('supplier', e.target.value)} placeholder="SKF Canada" />
-            {errors.supplier && <p className="text-xs text-danger-600">{errors.supplier}</p>}
+            {errors.supplier && <p className="text-xs text-danger-fg">{errors.supplier}</p>}
           </div>
 
           {/* Supplier Part No */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Supplier Part No.</label>
+            <label className="text-xs font-medium text-fg-secondary">Supplier Part No.</label>
             <input className={inputCls()} value={form.supplierPartNo}
               onChange={(e) => set('supplierPartNo', e.target.value)}
               placeholder="6205-2RS/C3" />
@@ -267,20 +267,20 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
 
           {/* Supplier Item ID */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Supplier Item ID</label>
+            <label className="text-xs font-medium text-fg-secondary">Supplier Item ID</label>
             <input className={inputCls()} value={form.supplierItemId}
               onChange={(e) => set('supplierItemId', e.target.value)}
               placeholder="e.g. Amazon ASIN: B00004RFRN" />
-            <p className="text-[10px] text-neutral-400">ASIN, McMaster #, Grainger ID, etc.</p>
+            <p className="text-2xs text-fg-muted">ASIN, McMaster #, Grainger ID, etc.</p>
           </div>
 
           {/* Unit Price */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">
-              Unit Price (CAD) <span className="text-danger-600">*</span>
+            <label className="text-xs font-medium text-fg-secondary">
+              Unit Price (CAD) <span className="text-danger-fg">*</span>
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400">$</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-fg-muted">$</span>
               <input
                 type="number" min="0" step="0.01"
                 className={cn(inputCls(errors.unitPrice), 'pl-6')}
@@ -289,12 +289,12 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
                 placeholder="0.00"
               />
             </div>
-            {errors.unitPrice && <p className="text-xs text-danger-600">{errors.unitPrice}</p>}
+            {errors.unitPrice && <p className="text-xs text-danger-fg">{errors.unitPrice}</p>}
           </div>
 
           {/* Unit */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Unit (UOM)</label>
+            <label className="text-xs font-medium text-fg-secondary">Unit (UOM)</label>
             <select className={inputCls()} value={form.unit}
               onChange={(e) => set('unit', e.target.value)}>
               {unitOptions.map((u) => <option key={u} value={u}>{u}</option>)}
@@ -303,14 +303,14 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
 
           {/* Status */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Status</label>
+            <label className="text-xs font-medium text-fg-secondary">Status</label>
             <div className="flex items-center gap-4 h-10">
               {[true, false].map((val) => (
                 <label key={String(val)} className="flex items-center gap-2 cursor-pointer">
                   <input type="radio" checked={form.isActive === val}
                     onChange={() => set('isActive', val)}
                     className="accent-primary-600" />
-                  <span className="text-sm text-neutral-700">{val ? 'Active' : 'Inactive'}</span>
+                  <span className="text-sm text-fg-secondary">{val ? 'Active' : 'Inactive'}</span>
                 </label>
               ))}
             </div>
@@ -335,7 +335,7 @@ export function PartThumbnail({ src, size = 36 }: { src?: string | null; size?: 
   if (src) {
     return (
       <div
-        className="shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50"
+        className="shrink-0 overflow-hidden rounded-lg border border-line bg-surface-subtle"
         style={{ width: size, height: size }}
       >
         <img src={src} alt="" className="h-full w-full object-contain p-0.5" />
@@ -344,10 +344,10 @@ export function PartThumbnail({ src, size = 36 }: { src?: string | null; size?: 
   }
   return (
     <div
-      className="shrink-0 flex items-center justify-center rounded-lg bg-neutral-100"
+      className="shrink-0 flex items-center justify-center rounded-lg bg-surface-sunken"
       style={{ width: size, height: size }}
     >
-      <Package className="text-neutral-300" style={{ width: size * 0.5, height: size * 0.5 }} />
+      <Package className="text-fg-faint" style={{ width: size * 0.5, height: size * 0.5 }} />
     </div>
   )
 }
@@ -502,8 +502,8 @@ export default function PartsListPage() {
       {/* Page header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Parts Catalog</h1>
-          <p className="mt-0.5 text-sm text-neutral-500">
+          <h1 className="text-2xl font-bold text-fg">Parts Catalog</h1>
+          <p className="mt-0.5 text-sm text-fg-muted">
             {totalAll} total parts
           </p>
         </div>
@@ -531,7 +531,7 @@ export default function PartsListPage() {
 
       {/* Import error toast */}
       {importError && (
-        <div className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm bg-danger-50 border border-danger-200 text-danger-700">
+        <div className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm bg-danger-soft border border-danger-line text-danger-fg">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>Import failed: {importError}</span>
           <button onClick={() => setImportError(null)} className="ml-auto">
@@ -545,8 +545,8 @@ export default function PartsListPage() {
         <div className={cn(
           'flex items-center gap-3 rounded-xl px-4 py-3 text-sm',
           importResult.errors > 0
-            ? 'bg-warning-50 border border-warning-200 text-warning-700'
-            : 'bg-success-50 border border-success-200 text-success-700'
+            ? 'bg-warning-soft border border-warning-line text-warning-fg'
+            : 'bg-success-soft border border-success-line text-success-fg'
         )}>
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>
@@ -560,25 +560,25 @@ export default function PartsListPage() {
       )}
 
       {/* CSV format hint */}
-      <div className="rounded-lg bg-neutral-50 border border-neutral-200 px-4 py-2.5 text-xs text-neutral-500">
-        <span className="font-medium text-neutral-600">CSV format: </span>
+      <div className="rounded-lg bg-surface-subtle border border-line px-4 py-2.5 text-xs text-fg-muted">
+        <span className="font-medium text-fg-secondary">CSV format: </span>
         code, category, name, description, supplier, supplierPartNo, supplierItemId, unitPrice, unit
-        <span className="ml-2 text-neutral-400">(images managed via the form only)</span>
+        <span className="ml-2 text-fg-muted">(images managed via the form only)</span>
       </div>
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-52">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
           <Input placeholder="Search code, name, supplier…"
             value={search} onChange={(e) => setSearchAndReset(e.target.value)} className="pl-9" />
         </div>
         <div className="flex items-center gap-2">
-          <Filter className="h-4 w-4 text-neutral-400" />
+          <Filter className="h-4 w-4 text-fg-muted" />
           <select
             value={catFilter}
             onChange={(e) => setCatAndReset(e.target.value)}
-            className="h-10 rounded-lg border border-neutral-200 bg-neutral-100 px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="h-10 rounded-lg border border-line bg-surface-sunken px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
           >
             <option value="all">All Categories</option>
             {categories.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -600,11 +600,11 @@ export default function PartsListPage() {
       )}
 
       {/* Table */}
-      <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
+      <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-50">
+              <tr className="border-b border-line bg-surface-subtle">
                 <th className="w-12 px-3 py-3" />
                 <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className={PART_TH} />
                 <SortTh label="Category" sortKey="category" sort={sort} onSort={onSort} className={PART_TH} />
@@ -621,9 +621,9 @@ export default function PartsListPage() {
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={10} className="py-16 text-center">
-                    <Package className="h-8 w-8 text-neutral-300 mx-auto mb-3" />
-                    <p className="text-sm font-medium text-neutral-500">No parts found</p>
-                    <p className="text-xs text-neutral-400 mt-1">
+                    <Package className="h-8 w-8 text-fg-faint mx-auto mb-3" />
+                    <p className="text-sm font-medium text-fg-muted">No parts found</p>
+                    <p className="text-xs text-fg-muted mt-1">
                       {search || catFilter !== 'all' ? 'Try adjusting your filters' : 'Add your first part to the catalog'}
                     </p>
                   </td>
@@ -633,8 +633,8 @@ export default function PartsListPage() {
                 <tr
                   key={part.id}
                   className={cn(
-                    'border-b border-neutral-100 hover:bg-primary-50/40 transition-colors',
-                    i % 2 === 1 ? 'bg-neutral-50/60' : 'bg-white',
+                    'border-b border-line-subtle hover:bg-primary-50/40 transition-colors',
+                    i % 2 === 1 ? 'bg-surface-subtle/60' : 'bg-surface',
                     !part.is_active && 'opacity-60'
                   )}
                 >
@@ -647,23 +647,23 @@ export default function PartsListPage() {
                       {part.code}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-neutral-500 whitespace-nowrap">{part.category}</td>
-                  <td className="px-4 py-3 text-neutral-900 font-medium max-w-52">
+                  <td className="px-4 py-3 text-fg-muted whitespace-nowrap">{part.category}</td>
+                  <td className="px-4 py-3 text-fg font-medium max-w-52">
                     <p className="truncate">{part.name}</p>
                     {part.description && (
-                      <p className="text-xs text-neutral-400 truncate">{part.description}</p>
+                      <p className="text-xs text-fg-muted truncate">{part.description}</p>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-neutral-600 whitespace-nowrap">{part.supplier}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-neutral-500">{part.supplier_part_no || '—'}</td>
-                  <td className="px-4 py-3 font-mono text-sm text-neutral-900 text-right">
+                  <td className="px-4 py-3 text-fg-secondary whitespace-nowrap">{part.supplier}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-fg-muted">{part.supplier_part_no || '—'}</td>
+                  <td className="px-4 py-3 font-mono text-sm text-fg text-right">
                     {formatCAD(part.unit_price)}
                   </td>
-                  <td className="px-4 py-3 text-neutral-500">{part.unit}</td>
+                  <td className="px-4 py-3 text-fg-muted">{part.unit}</td>
                   <td className="px-4 py-3">
                     <span className={cn(
                       'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                      part.is_active ? 'bg-success-50 text-success-700' : 'bg-neutral-100 text-neutral-500'
+                      part.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted'
                     )}>
                       {part.is_active ? '● Active' : '○ Inactive'}
                     </span>
@@ -674,12 +674,12 @@ export default function PartsListPage() {
                       {deleteConfirm === part.id ? (
                         <>
                           <button onClick={() => { deletePart.mutate(part.id); setDeleteConfirm(null) }}
-                            className="flex h-7 w-7 items-center justify-center rounded text-danger-600 hover:bg-danger-50"
+                            className="flex h-7 w-7 items-center justify-center rounded text-danger-fg hover:bg-danger-soft"
                             title="Confirm delete">
                             <Check className="h-3.5 w-3.5" />
                           </button>
                           <button onClick={() => setDeleteConfirm(null)}
-                            className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100"
+                            className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-surface-sunken"
                             title="Cancel">
                             <X className="h-3.5 w-3.5" />
                           </button>
@@ -687,12 +687,12 @@ export default function PartsListPage() {
                       ) : (
                         <>
                           <button onClick={() => { openEdit(part); setDeleteConfirm(null) }}
-                            className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-primary-50 hover:text-primary-600"
+                            className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-primary-50 hover:text-primary-600"
                             title="Edit part">
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
                           <button onClick={() => { setDeleteConfirm(part.id); setMode('none') }}
-                            className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-danger-50 hover:text-danger-500"
+                            className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-danger-soft hover:text-danger-fg"
                             title="Delete part">
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -707,13 +707,13 @@ export default function PartsListPage() {
           </table>
         </div>
         {/* Pagination footer */}
-        <div className="flex items-center justify-between border-t border-neutral-200 bg-neutral-50 px-4 py-2.5 text-xs text-neutral-500 gap-4 flex-wrap">
+        <div className="flex items-center justify-between border-t border-line bg-surface-subtle px-4 py-2.5 text-xs text-fg-muted gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <span>Rows per page:</span>
             <select
               value={pageSize}
               onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}
-              className="h-7 rounded border border-neutral-200 bg-white px-2 text-xs"
+              className="h-7 rounded border border-line bg-surface px-2 text-xs"
             >
               {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
@@ -723,25 +723,25 @@ export default function PartsListPage() {
           </div>
           <div className="flex items-center gap-1">
             <button onClick={() => setPage(1)} disabled={page === 1}
-              className="flex h-7 w-7 items-center justify-center rounded hover:bg-neutral-200 disabled:opacity-40">«</button>
+              className="flex h-7 w-7 items-center justify-center rounded hover:bg-surface-strong disabled:opacity-40">«</button>
             <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
-              className="flex h-7 w-7 items-center justify-center rounded hover:bg-neutral-200 disabled:opacity-40">‹</button>
+              className="flex h-7 w-7 items-center justify-center rounded hover:bg-surface-strong disabled:opacity-40">‹</button>
             {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
               const start = Math.max(1, Math.min(page - 2, totalPages - 4))
               const p = start + i
               return (
                 <button key={p} onClick={() => setPage(p)}
                   className={cn('flex h-7 w-7 items-center justify-center rounded text-xs',
-                    p === page ? 'bg-primary-600 text-white font-semibold' : 'hover:bg-neutral-200'
+                    p === page ? 'bg-primary-600 text-white font-semibold' : 'hover:bg-surface-strong'
                   )}>
                   {p}
                 </button>
               )
             })}
             <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-              className="flex h-7 w-7 items-center justify-center rounded hover:bg-neutral-200 disabled:opacity-40">›</button>
+              className="flex h-7 w-7 items-center justify-center rounded hover:bg-surface-strong disabled:opacity-40">›</button>
             <button onClick={() => setPage(totalPages)} disabled={page === totalPages}
-              className="flex h-7 w-7 items-center justify-center rounded hover:bg-neutral-200 disabled:opacity-40">»</button>
+              className="flex h-7 w-7 items-center justify-center rounded hover:bg-surface-strong disabled:opacity-40">»</button>
           </div>
         </div>
       </div>

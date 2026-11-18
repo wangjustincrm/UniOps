@@ -20,22 +20,22 @@ export function FreightPaCreate({ preselectInvoiceId }: { preselectInvoiceId: st
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-3">
-        <BackLink to="/pa" className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500" aria-label="Back to Payment Applications">
+        <BackLink to="/pa" className="p-2 rounded-lg hover:bg-surface-sunken text-fg-muted" aria-label="Back to Payment Applications">
           <ArrowLeft className="h-5 w-5" />
         </BackLink>
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">New Freight PA</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">Pay matched courier invoices of one carrier, split over the cost centers they were matched to</p>
+          <h1 className="text-2xl font-bold text-fg">New Freight PA</h1>
+          <p className="text-sm text-fg-muted mt-0.5">Pay matched courier invoices of one carrier, split over the cost centers they were matched to</p>
         </div>
       </div>
       {isLoading ? (
-        <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-neutral-300" /></div>
+        <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-fg-faint" /></div>
       ) : access?.manage ? (
         <FreightPaForm preselectInvoiceId={preselectInvoiceId} />
       ) : (
-        <div className="rounded-xl border border-neutral-200 bg-white py-16 text-center">
-          <p className="text-sm font-medium text-neutral-500">You do not have access to Freight payments</p>
-          <p className="text-xs text-neutral-400 mt-1">Raising a Freight PA needs the Freight manage permission.</p>
+        <div className="rounded-xl border border-line bg-surface py-16 text-center">
+          <p className="text-sm font-medium text-fg-muted">You do not have access to Freight payments</p>
+          <p className="text-xs text-fg-muted mt-1">Raising a Freight PA needs the Freight manage permission.</p>
         </div>
       )}
     </div>
@@ -113,29 +113,29 @@ function FreightPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nu
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-      <div className="lg:col-span-2 rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex flex-wrap items-center gap-3 border-b border-neutral-200 px-5 py-3">
+      <div className="lg:col-span-2 rounded-xl border border-line bg-surface shadow-sm overflow-hidden">
+        <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
           <select value={carrierId} onChange={(e) => { setCarrierId(e.target.value); setSelected(new Set()) }} className={SELECT_CLS}>
             <option value="">Select carrier…</option>
             {carriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <span className="text-sm text-neutral-400">
+          <span className="text-sm text-fg-muted">
             {carrierId ? (isPending ? 'Loading…' : `${ready.length} matched invoice${ready.length !== 1 ? 's' : ''} not on a PA`) : 'Matched invoices of one carrier go on one PA'}
           </span>
         </div>
         {!carrierId ? (
-          <div className="py-16 text-center text-sm text-neutral-400">Choose a carrier to see its invoices ready for payment</div>
+          <div className="py-16 text-center text-sm text-fg-muted">Choose a carrier to see its invoices ready for payment</div>
         ) : isPending ? (
-          <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-neutral-300" /></div>
+          <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-fg-faint" /></div>
         ) : ready.length === 0 ? (
           <div className="py-16 text-center">
-            <p className="text-sm font-medium text-neutral-500">Nothing ready to pay</p>
-            <p className="text-xs text-neutral-400 mt-1">Finalise the matching on a courier invoice first (Invoices page)</p>
+            <p className="text-sm font-medium text-fg-muted">Nothing ready to pay</p>
+            <p className="text-xs text-fg-muted mt-1">Finalise the matching on a courier invoice first (Invoices page)</p>
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-100 bg-neutral-50">
+              <tr className="border-b border-line-subtle bg-surface-subtle">
                 <th className={cn(TH_CLS, 'w-10')}>
                   <input type="checkbox" aria-label="Select all"
                     checked={ready.length > 0 && ready.every((i) => selected.has(i.id))}
@@ -151,16 +151,16 @@ function FreightPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nu
                 const due = dueInfo(inv.due_date, inv.status)
                 const urgent = due.tone === 'overdue' || due.tone === 'soon'
                 return (
-                  <tr key={inv.id} className="border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer" onClick={() => toggle(inv.id)}>
+                  <tr key={inv.id} className="border-b border-line-subtle hover:bg-surface-subtle cursor-pointer" onClick={() => toggle(inv.id)}>
                     <td className="px-3 py-2.5"><input type="checkbox" checked={selected.has(inv.id)} onChange={() => toggle(inv.id)} onClick={(e) => e.stopPropagation()} /></td>
                     <td className="px-3 py-2.5">
                       <Link to={`/invoices/${inv.id}`} onClick={(e) => e.stopPropagation()} className="font-mono text-xs font-semibold text-primary-700 hover:underline">
                         {inv.vendor_invoice_number}
                       </Link>
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-neutral-600">{formatDate(inv.invoice_date)}</td>
-                    <td className={cn('px-3 py-2.5 text-xs', urgent ? 'font-semibold text-danger-600' : 'text-neutral-600')}>
-                      {formatDate(inv.due_date)}{due.label && <span className="ml-1 text-[10px]">({due.label})</span>}
+                    <td className="px-3 py-2.5 text-xs text-fg-secondary">{formatDate(inv.invoice_date)}</td>
+                    <td className={cn('px-3 py-2.5 text-xs', urgent ? 'font-semibold text-danger-fg' : 'text-fg-secondary')}>
+                      {formatDate(inv.due_date)}{due.label && <span className="ml-1 text-2xs">({due.label})</span>}
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono text-xs">{formatAmount(num(inv.amount), inv.currency)}</td>
                     <td className="px-3 py-2.5 text-right font-mono text-xs">{formatAmount(num(inv.tax_amount), inv.currency)}</td>
@@ -174,16 +174,16 @@ function FreightPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nu
       </div>
 
       <div className="flex flex-col gap-4">
-        <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-3">Cost Split Preview</h3>
+        <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+          <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-3">Cost Split Preview</h3>
           {selectedIds.length === 0 ? (
-            <p className="text-xs text-neutral-400">Tick one or more invoices.</p>
+            <p className="text-xs text-fg-muted">Tick one or more invoices.</p>
           ) : details.isLoading ? (
-            <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-neutral-300" /></div>
+            <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-fg-faint" /></div>
           ) : (
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-neutral-500">
+                <tr className="text-fg-muted">
                   <th className="pb-1.5 text-left font-medium">Cost center</th>
                   <th className="pb-1.5 text-right font-medium">Amount</th>
                   <th className="pb-1.5 text-right font-medium">Tax</th>
@@ -191,16 +191,16 @@ function FreightPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nu
               </thead>
               <tbody>
                 {split.map((r, i) => (
-                  <tr key={i} className="border-t border-neutral-100">
+                  <tr key={i} className="border-t border-line-subtle">
                     <td className="py-1.5">
-                      <div className="text-neutral-800">{r.code ? `${r.code} — ${r.name ?? ''}` : '—'}</div>
-                      <div className="text-[10px] text-neutral-400">{r.dept ?? ''}</div>
+                      <div className="text-fg">{r.code ? `${r.code} — ${r.name ?? ''}` : '—'}</div>
+                      <div className="text-2xs text-fg-muted">{r.dept ?? ''}</div>
                     </td>
                     <td className="py-1.5 text-right font-mono">{formatAmount(r.amount, currency)}</td>
                     <td className="py-1.5 text-right font-mono">{formatAmount(r.tax, currency)}</td>
                   </tr>
                 ))}
-                <tr className="border-t-2 border-neutral-200 font-semibold">
+                <tr className="border-t-2 border-line font-semibold">
                   <td className="py-1.5">Total</td>
                   <td className="py-1.5 text-right font-mono">{formatAmount(subtotal, currency)}</td>
                   <td className="py-1.5 text-right font-mono">{formatAmount(taxTotal, currency)}</td>
@@ -215,26 +215,26 @@ function FreightPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nu
             </div>
           )}
           {currencies.size > 1 && (
-            <p className="mt-2 flex items-center gap-1 text-xs text-danger-600"><AlertTriangle className="h-3.5 w-3.5" /> The ticked invoices are in different currencies.</p>
+            <p className="mt-2 flex items-center gap-1 text-xs text-danger-fg"><AlertTriangle className="h-3.5 w-3.5" /> The ticked invoices are in different currencies.</p>
           )}
         </div>
 
-        <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-3">
+        <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Title</label>
+            <label className="text-xs font-medium text-fg-secondary">Title</label>
             <Input value={title} onChange={(e: ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)} placeholder="Default: Freight — carrier + invoice numbers" />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Notes</label>
+            <label className="text-xs font-medium text-fg-secondary">Notes</label>
             <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
-              className="w-full resize-none rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+              className="w-full resize-none rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
           </div>
-          {error && <p className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-600">{error}</p>}
+          {error && <p className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">{error}</p>}
           <Button onClick={submit} disabled={createPa.isPending || selectedIds.length === 0 || currencies.size > 1} className="gap-2">
             <CreditCard className="h-4 w-4" />
             {createPa.isPending ? 'Creating…' : 'Create Freight PA'}
           </Button>
-          <p className="text-[11px] text-neutral-400">The PA opens as a draft. Check it, then press Submit for Approval on the PA page.</p>
+          <p className="text-2xs text-fg-muted">The PA opens as a draft. Check it, then press Submit for Approval on the PA page.</p>
         </div>
       </div>
     </div>

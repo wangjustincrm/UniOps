@@ -22,24 +22,24 @@ export function RejectReceiptDialog({ receiptLabel, onClose, onConfirm }: {
   // Escape closes without rejecting, like Cancel.
   useCloseOnEscape(true, onClose)
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true">
-        <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl" role="dialog" aria-modal="true">
+        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-danger-50">
-              <XCircle className="h-5 w-5 text-danger-600" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-danger-soft">
+              <XCircle className="h-5 w-5 text-danger-fg" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-neutral-900">Reject Receipt</h2>
-              <p className="text-xs text-neutral-500">{receiptLabel}</p>
+              <h2 className="text-sm font-semibold text-fg">Reject Receipt</h2>
+              <p className="text-xs text-fg-muted">{receiptLabel}</p>
             </div>
           </div>
-          <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600">
+          <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary">
             <X className="h-4 w-4" />
           </button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
-          <p className="text-sm text-neutral-700">
+          <p className="text-sm text-fg-secondary">
             This is final — a rejected receipt can never be approved, removed, or edited afterward.
             The only way to record this spend again is to enter a brand-new receipt.
           </p>
@@ -48,7 +48,7 @@ export function RejectReceiptDialog({ receiptLabel, onClose, onConfirm }: {
             <button
               onClick={onConfirm}
               autoFocus
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-danger-600 px-3 text-sm font-medium text-white transition-colors hover:bg-danger-700"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-danger-solid px-3 text-sm font-medium text-white transition-colors hover:bg-danger-700"
             >
               <XCircle className="h-4 w-4" />
               Reject

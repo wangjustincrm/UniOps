@@ -40,21 +40,21 @@ function money(v: string) {
 export function BillEvidence({ jv, other }: { jv?: JvMatch[]; other?: OtherCurrencyBill[] }) {
   if (!jv?.length && !other?.length) return null
   return (
-    <div className="mt-1 space-y-0.5 font-sans text-[10px] leading-snug">
+    <div className="mt-1 space-y-0.5 font-sans text-2xs leading-snug">
       {jv?.map((m, k) => (
         <div key={`jv${k}`}
              title={[m.summary, m.subsystem && `source: ${m.subsystem}`].filter(Boolean).join(' · ')}
-             className={m.amount_matches ? 'text-emerald-700' : 'text-sky-700'}>
-          <span className="rounded bg-sky-50 px-1 py-px font-semibold">In JV</span>{' '}
+             className={m.amount_matches ? 'text-success-fg' : 'text-info-fg'}>
+          <span className="rounded bg-info-soft px-1 py-px font-semibold">In JV</span>{' '}
           <span className="font-mono">{m.jv_number}</span> · {formatDate(m.voucher_date)} ·{' '}
           {money(m.amount)} {m.currency} · inv {m.invoice_no}
           {m.amount_matches && <span className="font-semibold"> · amount matches</span>}
         </div>
       ))}
       {other?.map((o) => (
-        <div key={o.bill_no} className="text-amber-700"
+        <div key={o.bill_no} className="text-warning-fg"
              title={`Invoice ${o.invoice_nos.join(', ')} is also on ${o.bill_no} (${o.currency}), billed ${money(o.money_cr)}`}>
-          <span className="rounded bg-amber-50 px-1 py-px font-semibold">Also in {o.currency}</span>{' '}
+          <span className="rounded bg-warning-soft px-1 py-px font-semibold">Also in {o.currency}</span>{' '}
           <span className="font-mono">{o.bill_no}</span> · {formatDate(o.bill_date)} · inv {o.invoice_nos.join(', ')} ·{' '}
           {Number(o.money_bal) === 0 ? 'settled' : `open ${money(o.money_bal)}`}
         </div>

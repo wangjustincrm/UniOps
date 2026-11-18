@@ -173,16 +173,16 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
 
   const modal = (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-2xl rounded-xl border border-neutral-200 bg-white shadow-xl flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-2xl rounded-xl border border-line bg-surface shadow-xl flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 shrink-0">
-          <h2 className="text-base font-semibold text-neutral-900">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-line shrink-0">
+          <h2 className="text-base font-semibold text-fg">
             {isEdit ? 'Edit Room' : 'New Room'}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="text-neutral-400 hover:text-neutral-600"
+            className="text-fg-muted hover:text-fg-secondary"
           >
             <XIcon className="h-5 w-5" />
           </button>
@@ -191,7 +191,7 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
         {/* Scrollable body */}
         <form id="room-form" onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
           {error && (
-            <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+            <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
               <AlertCircle className="h-4 w-4 shrink-0" />
               {error}
             </div>
@@ -200,22 +200,22 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
           {/* Name + Code */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-neutral-700 mb-1">Name <span className="text-red-500">*</span></label>
+              <label className="block text-xs font-medium text-fg-secondary mb-1">Name <span className="text-danger-fg">*</span></label>
               <input
                 required
                 value={form.name}
                 onChange={(e) => setField('name', e.target.value)}
-                className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
                 placeholder="Conference Room A"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-neutral-700 mb-1">Code <span className="text-red-500">*</span></label>
+              <label className="block text-xs font-medium text-fg-secondary mb-1">Code <span className="text-danger-fg">*</span></label>
               <input
                 required
                 value={form.code}
                 onChange={(e) => setField('code', e.target.value.toUpperCase())}
-                className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
                 placeholder="CR-A"
               />
             </div>
@@ -224,20 +224,20 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
           {/* Location */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-neutral-700 mb-1">Floor</label>
+              <label className="block text-xs font-medium text-fg-secondary mb-1">Floor</label>
               <input
                 value={form.floor as string ?? ''}
                 onChange={(e) => setField('floor', e.target.value)}
-                className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
                 placeholder="2"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-neutral-700 mb-1">Area</label>
+              <label className="block text-xs font-medium text-fg-secondary mb-1">Area</label>
               <input
                 value={form.area as string ?? ''}
                 onChange={(e) => setField('area', e.target.value)}
-                className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
                 placeholder="East Wing"
               />
             </div>
@@ -246,22 +246,22 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
           {/* Capacity + Type */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-neutral-700 mb-1">Capacity <span className="text-red-500">*</span></label>
+              <label className="block text-xs font-medium text-fg-secondary mb-1">Capacity <span className="text-danger-fg">*</span></label>
               <input
                 required
                 type="number"
                 min={1}
                 value={form.capacity}
                 onChange={(e) => setField('capacity', Number(e.target.value))}
-                className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-neutral-700 mb-1">Room Type</label>
+              <label className="block text-xs font-medium text-fg-secondary mb-1">Room Type</label>
               <select
                 value={form.room_type}
                 onChange={(e) => setField('room_type', e.target.value)}
-                className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
               >
                 {ROOM_TYPES.map((t) => (
                   <option key={t} value={t}>{ROOM_TYPE_LABELS[t]}</option>
@@ -272,7 +272,7 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
 
           {/* Equipment */}
           <div>
-            <label className="block text-xs font-medium text-neutral-700 mb-1">Equipment</label>
+            <label className="block text-xs font-medium text-fg-secondary mb-1">Equipment</label>
             <div className="flex flex-wrap gap-2">
               {EQUIPMENT_OPTIONS.map((item) => {
                 const checked = (form.equipment ?? []).includes(item)
@@ -282,8 +282,8 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
                     className={cn(
                       'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs cursor-pointer transition-colors',
                       checked
-                        ? 'border-[#085E5E] bg-[#085E5E]/10 text-[#085E5E] font-medium'
-                        : 'border-neutral-300 bg-white text-neutral-600 hover:border-neutral-400',
+                        ? 'border-primary-700 bg-primary-700/10 text-primary-700 font-medium'
+                        : 'border-line-strong bg-surface text-fg-secondary hover:border-line-strong',
                     )}
                   >
                     <input
@@ -302,64 +302,64 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
           {/* Open hours */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-neutral-700 mb-1">Open Time Start</label>
+              <label className="block text-xs font-medium text-fg-secondary mb-1">Open Time Start</label>
               <input
                 type="time"
                 value={form.open_time_start as string ?? ''}
                 onChange={(e) => setField('open_time_start', e.target.value)}
-                className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-neutral-700 mb-1">Open Time End</label>
+              <label className="block text-xs font-medium text-fg-secondary mb-1">Open Time End</label>
               <input
                 type="time"
                 value={form.open_time_end as string ?? ''}
                 onChange={(e) => setField('open_time_end', e.target.value)}
-                className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
               />
             </div>
           </div>
 
           {/* Advance booking days */}
           <div>
-            <label className="block text-xs font-medium text-neutral-700 mb-1">Advance Booking Days</label>
+            <label className="block text-xs font-medium text-fg-secondary mb-1">Advance Booking Days</label>
             <input
               type="number"
               min={0}
               value={form.advance_booking_days ?? ''}
               onChange={(e) => setField('advance_booking_days', e.target.value ? Number(e.target.value) : undefined)}
-              className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+              className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
               placeholder="Leave blank to use system default"
             />
           </div>
 
           {/* Owner department */}
           <div>
-            <label className="block text-xs font-medium text-neutral-700 mb-1">Owner Department</label>
+            <label className="block text-xs font-medium text-fg-secondary mb-1">Owner Department</label>
             <input
               value={form.owner_department as string ?? ''}
               onChange={(e) => setField('owner_department', e.target.value)}
-              className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+              className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
               placeholder="e.g. Facilities"
             />
           </div>
 
           {/* Notes */}
           <div>
-            <label className="block text-xs font-medium text-neutral-700 mb-1">Notes</label>
+            <label className="block text-xs font-medium text-fg-secondary mb-1">Notes</label>
             <textarea
               rows={2}
               value={form.notes as string ?? ''}
               onChange={(e) => setField('notes', e.target.value)}
-              className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40 resize-none"
+              className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40 resize-none"
               placeholder="Optional notes visible to admins"
             />
           </div>
 
           {/* Image upload — file-api */}
           <div>
-            <label className="block text-xs font-medium text-neutral-700 mb-1">Room Images</label>
+            <label className="block text-xs font-medium text-fg-secondary mb-1">Room Images</label>
 
             {/* Thumbnail grid with per-image remove */}
             {(form.image_file_ids ?? []).length > 0 && FILE_API_BASE && (
@@ -369,12 +369,12 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
                     <AuthImage
                       src={`${FILE_API_BASE}/files/v1/files/${fid}`}
                       alt="Room image"
-                      className="h-20 w-28 rounded-lg object-cover border border-neutral-200"
+                      className="h-20 w-28 rounded-lg object-cover border border-line"
                     />
                     <button
                       type="button"
                       onClick={() => removeImage(fid)}
-                      className="absolute top-1 right-1 hidden group-hover:flex items-center justify-center h-5 w-5 rounded-full bg-red-500 text-white shadow"
+                      className="absolute top-1 right-1 hidden group-hover:flex items-center justify-center h-5 w-5 rounded-full bg-danger-solid text-white shadow"
                       title="Remove image"
                     >
                       <Trash2 className="h-3 w-3" />
@@ -399,7 +399,7 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading || !FILE_API_BASE}
               className={cn(
-                'inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 disabled:cursor-not-allowed',
+                'inline-flex items-center gap-1.5 rounded-md border border-line-strong px-3 py-1.5 text-xs text-fg-secondary hover:bg-surface-subtle disabled:opacity-50 disabled:cursor-not-allowed',
               )}
             >
               {uploading
@@ -410,12 +410,12 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
             </button>
 
             {!FILE_API_BASE && (
-              <p className="mt-1 text-xs text-neutral-400">
+              <p className="mt-1 text-xs text-fg-muted">
                 Image upload requires VITE_FILE_API_URL to be configured.
               </p>
             )}
             {uploadError && (
-              <div className="mt-1 flex items-center gap-1.5 text-xs text-red-600">
+              <div className="mt-1 flex items-center gap-1.5 text-xs text-danger-fg">
                 <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                 {uploadError}
               </div>
@@ -424,12 +424,12 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
         </form>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 px-6 py-4 border-t border-neutral-200 shrink-0">
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-line shrink-0">
           <button
             type="button"
             onClick={onClose}
             disabled={isPending}
-            className="rounded-md border border-neutral-300 px-4 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+            className="rounded-md border border-line-strong px-4 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50"
           >
             Cancel
           </button>
@@ -438,7 +438,7 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
             form="room-form"
             disabled={isPending}
             onClick={handleSubmit}
-            className="inline-flex items-center gap-1.5 rounded-md bg-[#085E5E] px-4 py-1.5 text-sm font-semibold text-white hover:bg-[#085E5E]/90 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-primary-700/90 disabled:opacity-50"
           >
             {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {isEdit ? 'Save Changes' : 'Create Room'}

@@ -5,12 +5,12 @@ import { displayTimeZone, formatDate } from '@/lib/utils'
 import { SortTh, useSortableRows } from '@uniops/shell'
 
 const GR_STATUS_STYLES: Record<string, string> = {
-  pending_ack:        'bg-warning-100 text-warning-700',
-  collection_pending: 'bg-blue-100 text-blue-700',
-  collected:          'bg-success-100 text-success-700',
-  confirmed:          'bg-success-100 text-success-700',
-  discrepancy:        'bg-danger-100 text-danger-700',
-  cancelled:          'bg-neutral-100 text-neutral-500',
+  pending_ack:        'bg-warning-soft text-warning-fg',
+  collection_pending: 'bg-info-soft text-info-fg',
+  collected:          'bg-success-soft text-success-fg',
+  confirmed:          'bg-success-soft text-success-fg',
+  discrepancy:        'bg-danger-soft text-danger-fg',
+  cancelled:          'bg-surface-sunken text-fg-muted',
 }
 
 const GR_STATUS_LABEL: Record<string, string> = {
@@ -24,7 +24,7 @@ const GR_STATUS_LABEL: Record<string, string> = {
 
 function GrStatusBadge({ status }: { status: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${GR_STATUS_STYLES[status] ?? 'bg-neutral-100 text-neutral-600'}`}>
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${GR_STATUS_STYLES[status] ?? 'bg-surface-sunken text-fg-secondary'}`}>
       {GR_STATUS_LABEL[status] ?? status}
     </span>
   )
@@ -49,7 +49,7 @@ export default function WarehouseDashboard() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Warehouse Dashboard</h1>
+        <h1 className="text-2xl font-bold text-fg">Warehouse Dashboard</h1>
         <Link to="/gr/new" className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 transition-colors">
           + New GR
         </Link>
@@ -85,16 +85,16 @@ export default function WarehouseDashboard() {
       </div>
 
       {/* GRs table */}
-      <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+      <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-neutral-900">Open Goods Receipts</h2>
+          <h2 className="text-base font-semibold text-fg">Open Goods Receipts</h2>
           <Link to="/gr" className="text-xs text-primary-600 hover:underline">View all →</Link>
         </div>
 
         {recentGrs.length === 0 ? (
           <div className="py-12 text-center">
-            <p className="text-sm font-medium text-neutral-500">No open goods receipts</p>
-            <p className="mt-1 text-xs text-neutral-400">All GRs are resolved or cancelled.</p>
+            <p className="text-sm font-medium text-fg-muted">No open goods receipts</p>
+            <p className="mt-1 text-xs text-fg-muted">All GRs are resolved or cancelled.</p>
             <Link to="/gr/new" className="mt-4 inline-flex items-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 transition-colors">
               Create New GR
             </Link>
@@ -103,35 +103,35 @@ export default function WarehouseDashboard() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-neutral-100 text-left">
-                  <SortTh label="GR #" sortKey="number" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <SortTh label="Type" sortKey="gr_type" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <SortTh label="PO #" sortKey="po_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <th className="pb-2 font-medium text-neutral-500"></th>
+                <tr className="border-b border-line-subtle text-left">
+                  <SortTh label="GR #" sortKey="number" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <SortTh label="Type" sortKey="gr_type" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <SortTh label="PO #" sortKey="po_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <th className="pb-2 font-medium text-fg-muted"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-50">
+              <tbody className="divide-y divide-line-subtle">
                 {recentGrs.map((gr) => (
-                  <tr key={gr.id} className="hover:bg-neutral-50">
+                  <tr key={gr.id} className="hover:bg-surface-subtle">
                     <td className="py-2 pr-3">
-                      <span className="font-mono text-xs text-neutral-700">{gr.number}</span>
+                      <span className="font-mono text-xs text-fg-secondary">{gr.number}</span>
                     </td>
                     <td className="py-2 pr-3">
                       {gr.gr_type === 'physical' ? (
-                        <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">Physical</span>
+                        <span className="inline-flex items-center rounded-full bg-info-soft px-2 py-0.5 text-xs font-medium text-info-fg">Physical</span>
                       ) : (
-                        <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">Service</span>
+                        <span className="inline-flex items-center rounded-full bg-cat4-soft px-2 py-0.5 text-xs font-medium text-cat4-fg">Service</span>
                       )}
                     </td>
                     <td className="py-2 pr-3">
-                      <span className="font-mono text-xs text-neutral-600">{gr.po_number}</span>
+                      <span className="font-mono text-xs text-fg-secondary">{gr.po_number}</span>
                     </td>
-                    <td className="py-2 pr-3 max-w-[140px] truncate text-neutral-500">{gr.vendor_name}</td>
+                    <td className="py-2 pr-3 max-w-[140px] truncate text-fg-muted">{gr.vendor_name}</td>
                     <td className="py-2 pr-3"><GrStatusBadge status={gr.status} /></td>
-                    <td className="py-2 pr-3 text-neutral-500">{formatDate(gr.created_at)}</td>
+                    <td className="py-2 pr-3 text-fg-muted">{formatDate(gr.created_at)}</td>
                     <td className="py-2">
                       <Link to={`/gr/${gr.id}`} className="text-xs text-primary-600 hover:underline whitespace-nowrap">View →</Link>
                     </td>

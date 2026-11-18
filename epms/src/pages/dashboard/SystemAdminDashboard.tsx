@@ -25,7 +25,7 @@ export default function SystemAdminDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-neutral-900">System Admin Dashboard</h1>
+      <h1 className="text-2xl font-bold text-fg">System Admin Dashboard</h1>
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -39,29 +39,29 @@ export default function SystemAdminDashboard() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Users by role */}
         <div className="lg:col-span-6">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-neutral-900">Users by Role</h2>
+              <h2 className="text-base font-semibold text-fg">Users by Role</h2>
               <Link to="/admin" className="text-xs text-primary-600 hover:underline">Manage Users →</Link>
             </div>
             {roleRows.length === 0 ? (
-              <p className="py-8 text-center text-sm text-neutral-400">No users found.</p>
+              <p className="py-8 text-center text-sm text-fg-muted">No users found.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-neutral-100 text-left">
-                      <SortTh label="Role" sortKey="role" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                      <SortTh label="Users" sortKey="count" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-neutral-500" />
+                    <tr className="border-b border-line-subtle text-left">
+                      <SortTh label="Role" sortKey="role" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                      <SortTh label="Users" sortKey="count" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-50">
+                  <tbody className="divide-y divide-line-subtle">
                     {roleRows.map(({ role, count }) => (
-                      <tr key={role} className="hover:bg-neutral-50">
-                        <td className="py-2 pr-3 text-neutral-700">
+                      <tr key={role} className="hover:bg-surface-subtle">
+                        <td className="py-2 pr-3 text-fg-secondary">
                           {ROLE_LABELS[role as UserRole] ?? role}
                         </td>
-                        <td className="py-2 text-right font-mono font-semibold text-neutral-900">{count}</td>
+                        <td className="py-2 text-right font-mono font-semibold text-fg">{count}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -73,20 +73,20 @@ export default function SystemAdminDashboard() {
 
         {/* Quick links */}
         <div className="lg:col-span-6">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
-            <h2 className="mb-4 text-base font-semibold text-neutral-900">Admin Sections</h2>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+            <h2 className="mb-4 text-base font-semibold text-fg">Admin Sections</h2>
             <div className="flex flex-col gap-2">
               {QUICK_LINKS.map((item) => (
                 <Link
                   key={item.label}
                   to={item.href}
-                  className="rounded-lg border border-neutral-200 bg-white p-3 flex items-center justify-between hover:bg-primary-50 transition-colors"
+                  className="rounded-lg border border-line bg-surface p-3 flex items-center justify-between hover:bg-primary-50 transition-colors"
                 >
                   <div>
-                    <p className="text-sm font-medium text-neutral-800">{item.label}</p>
-                    <p className="text-xs text-neutral-500">{item.description}</p>
+                    <p className="text-sm font-medium text-fg">{item.label}</p>
+                    <p className="text-xs text-fg-muted">{item.description}</p>
                   </div>
-                  <span className="text-neutral-400 ml-2">→</span>
+                  <span className="text-fg-muted ml-2">→</span>
                 </Link>
               ))}
             </div>

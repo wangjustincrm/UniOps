@@ -64,7 +64,7 @@ export function UserCombobox(props: {
   return (
     <div ref={anchorRef} className="flex flex-col gap-1.5">
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
         <input
           id={inputId}
           type="text"
@@ -76,8 +76,8 @@ export function UserCombobox(props: {
           value={selected ? selected.full_name : query}
           onFocus={() => { setOpen(true); if (selected) setQuery('') }}
           onChange={(e) => { setQuery(e.target.value); onChange(''); setOpen(true) }}
-          className={`h-10 w-full rounded-md border bg-white pl-9 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400 ${
-            invalid ? 'border-danger-400' : 'border-neutral-300'
+          className={`h-10 w-full rounded-md border bg-surface pl-9 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted ${
+            invalid ? 'border-danger-400' : 'border-line-strong'
           }`}
         />
         {value !== '' && !disabled && (
@@ -85,7 +85,7 @@ export function UserCombobox(props: {
             type="button"
             aria-label="Clear selection"
             onClick={() => { onChange(''); setQuery(''); setOpen(false) }}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -101,11 +101,11 @@ export function UserCombobox(props: {
               onClick={() => { onChange(u.id); setOpen(false); setQuery('') }}
             >
               <span>{u.full_name}</span>
-              {u.department_name && <span className="text-xs text-neutral-400">{u.department_name}</span>}
+              {u.department_name && <span className="text-xs text-fg-muted">{u.department_name}</span>}
             </button>
           ))}
           {results.length === 0 && (
-            <p className="px-3 py-2 text-sm text-neutral-400">No people found</p>
+            <p className="px-3 py-2 text-sm text-fg-muted">No people found</p>
           )}
         </DropdownPortal>
       )}

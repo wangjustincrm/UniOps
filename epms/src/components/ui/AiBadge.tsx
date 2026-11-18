@@ -11,7 +11,7 @@
 // after it.
 export function AiBadge() {
   return (
-    <span className="inline-flex items-center rounded-full bg-primary-50 border border-primary-200 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 ml-1.5">
+    <span className="inline-flex items-center rounded-full bg-primary-50 border border-primary-200 px-1.5 py-0.5 text-2xs font-medium text-primary-600 ml-1.5">
       AI
     </span>
   )

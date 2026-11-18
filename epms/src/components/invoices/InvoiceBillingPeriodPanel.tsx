@@ -74,22 +74,22 @@ function InvoiceBillingPeriodPanelBody({
   if (linked && !changing) {
     const others = (currentRow?.invoices ?? []).filter((i) => i.id !== invoice.id)
     return (
-      <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-4">
+      <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex flex-col gap-0.5">
-            <p className="text-xs font-medium text-neutral-500">Billing period</p>
-            <p className="text-sm font-medium text-neutral-900">
+            <p className="text-xs font-medium text-fg-muted">Billing period</p>
+            <p className="text-sm font-medium text-fg">
               {currentRow
                 ? (currentRow.period_label ?? `Period #${currentRow.sequence}`)
                 : scheduleQuery.isLoading ? 'Loading…' : 'Linked'}
               {currentRow?.expected_date && (
-                <span className="ml-1.5 text-xs font-normal text-neutral-500">
+                <span className="ml-1.5 text-xs font-normal text-fg-muted">
                   · expected {formatDate(currentRow.expected_date)}
                 </span>
               )}
             </p>
             {others.length > 0 && (
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-fg-muted">
                 Shared with {others.map((i) => i.internal_ref ?? 'another invoice').join(', ')}
               </p>
             )}
@@ -101,7 +101,7 @@ function InvoiceBillingPeriodPanelBody({
           )}
         </div>
         {canChange && changeBlockedReason && (
-          <p className="text-xs text-neutral-500">{changeBlockedReason}</p>
+          <p className="text-xs text-fg-muted">{changeBlockedReason}</p>
         )}
       </div>
     )
@@ -110,13 +110,13 @@ function InvoiceBillingPeriodPanelBody({
   return (
     <div className={cn(
       'flex flex-col gap-3 rounded-lg border p-4',
-      linked ? 'border-neutral-200 bg-white' : 'border-warning-200 bg-warning-50',
+      linked ? 'border-line bg-surface' : 'border-warning-line bg-warning-soft',
     )}>
       {linked ? (
         <div className="flex items-start justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium text-neutral-900">Move to another billing period</p>
-            <p className="text-xs text-neutral-500">
+            <p className="text-sm font-medium text-fg">Move to another billing period</p>
+            <p className="text-xs text-fg-muted">
               Currently in {currentRow?.period_label ?? 'a period'}. If no other invoice is left there, that
               period goes back to pending and its open confirmation task is closed. A period that already
               holds invoices can take this one too.
@@ -128,14 +128,14 @@ function InvoiceBillingPeriodPanelBody({
         </div>
       ) : (
         <div className="flex items-start gap-2">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-700" />
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-fg" />
           <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium text-warning-800">Not linked to a billing period</p>
+            <p className="text-sm font-medium text-warning-fg">Not linked to a billing period</p>
             {/* States the cause, because it is not visible anywhere else: the
                 automatic claim compares the invoice total against the period's
                 expected amount, and an agreement with no tolerance set requires
                 them to be equal to the cent. */}
-            <p className="text-xs text-warning-800">
+            <p className="text-xs text-warning-fg">
               This invoice was matched to the agreement but never claimed a scheduled period —
               its total fell outside the period's tolerance, or no period was available at the
               time. A payment cannot be raised against it until one is assigned. Pick the period
@@ -147,7 +147,7 @@ function InvoiceBillingPeriodPanelBody({
       )}
 
       {scheduleQuery.isLoading ? (
-        <p className="rounded-lg border border-warning-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
+        <p className="rounded-lg border border-warning-line bg-surface px-3 py-4 text-center text-xs text-fg-muted">
           Loading the payment schedule…
         </p>
       ) : scheduleQuery.isError ? (
@@ -155,12 +155,12 @@ function InvoiceBillingPeriodPanelBody({
         // on epms.agreement.read, which not every role that can match an
         // invoice holds, and an empty list would read as a schedule problem
         // rather than a permission one.
-        <p className="rounded-lg border border-warning-200 bg-white px-3 py-2.5 text-xs text-warning-800">
+        <p className="rounded-lg border border-warning-line bg-surface px-3 py-2.5 text-xs text-warning-fg">
           Couldn't load the payment schedule — you may not have permission to view it. Someone
           with access to the agreement can assign the period.
         </p>
       ) : candidatePeriods.length === 0 ? (
-        <p className="rounded-lg border border-warning-200 bg-white px-3 py-2.5 text-xs text-warning-800">
+        <p className="rounded-lg border border-warning-line bg-surface px-3 py-2.5 text-xs text-warning-fg">
           No other period on this agreement can take an invoice. The schedule may need extending.
         </p>
       ) : (
@@ -176,7 +176,7 @@ function InvoiceBillingPeriodPanelBody({
                     'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 transition-colors',
                     selectedId === row.id
                       ? 'border-primary-400 bg-primary-50'
-                      : 'border-neutral-200 bg-white hover:bg-neutral-50',
+                      : 'border-line bg-surface hover:bg-surface-subtle',
                   )}
                 >
                   <input
@@ -187,13 +187,13 @@ function InvoiceBillingPeriodPanelBody({
                     className="h-4 w-4 text-primary-600 focus:ring-primary-500"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-neutral-900">
+                    <p className="text-sm font-medium text-fg">
                       {row.period_label ?? `Period #${row.sequence}`}
                       {row.status === 'overdue' && (
-                        <span className="ml-1.5 text-xs font-medium text-warning-700">· overdue</span>
+                        <span className="ml-1.5 text-xs font-medium text-warning-fg">· overdue</span>
                       )}
                     </p>
-                    <p className="text-[11px] text-neutral-500">
+                    <p className="text-2xs text-fg-muted">
                       Expected {formatDate(row.expected_date ?? '')}
                       {expected !== null && <> · expected {formatAmount(expected, invoice.currency)}</>}
                       {existing.length > 0 && (
@@ -205,7 +205,7 @@ function InvoiceBillingPeriodPanelBody({
                       gap this large is a decision worth seeing the size of. */}
                   {expected !== null && existing.length === 0 &&
                     Math.round(expected * 100) !== Math.round(invoiceTotal * 100) && (
-                    <span className="shrink-0 text-[11px] font-medium text-warning-700">
+                    <span className="shrink-0 text-2xs font-medium text-warning-fg">
                       {formatAmount(invoiceTotal - expected, invoice.currency)} vs invoice
                     </span>
                   )}
@@ -231,7 +231,7 @@ function InvoiceBillingPeriodPanelBody({
       )}
 
       {assign.error && (
-        <p className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+        <p className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
           {assign.error instanceof Error ? assign.error.message : 'Could not assign the billing period'}
         </p>
       )}

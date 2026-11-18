@@ -65,39 +65,39 @@ export function UnmatchDialog({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-neutral-900/40 p-4 backdrop-blur-sm">
-      <div className="flex w-full max-w-md flex-col rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3.5">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-inverse/40 p-4 backdrop-blur-sm">
+      <div className="flex w-full max-w-md flex-col rounded-2xl bg-surface shadow-2xl">
+        <div className="flex items-center justify-between border-b border-line-subtle px-5 py-3.5">
           <div className="flex items-center gap-2">
-            <Unlink className="h-4 w-4 text-danger-600" />
-            <h2 className="text-sm font-semibold text-neutral-900">{copy.title}</h2>
+            <Unlink className="h-4 w-4 text-danger-fg" />
+            <h2 className="text-sm font-semibold text-fg">{copy.title}</h2>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <div className="flex flex-col gap-3 px-5 py-4">
-          <p className="text-xs text-neutral-600">{copy.body}</p>
+          <p className="text-xs text-fg-secondary">{copy.body}</p>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-neutral-700">Reason (required)</span>
+            <span className="text-xs font-medium text-fg-secondary">Reason (required)</span>
             <textarea
               autoFocus
               rows={3}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Why is this being unmatched?"
-              className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+              className="w-full rounded-lg border border-line-strong px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
             />
           </label>
           {unmatch.isError && (
-            <p className="text-xs text-danger-600">
+            <p className="text-xs text-danger-fg">
               {unmatch.error instanceof Error ? unmatch.error.message : 'Unmatch failed'}
             </p>
           )}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-3.5">
+        <div className="flex justify-end gap-2 border-t border-line-subtle px-5 py-3.5">
           <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
           <Button variant="destructive" size="sm" disabled={!ready || unmatch.isPending} onClick={submit}>
             {unmatch.isPending ? 'Unmatching…' : copy.confirm}

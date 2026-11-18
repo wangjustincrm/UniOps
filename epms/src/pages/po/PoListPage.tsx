@@ -119,9 +119,9 @@ export default function PoListPage() {
     <div className="flex flex-col gap-6">
       {/* Page header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Purchase Orders</h1>
+        <h1 className="text-2xl font-bold text-fg">Purchase Orders</h1>
         <div className="flex items-center gap-2">
-          {ncMsg && <span className="text-xs text-neutral-500">{ncMsg}</span>}
+          {ncMsg && <span className="text-xs text-fg-muted">{ncMsg}</span>}
           {canSyncNc && (
             <Button variant="secondary" onClick={handleSyncNc} disabled={ncSyncing}>
               <RefreshCw className={cn('h-4 w-4', ncSyncing && 'animate-spin')} />
@@ -140,10 +140,10 @@ export default function PoListPage() {
       </div>
 
       {/* Filters */}
-      <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-4">
+      <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-48">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
             <Input
               placeholder="Search PO number, title, vendor, PR…"
               value={search}
@@ -154,7 +154,7 @@ export default function PoListPage() {
           <select
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
-            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
           >
             {STATUS_FILTER_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -163,7 +163,7 @@ export default function PoListPage() {
           <select
             value={deptFilter}
             onChange={(e) => { setDeptFilter(e.target.value); setPage(1) }}
-            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
           >
             <option value="all">All Departments</option>
             {departments.map((d) => (
@@ -173,7 +173,7 @@ export default function PoListPage() {
           <select
             value={typeFilter}
             onChange={(e) => { setTypeFilter(e.target.value); setPage(1) }}
-            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
           >
             <option value="all">All Types</option>
             {Object.entries(TYPE_LABELS).map(([value, label]) => (
@@ -183,38 +183,38 @@ export default function PoListPage() {
           <select
             value={prepaidFilter}
             onChange={(e) => { setPrepaidFilter(e.target.value); setPage(1) }}
-            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
           >
             <option value="all">All (Prepaid)</option>
             <option value="yes">Prepaid</option>
             <option value="no">Not Prepaid</option>
           </select>
-          <span className="text-sm text-neutral-400">{isLoading ? 'Loading…' : `${total} result${total !== 1 ? 's' : ''}`}</span>
+          <span className="text-sm text-fg-muted">{isLoading ? 'Loading…' : `${total} result${total !== 1 ? 's' : ''}`}</span>
         </div>
       </div>
 
       {/* Table */}
-      <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
+      <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-50">
-                <SortTh label="PO Number" sortKey="number" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
-                <SortTh label="PR Ref." sortKey="pr_number" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
-                <SortTh label="Title / Vendor" sortKey="title" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
-                <SortTh label="Type" sortKey="type" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+              <tr className="border-b border-line bg-surface-subtle">
+                <SortTh label="PO Number" sortKey="number" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
+                <SortTh label="PR Ref." sortKey="pr_number" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
+                <SortTh label="Title / Vendor" sortKey="title" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
+                <SortTh label="Type" sortKey="type" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
                 <SortTh label="Total (CAD)" sortKey="total" sort={sort} onSort={onSort} align="right"
-                  className="px-4 py-3 text-right text-xs font-semibold text-neutral-500" />
-                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                  className="px-4 py-3 text-right text-xs font-semibold text-fg-muted" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
                 {/* Freight / customs invoices of an NC order against its Incoterms: every
                     raw-material order, a milk order once it has Incoterms; blank otherwise. */}
-                <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500"
+                <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted"
                     title="Freight & customs invoices against what the PO's Incoterms expect (NC orders; milk orders only once they have Incoterms)">
                   Fees
                 </th>
-                <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
-                <SortTh label="Prepaid" sortKey="is_prepaid" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
-                <SortTh label="Exp. Delivery" sortKey="expected_delivery" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
+                <SortTh label="Prepaid" sortKey="is_prepaid" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
+                <SortTh label="Exp. Delivery" sortKey="expected_delivery" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -223,7 +223,7 @@ export default function PoListPage() {
               {!isLoading && pos.length === 0 && (
                 <tr>
                   <td colSpan={11} className="px-4 py-16 text-center">
-                    <div className="flex flex-col items-center gap-2 text-neutral-400">
+                    <div className="flex flex-col items-center gap-2 text-fg-muted">
                       <span className="text-3xl">📦</span>
                       <p className="text-sm font-medium">No purchase orders found</p>
                       <p className="text-xs">Try adjusting your search or filters</p>
@@ -234,7 +234,7 @@ export default function PoListPage() {
               {pos.map((po) => (
                 <tr
                   key={po.id}
-                  className="border-b border-neutral-100 last:border-0 bg-white hover:bg-primary-50/60 transition-colors"
+                  className="border-b border-line-subtle last:border-0 bg-surface hover:bg-primary-50/60 transition-colors"
                 >
                   <td className="px-4 py-3">
                     <Link to={`/po/${po.id}`} className="font-mono text-sm font-medium text-primary-700 hover:text-primary-900">
@@ -245,24 +245,24 @@ export default function PoListPage() {
                     {po.pr_id ? (
                       <Link
                         to={`/pr/${po.pr_id}`}
-                        className="inline-flex items-center gap-1 font-mono text-xs text-neutral-500 hover:text-primary-600"
+                        className="inline-flex items-center gap-1 font-mono text-xs text-fg-muted hover:text-primary-600"
                       >
                         {po.pr_number}
                         <ExternalLink className="h-3 w-3" />
                       </Link>
                     ) : (
-                      <span className="text-neutral-300">—</span>
+                      <span className="text-fg-faint">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <p className="font-medium text-neutral-900">{po.title}</p>
-                    <p className="text-xs text-neutral-400">{po.vendor_name}</p>
+                    <p className="font-medium text-fg">{po.title}</p>
+                    <p className="text-xs text-fg-muted">{po.vendor_name}</p>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="text-xs text-neutral-500">{TYPE_LABELS[po.type]}</span>
+                    <span className="text-xs text-fg-muted">{TYPE_LABELS[po.type]}</span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <span className="amount font-medium text-neutral-900">{formatCAD(po.total)}</span>
+                    <span className="amount font-medium text-fg">{formatCAD(po.total)}</span>
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={po.status as DocumentStatus} />
@@ -271,15 +271,15 @@ export default function PoListPage() {
                   <td className="px-4 py-3">
                     {po.fee_status && <FeeStatusBadge status={po.fee_status} />}
                   </td>
-                  <td className="px-4 py-3 text-xs text-neutral-500">{formatDate(po.created_at)}</td>
+                  <td className="px-4 py-3 text-xs text-fg-muted">{formatDate(po.created_at)}</td>
                   <td className="px-4 py-3">
                     {po.is_prepaid && (
-                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 border border-amber-200">
+                      <span className="inline-flex items-center rounded-full bg-warning-soft px-2 py-0.5 text-2xs font-semibold text-warning-fg border border-warning-line">
                         Prepaid
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-xs text-neutral-500">{formatDate(po.expected_delivery ?? '')}</td>
+                  <td className="px-4 py-3 text-xs text-fg-muted">{formatDate(po.expected_delivery ?? '')}</td>
                   <td className="px-4 py-3">
                     <Link to={`/po/${po.id}`}>
                       <Button variant="ghost" size="sm">View</Button>

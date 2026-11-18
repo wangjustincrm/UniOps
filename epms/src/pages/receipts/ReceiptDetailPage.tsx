@@ -88,7 +88,7 @@ export default function ReceiptDetailPage() {
   const canRecordReceipt = user?.role === 'system_admin' || !!perms?.['epms.agreement.receipt.write']
   const canApReview = user?.role === 'system_admin' || !!perms?.['epms.invoice.match']
 
-  if (isLoading) return <div className="p-8 text-center text-neutral-400">Loading…</div>
+  if (isLoading) return <div className="p-8 text-center text-fg-muted">Loading…</div>
 
   if (isError || !receipt) {
     return (
@@ -311,15 +311,15 @@ function ReceiptDetail({
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-4">
-          <Link to="/receipts" className="mt-1 text-neutral-400 hover:text-neutral-600 transition-colors">
+          <Link to="/receipts" className="mt-1 text-fg-muted hover:text-fg-secondary transition-colors">
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-neutral-900 font-mono">{heading}</h1>
+              <h1 className="text-2xl font-bold text-fg font-mono">{heading}</h1>
               <StatusBadge status={receipt.status as DocumentStatus} />
             </div>
-            <p className="mt-1 text-sm text-neutral-500">
+            <p className="mt-1 text-sm text-fg-muted">
               {RECEIPT_TYPE_LABELS[receipt.receipt_type]} · {receipt.agreement_number}
               {receiptTotal(receipt) !== null && <> · {formatAmount(receiptTotal(receipt)!, receipt.currency)}</>}
             </p>
@@ -351,7 +351,7 @@ function ReceiptDetail({
           {canVoid && (
             <Button
               variant="secondary"
-              className="gap-2 text-danger-600 hover:text-danger-700"
+              className="gap-2 text-danger-fg hover:text-danger-fg"
               onClick={handleVoid}
               disabled={anyPending}
             >
@@ -364,7 +364,7 @@ function ReceiptDetail({
 
       {/* A refused Approve / Reject (was a browser alert). */}
       {apReview.isError && (
-        <p role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+        <p role="alert" className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           {errorMessage(apReview.error, 'Failed to record AP review')}
         </p>
       )}
@@ -373,10 +373,10 @@ function ReceiptDetail({
           on its sub-row, repeated here because this page is now a place AP can
           decide from. */}
       {receipt.status === 'pending_ap_review' && (
-        <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
-          <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
+        <div className="rounded-lg border border-warning-line bg-warning-soft p-4 flex gap-3">
+          <AlertTriangle className="h-5 w-5 text-warning-fg flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-warning-700">Waiting for AP review</p>
+            <p className="text-sm font-semibold text-warning-fg">Waiting for AP review</p>
             <p className="text-sm text-warning-700/90 mt-0.5">
               <span className="font-medium">Reason recorded: </span>
               {receipt.missing_receipt_reason?.trim()
@@ -391,20 +391,20 @@ function ReceiptDetail({
         {/* Main column */}
         <div className="flex-1 min-w-0 flex flex-col gap-4">
           {/* Receipt details — editable form, or read-only with the reason */}
-          <div className="rounded-xl border border-neutral-200 bg-white p-6">
+          <div className="rounded-xl border border-line bg-surface p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
                 Receipt Details
               </h2>
               {savedAt && (
-                <span className="text-xs text-success-600">Saved at {savedAt}</span>
+                <span className="text-xs text-success-fg">Saved at {savedAt}</span>
               )}
             </div>
 
             {!isEditable && (
-              <div className="mb-5 flex gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4">
-                <Lock className="h-4 w-4 text-neutral-400 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-neutral-600">{lockReason(receipt)}</p>
+              <div className="mb-5 flex gap-3 rounded-lg border border-line bg-surface-subtle p-4">
+                <Lock className="h-4 w-4 text-fg-muted flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-fg-secondary">{lockReason(receipt)}</p>
               </div>
             )}
             {/* A REMINDER, not an error (Task 13): a slip from another trading
@@ -417,9 +417,9 @@ function ReceiptDetail({
                 a reconciled receipt is where this matters most and its form
                 is locked. */}
             {receipt.vendor_mismatch && (
-              <div className="mb-5 flex gap-3 rounded-lg border border-warning-200 bg-warning-50 p-4">
-                <AlertTriangle className="h-4 w-4 flex-shrink-0 text-warning-500 mt-0.5" />
-                <div className="text-sm text-warning-800">
+              <div className="mb-5 flex gap-3 rounded-lg border border-warning-line bg-warning-soft p-4">
+                <AlertTriangle className="h-4 w-4 flex-shrink-0 text-warning-fg mt-0.5" />
+                <div className="text-sm text-warning-fg">
                   <p className="font-semibold">This receipt is from a different vendor</p>
                   <p className="mt-0.5">
                     The receipt says <span className="font-medium">{receipt.vendor_name}</span>, but
@@ -432,9 +432,9 @@ function ReceiptDetail({
               </div>
             )}
             {isEditable && !canRecordReceipt && (
-              <div className="mb-5 flex gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4">
-                <Lock className="h-4 w-4 text-neutral-400 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-neutral-600">
+              <div className="mb-5 flex gap-3 rounded-lg border border-line bg-surface-subtle p-4">
+                <Lock className="h-4 w-4 text-fg-muted flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-fg-secondary">
                   You can view this receipt but not change it — editing needs the "record agreement
                   receipts" permission. Ask an administrator if you need it.
                 </p>
@@ -444,7 +444,7 @@ function ReceiptDetail({
             {canEdit ? (
               <form onSubmit={handleSave} className="flex flex-col gap-5">
                 <div className="flex flex-col gap-2">
-                  <label className="text-sm font-medium text-neutral-700">Receipt type</label>
+                  <label className="text-sm font-medium text-fg-secondary">Receipt type</label>
                   <div className="flex gap-3">
                     {TYPE_OPTIONS.map((t) => (
                       <button
@@ -456,7 +456,7 @@ function ReceiptDetail({
                           'flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors',
                           receiptType === t
                             ? 'border-primary-600 bg-primary-50 text-primary-700'
-                            : 'border-neutral-300 text-neutral-600 hover:border-neutral-400',
+                            : 'border-line-strong text-fg-secondary hover:border-line-strong',
                         )}
                       >
                         {RECEIPT_TYPE_LABELS[t]}
@@ -552,7 +552,7 @@ function ReceiptDetail({
                     value={missingReason}
                     onChange={(e) => touch(setMissingReason)(e.target.value)}
                     placeholder="e.g. receipt was lost / illegible / not issued"
-                    className="w-full resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                   />
                 </FormField>
 
@@ -563,13 +563,13 @@ function ReceiptDetail({
                     value={notes}
                     onChange={(e) => touch(setNotes)(e.target.value)}
                     placeholder="Optional notes"
-                    className="w-full resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                   />
                 </FormField>
 
-                {formError && <p className="text-sm text-danger-600">{formError}</p>}
+                {formError && <p className="text-sm text-danger-fg">{formError}</p>}
                 {!formError && updateReceipt.isError && (
-                  <p role="alert" className="text-sm text-danger-600">{errorMessage(updateReceipt.error, 'Failed to save receipt')}</p>
+                  <p role="alert" className="text-sm text-danger-fg">{errorMessage(updateReceipt.error, 'Failed to save receipt')}</p>
                 )}
 
                 <div className="flex justify-end">
@@ -589,11 +589,11 @@ function ReceiptDetail({
                     (locked) receipt shows. Muted, never an error colour —
                     unmatched is normal. */}
                 <div className="flex gap-2 text-sm">
-                  <span className="text-neutral-400 min-w-36 flex-shrink-0">Vendor on receipt</span>
-                  <span className="text-neutral-800 font-medium break-words">
+                  <span className="text-fg-muted min-w-36 flex-shrink-0">Vendor on receipt</span>
+                  <span className="text-fg font-medium break-words">
                     {receipt.vendor_name ?? '—'}
                     {receipt.vendor_name && !receipt.vendor_matched && (
-                      <span className="ml-2 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500">
+                      <span className="ml-2 rounded-full bg-surface-sunken px-1.5 py-0.5 text-2xs font-medium text-fg-muted">
                         not in vendor list
                       </span>
                     )}
@@ -628,27 +628,27 @@ function ReceiptDetail({
 
         {/* Right column — context that isn't editable here */}
         <div className="w-72 flex-shrink-0 flex flex-col gap-4">
-          <div className="rounded-xl border border-neutral-200 bg-white p-5">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">
+          <div className="rounded-xl border border-line bg-surface p-5">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">
               Linked Documents
             </h3>
             <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2.5">
+              <div className="flex items-center justify-between rounded-lg border border-line px-3 py-2.5">
                 <div className="min-w-0">
-                  <p className="text-xs text-neutral-400">Agreement</p>
+                  <p className="text-xs text-fg-muted">Agreement</p>
                   {/* Never the bare agreement_id — the human number. */}
                   <Link to={`/agreements/${agreementId}`} className="text-sm font-medium text-primary-600 hover:underline font-mono">
                     {receipt.agreement_number}
                   </Link>
                 </div>
                 <Link to={`/agreements/${agreementId}`}>
-                  <ExternalLink className="h-4 w-4 text-neutral-400 hover:text-primary-600" />
+                  <ExternalLink className="h-4 w-4 text-fg-muted hover:text-primary-600" />
                 </Link>
               </div>
               {receipt.invoice_id ? (
-                <div className="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2.5">
+                <div className="flex items-center justify-between rounded-lg border border-line px-3 py-2.5">
                   <div className="min-w-0">
-                    <p className="text-xs text-neutral-400">Claimed by invoice</p>
+                    <p className="text-xs text-fg-muted">Claimed by invoice</p>
                     <Link to={`/invoices/${receipt.invoice_id}`} className="text-sm font-medium text-primary-600 hover:underline font-mono">
                       {/* invoice_ref is resolved server-side; the short id slice
                           is only a fallback for a row whose invoice has no
@@ -657,17 +657,17 @@ function ReceiptDetail({
                     </Link>
                   </div>
                   <Link to={`/invoices/${receipt.invoice_id}`}>
-                    <ExternalLink className="h-4 w-4 text-neutral-400 hover:text-primary-600" />
+                    <ExternalLink className="h-4 w-4 text-fg-muted hover:text-primary-600" />
                   </Link>
                 </div>
               ) : (
-                <p className="text-xs text-neutral-400">Not claimed by any invoice yet.</p>
+                <p className="text-xs text-fg-muted">Not claimed by any invoice yet.</p>
               )}
             </div>
           </div>
 
-          <div className="rounded-xl border border-neutral-200 bg-white p-5">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">
+          <div className="rounded-xl border border-line bg-surface p-5">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">
               Record
             </h3>
             <div className="flex flex-col gap-2">
@@ -762,16 +762,16 @@ function ReceiptAttachmentsCard({
   }
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-6">
+    <div className="rounded-xl border border-line bg-surface p-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
           Photos &amp; Proof Files
         </h2>
         {canWrite && (
           <label
             htmlFor="receipt-attachment-upload"
             className={cn(
-              'inline-flex items-center gap-2 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700',
+              'inline-flex items-center gap-2 rounded-lg border border-line-strong px-3 py-1.5 text-sm font-medium text-fg-secondary',
               busy ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-primary-400 hover:text-primary-700',
             )}
           >
@@ -790,19 +790,19 @@ function ReceiptAttachmentsCard({
       </div>
 
       {(upload.isError || downloadError) && (
-        <p role="alert" className="mb-3 text-sm text-danger-600">
+        <p role="alert" className="mb-3 text-sm text-danger-fg">
           {downloadError ?? errorMessage(upload.error, 'Failed to upload photo')}
         </p>
       )}
       {confirmDlg.dialog}
 
       {isLoading ? (
-        <p className="py-6 text-center text-sm text-neutral-400">Loading…</p>
+        <p className="py-6 text-center text-sm text-fg-muted">Loading…</p>
       ) : attachments.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-          <AlertTriangle className="h-7 w-7 text-warning-500" />
-          <p className="text-sm font-medium text-warning-700">No photo or proof file on this receipt</p>
-          <p className="max-w-md text-xs text-neutral-500">
+          <AlertTriangle className="h-7 w-7 text-warning-fg" />
+          <p className="text-sm font-medium text-warning-fg">No photo or proof file on this receipt</p>
+          <p className="max-w-md text-xs text-fg-muted">
             {canWrite
               ? 'A receipt with no evidence can still be claimed by an invoice and paid. Add the photo here, or write a reason above so AP reviews it before payment.'
               : 'A receipt with no evidence can still be claimed by an invoice and paid. Ask whoever recorded it to attach the photo.'}
@@ -811,10 +811,10 @@ function ReceiptAttachmentsCard({
       ) : (
         <div className="flex flex-col gap-2">
           {attachments.map((att) => (
-            <div key={att.id} className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
-              <Paperclip className="h-4 w-4 shrink-0 text-neutral-400" />
-              <span className="flex-1 truncate text-sm text-neutral-700" title={att.filename}>{att.filename}</span>
-              <span className="text-xs text-neutral-400">{(att.file_size / 1024).toFixed(0)} KB</span>
+            <div key={att.id} className="flex items-center gap-3 rounded-lg border border-line bg-surface-subtle px-4 py-3">
+              <Paperclip className="h-4 w-4 shrink-0 text-fg-muted" />
+              <span className="flex-1 truncate text-sm text-fg-secondary" title={att.filename}>{att.filename}</span>
+              <span className="text-xs text-fg-muted">{(att.file_size / 1024).toFixed(0)} KB</span>
               <button
                 type="button"
                 // Token-bearing blob fetch, never a bare <a href>: an
@@ -836,12 +836,12 @@ function ReceiptAttachmentsCard({
                   disabled={busy}
                   title="Delete this file"
                   className={cn(
-                    'text-neutral-300 hover:text-danger-500',
+                    'text-fg-faint hover:text-danger-fg',
                     busy && 'cursor-not-allowed opacity-50',
                   )}
                 >
                   {pendingDeleteId === att.id
-                    ? <span className="text-xs text-neutral-500">Deleting…</span>
+                    ? <span className="text-xs text-fg-muted">Deleting…</span>
                     : <X className="h-3.5 w-3.5" />}
                 </button>
               )}
@@ -858,8 +858,8 @@ function ReceiptAttachmentsCard({
 function MetaRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex gap-2 text-sm">
-      <span className="text-neutral-400 min-w-36 flex-shrink-0">{label}</span>
-      <span className={cn('text-neutral-800 font-medium break-words', mono && 'font-mono text-xs')}>{value}</span>
+      <span className="text-fg-muted min-w-36 flex-shrink-0">{label}</span>
+      <span className={cn('text-fg font-medium break-words', mono && 'font-mono text-xs')}>{value}</span>
     </div>
   )
 }

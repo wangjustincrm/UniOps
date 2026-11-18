@@ -24,9 +24,9 @@ const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday',
 
 function Rule({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <li className="border-t border-neutral-100 px-3 py-2.5 first:border-t-0">
-      <p className="text-xs font-semibold text-neutral-800">{title}</p>
-      <p className="mt-0.5 text-[11px] leading-relaxed text-neutral-600">{children}</p>
+    <li className="border-t border-line-subtle px-3 py-2.5 first:border-t-0">
+      <p className="text-xs font-semibold text-fg">{title}</p>
+      <p className="mt-0.5 text-2xs leading-relaxed text-fg-secondary">{children}</p>
     </li>
   )
 }
@@ -58,7 +58,7 @@ export function PlanningRulesPanel({ run }: { run: MpsRunDetail }) {
         onClick={() => setOpen(true)}
         aria-expanded={false}
         title="Show the rules this plan was built under"
-        className="flex h-fit shrink-0 items-center gap-1 self-start rounded-lg border border-neutral-200 bg-white px-2 py-3 text-[11px] font-medium text-neutral-500 hover:bg-neutral-50"
+        className="flex h-fit shrink-0 items-center gap-1 self-start rounded-lg border border-line bg-surface px-2 py-3 text-2xs font-medium text-fg-muted hover:bg-surface-subtle"
       >
         <Info aria-hidden className="h-3.5 w-3.5" />
         <span className="[writing-mode:vertical-rl]">Planning rules</span>
@@ -71,17 +71,17 @@ export function PlanningRulesPanel({ run }: { run: MpsRunDetail }) {
   const leadWeeks = run.production_lead_weeks
 
   return (
-    <aside className="w-72 shrink-0 self-start rounded-lg border border-neutral-200 bg-white">
-      <div className="flex items-center justify-between border-b border-neutral-200 px-3 py-2">
-        <h2 className="flex items-center gap-1.5 text-xs font-semibold text-neutral-900">
-          <Info aria-hidden className="h-3.5 w-3.5 text-neutral-400" />
+    <aside className="w-72 shrink-0 self-start rounded-lg border border-line bg-surface">
+      <div className="flex items-center justify-between border-b border-line px-3 py-2">
+        <h2 className="flex items-center gap-1.5 text-xs font-semibold text-fg">
+          <Info aria-hidden className="h-3.5 w-3.5 text-fg-muted" />
           How this plan was built
         </h2>
         <button
           type="button"
           onClick={() => setOpen(false)}
           aria-label="Hide the planning rules"
-          className="text-neutral-400 hover:text-neutral-700"
+          className="text-fg-muted hover:text-fg-secondary"
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -113,7 +113,7 @@ export function PlanningRulesPanel({ run }: { run: MpsRunDetail }) {
           Splitting it puts both halves back under the minimum, which is the thing being
           avoided. If no week in its own month can take it, the search goes{' '}
           <strong>backwards first</strong> (build early), then forwards (
-          <span className="text-warning-700">late — flagged amber</span>), and only when
+          <span className="text-warning-fg">late — flagged amber</span>), and only when
           the whole horizon is full does it become a shortfall.
         </Rule>
 
@@ -153,7 +153,7 @@ export function PlanningRulesPanel({ run }: { run: MpsRunDetail }) {
         </Rule>
       </ul>
 
-      <p className="flex items-start gap-1.5 border-t border-neutral-100 px-3 py-2 text-[11px] text-neutral-400">
+      <p className="flex items-start gap-1.5 border-t border-line-subtle px-3 py-2 text-2xs text-fg-muted">
         <ChevronRight aria-hidden className="mt-0.5 h-3 w-3 shrink-0" />
         <span>
           The numbers above are this version's own, recorded when it was generated —

@@ -37,12 +37,12 @@ import { ATTACHMENT_RULE, uploadProblem } from '@/lib/uploadLimits'
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<InvoiceStatus, { label: string; variant: 'neutral' | 'warning' | 'info' | 'success' | 'danger'; dot: string }> = {
-  unmatched:    { label: 'Unmatched',       variant: 'warning', dot: 'bg-warning-500'  },
-  matched:      { label: 'Matched',         variant: 'success', dot: 'bg-success-600'  },
-  exception:    { label: 'Exception',       variant: 'danger',  dot: 'bg-danger-600'   },
+  unmatched:    { label: 'Unmatched',       variant: 'warning', dot: 'bg-warning-solid'  },
+  matched:      { label: 'Matched',         variant: 'success', dot: 'bg-success-solid'  },
+  exception:    { label: 'Exception',       variant: 'danger',  dot: 'bg-danger-solid'   },
   match_review: { label: 'Pending Review',  variant: 'info',    dot: 'bg-primary-500'  },
-  approved:     { label: 'Approved',        variant: 'success', dot: 'bg-success-600'  },
-  paid:         { label: 'Paid',            variant: 'neutral', dot: 'bg-neutral-400'  },
+  approved:     { label: 'Approved',        variant: 'success', dot: 'bg-success-solid'  },
+  paid:         { label: 'Paid',            variant: 'neutral', dot: 'bg-fg-faint'  },
 }
 
 function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
@@ -78,9 +78,9 @@ function MatchRow({
   action?: React.ReactNode
 }) {
   return (
-    <tr className="border-b border-neutral-100">
+    <tr className="border-b border-line-subtle">
       <td className="px-4 py-3">
-        <div className="flex items-center gap-2 text-sm font-medium text-neutral-900">
+        <div className="flex items-center gap-2 text-sm font-medium text-fg">
           {icon}{label}
         </div>
       </td>
@@ -89,26 +89,26 @@ function MatchRow({
           ? <Link to={href} className="font-mono text-xs text-primary-600 hover:underline inline-flex items-center gap-1">
               {docRef} <ExternalLink className="h-3 w-3" />
             </Link>
-          : <span className="text-neutral-300 text-xs">—</span>
+          : <span className="text-fg-faint text-xs">—</span>
         }
       </td>
       <td className="px-4 py-3 text-right">
         {amount != null && currency
-          ? <span className="font-mono text-sm font-semibold text-neutral-900">{formatAmount(amount, currency)}</span>
-          : <span className="text-neutral-300 text-xs">—</span>
+          ? <span className="font-mono text-sm font-semibold text-fg">{formatAmount(amount, currency)}</span>
+          : <span className="text-fg-faint text-xs">—</span>
         }
         {amount != null && amountInclTax != null && currency
           && Math.abs(Number(amountInclTax) - Number(amount)) >= 0.005 && (
-          <div className="font-mono text-xs text-neutral-400 mt-0.5">
+          <div className="font-mono text-xs text-fg-muted mt-0.5">
             {formatAmount(amountInclTax, currency)} incl. tax
           </div>
         )}
       </td>
-      <td className="px-4 py-3 text-xs text-neutral-500">{note}</td>
+      <td className="px-4 py-3 text-xs text-fg-muted">{note}</td>
       <td className="px-4 py-3 text-center">
-        {ok === true  && <CheckCircle2 className="h-4 w-4 text-success-600 mx-auto" />}
-        {ok === false && <AlertTriangle className="h-4 w-4 text-danger-600 mx-auto" />}
-        {ok == null   && <span className="text-neutral-300">—</span>}
+        {ok === true  && <CheckCircle2 className="h-4 w-4 text-success-fg mx-auto" />}
+        {ok === false && <AlertTriangle className="h-4 w-4 text-danger-fg mx-auto" />}
+        {ok == null   && <span className="text-fg-faint">—</span>}
       </td>
       <td className="px-4 py-3 text-right">{action}</td>
     </tr>
@@ -127,7 +127,7 @@ function UnmatchButton({ label, blockedReason, onClick }: {
       disabled={blockedReason != null}
       onClick={onClick}
       title={blockedReason ?? 'Reverse this link (a reason is required)'}
-      className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2 py-1 text-xs font-medium text-danger-600 transition-colors hover:border-danger-200 hover:bg-danger-50 disabled:cursor-not-allowed disabled:border-neutral-100 disabled:text-neutral-300 disabled:hover:bg-transparent"
+      className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs font-medium text-danger-fg transition-colors hover:border-danger-line hover:bg-danger-soft disabled:cursor-not-allowed disabled:border-line-subtle disabled:text-fg-faint disabled:hover:bg-transparent"
     >
       <Unlink className="h-3 w-3" />{label}
     </button>
@@ -150,26 +150,26 @@ function DirectRouteCard({ inv, pa, canCreatePa, onCreatePa, unmatchAction }: {
         <div className="flex-1">
           <p className="text-sm font-semibold text-primary-800">Matched for a Direct PA — no PO or agreement</p>
           {inv.matched_at && (
-            <p className="text-xs text-neutral-500 mt-0.5">
+            <p className="text-xs text-fg-muted mt-0.5">
               Matched by {inv.matched_by_name ?? inv.matched_by} on {formatDateTime(inv.matched_at)}
             </p>
           )}
         </div>
         {unmatchAction}
       </div>
-      <p className="text-xs text-neutral-600">
+      <p className="text-xs text-fg-secondary">
         There is no 3-way match on this route. The department, cost center and budget account it is charged to,
         and the reason, are on the Direct PA; it is approved on the PA (Direct) workflow.
       </p>
       {pa ? (
-        <p className="text-xs text-neutral-700">
+        <p className="text-xs text-fg-secondary">
           Paid by <Link to={`/pa/${pa.id}`} className="font-mono font-semibold text-primary-700 hover:underline">{pa.number}</Link>
-          {pa.status && <span className="ml-1 capitalize text-neutral-500">({pa.status.replace(/_/g, ' ')})</span>}
+          {pa.status && <span className="ml-1 capitalize text-fg-muted">({pa.status.replace(/_/g, ' ')})</span>}
         </p>
       ) : canCreatePa ? (
         <div><Button size="sm" onClick={onCreatePa}>Create Direct PA</Button></div>
       ) : (
-        <p className="text-xs text-neutral-500">No payment application yet — someone with the Create / Edit PAs permission raises it.</p>
+        <p className="text-xs text-fg-muted">No payment application yet — someone with the Create / Edit PAs permission raises it.</p>
       )}
     </div>
   )
@@ -356,7 +356,7 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  if (isLoading) return <div className="p-8 text-center text-neutral-400">Loading…</div>
+  if (isLoading) return <div className="p-8 text-center text-fg-muted">Loading…</div>
   if (!inv) {
     return (
       <NotFoundState title="Invoice Not Found" message="The invoice you're looking for doesn't exist."
@@ -491,23 +491,23 @@ export default function InvoiceDetailPage() {
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div className="flex items-start gap-4">
-          <Link to="/invoices" className="mt-1 text-neutral-400 hover:text-neutral-600 transition-colors">
+          <Link to="/invoices" className="mt-1 text-fg-muted hover:text-fg-secondary transition-colors">
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-bold text-neutral-900 font-mono">{inv.internal_ref}</h1>
+              <h1 className="text-2xl font-bold text-fg font-mono">{inv.internal_ref}</h1>
               <InvoiceStatusBadge status={inv.status} />
               {sla && (
                 <span className={cn('text-xs font-medium rounded-full px-2 py-0.5',
-                  sla.status === 'overdue'  ? 'bg-danger-50 text-danger-700'   :
-                  sla.status === 'warning'  ? 'bg-warning-50 text-warning-700' :
-                  'bg-success-50 text-success-700')}>
+                  sla.status === 'overdue'  ? 'bg-danger-soft text-danger-fg'   :
+                  sla.status === 'warning'  ? 'bg-warning-soft text-warning-fg' :
+                  'bg-success-soft text-success-fg')}>
                   {sla.status === 'overdue' ? `⚠ SLA overdue (${sla.days}d)` : sla.status === 'warning' ? '⚠ Due today' : '✓ On time'}
                 </span>
               )}
             </div>
-            <p className="mt-1 text-sm text-neutral-500">
+            <p className="mt-1 text-sm text-fg-muted">
               {inv.vendor_name} · Vendor ref: {inv.vendor_invoice_number}{inv.uploaded_at ? ` · Uploaded ${formatDate(inv.uploaded_at)}` : ''}
             </p>
           </div>
@@ -543,13 +543,13 @@ export default function InvoiceDetailPage() {
           {canDelete && !editing && (
             <>
               {deleteInvoice.isError && (
-                <span className="text-xs text-danger-600">
+                <span className="text-xs text-danger-fg">
                   {deleteInvoice.error instanceof Error ? deleteInvoice.error.message : 'Delete failed'}
                 </span>
               )}
               {confirmDelete ? (
                 <>
-                  <span className="text-xs text-danger-600 font-medium">Delete this invoice?</span>
+                  <span className="text-xs text-danger-fg font-medium">Delete this invoice?</span>
                   <Button
                     variant="secondary"
                     size="sm"
@@ -560,7 +560,7 @@ export default function InvoiceDetailPage() {
                   </Button>
                   <Button
                     size="sm"
-                    className="bg-danger-600 hover:bg-danger-700 text-white gap-1.5"
+                    className="bg-danger-solid hover:bg-danger-700 text-white gap-1.5"
                     onClick={handleDelete}
                     disabled={deleteInvoice.isPending}
                   >
@@ -572,7 +572,7 @@ export default function InvoiceDetailPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="gap-1.5 text-danger-600 border-danger-200 hover:bg-danger-50"
+                  className="gap-1.5 text-danger-fg border-danger-line hover:bg-danger-soft"
                   onClick={() => setConfirmDelete(true)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -591,29 +591,29 @@ export default function InvoiceDetailPage() {
 
       {/* Exception banner */}
       {hasException && (
-        <div className="rounded-lg border border-danger-200 bg-danger-50 p-4 flex gap-3">
-          <AlertTriangle className="h-5 w-5 text-danger-600 flex-shrink-0 mt-0.5" />
+        <div className="rounded-lg border border-danger-line bg-danger-soft p-4 flex gap-3">
+          <AlertTriangle className="h-5 w-5 text-danger-fg flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm font-semibold text-danger-700">
+            <p className="text-sm font-semibold text-danger-fg">
               Variance{varianceScope}: {signed(decidingVariance)}{formatAmount(varianceAbs, inv.currency)}
               {' '}({variancePctAbs.toFixed(1)}% {decidingVariance < 0 ? 'below' : 'over'} PO)
             </p>
             {otherInvoices.length > 0 && (
-              <p className="text-xs text-danger-600 mt-0.5">
+              <p className="text-xs text-danger-fg mt-0.5">
                 Other invoices on this PO line: {otherInvoices.join(', ')}. This invoice alone vs the PO:{' '}
                 {Number(inv.variance ?? 0) >= 0 ? '+' : ''}{formatAmount(Number(inv.variance ?? 0), inv.currency)}.
               </p>
             )}
-            <p className="text-sm text-danger-600 mt-0.5">{inv.exception_reason}</p>
+            <p className="text-sm text-danger-fg mt-0.5">{inv.exception_reason}</p>
             {inv.exception_resolved_at && (
-              <p className="text-xs text-neutral-500 mt-1">
+              <p className="text-xs text-fg-muted mt-1">
                 Resolved by {inv.exception_resolved_by_name ?? inv.exception_resolved_by} on {formatDateTime(inv.exception_resolved_at)} —{' '}
                 {inv.exception_resolution === 'accepted' ? 'Accepted with justification' : 'Credit note requested'}
               </p>
             )}
             {inv.exception_resolved_at && inv.exception_resolution_note && (
-              <p className="text-xs text-neutral-700 mt-1 whitespace-pre-wrap">
-                <span className="text-neutral-500">{resolutionNoteLabel}:</span> {inv.exception_resolution_note}
+              <p className="text-xs text-fg-secondary mt-1 whitespace-pre-wrap">
+                <span className="text-fg-muted">{resolutionNoteLabel}:</span> {inv.exception_resolution_note}
               </p>
             )}
           </div>
@@ -626,7 +626,7 @@ export default function InvoiceDetailPage() {
           {isAp && !showResolvePanel && (
             <Button
               variant="secondary" size="sm"
-              className="self-start gap-1.5 border-warning-300 bg-warning-50 text-warning-700 hover:bg-warning-100"
+              className="self-start gap-1.5 border-warning-line bg-warning-soft text-warning-fg hover:bg-warning-soft"
               onClick={() => setShowResolvePanel(true)}
             >
               Resolve
@@ -642,11 +642,11 @@ export default function InvoiceDetailPage() {
         {/* Main content */}
         <div className="flex-1 min-w-0 flex flex-col gap-4">
           {/* Tabs */}
-          <div className="flex gap-1 border-b border-neutral-200">
+          <div className="flex gap-1 border-b border-line">
             {tabs.map((t) => (
               <button key={t.key} onClick={() => setActiveTab(t.key)}
                 className={cn('px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
-                  activeTab === t.key ? 'border-primary-600 text-primary-600' : 'border-transparent text-neutral-500 hover:text-neutral-700')}>
+                  activeTab === t.key ? 'border-primary-600 text-primary-600' : 'border-transparent text-fg-muted hover:text-fg-secondary')}>
                 {t.label}
               </button>
             ))}
@@ -664,14 +664,14 @@ export default function InvoiceDetailPage() {
                   <p className="text-sm font-semibold text-primary-800">Confirm invoice match</p>
                   {/* An agreement invoice has no PO, GR or variance (AGR-026), so it
                       is not described in PO / goods-receipt terms (ISS-0183). */}
-                  <p className="text-xs text-neutral-500">
+                  <p className="text-xs text-fg-muted">
                     {isAgreementRoute
                       ? 'This confirms the invoice is linked to the correct agreement.'
                       : 'This confirms the invoice is linked to the correct PO and goods receipt.'} It
                     does not approve the payment amount — that happens later, on the Payment
                     Application approval chain.
                   </p>
-                  <p className="text-xs text-neutral-600">
+                  <p className="text-xs text-fg-secondary">
                     {isAgreementRoute ? (
                       <>Matched to Agreement {inv.agreement_number ?? inv.agreement_id?.slice(0, 8)}. </>
                     ) : (
@@ -685,9 +685,9 @@ export default function InvoiceDetailPage() {
                   </p>
                   <textarea rows={2} value={reviewNote} onChange={(e) => setReviewNote(e.target.value)}
                     placeholder="Review note (required to reject)..."
-                    className="px-3 py-2 rounded-lg border border-neutral-300 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-600" />
+                    className="px-3 py-2 rounded-lg border border-line-strong text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-600" />
                   {reviewMutation.isError && (
-                    <p className="text-xs text-danger-600">
+                    <p className="text-xs text-danger-fg">
                       {reviewMutation.error instanceof Error ? reviewMutation.error.message : 'Review action failed'}
                     </p>
                   )}
@@ -711,8 +711,8 @@ export default function InvoiceDetailPage() {
               )}
 
               {/* Invoice fields */}
-              <div className="rounded-xl border border-neutral-200 bg-white p-5">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">Invoice Information</h3>
+              <div className="rounded-xl border border-line bg-surface p-5">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">Invoice Information</h3>
                 <div className="flex flex-col gap-2.5">
                   <MetaRow label="Internal Ref"     value={inv.internal_ref}          mono />
                   <MetaRow label="Vendor Invoice #" value={inv.vendor_invoice_number}  mono />
@@ -725,18 +725,18 @@ export default function InvoiceDetailPage() {
               </div>
 
               {/* Amounts */}
-              <div className="rounded-xl border border-neutral-200 bg-white p-5">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">Amounts</h3>
+              <div className="rounded-xl border border-line bg-surface p-5">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">Amounts</h3>
                 <div className="flex flex-col gap-2.5">
                   <MetaRow label="Pre-tax Amount"  value={formatAmount(inv.amount, inv.currency)}    mono />
                   <MetaRow label="Tax Amount"      value={formatAmount(inv.tax_amount, inv.currency)} mono />
-                  <div className="border-t border-neutral-100 pt-2.5">
+                  <div className="border-t border-line-subtle pt-2.5">
                     <MetaRow label="Total Amount"  value={formatAmount(inv.total_amount, inv.currency)} mono />
                   </div>
                   <MetaRow label="Currency"        value={inv.currency} />
                   {inv.matched_at && (
                     <>
-                      <div className="border-t border-neutral-100 pt-2.5">
+                      <div className="border-t border-line-subtle pt-2.5">
                         <MetaRow label="Matched On" value={formatDateTime(inv.matched_at)} />
                         <MetaRow label="Matched By" value={inv.matched_by_name ?? inv.matched_by ?? '—'} />
                       </div>
@@ -746,16 +746,16 @@ export default function InvoiceDetailPage() {
               </div>
 
               {/* Linked documents */}
-              <div className="rounded-xl border border-neutral-200 bg-white p-5 sm:col-span-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">Linked Documents</h3>
+              <div className="rounded-xl border border-line bg-surface p-5 sm:col-span-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">Linked Documents</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {(() => {
                     // Agreement route: the PO slot shows the agreement instead —
                     // there is no PO on this route at all.
                     if (inv.match_route === 'agreement' && inv.agreement_id) {
                       return (
-                        <div className="col-span-2 rounded-lg border border-neutral-200 px-3 py-2.5 flex flex-col gap-1.5">
-                          <p className="text-xs text-neutral-400">Agreement</p>
+                        <div className="col-span-2 rounded-lg border border-line px-3 py-2.5 flex flex-col gap-1.5">
+                          <p className="text-xs text-fg-muted">Agreement</p>
                           <Link
                             to={`/agreements/${inv.agreement_id}`}
                             className="text-sm font-mono font-medium text-primary-600 hover:underline inline-flex items-center gap-1"
@@ -766,7 +766,7 @@ export default function InvoiceDetailPage() {
                             <div className="flex flex-col gap-1 pt-1">
                               <Badge variant="warning" className="self-start">Settled without receipt</Badge>
                               {inv.legacy_settlement_reason && (
-                                <p className="text-xs text-neutral-500">{inv.legacy_settlement_reason}</p>
+                                <p className="text-xs text-fg-muted">{inv.legacy_settlement_reason}</p>
                               )}
                             </div>
                           ) : claimedReceiptCount > 0 ? (
@@ -783,7 +783,7 @@ export default function InvoiceDetailPage() {
                                 {claimedReceiptCount} {receiptNoun} claimed
                               </Badge>
                               {inv.receipt_variance_reason && (
-                                <p className="text-xs text-neutral-500">
+                                <p className="text-xs text-fg-muted">
                                   Amount variance: {inv.receipt_variance_reason}
                                 </p>
                               )}
@@ -803,9 +803,9 @@ export default function InvoiceDetailPage() {
                     // receipt to wait for — not "Not yet matched" / "No GR linked" (ISS-0190).
                     if (isDirectRoute && inv.status !== 'unmatched') {
                       return (
-                        <div className="col-span-2 rounded-lg border border-neutral-200 px-3 py-2.5 flex flex-col gap-1">
-                          <p className="text-xs text-neutral-400">Direct PA</p>
-                          <p className="text-sm text-neutral-700">Matched for a Direct PA — no PO, agreement or goods receipt needed</p>
+                        <div className="col-span-2 rounded-lg border border-line px-3 py-2.5 flex flex-col gap-1">
+                          <p className="text-xs text-fg-muted">Direct PA</p>
+                          <p className="text-sm text-fg-secondary">Matched for a Direct PA — no PO, agreement or goods receipt needed</p>
                           {directPa && (
                             <Link
                               to={`/pa/${directPa.id}`}
@@ -826,8 +826,8 @@ export default function InvoiceDetailPage() {
                       linkedPos.push([inv.po_id, inv.po_number ?? inv.po_id.slice(0, 8)])
                     }
                     return linkedPos.length > 0 ? (
-                      <div className="rounded-lg border border-neutral-200 px-3 py-2.5">
-                        <p className="text-xs text-neutral-400 mb-1">
+                      <div className="rounded-lg border border-line px-3 py-2.5">
+                        <p className="text-xs text-fg-muted mb-1">
                           Purchase Order{linkedPos.length > 1 ? `s (${linkedPos.length})` : ''}
                         </p>
                         <div className="flex flex-col gap-1">
@@ -843,25 +843,25 @@ export default function InvoiceDetailPage() {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-center justify-center rounded-lg border border-dashed border-neutral-200 px-3 py-4">
-                        <p className="text-xs text-neutral-400">Not yet matched to a PO</p>
+                      <div className="flex items-center justify-center rounded-lg border border-dashed border-line px-3 py-4">
+                        <p className="text-xs text-fg-muted">Not yet matched to a PO</p>
                       </div>
                     )
                   })()}
                   {inv.match_route === 'agreement' || (isDirectRoute && inv.status !== 'unmatched') ? null : gr ? (
-                    <div className="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2.5">
+                    <div className="flex items-center justify-between rounded-lg border border-line px-3 py-2.5">
                       <div>
-                        <p className="text-xs text-neutral-400">Goods Receipt</p>
+                        <p className="text-xs text-fg-muted">Goods Receipt</p>
                         <Link to={`/gr/${inv.gr_id}`} className="text-sm font-mono font-medium text-primary-600 hover:underline">
                           {inv.gr_number}
                         </Link>
                       </div>
-                      <Link to={`/gr/${inv.gr_id}`}><ExternalLink className="h-4 w-4 text-neutral-400 hover:text-primary-600" /></Link>
+                      <Link to={`/gr/${inv.gr_id}`}><ExternalLink className="h-4 w-4 text-fg-muted hover:text-primary-600" /></Link>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-center rounded-lg border border-dashed border-neutral-200 px-3 py-4">
+                    <div className="flex items-center justify-center rounded-lg border border-dashed border-line px-3 py-4">
                       {/* gr_id set but the GR did not load: this user may not view GRs (§1.3) — it is still linked (ISS-0115) */}
-                      <p className="text-xs text-neutral-400">
+                      <p className="text-xs text-fg-muted">
                         {!inv.gr_id ? 'No GR linked' : grUnreadable ? 'Goods receipt linked (no permission to view)' : 'Loading…'}
                       </p>
                     </div>
@@ -871,46 +871,46 @@ export default function InvoiceDetailPage() {
 
               {/* Line Items */}
               {inv.line_items && inv.line_items.length > 0 && (
-                <div className="rounded-xl border border-neutral-200 bg-white p-5 sm:col-span-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">
-                    Line Items <span className="ml-1 normal-case font-normal text-neutral-300">({inv.line_items.length})</span>
+                <div className="rounded-xl border border-line bg-surface p-5 sm:col-span-2">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">
+                    Line Items <span className="ml-1 normal-case font-normal text-fg-faint">({inv.line_items.length})</span>
                   </h3>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-neutral-100">
-                          <th className="pb-2 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide">Description</th>
-                          <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-16">Qty</th>
-                          <th className="pb-2 pl-3 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide w-16">Unit</th>
-                          <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-28">Unit Price</th>
-                          <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-28">Line Total</th>
+                        <tr className="border-b border-line-subtle">
+                          <th className="pb-2 text-left text-xs font-semibold text-fg-muted uppercase tracking-wide">Description</th>
+                          <th className="pb-2 text-right text-xs font-semibold text-fg-muted uppercase tracking-wide w-16">Qty</th>
+                          <th className="pb-2 pl-3 text-left text-xs font-semibold text-fg-muted uppercase tracking-wide w-16">Unit</th>
+                          <th className="pb-2 text-right text-xs font-semibold text-fg-muted uppercase tracking-wide w-28">Unit Price</th>
+                          <th className="pb-2 text-right text-xs font-semibold text-fg-muted uppercase tracking-wide w-28">Line Total</th>
                         </tr>
                       </thead>
                       <tbody>
                         {inv.line_items.map((item, idx) => (
-                          <tr key={idx} className="border-b border-neutral-50 last:border-0">
-                            <td className="py-2.5 pr-4 text-neutral-800">
+                          <tr key={idx} className="border-b border-line-subtle last:border-0">
+                            <td className="py-2.5 pr-4 text-fg">
                               <span>{item.description}</span>
                               {item.non_po_fee && (
-                                <span className="ml-2 inline-flex items-center rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-500 align-middle">
+                                <span className="ml-2 inline-flex items-center rounded bg-surface-sunken px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-fg-muted align-middle">
                                   Non-PO fee
                                 </span>
                               )}
                               {item.non_po_fee && item.non_po_note && (
-                                <span className="ml-2 text-[11px] text-neutral-400">{item.non_po_note}</span>
+                                <span className="ml-2 text-2xs text-fg-muted">{item.non_po_note}</span>
                               )}
                             </td>
-                            <td className="py-2.5 text-right font-mono text-xs text-neutral-600">{Number(item.quantity)}</td>
-                            <td className="py-2.5 pl-3 text-xs text-neutral-400">{item.unit ?? '—'}</td>
-                            <td className="py-2.5 text-right font-mono text-xs text-neutral-600">{formatAmount(Number(item.unit_price), inv.currency)}</td>
-                            <td className="py-2.5 text-right font-mono text-xs font-semibold text-neutral-900">{formatAmount(Number(item.line_total), inv.currency)}</td>
+                            <td className="py-2.5 text-right font-mono text-xs text-fg-secondary">{Number(item.quantity)}</td>
+                            <td className="py-2.5 pl-3 text-xs text-fg-muted">{item.unit ?? '—'}</td>
+                            <td className="py-2.5 text-right font-mono text-xs text-fg-secondary">{formatAmount(Number(item.unit_price), inv.currency)}</td>
+                            <td className="py-2.5 text-right font-mono text-xs font-semibold text-fg">{formatAmount(Number(item.line_total), inv.currency)}</td>
                           </tr>
                         ))}
                       </tbody>
                       <tfoot>
-                        <tr className="border-t border-neutral-200">
-                          <td colSpan={4} className="pt-2.5 text-xs text-neutral-400 text-right pr-4">Subtotal</td>
-                          <td className="pt-2.5 text-right font-mono text-xs font-semibold text-neutral-900">
+                        <tr className="border-t border-line">
+                          <td colSpan={4} className="pt-2.5 text-xs text-fg-muted text-right pr-4">Subtotal</td>
+                          <td className="pt-2.5 text-right font-mono text-xs font-semibold text-fg">
                             {formatAmount(inv.line_items.reduce((s, i) => s + Number(i.line_total), 0), inv.currency)}
                           </td>
                         </tr>
@@ -953,8 +953,8 @@ export default function InvoiceDetailPage() {
                   Attachments above (ISS-0243: it used to repeat here with a
                   Download button that did nothing). */}
               {inv.notes && (
-                <div className="rounded-xl border border-neutral-200 bg-white p-5 sm:col-span-2">
-                  <p className="text-sm text-neutral-600">{inv.notes}</p>
+                <div className="rounded-xl border border-line bg-surface p-5 sm:col-span-2">
+                  <p className="text-sm text-fg-secondary">{inv.notes}</p>
                 </div>
               )}
             </div>
@@ -964,56 +964,56 @@ export default function InvoiceDetailPage() {
           {editing && (
             <div className="flex flex-col gap-4">
               {/* Basic info */}
-              <div className="rounded-xl border border-neutral-200 bg-white p-5">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-4">Invoice Information</h3>
+              <div className="rounded-xl border border-line bg-surface p-5">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-4">Invoice Information</h3>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="block text-xs font-medium text-neutral-500 mb-1">Vendor Invoice #</label>
+                    <label className="block text-xs font-medium text-fg-muted mb-1">Vendor Invoice #</label>
                     <input
                       value={editVendorInvoiceNumber}
                       onChange={(e) => setEditVendorInvoiceNumber(e.target.value)}
-                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="w-full rounded-lg border border-line-strong px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-neutral-500 mb-1">Vendor</label>
-                    <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-500">
+                    <label className="block text-xs font-medium text-fg-muted mb-1">Vendor</label>
+                    <div className="rounded-lg border border-line bg-surface-subtle px-3 py-2 text-sm text-fg-muted">
                       {inv.vendor_name}
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-neutral-500 mb-1">Invoice Date</label>
+                    <label className="block text-xs font-medium text-fg-muted mb-1">Invoice Date</label>
                     <input
                       type="date"
                       value={editInvoiceDate}
                       onChange={(e) => setEditInvoiceDate(e.target.value)}
-                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="w-full rounded-lg border border-line-strong px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-neutral-500 mb-1">Due Date</label>
+                    <label className="block text-xs font-medium text-fg-muted mb-1">Due Date</label>
                     <input
                       type="date"
                       value={editDueDate}
                       onChange={(e) => setEditDueDate(e.target.value)}
-                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="w-full rounded-lg border border-line-strong px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                     />
                   </div>
                   {inv.po_id && (
                     <div className="sm:col-span-2">
-                      <label className="block text-xs font-medium text-neutral-500 mb-2">
+                      <label className="block text-xs font-medium text-fg-muted mb-2">
                         Goods Receipts
-                        <span className="ml-1 font-normal text-neutral-400">(PO: {inv.po_number})</span>
+                        <span className="ml-1 font-normal text-fg-muted">(PO: {inv.po_number})</span>
                         {editGrIds.length > 0 && (
-                          <span className="ml-2 rounded-full bg-primary-100 px-1.5 py-0.5 text-[10px] font-semibold text-primary-700">
+                          <span className="ml-2 rounded-full bg-primary-100 px-1.5 py-0.5 text-2xs font-semibold text-primary-700">
                             {editGrIds.length} selected
                           </span>
                         )}
                       </label>
                       {poGrs.filter((g) => g.status !== 'cancelled').length === 0 ? (
-                        <p className="text-xs text-neutral-400 italic">No GRs found for this PO</p>
+                        <p className="text-xs text-fg-muted italic">No GRs found for this PO</p>
                       ) : (
-                        <div className="flex flex-col gap-1.5 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                        <div className="flex flex-col gap-1.5 rounded-lg border border-line bg-surface-subtle p-3">
                           {poGrs
                             .filter((g) => g.status !== 'cancelled')
                             .map((g) => {
@@ -1023,7 +1023,7 @@ export default function InvoiceDetailPage() {
                                   key={g.id}
                                   className={cn(
                                     'flex items-center gap-3 rounded-md px-2.5 py-2 cursor-pointer transition-colors',
-                                    checked ? 'bg-primary-50 border border-primary-200' : 'border border-transparent hover:bg-white',
+                                    checked ? 'bg-primary-50 border border-primary-200' : 'border border-transparent hover:bg-surface',
                                   )}
                                 >
                                   <input
@@ -1036,11 +1036,11 @@ export default function InvoiceDetailPage() {
                                           : prev.filter((id) => id !== g.id),
                                       )
                                     }
-                                    className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+                                    className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-500"
                                   />
-                                  <span className="font-mono text-sm font-medium text-neutral-900">{g.number}</span>
-                                  <span className="text-xs text-neutral-500 flex-1 truncate">{g.title}</span>
-                                  <span className="text-xs text-neutral-400 shrink-0">
+                                  <span className="font-mono text-sm font-medium text-fg">{g.number}</span>
+                                  <span className="text-xs text-fg-muted flex-1 truncate">{g.title}</span>
+                                  <span className="text-xs text-fg-muted shrink-0">
                                     {g.status.replace(/_/g, ' ')}
                                   </span>
                                 </label>
@@ -1054,22 +1054,22 @@ export default function InvoiceDetailPage() {
               </div>
 
               {/* Amounts */}
-              <div className="rounded-xl border border-neutral-200 bg-white p-5">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-4">Amounts</h3>
+              <div className="rounded-xl border border-line bg-surface p-5">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-4">Amounts</h3>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
-                    <label className="block text-xs font-medium text-neutral-500 mb-1">Pre-tax Amount</label>
+                    <label className="block text-xs font-medium text-fg-muted mb-1">Pre-tax Amount</label>
                     <input
                       type="number"
                       min="0"
                       step="0.01"
                       value={editAmount}
                       onChange={(e) => setEditAmount(e.target.value)}
-                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="w-full rounded-lg border border-line-strong px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-neutral-500 mb-1">Tax Amount</label>
+                    <label className="block text-xs font-medium text-fg-muted mb-1">Tax Amount</label>
                     <input
                       type="number"
                       min="0"
@@ -1077,20 +1077,20 @@ export default function InvoiceDetailPage() {
                       value={editTaxAmount}
                       onChange={(e) => setEditTaxAmount(e.target.value)}
                       disabled={hasTaxLines}
-                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-neutral-50 disabled:text-neutral-400"
+                      className="w-full rounded-lg border border-line-strong px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-surface-subtle disabled:text-fg-muted"
                     />
                     {hasTaxLines && (
-                      <p className="mt-1 text-[11px] text-neutral-400">
+                      <p className="mt-1 text-2xs text-fg-muted">
                         Derived from the tax lines below — edit those to change the tax.
                       </p>
                     )}
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-neutral-500 mb-1">Currency</label>
+                    <label className="block text-xs font-medium text-fg-muted mb-1">Currency</label>
                     <select
                       value={editCurrency}
                       onChange={(e) => setEditCurrency(e.target.value)}
-                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="w-full rounded-lg border border-line-strong px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                     >
                       {['CAD', 'USD', 'EUR', 'RMB'].map((c) => (
                         <option key={c} value={c}>{c}</option>
@@ -1098,30 +1098,30 @@ export default function InvoiceDetailPage() {
                     </select>
                   </div>
                 </div>
-                <div className="mt-3 flex items-center justify-between rounded-lg bg-neutral-50 border border-neutral-200 px-4 py-2.5">
-                  <span className="text-xs text-neutral-500">Total Amount</span>
-                  <span className="font-mono text-sm font-semibold text-neutral-900">
+                <div className="mt-3 flex items-center justify-between rounded-lg bg-surface-subtle border border-line px-4 py-2.5">
+                  <span className="text-xs text-fg-muted">Total Amount</span>
+                  <span className="font-mono text-sm font-semibold text-fg">
                     {editCurrency} {((parseFloat(editAmount) || 0) + (parseFloat(editTaxAmount) || 0)).toLocaleString('en-CA', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
               </div>
 
               {/* Notes */}
-              <div className="rounded-xl border border-neutral-200 bg-white p-5">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-4">Notes</h3>
+              <div className="rounded-xl border border-line bg-surface p-5">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-4">Notes</h3>
                 <textarea
                   value={editNotes}
                   onChange={(e) => setEditNotes(e.target.value)}
                   rows={3}
                   placeholder="Optional notes…"
-                  className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                  className="w-full rounded-lg border border-line-strong px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
                 />
               </div>
 
               {/* Line Items */}
-              <div className="rounded-xl border border-neutral-200 bg-white p-5">
+              <div className="rounded-xl border border-line bg-surface p-5">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Line Items</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted">Line Items</h3>
                   <button
                     onClick={addEditLineItem}
                     className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700"
@@ -1130,29 +1130,29 @@ export default function InvoiceDetailPage() {
                   </button>
                 </div>
                 {editLineItems.length === 0 ? (
-                  <p className="text-xs text-neutral-400 text-center py-4">No line items — click Add Row to add one</p>
+                  <p className="text-xs text-fg-muted text-center py-4">No line items — click Add Row to add one</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-neutral-100">
-                          <th className="pb-2 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide">Description</th>
-                          <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-20">Qty</th>
-                          <th className="pb-2 pl-2 text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide w-20">Unit</th>
-                          <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-28">Unit Price</th>
-                          <th className="pb-2 text-right text-xs font-semibold text-neutral-400 uppercase tracking-wide w-28">Total</th>
+                        <tr className="border-b border-line-subtle">
+                          <th className="pb-2 text-left text-xs font-semibold text-fg-muted uppercase tracking-wide">Description</th>
+                          <th className="pb-2 text-right text-xs font-semibold text-fg-muted uppercase tracking-wide w-20">Qty</th>
+                          <th className="pb-2 pl-2 text-left text-xs font-semibold text-fg-muted uppercase tracking-wide w-20">Unit</th>
+                          <th className="pb-2 text-right text-xs font-semibold text-fg-muted uppercase tracking-wide w-28">Unit Price</th>
+                          <th className="pb-2 text-right text-xs font-semibold text-fg-muted uppercase tracking-wide w-28">Total</th>
                           <th className="pb-2 w-8" />
                         </tr>
                       </thead>
                       <tbody>
                         {editLineItems.map((item, idx) => (
-                          <tr key={idx} className="border-b border-neutral-50 last:border-0">
+                          <tr key={idx} className="border-b border-line-subtle last:border-0">
                             <td className="py-1.5 pr-2">
                               <input
                                 value={item.description}
                                 onChange={(e) => updateEditLineItem(idx, { description: e.target.value })}
                                 placeholder="Description"
-                                className="w-full rounded border border-neutral-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary-400"
+                                className="w-full rounded border border-line px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary-400"
                               />
                             </td>
                             <td className="py-1.5 px-1">
@@ -1162,7 +1162,7 @@ export default function InvoiceDetailPage() {
                                 step="1"
                                 value={item.quantity}
                                 onChange={(e) => updateEditLineItem(idx, { quantity: parseFloat(e.target.value) || 0 })}
-                                className="w-full rounded border border-neutral-200 px-2 py-1 text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-400"
+                                className="w-full rounded border border-line px-2 py-1 text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-400"
                               />
                             </td>
                             <td className="py-1.5 px-1">
@@ -1170,7 +1170,7 @@ export default function InvoiceDetailPage() {
                                 value={item.unit ?? ''}
                                 onChange={(e) => updateEditLineItem(idx, { unit: e.target.value || null })}
                                 placeholder="unit"
-                                className="w-full rounded border border-neutral-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary-400"
+                                className="w-full rounded border border-line px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary-400"
                               />
                             </td>
                             <td className="py-1.5 px-1">
@@ -1179,16 +1179,16 @@ export default function InvoiceDetailPage() {
                                 step="0.01"
                                 value={item.unit_price}
                                 onChange={(e) => updateEditLineItem(idx, { unit_price: parseFloat(e.target.value) || 0 })}
-                                className="w-full rounded border border-neutral-200 px-2 py-1 text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-400"
+                                className="w-full rounded border border-line px-2 py-1 text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-400"
                               />
                             </td>
-                            <td className="py-1.5 px-1 text-right font-mono text-xs text-neutral-700">
+                            <td className="py-1.5 px-1 text-right font-mono text-xs text-fg-secondary">
                               {(Number(item.quantity) * Number(item.unit_price)).toLocaleString('en-CA', { minimumFractionDigits: 2 })}
                             </td>
                             <td className="py-1.5 pl-1">
                               <button
                                 onClick={() => removeEditLineItem(idx)}
-                                className="rounded p-1 text-neutral-400 hover:text-danger-600 hover:bg-danger-50"
+                                className="rounded p-1 text-fg-muted hover:text-danger-fg hover:bg-danger-soft"
                               >
                                 <X className="h-3.5 w-3.5" />
                               </button>
@@ -1203,7 +1203,7 @@ export default function InvoiceDetailPage() {
 
               {/* Save / Cancel */}
               {editError && (
-                <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+                <div className="rounded-lg border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
                   {editError}
                 </div>
               )}
@@ -1228,10 +1228,10 @@ export default function InvoiceDetailPage() {
           {activeTab === 'match' && (
             <div className="flex flex-col gap-4">
               {inv.status === 'unmatched' ? (
-                <div className="rounded-xl border border-neutral-200 bg-white p-8 flex flex-col items-center text-center gap-3">
-                  <FileText className="h-10 w-10 text-neutral-300" />
-                  <p className="text-sm font-medium text-neutral-500">Not yet matched to a PO</p>
-                  <p className="text-xs text-neutral-400">Go to the Unmatched Queue to link this invoice to a PO</p>
+                <div className="rounded-xl border border-line bg-surface p-8 flex flex-col items-center text-center gap-3">
+                  <FileText className="h-10 w-10 text-fg-faint" />
+                  <p className="text-sm font-medium text-fg-muted">Not yet matched to a PO</p>
+                  <p className="text-xs text-fg-muted">Go to the Unmatched Queue to link this invoice to a PO</p>
                   <Link to="/invoices"><Button variant="secondary" size="sm">Go to Unmatched Queue</Button></Link>
                 </div>
               ) : isDirectRoute ? (
@@ -1253,17 +1253,17 @@ export default function InvoiceDetailPage() {
                 // pending state, not a success one, and a green success box
                 // saying so read as self-contradictory on first glance.
                 <div className={cn('rounded-xl border p-5 flex flex-col gap-3',
-                  evidencePending ? 'border-warning-200 bg-warning-50' : 'border-success-200 bg-success-50')}>
+                  evidencePending ? 'border-warning-line bg-warning-soft' : 'border-success-line bg-success-soft')}>
                   <div className="flex items-center gap-4">
                     {evidencePending
-                      ? <AlertTriangle className="h-8 w-8 text-warning-600 flex-shrink-0" />
-                      : <CheckCircle2 className="h-8 w-8 text-success-600 flex-shrink-0" />}
+                      ? <AlertTriangle className="h-8 w-8 text-warning-fg flex-shrink-0" />
+                      : <CheckCircle2 className="h-8 w-8 text-success-fg flex-shrink-0" />}
                     <div className="flex-1">
-                      <p className={cn('text-sm font-semibold', evidencePending ? 'text-warning-700' : 'text-success-700')}>
+                      <p className={cn('text-sm font-semibold', evidencePending ? 'text-warning-fg' : 'text-success-fg')}>
                         Matched to Agreement {inv.agreement_number ?? inv.agreement_id?.slice(0, 8)} — {agreementEvidenceSummary}
                       </p>
                       {inv.matched_at && (
-                        <p className="text-xs text-neutral-500 mt-0.5">
+                        <p className="text-xs text-fg-muted mt-0.5">
                           Matched by {inv.matched_by_name ?? inv.matched_by} on {formatDateTime(inv.matched_at)}
                         </p>
                       )}
@@ -1281,12 +1281,12 @@ export default function InvoiceDetailPage() {
                       />
                     )}
                   </div>
-                  <p className="text-xs text-neutral-500">{agreementEvidenceDetail}</p>
+                  <p className="text-xs text-fg-muted">{agreementEvidenceDetail}</p>
                   {inv.legacy_settlement ? (
-                    <div className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 flex flex-col gap-1">
+                    <div className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2.5 flex flex-col gap-1">
                       <Badge variant="warning" className="self-start">Settled without receipt</Badge>
                       {inv.legacy_settlement_reason && (
-                        <p className="text-xs text-warning-800">{inv.legacy_settlement_reason}</p>
+                        <p className="text-xs text-warning-fg">{inv.legacy_settlement_reason}</p>
                       )}
                     </div>
                   ) : claimedReceiptCount > 0 ? (
@@ -1294,12 +1294,12 @@ export default function InvoiceDetailPage() {
                        Linked Documents block above for why the variance reason and the
                        legacy reason share one slot. Both blocks have to agree; a fix
                        applied to only one of them recreates the split I1 came from. */
-                    <div className="rounded-lg border border-success-200 bg-white px-3 py-2.5 flex flex-col gap-1">
+                    <div className="rounded-lg border border-success-line bg-surface px-3 py-2.5 flex flex-col gap-1">
                       <Badge variant="success" className="self-start">
                         {claimedReceiptCount} {receiptNoun} claimed
                       </Badge>
                       {inv.receipt_variance_reason && (
-                        <p className="text-xs text-neutral-600">
+                        <p className="text-xs text-fg-secondary">
                           Amount variance: {inv.receipt_variance_reason}
                         </p>
                       )}
@@ -1307,9 +1307,9 @@ export default function InvoiceDetailPage() {
                   ) : isHouseAccountRoute ? (
                     // Task 8: see the comment on the Linked Documents block above —
                     // this is now a reachable pending state, not "nothing to show".
-                    <div className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 flex flex-col gap-1">
+                    <div className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2.5 flex flex-col gap-1">
                       <Badge variant="warning" className="self-start">No receipt evidence yet</Badge>
-                      <p className="text-xs text-warning-800">Attach the receipt(s) this invoice covers below, or explicitly settle without receipt evidence.</p>
+                      <p className="text-xs text-warning-fg">Attach the receipt(s) this invoice covers below, or explicitly settle without receipt evidence.</p>
                     </div>
                   ) : null}
                   {inv.agreement_id && (
@@ -1345,20 +1345,20 @@ export default function InvoiceDetailPage() {
                 <>
                   {/* Summary row */}
                   <div className={cn('rounded-xl border p-5 flex items-center gap-4',
-                    hasException ? 'border-danger-200 bg-danger-50'
-                      : exceptionAccepted || overBilledSince ? 'border-warning-200 bg-warning-50'
+                    hasException ? 'border-danger-line bg-danger-soft'
+                      : exceptionAccepted || overBilledSince ? 'border-warning-line bg-warning-soft'
                       : partiallyInvoiced || awaitingGr ? 'border-primary-200 bg-primary-50'
-                      : 'border-success-200 bg-success-50')}>
+                      : 'border-success-line bg-success-soft')}>
                     {hasException || exceptionAccepted || overBilledSince
-                      ? <AlertTriangle className={cn('h-8 w-8 flex-shrink-0', hasException ? 'text-danger-600' : 'text-warning-600')} />
+                      ? <AlertTriangle className={cn('h-8 w-8 flex-shrink-0', hasException ? 'text-danger-fg' : 'text-warning-fg')} />
                       : partiallyInvoiced || awaitingGr
                       ? <Info className="h-8 w-8 text-primary-600 flex-shrink-0" />
-                      : <CheckCircle2 className="h-8 w-8 text-success-600 flex-shrink-0" />
+                      : <CheckCircle2 className="h-8 w-8 text-success-fg flex-shrink-0" />
                     }
                     <div>
                       <p className={cn('text-sm font-semibold',
-                        hasException ? 'text-danger-700' : exceptionAccepted || overBilledSince ? 'text-warning-700'
-                          : partiallyInvoiced || awaitingGr ? 'text-primary-700' : 'text-success-700')}>
+                        hasException ? 'text-danger-fg' : exceptionAccepted || overBilledSince ? 'text-warning-fg'
+                          : partiallyInvoiced || awaitingGr ? 'text-primary-700' : 'text-success-fg')}>
                         {hasException || exceptionAccepted
                           ? `${matchLabel}: ${hasException ? 'Exception' : 'Exception accepted'} — Variance${varianceScope} ${decidingPct > 0 ? '+' : ''}${decidingPct.toFixed(1)}% (${formatAmount(decidingVariance, inv.currency)})`
                           : overBilledSince
@@ -1381,7 +1381,7 @@ export default function InvoiceDetailPage() {
                         </p>
                       )}
                       {inv.matched_at && (
-                        <p className="text-xs text-neutral-500 mt-0.5">
+                        <p className="text-xs text-fg-muted mt-0.5">
                           Matched by {inv.matched_by_name ?? inv.matched_by} on {formatDateTime(inv.matched_at)}
                         </p>
                       )}
@@ -1389,16 +1389,16 @@ export default function InvoiceDetailPage() {
                   </div>
 
                   {/* Match table */}
-                  <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+                  <div className="rounded-xl border border-line bg-surface overflow-hidden">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-neutral-200 bg-neutral-50">
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Document</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Reference</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Amount (pre-tax)</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Note</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-neutral-500">Status</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Action</th>
+                        <tr className="border-b border-line bg-surface-subtle">
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Document</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Reference</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Amount (pre-tax)</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Note</th>
+                          <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-fg-muted">Status</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Action</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1426,7 +1426,7 @@ export default function InvoiceDetailPage() {
                           return poRows.map((r, i) => (
                             <MatchRow
                               key={r.pid ?? 'po'}
-                              icon={<FileText className="h-4 w-4 text-neutral-400" />}
+                              icon={<FileText className="h-4 w-4 text-fg-muted" />}
                               label="Purchase Order"
                               docRef={r.number ?? undefined}
                               href={`/po/${r.pid}`}
@@ -1445,7 +1445,7 @@ export default function InvoiceDetailPage() {
                           ))
                         })()}
                         <MatchRow
-                          icon={<TrendingUp className="h-4 w-4 text-neutral-400" />}
+                          icon={<TrendingUp className="h-4 w-4 text-fg-muted" />}
                           label="Goods / Service Receipt"
                           docRef={inv.gr_number}
                           href={`/gr/${inv.gr_id}`}
@@ -1487,11 +1487,11 @@ export default function InvoiceDetailPage() {
                       </tbody>
                     </table>
                     {/* Variance footer */}
-                    <div className="px-4 py-3 border-t border-neutral-200 bg-neutral-50 flex justify-end">
+                    <div className="px-4 py-3 border-t border-line bg-surface-subtle flex justify-end">
                       <div className="flex items-center gap-6 text-sm">
-                        <span className="text-neutral-500">Variance{varianceScope}</span>
+                        <span className="text-fg-muted">Variance{varianceScope}</span>
                         <span className={cn('font-mono font-semibold',
-                          variancePctAbs > matchTolerancePct ? 'text-danger-600' : variancePctAbs > 0 ? 'text-warning-600' : 'text-success-600')}>
+                          variancePctAbs > matchTolerancePct ? 'text-danger-fg' : variancePctAbs > 0 ? 'text-warning-fg' : 'text-success-fg')}>
                           {decidingVariance >= 0 ? '+' : ''}{formatAmount(decidingVariance, inv.currency)}{' '}
                           ({decidingPct >= 0 ? '+' : ''}{decidingPct.toFixed(2)}%)
                         </span>
@@ -1501,31 +1501,31 @@ export default function InvoiceDetailPage() {
 
                   {/* PO allocations breakdown (multi-PO) */}
                   {inv.allocations && inv.allocations.length > 0 && (
-                    <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-                      <div className="px-4 py-3 border-b border-neutral-200 bg-neutral-50">
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">PO Allocations</h3>
+                    <div className="rounded-xl border border-line bg-surface overflow-hidden">
+                      <div className="px-4 py-3 border-b border-line bg-surface-subtle">
+                        <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted">PO Allocations</h3>
                       </div>
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="border-b border-neutral-200 bg-neutral-50">
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">PO</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">PO Line</th>
-                            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Allocated</th>
-                            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Variance</th>
+                          <tr className="border-b border-line bg-surface-subtle">
+                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">PO</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">PO Line</th>
+                            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Allocated</th>
+                            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Variance</th>
                           </tr>
                         </thead>
                         <tbody>
                           {inv.allocations.map((a) => (
-                            <tr key={a.id} className="border-b border-neutral-100 last:border-0">
+                            <tr key={a.id} className="border-b border-line-subtle last:border-0">
                               <td className="px-4 py-3">
                                 <Link to={`/po/${a.po_id}`} className="font-mono text-xs text-primary-600 hover:underline">
                                   {a.po_number ?? a.po_id.slice(0, 8)}
                                 </Link>
                               </td>
-                              <td className="px-4 py-3 text-xs text-neutral-500">{a.po_line_description ?? (a.po_line_id ? a.po_line_id.slice(0, 8) : 'PO header')}</td>
+                              <td className="px-4 py-3 text-xs text-fg-muted">{a.po_line_description ?? (a.po_line_id ? a.po_line_id.slice(0, 8) : 'PO header')}</td>
                               <td className="px-4 py-3 text-right font-mono text-xs">{formatAmount(Number(a.allocated_total), inv.currency)}</td>
                               <td className={cn('px-4 py-3 text-right font-mono text-xs',
-                                Number(a.variance ?? 0) === 0 ? 'text-success-600' : 'text-danger-600')}>
+                                Number(a.variance ?? 0) === 0 ? 'text-success-fg' : 'text-danger-fg')}>
                                 {a.variance == null ? '-' : formatAmount(Number(a.variance), inv.currency)}
                               </td>
                             </tr>
@@ -1537,16 +1537,16 @@ export default function InvoiceDetailPage() {
 
                   {/* Exception resolution detail */}
                   {inv.exception_resolved_at && (
-                    <div className="rounded-xl border border-neutral-200 bg-white p-5">
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">Exception Resolution</h3>
+                    <div className="rounded-xl border border-line bg-surface p-5">
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">Exception Resolution</h3>
                       <div className="flex flex-col gap-2">
                         <MetaRow label="Resolution" value={inv.exception_resolution === 'accepted' ? 'Accepted with justification' : 'Credit note requested'} />
                         <MetaRow label="Resolved By" value={inv.exception_resolved_by_name ?? inv.exception_resolved_by ?? '—'} />
                         <MetaRow label="Resolved On" value={formatDateTime(inv.exception_resolved_at)} />
                         {inv.exception_resolution_note && (
                           <div className="flex gap-2 text-sm">
-                            <span className="text-neutral-400 min-w-36 flex-shrink-0">{resolutionNoteLabel}</span>
-                            <span className="text-neutral-800 whitespace-pre-wrap">{inv.exception_resolution_note}</span>
+                            <span className="text-fg-muted min-w-36 flex-shrink-0">{resolutionNoteLabel}</span>
+                            <span className="text-fg whitespace-pre-wrap">{inv.exception_resolution_note}</span>
                           </div>
                         )}
                       </div>
@@ -1559,10 +1559,10 @@ export default function InvoiceDetailPage() {
 
           {/* ── History tab ───────────────────────────────────────────────────── */}
           {activeTab === 'history' && (
-            <div className="rounded-xl border border-neutral-200 bg-white p-5">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-4">Activity Log</h3>
+            <div className="rounded-xl border border-line bg-surface p-5">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-4">Activity Log</h3>
               {historyError && (
-                <p role="alert" className="mb-3 text-xs text-danger-600">
+                <p role="alert" className="mb-3 text-xs text-danger-fg">
                   The recorded steps could not be loaded ({historyError instanceof Error ? historyError.message : 'error'}) — only the upload and the current match are shown.
                 </p>
               )}
@@ -1584,7 +1584,7 @@ export default function InvoiceDetailPage() {
                     actor: inv.exception_resolved_by_name ?? inv.exception_resolved_by ?? 'System',
                     action: inv.exception_resolution === 'accepted' ? 'Exception accepted with justification' : 'Credit note requested',
                     note: inv.exception_resolution_note ?? undefined,
-                    color: 'bg-warning-500',
+                    color: 'bg-warning-solid',
                   },
                   inv.matched_at && !(historyRows ?? []).some((h) => MATCH_ACTIONS.has(h.action)) && {
                     date: inv.matched_at,
@@ -1598,7 +1598,7 @@ export default function InvoiceDetailPage() {
                       ? `Matched to Agreement ${inv.agreement_number ?? inv.agreement_id?.slice(0, 8) ?? ''} — ${agreementEvidenceSummary}`
                       : `Matched to ${inv.po_number}${hasException || exceptionAccepted ? ' — Exception raised'
                           : `${partiallyInvoiced ? ' — partially invoiced' : hasGr ? ' — 3-way match passed' : ' — 2-way matched'}${awaitingGr ? ', awaiting goods receipt' : ''}`}`,
-                    color: hasException || exceptionAccepted ? 'bg-danger-600' : 'bg-success-600',
+                    color: hasException || exceptionAccepted ? 'bg-danger-solid' : 'bg-success-solid',
                   },
                   {
                     date: inv.uploaded_at,
@@ -1615,16 +1615,16 @@ export default function InvoiceDetailPage() {
                       <div key={i} className="flex gap-3">
                         <div className="flex flex-col items-center">
                           <div className={cn('h-2.5 w-2.5 rounded-full mt-1 flex-shrink-0', e.color)} />
-                          {i < arr.length - 1 && <div className="w-0.5 flex-1 bg-neutral-200 my-1" style={{ minHeight: 20 }} />}
+                          {i < arr.length - 1 && <div className="w-0.5 flex-1 bg-surface-strong my-1" style={{ minHeight: 20 }} />}
                         </div>
                         <div className="pb-4">
-                          <p className="text-sm text-neutral-900">{e.action}</p>
+                          <p className="text-sm text-fg">{e.action}</p>
                           {e.note && (
-                            <p className="text-sm text-neutral-700 mt-1 rounded-md bg-neutral-50 border border-neutral-200 px-3 py-2 whitespace-pre-wrap">
+                            <p className="text-sm text-fg-secondary mt-1 rounded-md bg-surface-subtle border border-line px-3 py-2 whitespace-pre-wrap">
                               {e.note}
                             </p>
                           )}
-                          <p className="text-xs text-neutral-400 mt-0.5">{e.actor} · {formatDateTime(e.date)}</p>
+                          <p className="text-xs text-fg-muted mt-0.5">{e.actor} · {formatDateTime(e.date)}</p>
                         </div>
                       </div>
                     )
@@ -1637,19 +1637,19 @@ export default function InvoiceDetailPage() {
 
         {/* Right sidebar */}
         <div className="w-full lg:w-56 flex-shrink-0 flex flex-col gap-4">
-          <div className="rounded-xl border border-neutral-200 bg-white p-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">Quick Info</h3>
+          <div className="rounded-xl border border-line bg-surface p-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">Quick Info</h3>
             <div className="flex flex-col gap-2 text-xs">
               <div className="flex justify-between">
-                <span className="text-neutral-400">Total Due</span>
-                <span className="font-mono font-semibold text-neutral-900">{formatAmount(inv.total_amount, inv.currency)}</span>
+                <span className="text-fg-muted">Total Due</span>
+                <span className="font-mono font-semibold text-fg">{formatAmount(inv.total_amount, inv.currency)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-neutral-400">Due Date</span>
-                <span className="text-neutral-700">{formatDate(inv.due_date)}</span>
+                <span className="text-fg-muted">Due Date</span>
+                <span className="text-fg-secondary">{formatDate(inv.due_date)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-neutral-400">Status</span>
+                <span className="text-fg-muted">Status</span>
                 <InvoiceStatusBadge status={inv.status} />
               </div>
             </div>
@@ -1738,13 +1738,13 @@ function AttachmentItem({ att, token }: { att: AttachmentMeta; token: string | n
     <div className="flex flex-col gap-2">
       {/* File info + actions */}
       <div className="flex items-center gap-2 text-xs">
-        <FileText className="h-4 w-4 text-neutral-400 shrink-0" />
+        <FileText className="h-4 w-4 text-fg-muted shrink-0" />
         <div className="min-w-0 flex-1">
-          <p className="truncate font-medium text-neutral-700">{att.file_name}</p>
-          <p className="text-neutral-400">{fmtBytes(att.file_size_bytes)}</p>
+          <p className="truncate font-medium text-fg-secondary">{att.file_name}</p>
+          <p className="text-fg-muted">{fmtBytes(att.file_size_bytes)}</p>
         </div>
         <button onClick={handleOpen} disabled={!blobUrl}
-          className="flex items-center gap-1 rounded-lg border border-neutral-200 px-2 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-40 transition-colors shrink-0">
+          className="flex items-center gap-1 rounded-lg border border-line px-2 py-1.5 text-xs font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-40 transition-colors shrink-0">
           <ExternalLink className="h-3 w-3" /> Open
         </button>
         <button onClick={handleDownload} disabled={!blobUrl}
@@ -1753,7 +1753,7 @@ function AttachmentItem({ att, token }: { att: AttachmentMeta; token: string | n
         </button>
       </div>
       {error && (
-        <p role="alert" className="flex items-center gap-1 text-xs text-danger-600">
+        <p role="alert" className="flex items-center gap-1 text-xs text-danger-fg">
           <AlertTriangle className="h-3 w-3 shrink-0" />
           This file could not be loaded ({error}), so it cannot be opened or downloaded. Reload the page to try again; if it keeps failing, ask an administrator to check the file store.
         </p>
@@ -1827,7 +1827,7 @@ function InvoiceAttachments({
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 transition-colors"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50 transition-colors"
         >
           <Upload className="h-3 w-3" />
           {uploading ? 'Uploading…' : label}
@@ -1837,43 +1837,43 @@ function InvoiceAttachments({
   )
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-4">
+    <div className="rounded-xl border border-line bg-surface p-4">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
           Attachments {attachments.length > 0 && `(${attachments.length})`}
         </h3>
         {attachments.length > 0 && <UploadButton label="Add" />}
       </div>
-      {canUpload && <p className="-mt-2 mb-3 text-xs text-neutral-400">{ATTACHMENT_RULE.hint}</p>}
+      {canUpload && <p className="-mt-2 mb-3 text-xs text-fg-muted">{ATTACHMENT_RULE.hint}</p>}
 
       {uploadError && (
-        <p className="mb-2 text-xs text-danger-600 flex items-center gap-1">
+        <p className="mb-2 text-xs text-danger-fg flex items-center gap-1">
           <AlertTriangle className="h-3 w-3 shrink-0" />{uploadError}
         </p>
       )}
       {listError && (
-        <p role="alert" className="mb-2 text-xs text-danger-600 flex items-center gap-1">
+        <p role="alert" className="mb-2 text-xs text-danger-fg flex items-center gap-1">
           <AlertTriangle className="h-3 w-3 shrink-0" />
           The attachment list could not be loaded ({listError instanceof Error ? listError.message : 'error'}). Reload the page to try again.
         </p>
       )}
 
       {isLoading ? (
-        <p className="text-xs text-neutral-400">Loading…</p>
+        <p className="text-xs text-fg-muted">Loading…</p>
       ) : attachments.length === 0 ? (
         <div className="flex flex-col gap-3">
           {fileName && (
-            <div className="flex items-center gap-2 text-xs text-neutral-500">
-              <FileText className="h-4 w-4 text-neutral-400 shrink-0" />
+            <div className="flex items-center gap-2 text-xs text-fg-muted">
+              <FileText className="h-4 w-4 text-fg-muted shrink-0" />
               <div className="min-w-0">
-                <p className="truncate text-neutral-700">{fileName}</p>
-                {fileSize && <p className="text-neutral-400">{fileSize}</p>}
+                <p className="truncate text-fg-secondary">{fileName}</p>
+                {fileSize && <p className="text-fg-muted">{fileSize}</p>}
               </div>
             </div>
           )}
           <UploadButton label={fileName ? 'Upload to file server' : 'Upload file'} />
           {!canUpload && (
-            <p className="text-xs text-neutral-400">{fileName ? 'No file preview available' : 'No attachment'}</p>
+            <p className="text-xs text-fg-muted">{fileName ? 'No file preview available' : 'No attachment'}</p>
           )}
         </div>
       ) : (
@@ -1892,8 +1892,8 @@ function InvoiceAttachments({
 function MetaRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex gap-2 text-sm">
-      <span className="text-neutral-400 min-w-36 flex-shrink-0">{label}</span>
-      <span className={cn('text-neutral-800 font-medium', mono && 'font-mono text-xs')}>{value}</span>
+      <span className="text-fg-muted min-w-36 flex-shrink-0">{label}</span>
+      <span className={cn('text-fg font-medium', mono && 'font-mono text-xs')}>{value}</span>
     </div>
   )
 }

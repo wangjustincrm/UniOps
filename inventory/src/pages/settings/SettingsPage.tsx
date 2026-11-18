@@ -19,9 +19,9 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-neutral-900">Settings</h1>
+        <h1 className="text-xl font-semibold text-fg">Settings</h1>
         {!canAdmin && (
-          <p className="mt-1 flex items-center gap-1.5 text-sm text-neutral-500">
+          <p className="mt-1 flex items-center gap-1.5 text-sm text-fg-muted">
             <ShieldAlert aria-hidden className="h-4 w-4" />
             Read-only — changing these settings needs inventory.admin.
           </p>

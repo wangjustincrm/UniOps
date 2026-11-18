@@ -110,12 +110,12 @@ export function OutlooksPanel({
   const to = Math.min(page * PAGE_SIZE, total)
 
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-3">
+    <div className="rounded-lg border border-line bg-surface p-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-neutral-900">Outlooks</h2>
+        <h2 className="text-sm font-semibold text-fg">Outlooks</h2>
         <div className="flex items-center gap-2">
-          <div className="flex h-8 items-center gap-1.5 rounded-md border border-neutral-300 px-2">
-            <Search aria-hidden className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
+          <div className="flex h-8 items-center gap-1.5 rounded-md border border-line-strong px-2">
+            <Search aria-hidden className="h-3.5 w-3.5 shrink-0 text-fg-muted" />
             <input
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
@@ -125,13 +125,13 @@ export function OutlooksPanel({
             />
             {searchInput && (
               <button type="button" onClick={() => setSearchInput('')} aria-label="Clear search"
-                className="shrink-0 text-neutral-400 hover:text-neutral-700">
+                className="shrink-0 text-fg-muted hover:text-fg-secondary">
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
           {!listQuery.isLoading && (
-            <span className="text-[11px] text-neutral-400">
+            <span className="text-2xs text-fg-muted">
               {search ? `${total} match` : `${total} confirmed`}
             </span>
           )}
@@ -139,13 +139,13 @@ export function OutlooksPanel({
       </div>
 
       {listQuery.isLoading ? (
-        <p role="status" className="py-4 text-center text-xs text-neutral-400">Loading outlooks…</p>
+        <p role="status" className="py-4 text-center text-xs text-fg-muted">Loading outlooks…</p>
       ) : listQuery.isError ? (
-        <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+        <p role="alert" className="rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
           {errMsg(listQuery.error, 'Could not load outlooks.')}
         </p>
       ) : items.length === 0 ? (
-        <p className="py-4 text-center text-xs text-neutral-400">
+        <p className="py-4 text-center text-xs text-fg-muted">
           {search
             // An empty search result and an empty list look identical, and
             // reading the second as the first is how somebody concludes
@@ -158,7 +158,7 @@ export function OutlooksPanel({
           <div className="overflow-x-auto">
             <table className="min-w-full text-xs">
               <thead>
-                <tr className="border-b border-neutral-100 text-left text-[11px] font-semibold text-neutral-500">
+                <tr className="border-b border-line-subtle text-left text-2xs font-semibold text-fg-muted">
                   <SortTh label="Version" sortKey="version_no" sort={sort} onSort={onSort} className="px-2 py-1.5" />
                   <SortTh label="Anchor" sortKey="source_anchor_month" sort={sort} onSort={onSort} className="px-2 py-1.5" />
                   <SortTh label="Horizon" sortKey="horizon_months" sort={sort} onSort={onSort} className="px-2 py-1.5" />
@@ -168,11 +168,11 @@ export function OutlooksPanel({
               </thead>
               <tbody>
                 {items.map((v) => (
-                  <tr key={v.id} className="border-b border-neutral-50 last:border-0">
-                    <td className="px-2 py-1.5 font-medium text-neutral-800">{v.version_no}</td>
-                    <td className="px-2 py-1.5 text-neutral-600">{v.source_anchor_month ?? '—'}</td>
-                    <td className="px-2 py-1.5 text-neutral-600">{v.horizon_months} mo</td>
-                    <td className="px-2 py-1.5 text-neutral-500">{formatDateTime(v.created_at)}</td>
+                  <tr key={v.id} className="border-b border-line-subtle last:border-0">
+                    <td className="px-2 py-1.5 font-medium text-fg">{v.version_no}</td>
+                    <td className="px-2 py-1.5 text-fg-secondary">{v.source_anchor_month ?? '—'}</td>
+                    <td className="px-2 py-1.5 text-fg-secondary">{v.horizon_months} mo</td>
+                    <td className="px-2 py-1.5 text-fg-muted">{formatDateTime(v.created_at)}</td>
                     <td className="px-2 py-1.5">
                       <div className="flex items-center justify-end gap-1">
                         <Button type="button" size="sm" variant="secondary" onClick={() => onView(v)}>
@@ -184,7 +184,7 @@ export function OutlooksPanel({
                             onClick={() => setDeleteTarget(v)}
                             aria-label={`Delete outlook ${v.version_no}`}
                             title="Delete"
-                            className="rounded p-1.5 text-neutral-400 hover:bg-danger-50 hover:text-danger-600"
+                            className="rounded p-1.5 text-fg-muted hover:bg-danger-soft hover:text-danger-fg"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -200,8 +200,8 @@ export function OutlooksPanel({
           {/* The pager stays visible on a single page too, because it also
               says WHICH rows these are: "1–10 of 17" is the only thing that
               distinguishes a short list from a first page. */}
-          <div className="mt-2 flex items-center justify-between gap-2 border-t border-neutral-100 pt-2">
-            <span className="text-[11px] text-neutral-500">
+          <div className="mt-2 flex items-center justify-between gap-2 border-t border-line-subtle pt-2">
+            <span className="text-2xs text-fg-muted">
               {from}–{to} of {total}
             </span>
             <div className="flex items-center gap-1">
@@ -210,17 +210,17 @@ export function OutlooksPanel({
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page <= 1 || listQuery.isFetching}
                 aria-label="Previous page"
-                className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <span className="text-[11px] text-neutral-500">Page {page} of {pageCount}</span>
+              <span className="text-2xs text-fg-muted">Page {page} of {pageCount}</span>
               <button
                 type="button"
                 onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
                 disabled={page >= pageCount || listQuery.isFetching}
                 aria-label="Next page"
-                className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
@@ -244,7 +244,7 @@ export function OutlooksPanel({
             {formatDateTime(deleteTarget.created_at)}) and its frozen quantities will be
             removed. This cannot be undone.
           </p>
-          <p className="flex items-start gap-1.5 text-xs text-neutral-500">
+          <p className="flex items-start gap-1.5 text-xs text-fg-muted">
             <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
               The forecast itself is not affected — an outlook is a frozen copy of it. An

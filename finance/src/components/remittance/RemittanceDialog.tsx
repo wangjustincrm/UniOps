@@ -20,8 +20,8 @@ import type { RemittanceScope, SendResult } from '@/services/remittance'
 
 const DEFAULT_HEADER = (
   <div>
-    <h2 className="text-base font-semibold text-neutral-800">Send Remittance Advice</h2>
-    <p className="text-sm text-neutral-500">Choose the recipients, preview the emails, then confirm to send.</p>
+    <h2 className="text-base font-semibold text-fg">Send Remittance Advice</h2>
+    <p className="text-sm text-fg-muted">Choose the recipients, preview the emails, then confirm to send.</p>
   </div>
 )
 
@@ -38,11 +38,11 @@ export function RemittanceDialog({ scope, open, onClose, onSent, header }: {
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl"
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-surface p-5 shadow-xl"
            onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-start justify-between">
           {header ?? DEFAULT_HEADER}
-          <button type="button" onClick={onClose} className="rounded p-1 text-neutral-400 hover:text-neutral-700">
+          <button type="button" onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
             <X className="h-5 w-5" />
           </button>
         </div>

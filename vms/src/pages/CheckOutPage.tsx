@@ -99,24 +99,24 @@ export default function CheckOutPage() {
     <div className="max-w-2xl">
       <BackLink
         to="/"
-        className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-700"
+        className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-fg-secondary"
       >
         <ArrowLeft className="h-3 w-3" />
         Back
       </BackLink>
 
-      <h1 className="mt-2 text-2xl font-bold text-neutral-900">Check out</h1>
-      <p className="mt-1 text-sm text-neutral-500">
+      <h1 className="mt-2 text-2xl font-bold text-fg">Check out</h1>
+      <p className="mt-1 text-sm text-fg-muted">
         Scan the QR code on the visitor badge — or paste the visit ID — to record their departure.
       </p>
 
       {/* Mode toggle */}
-      <div className="mt-5 inline-flex rounded-md border border-neutral-200 bg-white p-0.5 text-sm">
+      <div className="mt-5 inline-flex rounded-md border border-line bg-surface p-0.5 text-sm">
         <button
           onClick={() => setMode('scan')}
           className={
             'inline-flex items-center gap-1.5 rounded px-3 py-1.5 ' +
-            (mode === 'scan' ? 'bg-primary-600 text-white' : 'text-neutral-600 hover:bg-neutral-50')
+            (mode === 'scan' ? 'bg-primary-600 text-white' : 'text-fg-secondary hover:bg-surface-subtle')
           }
         >
           <Camera className="h-4 w-4" />
@@ -126,7 +126,7 @@ export default function CheckOutPage() {
           onClick={() => setMode('input')}
           className={
             'inline-flex items-center gap-1.5 rounded px-3 py-1.5 ' +
-            (mode === 'input' ? 'bg-primary-600 text-white' : 'text-neutral-600 hover:bg-neutral-50')
+            (mode === 'input' ? 'bg-primary-600 text-white' : 'text-fg-secondary hover:bg-surface-subtle')
           }
         >
           <Keyboard className="h-4 w-4" />
@@ -141,9 +141,9 @@ export default function CheckOutPage() {
         ) : (
           <form
             onSubmit={(e) => { e.preventDefault(); void lookupVisit(input) }}
-            className="rounded-md border border-neutral-200 bg-white p-4"
+            className="rounded-md border border-line bg-surface p-4"
           >
-            <label className="block text-sm font-medium text-neutral-700">
+            <label className="block text-sm font-medium text-fg-secondary">
               Visit ID (paste / scan into this field)
             </label>
             <div className="mt-1 flex gap-2">
@@ -152,7 +152,7 @@ export default function CheckOutPage() {
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="e.g. 8a7b3f8e-…"
                 autoFocus
-                className="flex-1 rounded-md border border-neutral-300 px-3 py-2 text-sm font-mono outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                className="flex-1 rounded-md border border-line-strong px-3 py-2 text-sm font-mono outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
               />
               <button
                 type="submit"
@@ -163,7 +163,7 @@ export default function CheckOutPage() {
                 Look up
               </button>
             </div>
-            <p className="mt-2 text-xs text-neutral-500">
+            <p className="mt-2 text-xs text-fg-muted">
               A USB barcode scanner sends the QR contents as keyboard input — focus this field and
               scan to look up automatically.
             </p>
@@ -173,7 +173,7 @@ export default function CheckOutPage() {
 
       {/* Lookup error */}
       {lookupError && (
-        <div className="mt-4 flex items-start gap-2 rounded-md border border-red-200 bg-danger-50 px-3 py-2 text-sm text-danger-600">
+        <div className="mt-4 flex items-start gap-2 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           {lookupError}
         </div>

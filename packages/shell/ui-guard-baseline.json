@@ -3,415 +3,317 @@
  "totals": {
   "booking": {
    "raw-control": 136,
-   "raw-color": 792,
-   "arbitrary-size": 15,
    "shouting-type": 27,
    "raw-overlay": 6,
+   "raw-color": 5,
    "raw-table": 60
   },
   "epms": {
    "raw-control": 805,
    "raw-table": 1112,
-   "raw-color": 4795,
    "raw-overlay": 44,
-   "arbitrary-size": 392,
+   "arbitrary-size": 114,
    "emoji": 43,
-   "shouting-type": 380
+   "shouting-type": 380,
+   "raw-color": 3
   },
   "finance": {
    "raw-control": 507,
-   "raw-color": 2794,
-   "arbitrary-size": 175,
    "shouting-type": 75,
    "raw-overlay": 22,
-   "raw-table": 1442
+   "raw-color": 12,
+   "raw-table": 1442,
+   "arbitrary-size": 5
   },
   "inventory": {
    "raw-control": 68,
-   "raw-color": 546,
-   "arbitrary-size": 76,
    "raw-overlay": 2,
+   "arbitrary-size": 1,
    "shouting-type": 22,
+   "raw-color": 2,
    "raw-table": 411,
    "emoji": 1
   },
   "mrp": {
    "raw-control": 82,
    "raw-overlay": 14,
-   "raw-color": 593,
    "raw-table": 129,
-   "arbitrary-size": 48,
-   "shouting-type": 14
+   "shouting-type": 14,
+   "raw-color": 2,
+   "arbitrary-size": 1
   },
   "oa": {
-   "raw-color": 583,
    "raw-control": 132,
    "raw-overlay": 6,
-   "arbitrary-size": 41,
    "shouting-type": 55,
    "emoji": 2,
-   "raw-table": 122
+   "raw-color": 2,
+   "raw-table": 122,
+   "arbitrary-size": 1
   },
   "portal": {
-   "raw-color": 1216,
    "raw-control": 262,
    "raw-overlay": 14,
-   "arbitrary-size": 33,
+   "raw-color": 14,
    "shouting-type": 58,
    "raw-table": 290,
    "emoji": 1
   },
   "vms": {
-   "raw-color": 564,
+   "raw-color": 3,
    "shouting-type": 41,
    "raw-control": 166,
    "raw-overlay": 8,
-   "arbitrary-size": 17,
    "raw-table": 92,
    "emoji": 1
   }
  },
  "files": {
   "booking/src/components/AttendeePicker.tsx": {
-   "raw-control": 3,
-   "raw-color": 15
-  },
-  "booking/src/components/DayTimeline.tsx": {
-   "raw-color": 9,
-   "arbitrary-size": 3
+   "raw-control": 3
   },
   "booking/src/components/RecurrencePicker.tsx": {
    "raw-control": 6,
-   "raw-color": 17,
    "shouting-type": 1
   },
-  "booking/src/components/StatusBadge.tsx": {
-   "raw-color": 8
-  },
   "booking/src/components/SuggestionPanel.tsx": {
-   "raw-control": 2,
-   "raw-color": 22
+   "raw-control": 2
   },
   "booking/src/components/WeekStrip.tsx": {
    "raw-control": 1,
-   "raw-color": 15,
-   "arbitrary-size": 2,
    "shouting-type": 2
   },
   "booking/src/components/layout/AppLayout.tsx": {
    "raw-control": 4,
    "raw-overlay": 1,
-   "raw-color": 23,
-   "arbitrary-size": 3,
+   "raw-color": 1,
    "shouting-type": 4
   },
   "booking/src/pages/BookingCreatePage.tsx": {
    "raw-control": 8,
-   "raw-color": 45,
+   "raw-color": 1,
    "shouting-type": 2
   },
   "booking/src/pages/BookingEditPage.tsx": {
    "raw-control": 8,
-   "raw-color": 40,
+   "raw-color": 1,
    "shouting-type": 2
   },
   "booking/src/pages/MeetingSummaryPage.tsx": {
-   "raw-control": 4,
-   "raw-color": 43,
-   "arbitrary-size": 7
+   "raw-control": 4
   },
   "booking/src/pages/MyBookingsPage.tsx": {
    "raw-control": 9,
    "raw-table": 14,
    "raw-overlay": 1,
-   "raw-color": 85,
    "shouting-type": 7
   },
   "booking/src/pages/RoomDetailPage.tsx": {
    "raw-control": 1,
-   "raw-color": 40,
+   "raw-color": 1,
    "shouting-type": 1
   },
   "booking/src/pages/RoomsPage.tsx": {
    "raw-control": 9,
-   "raw-color": 66,
+   "raw-color": 1,
    "shouting-type": 1
   },
   "booking/src/pages/admin/AllBookingsPage.tsx": {
    "raw-control": 15,
    "raw-table": 15,
    "raw-overlay": 1,
-   "raw-color": 95,
    "shouting-type": 2
   },
   "booking/src/pages/admin/NotificationsPage.tsx": {
    "raw-control": 8,
    "raw-table": 16,
-   "raw-color": 57,
    "shouting-type": 2
   },
   "booking/src/pages/admin/RoomFormModal.tsx": {
    "raw-control": 17,
-   "raw-overlay": 1,
-   "raw-color": 60
+   "raw-overlay": 1
   },
   "booking/src/pages/admin/RoomImportModal.tsx": {
    "raw-control": 5,
-   "raw-overlay": 1,
-   "raw-color": 33
+   "raw-overlay": 1
   },
   "booking/src/pages/admin/RoomsAdminPage.tsx": {
    "raw-control": 16,
    "raw-table": 15,
    "raw-overlay": 1,
-   "raw-color": 76,
    "shouting-type": 2
   },
   "booking/src/pages/admin/SettingsPage.tsx": {
    "raw-control": 20,
-   "raw-color": 43,
    "shouting-type": 1
   },
   "epms/src/components/agreements/MilestoneEditor.tsx": {
    "raw-control": 5,
-   "raw-table": 19,
-   "raw-color": 23
+   "raw-table": 19
   },
   "epms/src/components/agreements/ReceiptEntryForm.tsx": {
-   "raw-control": 3,
-   "raw-color": 12
+   "raw-control": 3
   },
   "epms/src/components/agreements/ReceiptTable.tsx": {
    "raw-control": 1,
-   "raw-table": 14,
-   "raw-color": 20
+   "raw-table": 14
   },
   "epms/src/components/agreements/ReceiptVendorPicker.tsx": {
-   "raw-control": 3,
-   "raw-color": 10
+   "raw-control": 3
   },
   "epms/src/components/agreements/RecurringFields.tsx": {
-   "raw-control": 6,
-   "raw-color": 12
+   "raw-control": 6
   },
   "epms/src/components/agreements/RejectReceiptDialog.tsx": {
    "raw-control": 2,
-   "raw-overlay": 1,
-   "raw-color": 8
+   "raw-overlay": 1
   },
   "epms/src/components/agreements/ScheduleTable.tsx": {
-   "raw-table": 33,
-   "raw-color": 36,
-   "arbitrary-size": 1
+   "raw-table": 33
   },
   "epms/src/components/agreements/UserCombobox.tsx": {
-   "raw-control": 3,
-   "raw-color": 8
+   "raw-control": 3
   },
   "epms/src/components/budget/BudgetAccountCascade.tsx": {
-   "raw-control": 3,
-   "raw-color": 9
+   "raw-control": 3
   },
   "epms/src/components/budget/BudgetAccountSelect.tsx": {
-   "raw-control": 1,
-   "raw-color": 3
+   "raw-control": 1
   },
   "epms/src/components/dashboard/BudgetOverview.tsx": {
-   "raw-color": 4,
    "arbitrary-size": 1,
    "emoji": 3
   },
   "epms/src/components/dashboard/PendingApprovals.tsx": {
-   "raw-color": 9,
-   "arbitrary-size": 3,
+   "arbitrary-size": 2,
    "shouting-type": 1
   },
   "epms/src/components/dashboard/PrPipeline.tsx": {
    "raw-control": 1,
-   "raw-color": 22,
    "arbitrary-size": 2,
    "emoji": 2
   },
   "epms/src/components/dashboard/StatCard.tsx": {
-   "raw-color": 4,
    "shouting-type": 2
   },
   "epms/src/components/dashboard/TaskInbox.tsx": {
    "raw-control": 1,
-   "raw-color": 9,
-   "arbitrary-size": 3,
+   "arbitrary-size": 2,
    "shouting-type": 3
   },
   "epms/src/components/invoices/InvoiceBillingPeriodPanel.tsx": {
-   "raw-control": 1,
-   "raw-color": 14,
-   "arbitrary-size": 2
+   "raw-control": 1
   },
   "epms/src/components/invoices/InvoiceFeeLinksPanel.tsx": {
    "raw-control": 6,
-   "raw-color": 40,
-   "arbitrary-size": 3,
    "shouting-type": 4
   },
   "epms/src/components/invoices/InvoiceMatchVariancePanel.tsx": {
    "raw-table": 62,
-   "raw-color": 61,
-   "arbitrary-size": 5,
    "shouting-type": 18
   },
   "epms/src/components/invoices/InvoiceReceiptsPanel.tsx": {
    "raw-control": 4,
-   "raw-color": 32,
-   "arbitrary-size": 3,
    "shouting-type": 2
   },
   "epms/src/components/invoices/InvoiceTaxSection.tsx": {
    "raw-control": 5,
-   "raw-color": 28,
-   "arbitrary-size": 2,
    "shouting-type": 4
   },
   "epms/src/components/invoices/ResolveExceptionPanel.tsx": {
-   "raw-control": 3,
-   "raw-color": 10
+   "raw-control": 3
   },
   "epms/src/components/layout/AppLayout.tsx": {
    "raw-overlay": 1,
-   "raw-color": 4
+   "raw-color": 2
   },
   "epms/src/components/layout/Header.tsx": {
    "raw-control": 17,
    "raw-overlay": 3,
-   "raw-color": 62,
-   "arbitrary-size": 2,
+   "arbitrary-size": 1,
    "shouting-type": 2
   },
   "epms/src/components/layout/Sidebar.tsx": {
    "raw-control": 2,
-   "arbitrary-size": 4,
    "shouting-type": 6
   },
-  "epms/src/components/layout/TabQueryScope.tsx": {
-   "raw-color": 2
-  },
   "epms/src/components/pa/DirectPaBudgetPanel.tsx": {
-   "raw-color": 4,
-   "arbitrary-size": 1,
    "shouting-type": 1
   },
   "epms/src/components/po/ImportedPoLineItems.tsx": {
    "raw-control": 8,
-   "raw-table": 27,
-   "raw-color": 20,
-   "arbitrary-size": 1
+   "raw-table": 27
   },
   "epms/src/components/po/PaymentTermsField.tsx": {
-   "raw-control": 2,
-   "raw-color": 4
+   "raw-control": 2
   },
   "epms/src/components/po/PoFeePanel.tsx": {
    "raw-table": 13,
-   "raw-color": 24,
    "arbitrary-size": 2,
    "shouting-type": 2
   },
   "epms/src/components/po/PoSignoffPanel.tsx": {
    "raw-control": 3,
-   "raw-color": 30,
-   "arbitrary-size": 1,
    "shouting-type": 2
   },
   "epms/src/components/po/PoSignoffSummary.tsx": {
-   "raw-color": 12,
    "shouting-type": 1
   },
   "epms/src/components/pr/ApprovalTimeline.tsx": {
-   "raw-control": 1,
-   "raw-color": 19,
-   "arbitrary-size": 2
+   "raw-control": 1
   },
   "epms/src/components/pr/BudgetBalanceWidget.tsx": {
-   "raw-color": 12,
-   "arbitrary-size": 1,
    "emoji": 1
   },
   "epms/src/components/pr/PrLineItems.tsx": {
    "raw-control": 23,
    "raw-table": 25,
-   "raw-color": 97,
-   "arbitrary-size": 13,
+   "arbitrary-size": 2,
    "shouting-type": 2
   },
   "epms/src/components/pr/ProcurementTypeSelector.tsx": {
    "raw-control": 1,
-   "raw-color": 6,
-   "arbitrary-size": 2,
    "emoji": 6
   },
   "epms/src/components/shared/AttachmentsEditor.tsx": {
-   "raw-control": 3,
-   "raw-color": 10
+   "raw-control": 3
   },
   "epms/src/components/shared/ChainAttachmentsPanel.tsx": {
    "raw-control": 5,
    "raw-overlay": 1,
-   "raw-color": 22,
-   "arbitrary-size": 3,
    "shouting-type": 1
   },
   "epms/src/components/shared/DocumentChainTree.tsx": {
    "raw-control": 1,
-   "raw-color": 32,
-   "arbitrary-size": 12,
    "shouting-type": 1
   },
   "epms/src/components/shared/NotFoundState.tsx": {
-   "raw-color": 2,
    "emoji": 1
   },
   "epms/src/components/shared/SignaturePad.tsx": {
    "raw-control": 1,
-   "raw-color": 5
-  },
-  "epms/src/components/ui/AiBadge.tsx": {
-   "arbitrary-size": 1
-  },
-  "epms/src/components/ui/CompactAmount.tsx": {
-   "raw-color": 2,
-   "arbitrary-size": 1
+   "raw-color": 1
   },
   "epms/src/components/ui/ConfirmDialog.tsx": {
    "raw-control": 3,
-   "raw-overlay": 2,
-   "raw-color": 12
-  },
-  "epms/src/components/ui/CurrentStepHint.tsx": {
-   "raw-color": 1,
-   "arbitrary-size": 1
+   "raw-overlay": 2
   },
   "epms/src/components/ui/DropdownPortal.tsx": {
-   "raw-overlay": 1,
-   "raw-color": 1
-  },
-  "epms/src/components/ui/badge.tsx": {
-   "raw-color": 7
+   "raw-overlay": 1
   },
   "epms/src/pages/admin/AdminPanel.tsx": {
    "raw-control": 60,
    "raw-table": 60,
    "raw-overlay": 2,
-   "raw-color": 246,
    "arbitrary-size": 6,
    "shouting-type": 22
   },
   "epms/src/pages/admin/PmsImportPanel.tsx": {
    "raw-control": 3,
-   "raw-color": 45,
    "shouting-type": 3
   },
   "epms/src/pages/agreements/AgreementCreatePage.tsx": {
    "raw-control": 15,
-   "raw-color": 50,
    "arbitrary-size": 8,
    "shouting-type": 1,
    "emoji": 3
@@ -420,14 +322,12 @@
    "raw-control": 7,
    "raw-table": 11,
    "raw-overlay": 1,
-   "raw-color": 79,
    "arbitrary-size": 9,
    "shouting-type": 10,
    "emoji": 1
   },
   "epms/src/pages/agreements/AgreementEditPage.tsx": {
    "raw-control": 10,
-   "raw-color": 58,
    "arbitrary-size": 8,
    "shouting-type": 1,
    "emoji": 1
@@ -435,248 +335,190 @@
   "epms/src/pages/agreements/AgreementListPage.tsx": {
    "raw-control": 3,
    "raw-table": 17,
-   "raw-color": 29,
-   "arbitrary-size": 3,
+   "arbitrary-size": 2,
    "shouting-type": 2,
    "emoji": 1
   },
   "epms/src/pages/auth/LoginPage.tsx": {
    "raw-control": 1,
-   "raw-color": 4,
    "shouting-type": 1
   },
   "epms/src/pages/auth/MfaPage.tsx": {
    "raw-control": 2,
-   "raw-color": 3,
    "shouting-type": 1
   },
   "epms/src/pages/budget/BreakdownMatrixModal.tsx": {
    "raw-control": 11,
    "raw-table": 28,
    "raw-overlay": 2,
-   "raw-color": 121,
-   "arbitrary-size": 25,
    "shouting-type": 9
   },
   "epms/src/pages/budget/BudgetCatalogPage.tsx": {
    "raw-control": 10,
    "raw-overlay": 1,
-   "raw-color": 47,
-   "arbitrary-size": 2,
    "shouting-type": 1
   },
   "epms/src/pages/budget/BudgetDashboard.tsx": {
    "raw-control": 11,
    "raw-table": 45,
-   "raw-color": 83,
-   "arbitrary-size": 12,
    "shouting-type": 8
   },
   "epms/src/pages/budget/BudgetPlanEditPage.tsx": {
    "raw-control": 7,
    "raw-overlay": 2,
-   "raw-color": 75,
-   "arbitrary-size": 8,
    "shouting-type": 7
   },
   "epms/src/pages/budget/BudgetPlanListPage.tsx": {
    "raw-control": 9,
    "raw-table": 11,
    "raw-overlay": 1,
-   "raw-color": 33,
-   "arbitrary-size": 3,
    "shouting-type": 4
   },
   "epms/src/pages/budget/FactorConfigPanel.tsx": {
    "raw-control": 10,
-   "raw-color": 51,
-   "arbitrary-size": 12,
    "shouting-type": 1,
    "emoji": 3
   },
   "epms/src/pages/dashboard/ApClerkDashboard.tsx": {
    "raw-table": 11,
-   "raw-color": 32,
    "arbitrary-size": 2,
    "shouting-type": 1
   },
   "epms/src/pages/dashboard/ApproverDashboard.tsx": {
-   "raw-color": 1,
    "arbitrary-size": 1,
    "shouting-type": 1
   },
   "epms/src/pages/dashboard/AuditorDashboard.tsx": {
-   "raw-color": 8,
    "shouting-type": 1
   },
   "epms/src/pages/dashboard/CfoDashboard.tsx": {
    "raw-table": 11,
-   "raw-color": 27,
    "arbitrary-size": 3,
    "shouting-type": 1
   },
   "epms/src/pages/dashboard/FinanceBpDashboard.tsx": {
    "raw-table": 13,
-   "raw-color": 23,
-   "arbitrary-size": 2,
+   "arbitrary-size": 1,
    "shouting-type": 2
   },
   "epms/src/pages/dashboard/FinanceManagerDashboard.tsx": {
    "raw-table": 12,
-   "raw-color": 23,
-   "arbitrary-size": 2,
+   "arbitrary-size": 1,
    "shouting-type": 2
   },
   "epms/src/pages/dashboard/PaymentOfficerDashboard.tsx": {
    "raw-table": 13,
-   "raw-color": 23,
-   "arbitrary-size": 2,
+   "arbitrary-size": 1,
    "shouting-type": 2
   },
   "epms/src/pages/dashboard/ProcurementDashboard.tsx": {
    "raw-table": 10,
-   "raw-color": 35,
    "arbitrary-size": 2,
    "shouting-type": 1
   },
   "epms/src/pages/dashboard/RequesterDashboard.tsx": {
-   "raw-color": 1,
    "shouting-type": 1
   },
   "epms/src/pages/dashboard/SystemAdminDashboard.tsx": {
    "raw-table": 7,
-   "raw-color": 15,
    "arbitrary-size": 2,
    "shouting-type": 1
   },
   "epms/src/pages/dashboard/VendorManagerDashboard.tsx": {
    "raw-table": 14,
-   "raw-color": 23,
    "arbitrary-size": 1,
    "shouting-type": 1
   },
   "epms/src/pages/dashboard/WarehouseDashboard.tsx": {
    "raw-table": 13,
-   "raw-color": 28,
    "arbitrary-size": 1,
    "shouting-type": 1
   },
   "epms/src/pages/freight/CarriersTab.tsx": {
    "raw-control": 3,
-   "raw-table": 13,
-   "raw-color": 26
-  },
-  "epms/src/pages/freight/FreightInvoiceRedirect.tsx": {
-   "raw-color": 1
+   "raw-table": 13
   },
   "epms/src/pages/freight/FreightPage.tsx": {
    "raw-control": 1,
-   "raw-color": 9,
    "shouting-type": 1
   },
   "epms/src/pages/freight/ShipmentAttachments.tsx": {
-   "raw-control": 5,
-   "raw-color": 16,
-   "arbitrary-size": 2
+   "raw-control": 5
   },
   "epms/src/pages/freight/ShipmentDetailPage.tsx": {
-   "raw-color": 16,
    "shouting-type": 2
   },
   "epms/src/pages/freight/ShipmentsTab.tsx": {
    "raw-control": 13,
-   "raw-table": 15,
-   "raw-color": 44,
-   "arbitrary-size": 3
+   "raw-table": 15
   },
   "epms/src/pages/freight/freightUi.tsx": {
    "raw-control": 3,
    "raw-overlay": 1,
-   "raw-color": 21,
-   "arbitrary-size": 3,
    "shouting-type": 4
   },
   "epms/src/pages/gr/CollectionConfirmPage.tsx": {
    "raw-control": 5,
-   "raw-color": 31,
    "shouting-type": 1,
    "emoji": 1
   },
   "epms/src/pages/gr/GrCreatePage.tsx": {
    "raw-control": 14,
    "raw-table": 22,
-   "raw-color": 75,
-   "arbitrary-size": 3,
    "shouting-type": 8
   },
   "epms/src/pages/gr/GrDetailPage.tsx": {
    "raw-control": 7,
    "raw-table": 22,
    "raw-overlay": 1,
-   "raw-color": 81,
    "shouting-type": 17
   },
   "epms/src/pages/gr/GrListPage.tsx": {
    "raw-control": 2,
    "raw-table": 13,
-   "raw-color": 26,
    "shouting-type": 2
   },
   "epms/src/pages/gr/ReceivingReportPage.tsx": {
    "raw-control": 6,
    "raw-table": 20,
-   "raw-color": 37,
    "arbitrary-size": 1,
    "shouting-type": 2
   },
   "epms/src/pages/gr/ServiceGrConfirmPage.tsx": {
    "raw-control": 7,
    "raw-table": 15,
-   "raw-color": 55,
    "shouting-type": 6
   },
   "epms/src/pages/invoices/AssignMatchDialog.tsx": {
    "raw-control": 3,
-   "raw-overlay": 1,
-   "raw-color": 14
+   "raw-overlay": 1
   },
   "epms/src/pages/invoices/CourierInvoiceReview.tsx": {
    "raw-control": 22,
    "raw-table": 22,
-   "raw-color": 36,
-   "arbitrary-size": 1,
    "shouting-type": 1
   },
   "epms/src/pages/invoices/CourierInvoiceView.tsx": {
    "raw-control": 10,
    "raw-table": 26,
-   "raw-color": 70,
-   "arbitrary-size": 11,
    "shouting-type": 6
   },
   "epms/src/pages/invoices/FilePreviewPanel.tsx": {
-   "raw-control": 2,
-   "raw-color": 15
+   "raw-control": 2
   },
   "epms/src/pages/invoices/InvoiceAllocationPanel.tsx": {
    "raw-control": 7,
    "raw-overlay": 1,
-   "raw-color": 45,
-   "arbitrary-size": 12,
    "shouting-type": 3
   },
   "epms/src/pages/invoices/InvoiceChainDrawer.tsx": {
    "raw-control": 1,
    "raw-overlay": 1,
-   "raw-color": 26,
-   "arbitrary-size": 1,
    "shouting-type": 1
   },
   "epms/src/pages/invoices/InvoiceDetailPage.tsx": {
    "raw-control": 21,
    "raw-table": 66,
-   "raw-color": 206,
-   "arbitrary-size": 4,
    "shouting-type": 35,
    "emoji": 4
   },
@@ -684,104 +526,79 @@
    "raw-control": 45,
    "raw-table": 76,
    "raw-overlay": 3,
-   "raw-color": 176,
-   "arbitrary-size": 6,
    "shouting-type": 5
   },
   "epms/src/pages/invoices/InvoiceTotalMatchPanel.tsx": {
    "raw-control": 2,
-   "raw-color": 13,
-   "arbitrary-size": 5,
    "shouting-type": 2
   },
   "epms/src/pages/invoices/MatchPanel.tsx": {
-   "raw-control": 11,
-   "raw-color": 48,
-   "arbitrary-size": 2
+   "raw-control": 11
   },
   "epms/src/pages/invoices/PdfSplitPanel.tsx": {
    "raw-control": 7,
-   "raw-overlay": 1,
-   "raw-color": 38,
-   "arbitrary-size": 1
+   "raw-overlay": 1
   },
   "epms/src/pages/invoices/UnmatchDialog.tsx": {
    "raw-control": 2,
-   "raw-overlay": 1,
-   "raw-color": 9
+   "raw-overlay": 1
   },
   "epms/src/pages/pa/DerivedPaLinesTable.tsx": {
    "raw-table": 13,
-   "raw-color": 16,
-   "arbitrary-size": 1,
    "shouting-type": 4
   },
   "epms/src/pages/pa/DirectPaCreate.tsx": {
    "raw-control": 3,
    "raw-table": 15,
-   "raw-color": 39,
-   "arbitrary-size": 4,
    "shouting-type": 2
   },
   "epms/src/pages/pa/DirectPaEditForm.tsx": {
    "raw-control": 3,
-   "raw-color": 11,
    "shouting-type": 1
   },
   "epms/src/pages/pa/FreightPaCreate.tsx": {
    "raw-control": 4,
    "raw-table": 29,
-   "raw-color": 35,
-   "arbitrary-size": 3,
    "shouting-type": 3
   },
   "epms/src/pages/pa/FreightPaEditForm.tsx": {
    "raw-control": 2,
-   "raw-color": 9,
    "shouting-type": 1
   },
   "epms/src/pages/pa/PaCreatePage.tsx": {
    "raw-control": 22,
    "raw-table": 17,
-   "raw-color": 183,
-   "arbitrary-size": 38,
    "shouting-type": 13
   },
   "epms/src/pages/pa/PaDetailPage.tsx": {
    "raw-control": 18,
    "raw-table": 34,
    "raw-overlay": 3,
-   "raw-color": 175,
-   "arbitrary-size": 7,
+   "arbitrary-size": 1,
    "shouting-type": 22,
    "emoji": 4
   },
   "epms/src/pages/pa/PaEditPage.tsx": {
    "raw-control": 18,
    "raw-table": 17,
-   "raw-color": 138,
-   "arbitrary-size": 19,
+   "arbitrary-size": 1,
    "shouting-type": 11
   },
   "epms/src/pages/pa/PaListPage.tsx": {
    "raw-control": 2,
    "raw-table": 14,
-   "raw-color": 33,
-   "arbitrary-size": 7,
    "shouting-type": 6,
    "emoji": 1
   },
   "epms/src/pages/parts/PartsListPage.tsx": {
    "raw-control": 27,
    "raw-table": 19,
-   "raw-color": 70,
-   "arbitrary-size": 3,
+   "arbitrary-size": 1,
    "shouting-type": 2
   },
   "epms/src/pages/po/PoCreatePage.tsx": {
    "raw-control": 12,
    "raw-overlay": 1,
-   "raw-color": 58,
    "arbitrary-size": 6,
    "shouting-type": 3,
    "emoji": 2
@@ -790,7 +607,6 @@
    "raw-control": 23,
    "raw-table": 32,
    "raw-overlay": 2,
-   "raw-color": 150,
    "arbitrary-size": 6,
    "shouting-type": 14,
    "emoji": 2
@@ -798,28 +614,24 @@
   "epms/src/pages/po/PoEditPage.tsx": {
    "raw-control": 9,
    "raw-overlay": 1,
-   "raw-color": 49,
    "arbitrary-size": 7,
    "shouting-type": 3,
    "emoji": 1
   },
   "epms/src/pages/po/PoImportedEditPage.tsx": {
-   "raw-control": 5,
-   "raw-color": 36
+   "raw-control": 5
   },
   "epms/src/pages/po/PoListPage.tsx": {
    "raw-control": 4,
    "raw-table": 20,
-   "raw-color": 37,
-   "arbitrary-size": 3,
+   "arbitrary-size": 2,
    "shouting-type": 1,
    "emoji": 1
   },
   "epms/src/pages/pr/PrCreatePage.tsx": {
    "raw-control": 16,
    "raw-overlay": 1,
-   "raw-color": 53,
-   "arbitrary-size": 7,
+   "arbitrary-size": 5,
    "shouting-type": 1,
    "emoji": 3
   },
@@ -827,7 +639,6 @@
    "raw-control": 8,
    "raw-table": 25,
    "raw-overlay": 1,
-   "raw-color": 66,
    "arbitrary-size": 5,
    "shouting-type": 10,
    "emoji": 1
@@ -835,549 +646,406 @@
   "epms/src/pages/pr/PrEditPage.tsx": {
    "raw-control": 16,
    "raw-overlay": 1,
-   "raw-color": 45,
-   "arbitrary-size": 5,
+   "arbitrary-size": 3,
    "shouting-type": 1
   },
   "epms/src/pages/pr/PrListPage.tsx": {
    "raw-control": 6,
    "raw-table": 20,
-   "raw-color": 28,
-   "arbitrary-size": 2,
+   "arbitrary-size": 1,
    "shouting-type": 2
   },
   "epms/src/pages/profile/ProfilePage.tsx": {
    "raw-control": 13,
-   "raw-color": 61,
    "arbitrary-size": 1,
    "shouting-type": 2
   },
   "epms/src/pages/projects/ProjectsPage.tsx": {
    "raw-control": 16,
    "raw-table": 17,
-   "raw-color": 55,
-   "arbitrary-size": 7,
+   "arbitrary-size": 6,
    "shouting-type": 10
   },
   "epms/src/pages/receipts/ReceiptCreatePage.tsx": {
    "raw-control": 4,
-   "raw-color": 30,
    "shouting-type": 1
   },
   "epms/src/pages/receipts/ReceiptDetailPage.tsx": {
    "raw-control": 6,
-   "raw-color": 51,
-   "arbitrary-size": 1,
    "shouting-type": 5
   },
   "epms/src/pages/receipts/ReceiptListPage.tsx": {
    "raw-control": 3,
    "raw-table": 19,
-   "raw-color": 33,
-   "arbitrary-size": 2,
    "shouting-type": 3
   },
   "epms/src/pages/reports/ReportCentrePage.tsx": {
    "raw-control": 12,
-   "raw-color": 26,
    "arbitrary-size": 1,
    "shouting-type": 1
   },
   "epms/src/pages/tasks/TaskInboxPage.tsx": {
    "raw-control": 4,
-   "raw-color": 39,
-   "arbitrary-size": 5,
+   "arbitrary-size": 2,
    "shouting-type": 8
   },
   "epms/src/pages/vendorcredits/CreditDetailDrawer.tsx": {
    "raw-control": 7,
    "raw-overlay": 1,
-   "raw-color": 32,
    "shouting-type": 4
   },
   "epms/src/pages/vendorcredits/ManualCreditModal.tsx": {
    "raw-control": 16,
-   "raw-overlay": 2,
-   "raw-color": 39,
-   "arbitrary-size": 4
+   "raw-overlay": 2
   },
   "epms/src/pages/vendorcredits/VendorCreditsPage.tsx": {
    "raw-control": 9,
    "raw-table": 15,
    "raw-overlay": 1,
-   "raw-color": 17,
-   "arbitrary-size": 2,
    "shouting-type": 1
   },
   "epms/src/pages/vendors/ErpVendorImportDrawer.tsx": {
    "raw-control": 12,
    "raw-table": 10,
    "raw-overlay": 1,
-   "raw-color": 33,
    "shouting-type": 3
   },
   "epms/src/pages/vendors/VendorsPage.tsx": {
    "raw-control": 29,
    "raw-table": 17,
    "raw-overlay": 1,
-   "raw-color": 87,
    "arbitrary-size": 5,
    "shouting-type": 8,
    "emoji": 1
   },
   "finance/src/components/ListPager.tsx": {
-   "raw-control": 2,
-   "raw-color": 4
-  },
-  "finance/src/components/ap/BillEvidence.tsx": {
-   "raw-color": 5,
-   "arbitrary-size": 1
+   "raw-control": 2
   },
   "finance/src/components/ap/BillInvoices.tsx": {
-   "raw-color": 4,
-   "arbitrary-size": 1,
    "shouting-type": 1
   },
   "finance/src/components/layout/AppLayout.tsx": {
    "raw-control": 5,
    "raw-overlay": 1,
-   "raw-color": 20,
-   "arbitrary-size": 2,
+   "raw-color": 1,
    "shouting-type": 3
   },
   "finance/src/components/layout/PortalChromeLayout.tsx": {
-   "raw-color": 2,
    "shouting-type": 1
   },
   "finance/src/components/remittance/RemittanceDialog.tsx": {
    "raw-control": 2,
-   "raw-overlay": 1,
-   "raw-color": 4
+   "raw-overlay": 1
   },
   "finance/src/components/remittance/RemittanceEmailPreview.tsx": {
-   "raw-control": 5,
-   "raw-color": 13
+   "raw-control": 5
   },
   "finance/src/components/remittance/RemittancePanel.tsx": {
    "raw-control": 5,
-   "raw-table": 24,
-   "raw-color": 47
+   "raw-table": 24
   },
   "finance/src/lib/costAnalysis.tsx": {
    "raw-control": 2,
    "raw-table": 6,
-   "raw-color": 59,
-   "arbitrary-size": 4,
    "shouting-type": 1
   },
   "finance/src/pages/budget/BudgetConfigPage.tsx": {
    "raw-control": 25,
    "raw-table": 22,
-   "raw-color": 130,
-   "arbitrary-size": 13,
+   "arbitrary-size": 1,
    "shouting-type": 5
-  },
-  "finance/src/pages/budget/EpmsEmbed.tsx": {
-   "raw-color": 3
   },
   "finance/src/pages/budget/FactorLibraryPage.tsx": {
    "raw-control": 23,
    "raw-table": 15,
-   "raw-color": 98,
-   "arbitrary-size": 16,
    "shouting-type": 7
   },
   "finance/src/pages/finance/AccountBalancePage.tsx": {
    "raw-control": 9,
    "raw-table": 42,
-   "raw-overlay": 1,
-   "raw-color": 41,
-   "arbitrary-size": 1
+   "raw-overlay": 1
   },
   "finance/src/pages/finance/AccountVouchersModal.tsx": {
    "raw-control": 2,
    "raw-table": 13,
-   "raw-overlay": 1,
-   "raw-color": 17,
-   "arbitrary-size": 1
+   "raw-overlay": 1
   },
   "finance/src/pages/finance/AccountsPayablePage.tsx": {
    "raw-control": 10,
    "raw-table": 38,
-   "raw-color": 72,
-   "arbitrary-size": 5,
+   "raw-color": 1,
+   "arbitrary-size": 1,
    "shouting-type": 1
   },
   "finance/src/pages/finance/AccountsReceivablePage.tsx": {
    "raw-control": 27,
    "raw-table": 33,
-   "raw-overlay": 1,
-   "raw-color": 73
+   "raw-overlay": 1
   },
   "finance/src/pages/finance/ApCashFlowPage.tsx": {
    "raw-control": 4,
-   "raw-table": 62,
-   "raw-color": 93,
-   "arbitrary-size": 13
+   "raw-table": 62
   },
   "finance/src/pages/finance/ApDuplicateInvoicesPage.tsx": {
    "raw-control": 11,
    "raw-table": 40,
    "raw-overlay": 1,
-   "raw-color": 89,
-   "arbitrary-size": 6,
    "shouting-type": 1
   },
   "finance/src/pages/finance/ApLedgerHealthPage.tsx": {
    "raw-control": 29,
    "raw-table": 142,
-   "raw-overlay": 2,
-   "raw-color": 249,
-   "arbitrary-size": 31
+   "raw-overlay": 2
   },
   "finance/src/pages/finance/ApReconciliationPage.tsx": {
    "raw-control": 7,
    "raw-table": 67,
-   "raw-color": 79,
-   "arbitrary-size": 7,
    "shouting-type": 2
   },
   "finance/src/pages/finance/BankReconciliationPage.tsx": {
    "raw-control": 27,
    "raw-table": 79,
-   "raw-color": 202,
-   "arbitrary-size": 19,
+   "raw-color": 10,
    "shouting-type": 11
   },
   "finance/src/pages/finance/BankSettingsPage.tsx": {
    "raw-control": 14,
    "raw-table": 19,
-   "raw-overlay": 1,
-   "raw-color": 47
+   "raw-overlay": 1
   },
   "finance/src/pages/finance/BankStatementCsvPage.tsx": {
    "raw-control": 28,
    "raw-table": 31,
-   "raw-overlay": 1,
-   "raw-color": 78
+   "raw-overlay": 1
   },
   "finance/src/pages/finance/BatchCostPage.tsx": {
    "raw-control": 6,
    "raw-table": 20,
-   "raw-color": 45,
-   "arbitrary-size": 1,
    "shouting-type": 2
   },
   "finance/src/pages/finance/BudgetActualBreakdown.tsx": {
    "raw-control": 4,
    "raw-table": 30,
-   "raw-color": 39,
    "arbitrary-size": 1
   },
   "finance/src/pages/finance/BudgetActualPage.tsx": {
    "raw-control": 3,
-   "raw-table": 42,
-   "raw-color": 42
+   "raw-table": 42
   },
   "finance/src/pages/finance/BudgetActualRollup.tsx": {
    "raw-control": 15,
    "raw-table": 49,
-   "raw-color": 79,
-   "arbitrary-size": 3,
    "shouting-type": 1
   },
   "finance/src/pages/finance/CoaConfigPage.tsx": {
    "raw-control": 38,
    "raw-table": 26,
    "raw-overlay": 1,
-   "raw-color": 117,
-   "arbitrary-size": 24,
    "shouting-type": 16
   },
   "finance/src/pages/finance/CoaSyncModal.tsx": {
    "raw-control": 4,
    "raw-table": 22,
-   "raw-overlay": 1,
-   "raw-color": 26
+   "raw-overlay": 1
   },
   "finance/src/pages/finance/CostAnomaliesPage.tsx": {
    "raw-control": 4,
-   "raw-table": 32,
-   "raw-color": 37,
-   "arbitrary-size": 1
+   "raw-table": 32
   },
   "finance/src/pages/finance/CostChainPage.tsx": {
    "raw-control": 4,
    "raw-table": 52,
-   "raw-color": 60,
-   "arbitrary-size": 5,
    "shouting-type": 2
   },
   "finance/src/pages/finance/ExchangeRatesPage.tsx": {
    "raw-control": 18,
    "raw-table": 21,
-   "raw-color": 63,
    "shouting-type": 3
   },
   "finance/src/pages/finance/GeneralLedgerPage.tsx": {
    "raw-control": 17,
    "raw-table": 62,
-   "raw-overlay": 1,
-   "raw-color": 67
+   "raw-overlay": 1
   },
   "finance/src/pages/finance/GrossMarginPage.tsx": {
    "raw-control": 3,
    "raw-table": 12,
-   "raw-color": 46,
-   "arbitrary-size": 2,
    "shouting-type": 2
   },
   "finance/src/pages/finance/JournalVouchersPage.tsx": {
    "raw-control": 29,
-   "raw-table": 17,
-   "raw-color": 37,
-   "arbitrary-size": 1
+   "raw-table": 17
   },
   "finance/src/pages/finance/JvDetailModal.tsx": {
    "raw-control": 6,
    "raw-table": 26,
-   "raw-overlay": 1,
-   "raw-color": 52,
-   "arbitrary-size": 1
+   "raw-overlay": 1
   },
   "finance/src/pages/finance/JvLinesPage.tsx": {
    "raw-control": 11,
    "raw-table": 16,
-   "raw-color": 23,
    "arbitrary-size": 1
   },
   "finance/src/pages/finance/JvValidationPage.tsx": {
    "raw-control": 8,
-   "raw-table": 39,
-   "raw-color": 46
+   "raw-table": 39
   },
   "finance/src/pages/finance/MaterialTracePage.tsx": {
    "raw-control": 5,
    "raw-table": 107,
-   "raw-color": 67,
-   "arbitrary-size": 2,
    "shouting-type": 1
   },
   "finance/src/pages/finance/NcSyncModal.tsx": {
    "raw-control": 6,
-   "raw-overlay": 1,
-   "raw-color": 25
+   "raw-overlay": 1
   },
   "finance/src/pages/finance/PaymentBatchPage.tsx": {
    "raw-control": 18,
    "raw-table": 54,
    "raw-overlay": 1,
-   "raw-color": 124,
-   "arbitrary-size": 8
+   "arbitrary-size": 1
   },
   "finance/src/pages/finance/PaymentsPage.tsx": {
    "raw-control": 18,
    "raw-table": 20,
-   "raw-color": 61,
    "shouting-type": 3
   },
   "finance/src/pages/finance/QboCreditImportPage.tsx": {
    "raw-control": 10,
-   "raw-table": 39,
-   "raw-color": 81
+   "raw-table": 39
   },
   "finance/src/pages/finance/QboMirrorPage.tsx": {
    "raw-control": 16,
    "raw-table": 33,
-   "raw-overlay": 4,
-   "raw-color": 77
+   "raw-overlay": 4
   },
   "finance/src/pages/finance/StandardCostPage.tsx": {
    "raw-control": 10,
    "raw-table": 54,
-   "raw-color": 54,
-   "arbitrary-size": 3,
    "shouting-type": 2
   },
   "finance/src/pages/finance/TaxSettingsPage.tsx": {
    "raw-control": 15,
    "raw-table": 15,
    "raw-overlay": 1,
-   "raw-color": 70,
-   "arbitrary-size": 1,
    "shouting-type": 10
   },
   "finance/src/pages/finance/UnallocatedLinesModal.tsx": {
    "raw-control": 2,
    "raw-table": 21,
-   "raw-overlay": 1,
-   "raw-color": 27,
-   "arbitrary-size": 1
+   "raw-overlay": 1
   },
   "inventory/src/components/Combobox.tsx": {
-   "raw-control": 3,
-   "raw-color": 11,
-   "arbitrary-size": 1
+   "raw-control": 3
   },
   "inventory/src/components/ConfirmDialog.tsx": {
    "raw-control": 1,
-   "raw-overlay": 1,
-   "raw-color": 7
+   "raw-overlay": 1
   },
   "inventory/src/components/ScrollTable.tsx": {
-   "raw-color": 3,
    "arbitrary-size": 1,
    "shouting-type": 1
   },
   "inventory/src/components/Toast.tsx": {
    "raw-control": 2
   },
-  "inventory/src/components/WmsHistoryNote.tsx": {
-   "raw-color": 1
-  },
   "inventory/src/components/layout/AppLayout.tsx": {
    "raw-control": 5,
    "raw-overlay": 1,
-   "raw-color": 21,
-   "arbitrary-size": 2,
+   "raw-color": 2,
    "shouting-type": 4
   },
   "inventory/src/pages/nc/CostTab.tsx": {
    "raw-control": 1,
    "raw-table": 52,
-   "raw-color": 18,
-   "arbitrary-size": 3,
    "shouting-type": 1
   },
   "inventory/src/pages/nc/LedgerTab.tsx": {
    "raw-control": 2,
    "raw-table": 54,
-   "raw-color": 21,
-   "arbitrary-size": 3,
    "emoji": 1
   },
   "inventory/src/pages/nc/NcInventoryPage.tsx": {
-   "raw-control": 5,
-   "raw-color": 15
+   "raw-control": 5
   },
   "inventory/src/pages/nc/NcUi.tsx": {
    "raw-control": 2,
    "raw-table": 4,
-   "raw-color": 14,
-   "arbitrary-size": 2,
    "shouting-type": 1
   },
   "inventory/src/pages/nc/StockTab.tsx": {
    "raw-control": 3,
    "raw-table": 25,
-   "raw-color": 25,
-   "arbitrary-size": 5,
    "shouting-type": 1
   },
   "inventory/src/pages/recon/ReconRows.tsx": {
    "raw-control": 2,
-   "raw-table": 74,
-   "raw-color": 35,
-   "arbitrary-size": 10
+   "raw-table": 74
   },
   "inventory/src/pages/recon/ReconciliationPage.tsx": {
    "raw-control": 11,
    "raw-table": 7,
-   "raw-color": 32,
-   "arbitrary-size": 4,
    "shouting-type": 2
   },
   "inventory/src/pages/settings/NoBatchMaterialsCard.tsx": {
    "raw-table": 10,
-   "raw-color": 12,
    "shouting-type": 1
   },
   "inventory/src/pages/settings/ParametersCard.tsx": {
-   "raw-control": 1,
-   "raw-color": 9
-  },
-  "inventory/src/pages/settings/SettingsPage.tsx": {
-   "raw-color": 2
+   "raw-control": 1
   },
   "inventory/src/pages/settings/SyncStatusCard.tsx": {
    "raw-control": 1,
    "raw-table": 22,
-   "raw-color": 24,
    "shouting-type": 4
   },
   "inventory/src/pages/settings/WarehouseClassesCard.tsx": {
    "raw-control": 1,
    "raw-table": 12,
-   "raw-color": 13,
    "shouting-type": 1
   },
   "inventory/src/pages/trace/TracePage.tsx": {
    "raw-control": 8,
-   "raw-color": 52,
-   "arbitrary-size": 5,
    "shouting-type": 1
   },
   "inventory/src/pages/trace/TracePickers.tsx": {
-   "raw-color": 6,
-   "arbitrary-size": 4,
    "shouting-type": 1
   },
   "inventory/src/pages/trace/TraceRows.tsx": {
    "raw-control": 1,
-   "raw-table": 42,
-   "raw-color": 48,
-   "arbitrary-size": 13
+   "raw-table": 42
   },
   "inventory/src/pages/wms/AgingTab.tsx": {
    "raw-control": 3,
    "raw-table": 17,
-   "raw-color": 34,
-   "arbitrary-size": 3,
    "shouting-type": 1
   },
   "inventory/src/pages/wms/BatchesTab.tsx": {
    "raw-control": 6,
    "raw-table": 42,
-   "raw-color": 66,
-   "arbitrary-size": 6,
    "shouting-type": 1
   },
   "inventory/src/pages/wms/InventoryPage.tsx": {
-   "raw-control": 3,
-   "raw-color": 13,
-   "arbitrary-size": 3
+   "raw-control": 3
   },
   "inventory/src/pages/wms/InventorySummary.tsx": {
    "raw-control": 1,
    "raw-table": 14,
-   "raw-color": 22,
-   "arbitrary-size": 6,
    "shouting-type": 1
   },
   "inventory/src/pages/wms/MaterialsTab.tsx": {
    "raw-control": 6,
    "raw-table": 36,
-   "raw-color": 38,
-   "arbitrary-size": 5,
    "shouting-type": 1
-  },
-  "inventory/src/pages/wms/WmsFreshness.tsx": {
-   "raw-color": 4
   },
   "mrp/src/components/ConfirmDialog.tsx": {
    "raw-control": 1,
-   "raw-overlay": 1,
-   "raw-color": 7
+   "raw-overlay": 1
   },
   "mrp/src/components/MatrixGrid.tsx": {
    "raw-control": 4,
    "raw-table": 21,
-   "raw-color": 32,
-   "arbitrary-size": 4,
    "shouting-type": 2
-  },
-  "mrp/src/components/StatusBadge.tsx": {
-   "raw-color": 31
   },
   "mrp/src/components/Toast.tsx": {
    "raw-control": 2
@@ -1385,298 +1053,210 @@
   "mrp/src/components/layout/AppLayout.tsx": {
    "raw-control": 4,
    "raw-overlay": 1,
-   "raw-color": 16,
-   "arbitrary-size": 2,
+   "raw-color": 2,
    "shouting-type": 4
   },
   "mrp/src/pages/bom/BomExplorerPage.tsx": {
    "raw-control": 2,
-   "raw-color": 24,
-   "arbitrary-size": 1,
    "shouting-type": 1
   },
   "mrp/src/pages/bom/BomTreeNode.tsx": {
-   "raw-control": 2,
-   "raw-color": 20
+   "raw-control": 2
   },
   "mrp/src/pages/bom/SyncSection.tsx": {
-   "raw-control": 1,
-   "raw-color": 11
+   "raw-control": 1
   },
   "mrp/src/pages/capacity/CapacityRulesPage.tsx": {
    "raw-control": 3,
-   "raw-table": 13,
-   "raw-color": 27,
-   "arbitrary-size": 3
+   "raw-table": 13
   },
   "mrp/src/pages/capacity/LossRatesSection.tsx": {
-   "raw-control": 1,
-   "raw-color": 9
+   "raw-control": 1
   },
   "mrp/src/pages/capacity/PlanningCalendarSection.tsx": {
-   "raw-control": 2,
-   "raw-color": 12
+   "raw-control": 2
   },
   "mrp/src/pages/capacity/RuleDrawer.tsx": {
    "raw-control": 4,
-   "raw-overlay": 1,
-   "raw-color": 9
+   "raw-overlay": 1
   },
   "mrp/src/pages/capacity/WeekExceptionsSection.tsx": {
    "raw-control": 4,
    "raw-table": 12,
-   "raw-overlay": 1,
-   "raw-color": 39,
-   "arbitrary-size": 6
+   "raw-overlay": 1
   },
   "mrp/src/pages/consignment/ConsignmentStockPage.tsx": {
-   "raw-table": 11,
-   "raw-color": 30,
-   "arbitrary-size": 2
+   "raw-table": 11
   },
   "mrp/src/pages/consignment/LotCombo.tsx": {
-   "raw-control": 3,
-   "raw-color": 12,
-   "arbitrary-size": 2
+   "raw-control": 3
   },
   "mrp/src/pages/consignment/MaterialPicker.tsx": {
-   "raw-control": 4,
-   "raw-color": 18,
-   "arbitrary-size": 3
+   "raw-control": 4
   },
   "mrp/src/pages/forecast/AddIntentProductModal.tsx": {
    "raw-control": 2,
    "raw-overlay": 1,
-   "raw-color": 13,
    "arbitrary-size": 1
   },
   "mrp/src/pages/forecast/BindIntentModal.tsx": {
    "raw-control": 1,
-   "raw-overlay": 1,
-   "raw-color": 7
+   "raw-overlay": 1
   },
   "mrp/src/pages/forecast/CellHistoryPopover.tsx": {
-   "raw-control": 1,
-   "raw-color": 11,
-   "arbitrary-size": 1
+   "raw-control": 1
   },
   "mrp/src/pages/forecast/GenerateOutlookModal.tsx": {
    "raw-control": 1,
-   "raw-overlay": 1,
-   "raw-color": 7
+   "raw-overlay": 1
   },
   "mrp/src/pages/forecast/OutlookViewerModal.tsx": {
    "raw-control": 1,
-   "raw-overlay": 1,
-   "raw-color": 8
+   "raw-overlay": 1
   },
   "mrp/src/pages/forecast/OutlooksPanel.tsx": {
    "raw-control": 5,
-   "raw-table": 11,
-   "raw-color": 25,
-   "arbitrary-size": 4
+   "raw-table": 11
   },
   "mrp/src/pages/forecast/SalesForecastPage.tsx": {
-   "raw-control": 3,
-   "raw-color": 17,
-   "arbitrary-size": 2
+   "raw-control": 3
   },
   "mrp/src/pages/mps/AdjustDrawer.tsx": {
    "raw-control": 3,
-   "raw-overlay": 1,
-   "raw-color": 12,
-   "arbitrary-size": 2
+   "raw-overlay": 1
   },
   "mrp/src/pages/mps/PlanningRulesPanel.tsx": {
-   "raw-control": 2,
-   "raw-color": 14,
-   "arbitrary-size": 3
+   "raw-control": 2
   },
   "mrp/src/pages/mps/ProductionMatrix.tsx": {
    "raw-control": 3,
    "raw-table": 24,
-   "raw-color": 66,
-   "arbitrary-size": 10,
    "shouting-type": 3
   },
   "mrp/src/pages/mps/ProductionPlanPage.tsx": {
    "raw-control": 4,
-   "raw-overlay": 1,
-   "raw-color": 28,
-   "arbitrary-size": 2
+   "raw-overlay": 1
   },
   "mrp/src/pages/mps/RunPicker.tsx": {
    "raw-control": 2,
    "raw-overlay": 1,
-   "raw-color": 9,
    "shouting-type": 1
   },
   "mrp/src/pages/mps/WeekDrawer.tsx": {
    "raw-control": 3,
-   "raw-overlay": 1,
-   "raw-color": 13
+   "raw-overlay": 1
   },
   "mrp/src/pages/purchase/PurchaseSuggestionsPage.tsx": {
    "raw-control": 3,
    "raw-table": 20,
-   "raw-color": 19,
    "shouting-type": 2
   },
   "mrp/src/pages/supply/SupplierPicker.tsx": {
    "raw-control": 4,
-   "raw-overlay": 1,
-   "raw-color": 12
+   "raw-overlay": 1
   },
   "mrp/src/pages/supply/SupplyParametersPage.tsx": {
    "raw-control": 5,
    "raw-table": 17,
-   "raw-color": 25,
    "shouting-type": 1
   },
   "mrp/src/pages/supply/SupplyRowDrawer.tsx": {
    "raw-control": 2,
-   "raw-overlay": 1,
-   "raw-color": 10
-  },
-  "oa/src/app/routes.tsx": {
-   "raw-color": 1
+   "raw-overlay": 1
   },
   "oa/src/components/BudgetAccountPicker.tsx": {
    "raw-control": 5,
    "raw-overlay": 1,
-   "raw-color": 23,
-   "arbitrary-size": 3,
    "shouting-type": 1
   },
   "oa/src/components/LineCardField.tsx": {
-   "raw-color": 1,
-   "arbitrary-size": 1,
    "shouting-type": 1
   },
   "oa/src/components/ProcessPaymentModal.tsx": {
    "raw-control": 4,
    "raw-overlay": 1,
-   "raw-color": 11,
    "emoji": 2
   },
   "oa/src/components/ReceiptScanButton.tsx": {
-   "raw-control": 2,
-   "raw-color": 2,
-   "arbitrary-size": 1
+   "raw-control": 2
   },
   "oa/src/components/TravelerPicker.tsx": {
-   "raw-control": 3,
-   "raw-color": 5
+   "raw-control": 3
   },
   "oa/src/components/layout/AppLayout.tsx": {
    "raw-control": 4,
    "raw-overlay": 1,
-   "raw-color": 16,
-   "arbitrary-size": 5,
+   "raw-color": 2,
    "shouting-type": 7
-  },
-  "oa/src/components/layout/TabQueryScope.tsx": {
-   "raw-color": 2
   },
   "oa/src/components/ui/ActionModal.tsx": {
    "raw-control": 4,
-   "raw-overlay": 1,
-   "raw-color": 14
+   "raw-overlay": 1
   },
   "oa/src/components/ui/ConfirmDialog.tsx": {
    "raw-control": 3,
-   "raw-overlay": 1,
-   "raw-color": 9
+   "raw-overlay": 1
   },
   "oa/src/components/ui/Pagination.tsx": {
-   "raw-control": 3,
-   "raw-color": 10
-  },
-  "oa/src/components/ui/badge.tsx": {
-   "raw-color": 5
+   "raw-control": 3
   },
   "oa/src/pages/admin/CfmAdminPage.tsx": {
    "raw-control": 17,
-   "raw-color": 47,
-   "arbitrary-size": 7,
    "shouting-type": 1
   },
   "oa/src/pages/admin/ExpenseConfigPage.tsx": {
    "raw-control": 2,
-   "raw-color": 13,
-   "arbitrary-size": 1,
    "shouting-type": 4
   },
   "oa/src/pages/expenses/CfmCreatePage.tsx": {
    "raw-control": 4,
-   "raw-color": 12,
    "shouting-type": 1
   },
   "oa/src/pages/expenses/ExpenseCreatePage.tsx": {
    "raw-control": 11,
    "raw-table": 31,
-   "raw-color": 49,
-   "arbitrary-size": 1,
    "shouting-type": 1
   },
   "oa/src/pages/expenses/ExpenseDetailPage.tsx": {
    "raw-control": 15,
    "raw-table": 38,
-   "raw-color": 115,
-   "arbitrary-size": 3,
    "shouting-type": 1
-  },
-  "oa/src/pages/expenses/ExpenseEditPage.tsx": {
-   "raw-color": 2
   },
   "oa/src/pages/expenses/ExpenseListPage.tsx": {
    "raw-control": 6,
    "raw-table": 11,
    "raw-overlay": 1,
-   "raw-color": 37,
-   "arbitrary-size": 2,
    "shouting-type": 8
   },
   "oa/src/pages/expenses/MilCreatePage.tsx": {
    "raw-control": 12,
    "raw-table": 29,
-   "raw-color": 47,
    "shouting-type": 1
   },
   "oa/src/pages/expenses/TrvCreatePage.tsx": {
    "raw-control": 21,
-   "raw-color": 76,
-   "arbitrary-size": 12,
    "shouting-type": 11
   },
   "oa/src/pages/tasks/TaskListPage.tsx": {
    "raw-control": 3,
-   "raw-color": 30,
-   "arbitrary-size": 5,
+   "arbitrary-size": 1,
    "shouting-type": 9
   },
   "oa/src/pages/travel/TraCreatePage.tsx": {
    "raw-control": 10,
-   "raw-color": 29,
    "shouting-type": 1
   },
   "oa/src/pages/travel/TravelApplicationsListPage.tsx": {
    "raw-control": 3,
    "raw-table": 13,
-   "raw-color": 27,
    "shouting-type": 8
-  },
-  "portal/src/App.tsx": {
-   "raw-color": 1
   },
   "portal/src/components/ConfirmDialog.tsx": {
    "raw-control": 3,
-   "raw-overlay": 1,
-   "raw-color": 14
+   "raw-overlay": 1
   },
   "portal/src/components/auth/ChangePasswordForm.tsx": {
-   "raw-control": 4,
-   "raw-color": 12
+   "raw-control": 4
   },
   "portal/src/components/layout/PortalPageLayout.tsx": {
    "raw-overlay": 1,
@@ -1684,173 +1264,135 @@
   },
   "portal/src/components/layout/PortalSidebar.tsx": {
    "raw-control": 2,
-   "raw-color": 1,
-   "arbitrary-size": 2,
    "shouting-type": 4
   },
   "portal/src/components/layout/TopHeader.tsx": {
    "raw-control": 5,
-   "raw-overlay": 2,
-   "raw-color": 28
+   "raw-overlay": 2
   },
   "portal/src/pages/ForcePasswordChangePage.tsx": {
    "raw-control": 1,
-   "raw-color": 9
+   "raw-color": 1
   },
   "portal/src/pages/PortalHome.tsx": {
    "raw-control": 1,
    "raw-overlay": 1,
-   "raw-color": 77,
-   "arbitrary-size": 11,
+   "raw-color": 1,
    "shouting-type": 10
   },
   "portal/src/pages/admin/AccessControl.tsx": {
    "raw-control": 8,
    "raw-table": 22,
-   "raw-color": 52,
-   "arbitrary-size": 2,
    "shouting-type": 7
   },
   "portal/src/pages/admin/AdminPanel.tsx": {
    "raw-control": 73,
    "raw-table": 88,
    "raw-overlay": 4,
-   "raw-color": 402,
-   "arbitrary-size": 11,
+   "raw-color": 3,
    "shouting-type": 11
   },
   "portal/src/pages/admin/ApprovalDelegation.tsx": {
    "raw-control": 3,
    "raw-table": 15,
-   "raw-color": 38,
    "shouting-type": 7
   },
   "portal/src/pages/admin/ApprovalRouting.tsx": {
    "raw-control": 7,
    "raw-table": 11,
-   "raw-color": 38,
    "shouting-type": 6
   },
   "portal/src/pages/admin/DataMaintenance.tsx": {
    "raw-control": 1,
-   "raw-color": 7,
    "shouting-type": 1
   },
   "portal/src/pages/admin/NcPurchaseSyncSection.tsx": {
-   "raw-control": 6,
-   "raw-color": 31,
-   "arbitrary-size": 1
+   "raw-control": 6
   },
   "portal/src/pages/admin/TaskNotificationPolicies.tsx": {
    "raw-control": 4,
    "raw-table": 12,
-   "raw-color": 27,
-   "arbitrary-size": 1,
    "shouting-type": 1
   },
   "portal/src/pages/admin/UnitsOfMeasure.tsx": {
    "raw-control": 10,
    "raw-table": 11,
    "raw-overlay": 1,
-   "raw-color": 52,
-   "arbitrary-size": 1,
    "shouting-type": 5
   },
   "portal/src/pages/admin/WmsSyncSection.tsx": {
-   "raw-control": 3,
-   "raw-color": 32
+   "raw-control": 3
   },
   "portal/src/pages/admin/data-maintenance/ApprovalStatePanel.tsx": {
-   "raw-control": 4,
-   "raw-color": 14,
-   "arbitrary-size": 1
+   "raw-control": 4
   },
   "portal/src/pages/admin/data-maintenance/BulkDeleteConfirm.tsx": {
    "raw-control": 2,
-   "raw-overlay": 1,
-   "raw-color": 9
+   "raw-overlay": 1
   },
   "portal/src/pages/admin/data-maintenance/DeleteConfirm.tsx": {
    "raw-control": 2,
-   "raw-overlay": 1,
-   "raw-color": 10
+   "raw-overlay": 1
   },
   "portal/src/pages/admin/data-maintenance/EntityTable.tsx": {
    "raw-control": 10,
    "raw-table": 15,
-   "raw-color": 19,
    "shouting-type": 2
   },
   "portal/src/pages/admin/data-maintenance/LineItemsEditor.tsx": {
    "raw-control": 4,
-   "raw-table": 18,
-   "raw-color": 11,
-   "arbitrary-size": 1
+   "raw-table": 18
   },
   "portal/src/pages/admin/data-maintenance/RecordEditForm.tsx": {
    "raw-control": 7,
-   "raw-overlay": 1,
-   "raw-color": 11
+   "raw-overlay": 1
   },
   "portal/src/pages/admin/data-maintenance/ReferenceListPicker.tsx": {
    "raw-control": 4,
-   "raw-color": 14,
    "emoji": 1
   },
   "portal/src/pages/admin/data-maintenance/ReferencePicker.tsx": {
-   "raw-control": 3,
-   "raw-color": 6
+   "raw-control": 3
   },
   "portal/src/pages/admin/data-maintenance/cascadeDisplay.tsx": {
-   "raw-color": 8,
    "shouting-type": 3
   },
   "portal/src/pages/admin/nc-sync/NcSyncSection.tsx": {
-   "raw-control": 5,
-   "raw-color": 30
+   "raw-control": 5
   },
   "portal/src/pages/admin/nc-sync/ScheduleCard.tsx": {
-   "raw-control": 4,
-   "raw-color": 23,
-   "arbitrary-size": 1
+   "raw-control": 4
   },
   "portal/src/pages/mdm/org/Combobox.tsx": {
    "raw-control": 3,
-   "raw-color": 10
+   "raw-color": 1
   },
   "portal/src/pages/mdm/org/OrgChart.tsx": {
    "raw-control": 23,
-   "raw-color": 76,
-   "arbitrary-size": 1
+   "raw-color": 7
   },
   "portal/src/pages/mdm/staff/StaffDepartmentMap.tsx": {
    "raw-control": 1,
-   "raw-table": 8,
-   "raw-color": 6
+   "raw-table": 8
   },
   "portal/src/pages/mdm/staff/StaffDetail.tsx": {
    "raw-control": 17,
-   "raw-table": 28,
-   "raw-color": 34
+   "raw-table": 28
   },
   "portal/src/pages/mdm/staff/StaffImport.tsx": {
    "raw-control": 14,
-   "raw-table": 23,
-   "raw-color": 46
+   "raw-table": 23
   },
   "portal/src/pages/mdm/staff/StaffList.tsx": {
    "raw-control": 18,
    "raw-table": 17,
-   "raw-overlay": 1,
-   "raw-color": 19
+   "raw-overlay": 1
   },
   "portal/src/pages/mdm/staff/StaffNcTodo.tsx": {
    "raw-control": 10,
-   "raw-table": 22,
-   "raw-color": 22
+   "raw-table": 22
   },
   "portal/src/pages/mdm/staff/shared.tsx": {
-   "raw-color": 26,
    "shouting-type": 1
   },
   "vms/src/components/BadgePreview.tsx": {
@@ -1859,154 +1401,118 @@
   },
   "vms/src/components/CheckOutConfirm.tsx": {
    "raw-control": 6,
-   "raw-overlay": 1,
-   "raw-color": 23
+   "raw-overlay": 1
   },
   "vms/src/components/EditVisitModal.tsx": {
    "raw-control": 8,
-   "raw-overlay": 1,
-   "raw-color": 10
+   "raw-overlay": 1
   },
   "vms/src/components/HealthDeclForm.tsx": {
    "raw-control": 7,
    "raw-overlay": 1,
-   "raw-color": 28,
+   "raw-color": 1,
    "shouting-type": 1
   },
   "vms/src/components/HealthDeclView.tsx": {
    "raw-control": 2,
    "raw-overlay": 1,
-   "raw-color": 15,
    "shouting-type": 1
   },
   "vms/src/components/HostSearch.tsx": {
-   "raw-control": 3,
-   "raw-color": 11
+   "raw-control": 3
   },
   "vms/src/components/PpeRequestForm.tsx": {
    "raw-control": 7,
-   "raw-color": 11,
    "shouting-type": 1
   },
   "vms/src/components/QrScanner.tsx": {
-   "raw-control": 1,
-   "raw-color": 2
-  },
-  "vms/src/components/StatusBadge.tsx": {
-   "raw-color": 24,
-   "arbitrary-size": 1
+   "raw-control": 1
   },
   "vms/src/components/VisitAttachments.tsx": {
    "raw-control": 3,
-   "raw-color": 10,
-   "arbitrary-size": 1,
    "shouting-type": 1
   },
   "vms/src/components/VisitorSearch.tsx": {
-   "raw-control": 5,
-   "raw-color": 12
+   "raw-control": 5
   },
   "vms/src/components/layout/AppLayout.tsx": {
    "raw-control": 4,
    "raw-overlay": 1,
-   "raw-color": 21,
-   "arbitrary-size": 6,
+   "raw-color": 1,
    "shouting-type": 7
   },
   "vms/src/pages/ActiveVisitsPage.tsx": {
    "raw-control": 1,
    "raw-table": 13,
-   "raw-color": 15,
    "shouting-type": 2
   },
   "vms/src/pages/AuditLogPage.tsx": {
    "raw-control": 10,
    "raw-table": 15,
-   "raw-color": 34,
-   "arbitrary-size": 2,
    "shouting-type": 3
   },
   "vms/src/pages/BadgePrintPage.tsx": {
-   "raw-control": 1,
-   "raw-color": 8
+   "raw-control": 1
   },
   "vms/src/pages/CheckOutPage.tsx": {
    "raw-control": 4,
-   "raw-color": 14,
    "shouting-type": 1
   },
   "vms/src/pages/DashboardPage.tsx": {
    "raw-table": 13,
-   "raw-color": 31,
    "shouting-type": 4
   },
   "vms/src/pages/HealthDeclarationsPage.tsx": {
    "raw-control": 6,
    "raw-table": 18,
-   "raw-color": 28,
    "shouting-type": 2
   },
   "vms/src/pages/ReportsPage.tsx": {
    "raw-control": 3,
-   "raw-color": 14,
    "shouting-type": 2
   },
   "vms/src/pages/TaskInboxPage.tsx": {
-   "raw-color": 16,
-   "arbitrary-size": 2,
    "shouting-type": 1
   },
   "vms/src/pages/VisitCreatePage.tsx": {
    "raw-control": 16,
-   "raw-color": 12,
    "shouting-type": 2
   },
   "vms/src/pages/VisitDetailPage.tsx": {
    "raw-control": 20,
    "raw-overlay": 2,
-   "raw-color": 91,
    "shouting-type": 5,
    "emoji": 1
   },
   "vms/src/pages/VisitListPage.tsx": {
    "raw-table": 14,
-   "raw-color": 12,
    "shouting-type": 2
   },
   "vms/src/pages/VisitorCompliancePage.tsx": {
    "raw-control": 1,
-   "raw-color": 14,
    "shouting-type": 1
   },
   "vms/src/pages/admin/AdminPanel.tsx": {
    "raw-control": 1,
-   "raw-color": 7,
    "shouting-type": 1
   },
   "vms/src/pages/admin/BadgeTemplatesPage.tsx": {
    "raw-control": 27,
-   "raw-color": 23,
-   "arbitrary-size": 3,
    "shouting-type": 1
   },
   "vms/src/pages/admin/EmailSettingsPage.tsx": {
-   "raw-control": 6,
-   "raw-color": 15
+   "raw-control": 6
   },
   "vms/src/pages/admin/HealthQuestionsPage.tsx": {
-   "raw-control": 10,
-   "raw-color": 22
+   "raw-control": 10
   },
   "vms/src/pages/admin/NotificationContactsPage.tsx": {
-   "raw-control": 2,
-   "raw-color": 7
+   "raw-control": 2
   },
   "vms/src/pages/admin/ZonesPage.tsx": {
    "raw-control": 12,
    "raw-table": 19,
    "raw-overlay": 1,
-   "raw-color": 33,
-   "arbitrary-size": 2,
    "shouting-type": 1
   }
  }

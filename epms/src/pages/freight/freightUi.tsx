@@ -8,12 +8,12 @@ import type { ApiDepartment } from '@/services/departments'
 import type { MatchStatus } from '@/services/freight'
 
 export const SELECT_CLS =
-  'h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-50 disabled:text-neutral-400'
+  'h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-subtle disabled:text-fg-muted'
 export const SELECT_SM_CLS =
-  'h-8 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-50 disabled:text-neutral-400'
+  'h-8 rounded-md border border-line-strong bg-surface px-2 text-xs text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-subtle disabled:text-fg-muted'
 export const INPUT_SM_CLS =
-  'h-8 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-800 focus:outline-none focus:ring-2 focus:ring-primary-600'
-export const TH_CLS = 'px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap'
+  'h-8 rounded-md border border-line-strong bg-surface px-2 text-xs text-fg focus:outline-none focus:ring-2 focus:ring-primary-600'
+export const TH_CLS = 'px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap'
 
 // ─── Badges ───────────────────────────────────────────────────────────────────
 
@@ -24,31 +24,31 @@ function Dot({ cls }: { cls: string }) {
 }
 
 const SHIPMENT_STATUS: Record<string, { label: string; variant: Variant; dot: string }> = {
-  pending: { label: 'Pending', variant: 'warning', dot: 'bg-warning-500' },
-  billed: { label: 'Billed', variant: 'success', dot: 'bg-success-600' },
-  void: { label: 'Void', variant: 'dark', dot: 'bg-neutral-400' },
+  pending: { label: 'Pending', variant: 'warning', dot: 'bg-warning-solid' },
+  billed: { label: 'Billed', variant: 'success', dot: 'bg-success-solid' },
+  void: { label: 'Void', variant: 'dark', dot: 'bg-fg-faint' },
 }
 
 export function ShipmentStatusBadge({ status }: { status: string }) {
-  const c = SHIPMENT_STATUS[status] ?? { label: status, variant: 'neutral' as const, dot: 'bg-neutral-400' }
+  const c = SHIPMENT_STATUS[status] ?? { label: status, variant: 'neutral' as const, dot: 'bg-fg-faint' }
   return <Badge variant={c.variant}><Dot cls={c.dot} />{c.label}</Badge>
 }
 
 const INVOICE_STATUS: Record<string, { label: string; variant: Variant; dot: string }> = {
-  unmatched: { label: 'Matching', variant: 'warning', dot: 'bg-warning-500' },
-  matched: { label: 'Matched', variant: 'success', dot: 'bg-success-600' },
-  paid: { label: 'Paid', variant: 'dark', dot: 'bg-neutral-400' },
+  unmatched: { label: 'Matching', variant: 'warning', dot: 'bg-warning-solid' },
+  matched: { label: 'Matched', variant: 'success', dot: 'bg-success-solid' },
+  paid: { label: 'Paid', variant: 'dark', dot: 'bg-fg-faint' },
 }
 
 export function FreightInvoiceStatusBadge({ status }: { status: string }) {
-  const c = INVOICE_STATUS[status] ?? { label: status, variant: 'neutral' as const, dot: 'bg-neutral-400' }
+  const c = INVOICE_STATUS[status] ?? { label: status, variant: 'neutral' as const, dot: 'bg-fg-faint' }
   return <Badge variant={c.variant}><Dot cls={c.dot} />{c.label}</Badge>
 }
 
 /** Marks a courier invoice (match_route='freight') in the general invoice lists. */
 export function FreightRouteBadge({ className }: { className?: string }) {
   return (
-    <span className={cn('inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700', className)}>
+    <span className={cn('inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-primary-700', className)}>
       Freight
     </span>
   )
@@ -57,7 +57,7 @@ export function FreightRouteBadge({ className }: { className?: string }) {
 /** Marks an invoice matched for a Direct PA (match_route='direct') in the lists. */
 export function DirectRouteBadge({ className }: { className?: string }) {
   return (
-    <span className={cn('inline-flex items-center rounded-full border border-warning-200 bg-warning-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning-700', className)}>
+    <span className={cn('inline-flex items-center rounded-full border border-warning-line bg-warning-soft px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-warning-fg', className)}>
       Direct
     </span>
   )
@@ -66,7 +66,7 @@ export function DirectRouteBadge({ className }: { className?: string }) {
 /** Marks a project-related shipment (FRT-019) wherever its department / cost center would show. */
 export function ProjectBadge({ className }: { className?: string }) {
   return (
-    <span className={cn('inline-flex items-center rounded-full border border-info-200 bg-info-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-info-700', className)}>
+    <span className={cn('inline-flex items-center rounded-full border border-info-line bg-info-soft px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-info-fg', className)}>
       Project
     </span>
   )
@@ -110,14 +110,14 @@ export function Modal({ title, subtitle, onClose, children, wide = false }: {
   title: string; subtitle?: string; onClose: () => void; children: React.ReactNode; wide?: boolean
 }) {
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
-      <div className={cn('flex max-h-[92vh] w-full flex-col rounded-2xl bg-white shadow-2xl', wide ? 'max-w-6xl' : 'max-w-lg')}>
-        <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
+      <div className={cn('flex max-h-[92vh] w-full flex-col rounded-2xl bg-surface shadow-2xl', wide ? 'max-w-6xl' : 'max-w-lg')}>
+        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
           <div>
-            <h2 className="text-sm font-semibold text-neutral-900">{title}</h2>
-            {subtitle && <p className="text-xs text-neutral-500">{subtitle}</p>}
+            <h2 className="text-sm font-semibold text-fg">{title}</h2>
+            {subtitle && <p className="text-xs text-fg-muted">{subtitle}</p>}
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100" aria-label="Close">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>

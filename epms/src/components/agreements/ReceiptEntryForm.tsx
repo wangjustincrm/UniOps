@@ -423,35 +423,35 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
           unless explained. Delivery note / service sign-off: one optional
           attachment, no OCR, no consequence for leaving it empty. */}
       <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium text-neutral-700">
+        <label className="text-sm font-medium text-fg-secondary">
           {isSlip ? 'Receipt photo' : 'Attachment'}
-          {!isSlip && <span className="ml-1.5 font-normal text-neutral-400">(optional)</span>}
+          {!isSlip && <span className="ml-1.5 font-normal text-fg-muted">(optional)</span>}
         </label>
         {!file ? (
           <label
             htmlFor="receipt-photo-upload"
             className={cn(
-              'flex cursor-pointer items-center gap-2 rounded-lg border-2 border-dashed border-neutral-300 text-center transition-colors hover:border-primary-400 hover:bg-primary-50',
+              'flex cursor-pointer items-center gap-2 rounded-lg border-2 border-dashed border-line-strong text-center transition-colors hover:border-primary-400 hover:bg-primary-50',
               isSlip ? 'flex-col p-5' : 'justify-center px-4 py-3',
             )}
           >
-            <Upload className={cn('text-neutral-400', isSlip ? 'h-6 w-6' : 'h-4 w-4')} />
+            <Upload className={cn('text-fg-muted', isSlip ? 'h-6 w-6' : 'h-4 w-4')} />
             {isSlip ? (
               <>
-                <p className="text-sm font-medium text-neutral-700">Take or upload a photo of the receipt</p>
-                <p className="text-xs text-neutral-400">Vendor, amounts and date will be auto-filled — optional, but recommended</p>
+                <p className="text-sm font-medium text-fg-secondary">Take or upload a photo of the receipt</p>
+                <p className="text-xs text-fg-muted">Vendor, amounts and date will be auto-filled — optional, but recommended</p>
               </>
             ) : (
-              <p className="text-sm text-neutral-600">
+              <p className="text-sm text-fg-secondary">
                 Attach the signed {receiptType === 'delivery' ? 'delivery note' : 'sign-off'} if you have one
               </p>
             )}
             <input id="receipt-photo-upload" type="file" accept="image/*,.pdf" className="sr-only" onChange={handleFileChange} />
           </label>
         ) : (
-          <div className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
-            <span className="flex-1 truncate text-neutral-700">📎 {file.name}</span>
-            <button type="button" onClick={clearFile} className="text-neutral-400 hover:text-danger-600" aria-label="Remove attachment">
+          <div className="flex items-center gap-2 rounded-md border border-line bg-surface-subtle px-3 py-2 text-sm">
+            <span className="flex-1 truncate text-fg-secondary">📎 {file.name}</span>
+            <button type="button" onClick={clearFile} className="text-fg-muted hover:text-danger-fg" aria-label="Remove attachment">
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -460,7 +460,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
         {/* OCR only ever runs for a counter slip, so these three states are
             unreachable on the other types — no need to guard them separately. */}
         {ocrState === 'loading' && (
-          <p className="flex items-center gap-1.5 text-xs text-neutral-500">
+          <p className="flex items-center gap-1.5 text-xs text-fg-muted">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading receipt…
           </p>
         )}
@@ -470,7 +470,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
           </p>
         )}
         {ocrState === 'failed' && (
-          <p className="flex items-center gap-1.5 text-xs text-neutral-500">
+          <p className="flex items-center gap-1.5 text-xs text-fg-muted">
             <Info className="h-3.5 w-3.5 shrink-0" /> Couldn't auto-read this photo — enter the details manually.
           </p>
         )}
@@ -523,7 +523,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
               {/* A heads-up while typing; the save itself still refuses a
                   total that is not amount + tax (schemas/agreement_receipt.py). */}
               {totalMismatch && !amountError && (
-                <p className="text-xs text-amber-700">{sumHint} — the Total entered differs. Check the slip.</p>
+                <p className="text-xs text-warning-fg">{sumHint} — the Total entered differs. Check the slip.</p>
               )}
             </FormField>
           </>
@@ -558,7 +558,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
           value={missingReceiptReason}
           onChange={(e) => setMissingReceiptReason(e.target.value)}
           placeholder="e.g. receipt was lost / illegible / not issued"
-          className="w-full resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+          className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
         />
       </FormField>
       )}
@@ -570,13 +570,13 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Optional notes"
-          className="w-full resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+          className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
         />
       </FormField>
 
       <div className="flex items-center justify-end gap-3">
-        {submitError && <p className="text-sm text-danger-600" role="alert">{submitError}</p>}
-        {!submitError && refError && <p className="text-sm text-danger-600">{refError}</p>}
+        {submitError && <p className="text-sm text-danger-fg" role="alert">{submitError}</p>}
+        {!submitError && refError && <p className="text-sm text-danger-fg">{refError}</p>}
         <Button type="submit" size="sm" disabled={isPending} className={cn(isPending && 'cursor-not-allowed')}>
           {isPending ? 'Recording…' : 'Record Receipt'}
         </Button>

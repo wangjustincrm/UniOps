@@ -95,7 +95,7 @@ function deriveStatus(row: DelegationOut, today: string): DelegationStatus {
 
 function LoadingBlock() {
   return (
-    <div className="flex items-center justify-center gap-2 py-16 text-sm text-neutral-400">
+    <div className="flex items-center justify-center gap-2 py-16 text-sm text-fg-muted">
       <Loader2 className="h-4 w-4 animate-spin" />Loading…
     </div>
   )
@@ -103,7 +103,7 @@ function LoadingBlock() {
 
 function ErrorBlock({ message }: { message: string }) {
   return (
-    <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+    <div className="flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-fg">
       <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{message}
     </div>
   )
@@ -159,22 +159,22 @@ function UserCombobox({ users, value, onChange, placeholder }: UserComboboxProps
     <>
       <button
         ref={triggerRef} type="button" onClick={toggle}
-        className="flex h-10 w-full items-center justify-between rounded-lg border border-neutral-200 bg-neutral-100 px-3 text-left text-sm hover:bg-white focus:outline-none focus:border-primary-600"
+        className="flex h-10 w-full items-center justify-between rounded-lg border border-line bg-surface-sunken px-3 text-left text-sm hover:bg-surface focus:outline-none focus:border-primary-600"
       >
         <span className="truncate">
-          {selected ? userLabel(selected) : <span className="text-neutral-400">{placeholder}</span>}
+          {selected ? userLabel(selected) : <span className="text-fg-muted">{placeholder}</span>}
         </span>
-        <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
+        <ChevronDown className="h-4 w-4 shrink-0 text-fg-muted" />
       </button>
       {open && rect && createPortal(
         <div
           ref={popRef}
           style={{ position: 'fixed', top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 260) }}
-          className="z-[60] rounded-lg border border-neutral-200 bg-white shadow-lg"
+          className="z-[60] rounded-lg border border-line bg-surface shadow-lg"
         >
           <input
             autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or email…"
-            className="m-2 h-8 w-[calc(100%-1rem)] rounded border border-neutral-300 px-2 text-sm focus:outline-none focus:border-primary-400"
+            className="m-2 h-8 w-[calc(100%-1rem)] rounded border border-line-strong px-2 text-sm focus:outline-none focus:border-primary-400"
           />
           <ul className="max-h-64 overflow-y-auto pb-1">
             {filtered.map((u) => (
@@ -188,7 +188,7 @@ function UserCombobox({ users, value, onChange, placeholder }: UserComboboxProps
                 </button>
               </li>
             ))}
-            {filtered.length === 0 && <li className="px-3 py-2 text-xs text-neutral-400">No matches</li>}
+            {filtered.length === 0 && <li className="px-3 py-2 text-xs text-fg-muted">No matches</li>}
           </ul>
         </div>,
         document.body,
@@ -205,7 +205,7 @@ export default function ApprovalDelegation() {
   // UI-level gate; the backend independently enforces system_admin on every
   // /approval/v1/delegations verb (and epms-api's gateway passes that through).
   if (user?.role !== 'system_admin') {
-    return <p className="p-6 text-sm text-red-600">You do not have access to Approval Delegation.</p>
+    return <p className="p-6 text-sm text-danger-fg">You do not have access to Approval Delegation.</p>
   }
 
   return (
@@ -213,7 +213,7 @@ export default function ApprovalDelegation() {
       <div className="flex flex-col gap-5">
         <div>
           <h1 className="text-lg font-semibold">Approval Delegation</h1>
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-fg-muted">
             Name a dated stand-in who can approve on someone's behalf. The delegate can act on the
             delegator's approval tasks for the selected date range; both retain the right to approve.
           </p>
@@ -357,7 +357,7 @@ function ApprovalDelegationBody() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <span className="text-sm text-neutral-500">{rows.length} delegation{rows.length === 1 ? '' : 's'}</span>
+        <span className="text-sm text-fg-muted">{rows.length} delegation{rows.length === 1 ? '' : 's'}</span>
         {mode.kind === 'closed' && <Button size="sm" onClick={openCreate}>Add delegation</Button>}
       </div>
 
@@ -374,23 +374,23 @@ function ApprovalDelegationBody() {
         />
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full min-w-max text-sm">
-          <thead className="border-b border-neutral-100 bg-neutral-50">
+          <thead className="border-b border-line-subtle bg-surface-subtle">
             <tr>
-              <SortTh label="Delegator" sortKey="delegator" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-              <SortTh label="Delegate" sortKey="delegate" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-              <SortTh label="From" sortKey="start_date" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-              <SortTh label="To" sortKey="end_date" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-              <SortTh label="Note" sortKey="note" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-              <SortTh label="Status" sortKey="status" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+              <SortTh label="Delegator" sortKey="delegator" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+              <SortTh label="Delegate" sortKey="delegate" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+              <SortTh label="From" sortKey="start_date" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+              <SortTh label="To" sortKey="end_date" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+              <SortTh label="Note" sortKey="note" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+              <SortTh label="Status" sortKey="status" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-10 text-center text-sm text-neutral-400">
+                <td colSpan={7} className="py-10 text-center text-sm text-fg-muted">
                   No delegations yet.
                 </td>
               </tr>
@@ -403,13 +403,13 @@ function ApprovalDelegationBody() {
                 return (
                   <tr
                     key={row.id}
-                    className={cn('border-b border-neutral-100', i === rows.length - 1 && 'border-b-0')}
+                    className={cn('border-b border-line-subtle', i === rows.length - 1 && 'border-b-0')}
                   >
-                    <td className="px-4 py-2.5 text-neutral-700">{delegatorName}</td>
-                    <td className="px-4 py-2.5 text-neutral-700">{delegateName}</td>
-                    <td className="px-4 py-2.5 text-neutral-500">{formatDate(row.start_date)}</td>
-                    <td className="px-4 py-2.5 text-neutral-500">{formatDate(row.end_date)}</td>
-                    <td className="max-w-xs truncate px-4 py-2.5 text-neutral-500">{row.note || '—'}</td>
+                    <td className="px-4 py-2.5 text-fg-secondary">{delegatorName}</td>
+                    <td className="px-4 py-2.5 text-fg-secondary">{delegateName}</td>
+                    <td className="px-4 py-2.5 text-fg-muted">{formatDate(row.start_date)}</td>
+                    <td className="px-4 py-2.5 text-fg-muted">{formatDate(row.end_date)}</td>
+                    <td className="max-w-xs truncate px-4 py-2.5 text-fg-muted">{row.note || '—'}</td>
                     <td className="px-4 py-2.5"><Badge variant={STATUS_VARIANT[status]}>{status}</Badge></td>
                     <td className="px-4 py-2.5">
                       {!isRevoked && (
@@ -417,7 +417,7 @@ function ApprovalDelegationBody() {
                           <Button variant="ghost" size="sm" onClick={() => openEdit(row)}>Edit</Button>
                           <Button
                             variant="ghost" size="sm"
-                            className="text-danger-600 hover:bg-danger-50"
+                            className="text-danger-fg hover:bg-danger-soft"
                             onClick={() => handleRevoke(row)}
                             disabled={revoke.isPending}
                           >
@@ -455,13 +455,13 @@ function DelegationForm({ mode, form, setForm, users, error, isSubmitting, onSub
   const isEdit = mode.kind === 'edit'
 
   return (
-    <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 bg-white p-4">
-      <h2 className="text-sm font-semibold text-neutral-700">{isEdit ? 'Edit delegation' : 'New delegation'}</h2>
+    <div className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-4">
+      <h2 className="text-sm font-semibold text-fg-secondary">{isEdit ? 'Edit delegation' : 'New delegation'}</h2>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <FormField label="Delegator" required>
           {isEdit ? (
-            <div className="flex h-10 items-center rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm text-neutral-500">
+            <div className="flex h-10 items-center rounded-lg border border-line bg-surface-subtle px-3 text-sm text-fg-muted">
               {mode.row.delegator_name ?? '—'}
             </div>
           ) : (
@@ -476,7 +476,7 @@ function DelegationForm({ mode, form, setForm, users, error, isSubmitting, onSub
 
         <FormField label="Delegate" required hint="Stands in for the delegator during this window.">
           {isEdit ? (
-            <div className="flex h-10 items-center rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm text-neutral-500">
+            <div className="flex h-10 items-center rounded-lg border border-line bg-surface-subtle px-3 text-sm text-fg-muted">
               {mode.row.delegate_name ?? '—'}
             </div>
           ) : (

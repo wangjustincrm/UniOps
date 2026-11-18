@@ -22,7 +22,7 @@ export default function VendorManagerDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-neutral-900">Vendor Manager Dashboard</h1>
+      <h1 className="text-2xl font-bold text-fg">Vendor Manager Dashboard</h1>
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -38,45 +38,45 @@ export default function VendorManagerDashboard() {
       </div>
 
       {/* Vendor table */}
-      <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+      <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-neutral-900">Recent Vendors</h2>
+          <h2 className="text-base font-semibold text-fg">Recent Vendors</h2>
           <Link to="/vendors" className="text-xs text-primary-600 hover:underline">Go to Vendors →</Link>
         </div>
 
         {recentVendors.length === 0 ? (
-          <p className="py-8 text-center text-sm text-neutral-400">No vendors registered yet.</p>
+          <p className="py-8 text-center text-sm text-fg-muted">No vendors registered yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-neutral-100 text-left">
-                  <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <SortTh label="Category" sortKey="category" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <SortTh label="Contact" sortKey="contact_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <SortTh label="Payment Terms" sortKey="payment_terms" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <SortTh label="Added" sortKey="created_at" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <th className="pb-2 font-medium text-neutral-500"></th>
+                <tr className="border-b border-line-subtle text-left">
+                  <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <SortTh label="Category" sortKey="category" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <SortTh label="Contact" sortKey="contact_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <SortTh label="Payment Terms" sortKey="payment_terms" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <SortTh label="Added" sortKey="created_at" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <th className="pb-2 font-medium text-fg-muted"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-50">
+              <tbody className="divide-y divide-line-subtle">
                 {recentVendors.map((vendor) => (
-                  <tr key={vendor.id} className="hover:bg-neutral-50">
+                  <tr key={vendor.id} className="hover:bg-surface-subtle">
                     <td className="py-2 pr-3">
-                      <span className="font-mono text-xs font-semibold text-neutral-700">{vendor.code}</span>
+                      <span className="font-mono text-xs font-semibold text-fg-secondary">{vendor.code}</span>
                     </td>
-                    <td className="py-2 pr-3 max-w-[160px] truncate font-medium text-neutral-800">{vendor.name}</td>
-                    <td className="py-2 pr-3 text-neutral-500">{vendor.category}</td>
-                    <td className="py-2 pr-3 text-neutral-500">{vendor.contact_name}</td>
-                    <td className="py-2 pr-3 text-neutral-500">{formatPaymentTerms(vendor.payment_terms)}</td>
-                    <td className="py-2 pr-3 text-neutral-500">{formatDate(vendor.created_at)}</td>
+                    <td className="py-2 pr-3 max-w-[160px] truncate font-medium text-fg">{vendor.name}</td>
+                    <td className="py-2 pr-3 text-fg-muted">{vendor.category}</td>
+                    <td className="py-2 pr-3 text-fg-muted">{vendor.contact_name}</td>
+                    <td className="py-2 pr-3 text-fg-muted">{formatPaymentTerms(vendor.payment_terms)}</td>
+                    <td className="py-2 pr-3 text-fg-muted">{formatDate(vendor.created_at)}</td>
                     <td className="py-2 pr-3">
                       {vendor.is_active ? (
-                        <span className="inline-flex items-center rounded-full bg-success-100 px-2 py-0.5 text-xs font-medium text-success-700">Active</span>
+                        <span className="inline-flex items-center rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success-fg">Active</span>
                       ) : (
-                        <span className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500">Inactive</span>
+                        <span className="inline-flex items-center rounded-full bg-surface-sunken px-2 py-0.5 text-xs font-medium text-fg-muted">Inactive</span>
                       )}
                     </td>
                     <td className="py-2">
@@ -89,7 +89,7 @@ export default function VendorManagerDashboard() {
           </div>
         )}
 
-        <div className="mt-4 border-t border-neutral-100 pt-3">
+        <div className="mt-4 border-t border-line-subtle pt-3">
           <Link to="/vendors" className="text-sm text-primary-600 hover:underline font-medium">Go to Vendors →</Link>
         </div>
       </div>

@@ -52,23 +52,23 @@ export function GenerateOutlookModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-200">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-neutral-900">
+      <div className="w-full max-w-md rounded-xl border border-line bg-surface shadow-xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
+          <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
             <Sparkles className="h-4 w-4 text-primary-600" /> Generate Outlook
           </h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="-m-2.5 flex min-h-[44px] min-w-[44px] items-center justify-center text-neutral-400 hover:text-neutral-600"
+            className="-m-2.5 flex min-h-[44px] min-w-[44px] items-center justify-center text-fg-muted hover:text-fg-secondary"
           >
             <XIcon className="h-5 w-5" />
           </button>
         </div>
 
         <div className="px-5 py-4 space-y-4">
-          <p className="text-sm text-neutral-600">
+          <p className="text-sm text-fg-secondary">
             Freezes a read-only snapshot of the forecast for Production Plan to run MPS against. The live grid keeps
             going afterward — this doesn't lock it.
           </p>
@@ -96,20 +96,20 @@ export function GenerateOutlookModal({
           </FormField>
 
           {intentCount > 0 && (
-            <p role="status" className="rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+            <p role="status" className="rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-fg">
               The grid has {intentCount} intent product{intentCount === 1 ? '' : 's'}. Any with data in this window
               are recorded but never scheduled.
             </p>
           )}
 
           {error && (
-            <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+            <p role="alert" className="rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
               {error}
             </p>
           )}
         </div>
 
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-neutral-200">
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-line">
           <Button type="button" variant="secondary" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button type="button" size="sm" onClick={submit} disabled={busy || !monthValid || !horizonValid}>
             {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}

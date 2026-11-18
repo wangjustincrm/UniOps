@@ -73,7 +73,7 @@ export default function ApproverDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-neutral-900">Dashboard</h1>
+      <h1 className="text-2xl font-bold text-fg">Dashboard</h1>
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -103,7 +103,7 @@ export default function ApproverDashboard() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Pending approvals */}
         <div className="lg:col-span-8">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
             <PendingApprovals
               items={approvals}
               onApprove={(id) => handleAction(id, 'approve')}

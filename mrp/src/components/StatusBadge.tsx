@@ -40,16 +40,16 @@ const LABEL: Record<ForecastVersionStatus | BomTypeStatus, string> = {
 }
 
 const STYLE: Record<ForecastVersionStatus | BomTypeStatus, string> = {
-  draft: 'bg-amber-50 text-amber-700 ring-amber-200',
-  confirmed: 'bg-success-50 text-success-700 ring-emerald-200',
-  superseded: 'bg-neutral-100 text-neutral-500 ring-neutral-200',
-  milling: 'bg-violet-50 text-violet-700 ring-violet-200',
-  powdering: 'bg-violet-50 text-violet-700 ring-violet-200',
-  drymix: 'bg-sky-50 text-sky-700 ring-sky-200',
-  packaging: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
-  past: 'bg-rose-50 text-rose-700 ring-rose-200',
-  raw: 'bg-teal-50 text-teal-700 ring-teal-200',
-  'packaging-material': 'bg-orange-50 text-orange-700 ring-orange-200',
+  draft: 'bg-warning-soft text-warning-fg ring-warning-line',
+  confirmed: 'bg-success-soft text-success-fg ring-success-line',
+  superseded: 'bg-surface-sunken text-fg-muted ring-line',
+  milling: 'bg-cat4-soft text-cat4-fg ring-cat4-line',
+  powdering: 'bg-cat4-soft text-cat4-fg ring-cat4-line',
+  drymix: 'bg-cat2-soft text-cat2-fg ring-cat2-line',
+  packaging: 'bg-cat8-soft text-cat8-fg ring-cat8-line',
+  past: 'bg-cat5-soft text-cat5-fg ring-cat5-line',
+  raw: 'bg-cat1-soft text-cat1-fg ring-cat1-line',
+  'packaging-material': 'bg-cat7-soft text-cat7-fg ring-cat7-line',
 }
 
 export function StatusBadge({ status }: { status: string }) {
@@ -58,7 +58,7 @@ export function StatusBadge({ status }: { status: string }) {
   return (
     <span className={cn(
       'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset whitespace-nowrap',
-      known ? STYLE[key] : 'bg-neutral-100 text-neutral-500 ring-neutral-200',
+      known ? STYLE[key] : 'bg-surface-sunken text-fg-muted ring-line',
     )}>
       {known ? LABEL[key] : status}
     </span>

@@ -87,8 +87,8 @@ const FLOW_COLS: [string, string][] = [
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <section className="mb-6">
-      <h2 className="text-sm font-semibold text-neutral-800">{title}</h2>
-      {hint && <p className="mb-2 mt-0.5 text-xs text-neutral-500">{hint}</p>}
+      <h2 className="text-sm font-semibold text-fg">{title}</h2>
+      {hint && <p className="mb-2 mt-0.5 text-xs text-fg-muted">{hint}</p>}
       {children}
     </section>
   )
@@ -96,7 +96,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 
 const th = 'px-2 py-1.5 font-medium'
 const td = 'px-2 py-1.5 text-right font-mono tabular-nums'
-const neg = (v: number | null | undefined) => (v ?? 0) < -0.005 ? 'text-red-700' : ''
+const neg = (v: number | null | undefined) => (v ?? 0) < -0.005 ? 'text-danger-fg' : ''
 
 export default function MaterialTracePage() {
   const user = useAuthStore((s) => s.user)
@@ -191,47 +191,47 @@ export default function MaterialTracePage() {
               onSubmit={(e) => { e.preventDefault(); apply() }}>
           <input list="cost-material-picks" value={draft} onChange={(e) => setDraft(e.target.value)}
                  placeholder="Material code, e.g. CR0059"
-                 className="w-56 rounded-lg border border-neutral-300 px-2.5 py-1 font-mono" />
+                 className="w-56 rounded-lg border border-line-strong px-2.5 py-1 font-mono" />
           <datalist id="cost-material-picks">
             {(picks?.materials ?? []).map((m) => <option key={m.code} value={m.code}>{m.name}</option>)}
           </datalist>
-          <label className="text-xs text-neutral-500">From</label>
+          <label className="text-xs text-fg-muted">From</label>
           <input type="month" value={dFrom} onChange={(e) => setDFrom(e.target.value)}
-                 className="rounded-lg border border-neutral-300 px-2 py-1" />
-          <label className="text-xs text-neutral-500">To</label>
+                 className="rounded-lg border border-line-strong px-2 py-1" />
+          <label className="text-xs text-fg-muted">To</label>
           <input type="month" value={dTo} onChange={(e) => setDTo(e.target.value)}
-                 className="rounded-lg border border-neutral-300 px-2 py-1" />
+                 className="rounded-lg border border-line-strong px-2 py-1" />
           <button type="submit" disabled={!draft.trim() || dFrom > dTo}
-                  className="rounded-lg bg-[#085E5E] px-3 py-1 text-white disabled:opacity-40">
+                  className="rounded-lg bg-primary-700 px-3 py-1 text-white disabled:opacity-40">
             Trace
           </button>
-          {isFetching && <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />}
+          {isFetching && <Loader2 className="h-4 w-4 animate-spin text-fg-muted" />}
         </form>
 
         {!material ? (
-          <div className="rounded-lg border border-neutral-200 px-4 py-10 text-center text-sm text-neutral-500">
+          <div className="rounded-lg border border-line px-4 py-10 text-center text-sm text-fg-muted">
             Pick a material to rebuild its cost month by month.
           </div>
         ) : error ? <AccessMessage error={error} /> : !data ? (
-          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
+          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
         ) : (
           <>
             <p className="mb-4 text-sm">
               <span className="font-mono font-semibold">{data.material.code}</span>{' '}
-              <span className="text-neutral-600">{data.material.name}</span>
+              <span className="text-fg-secondary">{data.material.name}</span>
             </p>
 
             {data.diagnosis && <div className="mb-6"><DiagnosisPanel d={data.diagnosis} /></div>}
 
-            <h2 className="mb-3 border-b border-neutral-200 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+            <h2 className="mb-3 border-b border-line pb-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">
               Supporting data
             </h2>
 
             <Section title="Month by month"
                      hint="Opening + receipts − issues = closing, rebuilt from every NC ledger line. Closed months are held against NC's month-end balance. Transfers between warehouses (incl. production picking) are shown net — they move stock, they do not consume it.">
-              <div className="overflow-x-auto rounded-lg border border-neutral-200">
+              <div className="overflow-x-auto rounded-lg border border-line">
                 <table className="w-full text-xs">
-                  <thead className="bg-neutral-50 text-left text-neutral-500">
+                  <thead className="bg-surface-subtle text-left text-fg-muted">
                     <tr>
                       <th className={th}>Month</th>
                       <th className={cn(th, 'text-right')}>Opening</th>
@@ -250,7 +250,7 @@ export default function MaterialTracePage() {
                       const tIn = m.flows.transfer_in?.amount ?? 0
                       const tOut = m.flows.transfer_out?.amount ?? 0
                       return (
-                        <tr key={m.period} className="border-t border-neutral-100">
+                        <tr key={m.period} className="border-t border-line-subtle">
                           <td className="whitespace-nowrap px-2 py-1.5 font-mono">
                             {m.period}{!m.period_closed && <OpenPeriodBadge />}
                           </td>
@@ -273,9 +273,9 @@ export default function MaterialTracePage() {
                           <td className={cn(td, neg(m.closing.unit))}>{num(m.closing.unit, 4)}</td>
                           <td className={cn(td, neg(m.production_unit_cost), 'font-semibold')}>{num(m.production_unit_cost, 4)}</td>
                           <td className="whitespace-nowrap px-2 py-1.5">
-                            {m.balance_matches === null ? <span className="text-neutral-400">not closed</span>
-                              : m.balance_matches ? <span className="text-[#085E5E]">matches</span>
-                              : <span className="font-medium text-red-700">differs ({num(m.nc_balance?.amount ?? 0)})</span>}
+                            {m.balance_matches === null ? <span className="text-fg-muted">not closed</span>
+                              : m.balance_matches ? <span className="text-primary-700">matches</span>
+                              : <span className="font-medium text-danger-fg">differs ({num(m.nc_balance?.amount ?? 0)})</span>}
                           </td>
                         </tr>
                       )
@@ -283,15 +283,15 @@ export default function MaterialTracePage() {
                   </tbody>
                 </table>
               </div>
-              <p className="mt-1 text-[11px] text-neutral-400">Issue columns are the value that left; a negative issue adjustment means NC took value off a consumption after the fact.</p>
+              <p className="mt-1 text-2xs text-fg-muted">Issue columns are the value that left; a negative issue adjustment means NC took value off a consumption after the fact.</p>
             </Section>
 
             {data.product_cost.length > 0 && (
               <Section title="Product cost in NC, split by where each input's value came from"
                        hint="Consumed = issues this cost object took in the month. Settlement adjustment = amount-only adjustments (a provisional price settled differently, after the stock was used). Carried in = cost collected in an earlier month with no output, rolled into this one.">
                 {data.product_cost.map((p) => (
-                  <div key={p.period} className="mb-3 overflow-x-auto rounded-lg border border-neutral-200">
-                    <div className="flex flex-wrap gap-4 bg-neutral-50 px-3 py-2 text-xs">
+                  <div key={p.period} className="mb-3 overflow-x-auto rounded-lg border border-line">
+                    <div className="flex flex-wrap gap-4 bg-surface-subtle px-3 py-2 text-xs">
                       <span className="font-mono font-semibold">{p.period}</span>
                       <span>Output {qty(p.qty)}</span>
                       <span className={neg(p.amount)}>Cost {num(p.amount)}</span>
@@ -303,7 +303,7 @@ export default function MaterialTracePage() {
                       )}
                     </div>
                     <table className="w-full text-xs">
-                      <thead className="text-left text-neutral-500"><tr>
+                      <thead className="text-left text-fg-muted"><tr>
                         <th className={th}>Input</th><th className={th}>Element</th>
                         <th className={cn(th, 'text-right')}>Consumed qty</th>
                         <th className={cn(th, 'text-right')}>Consumed</th>
@@ -313,9 +313,9 @@ export default function MaterialTracePage() {
                       </tr></thead>
                       <tbody>
                         {p.inputs.map((i, n) => (
-                          <tr key={n} className="border-t border-neutral-100">
-                            <td className="px-2 py-1.5"><span className="font-mono">{i.material_code ?? '—'}</span> <span className="text-neutral-500">{i.material_name}</span></td>
-                            <td className="px-2 py-1.5 text-neutral-500">{i.element_name}</td>
+                          <tr key={n} className="border-t border-line-subtle">
+                            <td className="px-2 py-1.5"><span className="font-mono">{i.material_code ?? '—'}</span> <span className="text-fg-muted">{i.material_name}</span></td>
+                            <td className="px-2 py-1.5 text-fg-muted">{i.element_name}</td>
                             <td className={td}>{qty(i.consumed_qty)}</td>
                             <td className={cn(td, neg(i.consumed_amount))}>{num(i.consumed_amount)}</td>
                             <td className={cn(td, neg(i.adjustment), Math.abs(i.adjustment) >= 0.01 && 'font-semibold')}>{Math.abs(i.adjustment) >= 0.01 ? num(i.adjustment) : ''}</td>
@@ -333,9 +333,9 @@ export default function MaterialTracePage() {
             {data.settlements.length > 0 && (
               <Section title="Provisional receipts and their settlement"
                        hint="A receipt entered at a provisional price is reversed and re-entered at the settled price. If the stock was already used, the variance cannot stay in inventory and NC pushes it onto a later consumption.">
-                <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                <div className="overflow-x-auto rounded-lg border border-line">
                   <table className="w-full text-xs">
-                    <thead className="bg-neutral-50 text-left text-neutral-500"><tr>
+                    <thead className="bg-surface-subtle text-left text-fg-muted"><tr>
                       <SortTh label="Batch" sortKey="batch" sort={setl.sort} onSort={setl.onSort} className="px-2 py-1.5 font-medium" />
                       <SortTh label="Provisional receipt" sortKey="provisional" sort={setl.sort} onSort={setl.onSort} className="px-2 py-1.5 font-medium" />
                       <SortTh label="Qty" sortKey="qty" sort={setl.sort} onSort={setl.onSort} align="right" className="px-2 py-1.5 font-medium" />
@@ -346,10 +346,10 @@ export default function MaterialTracePage() {
                     </tr></thead>
                     <tbody>
                       {setl.rows.map((s, n) => (
-                        <tr key={n} className="border-t border-neutral-100">
+                        <tr key={n} className="border-t border-line-subtle">
                           <td className="px-2 py-1.5 font-mono">{s.batch_code ?? '—'}</td>
                           <td className="px-2 py-1.5 font-mono">
-                            {s.provisional ? `${s.provisional.bill_code ?? ''} (${s.provisional.period})` : <span className="text-amber-700">not found</span>}
+                            {s.provisional ? `${s.provisional.bill_code ?? ''} (${s.provisional.period})` : <span className="text-warning-fg">not found</span>}
                           </td>
                           <td className={td}>{qty(s.settled.qty)}</td>
                           <td className={td}>{num(s.provisional?.unit, 4)}</td>
@@ -367,9 +367,9 @@ export default function MaterialTracePage() {
             {data.out_adjustments.length > 0 && (
               <Section title="Issue adjustments (IA) and where they landed"
                        hint="Value NC moved onto a consumption after the fact — settlement variances, and the month-end tail when quantity reaches zero but value does not.">
-                <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                <div className="overflow-x-auto rounded-lg border border-line">
                   <table className="w-full text-xs">
-                    <thead className="bg-neutral-50 text-left text-neutral-500"><tr>
+                    <thead className="bg-surface-subtle text-left text-fg-muted"><tr>
                       <SortTh label="Month" sortKey="month" sort={adj.sort} onSort={adj.onSort} className="px-2 py-1.5 font-medium" />
                       <SortTh label="Adjustment" sortKey="adjustment" sort={adj.sort} onSort={adj.onSort} className="px-2 py-1.5 font-medium" />
                       <SortTh label="Amount" sortKey="amount" sort={adj.sort} onSort={adj.onSort} align="right" className="px-2 py-1.5 font-medium" />
@@ -379,7 +379,7 @@ export default function MaterialTracePage() {
                     </tr></thead>
                     <tbody>
                       {adj.rows.map((a, n) => (
-                        <tr key={n} className="border-t border-neutral-100">
+                        <tr key={n} className="border-t border-line-subtle">
                           <td className="px-2 py-1.5 font-mono">{a.period}</td>
                           <td className="px-2 py-1.5 font-mono">{a.bill_code}</td>
                           <td className={cn(td, neg(a.amount), Math.abs(a.amount) >= 1000 && 'font-semibold')}>{num(a.amount)}</td>
@@ -397,9 +397,9 @@ export default function MaterialTracePage() {
             {data.vouchers.length > 0 && (
               <Section title={`Vouchers behind the adjustments — unposted included${data.vouchers_unposted ? ` (${data.vouchers_unposted} unposted)` : ''}`}
                        hint="Every GL voucher NC generated for this material's adjustments and for the issues they sit on, whatever its status. An unposted voucher is not in NC's ledger yet, so a posted-only report would not show it.">
-                <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                <div className="overflow-x-auto rounded-lg border border-line">
                   <table className="w-full text-xs">
-                    <thead className="bg-neutral-50 text-left text-neutral-500"><tr>
+                    <thead className="bg-surface-subtle text-left text-fg-muted"><tr>
                       <SortTh label="Month" sortKey="month" sort={vch.sort} onSort={vch.onSort} className="px-2 py-1.5 font-medium" />
                       <SortTh label="Document" sortKey="document" sort={vch.sort} onSort={vch.onSort} className="px-2 py-1.5 font-medium" />
                       <SortTh label="What" sortKey="what" sort={vch.sort} onSort={vch.onSort} className="px-2 py-1.5 font-medium" />
@@ -411,7 +411,7 @@ export default function MaterialTracePage() {
                     </tr></thead>
                     <tbody>
                       {vch.rows.map((v, n) => (
-                        <tr key={n} className="border-t border-neutral-100">
+                        <tr key={n} className="border-t border-line-subtle">
                           <td className="px-2 py-1.5 font-mono">{v.period}</td>
                           <td className="px-2 py-1.5 font-mono">{v.bill_code}</td>
                           <td className="px-2 py-1.5">{v.document}</td>
@@ -419,13 +419,13 @@ export default function MaterialTracePage() {
                           <td className="px-2 py-1.5 font-mono">{v.voucher?.voucher_no ?? '—'}</td>
                           <td className="px-2 py-1.5 font-mono">{v.voucher?.period ?? ''}</td>
                           <td className="px-2 py-1.5">
-                            {!v.voucher ? <span className="text-neutral-500">No voucher yet</span>
-                              : <span className={cn('inline-block rounded border px-1.5 py-0.5 text-[11px] font-medium',
-                                  v.voucher.status === 'posted' ? 'border-neutral-200 bg-neutral-50 text-neutral-600'
-                                  : v.voucher.status === 'unposted' ? 'border-amber-300 bg-amber-50 text-amber-800'
-                                  : 'border-red-200 bg-red-50 text-red-700')}>{v.voucher.status_label}</span>}
+                            {!v.voucher ? <span className="text-fg-muted">No voucher yet</span>
+                              : <span className={cn('inline-block rounded border px-1.5 py-0.5 text-2xs font-medium',
+                                  v.voucher.status === 'posted' ? 'border-line bg-surface-subtle text-fg-secondary'
+                                  : v.voucher.status === 'unposted' ? 'border-warning-line bg-warning-soft text-warning-fg'
+                                  : 'border-danger-line bg-danger-soft text-danger-fg')}>{v.voucher.status_label}</span>}
                           </td>
-                          <td className="px-2 py-1.5 text-neutral-500">{v.voucher?.explanation ?? ''}</td>
+                          <td className="px-2 py-1.5 text-fg-muted">{v.voucher?.explanation ?? ''}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -436,9 +436,9 @@ export default function MaterialTracePage() {
 
             {data.consumers.length > 0 && (
               <Section title="Who consumed it" hint="From NC's cost collection, by cost object. Adjustment rows are amount-only value moved onto that cost object.">
-                <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                <div className="overflow-x-auto rounded-lg border border-line">
                   <table className="w-full text-xs">
-                    <thead className="bg-neutral-50 text-left text-neutral-500"><tr>
+                    <thead className="bg-surface-subtle text-left text-fg-muted"><tr>
                       <SortTh label="Month" sortKey="month" sort={cons.sort} onSort={cons.onSort} className="px-2 py-1.5 font-medium" />
                       <SortTh label="Cost object" sortKey="object" sort={cons.sort} onSort={cons.onSort} className="px-2 py-1.5 font-medium" />
                       <SortTh label="Kind" sortKey="kind" sort={cons.sort} onSort={cons.onSort} className="px-2 py-1.5 font-medium" />
@@ -448,10 +448,10 @@ export default function MaterialTracePage() {
                     </tr></thead>
                     <tbody>
                       {cons.rows.map((c, n) => (
-                        <tr key={n} className="border-t border-neutral-100">
+                        <tr key={n} className="border-t border-line-subtle">
                           <td className="px-2 py-1.5 font-mono">{c.period}</td>
-                          <td className="px-2 py-1.5"><span className="font-mono">{c.cost_object_code}</span> <span className="text-neutral-500">{c.cost_object_name}</span></td>
-                          <td className="px-2 py-1.5">{c.kind === 'adjustment' ? <span className="text-amber-800">adjustment</span> : 'consumption'}</td>
+                          <td className="px-2 py-1.5"><span className="font-mono">{c.cost_object_code}</span> <span className="text-fg-muted">{c.cost_object_name}</span></td>
+                          <td className="px-2 py-1.5">{c.kind === 'adjustment' ? <span className="text-warning-fg">adjustment</span> : 'consumption'}</td>
                           <td className={td}>{c.qty ? qty(c.qty) : ''}</td>
                           <td className={cn(td, neg(c.amount))}>{num(c.amount)}</td>
                           <td className={cn(td, neg(c.unit))}>{num(c.unit, 4)}</td>
@@ -465,14 +465,14 @@ export default function MaterialTracePage() {
 
             <Section title={`NC ledger lines (${data.lines.length})`}>
               <button onClick={() => setShowLines(!showLines)}
-                      className="mb-2 inline-flex items-center gap-1 text-xs text-[#085E5E]">
+                      className="mb-2 inline-flex items-center gap-1 text-xs text-primary-700">
                 {showLines ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                 {showLines ? 'Hide' : 'Show'} every line
               </button>
               {showLines && (
-                <div className="max-h-[480px] overflow-auto rounded-lg border border-neutral-200">
+                <div className="max-h-[480px] overflow-auto rounded-lg border border-line">
                   <table className="w-full text-xs">
-                    <thead className="sticky top-0 bg-neutral-50 text-left text-neutral-500"><tr>
+                    <thead className="sticky top-0 bg-surface-subtle text-left text-fg-muted"><tr>
                       <SortTh label="Month" sortKey="month" sort={lines.sort} onSort={lines.onSort} className="px-2 py-1.5 font-medium" />
                       <SortTh label="Date" sortKey="date" sort={lines.sort} onSort={lines.onSort} className="px-2 py-1.5 font-medium" />
                       <SortTh label="Document" sortKey="document" sort={lines.sort} onSort={lines.onSort} className="px-2 py-1.5 font-medium" />
@@ -488,12 +488,12 @@ export default function MaterialTracePage() {
                     <tbody>
                       {lines.rows.map((l, n) => (
                         <Fragment key={n}>
-                          <tr className="border-t border-neutral-100">
+                          <tr className="border-t border-line-subtle">
                             <td className="px-2 py-1 font-mono">{l.period}</td>
                             <td className="px-2 py-1 font-mono">{formatDate(l.biz_date)}</td>
                             <td className="px-2 py-1 font-mono">{l.bill_code}</td>
-                            <td className="px-2 py-1">{l.category_label}{l.estimate && <span className="ml-1 text-amber-700">(provisional)</span>}</td>
-                            <td className="px-2 py-1 text-neutral-500">{l.trantype}</td>
+                            <td className="px-2 py-1">{l.category_label}{l.estimate && <span className="ml-1 text-warning-fg">(provisional)</span>}</td>
+                            <td className="px-2 py-1 text-fg-muted">{l.trantype}</td>
                             <td className={td}>{l.qty != null ? `${l.direction === 'out' ? '−' : ''}${qty(l.qty)}` : ''}</td>
                             <td className={td}>{num(l.price, 4)}</td>
                             <td className={cn(td, neg(l.amount))}>{l.direction === 'out' ? '−' : ''}{num(l.amount)}</td>

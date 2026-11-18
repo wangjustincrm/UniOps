@@ -216,11 +216,11 @@ export default function ConsignmentStockPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-lg font-semibold text-neutral-900">Consignment Stock</h1>
+      <h1 className="text-lg font-semibold text-fg">Consignment Stock</h1>
 
       {/* ── Entry form ─────────────────────────────────────────────────── */}
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-lg border border-neutral-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-neutral-800">New Count Entry</h2>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-lg border border-line bg-surface p-4">
+        <h2 className="text-sm font-semibold text-fg">New Count Entry</h2>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <FormField label="Product" required error={fieldErrors.material}>
@@ -280,12 +280,12 @@ export default function ConsignmentStockPage() {
             a genuine failure (network/WMS unreachable) and gets role="alert"
             instead, below. */}
         {lookupState === 'loading' && (
-          <p role="status" className="flex items-center gap-1.5 text-xs text-neutral-500">
+          <p role="status" className="flex items-center gap-1.5 text-xs text-fg-muted">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking WMS for this lot…
           </p>
         )}
         {lookupState === 'found' && lookupDates && (
-          <div role="status" className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-success-200 bg-success-50 px-3 py-2 text-xs text-success-800">
+          <div role="status" className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-success-line bg-success-soft px-3 py-2 text-xs text-success-fg">
             <span className="flex items-center gap-1.5 font-medium">
               <CheckCircle2 className="h-3.5 w-3.5" /> Lot found in WMS
               <Badge variant="success">from WMS</Badge>
@@ -295,20 +295,20 @@ export default function ConsignmentStockPage() {
           </div>
         )}
         {lookupState === 'not-found' && (
-          <p role="status" className="flex items-center gap-1.5 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+          <p role="status" className="flex items-center gap-1.5 rounded-md border border-line bg-surface-subtle px-3 py-2 text-xs text-fg-secondary">
             <HelpCircle className="h-3.5 w-3.5 shrink-0" />
             Lot not found in WMS — expiry will be left blank. You can still save this entry.
           </p>
         )}
         {lookupState === 'error' && (
-          <p role="alert" className="flex items-center gap-1.5 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-800">
+          <p role="alert" className="flex items-center gap-1.5 rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-fg">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
             Could not reach the WMS lot lookup — expiry will be left blank. You can still save this entry.
           </p>
         )}
 
         {createError && (
-          <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+          <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
             <AlertTriangle className="h-4 w-4 shrink-0" /> {createError}
           </p>
         )}
@@ -327,7 +327,7 @@ export default function ConsignmentStockPage() {
           <div
             className={cn(
               'flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm',
-              isStale ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-neutral-200 bg-neutral-50 text-neutral-600',
+              isStale ? 'border-warning-line bg-warning-soft text-warning-fg' : 'border-line bg-surface-subtle text-fg-secondary',
             )}
           >
             {isStale && <AlertTriangle className="h-4 w-4 shrink-0" />}
@@ -338,13 +338,13 @@ export default function ConsignmentStockPage() {
         )}
 
         {stockQuery.isError && (
-          <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+          <p role="alert" className="rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
             {errMsg(stockQuery.error, 'Could not load consignment stock entries.')}
           </p>
         )}
 
         {stockQuery.isLoading ? (
-          <p role="status" className="py-10 text-center text-sm text-neutral-400">Loading entries…</p>
+          <p role="status" className="py-10 text-center text-sm text-fg-muted">Loading entries…</p>
         ) : (
           <>
             <ConsignmentEntriesTable items={stockQuery.data?.items ?? []} sort={stockSort} onSort={onStockSort} />
@@ -364,10 +364,10 @@ export default function ConsignmentStockPage() {
 function expirySourceBadge(source: ConsignmentStock['expiry_source']) {
   if (source === 'wms') return <Badge variant="success">from WMS</Badge>
   if (source === 'manual') return <Badge variant="neutral">manual</Badge>
-  return <span className="text-neutral-300">—</span>
+  return <span className="text-fg-faint">—</span>
 }
 
-const entryTh = 'border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600'
+const entryTh = 'border-b border-line px-3 py-2 text-left text-2xs font-semibold text-fg-secondary'
 
 function ConsignmentEntriesTable({ items, sort, onSort }: {
   items: ConsignmentStock[]
@@ -376,21 +376,21 @@ function ConsignmentEntriesTable({ items, sort, onSort }: {
 }) {
   if (items.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-300 py-12 text-center">
-        <p className="text-sm text-neutral-500">No consignment stock entries yet.</p>
+      <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-line-strong py-12 text-center">
+        <p className="text-sm text-fg-muted">No consignment stock entries yet.</p>
       </div>
     )
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-neutral-200">
+    <div className="overflow-x-auto rounded-lg border border-line">
       <table className="min-w-full text-sm">
-        <thead className="bg-neutral-50">
+        <thead className="bg-surface-subtle">
           <tr>
             <SortTh label="Product" sortKey="material_code" sort={sort} onSort={onSort} className={entryTh} />
             <SortTh label="Lot No." sortKey="lot_no" sort={sort} onSort={onSort} className={entryTh} />
             <SortTh label="Qty" sortKey="qty" sort={sort} onSort={onSort} align="right"
-              className="border-b border-neutral-200 px-3 py-2 text-[11px] font-semibold text-neutral-600" />
+              className="border-b border-line px-3 py-2 text-2xs font-semibold text-fg-secondary" />
             <SortTh label="Count Date" sortKey="count_date" sort={sort} onSort={onSort} className={entryTh} />
             <SortTh label="Expiry Date" sortKey="expiry_date" sort={sort} onSort={onSort} className={entryTh} />
             <SortTh label="Source" sortKey="expiry_source" sort={sort} onSort={onSort} className={entryTh} />
@@ -398,12 +398,12 @@ function ConsignmentEntriesTable({ items, sort, onSort }: {
         </thead>
         <tbody>
           {items.map((row) => (
-            <tr key={row.id} className="border-b border-neutral-100 last:border-0 odd:bg-white even:bg-neutral-50/50">
-              <td className="px-3 py-2 font-mono text-xs text-neutral-800">{row.material_code}</td>
-              <td className="px-3 py-2 font-mono text-xs text-neutral-600">{row.lot_no}</td>
-              <td className="px-3 py-2 text-right font-mono text-xs text-neutral-800">{formatQty(Number(row.qty))}</td>
-              <td className="px-3 py-2 text-xs text-neutral-600">{formatDate(row.count_date)}</td>
-              <td className="px-3 py-2 text-xs text-neutral-600">{row.expiry_date ? formatDate(row.expiry_date) : '—'}</td>
+            <tr key={row.id} className="border-b border-line-subtle last:border-0 odd:bg-surface even:bg-surface-subtle/50">
+              <td className="px-3 py-2 font-mono text-xs text-fg">{row.material_code}</td>
+              <td className="px-3 py-2 font-mono text-xs text-fg-secondary">{row.lot_no}</td>
+              <td className="px-3 py-2 text-right font-mono text-xs text-fg">{formatQty(Number(row.qty))}</td>
+              <td className="px-3 py-2 text-xs text-fg-secondary">{formatDate(row.count_date)}</td>
+              <td className="px-3 py-2 text-xs text-fg-secondary">{row.expiry_date ? formatDate(row.expiry_date) : '—'}</td>
               <td className="px-3 py-2">{expirySourceBadge(row.expiry_source)}</td>
             </tr>
           ))}

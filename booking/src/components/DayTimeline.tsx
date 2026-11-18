@@ -72,7 +72,7 @@ export function DayTimeline({ openStart, openEnd, bookings, day }: Props) {
         {hourTicks.map(({ hour, pct }) => (
           <span
             key={hour}
-            className="absolute -translate-x-1/2 text-[10px] text-neutral-400"
+            className="absolute -translate-x-1/2 text-2xs text-fg-muted"
             style={{ left: `${pct}%` }}
           >
             {String(hour).padStart(2, '0')}:00
@@ -81,12 +81,12 @@ export function DayTimeline({ openStart, openEnd, bookings, day }: Props) {
       </div>
 
       {/* Timeline bar */}
-      <div className="relative h-8 rounded overflow-hidden bg-neutral-100 border border-neutral-200">
+      <div className="relative h-8 rounded overflow-hidden bg-surface-sunken border border-line">
         {/* Hour grid lines */}
         {hourTicks.map(({ hour, pct }) => (
           <div
             key={hour}
-            className="absolute top-0 bottom-0 w-px bg-neutral-200"
+            className="absolute top-0 bottom-0 w-px bg-surface-strong"
             style={{ left: `${pct}%` }}
           />
         ))}
@@ -114,13 +114,13 @@ export function DayTimeline({ openStart, openEnd, bookings, day }: Props) {
               title={tooltip}
               className={cn(
                 'absolute top-0.5 bottom-0.5 rounded-sm',
-                'bg-[#085E5E]/70 hover:bg-[#085E5E]/90 transition-colors',
+                'bg-primary-700/70 hover:bg-primary-700/90 transition-colors',
               )}
               style={{ left: `${left}%`, width: `${Math.max(width, 0.5)}%` }}
             >
               {width > 8 && (
                 <span className="absolute inset-0 flex items-center px-1 overflow-hidden">
-                  <span className="text-[9px] text-white font-medium truncate leading-none">
+                  <span className="text-2xs text-white font-medium truncate leading-none">
                     {b.title}
                   </span>
                 </span>
@@ -132,16 +132,16 @@ export function DayTimeline({ openStart, openEnd, bookings, day }: Props) {
         {/* Current-time marker */}
         {nowPct !== null && (
           <div
-            className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
+            className="absolute top-0 bottom-0 w-0.5 bg-danger-solid z-10"
             style={{ left: `${nowPct}%` }}
           >
-            <div className="absolute -top-0.5 -translate-x-1/2 h-1.5 w-1.5 rounded-full bg-red-500" />
+            <div className="absolute -top-0.5 -translate-x-1/2 h-1.5 w-1.5 rounded-full bg-danger-solid" />
           </div>
         )}
       </div>
 
       {/* Open hours label */}
-      <div className="mt-1 flex justify-between text-[10px] text-neutral-400">
+      <div className="mt-1 flex justify-between text-2xs text-fg-muted">
         <span>{openStart?.slice(0, 5) ?? '08:00'}</span>
         <span>{openEnd?.slice(0, 5) ?? '20:00'}</span>
       </div>

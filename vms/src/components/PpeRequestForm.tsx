@@ -71,7 +71,7 @@ export function PpeRequestForm({ visitors, value, onChange }: Props) {
 
   return (
     <div className="space-y-3">
-      <label className="flex cursor-pointer items-start gap-2.5 text-sm text-neutral-800">
+      <label className="flex cursor-pointer items-start gap-2.5 text-sm text-fg">
         <input
           type="checkbox"
           checked={enabled}
@@ -80,14 +80,14 @@ export function PpeRequestForm({ visitors, value, onChange }: Props) {
         />
         <div className="leading-tight">
           <p className="font-medium">PPE needed</p>
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-fg-muted">
             One size group per visitor — Janitor is emailed after approval with each person's gear.
           </p>
         </div>
       </label>
 
       {enabled && visitors.length === 0 && (
-        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+        <p className="rounded-md border border-warning-line bg-warning-soft p-3 text-xs text-warning-fg">
           Add at least one visitor above to specify PPE sizes.
         </p>
       )}
@@ -98,11 +98,11 @@ export function PpeRequestForm({ visitors, value, onChange }: Props) {
         return (
           <div
             key={v.id}
-            className="rounded-md border border-neutral-200 bg-neutral-50/40 p-3"
+            className="rounded-md border border-line bg-surface-subtle/40 p-3"
           >
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-muted">
               {v.first_name} {v.last_name}
-              <span className="ml-2 font-normal normal-case text-neutral-400">
+              <span className="ml-2 font-normal normal-case text-fg-muted">
                 {v.company_name}
               </span>
             </p>
@@ -203,14 +203,14 @@ export function PpeRequestForm({ visitors, value, onChange }: Props) {
 }
 
 const inputCls =
-  'block w-full rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500'
+  'block w-full rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500'
 
 function Field({
   label, children, className,
 }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <label className={'block text-xs ' + (className ?? '')}>
-      <span className="mb-0.5 block text-neutral-600">{label}</span>
+      <span className="mb-0.5 block text-fg-secondary">{label}</span>
       {children}
     </label>
   )

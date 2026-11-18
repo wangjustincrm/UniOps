@@ -105,10 +105,10 @@ export function LotCombo({
           placeholder={materialCode ? 'Select or type a lot number…' : 'Select a product first'}
           aria-invalid={hasError || undefined}
           className={cn(
-            'h-10 w-full min-w-0 rounded-lg border bg-white px-3 pr-9 text-sm transition-colors',
+            'h-10 w-full min-w-0 rounded-lg border bg-surface px-3 pr-9 text-sm transition-colors',
             'focus:outline-none focus:border-primary-600',
-            'disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:opacity-60',
-            hasError ? 'border-danger-600 bg-danger-50' : 'border-neutral-200',
+            'disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:opacity-60',
+            hasError ? 'border-danger-solid bg-danger-soft' : 'border-line',
           )}
         />
         <button
@@ -117,7 +117,7 @@ export function LotCombo({
           onClick={() => (open ? setOpen(false) : openPanel())}
           disabled={disabled || !materialCode}
           aria-label="Show lot suggestions"
-          className="absolute right-2 text-neutral-300 hover:text-neutral-500 disabled:opacity-40"
+          className="absolute right-2 text-fg-faint hover:text-fg-muted disabled:opacity-40"
         >
           <ChevronDown className={cn('h-4 w-4 transition-transform', open && 'rotate-180')} />
         </button>
@@ -129,15 +129,15 @@ export function LotCombo({
           role="listbox"
           aria-label="Lot numbers in WMS"
           style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width }}
-          className="z-[80] flex max-h-72 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-lg"
+          className="z-[80] flex max-h-72 flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
         >
           <div className="overflow-y-auto">
             {isLoading ? (
-              <div className="flex items-center gap-1.5 px-3 py-4 text-xs text-neutral-400">
+              <div className="flex items-center gap-1.5 px-3 py-4 text-xs text-fg-muted">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading batches from WMS…
               </div>
             ) : !shown.length ? (
-              <div className="flex flex-col items-center gap-1 py-6 text-neutral-400">
+              <div className="flex flex-col items-center gap-1 py-6 text-fg-muted">
                 <PackageSearch className="h-5 w-5" />
                 <span className="text-xs">
                   {data?.items.length ? 'No matching lot' : 'No WMS batches for this product — type one'}
@@ -155,19 +155,19 @@ export function LotCombo({
                   // lot-lookup / close the panel first.
                   onMouseDown={(e) => { e.preventDefault(); handlePick(item) }}
                   className={cn(
-                    'flex w-full items-center justify-between gap-3 border-b border-neutral-50 px-3 py-2 text-left transition-colors last:border-0 hover:bg-primary-50',
+                    'flex w-full items-center justify-between gap-3 border-b border-line-subtle px-3 py-2 text-left transition-colors last:border-0 hover:bg-primary-50',
                     item.lot_no === value && 'bg-primary-50/60',
                   )}
                 >
-                  <span className="truncate font-mono text-xs text-neutral-800">{item.lot_no}</span>
-                  <span className="shrink-0 text-[10px] text-neutral-400">
+                  <span className="truncate font-mono text-xs text-fg">{item.lot_no}</span>
+                  <span className="shrink-0 text-2xs text-fg-muted">
                     {item.expiry_date ? `exp ${formatDate(item.expiry_date)}` : 'no expiry'}
                   </span>
                 </button>
               ))
             )}
             {overflow > 0 && (
-              <div className="border-t border-neutral-100 px-3 py-2 text-center text-[10px] text-neutral-400">
+              <div className="border-t border-line-subtle px-3 py-2 text-center text-2xs text-fg-muted">
                 +{overflow} more — keep typing to narrow
               </div>
             )}

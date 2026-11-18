@@ -39,18 +39,18 @@ function Genealogy({ n, depth }: { n: BatchNode; depth: number }) {
   return (
     <div style={{ marginLeft: depth * 18 }} className="mt-1">
       <div className={cn('flex flex-wrap items-center gap-2 rounded border px-2 py-1 text-xs',
-                         off ? 'border-red-200 bg-red-50/60' : 'border-neutral-200 bg-white')}>
+                         off ? 'border-danger-line bg-danger-soft/60' : 'border-line bg-surface')}>
         {n.children.length > 0 ? (
-          <button onClick={() => setOpen(!open)} className="text-neutral-400">
+          <button onClick={() => setOpen(!open)} className="text-fg-muted">
             {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           </button>
         ) : <span className="inline-block w-3.5" />}
-        <Link to={traceLink(n.material_code, n.period, n.period)} className="font-mono text-[#085E5E] underline">{n.material_code}</Link>
-        <span className="font-mono text-neutral-600">batch {n.batch}</span>
-        <span className="text-neutral-500">{n.period} · {qty(n.qty)}{n.basis === 'month' ? ' · month basis (no production order)' : ` · order ${n.mo_codes.join(', ')}`}</span>
-        <span className="ml-auto font-mono">NC <b className={cn((n.nc.unit ?? 0) < 0 && 'text-red-700')}>{num(n.nc.unit, 4)}</b></span>
+        <Link to={traceLink(n.material_code, n.period, n.period)} className="font-mono text-primary-700 underline">{n.material_code}</Link>
+        <span className="font-mono text-fg-secondary">batch {n.batch}</span>
+        <span className="text-fg-muted">{n.period} · {qty(n.qty)}{n.basis === 'month' ? ' · month basis (no production order)' : ` · order ${n.mo_codes.join(', ')}`}</span>
+        <span className="ml-auto font-mono">NC <b className={cn((n.nc.unit ?? 0) < 0 && 'text-danger-fg')}>{num(n.nc.unit, 4)}</b></span>
         <span className="font-mono">actual <b>{num(n.actual.unit, 4)}</b></span>
-        {off && <span className="font-mono text-red-700">Δ {num(n.variance)}</span>}
+        {off && <span className="font-mono text-danger-fg">Δ {num(n.variance)}</span>}
       </div>
       {open && n.children.map((c, i) => <Genealogy key={i} n={c} depth={depth + 1} />)}
     </div>
@@ -64,32 +64,32 @@ function BatchDetail({ material, batch }: { material: string; batch: string }) {
   })
   const [ev, setEv] = useState(false)
   if (error) return <AccessMessage error={error} />
-  if (!data) return <p className="flex items-center gap-1 py-3 text-xs text-neutral-500"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Costing the batch…</p>
+  if (!data) return <p className="flex items-center gap-1 py-3 text-xs text-fg-muted"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Costing the batch…</p>
   const b = data.batch
   return (
     <div className="space-y-3 py-2">
-      <div className="rounded-lg border border-[#085E5E]/30 bg-primary-50/40 p-3">
-        <p className="text-sm font-semibold leading-relaxed text-neutral-900">{data.summary.headline}</p>
-        <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm leading-relaxed text-neutral-700">
+      <div className="rounded-lg border border-primary-700/30 bg-primary-50/40 p-3">
+        <p className="text-sm font-semibold leading-relaxed text-fg">{data.summary.headline}</p>
+        <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm leading-relaxed text-fg-secondary">
           {data.summary.because.map((x, i) => <li key={i}>{x}</li>)}
         </ul>
-        <button onClick={() => setEv(!ev)} className="mt-2 inline-flex items-center gap-1 text-xs text-[#085E5E]">
+        <button onClick={() => setEv(!ev)} className="mt-2 inline-flex items-center gap-1 text-xs text-primary-700">
           {ev ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />} Evidence ({data.summary.evidence.length})
         </button>
         {ev && (
           <table className="mt-1 w-full text-xs"><tbody>
             {data.summary.evidence.map((e, i) => (
-              <tr key={i} className="border-t border-neutral-100">
-                <td className="w-1/3 py-1 pr-3 text-neutral-500">{e.label}</td>
-                <td className="py-1 pr-3 font-mono text-neutral-800">{e.value}</td>
-                <td className="py-1 font-mono text-[11px] text-neutral-400">{e.ref ?? ''}</td>
+              <tr key={i} className="border-t border-line-subtle">
+                <td className="w-1/3 py-1 pr-3 text-fg-muted">{e.label}</td>
+                <td className="py-1 pr-3 font-mono text-fg">{e.value}</td>
+                <td className="py-1 font-mono text-2xs text-fg-muted">{e.ref ?? ''}</td>
               </tr>
             ))}
           </tbody></table>
         )}
       </div>
       <div>
-        <p className="text-xs font-medium text-neutral-600">Batch genealogy — NC's unit cost against the actual, batch by batch</p>
+        <p className="text-xs font-medium text-fg-secondary">Batch genealogy — NC's unit cost against the actual, batch by batch</p>
         <Genealogy n={b} depth={0} />
       </div>
     </div>
@@ -131,29 +131,29 @@ export default function BatchCostPage() {
         <form className="mb-5 flex flex-wrap items-center gap-2 text-sm"
               onSubmit={(e) => { e.preventDefault(); const c = draft.trim().toUpperCase(); if (c && dFrom <= dTo) navigate(`/finance/analysis/batches/${encodeURIComponent(c)}?from=${dFrom}&to=${dTo}`) }}>
           <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Product, e.g. S0104"
-                 className="w-56 rounded-lg border border-neutral-300 px-2.5 py-1 font-mono" />
-          <label className="text-xs text-neutral-500">From</label>
-          <input type="month" value={dFrom} onChange={(e) => setDFrom(e.target.value)} className="rounded-lg border border-neutral-300 px-2 py-1" />
-          <label className="text-xs text-neutral-500">To</label>
-          <input type="month" value={dTo} onChange={(e) => setDTo(e.target.value)} className="rounded-lg border border-neutral-300 px-2 py-1" />
-          <button type="submit" disabled={!draft.trim()} className="rounded-lg bg-[#085E5E] px-3 py-1 text-white disabled:opacity-40">Show batches</button>
-          {isFetching && <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />}
+                 className="w-56 rounded-lg border border-line-strong px-2.5 py-1 font-mono" />
+          <label className="text-xs text-fg-muted">From</label>
+          <input type="month" value={dFrom} onChange={(e) => setDFrom(e.target.value)} className="rounded-lg border border-line-strong px-2 py-1" />
+          <label className="text-xs text-fg-muted">To</label>
+          <input type="month" value={dTo} onChange={(e) => setDTo(e.target.value)} className="rounded-lg border border-line-strong px-2 py-1" />
+          <button type="submit" disabled={!draft.trim()} className="rounded-lg bg-primary-700 px-3 py-1 text-white disabled:opacity-40">Show batches</button>
+          {isFetching && <Loader2 className="h-4 w-4 animate-spin text-fg-muted" />}
         </form>
         {!material ? (
-          <div className="rounded-lg border border-neutral-200 px-4 py-10 text-center text-sm text-neutral-500">Pick a product.</div>
+          <div className="rounded-lg border border-line px-4 py-10 text-center text-sm text-fg-muted">Pick a product.</div>
         ) : error ? <AccessMessage error={error} /> : !data ? (
-          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
+          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
         ) : (
           <>
-            <div className="mb-6 rounded-lg border border-[#085E5E]/30 bg-primary-50/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-[#085E5E]">Summary</p>
-              <p className="mt-1 text-base font-semibold leading-snug text-neutral-900">{data.headline}</p>
-              {data.receipts_without_batch > 0 && <p className="mt-1 text-xs text-neutral-600">{data.receipts_without_batch} completion receipt line(s) carry no batch number and are not listed.</p>}
+            <div className="mb-6 rounded-lg border border-primary-700/30 bg-primary-50/40 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Summary</p>
+              <p className="mt-1 text-base font-semibold leading-snug text-fg">{data.headline}</p>
+              {data.receipts_without_batch > 0 && <p className="mt-1 text-xs text-fg-secondary">{data.receipts_without_batch} completion receipt line(s) carry no batch number and are not listed.</p>}
             </div>
-            <h2 className="mb-3 border-b border-neutral-200 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">Batches — click one for its analysis</h2>
-            <div className="overflow-x-auto rounded-lg border border-neutral-200">
+            <h2 className="mb-3 border-b border-line pb-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">Batches — click one for its analysis</h2>
+            <div className="overflow-x-auto rounded-lg border border-line">
               <table className="w-full text-xs">
-                <thead className="bg-neutral-50 text-left text-neutral-500"><tr>
+                <thead className="bg-surface-subtle text-left text-fg-muted"><tr>
                   <SortTh label="Batch" sortKey="batch" sort={sort} onSort={onSort} className="px-2 py-1.5 font-medium" />
                   <SortTh label="Month" sortKey="month" sort={sort} onSort={onSort} className="px-2 py-1.5 font-medium" />
                   <SortTh label="Qty" sortKey="qty" sort={sort} onSort={onSort} align="right" className="px-2 py-1.5 font-medium" />
@@ -168,17 +168,17 @@ export default function BatchCostPage() {
                     return (
                       <Fragment key={b.batch}>
                         <tr onClick={() => setOpen(open === b.batch ? null : b.batch)}
-                            className={cn('cursor-pointer border-t border-neutral-100 hover:bg-neutral-50', off && 'bg-red-50/50')}>
+                            className={cn('cursor-pointer border-t border-line-subtle hover:bg-surface-subtle', off && 'bg-danger-soft/50')}>
                           <td className="px-2 py-1.5 font-mono">{open === b.batch ? '▾' : '▸'} {b.batch}</td>
                           <td className="px-2 py-1.5 font-mono">{b.period}</td>
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums">{qty(b.qty)}</td>
-                          <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', (b.nc_unit ?? 0) < 0 && 'text-red-700')}>{num(b.nc_unit, 4)}</td>
+                          <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', (b.nc_unit ?? 0) < 0 && 'text-danger-fg')}>{num(b.nc_unit, 4)}</td>
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums">{num(b.actual_unit, 4)}</td>
-                          <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', off && 'font-semibold text-red-700')}>{num(b.variance)}</td>
-                          <td className="px-2 py-1.5 text-neutral-500">{b.basis === 'month' ? 'month (no order)' : `order ${b.mo_codes.join(', ')}`}</td>
+                          <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', off && 'font-semibold text-danger-fg')}>{num(b.variance)}</td>
+                          <td className="px-2 py-1.5 text-fg-muted">{b.basis === 'month' ? 'month (no order)' : `order ${b.mo_codes.join(', ')}`}</td>
                         </tr>
                         {open === b.batch && (
-                          <tr><td colSpan={7} className="bg-neutral-50/60 px-3"><BatchDetail material={material} batch={b.batch} /></td></tr>
+                          <tr><td colSpan={7} className="bg-surface-subtle/60 px-3"><BatchDetail material={material} batch={b.batch} /></td></tr>
                         )}
                       </Fragment>
                     )

@@ -82,12 +82,12 @@ export function CourierInvoiceView({ id }: { id: string }) {
   const pending = pendingData?.items ?? []
 
   if (isLoading) {
-    return <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-neutral-300" /></div>
+    return <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-fg-faint" /></div>
   }
   if (!inv) {
     return (
       <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-neutral-500">{loadError ? errorMessage(loadError, 'Freight invoice not found.') : 'Freight invoice not found.'}</p>
+        <p className="text-fg-muted">{loadError ? errorMessage(loadError, 'Freight invoice not found.') : 'Freight invoice not found.'}</p>
         <BackLink to="/invoices" className="mt-4"><Button variant="secondary">Back to Invoices</Button></BackLink>
       </div>
     )
@@ -147,66 +147,66 @@ export function CourierInvoiceView({ id }: { id: string }) {
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <BackLink to="/invoices" className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500" aria-label="Back to Invoices">
+          <BackLink to="/invoices" className="p-2 rounded-lg hover:bg-surface-sunken text-fg-muted" aria-label="Back to Invoices">
             <ArrowLeft className="h-5 w-5" />
           </BackLink>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-xl font-bold text-neutral-900">{inv.vendor_name} · {inv.vendor_invoice_number}</h1>
+              <h1 className="text-xl font-bold text-fg">{inv.vendor_name} · {inv.vendor_invoice_number}</h1>
               <FreightInvoiceStatusBadge status={inv.status} />
             </div>
-            <p className="text-sm text-neutral-500 mt-0.5">
+            <p className="text-sm text-fg-muted mt-0.5">
               <span className="font-mono">{inv.internal_ref}</span>
-              <span className="mx-2 text-neutral-300">·</span>
+              <span className="mx-2 text-fg-faint">·</span>
               {inv.lines.length} charge{inv.lines.length !== 1 ? 's' : ''}
-              {inv.uploaded_by_name && <><span className="mx-2 text-neutral-300">·</span>uploaded by {inv.uploaded_by_name} {formatDateTime(inv.created_at)}</>}
+              {inv.uploaded_by_name && <><span className="mx-2 text-fg-faint">·</span>uploaded by {inv.uploaded_by_name} {formatDateTime(inv.created_at)}</>}
             </p>
           </div>
         </div>
       </div>
 
       {actionError && (
-        <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-2.5 text-sm text-danger-600">{actionError}</div>
+        <div className="rounded-lg border border-danger-line bg-danger-soft px-4 py-2.5 text-sm text-danger-fg">{actionError}</div>
       )}
 
       <div className="grid grid-cols-1 gap-6 2xl:grid-cols-4">
         <div className="2xl:col-span-3 min-w-0 flex flex-col gap-5">
           {/* Header card */}
-          <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
             <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm md:grid-cols-4">
               <Field label="Carrier" value={inv.carrier_code ?? '—'} />
               <Field label="Invoice date" value={formatDate(inv.invoice_date)} />
               <Field label="Due date" value={
-                <span className={cn(dueUrgent && 'text-danger-600 font-semibold')}>
+                <span className={cn(dueUrgent && 'text-danger-fg font-semibold')}>
                   {formatDate(inv.due_date)}{due.label && <span className="ml-1 text-xs">({due.label})</span>}
                 </span>} />
               <Field label="Payment application" value={inv.pa_id
                 ? <Link to={`/pa/${inv.pa_id}`} className="font-mono text-primary-700 hover:underline">{inv.pa_number}</Link>
-                : <span className="text-neutral-400">—</span>} />
+                : <span className="text-fg-muted">—</span>} />
               <Field label="Amount before tax" value={<span className="font-mono">{formatAmount(num(inv.amount), ccy)}</span>} />
               <Field label="Tax" value={<span className="font-mono">{formatAmount(num(inv.tax_amount), ccy)}</span>} />
               <Field label="Total" value={<span className="font-mono font-bold">{formatAmount(num(inv.total_amount), ccy)}</span>} />
               <Field label="Currency" value={ccy} />
             </div>
-            {inv.notes && <p className="mt-4 border-t border-neutral-100 pt-3 text-sm text-neutral-600 whitespace-pre-wrap">{inv.notes}</p>}
+            {inv.notes && <p className="mt-4 border-t border-line-subtle pt-3 text-sm text-fg-secondary whitespace-pre-wrap">{inv.notes}</p>}
           </div>
 
           {/* Lines */}
-          <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-5 py-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Charges</h3>
+          <div className="rounded-xl border border-line bg-surface shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between border-b border-line bg-surface-subtle px-5 py-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted">Charges</h3>
               {editable
-                ? <span className="text-xs text-neutral-500">Every change saves at once{updateLine.isPending && ' — saving…'}</span>
+                ? <span className="text-xs text-fg-muted">Every change saves at once{updateLine.isPending && ' — saving…'}</span>
                 : canManage
-                  ? <span className="text-xs text-neutral-400">Reopen the invoice to change the matching</span>
+                  ? <span className="text-xs text-fg-muted">Reopen the invoice to change the matching</span>
                   : inv.status !== 'unmatched'
-                    ? <span className="text-xs text-neutral-400">Matched — the freight manager raises the Freight PA</span>
-                    : <span className="text-xs text-neutral-400">Read-only — courier invoices are matched by the freight manager or the person AP assigns</span>}
+                    ? <span className="text-xs text-fg-muted">Matched — the freight manager raises the Freight PA</span>
+                    : <span className="text-xs text-fg-muted">Read-only — courier invoices are matched by the freight manager or the person AP assigns</span>}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-neutral-100">
+                  <tr className="border-b border-line-subtle">
                     {['#', 'Type', 'Tracking No', 'Date', 'Description / Ref', 'Amount', 'Tax', 'Match', 'Cost Center'].map((h) => (
                       <th key={h} className={cn(TH_CLS, ['Amount', 'Tax'].includes(h) && 'text-right')}>{h}</th>
                     ))}
@@ -220,11 +220,11 @@ export function CourierInvoiceView({ id }: { id: string }) {
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t-2 border-neutral-200 bg-neutral-50 text-xs font-semibold">
-                    <td colSpan={5} className="px-3 py-2 text-right text-neutral-500">Lines total</td>
-                    <td className={cn('px-3 py-2 text-right font-mono', amountGap !== 0 && 'text-danger-600')}>{formatAmount(num(inv.lines_amount_total), ccy)}</td>
-                    <td className={cn('px-3 py-2 text-right font-mono', taxGap !== 0 && 'text-danger-600')}>{formatAmount(num(inv.lines_tax_total), ccy)}</td>
-                    <td colSpan={2} className="px-3 py-2 text-neutral-500">
+                  <tr className="border-t-2 border-line bg-surface-subtle text-xs font-semibold">
+                    <td colSpan={5} className="px-3 py-2 text-right text-fg-muted">Lines total</td>
+                    <td className={cn('px-3 py-2 text-right font-mono', amountGap !== 0 && 'text-danger-fg')}>{formatAmount(num(inv.lines_amount_total), ccy)}</td>
+                    <td className={cn('px-3 py-2 text-right font-mono', taxGap !== 0 && 'text-danger-fg')}>{formatAmount(num(inv.lines_tax_total), ccy)}</td>
+                    <td colSpan={2} className="px-3 py-2 text-fg-muted">
                       {(amountGap !== 0 || taxGap !== 0) && 'Does not agree with the invoice header'}
                     </td>
                   </tr>
@@ -234,14 +234,14 @@ export function CourierInvoiceView({ id }: { id: string }) {
           </div>
 
           {editable && pending.length > 0 && (
-            <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
-              <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">Still pending for {inv.carrier_code}</h3>
-              <p className="text-xs text-neutral-400 mb-3">Registered but not billed on this invoice — usually they come on the next one. Nothing to do here.</p>
+            <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+              <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-1">Still pending for {inv.carrier_code}</h3>
+              <p className="text-xs text-fg-muted mb-3">Registered but not billed on this invoice — usually they come on the next one. Nothing to do here.</p>
               <div className="flex flex-wrap gap-2">
                 {pending.map((s) => (
-                  <span key={s.id} className="rounded-md border border-neutral-200 bg-neutral-50 px-2 py-1 text-xs">
-                    <span className="font-mono text-neutral-700">{s.tracking_no}</span>
-                    <span className="ml-1.5 text-neutral-400">{s.is_project ? 'Project' : (s.cost_center_code ?? '')} · {formatDate(s.created_at)}</span>
+                  <span key={s.id} className="rounded-md border border-line bg-surface-subtle px-2 py-1 text-xs">
+                    <span className="font-mono text-fg-secondary">{s.tracking_no}</span>
+                    <span className="ml-1.5 text-fg-muted">{s.is_project ? 'Project' : (s.cost_center_code ?? '')} · {formatDate(s.created_at)}</span>
                   </span>
                 ))}
               </div>
@@ -251,19 +251,19 @@ export function CourierInvoiceView({ id }: { id: string }) {
 
         {/* Side panel */}
         <div className="order-first grid items-start gap-4 md:grid-cols-3 2xl:order-none 2xl:flex 2xl:flex-col">
-          <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-2">
+          <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-2">
             {inv.match_assignee_name && inv.status === 'unmatched' && (
-              <p className="flex items-center gap-1.5 text-xs text-neutral-600">
+              <p className="flex items-center gap-1.5 text-xs text-fg-secondary">
                 <UserPlus className="h-3.5 w-3.5 text-primary-600" /> Assigned to <span className="font-medium">{inv.match_assignee_name}</span>
               </p>
             )}
             {!canMatch && inv.status === 'unmatched' && (
-              <p className="text-xs text-neutral-500">Courier invoice — matched to shipments by the freight manager or the person AP assigns, and paid by the freight manager.</p>
+              <p className="text-xs text-fg-muted">Courier invoice — matched to shipments by the freight manager or the person AP assigns, and paid by the freight manager.</p>
             )}
             {/* By status, not by who may match: finalising closes the
                 assignee's task, and with it their right to match. */}
             {!canManage && inv.status === 'matched' && !inv.pa_id && (
-              <p className="text-xs text-neutral-500">Matched. The freight manager raises the Freight PA.</p>
+              <p className="text-xs text-fg-muted">Matched. The freight manager raises the Freight PA.</p>
             )}
             {editable && (
               <>
@@ -286,11 +286,11 @@ export function CourierInvoiceView({ id }: { id: string }) {
               </Button>
             )}
             {inv.status === 'matched' && inv.pa_id && (
-              <p className="text-xs text-neutral-500">This invoice is on <Link to={`/pa/${inv.pa_id}`} className="font-mono text-primary-700 hover:underline">{inv.pa_number}</Link>. {paLockHint(inv.pa_status)}</p>
+              <p className="text-xs text-fg-muted">This invoice is on <Link to={`/pa/${inv.pa_id}`} className="font-mono text-primary-700 hover:underline">{inv.pa_number}</Link>. {paLockHint(inv.pa_status)}</p>
             )}
             {editable && canManage && (
               <button onClick={handleDelete} disabled={busy}
-                className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-danger-600 hover:bg-danger-50 disabled:opacity-40">
+                className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-danger-fg hover:bg-danger-soft disabled:opacity-40">
                 <Trash2 className="h-3.5 w-3.5" /> {del.isPending ? 'Deleting…' : 'Delete invoice'}
               </button>
             )}
@@ -298,13 +298,13 @@ export function CourierInvoiceView({ id }: { id: string }) {
 
           {editable && (
             <div className={cn('rounded-xl border p-5 shadow-sm',
-              inv.finalize_blockers.length ? 'border-warning-200 bg-warning-50' : 'border-success-200 bg-success-50')}>
+              inv.finalize_blockers.length ? 'border-warning-line bg-warning-soft' : 'border-success-line bg-success-soft')}>
               {inv.finalize_blockers.length === 0 ? (
-                <p className="flex items-center gap-2 text-sm font-medium text-success-700"><CheckCircle2 className="h-4 w-4" /> Ready to finalise</p>
+                <p className="flex items-center gap-2 text-sm font-medium text-success-fg"><CheckCircle2 className="h-4 w-4" /> Ready to finalise</p>
               ) : (
                 <>
-                  <p className="flex items-center gap-2 text-sm font-medium text-warning-700 mb-2"><AlertTriangle className="h-4 w-4" /> Before it can be finalised</p>
-                  <ul className="list-disc pl-5 text-xs text-warning-700 space-y-1">
+                  <p className="flex items-center gap-2 text-sm font-medium text-warning-fg mb-2"><AlertTriangle className="h-4 w-4" /> Before it can be finalised</p>
+                  <ul className="list-disc pl-5 text-xs text-warning-fg space-y-1">
                     {inv.finalize_blockers.map((b, i) => <li key={i}>{b}</li>)}
                   </ul>
                 </>
@@ -312,23 +312,23 @@ export function CourierInvoiceView({ id }: { id: string }) {
             </div>
           )}
 
-          <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
-            <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-3">By Cost Center</h3>
+          <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+            <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-3">By Cost Center</h3>
             <table className="w-full text-xs">
               <tbody>
                 {inv.totals_by_cost_center.map((t, i) => (
-                  <tr key={t.cost_center_id ?? `none-${i}`} className="border-b border-neutral-100 last:border-0">
+                  <tr key={t.cost_center_id ?? `none-${i}`} className="border-b border-line-subtle last:border-0">
                     <td className="py-1.5">
                       {t.cost_center_id ? (
                         <>
-                          <div className="text-neutral-800">{t.cost_center_code} — {t.cost_center_name}</div>
-                          <div className="text-[10px] text-neutral-400">{t.department_name}</div>
+                          <div className="text-fg">{t.cost_center_code} — {t.cost_center_name}</div>
+                          <div className="text-2xs text-fg-muted">{t.department_name}</div>
                         </>
-                      ) : <span className="font-medium text-warning-600">No cost center yet</span>}
+                      ) : <span className="font-medium text-warning-fg">No cost center yet</span>}
                     </td>
                     <td className="py-1.5 text-right font-mono align-top">
                       {formatAmount(num(t.amount), ccy)}
-                      <div className="text-[10px] text-neutral-400">tax {formatAmount(num(t.tax_amount), ccy)}</div>
+                      <div className="text-2xs text-fg-muted">tax {formatAmount(num(t.tax_amount), ccy)}</div>
                     </td>
                   </tr>
                 ))}
@@ -346,8 +346,8 @@ export function CourierInvoiceView({ id }: { id: string }) {
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <p className="text-xs text-neutral-500">{label}</p>
-      <div className="font-medium text-neutral-900 mt-0.5">{value}</div>
+      <p className="text-xs text-fg-muted">{label}</p>
+      <div className="font-medium text-fg mt-0.5">{value}</div>
     </div>
   )
 }
@@ -396,17 +396,17 @@ function LineRow({
     !l.shipment_id && pending.length > 0
 
   return (
-    <tr className={cn('border-b border-neutral-100 last:border-0 align-top', needsAttention && editable && 'bg-warning-50/40')}>
-      <td className="px-3 py-2.5 text-xs text-neutral-400">{index}</td>
-      <td className="px-3 py-2.5 text-xs text-neutral-700">{CHARGE_TYPE_LABEL[l.charge_type] ?? l.charge_type}</td>
+    <tr className={cn('border-b border-line-subtle last:border-0 align-top', needsAttention && editable && 'bg-warning-50/40')}>
+      <td className="px-3 py-2.5 text-xs text-fg-muted">{index}</td>
+      <td className="px-3 py-2.5 text-xs text-fg-secondary">{CHARGE_TYPE_LABEL[l.charge_type] ?? l.charge_type}</td>
       <td className="px-3 py-2.5">
-        <span className="font-mono text-xs text-neutral-800">{l.tracking_no ?? '—'}</span>
-        {others.length > 0 && <div className="font-mono text-[10px] text-neutral-400">+ {others.join(', ')}</div>}
+        <span className="font-mono text-xs text-fg">{l.tracking_no ?? '—'}</span>
+        {others.length > 0 && <div className="font-mono text-2xs text-fg-muted">+ {others.join(', ')}</div>}
       </td>
-      <td className="px-3 py-2.5 text-xs text-neutral-600 whitespace-nowrap">{formatDate(l.ship_date)}</td>
+      <td className="px-3 py-2.5 text-xs text-fg-secondary whitespace-nowrap">{formatDate(l.ship_date)}</td>
       <td className="px-3 py-2.5 text-xs max-w-xs">
-        <div className="text-neutral-700">{l.description ?? '—'}</div>
-        {l.reference && <div className="text-[10px] text-neutral-400">Ref {l.reference}</div>}
+        <div className="text-fg-secondary">{l.description ?? '—'}</div>
+        {l.reference && <div className="text-2xs text-fg-muted">Ref {l.reference}</div>}
       </td>
       <td className="px-3 py-2.5 text-right">
         {editable ? (
@@ -426,9 +426,9 @@ function LineRow({
       </td>
       <td className="px-3 py-2.5">
         <MatchBadge status={l.match_status} previouslyBilledOn={l.previously_billed_on} />
-        {l.linked_line_id && <div className="mt-1 text-[10px] text-neutral-500">Follows line #{lineNo.get(l.linked_line_id) ?? '?'}</div>}
+        {l.linked_line_id && <div className="mt-1 text-2xs text-fg-muted">Follows line #{lineNo.get(l.linked_line_id) ?? '?'}</div>}
         {l.shipment_project_info && (
-          <div className="mt-1 max-w-48 text-[11px] text-neutral-600">
+          <div className="mt-1 max-w-48 text-2xs text-fg-secondary">
             <ProjectBadge className="mr-1" />{l.shipment_project_info}
           </div>
         )}
@@ -436,14 +436,14 @@ function LineRow({
           <button onClick={() => l.cost_center_id && onPatch(l, { cost_center_id: l.cost_center_id })}
             disabled={busy || !l.cost_center_id}
             title={l.cost_center_id ? undefined : 'Choose the cost center first'}
-            className="mt-1 block text-[11px] font-medium text-primary-700 hover:underline disabled:opacity-40">
+            className="mt-1 block text-2xs font-medium text-primary-700 hover:underline disabled:opacity-40">
             {l.cost_center_code ? `Confirm ${l.cost_center_code}` : 'Confirm cost center'}
           </button>
         )}
         {editable && l.match_status === 'duplicate_billing' && (
           <button onClick={() => l.cost_center_id && onPatch(l, { cost_center_id: l.cost_center_id })}
             disabled={busy || !l.cost_center_id}
-            className="mt-1 block text-[11px] font-medium text-primary-700 hover:underline disabled:opacity-40">
+            className="mt-1 block text-2xs font-medium text-primary-700 hover:underline disabled:opacity-40">
             Keep — it is a correct extra charge
           </button>
         )}
@@ -470,11 +470,11 @@ function LineRow({
               </select>
             )}
             {canLinkShipment && (
-              <label className="flex items-center gap-1 text-[10px] text-neutral-500">
+              <label className="flex items-center gap-1 text-2xs text-fg-muted">
                 <Link2 className="h-3 w-3 shrink-0" />
                 <select value="" disabled={busy}
                   onChange={(e) => e.target.value && onPatch(l, { shipment_id: e.target.value })}
-                  className={cn(SELECT_SM_CLS, 'h-7 flex-1 text-[11px]')}>
+                  className={cn(SELECT_SM_CLS, 'h-7 flex-1 text-2xs')}>
                   <option value="">Registered under another number…</option>
                   {pending.map((s) => (
                     <option key={s.id} value={s.id}>{s.tracking_no}{s.is_project ? ' · Project' : s.cost_center_code ? ` · ${s.cost_center_code}` : ''}</option>
@@ -485,8 +485,8 @@ function LineRow({
           </div>
         ) : (
           <div className="text-xs">
-            <div className="text-neutral-800">{l.cost_center_code ? `${l.cost_center_code} — ${l.cost_center_name ?? ''}` : '—'}</div>
-            <div className="text-[10px] text-neutral-400">{l.department_name ?? ''}</div>
+            <div className="text-fg">{l.cost_center_code ? `${l.cost_center_code} — ${l.cost_center_name ?? ''}` : '—'}</div>
+            <div className="text-2xs text-fg-muted">{l.department_name ?? ''}</div>
           </div>
         )}
       </td>
@@ -511,34 +511,34 @@ function InvoicePdfPanel({ invoiceId }: { invoiceId: string }) {
   }
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
+    <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Invoice PDF</h3>
+        <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Invoice PDF</h3>
         <input ref={input} type="file" accept="application/pdf,image/*" className="sr-only" onChange={onFile} />
         <button onClick={() => input.current?.click()} disabled={upload.isPending}
-          className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50 disabled:opacity-50">
+          className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs text-fg-secondary hover:bg-surface-subtle disabled:opacity-50">
           <Upload className="h-3 w-3" /> {upload.isPending ? 'Uploading…' : 'Add'}
         </button>
       </div>
       {isLoading ? (
-        <p className="text-xs text-neutral-400">Loading…</p>
+        <p className="text-xs text-fg-muted">Loading…</p>
       ) : atts.length === 0 ? (
-        <p className="text-xs text-neutral-400">No file attached.</p>
+        <p className="text-xs text-fg-muted">No file attached.</p>
       ) : (
         <div className="flex flex-col gap-2">
           {atts.map((a) => (
             <div key={a.id} className="flex items-center gap-2 text-xs">
-              <FileText className="h-4 w-4 text-neutral-400 shrink-0" />
-              <span className="min-w-0 flex-1 truncate text-neutral-700">{a.file_name}</span>
+              <FileText className="h-4 w-4 text-fg-muted shrink-0" />
+              <span className="min-w-0 flex-1 truncate text-fg-secondary">{a.file_name}</span>
               <button onClick={() => freightAttachmentService.open(a.id).catch((x) => setErr(errorMessage(x)))}
-                className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2 py-1 text-neutral-600 hover:bg-neutral-50">
+                className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-fg-secondary hover:bg-surface-subtle">
                 <ExternalLink className="h-3 w-3" /> Open
               </button>
             </div>
           ))}
         </div>
       )}
-      {err && <p className="mt-2 text-xs text-danger-600">{err}</p>}
+      {err && <p className="mt-2 text-xs text-danger-fg">{err}</p>}
     </div>
   )
 }

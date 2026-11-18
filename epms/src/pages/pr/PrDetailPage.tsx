@@ -114,70 +114,70 @@ function ApprovalModal({ action, prNumber, onConfirm, onClose, isPending, error 
     approve: {
       title: 'Approve Purchase Requisition',
       label: 'Approve',
-      icon: <CheckCircle2 className="h-5 w-5 text-success-600" />,
-      bgIcon: 'bg-success-50',
-      btn: 'bg-success-600 hover:bg-success-700 text-white',
+      icon: <CheckCircle2 className="h-5 w-5 text-success-fg" />,
+      bgIcon: 'bg-success-soft',
+      btn: 'bg-success-solid hover:bg-success-700 text-white',
       commentLabel: 'Comment (optional)',
       placeholder: 'Add an optional comment…',
     },
     reject: {
       title: 'Reject Purchase Requisition',
       label: 'Reject',
-      icon: <XCircle className="h-5 w-5 text-danger-600" />,
-      bgIcon: 'bg-danger-50',
-      btn: 'bg-danger-600 hover:bg-danger-700 text-white',
+      icon: <XCircle className="h-5 w-5 text-danger-fg" />,
+      bgIcon: 'bg-danger-soft',
+      btn: 'bg-danger-solid hover:bg-danger-700 text-white',
       commentLabel: 'Reason for rejection *',
       placeholder: 'Explain why this PR is being rejected…',
     },
     return: {
       title: 'Return for Revision',
       label: 'Return',
-      icon: <RotateCcw className="h-5 w-5 text-warning-600" />,
-      bgIcon: 'bg-warning-50',
-      btn: 'bg-warning-500 hover:bg-warning-600 text-white',
+      icon: <RotateCcw className="h-5 w-5 text-warning-fg" />,
+      bgIcon: 'bg-warning-soft',
+      btn: 'bg-warning-solid hover:bg-warning-solid text-white',
       commentLabel: 'Revision instructions *',
       placeholder: 'Describe what needs to be revised…',
     },
   }[action]
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl">
+        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
           <div className="flex items-center gap-3">
             <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', config.bgIcon)}>
               {config.icon}
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-neutral-900">{config.title}</h2>
-              <p className="text-xs text-neutral-500">{prNumber}</p>
+              <h2 className="text-sm font-semibold text-fg">{config.title}</h2>
+              <p className="text-xs text-fg-muted">{prNumber}</p>
             </div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <div className="px-6 py-5 flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">
+            <label className="text-xs font-medium text-fg-secondary">
               {config.commentLabel}
             </label>
             <div className="relative">
-              <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-neutral-400" />
+              <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-fg-muted" />
               <textarea
                 rows={3}
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 placeholder={config.placeholder}
                 autoFocus
-                className="w-full resize-none rounded-lg border border-neutral-300 bg-white pl-8 pr-3 pt-2 pb-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                className="w-full resize-none rounded-lg border border-line-strong bg-surface pl-8 pr-3 pt-2 pb-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               />
             </div>
           </div>
 
           {error && (
-            <p role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+            <p role="alert" className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
               {error}
             </p>
           )}
@@ -298,15 +298,15 @@ export default function PrDetailPage() {
   }
 
   if (isLoading) {
-    return <div className="flex items-center justify-center py-24 text-sm text-neutral-400">Loading…</div>
+    return <div className="flex items-center justify-center py-24 text-sm text-fg-muted">Loading…</div>
   }
 
   if (!pr) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <div className="text-5xl mb-4">🔍</div>
-        <h2 className="text-xl font-semibold text-neutral-700">PR Not Found</h2>
-        <p className="mt-2 text-sm text-neutral-400">
+        <h2 className="text-xl font-semibold text-fg-secondary">PR Not Found</h2>
+        <p className="mt-2 text-sm text-fg-muted">
           The purchase requisition you're looking for doesn't exist.
         </p>
         <BackLink to="/pr" className="mt-4">
@@ -329,7 +329,7 @@ export default function PrDetailPage() {
   return (
     <div className={cn('flex flex-col gap-6', canApprove && 'pb-16')}>
       {/* Page header */}
-      <div className="rounded-lg border border-neutral-200 bg-white px-6 py-4">
+      <div className="rounded-lg border border-line bg-surface px-6 py-4">
         <div className="flex items-center gap-3 mb-3">
           <BackLink to="/pr">
             <Button variant="ghost" size="sm">
@@ -341,11 +341,11 @@ export default function PrDetailPage() {
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-bold text-neutral-900">{pr.number}</h1>
+              <h1 className="text-xl font-bold text-fg">{pr.number}</h1>
               <StatusBadge status={pr.status} />
             </div>
-            <p className="mt-1 text-neutral-600">{pr.title} — {pr.vendor_name || '—'}</p>
-            <p className="mt-0.5 text-sm text-neutral-400">Submitted {formatDate(pr.submitted_at ?? '')}</p>
+            <p className="mt-1 text-fg-secondary">{pr.title} — {pr.vendor_name || '—'}</p>
+            <p className="mt-0.5 text-sm text-fg-muted">Submitted {formatDate(pr.submitted_at ?? '')}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {['draft', 'returned', 'submitted', 'in_review'].includes(pr.status) && !isCurrentApprover && isRequesterOrAdmin && (
@@ -388,7 +388,7 @@ export default function PrDetailPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="border-danger-200 text-danger-600 hover:bg-danger-50"
+                  className="border-danger-line text-danger-fg hover:bg-danger-soft"
                   onClick={() => confirmDlg.ask({
                     title: 'Withdraw PR',
                     subtitle: pr.number,
@@ -421,7 +421,7 @@ export default function PrDetailPage() {
           </div>
         </div>
         {actionError && (
-          <div role="alert" className="mt-3 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-600">
+          <div role="alert" className="mt-3 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
             {actionError}
           </div>
         )}
@@ -432,7 +432,7 @@ export default function PrDetailPage() {
         {/* Left: tabs */}
         <div className="lg:col-span-8 flex flex-col gap-4">
           {/* Tab bar */}
-          <div className="flex border-b border-neutral-200">
+          <div className="flex border-b border-line">
             {TABS.map((tab) => (
               <button
                 key={tab}
@@ -441,7 +441,7 @@ export default function PrDetailPage() {
                   'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
                   activeTab === tab
                     ? 'border-primary-600 text-primary-700'
-                    : 'border-transparent text-neutral-500 hover:text-neutral-700',
+                    : 'border-transparent text-fg-muted hover:text-fg-secondary',
                 ].join(' ')}
               >
                 {tab}
@@ -451,9 +451,9 @@ export default function PrDetailPage() {
 
           {/* Details tab */}
           {activeTab === 'Details' && (
-            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-6">
+            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-6">
               <section>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">Details</h2>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">Details</h2>
                 <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2 text-sm">
                   {([
                     ['Procurement Type', TYPE_LABELS[pr.type] ?? `Type ${pr.type}`],
@@ -482,9 +482,9 @@ export default function PrDetailPage() {
                     ['Notes', pr.notes || '—'],
                   ] as [string, string][]).map(([label, value]) => (
                     <div key={label} className="flex flex-col gap-0.5">
-                      <dt className="text-xs font-medium text-neutral-500">{label}</dt>
+                      <dt className="text-xs font-medium text-fg-muted">{label}</dt>
                       {/* pre-wrap: Notes / Delivery Address are typed with line breaks */}
-                      <dd className="whitespace-pre-wrap break-words text-neutral-900">{value}</dd>
+                      <dd className="whitespace-pre-wrap break-words text-fg">{value}</dd>
                     </div>
                   ))}
                 </dl>
@@ -493,7 +493,7 @@ export default function PrDetailPage() {
               {/* Decomposition Factors — only when the Budget Account had factors at PR time */}
               {pr.factor_combo && Object.keys(pr.factor_combo).length > 0 && (
                 <section>
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">
                     Decomposition Factors
                   </h2>
                   <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-3 text-sm">
@@ -506,8 +506,8 @@ export default function PrDetailPage() {
                         : valueCode
                       return (
                         <div key={factorCode} className="flex flex-col gap-0.5">
-                          <dt className="text-xs font-medium text-neutral-500">{factorLabel}</dt>
-                          <dd className="text-neutral-900">{valueLabel}</dd>
+                          <dt className="text-xs font-medium text-fg-muted">{factorLabel}</dt>
+                          <dd className="text-fg">{valueLabel}</dd>
                         </div>
                       )
                     })}
@@ -518,10 +518,10 @@ export default function PrDetailPage() {
               {/* Over-Budget Justification (OBG-007) — visible to all approvers */}
               {pr.over_budget && (
                 <section>
-                  <div className="rounded-md border border-warning-300 bg-warning-50 px-4 py-3">
-                    <h2 className="text-xs font-semibold uppercase tracking-wide text-warning-700 mb-1">Over-Budget Justification</h2>
-                    <p className="text-sm text-warning-900 whitespace-pre-wrap">
-                      {pr.over_budget_justification || <span className="italic text-warning-600">(no justification provided)</span>}
+                  <div className="rounded-md border border-warning-line bg-warning-soft px-4 py-3">
+                    <h2 className="text-xs font-semibold uppercase tracking-wide text-warning-fg mb-1">Over-Budget Justification</h2>
+                    <p className="text-sm text-warning-fg whitespace-pre-wrap">
+                      {pr.over_budget_justification || <span className="italic text-warning-fg">(no justification provided)</span>}
                     </p>
                   </div>
                 </section>
@@ -529,55 +529,55 @@ export default function PrDetailPage() {
 
               {/* Line Items */}
               <section>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">
-                  Line Items <span className="normal-case font-normal text-neutral-400">({pr.line_items.length})</span>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">
+                  Line Items <span className="normal-case font-normal text-fg-muted">({pr.line_items.length})</span>
                 </h2>
-                <div className="rounded-lg border border-neutral-200 overflow-hidden">
+                <div className="rounded-lg border border-line overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-neutral-200 bg-neutral-50">
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-10">#</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500">Description</th>
+                        <tr className="border-b border-line bg-surface-subtle">
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-10">#</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted">Description</th>
                           {hasMaterial && (
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-32">Material ID</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-32">Material ID</th>
                           )}
                           {/* Always shown for consistency with the Create PR page, which always exposes this input. */}
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-36">Supplier Item ID</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-20">Qty</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-20">Unit</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-32">Unit Price</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-32">Line Total</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-36">Supplier Item ID</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-fg-muted w-20">Qty</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-20">Unit</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-fg-muted w-32">Unit Price</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-fg-muted w-32">Line Total</th>
                         </tr>
                       </thead>
                       <tbody>
                         {pr.line_items.map((item, i) => (
                           <tr
                             key={item.id}
-                            className={`border-b border-neutral-100 last:border-0 ${i % 2 === 1 ? 'bg-neutral-50/50' : 'bg-white'}`}
+                            className={`border-b border-line-subtle last:border-0 ${i % 2 === 1 ? 'bg-surface-subtle/50' : 'bg-surface'}`}
                           >
-                            <td className="px-4 py-2.5 text-xs text-neutral-400">{i + 1}</td>
-                            <td className="px-4 py-2.5 text-neutral-900">{item.description}</td>
+                            <td className="px-4 py-2.5 text-xs text-fg-muted">{i + 1}</td>
+                            <td className="px-4 py-2.5 text-fg">{item.description}</td>
                             {hasMaterial && (
-                              <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.material_id || '—'}</td>
+                              <td className="px-4 py-2.5 font-mono text-xs text-fg-secondary">{item.material_id || '—'}</td>
                             )}
-                            <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.supplier_item_id || '—'}</td>
-                            <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatQty(item.qty)}</td>
-                            <td className="px-4 py-2.5 text-neutral-500">{item.unit}</td>
-                            <td className="px-4 py-2.5 amount text-right text-neutral-900">{formatAmount(item.unit_price, pr.currency ?? 'CAD')}</td>
-                            <td className="px-4 py-2.5 amount text-right font-semibold text-neutral-900">{formatAmount(item.line_total, pr.currency ?? 'CAD')}</td>
+                            <td className="px-4 py-2.5 font-mono text-xs text-fg-secondary">{item.supplier_item_id || '—'}</td>
+                            <td className="px-4 py-2.5 text-right font-mono text-fg">{formatQty(item.qty)}</td>
+                            <td className="px-4 py-2.5 text-fg-muted">{item.unit}</td>
+                            <td className="px-4 py-2.5 amount text-right text-fg">{formatAmount(item.unit_price, pr.currency ?? 'CAD')}</td>
+                            <td className="px-4 py-2.5 amount text-right font-semibold text-fg">{formatAmount(item.line_total, pr.currency ?? 'CAD')}</td>
                           </tr>
                         ))}
                       </tbody>
                       <tfoot>
-                        <tr className="border-t-2 border-neutral-200 bg-neutral-50">
+                        <tr className="border-t-2 border-line bg-surface-subtle">
                           <td
                             colSpan={6 + (hasMaterial ? 1 : 0)}
-                            className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500"
+                            className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted"
                           >
                             Total ({pr.currency ?? 'CAD'})
                           </td>
-                          <td className="px-4 py-3 amount text-right text-base font-bold text-neutral-900">
+                          <td className="px-4 py-3 amount text-right text-base font-bold text-fg">
                             {formatAmount(pr.amount, pr.currency ?? 'CAD')}
                           </td>
                         </tr>
@@ -591,9 +591,9 @@ export default function PrDetailPage() {
 
           {/* Attachments tab */}
           {activeTab === 'Attachments' && (
-            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
                   Attachments
                 </h2>
                 {pr.status === 'approved' && (
@@ -610,7 +610,7 @@ export default function PrDetailPage() {
                 )}
               </div>
               {downloadError && (
-                <div className="mb-3 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-600">
+                <div className="mb-3 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
                   {downloadError}
                 </div>
               )}
@@ -633,8 +633,8 @@ export default function PrDetailPage() {
 
           {/* History tab */}
           {activeTab === 'History' && (
-            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">
+            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">
                 Audit History
               </h2>
               {events && events.length > 0 ? (
@@ -643,19 +643,19 @@ export default function PrDetailPage() {
                     const line = historyLine(ev, workflowSteps)
                     return (
                       <li key={ev.id} className="flex gap-3 text-sm">
-                        <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDate(ev.created_at)}</span>
+                        <span className="text-xs text-fg-muted whitespace-nowrap pt-0.5">{formatDate(ev.created_at)}</span>
                         <div>
-                          <span className="font-medium text-neutral-800 capitalize">{line.action}</span>
-                          <span className="text-neutral-500 ml-1">{line.role}</span>
-                          {line.actorName && <span className="text-neutral-400 ml-1">— {line.actorName}</span>}
-                          {line.note && <p className="text-neutral-400 text-xs mt-0.5 italic">{line.note}</p>}
+                          <span className="font-medium text-fg capitalize">{line.action}</span>
+                          <span className="text-fg-muted ml-1">{line.role}</span>
+                          {line.actorName && <span className="text-fg-muted ml-1">— {line.actorName}</span>}
+                          {line.note && <p className="text-fg-muted text-xs mt-0.5 italic">{line.note}</p>}
                         </div>
                       </li>
                     )
                   })}
                 </ul>
               ) : (
-                <div className="text-sm text-neutral-400 text-center py-8">No history yet</div>
+                <div className="text-sm text-fg-muted text-center py-8">No history yet</div>
               )}
             </div>
           )}
@@ -663,8 +663,8 @@ export default function PrDetailPage() {
 
         {/* Right: approval timeline */}
         <div className="lg:col-span-4">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">
               Approval Timeline
             </h2>
             <ApprovalTimeline
@@ -688,9 +688,9 @@ export default function PrDetailPage() {
 
       {/* Fixed bottom approver action bar */}
       {canApprove && (
-        <div className="fixed bottom-0 left-60 right-0 z-10 bg-white border-t border-neutral-200 px-6 py-3 flex items-center justify-between shadow-[0_-1px_8px_rgba(0,0,0,0.06)] max-md:left-0">
-          <p className="text-sm text-neutral-500">
-            Reviewing <span className="font-medium text-neutral-900">{pr?.number}</span>
+        <div className="fixed bottom-0 left-60 right-0 z-10 bg-surface border-t border-line px-6 py-3 flex items-center justify-between shadow-[0_-1px_8px_rgba(0,0,0,0.06)] max-md:left-0">
+          <p className="text-sm text-fg-muted">
+            Reviewing <span className="font-medium text-fg">{pr?.number}</span>
           </p>
           <div className="flex items-center gap-2">
             <div className="relative" ref={moreRef}>
@@ -703,16 +703,16 @@ export default function PrDetailPage() {
                 More <ChevronDown className="h-3.5 w-3.5" />
               </Button>
               {moreOpen && (
-                <div className="absolute right-0 bottom-full mb-1 w-44 rounded-lg border border-neutral-200 bg-white py-1 shadow-lg z-20">
+                <div className="absolute right-0 bottom-full mb-1 w-44 rounded-lg border border-line bg-surface py-1 shadow-lg z-20">
                   <button
                     onClick={() => { setPendingAction('return'); setMoreOpen(false) }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-warning-700 hover:bg-warning-50"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-warning-fg hover:bg-warning-soft"
                   >
                     <RotateCcw className="h-4 w-4" /> Return for Revision
                   </button>
                   <button
                     onClick={() => { setPendingAction('reject'); setMoreOpen(false) }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger-600 hover:bg-danger-50"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger-fg hover:bg-danger-soft"
                   >
                     <XCircle className="h-4 w-4" /> Reject
                   </button>
@@ -721,7 +721,7 @@ export default function PrDetailPage() {
             </div>
             <button
               onClick={() => setPendingAction('approve')}
-              className="inline-flex items-center gap-2 h-9 px-5 rounded-lg bg-success-600 text-white text-sm font-semibold hover:bg-success-700 transition-colors"
+              className="inline-flex items-center gap-2 h-9 px-5 rounded-lg bg-success-solid text-white text-sm font-semibold hover:bg-success-700 transition-colors"
             >
               <CheckCircle2 className="h-4 w-4" /> Approve
             </button>

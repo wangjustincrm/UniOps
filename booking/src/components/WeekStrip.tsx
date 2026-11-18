@@ -73,26 +73,26 @@ export function WeekStrip({ weekBookings, selectedDay, onSelectDay, weekStart }:
             className={cn(
               'flex flex-1 flex-col items-center rounded-lg border px-1 py-1.5 text-center transition-colors',
               isSelected
-                ? 'border-[#085E5E] bg-[#085E5E]/10 text-[#085E5E]'
-                : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50',
+                ? 'border-primary-700 bg-primary-700/10 text-primary-700'
+                : 'border-line bg-surface text-fg-secondary hover:border-line-strong hover:bg-surface-subtle',
             )}
           >
-            <span className={cn('text-[10px] font-medium uppercase tracking-wide', isSelected ? 'text-[#085E5E]' : 'text-neutral-400')}>
+            <span className={cn('text-2xs font-medium uppercase tracking-wide', isSelected ? 'text-primary-700' : 'text-fg-muted')}>
               {label}
             </span>
             <span className={cn(
               'mt-0.5 text-sm font-bold leading-none',
-              isToday && !isSelected && 'text-[#085E5E]',
+              isToday && !isSelected && 'text-primary-700',
             )}>
               {dayNum}
             </span>
             {/* Busy density bar */}
-            <div className="mt-1.5 h-1 w-full rounded-full bg-neutral-100 overflow-hidden">
+            <div className="mt-1.5 h-1 w-full rounded-full bg-surface-sunken overflow-hidden">
               {count > 0 && (
                 <div
                   className={cn(
                     'h-full rounded-full transition-all',
-                    isSelected ? 'bg-[#085E5E]' : 'bg-[#085E5E]/50',
+                    isSelected ? 'bg-primary-700' : 'bg-primary-700/50',
                   )}
                   style={{ width: `${Math.max(density * 100, 20)}%` }}
                 />
@@ -100,8 +100,8 @@ export function WeekStrip({ weekBookings, selectedDay, onSelectDay, weekStart }:
             </div>
             {count > 0 && (
               <span className={cn(
-                'mt-0.5 text-[9px]',
-                isSelected ? 'text-[#085E5E]/80' : 'text-neutral-400',
+                'mt-0.5 text-2xs',
+                isSelected ? 'text-primary-700/80' : 'text-fg-muted',
               )}>
                 {count}
               </span>

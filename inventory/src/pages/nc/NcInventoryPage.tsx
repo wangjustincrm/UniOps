@@ -33,7 +33,7 @@ type TabKey = typeof TABS[number]['key']
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
 const selectCls =
-  'h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500'
+  'h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500'
 
 function IaBadge({ ia }: { ia: NcMeta['ia'] }) {
   if (ia.status === 'closed') return <Badge variant="success">IA period closed</Badge>
@@ -52,13 +52,13 @@ function MetaStrip({ date }: { date: string }) {
     // Keeps "synced 6 min ago" honest on a screen left open.
     refetchInterval: 60_000,
   })
-  if (q.isLoading) return <p className="text-xs text-neutral-400">Loading NC status…</p>
+  if (q.isLoading) return <p className="text-xs text-fg-muted">Loading NC status…</p>
   if (q.isError) return <ErrorBox error={q.error} fallback="Could not load NC status." />
   const m = q.data!
   const age = relativeAge(m.sync.last_success_at)
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-neutral-500">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-fg-muted">
         <span>
           As of {formatDate(m.date)} ({displayTimeZone()}) · NC clock cutoff {formatDate(m.nc_cutoff.slice(0, 10))} {m.nc_cutoff.slice(11, 16)} ({m.nc_time_zone})
         </span>
@@ -68,7 +68,7 @@ function MetaStrip({ date }: { date: string }) {
         </span>
       </div>
       {m.sync.tieout_ok === false && (
-        <p role="alert" className="flex items-start gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+        <p role="alert" className="flex items-start gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
           <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
             NC data does not tie out to NC ({m.sync.tieout_issue_count.toLocaleString('en-US')} issues) — see{' '}
@@ -108,12 +108,12 @@ export default function NcInventoryPage() {
     <div className="flex flex-col gap-4">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-neutral-900">NC Inventory</h1>
-          <p className="text-xs text-neutral-500">{TABS.find((t) => t.key === tab)?.hint}</p>
+          <h1 className="text-xl font-semibold text-fg">NC Inventory</h1>
+          <p className="text-xs text-fg-muted">{TABS.find((t) => t.key === tab)?.hint}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-xs text-neutral-600">
+          <label className="flex items-center gap-2 text-xs text-fg-secondary">
             Date
             <input
               type="date"
@@ -127,7 +127,7 @@ export default function NcInventoryPage() {
               className={selectCls}
             />
           </label>
-          <label className="flex items-center gap-2 text-xs text-neutral-600">
+          <label className="flex items-center gap-2 text-xs text-fg-secondary">
             Material class
             <select value={classCode} onChange={(e) => setParam('class', e.target.value)} className={selectCls}>
               <option value="">All</option>
@@ -136,8 +136,8 @@ export default function NcInventoryPage() {
               ))}
             </select>
           </label>
-          <div className="flex h-9 w-64 items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3">
-            <Search aria-hidden className="h-4 w-4 shrink-0 text-neutral-400" />
+          <div className="flex h-9 w-64 items-center gap-2 rounded-lg border border-line-strong bg-surface px-3">
+            <Search aria-hidden className="h-4 w-4 shrink-0 text-fg-muted" />
             <input
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
@@ -149,7 +149,7 @@ export default function NcInventoryPage() {
             />
             {searchInput && (
               <button type="button" onClick={() => setSearchInput('')} aria-label="Clear search"
-                className="shrink-0 text-neutral-400 hover:text-neutral-700">
+                className="shrink-0 text-fg-muted hover:text-fg-secondary">
                 <X className="h-4 w-4" />
               </button>
             )}
@@ -159,7 +159,7 @@ export default function NcInventoryPage() {
 
       <MetaStrip date={date} />
 
-      <div role="tablist" aria-label="NC ledgers" className="flex gap-1 border-b border-neutral-200">
+      <div role="tablist" aria-label="NC ledgers" className="flex gap-1 border-b border-line">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -171,7 +171,7 @@ export default function NcInventoryPage() {
               'flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors',
               tab === key
                 ? 'border-primary-600 text-primary-700'
-                : 'border-transparent text-neutral-500 hover:border-neutral-300 hover:text-neutral-700',
+                : 'border-transparent text-fg-muted hover:border-line-strong hover:text-fg-secondary',
             )}
           >
             <Icon aria-hidden className="h-4 w-4" />

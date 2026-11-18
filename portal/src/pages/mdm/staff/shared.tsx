@@ -63,11 +63,11 @@ export const TODO_LABEL: Record<string, string> = {
   fix_mismatch: 'Fix mismatch',
 }
 
-export const TH = 'sticky top-0 z-10 bg-neutral-50 px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500 whitespace-nowrap'
-export const TD = 'px-4 py-2.5 text-sm text-neutral-700'
-export const PRIMARY_BTN = 'inline-flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] transition-colors disabled:opacity-50'
-export const SECONDARY_BTN = 'inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors disabled:opacity-50'
-export const INPUT = 'rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-200'
+export const TH = 'sticky top-0 z-10 bg-surface-subtle px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted whitespace-nowrap'
+export const TD = 'px-4 py-2.5 text-sm text-fg-secondary'
+export const PRIMARY_BTN = 'inline-flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors disabled:opacity-50'
+export const SECONDARY_BTN = 'inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors disabled:opacity-50'
+export const INPUT = 'rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-200'
 
 /** Effective permission check. system_admin holds every key. */
 export function useStaffPerm() {
@@ -95,8 +95,8 @@ export { targetText }
 export function StatusPill({ status }: { status: string }) {
   return (
     <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium',
-      status === 'active' ? 'bg-green-50 text-green-700'
-        : status === 'on_leave' ? 'bg-amber-50 text-amber-700' : 'bg-neutral-100 text-neutral-500')}>
+      status === 'active' ? 'bg-success-soft text-success-fg'
+        : status === 'on_leave' ? 'bg-warning-soft text-warning-fg' : 'bg-surface-sunken text-fg-muted')}>
       {STATUS_LABEL[status] ?? status}
     </span>
   )
@@ -105,8 +105,8 @@ export function StatusPill({ status }: { status: string }) {
 export function NcPill({ state }: { state: string }) {
   return (
     <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap',
-      state === 'in_step' ? 'bg-green-50 text-green-700'
-        : state === 'unknown' ? 'bg-neutral-100 text-neutral-500' : 'bg-amber-50 text-amber-700')}>
+      state === 'in_step' ? 'bg-success-soft text-success-fg'
+        : state === 'unknown' ? 'bg-surface-sunken text-fg-muted' : 'bg-warning-soft text-warning-fg')}>
       {NC_STATE_LABEL[state] ?? state}
     </span>
   )
@@ -129,11 +129,11 @@ export function StaffShell({ permission, children }: { permission: string; child
   return (
     <PortalPageLayout activeKey="portal:/mdm/staff">
       <div className="p-6">
-        <div className="mb-5 flex gap-1 border-b border-neutral-200">
+        <div className="mb-5 flex gap-1 border-b border-line">
           {TABS.filter((t) => can(t.permission)).map((t) => (
             <Link key={t.to} to={t.to}
               className={cn('-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-                current === t.to ? 'border-[#085E5E] text-[#085E5E]' : 'border-transparent text-neutral-500 hover:text-neutral-800')}>
+                current === t.to ? 'border-primary-700 text-primary-700' : 'border-transparent text-fg-muted hover:text-fg')}>
               {t.label}
             </Link>
           ))}

@@ -53,7 +53,7 @@ const MONTHS = [
 const ANCHORED_TYPES: RecurringType[] = ['quarterly', 'yearly']
 
 const selectClass =
-  'h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400'
+  'h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted'
 
 /**
  * Cycle / expected-invoice-day / anchor-month / amount-per-period /
@@ -110,8 +110,8 @@ export function RecurringFields(props: {
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-neutral-700">
-            Cycle <span className="text-danger-600">*</span>
+          <label className="text-sm font-medium text-fg-secondary">
+            Cycle <span className="text-danger-fg">*</span>
           </label>
           <select
             value={value.recurringType}
@@ -129,8 +129,8 @@ export function RecurringFields(props: {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-neutral-700">
-            Expected invoice day <span className="text-danger-600">*</span>
+          <label className="text-sm font-medium text-fg-secondary">
+            Expected invoice day <span className="text-danger-fg">*</span>
           </label>
           {value.recurringType === 'weekly' ? (
             <select
@@ -154,7 +154,7 @@ export function RecurringFields(props: {
                 value={value.expectedInvoiceDay}
                 onChange={(e) => set({ expectedInvoiceDay: e.target.value })}
               />
-              <p className="text-xs text-neutral-500">Clamped to the last day in shorter months</p>
+              <p className="text-xs text-fg-muted">Clamped to the last day in shorter months</p>
             </>
           )}
         </div>
@@ -194,7 +194,7 @@ export function RecurringFields(props: {
                   <label
                     key={m}
                     className={`flex items-center gap-2 text-sm ${
-                      disabled ? 'text-neutral-400' : 'cursor-pointer text-neutral-700'
+                      disabled ? 'text-fg-muted' : 'cursor-pointer text-fg-secondary'
                     }`}
                   >
                     <input
@@ -202,7 +202,7 @@ export function RecurringFields(props: {
                       checked={value.activeMonths.includes(month)}
                       disabled={disabled}
                       onChange={() => toggleMonth(month)}
-                      className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600 disabled:opacity-50"
+                      className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600 disabled:opacity-50"
                     />
                     {m}
                   </label>
@@ -214,7 +214,7 @@ export function RecurringFields(props: {
                 type="button"
                 disabled={disabled}
                 onClick={() => set({ activeMonths: MONTHS.map((_, i) => i + 1) })}
-                className="text-primary-600 hover:underline disabled:text-neutral-400 disabled:no-underline"
+                className="text-primary-600 hover:underline disabled:text-fg-muted disabled:no-underline"
               >
                 Select all
               </button>
@@ -222,11 +222,11 @@ export function RecurringFields(props: {
                 type="button"
                 disabled={disabled}
                 onClick={() => set({ activeMonths: [] })}
-                className="text-primary-600 hover:underline disabled:text-neutral-400 disabled:no-underline"
+                className="text-primary-600 hover:underline disabled:text-fg-muted disabled:no-underline"
               >
                 Clear
               </button>
-              <span className="text-neutral-500">
+              <span className="text-fg-muted">
                 {value.activeMonths.length === 0
                   ? 'No months selected yet — tick at least one'
                   : `${value.activeMonths.length} month${value.activeMonths.length === 1 ? '' : 's'} per year`}

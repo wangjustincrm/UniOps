@@ -64,24 +64,24 @@ function lacksReceiptEvidence(inv: ApiInvoice): boolean {
 // an arbitrary subset — the operator sees some boxes ticked and no reason for
 // the others, which is how "the system missed one" starts.
 function ReceiptEvidenceBadge({ invoice }: { invoice: ApiInvoice }) {
-  const cls0 = 'shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium'
+  const cls0 = 'shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-2xs font-medium'
   if (invoice.agreement_type === 'recurring') {
     // Only worth a badge when it is the thing standing in the way — a period
     // that IS linked needs no announcement.
     return invoice.schedule_id
       ? null
-      : <span className={cn(cls0, 'bg-danger-50 text-danger-700')}>No billing period</span>
+      : <span className={cn(cls0, 'bg-danger-soft text-danger-fg')}>No billing period</span>
   }
   if (invoice.agreement_type !== 'house_account') return null
   const n = invoice.receipt_ids?.length ?? 0
-  const cls = 'shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium'
+  const cls = 'shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-2xs font-medium'
   if (n > 0) {
-    return <span className={cn(cls, 'bg-success-50 text-success-700')}>{n} receipt{n === 1 ? '' : 's'}</span>
+    return <span className={cn(cls, 'bg-success-soft text-success-fg')}>{n} receipt{n === 1 ? '' : 's'}</span>
   }
   if (invoice.legacy_settlement) {
-    return <span className={cn(cls, 'bg-warning-50 text-warning-700')}>Settled without receipts</span>
+    return <span className={cn(cls, 'bg-warning-soft text-warning-fg')}>Settled without receipts</span>
   }
-  return <span className={cn(cls, 'bg-danger-50 text-danger-700')}>No receipt evidence yet</span>
+  return <span className={cn(cls, 'bg-danger-soft text-danger-fg')}>No receipt evidence yet</span>
 }
 
 // Only invoices this payment could actually settle reach here — one already
@@ -99,7 +99,7 @@ function InvoiceSelectList({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-    <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-100">
+    <div className="rounded-lg border border-line divide-y divide-line-subtle">
       {invoices.map((inv) => {
         const blocked = lacksReceiptEvidence(inv)
         return (
@@ -117,7 +117,7 @@ function InvoiceSelectList({
               checked={selectedIds.has(inv.id)}
               onChange={() => onToggle(inv.id)}
               disabled={blocked && !selectedIds.has(inv.id)}
-              className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
+              className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600"
             />
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -125,15 +125,15 @@ function InvoiceSelectList({
                   <span className="font-mono text-xs font-semibold text-primary-700">{inv.internal_ref}</span>
                   <ReceiptEvidenceBadge invoice={inv} />
                 </div>
-                <span className="font-mono text-xs font-semibold text-neutral-900">{formatAmount(inv.total_amount, inv.currency)}</span>
+                <span className="font-mono text-xs font-semibold text-fg">{formatAmount(inv.total_amount, inv.currency)}</span>
               </div>
-              <div className="text-xs text-neutral-500 mt-0.5">
+              <div className="text-xs text-fg-muted mt-0.5">
                 #{inv.vendor_invoice_number} · {formatDate(inv.invoice_date)} · Due {formatDate(inv.due_date)} · <span className="capitalize">{inv.status}</span>
               </div>
-              <div className="flex items-center gap-3 mt-1 text-[11px] text-neutral-400">
-                <span>Pre-tax <span className="font-mono text-neutral-600">{formatAmount(inv.amount, inv.currency)}</span></span>
-                <span className="text-neutral-200">·</span>
-                <span>Tax <span className="font-mono text-neutral-600">{formatAmount(inv.tax_amount, inv.currency)}</span></span>
+              <div className="flex items-center gap-3 mt-1 text-2xs text-fg-muted">
+                <span>Pre-tax <span className="font-mono text-fg-secondary">{formatAmount(inv.amount, inv.currency)}</span></span>
+                <span className="text-fg-faint">·</span>
+                <span>Tax <span className="font-mono text-fg-secondary">{formatAmount(inv.tax_amount, inv.currency)}</span></span>
               </div>
             </div>
           </label>
@@ -977,12 +977,12 @@ function PoPaCreate() {
     <div className="flex flex-col gap-6 p-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => replaceTab('/pa')} className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500">
+        <button onClick={() => replaceTab('/pa')} className="p-2 rounded-lg hover:bg-surface-sunken text-fg-muted">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">New Payment Application</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">
+          <h1 className="text-2xl font-bold text-fg">New Payment Application</h1>
+          <p className="text-sm text-fg-muted mt-0.5">
             {isAgreementMode ? 'Create a payment request against an agreement' : 'Create a payment request linked to a PO'}
           </p>
         </div>
@@ -994,43 +994,43 @@ function PoPaCreate() {
 
           {/* ── Step 1 — Select PO / Agreement ─────────────────────────────── */}
           {isAgreementMode ? (
-            <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-4">
-              <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">1</span>
+            <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-4">
+              <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-bold">1</span>
                 Agreement
               </h2>
               {agreementLoadError ? (
-                <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 flex items-start gap-2">
-                  <AlertTriangle className="h-4 w-4 text-danger-600 mt-0.5 shrink-0" />
+                <div className="rounded-lg border border-danger-line bg-danger-soft px-4 py-3 flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-danger-fg mt-0.5 shrink-0" />
                   <div>
-                    <p className="text-sm font-medium text-danger-800">Could not load this agreement.</p>
-                    <p className="text-xs text-danger-700 mt-0.5">
+                    <p className="text-sm font-medium text-danger-fg">Could not load this agreement.</p>
+                    <p className="text-xs text-danger-fg mt-0.5">
                       It may not exist, or you may not have permission to view it. Check the link and try again.
                     </p>
                   </div>
                 </div>
               ) : !agreement ? (
-                <p className="px-3 py-4 text-xs text-neutral-400 text-center">Loading agreement…</p>
+                <p className="px-3 py-4 text-xs text-fg-muted text-center">Loading agreement…</p>
               ) : (
-                <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
+                <div className="rounded-lg border border-line bg-surface-subtle px-4 py-3">
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-xs font-semibold text-primary-700">{agreement.number}</span>
                     <StatusBadge status={agreement.status as DocumentStatus} />
                   </div>
-                  <div className="text-sm text-neutral-700 mt-0.5">{agreement.title}</div>
-                  <div className="text-xs text-neutral-400 mt-0.5">{agreement.vendor_name}</div>
-                  <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-neutral-500">
+                  <div className="text-sm text-fg-secondary mt-0.5">{agreement.title}</div>
+                  <div className="text-xs text-fg-muted mt-0.5">{agreement.vendor_name}</div>
+                  <div className="mt-2 flex items-center justify-between gap-2 text-2xs text-fg-muted">
                     <span>
                       Consumed (pre-tax) {formatAmount(agreementConsumed, agreement.currency)}
                       {agreementCeiling !== null ? ` / NTE ${formatAmount(agreementCeiling, agreement.currency)}` : ' / No ceiling'}
                     </span>
                     {agreementOverCeiling && (
-                      <span className="inline-flex items-center gap-1 font-medium text-warning-700">
+                      <span className="inline-flex items-center gap-1 font-medium text-warning-fg">
                         <AlertTriangle className="h-3 w-3" /> Over ceiling — warning only
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-neutral-400 mt-2">
+                  <p className="text-2xs text-fg-muted mt-2">
                     No purchase order and no goods receipt on this route — the agreement is the
                     authorization and the matched invoice(s) below are the evidence.
                   </p>
@@ -1038,14 +1038,14 @@ function PoPaCreate() {
               )}
             </div>
           ) : (
-          <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-4">
-            <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">1</span>
+          <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-4">
+            <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-bold">1</span>
               {lockedFromSettle || (fromTask && !changingPo)
                 ? (isMultiPo ? 'Purchase Orders' : 'Purchase Order')
                 : 'Select Purchase Order(s)'}
               {selectedPos.length > 1 && (
-                <span className="ml-auto text-[11px] font-normal text-neutral-500">
+                <span className="ml-auto text-2xs font-normal text-fg-muted">
                   {selectedPos.length} POs on this payment
                 </span>
               )}
@@ -1053,40 +1053,40 @@ function PoPaCreate() {
 
             {lockedFromSettle ? (
               selectedPo ? (
-                <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
+                <div className="rounded-lg border border-line bg-surface-subtle px-4 py-3">
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-xs font-semibold text-primary-700">{selectedPo.number}</span>
-                    <span className="font-mono text-xs font-semibold text-neutral-900">{formatAmount(selectedPo.total, selectedPo.currency)}</span>
+                    <span className="font-mono text-xs font-semibold text-fg">{formatAmount(selectedPo.total, selectedPo.currency)}</span>
                   </div>
-                  <div className="text-sm text-neutral-700 mt-0.5">{selectedPo.title}</div>
-                  <div className="text-xs text-neutral-400 mt-0.5">{selectedPo.vendor_name}</div>
-                  <p className="text-[11px] text-neutral-400 mt-2">Locked — settling prepayment {sourcePrepay?.pa_number}.</p>
+                  <div className="text-sm text-fg-secondary mt-0.5">{selectedPo.title}</div>
+                  <div className="text-xs text-fg-muted mt-0.5">{selectedPo.vendor_name}</div>
+                  <p className="text-2xs text-fg-muted mt-2">Locked — settling prepayment {sourcePrepay?.pa_number}.</p>
                 </div>
               ) : (
-                <p className="px-3 py-4 text-xs text-neutral-400 text-center">Loading prepayment…</p>
+                <p className="px-3 py-4 text-xs text-fg-muted text-center">Loading prepayment…</p>
               )
             ) : fromTask && !changingPo && (selectedPo || posData === undefined) ? (
               selectedPo ? (
-                <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
+                <div className="rounded-lg border border-line bg-surface-subtle px-4 py-3">
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-xs font-semibold text-primary-700">{selectedPo.number}</span>
-                    <span className="font-mono text-xs font-semibold text-neutral-900">{formatAmount(selectedPo.total, selectedPo.currency)}</span>
+                    <span className="font-mono text-xs font-semibold text-fg">{formatAmount(selectedPo.total, selectedPo.currency)}</span>
                   </div>
-                  <div className="text-sm text-neutral-700 mt-0.5">{selectedPo.title}</div>
-                  <div className="text-xs text-neutral-400 mt-0.5">{selectedPo.vendor_name}</div>
+                  <div className="text-sm text-fg-secondary mt-0.5">{selectedPo.title}</div>
+                  <div className="text-xs text-fg-muted mt-0.5">{selectedPo.vendor_name}</div>
                   <div className="mt-2 flex items-center justify-between">
-                    <p className="text-[11px] text-neutral-400">Pre-filled from the linked PO.</p>
+                    <p className="text-2xs text-fg-muted">Pre-filled from the linked PO.</p>
                     <button
                       type="button"
                       onClick={() => setChangingPo(true)}
-                      className="text-[11px] font-medium text-primary-600 hover:text-primary-700 hover:underline"
+                      className="text-2xs font-medium text-primary-600 hover:text-primary-700 hover:underline"
                     >
                       Change or add POs
                     </button>
                   </div>
                 </div>
               ) : (
-                <p className="px-3 py-4 text-xs text-neutral-400 text-center">Loading purchase order…</p>
+                <p className="px-3 py-4 text-xs text-fg-muted text-center">Loading purchase order…</p>
               )
             ) : (
               <div className="flex flex-col gap-2">
@@ -1094,17 +1094,17 @@ function PoPaCreate() {
                   value={poSearch}
                   onChange={(e) => setPoSearch(e.target.value)}
                   placeholder="Search PO # or vendor…"
-                  className="h-9 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="h-9 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 />
-                <p className="text-[11px] text-neutral-400">
+                <p className="text-2xs text-fg-muted">
                   Tick every purchase order this payment settles. They must share a vendor
                   and a currency; the first one ticked is the primary PO.
                 </p>
-                <div className="rounded-lg border border-neutral-200 max-h-56 overflow-y-auto">
+                <div className="rounded-lg border border-line max-h-56 overflow-y-auto">
                   {posLoading ? (
-                    <p className="px-3 py-4 text-xs text-neutral-400 text-center">Loading…</p>
+                    <p className="px-3 py-4 text-xs text-fg-muted text-center">Loading…</p>
                   ) : filteredPos.length === 0 ? (
-                    <p className="px-3 py-4 text-xs text-neutral-400 text-center">No eligible POs found</p>
+                    <p className="px-3 py-4 text-xs text-fg-muted text-center">No eligible POs found</p>
                   ) : (
                     filteredPos.map((po) => {
                       const isChecked = selectedPoIds.includes(po.id)
@@ -1116,9 +1116,9 @@ function PoPaCreate() {
                         <label
                           key={po.id}
                           className={cn(
-                            'flex items-start gap-3 px-4 py-3 border-b border-neutral-100 last:border-0 transition-colors',
+                            'flex items-start gap-3 px-4 py-3 border-b border-line-subtle last:border-0 transition-colors',
                             blockedReason
-                              ? 'cursor-not-allowed bg-neutral-50 opacity-60'
+                              ? 'cursor-not-allowed bg-surface-subtle opacity-60'
                               : 'cursor-pointer hover:bg-primary-50',
                             isChecked && 'bg-primary-50',
                           )}
@@ -1128,27 +1128,27 @@ function PoPaCreate() {
                             checked={isChecked}
                             disabled={Boolean(blockedReason)}
                             onChange={() => !blockedReason && togglePo(po.id)}
-                            className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600 disabled:opacity-50"
+                            className="mt-0.5 h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600 disabled:opacity-50"
                           />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-2">
                               <span className="flex items-center gap-2 min-w-0">
                                 <span className="font-mono text-xs font-semibold text-primary-700">{po.number}</span>
                                 {isPrimary && selectedPoIds.length > 1 && (
-                                  <span className="shrink-0 inline-flex items-center rounded-full bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-700">
+                                  <span className="shrink-0 inline-flex items-center rounded-full bg-primary-100 px-1.5 py-0.5 text-2xs font-medium text-primary-700">
                                     Primary
                                   </span>
                                 )}
                                 {blockedReason && (
-                                  <span className="shrink-0 inline-flex items-center rounded-full bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600">
+                                  <span className="shrink-0 inline-flex items-center rounded-full bg-surface-strong px-1.5 py-0.5 text-2xs font-medium text-fg-secondary">
                                     {blockedReason}
                                   </span>
                                 )}
                               </span>
-                              <span className="font-mono text-xs font-semibold text-neutral-900">{formatAmount(po.total, po.currency)}</span>
+                              <span className="font-mono text-xs font-semibold text-fg">{formatAmount(po.total, po.currency)}</span>
                             </div>
-                            <div className="text-sm text-neutral-700 mt-0.5">{po.title}</div>
-                            <div className="text-xs text-neutral-400 mt-0.5">{po.vendor_name}</div>
+                            <div className="text-sm text-fg-secondary mt-0.5">{po.title}</div>
+                            <div className="text-xs text-fg-muted mt-0.5">{po.vendor_name}</div>
                           </div>
                         </label>
                       )
@@ -1156,9 +1156,9 @@ function PoPaCreate() {
                   )}
                 </div>
                 {isCrossDepartment && (
-                  <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2">
-                    <AlertTriangle className="h-4 w-4 text-warning-600 mt-0.5 shrink-0" />
-                    <p className="text-[11px] text-warning-800">
+                  <div className="flex items-start gap-2 rounded-lg border border-warning-line bg-warning-soft px-3 py-2">
+                    <AlertTriangle className="h-4 w-4 text-warning-fg mt-0.5 shrink-0" />
+                    <p className="text-2xs text-warning-fg">
                       These purchase orders belong to {spannedDepartments.size} different departments.
                       No single Department Manager or Director covers all of them, so those two steps
                       are skipped (shown struck through on the approval timeline with the reason) and
@@ -1169,17 +1169,17 @@ function PoPaCreate() {
                 )}
                 {selectedPos.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2">
-                    <span className="text-[11px] font-medium text-primary-700">On this payment:</span>
+                    <span className="text-2xs font-medium text-primary-700">On this payment:</span>
                     {selectedPos.map((p) => (
                       <span
                         key={p.id}
-                        className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 font-mono text-[11px] font-semibold text-primary-700 ring-1 ring-primary-200"
+                        className="inline-flex items-center gap-1 rounded-full bg-surface px-2 py-0.5 font-mono text-2xs font-semibold text-primary-700 ring-1 ring-primary-200"
                       >
                         {p.number}
                         <button
                           type="button"
                           onClick={() => togglePo(p.id)}
-                          className="text-primary-400 hover:text-danger-600"
+                          className="text-primary-400 hover:text-danger-fg"
                           aria-label={`Remove ${p.number} from this payment`}
                         >
                           ×
@@ -1195,24 +1195,24 @@ function PoPaCreate() {
 
           {/* ── Step 2 — Link Invoices / GRs + PA Type (PO mode only) ──────── */}
           {!isAgreementMode && selectedPo && (
-            <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-5">
-              <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">2</span>
+            <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-5">
+              <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-bold">2</span>
                 Link Invoices & Goods Receipts
               </h2>
 
               {/* Invoices multi-select */}
               <div className="flex flex-col gap-2">
-                <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
+                <p className="text-xs font-medium text-fg-secondary flex items-center gap-1.5">
                   <FileText className="h-3.5 w-3.5" /> Invoices for {isMultiPo ? 'these POs' : 'this PO'}
-                  <span className="text-neutral-400 font-normal">(select all that apply)</span>
+                  <span className="text-fg-muted font-normal">(select all that apply)</span>
                 </p>
                 {selectablePoInvoices.length === 0 ? (
                   <p className={cn(
                     'text-xs italic px-3 py-2 border rounded-lg',
                     invoiceRequiredMissing
-                      ? 'text-danger-700 border-danger-300 bg-danger-50 not-italic'
-                      : 'text-neutral-400 border-neutral-200 bg-neutral-50',
+                      ? 'text-danger-fg border-danger-line bg-danger-soft not-italic'
+                      : 'text-fg-muted border-line bg-surface-subtle',
                   )}>
                     {/* Three different facts, and telling them apart matters:
                         nothing has been invoiced yet, everything invoiced is
@@ -1237,7 +1237,7 @@ function PoPaCreate() {
                       />
                     </div>
                     {claimedLabel(docInvoices) && (
-                      <p className="text-[11px] text-neutral-400">{claimedLabel(docInvoices)}</p>
+                      <p className="text-2xs text-fg-muted">{claimedLabel(docInvoices)}</p>
                     )}
                   </div>
                 )}
@@ -1245,16 +1245,16 @@ function PoPaCreate() {
 
               {/* GRs multi-select */}
               <div className="flex flex-col gap-2">
-                <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
+                <p className="text-xs font-medium text-fg-secondary flex items-center gap-1.5">
                   <Package className="h-3.5 w-3.5" /> Goods / Service Receipts for {isMultiPo ? 'these POs' : 'this PO'}
-                  <span className="text-neutral-400 font-normal">(ticked automatically from the invoices above)</span>
+                  <span className="text-fg-muted font-normal">(ticked automatically from the invoices above)</span>
                 </p>
                 {poGrs.length === 0 ? (
-                  <p className="text-xs text-neutral-400 italic px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
+                  <p className="text-xs text-fg-muted italic px-3 py-2 border border-line rounded-lg bg-surface-subtle">
                     No goods receipts found for the selected PO(s) yet
                   </p>
                 ) : (
-                  <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-100">
+                  <div className="rounded-lg border border-line divide-y divide-line-subtle">
                     {poGrs.map((gr) => (
                       <label
                         key={gr.id}
@@ -1267,14 +1267,14 @@ function PoPaCreate() {
                           type="checkbox"
                           checked={selectedGrIds.has(gr.id)}
                           onChange={() => toggleGr(gr.id)}
-                          className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
+                          className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600"
                         />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-mono text-xs font-semibold text-primary-700">{gr.number}</span>
-                            <span className="text-xs capitalize text-neutral-600">{gr.status.replace(/_/g, ' ')}</span>
+                            <span className="text-xs capitalize text-fg-secondary">{gr.status.replace(/_/g, ' ')}</span>
                           </div>
-                          <div className="text-xs text-neutral-500 mt-0.5">
+                          <div className="text-xs text-fg-muted mt-0.5">
                             {gr.gr_type === 'physical' ? 'Physical' : 'Service'} · Received {formatDate(gr.received_at)}
                           </div>
                         </div>
@@ -1289,19 +1289,19 @@ function PoPaCreate() {
               ) : (<>
               {/* PO Line Items */}
               <div className="flex flex-col gap-2">
-                <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
+                <p className="text-xs font-medium text-fg-secondary flex items-center gap-1.5">
                   <CircleDot className="h-3.5 w-3.5" /> PO Line Items
-                  <span className="text-neutral-400 font-normal">(select items covered by this PA)</span>
+                  <span className="text-fg-muted font-normal">(select items covered by this PA)</span>
                 </p>
-                <div className="rounded-lg border border-neutral-200 overflow-hidden">
+                <div className="rounded-lg border border-line overflow-hidden">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="border-b border-neutral-200 bg-neutral-50">
+                      <tr className="border-b border-line bg-surface-subtle">
                         <th className="w-8 px-3 py-2"></th>
-                        <th className="px-3 py-2 text-left font-semibold text-neutral-500 uppercase tracking-wide">Description</th>
-                        <th className="px-3 py-2 text-right font-semibold text-neutral-500 uppercase tracking-wide w-20">Ordered</th>
-                        <th className="px-3 py-2 text-right font-semibold text-neutral-500 uppercase tracking-wide w-20">Received</th>
-                        <th className="px-3 py-2 text-right font-semibold text-neutral-500 uppercase tracking-wide w-28">Line Total</th>
+                        <th className="px-3 py-2 text-left font-semibold text-fg-muted uppercase tracking-wide">Description</th>
+                        <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-20">Ordered</th>
+                        <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-20">Received</th>
+                        <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-28">Line Total</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1311,10 +1311,10 @@ function PoPaCreate() {
                         // items sit in one anonymous list and the operator cannot
                         // tell what they are ticking.
                         ...(isMultiPo ? [(
-                          <tr key={`hdr-${po.id}`} className="bg-neutral-100/70">
+                          <tr key={`hdr-${po.id}`} className="bg-surface-sunken/70">
                             <td colSpan={5} className="px-3 py-1.5">
-                              <span className="font-mono text-[11px] font-semibold text-primary-700">{po.number}</span>
-                              <span className="ml-2 text-[11px] text-neutral-500">{po.title}</span>
+                              <span className="font-mono text-2xs font-semibold text-primary-700">{po.number}</span>
+                              <span className="ml-2 text-2xs text-fg-muted">{po.title}</span>
                             </td>
                           </tr>
                         )] : []),
@@ -1326,9 +1326,9 @@ function PoPaCreate() {
                           <tr
                             key={line.id}
                             className={cn(
-                              'border-b border-neutral-100 last:border-0 cursor-pointer hover:bg-primary-50 transition-colors',
+                              'border-b border-line-subtle last:border-0 cursor-pointer hover:bg-primary-50 transition-colors',
                               isSelected && 'bg-primary-50',
-                              idx % 2 === 1 && !isSelected && 'bg-neutral-50/50'
+                              idx % 2 === 1 && !isSelected && 'bg-surface-subtle/50'
                             )}
                             onClick={() => toggleLine(line.id)}
                           >
@@ -1338,25 +1338,25 @@ function PoPaCreate() {
                                 checked={isSelected}
                                 onChange={() => toggleLine(line.id)}
                                 onClick={(e) => e.stopPropagation()}
-                                className="h-3.5 w-3.5 rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
+                                className="h-3.5 w-3.5 rounded border-line-strong text-primary-600 focus:ring-primary-600"
                               />
                             </td>
                             <td className="px-3 py-2.5">
-                              <div className="text-neutral-800 font-medium">{line.description}</div>
-                              {line.material_id && <div className="text-neutral-400 font-mono mt-0.5">{line.material_id}</div>}
+                              <div className="text-fg font-medium">{line.description}</div>
+                              {line.material_id && <div className="text-fg-muted font-mono mt-0.5">{line.material_id}</div>}
                               <div className={cn(
-                                'inline-flex items-center gap-1 mt-0.5 text-[10px] font-medium',
-                                isReceived ? 'text-success-600' : 'text-neutral-400'
+                                'inline-flex items-center gap-1 mt-0.5 text-2xs font-medium',
+                                isReceived ? 'text-success-fg' : 'text-fg-muted'
                               )}>
-                                <span className={cn('h-1.5 w-1.5 rounded-full', isReceived ? 'bg-success-500' : 'bg-neutral-300')} />
+                                <span className={cn('h-1.5 w-1.5 rounded-full', isReceived ? 'bg-success-solid' : 'bg-surface-strong')} />
                                 {isReceived ? `Received (${receivedQty} ${line.unit})` : 'Not yet received'}
                               </div>
                             </td>
-                            <td className="px-3 py-2.5 text-right font-mono text-neutral-500">{formatQty(line.qty)} {line.unit}</td>
-                            <td className="px-3 py-2.5 text-right font-mono font-medium text-neutral-700">
+                            <td className="px-3 py-2.5 text-right font-mono text-fg-muted">{formatQty(line.qty)} {line.unit}</td>
+                            <td className="px-3 py-2.5 text-right font-mono font-medium text-fg-secondary">
                               {receivedQty > 0 ? `${receivedQty} ${line.unit}` : '—'}
                             </td>
-                            <td className="px-3 py-2.5 text-right font-mono font-semibold text-neutral-900">
+                            <td className="px-3 py-2.5 text-right font-mono font-semibold text-fg">
                               {formatAmount(line.line_total, po.currency)}
                             </td>
                           </tr>
@@ -1366,7 +1366,7 @@ function PoPaCreate() {
                     </tbody>
                   </table>
                   {selectedLineIds.size > 0 && (
-                    <div className="flex items-center justify-between px-4 py-2 border-t border-neutral-200 bg-primary-50">
+                    <div className="flex items-center justify-between px-4 py-2 border-t border-line bg-primary-50">
                       <span className="text-xs text-primary-700 font-medium">{selectedLineIds.size} line{selectedLineIds.size !== 1 ? 's' : ''} selected</span>
                       <span className="text-xs font-mono font-semibold text-primary-700">
                         {formatAmount(autoSubtotal, selectedPo.currency)}
@@ -1381,7 +1381,7 @@ function PoPaCreate() {
                   PO can only be paid via prepayment/settlement, a standard PO only
                   via a regular payment. Type is never a free-form user choice. */}
               <div className="flex flex-col gap-2">
-                <p className="text-xs font-medium text-neutral-600">Payment Type</p>
+                <p className="text-xs font-medium text-fg-secondary">Payment Type</p>
                 <div className="grid grid-cols-2 gap-3">
                   {(selectedPo.is_prepaid && !isMultiPo
                     ? [
@@ -1398,37 +1398,37 @@ function PoPaCreate() {
                       onClick={() => setPaType(opt.value)}
                       className={cn(
                         'rounded-xl border-2 p-3 text-left transition-all',
-                        paType === opt.value ? 'border-primary-600 bg-primary-50' : 'border-neutral-200 hover:border-neutral-300'
+                        paType === opt.value ? 'border-primary-600 bg-primary-50' : 'border-line hover:border-line-strong'
                       )}
                     >
-                      <p className={cn('text-sm font-semibold', paType === opt.value ? 'text-primary-700' : 'text-neutral-800')}>{opt.label}</p>
-                      <p className="text-xs text-neutral-500 mt-0.5">{opt.desc}</p>
+                      <p className={cn('text-sm font-semibold', paType === opt.value ? 'text-primary-700' : 'text-fg')}>{opt.label}</p>
+                      <p className="text-xs text-fg-muted mt-0.5">{opt.desc}</p>
                     </button>
                   ))}
                 </div>
                 {isMultiPo && selectedPos.some((p) => p.is_prepaid) && (
-                  <p className="text-[11px] text-neutral-500">
+                  <p className="text-2xs text-fg-muted">
                     A payment covering several POs is always a regular payment — prepayment and
                     settlement are raised against a single order. Un-tick the others to prepay one.
                   </p>
                 )}
 
                 {isSettlementType && !isAgreementMode && (
-                  <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 mt-1">
-                    <p className="text-xs text-amber-700 font-medium">
+                  <div className="flex flex-col gap-2 rounded-lg border border-warning-line bg-warning-soft p-4 mt-1">
+                    <p className="text-xs text-warning-fg font-medium">
                       Settlement reconciles a prepayment after delivery; it pays only the remaining balance (final invoice − prepaid).
                     </p>
                     <div className="flex flex-col gap-1">
-                      <label className="text-xs font-medium text-neutral-700">
-                        Original Prepayment PA <span className="text-danger-600">*</span>
+                      <label className="text-xs font-medium text-fg-secondary">
+                        Original Prepayment PA <span className="text-danger-fg">*</span>
                       </label>
                       <select
                         value={prepaymentPaId}
                         onChange={(e) => setPrepaymentPaId(e.target.value)}
                         disabled={lockedFromSettle}
                         className={cn(
-                          'h-9 w-full rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-500',
-                          submitted && !prepaymentPaId ? 'border-danger-400' : 'border-neutral-300'
+                          'h-9 w-full rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted',
+                          submitted && !prepaymentPaId ? 'border-danger-400' : 'border-line-strong'
                         )}
                       >
                         <option value="">Select a prepayment PA…</option>
@@ -1440,31 +1440,31 @@ function PoPaCreate() {
                         ))}
                       </select>
                       {linkablePrepayments.length === 0 && (
-                        <p className="text-[11px] text-neutral-400">No prepayment PAs found for this PO.</p>
+                        <p className="text-2xs text-fg-muted">No prepayment PAs found for this PO.</p>
                       )}
-                      <p className="text-[11px] text-neutral-400">
+                      <p className="text-2xs text-fg-muted">
                         The prepayment this {paType} reconciles. Auto-loaded from the selected PO.
                       </p>
                     </div>
                     {settlementPool.length > 1 && (
-                      <div className="flex flex-col gap-1 rounded-md border border-amber-200 bg-white px-3 py-2">
-                        <p className="text-xs font-medium text-neutral-700">
+                      <div className="flex flex-col gap-1 rounded-md border border-warning-line bg-surface px-3 py-2">
+                        <p className="text-xs font-medium text-fg-secondary">
                           This {paType} reconciles all {settlementPool.length} prepayments on this PO:
                         </p>
                         {settlementPool.map((p) => (
-                          <p key={p.id} className="text-xs text-neutral-600 flex justify-between gap-3">
+                          <p key={p.id} className="text-xs text-fg-secondary flex justify-between gap-3">
                             <span>{p.pa_number}{p.prepayment_pct != null ? ` · ${Number(p.prepayment_pct)}%` : ''}</span>
                             <span className="font-mono">{formatAmount(p.payment_amount, p.currency)}</span>
                           </p>
                         ))}
-                        <p className="text-xs font-semibold text-neutral-800 flex justify-between gap-3 border-t border-neutral-100 pt-1">
+                        <p className="text-xs font-semibold text-fg flex justify-between gap-3 border-t border-line-subtle pt-1">
                           <span>Total prepaid</span>
                           <span className="font-mono">{formatAmount(prepaidAmount, formCurrency)}</span>
                         </p>
                       </div>
                     )}
                     {unpaidStages.length > 0 && (
-                      <p className="text-[11px] text-danger-600">
+                      <p className="text-2xs text-danger-fg">
                         Prepayment {unpaidStages.map((p) => p.pa_number).join(', ')} on this PO is not paid yet.
                         Wait until it is paid, or cancel it, before settling — the settlement covers every prepayment on the PO.
                       </p>
@@ -1473,13 +1473,13 @@ function PoPaCreate() {
                 )}
 
                 {paType === 'prepayment' && (
-                  <div className="flex flex-col gap-3 rounded-lg border border-info-200 bg-info-50 p-4 mt-1">
-                    <div className="flex items-start gap-2 text-xs text-info-700">
+                  <div className="flex flex-col gap-3 rounded-lg border border-info-line bg-info-soft p-4 mt-1">
+                    <div className="flex items-start gap-2 text-xs text-info-fg">
                       <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                       Prepayment requires settlement after goods/services are received and the final invoice is matched.
                     </div>
                     {linkablePrepayments.length > 0 && (
-                      <p className="text-xs text-info-700">
+                      <p className="text-xs text-info-fg">
                         Already prepaid on this PO: {linkablePrepayments.map((p) =>
                           `${p.pa_number} (${Number(p.prepayment_pct ?? 0)}%, ${p.status})`).join(', ')}
                         {' '}— {priorPrepaidPct}% in total. This stage adds to it; all stages are
@@ -1488,8 +1488,8 @@ function PoPaCreate() {
                     )}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="flex flex-col gap-1">
-                        <label className="text-xs font-medium text-neutral-700">
-                          Prepayment % <span className="text-danger-600">*</span>
+                        <label className="text-xs font-medium text-fg-secondary">
+                          Prepayment % <span className="text-danger-fg">*</span>
                         </label>
                         <div className="relative">
                           <input
@@ -1498,15 +1498,15 @@ function PoPaCreate() {
                             onChange={(e) => setPrepaymentPct(e.target.value)}
                             className={cn(
                               'h-9 w-full pl-3 pr-8 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                              submitted && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100) ? 'border-danger-400' : 'border-neutral-300'
+                              submitted && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100) ? 'border-danger-400' : 'border-line-strong'
                             )}
                           />
-                          <span className="absolute right-3 top-2 text-sm text-neutral-400">%</span>
+                          <span className="absolute right-3 top-2 text-sm text-fg-muted">%</span>
                         </div>
                       </div>
                       <div className="flex flex-col gap-1">
-                        <label className="text-xs font-medium text-neutral-700">
-                          Expected Settlement Date <span className="text-danger-600">*</span>
+                        <label className="text-xs font-medium text-fg-secondary">
+                          Expected Settlement Date <span className="text-danger-fg">*</span>
                         </label>
                         <input
                           type="date"
@@ -1515,15 +1515,15 @@ function PoPaCreate() {
                           onChange={(e) => setExpectedSettlement(e.target.value)}
                           className={cn(
                             'h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                            submitted && (!expectedSettlement || settlementDateInvalid) ? 'border-danger-400' : 'border-neutral-300'
+                            submitted && (!expectedSettlement || settlementDateInvalid) ? 'border-danger-400' : 'border-line-strong'
                           )}
                         />
                         {submitted && settlementDateInvalid && (
-                          <p className="text-xs text-danger-600">Expected Settlement Date is not a valid date</p>
+                          <p className="text-xs text-danger-fg">Expected Settlement Date is not a valid date</p>
                         )}
                       </div>
                     </div>
-                    <p className="text-[11px] text-info-700">
+                    <p className="text-2xs text-info-fg">
                       Pre-tax = {prepayPctNum || 0}% × PO pre-tax {formatAmount(prepayBase, selectedPo.currency)}
                       {' '}= {formatAmount(prepayPretax, selectedPo.currency)}
                     </p>
@@ -1535,17 +1535,17 @@ function PoPaCreate() {
 
           {/* ── Step 2 (agreement mode) — Link Invoices only ────────────────── */}
           {isAgreementMode && (
-            <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-4">
-              <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">2</span>
+            <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-4">
+              <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-bold">2</span>
                 Link Invoices
               </h2>
               <div className="flex flex-col gap-2">
-                <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
+                <p className="text-xs font-medium text-fg-secondary flex items-center gap-1.5">
                   <FileText className="h-3.5 w-3.5" /> Invoices matched to this agreement
-                  <span className="text-neutral-400 font-normal">(select all that apply)</span>
+                  <span className="text-fg-muted font-normal">(select all that apply)</span>
                 </p>
-                <p className="text-[11px] text-neutral-400">
+                <p className="text-2xs text-fg-muted">
                   {agreement?.agreement_type === 'house_account' ? (
                     <>
                       No purchase order and no goods receipt on this route — the receipts attached
@@ -1561,7 +1561,7 @@ function PoPaCreate() {
                   )}
                 </p>
                 {selectableAgreementInvoices.length === 0 ? (
-                  <p className="text-xs text-neutral-400 italic px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
+                  <p className="text-xs text-fg-muted italic px-3 py-2 border border-line rounded-lg bg-surface-subtle">
                     {agreementInvoiceCandidates.length > 0
                       ? `Nothing left to pay on this agreement — ${claimedLabel(agreementInvoiceCandidates)}`
                       : 'No unpaid invoices matched to this agreement yet.'}
@@ -1575,7 +1575,7 @@ function PoPaCreate() {
                       enforceDueWindow={false}
                     />
                     {claimedLabel(agreementInvoiceCandidates) && (
-                      <p className="text-[11px] text-neutral-400">{claimedLabel(agreementInvoiceCandidates)}</p>
+                      <p className="text-2xs text-fg-muted">{claimedLabel(agreementInvoiceCandidates)}</p>
                     )}
                   </div>
                 )}
@@ -1588,16 +1588,16 @@ function PoPaCreate() {
 
           {/* ── Step 3 — Charge Breakdown & Details (shared by both modes) ─── */}
           {contextSelected && (
-            <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-5">
-              <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">3</span>
+            <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-5">
+              <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-bold">3</span>
                 Charge Breakdown & Details
               </h2>
 
               {/* Title */}
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-neutral-700">
-                  PA Title <span className="text-danger-600">*</span>
+                <label className="text-xs font-medium text-fg-secondary">
+                  PA Title <span className="text-danger-fg">*</span>
                 </label>
                 <input
                   type="text"
@@ -1606,23 +1606,23 @@ function PoPaCreate() {
                   placeholder="e.g. Monthly Cleaning Services — April 2026"
                   className={cn(
                     'h-10 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                    submitted && !title.trim() ? 'border-danger-400' : 'border-neutral-300'
+                    submitted && !title.trim() ? 'border-danger-400' : 'border-line-strong'
                   )}
                 />
                 {submitted && !title.trim() && (
-                  <p className="text-xs text-danger-600">PA Title is required</p>
+                  <p className="text-xs text-danger-fg">PA Title is required</p>
                 )}
               </div>
 
               {/* Charge breakdown */}
               <div className="flex flex-col gap-3">
-                <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Charge Breakdown ({formCurrency})</p>
+                <p className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">Charge Breakdown ({formCurrency})</p>
 
                 <div className="grid grid-cols-2 gap-3">
                   {/* Pre-tax */}
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-neutral-700">
-                      Pre-tax Amount <span className="text-danger-600">*</span>
+                    <label className="text-xs font-medium text-fg-secondary">
+                      Pre-tax Amount <span className="text-danger-fg">*</span>
                     </label>
                     <input
                       type="number" min={0} step={0.01}
@@ -1632,30 +1632,30 @@ function PoPaCreate() {
                       placeholder="0.00"
                       className={cn(
                         'h-10 px-3 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                        isPrepayment && 'bg-neutral-50 text-neutral-600',
-                        submitted && subtotalNum <= 0 ? 'border-danger-400' : 'border-neutral-300'
+                        isPrepayment && 'bg-surface-subtle text-fg-secondary',
+                        submitted && subtotalNum <= 0 ? 'border-danger-400' : 'border-line-strong'
                       )}
                     />
                     {isPrepayment && (
-                      <p className="text-[11px] text-neutral-400">Prepayment % × PO pre-tax — change the % to change it</p>
+                      <p className="text-2xs text-fg-muted">Prepayment % × PO pre-tax — change the % to change it</p>
                     )}
                     {submitted && subtotalNum <= 0 && (
-                      <p className="text-xs text-danger-600">Pre-tax amount is required</p>
+                      <p className="text-xs text-danger-fg">Pre-tax amount is required</p>
                     )}
                   </div>
 
                   {/* Tax */}
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-neutral-700">
-                      Tax Amount <span className="text-danger-600">*</span>
+                    <label className="text-xs font-medium text-fg-secondary">
+                      Tax Amount <span className="text-danger-fg">*</span>
                       {isPrepayment && !taxManuallyEdited && (
-                        <span className="ml-1.5 text-[10px] font-normal text-neutral-400">same share of the PO's tax</span>
+                        <span className="ml-1.5 text-2xs font-normal text-fg-muted">same share of the PO's tax</span>
                       )}
                       {!isPrepayment && !taxManuallyEdited && hasLinkedInvoices && (
-                        <span className="ml-1.5 text-[10px] font-normal text-neutral-400">from invoice</span>
+                        <span className="ml-1.5 text-2xs font-normal text-fg-muted">from invoice</span>
                       )}
                       {!isPrepayment && !taxManuallyEdited && !hasLinkedInvoices && formCurrency === 'CAD' && subtotalNum > 0 && (
-                        <span className="ml-1.5 text-[10px] font-normal text-neutral-400">{`${(paTaxRate * 100).toFixed(0)}% HST`}</span>
+                        <span className="ml-1.5 text-2xs font-normal text-fg-muted">{`${(paTaxRate * 100).toFixed(0)}% HST`}</span>
                       )}
                     </label>
                     <input
@@ -1665,38 +1665,38 @@ function PoPaCreate() {
                       placeholder="0.00"
                       className={cn(
                         'h-10 px-3 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                        submitted && (taxNum < 0 || taxMissing) ? 'border-danger-400' : 'border-neutral-300'
+                        submitted && (taxNum < 0 || taxMissing) ? 'border-danger-400' : 'border-line-strong'
                       )}
                     />
                   </div>
 
                   {/* Shipping */}
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-neutral-700">
+                    <label className="text-xs font-medium text-fg-secondary">
                       Shipping / Freight
-                      <span className="text-neutral-400 font-normal ml-1">(optional)</span>
+                      <span className="text-fg-muted font-normal ml-1">(optional)</span>
                     </label>
                     <input
                       type="number" min={0} step={0.01}
                       value={shippingAmount}
                       onChange={(e) => setShipping(e.target.value)}
                       placeholder="0.00"
-                      className="h-10 px-3 rounded-lg border border-neutral-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
+                      className="h-10 px-3 rounded-lg border border-line-strong text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
                     />
                   </div>
 
                   {/* Other charges */}
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-neutral-700">
+                    <label className="text-xs font-medium text-fg-secondary">
                       Other Charges
-                      <span className="text-neutral-400 font-normal ml-1">(optional)</span>
+                      <span className="text-fg-muted font-normal ml-1">(optional)</span>
                     </label>
                     <input
                       type="number" min={0} step={0.01}
                       value={otherCharges}
                       onChange={(e) => setOther(e.target.value)}
                       placeholder="0.00"
-                      className="h-10 px-3 rounded-lg border border-neutral-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
+                      className="h-10 px-3 rounded-lg border border-line-strong text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
                     />
                   </div>
                 </div>
@@ -1704,13 +1704,13 @@ function PoPaCreate() {
                 {/* Other charges description */}
                 {otherNum > 0 && (
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-neutral-700">Other Charges Description</label>
+                    <label className="text-xs font-medium text-fg-secondary">Other Charges Description</label>
                     <input
                       type="text"
                       value={otherChargesNote}
                       onChange={(e) => setOtherNote(e.target.value)}
                       placeholder="Describe the other charges…"
-                      className="h-9 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                      className="h-9 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                     />
                   </div>
                 )}
@@ -1718,7 +1718,7 @@ function PoPaCreate() {
                 {/* Prepayment applied (settlement / balance only) */}
                 {isSettlementType && (
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-neutral-700">
+                    <label className="text-xs font-medium text-fg-secondary">
                       Prepayment Applied (deducted)
                     </label>
                     <input
@@ -1726,13 +1726,13 @@ function PoPaCreate() {
                       value={prepaymentApplied}
                       onChange={(e) => { setPrepaymentApplied(e.target.value); setAppliedEdited(true) }}
                       placeholder="0.00"
-                      className="h-10 px-3 rounded-lg border border-neutral-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
+                      className="h-10 px-3 rounded-lg border border-line-strong text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
                     />
-                    <p className="text-[11px] text-neutral-400">
+                    <p className="text-2xs text-fg-muted">
                       Amount already paid via the prepayment PA. Net payable = total − this.
                     </p>
                     {isOverpaid && (
-                      <p className="text-xs text-warning-700">
+                      <p className="text-xs text-warning-fg">
                         Total prepaid {formatAmount(prepaidAmount, formCurrency)} exceeds the final amount — only
                         the final amount is applied, net payable is 0; a credit note is expected for the difference.
                       </p>
@@ -1744,29 +1744,29 @@ function PoPaCreate() {
                 <div className="flex flex-col gap-1 rounded-xl border-2 border-primary-200 bg-primary-50 px-5 py-3">
                   {isSettlementType && appliedNum > 0 && (
                     <>
-                      <div className="flex items-center justify-between text-xs text-neutral-500">
+                      <div className="flex items-center justify-between text-xs text-fg-muted">
                         <span>Gross total</span>
                         <span className="font-mono">{formatAmount(grossTotal, formCurrency)}</span>
                       </div>
-                      <div className="flex items-center justify-between text-xs text-neutral-500">
+                      <div className="flex items-center justify-between text-xs text-fg-muted">
                         <span>Prepayment applied</span>
                         <span className="font-mono">−{formatAmount(appliedNum, formCurrency)}</span>
                       </div>
                     </>
                   )}
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-neutral-700">
+                    <span className="text-sm font-semibold text-fg-secondary">
                       {isSettlementType ? 'Net Payable' : 'Total Payment Amount'}
                     </span>
                     <span className={cn(
                       'font-mono font-bold text-xl',
-                      netPayable > 0 ? 'text-primary-700' : 'text-neutral-300'
+                      netPayable > 0 ? 'text-primary-700' : 'text-fg-faint'
                     )}>
                       {netPayable > 0 ? formatAmount(netPayable, formCurrency) : formatAmount(0, formCurrency)}
                     </span>
                   </div>
                   {isReconcileOnly && (
-                    <p className="text-[11px] text-neutral-500 mt-1">
+                    <p className="text-2xs text-fg-muted mt-1">
                       Fully covered by the prepayment — <strong>no payment will be made</strong>. This only
                       reconciles the prepayment{isOverpaid ? ' (overpaid — finance will confirm the credit note)' : ''}.
                     </p>
@@ -1776,15 +1776,15 @@ function PoPaCreate() {
 
               {/* Notes */}
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-neutral-700">
-                  Notes <span className="text-neutral-400 font-normal">(optional)</span>
+                <label className="text-xs font-medium text-fg-secondary">
+                  Notes <span className="text-fg-muted font-normal">(optional)</span>
                 </label>
                 <textarea
                   rows={3}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Add any payment instructions or notes for the finance team…"
-                  className="px-3 py-2 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
+                  className="px-3 py-2 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
                 />
               </div>
             </div>
@@ -1793,26 +1793,26 @@ function PoPaCreate() {
           {/* Receipt gate — no matched, GR-backed invoice on this PO, or (with
               Collection Confirmation Required on) goods not collected yet */}
           {receiptBlocked && (
-            <div className="rounded-md border border-warning-300 bg-warning-50 px-4 py-3 flex flex-col gap-2">
+            <div className="rounded-md border border-warning-line bg-warning-soft px-4 py-3 flex flex-col gap-2">
               {blockedByCollection ? (
                 <>
-                  <p className="text-sm font-medium text-warning-800">
+                  <p className="text-sm font-medium text-warning-fg">
                     The goods for {uncollectedPos.map((p) => p.number).join(', ')} have not been collected yet.
                   </p>
-                  <p className="text-xs text-warning-700">
+                  <p className="text-xs text-warning-fg">
                     Collection Confirmation is required before a PA. The requester records it on the goods receipt.
                   </p>
                 </>
               ) : (
                 <>
-                  <p className="text-sm font-medium text-warning-800">No goods receipt linked to a matched invoice yet.</p>
-                  <p className="text-xs text-warning-700">
+                  <p className="text-sm font-medium text-warning-fg">No goods receipt linked to a matched invoice yet.</p>
+                  <p className="text-xs text-warning-fg">
                     A Payment Application normally requires goods to be received. Create a Goods Receipt first.
                   </p>
                 </>
               )}
               {canOverride && (
-                <label className="flex items-start gap-2 text-xs text-warning-800">
+                <label className="flex items-start gap-2 text-xs text-warning-fg">
                   <input
                     type="checkbox"
                     checked={receiptOverride}
@@ -1832,7 +1832,7 @@ function PoPaCreate() {
                   value={receiptOverrideReason}
                   onChange={(e) => setReceiptOverrideReason(e.target.value)}
                   placeholder="Reason for override"
-                  className="px-3 py-2 rounded-lg border border-warning-300 text-xs focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
+                  className="px-3 py-2 rounded-lg border border-warning-line text-xs focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
                 />
               )}
             </div>
@@ -1841,9 +1841,9 @@ function PoPaCreate() {
           {/* Errors — the form's own checks, then the server's refusal of the
               last Submit (shown here, not as a browser pop-up — ISS-0188) */}
           {shownErrors.length > 0 && (
-            <div role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 flex flex-col gap-1">
+            <div role="alert" className="rounded-lg border border-danger-line bg-danger-soft px-4 py-3 flex flex-col gap-1">
               {shownErrors.map((e) => (
-                <p key={e} className="text-xs text-danger-700 flex items-center gap-1.5">
+                <p key={e} className="text-xs text-danger-fg flex items-center gap-1.5">
                   <AlertTriangle className="h-3 w-3 shrink-0" /> {e}
                 </p>
               ))}
@@ -1868,11 +1868,11 @@ function PoPaCreate() {
 
         {/* ── Sidebar — Payment Summary ───────────────────────────────────────── */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sticky top-6">
-            <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-3">Payment Summary</p>
+          <div className="rounded-xl border border-line bg-surface p-4 shadow-sm sticky top-6">
+            <p className="text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-3">Payment Summary</p>
 
             {!contextSelected ? (
-              <p className="text-xs text-neutral-400 text-center py-4">
+              <p className="text-xs text-fg-muted text-center py-4">
                 {isAgreementMode
                   ? (agreementLoadError ? 'Agreement failed to load.' : 'Loading agreement…')
                   : 'Select a PO to see summary'}
@@ -1881,22 +1881,22 @@ function PoPaCreate() {
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1.5 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-neutral-500">Vendor</span>
-                    <span className="text-neutral-800 font-medium text-right max-w-[60%]">
+                    <span className="text-fg-muted">Vendor</span>
+                    <span className="text-fg font-medium text-right max-w-[60%]">
                       {isAgreementMode ? agreement?.vendor_name : selectedPo?.vendor_name}
                     </span>
                   </div>
                   {!isAgreementMode && selectedPos.length > 1 && (
                     <div className="flex justify-between">
-                      <span className="text-neutral-500">POs</span>
-                      <span className="font-mono text-[11px] text-neutral-800 text-right max-w-[60%]">
+                      <span className="text-fg-muted">POs</span>
+                      <span className="font-mono text-2xs text-fg text-right max-w-[60%]">
                         {selectedPos.map((p) => p.number).join(', ')}
                       </span>
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <span className="text-neutral-500">{isAgreementMode ? 'Agreement' : 'PO Total'}</span>
-                    <span className="font-mono font-semibold text-neutral-900">
+                    <span className="text-fg-muted">{isAgreementMode ? 'Agreement' : 'PO Total'}</span>
+                    <span className="font-mono font-semibold text-fg">
                       {isAgreementMode
                         ? agreement?.number
                         /* Sum across every PO on the payment — showing only the
@@ -1906,51 +1906,51 @@ function PoPaCreate() {
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-neutral-500">Invoices linked</span>
-                    <span className="text-neutral-700">{selectedInvoiceIds.size}</span>
+                    <span className="text-fg-muted">Invoices linked</span>
+                    <span className="text-fg-secondary">{selectedInvoiceIds.size}</span>
                   </div>
                   {!isAgreementMode && (
                     <div className="flex justify-between">
-                      <span className="text-neutral-500">GRs linked</span>
-                      <span className="text-neutral-700">{selectedGrIds.size}</span>
+                      <span className="text-fg-muted">GRs linked</span>
+                      <span className="text-fg-secondary">{selectedGrIds.size}</span>
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <span className="text-neutral-500">Type</span>
-                    <span className="text-neutral-700 capitalize">{paType}</span>
+                    <span className="text-fg-muted">Type</span>
+                    <span className="text-fg-secondary capitalize">{paType}</span>
                   </div>
                 </div>
 
                 {/* Charge breakdown in sidebar */}
                 {subtotalNum > 0 && (
-                  <div className="border-t border-neutral-200 pt-3 flex flex-col gap-1.5 text-xs">
-                    <div className="flex justify-between text-neutral-500">
+                  <div className="border-t border-line pt-3 flex flex-col gap-1.5 text-xs">
+                    <div className="flex justify-between text-fg-muted">
                       <span>Pre-tax</span>
                       <span className="font-mono">{formatAmount(subtotalNum, formCurrency)}</span>
                     </div>
-                    <div className="flex justify-between text-neutral-500">
+                    <div className="flex justify-between text-fg-muted">
                       <span>Tax</span>
                       <span className="font-mono">{formatAmount(taxNum, formCurrency)}</span>
                     </div>
                     {shippingNum > 0 && (
-                      <div className="flex justify-between text-neutral-500">
+                      <div className="flex justify-between text-fg-muted">
                         <span>Shipping</span>
                         <span className="font-mono">{formatAmount(shippingNum, formCurrency)}</span>
                       </div>
                     )}
                     {otherNum > 0 && (
-                      <div className="flex justify-between text-neutral-500">
+                      <div className="flex justify-between text-fg-muted">
                         <span>Other</span>
                         <span className="font-mono">{formatAmount(otherNum, formCurrency)}</span>
                       </div>
                     )}
                     {isSettlementType && appliedNum > 0 && (
-                      <div className="flex justify-between text-neutral-500">
+                      <div className="flex justify-between text-fg-muted">
                         <span>Prepayment applied</span>
                         <span className="font-mono">−{formatAmount(appliedNum, formCurrency)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between font-semibold text-neutral-800 border-t border-neutral-200 pt-1.5 mt-0.5">
+                    <div className="flex justify-between font-semibold text-fg border-t border-line pt-1.5 mt-0.5">
                       <span>{isSettlementType ? 'Net Payable' : 'Total'}</span>
                       <span className="font-mono">{formatAmount(netPayable, formCurrency)}</span>
                     </div>

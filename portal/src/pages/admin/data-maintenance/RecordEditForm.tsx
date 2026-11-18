@@ -143,14 +143,14 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+      <div className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-surface p-5 shadow-xl">
         <h3 className="mb-4 text-base font-semibold">Edit {schema.label} · {String(record[schema.number_field] ?? '')}</h3>
 
         <section className="mb-5 grid grid-cols-2 gap-3">
           {schema.fields.map((f) => (
             <div key={f.name}
               className={`flex flex-col gap-1${f.type === 'reference_list' ? ' col-span-2' : ''}`}>
-              <label className="text-xs font-medium text-neutral-600">{f.label}{!f.editable && ' (read-only)'}</label>
+              <label className="text-xs font-medium text-fg-secondary">{f.label}{!f.editable && ' (read-only)'}</label>
               {isRef(f) && f.editable ? (
                 <ReferencePicker system={schema.system} source={f.ref_source ?? ''}
                   valueLabel={refLabels[f.name] ?? ''} onPick={(h) => pickRef(f, h)} />
@@ -164,7 +164,7 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
               ) : f.type === 'enum' && f.options ? (
                 <select value={form[f.name] ?? ''} disabled={!f.editable}
                   onChange={(e) => setForm((p) => ({ ...p, [f.name]: e.target.value }))}
-                  className="h-9 rounded-lg border border-neutral-300 px-3 text-sm disabled:bg-neutral-100">
+                  className="h-9 rounded-lg border border-line-strong px-3 text-sm disabled:bg-surface-sunken">
                   {!f.options.includes(form[f.name]) && form[f.name] && <option value={form[f.name]}>{form[f.name]} (current)</option>}
                   {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
@@ -175,7 +175,7 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
               ) : (
                 <input value={form[f.name] ?? ''} disabled={!f.editable}
                   onChange={(e) => setForm((p) => ({ ...p, [f.name]: e.target.value }))}
-                  className="h-9 rounded-lg border border-neutral-300 px-3 text-sm disabled:bg-neutral-100" />
+                  className="h-9 rounded-lg border border-line-strong px-3 text-sm disabled:bg-surface-sunken" />
               )}
             </div>
           ))}
@@ -196,7 +196,7 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
         )}
 
         {subtotalShift && (
-          <div className="mb-5 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <div className="mb-5 rounded-lg border border-warning-line bg-warning-soft p-3 text-sm text-warning-fg">
             <p>
               These lines total <span className="font-mono font-semibold">{subtotalShift.to}</span>, but this PA's
               pre-tax amount is <span className="font-mono font-semibold">{subtotalShift.from}</span>.
@@ -218,9 +218,9 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
           </section>
         )}
 
-        {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+        {error && <p className="mt-1 text-xs text-danger-fg">{error}</p>}
         <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-100">Cancel</button>
+          <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-sunken">Cancel</button>
           <button onClick={save} disabled={saving || (subtotalShift != null && !acceptLineTotal)}
             className="rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50">
             {saving ? 'Saving…' : 'Save'}

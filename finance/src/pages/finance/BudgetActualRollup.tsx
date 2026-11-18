@@ -79,7 +79,7 @@ function presetRange(preset: Preset, now: number): [number, number] {
   return [1, now]
 }
 
-const selectCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const selectCls = 'h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win,
                                     onWindowChange, scope, onScopeChange,
@@ -147,20 +147,20 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
   const windowLabel = from === to ? MONTHS[from - 1] : `${MONTHS[from - 1]}–${MONTHS[to - 1]}`
 
   return (
-    <div className="mb-6 rounded-lg border border-neutral-200 bg-white">
+    <div className="mb-6 rounded-lg border border-line bg-surface">
       {/* controls */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2 border-b border-line-subtle px-3 py-2.5">
         <select value={fiscalYear} onChange={(e) => onFiscalYearChange(Number(e.target.value))}
                 className={selectCls}>
           {years.map((y) => <option key={y} value={y}>FY {y}</option>)}
         </select>
-        <div className="flex rounded-lg border border-neutral-300 p-0.5">
+        <div className="flex rounded-lg border border-line-strong p-0.5">
           {([['month', 'Month'], ['quarter', 'Quarter'], ['ytd', 'YTD'],
              ['custom', 'Custom']] as [Preset, string][]).map(([p, label]) => (
             <button key={p} onClick={() => choosePreset(p)}
                     className={cn('rounded-md px-2.5 py-1 text-xs font-medium',
                       'cursor-pointer transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600',
-                      preset === p ? 'bg-primary-600 text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100')}>
+                      preset === p ? 'bg-primary-600 text-white shadow-sm' : 'text-fg-secondary hover:bg-surface-sunken')}>
               {label}
             </button>
           ))}
@@ -174,7 +174,7 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
                     }}>
               {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
             </select>
-            <span className="text-xs text-neutral-400">to</span>
+            <span className="text-xs text-fg-muted">to</span>
             <select value={custom[1]} className={selectCls}
                     onChange={(e) => {
                       const next: [number, number] = [custom[0], Number(e.target.value)]
@@ -187,35 +187,35 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
         {/* NC counts a voucher once it is tallied (记账); a month still being
             closed reads nearly empty without this. Same toggle as Account
             Balance's, same rule (finance-api fiscal.status_filter). */}
-        <label className="ml-2 inline-flex cursor-pointer select-none items-center gap-1.5 text-xs text-neutral-700"
+        <label className="ml-2 inline-flex cursor-pointer select-none items-center gap-1.5 text-xs text-fg-secondary"
                title="Also count vouchers entered in NC but not yet tallied (记账). Discarded or deleted vouchers never count.">
           <input type="checkbox" checked={includeUnposted}
                  onChange={(e) => onIncludeUnpostedChange(e.target.checked)}
-                 className="h-3.5 w-3.5 cursor-pointer rounded border-neutral-300 accent-primary-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600" />
+                 className="h-3.5 w-3.5 cursor-pointer rounded border-line-strong accent-primary-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600" />
           Include unposted vouchers
         </label>
-        <span className="ml-auto text-xs text-neutral-400">
+        <span className="ml-auto text-xs text-fg-muted">
           {isFetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : `${windowLabel} ${fiscalYear}`}
         </span>
       </div>
       {includeUnposted && (
-        <p className="border-b border-amber-100 bg-amber-50 px-4 py-1.5 text-xs text-amber-800">
+        <p className="border-b border-warning-line bg-warning-soft px-4 py-1.5 text-xs text-warning-fg">
           Actual includes vouchers not yet tallied in NC — these figures can still change until the month is closed.
         </p>
       )}
 
       {!data ? (
-        <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
+        <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
       ) : (
         <>
           {/* company — clicking the header resets the composition to everything */}
           <button onClick={() => onScopeChange({ kind: 'company', key: '', label: 'All cost centres' })}
-                  className={cn('w-full cursor-pointer border-b border-neutral-100 px-4 py-2 text-left text-xs transition-colors',
+                  className={cn('w-full cursor-pointer border-b border-line-subtle px-4 py-2 text-left text-xs transition-colors',
                     scope?.kind === 'company' ? 'bg-primary-50/70 font-medium text-primary-800'
-                                              : 'text-neutral-500 hover:bg-neutral-50')}>
+                                              : 'text-fg-muted hover:bg-surface-subtle')}>
             Whole company — click for its composition
           </button>
-          <div className="grid grid-cols-2 gap-px bg-neutral-100 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-px bg-surface-sunken lg:grid-cols-4">
             {[
               { label: `Plan ${windowLabel}`, v: data.company.plan_period },
               { label: `Actual ${windowLabel}`, v: data.company.actual_period },
@@ -225,35 +225,35 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
               { label: 'Full-year plan', v: data.company.plan_full_year,
                 sub: `${pct(data.company.consumed_pct)} consumed` },
             ].map((c) => (
-              <div key={c.label} className="bg-white px-4 py-3.5">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">{c.label}</p>
+              <div key={c.label} className="bg-surface px-4 py-3.5">
+                <p className="text-2xs font-medium uppercase tracking-wide text-fg-muted">{c.label}</p>
                 <p className={cn('mt-1 font-mono text-xl font-semibold tabular-nums tracking-tight',
-                  c.bad ? 'text-danger-600' : 'text-neutral-900')}>{money(c.v)}</p>
-                {c.sub && <p className="mt-0.5 text-xs text-neutral-400">{c.sub}</p>}
+                  c.bad ? 'text-danger-fg' : 'text-fg')}>{money(c.v)}</p>
+                {c.sub && <p className="mt-0.5 text-xs text-fg-muted">{c.sub}</p>}
               </div>
             ))}
           </div>
 
           {/* tree */}
-          <div className="flex items-center gap-1 border-t border-neutral-100 px-3 py-2">
+          <div className="flex items-center gap-1 border-t border-line-subtle px-3 py-2">
             {([['centre', 'By expense centre'], ['department', 'By department']] as const)
               .map(([t, label]) => (
                 <button key={t} onClick={() => { setTab(t); setOpen(new Set()) }}
                         className={cn('rounded-md px-2.5 py-1 text-xs font-medium',
                           'cursor-pointer transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600',
-                          tab === t ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-100')}>
+                          tab === t ? 'bg-inverse text-white' : 'text-fg-muted hover:bg-surface-sunken')}>
                   {label}
                 </button>
               ))}
-            <span className="ml-2 text-xs text-neutral-400">
+            <span className="ml-2 text-xs text-fg-muted">
               Same cost centres, two ways in
             </span>
 
             {multiMonth && (
-              <label className="ml-auto inline-flex cursor-pointer select-none items-center gap-1.5 text-xs text-neutral-700">
+              <label className="ml-auto inline-flex cursor-pointer select-none items-center gap-1.5 text-xs text-fg-secondary">
                 <input type="checkbox" checked={expandMonths}
                        onChange={(e) => setExpandMonths(e.target.checked)}
-                       className="h-3.5 w-3.5 cursor-pointer rounded border-neutral-300 accent-primary-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600" />
+                       className="h-3.5 w-3.5 cursor-pointer rounded border-line-strong accent-primary-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600" />
                 Expand by months
               </label>
             )}
@@ -279,8 +279,8 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
               className={cn(
                 'inline-flex cursor-pointer items-center gap-1.5 rounded-lg border',
                 multiMonth ? 'ml-3' : 'ml-auto',
-                'border-neutral-300 px-2.5 py-1.5 text-xs font-medium text-neutral-700',
-                'transition-colors hover:bg-neutral-50',
+                'border-line-strong px-2.5 py-1.5 text-xs font-medium text-fg-secondary',
+                'transition-colors hover:bg-surface-subtle',
                 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600',
                 'disabled:cursor-not-allowed disabled:opacity-50')}>
               {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -289,14 +289,14 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
             </button>
           </div>
           {exportError && (
-            <p role="alert" className="px-3 pb-2 text-xs text-danger-600">{exportError}</p>
+            <p role="alert" className="px-3 pb-2 text-xs text-danger-fg">{exportError}</p>
           )}
 
           <div className="overflow-x-auto">
             <table className="w-full min-w-[60rem] text-sm"
                    style={months.length ? { minWidth: `${60 + months.length * 11}rem` } : undefined}>
               <thead className="sticky top-0 z-10">
-                <tr className="border-y border-neutral-200 bg-neutral-50/95 text-xs font-medium text-neutral-600 backdrop-blur">
+                <tr className="border-y border-line bg-surface-subtle/95 text-xs font-medium text-fg-secondary backdrop-blur">
                   <th className="px-3 py-2 text-left font-medium">
                     {tab === 'centre' ? 'Expense centre' : 'Department'}
                   </th>
@@ -304,11 +304,11 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
                     <MonthHeads key={m} month={m} first={i === 0} />
                   ))}
                   <th className={cn('px-3 py-2 text-right font-medium',
-                    months.length > 0 && 'border-l border-neutral-200')}>Plan {windowLabel}</th>
+                    months.length > 0 && 'border-l border-line')}>Plan {windowLabel}</th>
                   <th className="px-3 py-2 text-right font-medium">Actual {windowLabel}</th>
                   <th className="px-3 py-2 text-right font-medium">Variance</th>
                   <th className="px-3 py-2 text-right font-medium">%</th>
-                  <th className="border-l border-neutral-200 px-3 py-2 text-right font-medium">Full-year plan</th>
+                  <th className="border-l border-line px-3 py-2 text-right font-medium">Full-year plan</th>
                   <th className="px-3 py-2 text-right font-medium">Actual YTD</th>
                   <th className="px-3 py-2 text-right font-medium">Remaining</th>
                   <th className="px-3 py-2 text-right font-medium">Consumed</th>
@@ -322,45 +322,45 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
                 ))}
 
                 {/* Not a footnote — see the file header. */}
-                <tr className="border-t-2 border-neutral-200 bg-amber-50/40">
+                <tr className="border-t-2 border-line bg-warning-soft/40">
                   <td className="px-3 py-2">
                     <button onClick={() => setShowUnallocated((v) => !v)}
-                            className="flex cursor-pointer items-center gap-1 text-left text-neutral-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+                            className="flex cursor-pointer items-center gap-1 text-left text-fg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
                       <ChevronRight className={cn('h-3.5 w-3.5 motion-safe:transition-transform',
                         showUnallocated && 'rotate-90')} />
                       <span className="font-medium">Category-level (not allocated)</span>
                     </button>
-                    <p className="pl-5 text-xs text-neutral-500">
+                    <p className="pl-5 text-xs text-fg-muted">
                       Tracked by category, never spread over cost centres
                     </p>
                   </td>
                   <MonthActualOnly months={months} cells={data.unallocated.monthly} />
-                  <td className={cn('px-3 py-2 text-right text-neutral-400',
-                    months.length > 0 && 'border-l border-neutral-200')}>—</td>
+                  <td className={cn('px-3 py-2 text-right text-fg-muted',
+                    months.length > 0 && 'border-l border-line')}>—</td>
                   <td className="px-3 py-2 text-right font-mono">{money(data.unallocated.actual_period)}</td>
-                  <td colSpan={3} className="px-3 py-2 text-right text-neutral-400">—</td>
+                  <td colSpan={3} className="px-3 py-2 text-right text-fg-muted">—</td>
                   <td className="px-3 py-2 text-right font-mono">{money(data.unallocated.actual_ytd)}</td>
-                  <td colSpan={2} className="px-3 py-2 text-right text-neutral-400">—</td>
+                  <td colSpan={2} className="px-3 py-2 text-right text-fg-muted">—</td>
                 </tr>
                 {showUnallocated && data.unallocated.breakdown.map((b) => (
-                  <tr key={b.key} className="border-t border-neutral-100 bg-amber-50/30 text-neutral-600">
+                  <tr key={b.key} className="border-t border-line-subtle bg-warning-soft/30 text-fg-secondary">
                     <td className="py-1.5 pl-10 pr-3 text-xs">
                       <button onClick={() => setDrillBucket({ key: b.key, label: b.label })}
                               className="cursor-pointer text-left hover:text-primary-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
                         {b.label}
                       </button>
                       <button onClick={() => setDrillBucket({ key: b.key, label: b.label })}
-                              className="ml-2 cursor-pointer rounded text-[11px] font-medium text-[#085E5E] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+                              className="ml-2 cursor-pointer rounded text-2xs font-medium text-primary-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
                         Vouchers
                       </button>
                     </td>
                     <MonthActualOnly months={months} cells={b.monthly} small />
-                    <td className={cn('px-3 py-1.5 text-right text-neutral-300',
-                      months.length > 0 && 'border-l border-neutral-200')}>—</td>
+                    <td className={cn('px-3 py-1.5 text-right text-fg-faint',
+                      months.length > 0 && 'border-l border-line')}>—</td>
                     <td className="px-3 py-1.5 text-right font-mono text-xs">{money(b.actual_period)}</td>
-                    <td colSpan={3} className="px-3 py-1.5 text-right text-neutral-300">—</td>
+                    <td colSpan={3} className="px-3 py-1.5 text-right text-fg-faint">—</td>
                     <td className="px-3 py-1.5 text-right font-mono text-xs">{money(b.actual_ytd)}</td>
-                    <td colSpan={2} className="px-3 py-1.5 text-right text-neutral-300">—</td>
+                    <td colSpan={2} className="px-3 py-1.5 text-right text-fg-faint">—</td>
                   </tr>
                 ))}
               </tbody>
@@ -368,7 +368,7 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
                 {/* The report's own proof: placed + unallocated == everything
                     posted in the window. A summary whose parts do not add to the
                     whole is what this page was rebuilt to stop being. */}
-                <tr className="border-t-2 border-neutral-300 bg-neutral-50 font-semibold">
+                <tr className="border-t-2 border-line-strong bg-surface-subtle font-semibold">
                   <td className="px-3 py-2">Total actual {windowLabel}</td>
                   <MonthActualOnly months={months} cells={data.reconciliation.total_monthly} />
                   {/* No plan figure beside this total on purpose: the plan
@@ -376,12 +376,12 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
                       includes the category-level items, which are not budgeted
                       at all. Printing them side by side reads as a 12M overrun
                       that does not exist. The company plan is in the card above. */}
-                  <td className={cn('px-3 py-2 text-right text-neutral-300',
-                    months.length > 0 && 'border-l border-neutral-200')}>—</td>
+                  <td className={cn('px-3 py-2 text-right text-fg-faint',
+                    months.length > 0 && 'border-l border-line')}>—</td>
                   <td className="px-3 py-2 text-right font-mono">
                     {money(data.reconciliation.total_actual_period)}
                   </td>
-                  <td colSpan={6} className="px-3 py-2 text-xs font-normal text-neutral-400">
+                  <td colSpan={6} className="px-3 py-2 text-xs font-normal text-fg-muted">
                     = {money(data.reconciliation.placed_actual_period)} in cost centres
                     + {money(data.reconciliation.unallocated_actual_period)} category-level
                   </td>
@@ -416,7 +416,7 @@ function Row({ node, isOpen, onToggle, tab, months, scope, onScopeChange }: {
   const selected = scope?.kind === kind && scope.key === node.code
   return (
     <>
-      <tr className={cn('border-t border-neutral-100 transition-colors hover:bg-neutral-50',
+      <tr className={cn('border-t border-line-subtle transition-colors hover:bg-surface-subtle',
         selected && 'bg-primary-50/70 hover:bg-primary-50/70')}>
         <td className="px-3 py-2">
           <span className="flex items-center gap-1">
@@ -424,14 +424,14 @@ function Row({ node, isOpen, onToggle, tab, months, scope, onScopeChange }: {
                 below. Two separate targets, because "show me the cost centres"
                 and "show me what this is made of" are different questions. */}
             <button onClick={onToggle} aria-label="Expand rows"
-                    className="shrink-0 cursor-pointer rounded p-0.5 hover:bg-neutral-200/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
-              <ChevronRight className={cn('h-3.5 w-3.5 text-neutral-400 transition-transform',
+                    className="shrink-0 cursor-pointer rounded p-0.5 hover:bg-surface-strong/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+              <ChevronRight className={cn('h-3.5 w-3.5 text-fg-muted transition-transform',
                 isOpen && 'rotate-90')} />
             </button>
             <button onClick={() => onScopeChange({ kind, key: node.code, label: node.label })}
                     className="cursor-pointer rounded text-left transition-colors hover:text-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
-              <span className="font-medium text-neutral-800">{node.label}</span>
-              {node.code && <span className="ml-1.5 font-mono text-xs text-neutral-400">{node.code}</span>}
+              <span className="font-medium text-fg">{node.label}</span>
+              {node.code && <span className="ml-1.5 font-mono text-xs text-fg-muted">{node.code}</span>}
             </button>
           </span>
         </td>
@@ -439,7 +439,7 @@ function Row({ node, isOpen, onToggle, tab, months, scope, onScopeChange }: {
       </tr>
       {isOpen && node.children.map((c) => (
         <tr key={c.cost_center_id}
-            className={cn('border-t border-neutral-100 bg-neutral-50/40 text-neutral-600',
+            className={cn('border-t border-line-subtle bg-surface-subtle/40 text-fg-secondary',
               scope?.kind === 'cost_centre' && scope.key === c.cost_center_code && 'bg-primary-50/70')}>
           <td className="border-l-2 border-primary-200 py-1.5 pl-9 pr-3">
             <button className="cursor-pointer rounded text-left transition-colors hover:text-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
@@ -451,7 +451,7 @@ function Row({ node, isOpen, onToggle, tab, months, scope, onScopeChange }: {
             {/* In the department tree, say which expense centre a cost centre
                 belongs to — that is exactly what the department spans. */}
             {tab === 'department' && (
-              <span className="ml-1.5 rounded bg-neutral-200/70 px-1.5 py-0.5 text-[10px] text-neutral-600">
+              <span className="ml-1.5 rounded bg-surface-strong/70 px-1.5 py-0.5 text-2xs text-fg-secondary">
                 {c.expense_centre}
               </span>
             )}
@@ -466,8 +466,8 @@ function Row({ node, isOpen, onToggle, tab, months, scope, onScopeChange }: {
 function MonthHeads({ month, first }: { month: number; first: boolean }) {
   return (
     <>
-      <th className={cn('whitespace-nowrap px-3 py-2 text-right font-medium text-neutral-500',
-        !first && 'border-l border-neutral-100')}>{MONTHS[month - 1]} plan</th>
+      <th className={cn('whitespace-nowrap px-3 py-2 text-right font-medium text-fg-muted',
+        !first && 'border-l border-line-subtle')}>{MONTHS[month - 1]} plan</th>
       <th className="whitespace-nowrap px-3 py-2 text-right font-medium">{MONTHS[month - 1]} actual</th>
     </>
   )
@@ -484,7 +484,7 @@ function MonthActualOnly({ months, cells, small }: {
     <>
       {months.map((m, i) => (
         <MonthPair key={m} first={i === 0}
-                   plan={<span className="text-neutral-300">—</span>}
+                   plan={<span className="text-fg-faint">—</span>}
                    actual={money(by.get(m)?.actual ?? null)} cls={cls} />
       ))}
     </>
@@ -496,7 +496,7 @@ function MonthPair({ plan, actual, cls, first }: {
 }) {
   return (
     <>
-      <td className={cn(cls, 'text-neutral-500', !first && 'border-l border-neutral-100')}>{plan}</td>
+      <td className={cn(cls, 'text-fg-muted', !first && 'border-l border-line-subtle')}>{plan}</td>
       <td className={cls}>{actual}</td>
     </>
   )
@@ -518,22 +518,22 @@ function Cells({ m, overspent, months, small }: {
                    plan={money(by.get(mo)?.plan ?? null)}
                    actual={money(by.get(mo)?.actual ?? null)} />
       ))}
-      <td className={cn(cls, 'text-neutral-500', months.length > 0 && 'border-l border-neutral-200')}>
+      <td className={cn(cls, 'text-fg-muted', months.length > 0 && 'border-l border-line')}>
         {money(m.plan_period)}
       </td>
       <td className={cls}>{money(m.actual_period)}</td>
-      <td className={cn(cls, overspent && 'text-danger-600 font-semibold')}>
+      <td className={cn(cls, overspent && 'text-danger-fg font-semibold')}>
         {money(m.variance_period)}
       </td>
-      <td className={cn(cls, 'text-neutral-500')}>{pct(m.variance_period_pct)}</td>
-      <td className={cn(cls, 'border-l border-neutral-200 text-neutral-500')}>
+      <td className={cn(cls, 'text-fg-muted')}>{pct(m.variance_period_pct)}</td>
+      <td className={cn(cls, 'border-l border-line text-fg-muted')}>
         {money(m.plan_full_year)}
       </td>
       <td className={cls}>{money(m.actual_ytd)}</td>
-      <td className={cn(cls, Number(m.remaining_full_year) < 0 && 'text-danger-600')}>
+      <td className={cn(cls, Number(m.remaining_full_year) < 0 && 'text-danger-fg')}>
         {money(m.remaining_full_year)}
       </td>
-      <td className={cn(cls, 'text-neutral-500')}>{pct(m.consumed_pct)}</td>
+      <td className={cn(cls, 'text-fg-muted')}>{pct(m.consumed_pct)}</td>
     </>
   )
 }

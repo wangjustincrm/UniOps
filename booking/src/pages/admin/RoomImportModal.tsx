@@ -51,27 +51,27 @@ export function RoomImportModal({ onClose }: Props) {
 
   const modal = (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-xl border border-neutral-200 bg-white shadow-xl">
+      <div className="w-full max-w-lg rounded-xl border border-line bg-surface shadow-xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200">
-          <h2 className="text-base font-semibold text-neutral-900">Import Rooms from Excel</h2>
-          <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-600">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-line">
+          <h2 className="text-base font-semibold text-fg">Import Rooms from Excel</h2>
+          <button type="button" onClick={onClose} className="text-fg-muted hover:text-fg-secondary">
             <XIcon className="h-5 w-5" />
           </button>
         </div>
 
         <div className="px-6 py-4 space-y-4">
           {/* Template hint */}
-          <div className="rounded-md border border-neutral-200 bg-neutral-50 p-3">
-            <p className="text-xs font-semibold text-neutral-600 mb-1.5">Expected columns (in any order):</p>
+          <div className="rounded-md border border-line bg-surface-subtle p-3">
+            <p className="text-xs font-semibold text-fg-secondary mb-1.5">Expected columns (in any order):</p>
             <div className="flex flex-wrap gap-1.5">
               {EXPECTED_COLUMNS.map((col) => (
-                <span key={col} className="inline-flex items-center rounded-md bg-white border border-neutral-200 px-2 py-0.5 text-xs text-neutral-700 font-mono">
+                <span key={col} className="inline-flex items-center rounded-md bg-surface border border-line px-2 py-0.5 text-xs text-fg-secondary font-mono">
                   {col}
                 </span>
               ))}
             </div>
-            <p className="mt-2 text-xs text-neutral-500">
+            <p className="mt-2 text-xs text-fg-muted">
               <strong>room_type</strong> must be one of: standard, training, boardroom, multi_function.
               Times in HH:MM format. <strong>capacity</strong> must be a positive integer.
             </p>
@@ -89,11 +89,11 @@ export function RoomImportModal({ onClose }: Props) {
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              className="w-full flex flex-col items-center gap-2 rounded-lg border-2 border-dashed border-neutral-300 px-4 py-6 text-sm text-neutral-500 hover:border-[#085E5E]/40 hover:text-[#085E5E] transition-colors"
+              className="w-full flex flex-col items-center gap-2 rounded-lg border-2 border-dashed border-line-strong px-4 py-6 text-sm text-fg-muted hover:border-primary-700/40 hover:text-primary-700 transition-colors"
             >
-              <FileSpreadsheet className="h-8 w-8 text-neutral-300" />
+              <FileSpreadsheet className="h-8 w-8 text-fg-faint" />
               {file ? (
-                <span className="font-medium text-neutral-700">{file.name}</span>
+                <span className="font-medium text-fg-secondary">{file.name}</span>
               ) : (
                 <span>Click to select an .xlsx file</span>
               )}
@@ -102,7 +102,7 @@ export function RoomImportModal({ onClose }: Props) {
 
           {/* Error from mutation */}
           {importMut.error && (
-            <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+            <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
               <AlertCircle className="h-4 w-4 shrink-0" />
               {importMut.error.message}
             </div>
@@ -111,18 +111,18 @@ export function RoomImportModal({ onClose }: Props) {
           {/* Result */}
           {result && (
             <div className="space-y-2">
-              <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              <div className="flex items-center gap-2 rounded-md border border-success-line bg-success-soft px-3 py-2 text-sm text-success-fg">
                 <CheckCircle2 className="h-4 w-4 shrink-0" />
                 {result.created} room{result.created !== 1 ? 's' : ''} imported successfully.
               </div>
               {result.errors.length > 0 && (
-                <div className="rounded-md border border-red-200 bg-red-50 p-3">
-                  <p className="text-xs font-semibold text-red-700 mb-1.5">
+                <div className="rounded-md border border-danger-line bg-danger-soft p-3">
+                  <p className="text-xs font-semibold text-danger-fg mb-1.5">
                     {result.errors.length} row{result.errors.length !== 1 ? 's' : ''} failed:
                   </p>
                   <ul className="space-y-0.5 max-h-40 overflow-y-auto">
                     {result.errors.map((e, i) => (
-                      <li key={i} className="text-xs text-red-600">
+                      <li key={i} className="text-xs text-danger-fg">
                         Row {e.row}: {e.message}
                       </li>
                     ))}
@@ -134,11 +134,11 @@ export function RoomImportModal({ onClose }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 px-6 py-4 border-t border-neutral-200">
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-line">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-neutral-300 px-4 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+            className="rounded-md border border-line-strong px-4 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle"
           >
             Close
           </button>
@@ -146,7 +146,7 @@ export function RoomImportModal({ onClose }: Props) {
             type="button"
             onClick={handleUpload}
             disabled={!file || importMut.isPending}
-            className="inline-flex items-center gap-1.5 rounded-md bg-[#085E5E] px-4 py-1.5 text-sm font-semibold text-white hover:bg-[#085E5E]/90 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-primary-700/90 disabled:opacity-50"
           >
             {importMut.isPending ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

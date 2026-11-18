@@ -63,8 +63,8 @@ const toISO = (date: string, time: string) => zonedToISO(date, time)
 // ── Form UI helpers (mirrors BookingCreatePage style) ─────────────────────────
 
 const inputCls =
-  'w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm ' +
-  'outline-none focus:border-[#085E5E]/60 focus:ring-1 focus:ring-[#085E5E]/30'
+  'w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm ' +
+  'outline-none focus:border-primary-700/60 focus:ring-1 focus:ring-primary-700/30'
 
 function Field({ label, required, children, hint }: {
   label: string
@@ -74,11 +74,11 @@ function Field({ label, required, children, hint }: {
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-neutral-700">
-        {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+      <label className="block text-sm font-medium text-fg-secondary">
+        {label}{required && <span className="text-danger-fg ml-0.5">*</span>}
       </label>
       <div className="mt-1">{children}</div>
-      {hint && <p className="mt-1 text-xs text-neutral-500">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-fg-muted">{hint}</p>}
     </div>
   )
 }
@@ -86,7 +86,7 @@ function Field({ label, required, children, hint }: {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">{title}</h2>
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-fg-muted">{title}</h2>
       <div className="space-y-4">{children}</div>
     </section>
   )
@@ -102,20 +102,20 @@ interface OccurrenceConflict {
 function OccurrenceConflictList({ items }: { items: OccurrenceConflict[] }) {
   if (items.length === 0) return null
   return (
-    <div className="rounded-md border border-red-200 bg-red-50 p-4 space-y-3">
-      <div className="flex items-center gap-2 text-sm font-medium text-red-700">
+    <div className="rounded-md border border-danger-line bg-danger-soft p-4 space-y-3">
+      <div className="flex items-center gap-2 text-sm font-medium text-danger-fg">
         <AlertCircle className="h-4 w-4 shrink-0" />
         Conflicts on the following dates:
       </div>
       <ul className="space-y-2">
         {items.map((oc) => (
-          <li key={oc.date} className="text-sm text-red-600">
+          <li key={oc.date} className="text-sm text-danger-fg">
             <span className="font-medium">{formatDate(oc.date)}:</span>{' '}
             {oc.conflicts.map((c) => c.title).join(', ')}
           </li>
         ))}
       </ul>
-      <p className="text-xs text-red-500">
+      <p className="text-xs text-danger-fg">
         Please choose a different time or room that is free on all dates.
       </p>
     </div>
@@ -381,12 +381,12 @@ export default function BookingEditPage() {
     return (
       <div className="h-full overflow-y-auto">
         <div className="mx-auto max-w-2xl px-4 py-6">
-          <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4" />
             Booking not found.
           </div>
           <BackLink to="/my"
-            className="mt-4 flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700"
+            className="mt-4 flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg-secondary"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to My Bookings
@@ -399,7 +399,7 @@ export default function BookingEditPage() {
   // ── Render: loading ──────────────────────────────────────────────────────────
   if (!booking || !formInitialised) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-neutral-500">
+      <div className="flex h-full items-center justify-center text-sm text-fg-muted">
         <Loader2 className="h-4 w-4 animate-spin mr-2" />
         Loading booking…
       </div>
@@ -413,7 +413,7 @@ export default function BookingEditPage() {
       <div className="mx-auto max-w-2xl px-4 py-6 sm:px-6 space-y-6">
         {/* Back nav */}
         <BackLink to="/my"
-          className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 transition-colors"
+          className="flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg-secondary transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to My Bookings
@@ -421,8 +421,8 @@ export default function BookingEditPage() {
 
         {/* Page title */}
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Edit Booking</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <h1 className="text-2xl font-bold text-fg">Edit Booking</h1>
+          <p className="mt-1 text-sm text-fg-muted">
             {isSeries
               ? 'Update details for your recurring series.'
               : 'Update details, time, or room. Attendees will receive an updated invite.'}
@@ -431,7 +431,7 @@ export default function BookingEditPage() {
 
         {/* Series mode banner */}
         {isSeries && (
-          <div className="flex items-start gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+          <div className="flex items-start gap-3 rounded-md border border-info-line bg-info-soft px-4 py-3 text-sm text-info-fg">
             <Info className="h-4 w-4 shrink-0 mt-0.5" />
             <span>
               You are editing the entire series — changes apply to all upcoming occurrences.
@@ -441,7 +441,7 @@ export default function BookingEditPage() {
         )}
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm space-y-6">
+        <form onSubmit={handleSubmit} className="rounded-xl border border-line bg-surface p-6 shadow-sm space-y-6">
           <Section title="Details">
             <Field label="Title" required>
               <input
@@ -534,13 +534,13 @@ export default function BookingEditPage() {
           {!isSeries && hasWindow && formInitialised && (
             <div>
               {precheck.isPending && (
-                <div className="flex items-center gap-2 text-xs text-neutral-500">
+                <div className="flex items-center gap-2 text-xs text-fg-muted">
                   <Loader2 className="h-3 w-3 animate-spin" />
                   Checking availability…
                 </div>
               )}
               {!precheck.isPending && precheckAvailable && !conflictResult && (
-                <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                <div className="flex items-center gap-2 rounded-md border border-success-line bg-success-soft px-3 py-2 text-sm text-success-fg">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
                   Room is available for the selected time.
                 </div>
@@ -581,7 +581,7 @@ export default function BookingEditPage() {
 
           {/* Form error */}
           {formError && (
-            <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+            <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
               <AlertCircle className="h-4 w-4 shrink-0" />
               {formError}
             </div>
@@ -592,7 +592,7 @@ export default function BookingEditPage() {
             <button
               type="button"
               onClick={() => navigate('/my')}
-              className="rounded-md border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+              className="rounded-md border border-line-strong px-4 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
             >
               Cancel
             </button>
@@ -602,8 +602,8 @@ export default function BookingEditPage() {
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold transition-colors',
                 canSubmit
-                  ? 'bg-[#085E5E] text-white hover:bg-[#074f4f]'
-                  : 'bg-neutral-100 text-neutral-400 cursor-not-allowed',
+                  ? 'bg-primary-700 text-white hover:bg-[#074f4f]'
+                  : 'bg-surface-sunken text-fg-muted cursor-not-allowed',
               )}
             >
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}

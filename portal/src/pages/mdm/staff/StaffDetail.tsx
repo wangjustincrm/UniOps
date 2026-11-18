@@ -26,8 +26,8 @@ interface Detail extends StaffRow {
 function Line({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <dt className="text-xs text-neutral-500">{label}</dt>
-      <dd className="text-sm text-neutral-800">{children || '—'}</dd>
+      <dt className="text-xs text-fg-muted">{label}</dt>
+      <dd className="text-sm text-fg">{children || '—'}</dd>
     </div>
   )
 }
@@ -65,7 +65,7 @@ export default function StaffDetail() {
     } catch (err) { setError((err as Error).message) } finally { setBusy(false) }
   }
 
-  if (!e) return <StaffShell permission="employee.view"><p className="text-sm text-neutral-400">Loading…</p></StaffShell>
+  if (!e) return <StaffShell permission="employee.view"><p className="text-sm text-fg-muted">Loading…</p></StaffShell>
 
   const editable = can('employee.edit')
   const pending: { department_id?: string | null; notes?: string } = {}
@@ -91,12 +91,12 @@ export default function StaffDetail() {
 
   return (
     <StaffShell permission="employee.view">
-      <Link to="/mdm/staff" className="mb-3 inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-800">
+      <Link to="/mdm/staff" className="mb-3 inline-flex items-center gap-1 text-sm text-fg-muted hover:text-fg">
         <ArrowLeft className="h-4 w-4" />Staff
       </Link>
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold text-neutral-900">{e.display_name}</h1>
-        <span className="font-mono text-sm text-neutral-500">{e.employee_number}</span>
+        <h1 className="text-xl font-semibold text-fg">{e.display_name}</h1>
+        <span className="font-mono text-sm text-fg-muted">{e.employee_number}</span>
         <StatusPill status={e.status} />
         <div className="ml-auto flex gap-2">
           {admin && !e.user && e.status !== 'left' && (
@@ -110,13 +110,13 @@ export default function StaffDetail() {
         </div>
       </div>
 
-      {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-3 text-sm text-danger-fg">{error}</p>}
 
       {leaving && (
-        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 bg-white p-3">
-          <label className="text-sm text-neutral-700">Left on <input type="date" className={`${INPUT} ml-1`} value={leftOn} onChange={(ev) => setLeftOn(ev.target.value)} /></label>
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface p-3">
+          <label className="text-sm text-fg-secondary">Left on <input type="date" className={`${INPUT} ml-1`} value={leftOn} onChange={(ev) => setLeftOn(ev.target.value)} /></label>
           {e.user?.is_active && (
-            <label className="flex items-center gap-1.5 text-sm text-neutral-700">
+            <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
               <input type="checkbox" checked={deactivate} onChange={(ev) => setDeactivate(ev.target.checked)} />
               Also deactivate their user ({e.user.email})
             </label>
@@ -127,7 +127,7 @@ export default function StaffDetail() {
       )}
 
       {correcting && (
-        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 bg-white p-3">
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface p-3">
           <input className={INPUT} placeholder="New number (six digits)" value={number} onChange={(ev) => setNumber(ev.target.value)} />
           <input className={`${INPUT} min-w-64`} placeholder="Reason" value={reason} onChange={(ev) => setReason(ev.target.value)} />
           <button className={PRIMARY_BTN} disabled={!/^\d{6}$/.test(number) || !reason.trim() || busy}
@@ -140,8 +140,8 @@ export default function StaffDetail() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-xl border border-neutral-200 bg-white p-4">
-          <h2 className="mb-3 text-sm font-semibold text-neutral-900">Employee</h2>
+        <section className="rounded-xl border border-line bg-surface p-4">
+          <h2 className="mb-3 text-sm font-semibold text-fg">Employee</h2>
           <dl className="grid grid-cols-2 gap-3">
             <Line label="Source">{SOURCE_LABEL[e.source]}</Line>
             <Line label="Payroll name">{e.payroll_name}</Line>
@@ -150,21 +150,21 @@ export default function StaffDetail() {
             <Line label="ADP department">{e.adp_department}</Line>
             <Line label="Left on">{e.left_on && formatDate(e.left_on)}</Line>
             <div className="col-span-2">
-              <dt className="text-xs text-neutral-500">UniOps department</dt>
+              <dt className="text-xs text-fg-muted">UniOps department</dt>
               {editable ? (
                 <select className={`${INPUT} mt-1 w-full`} value={departmentId ?? e.department_id ?? ''} disabled={busy}
                   onChange={(ev) => { setDepartmentId(ev.target.value); setSaved(false) }}>
                   <option value="">Not set</option>
                   {depts?.items.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
-              ) : <dd className="text-sm text-neutral-800">{e.department_name ?? '—'}</dd>}
+              ) : <dd className="text-sm text-fg">{e.department_name ?? '—'}</dd>}
             </div>
             <div className="col-span-2">
-              <dt className="text-xs text-neutral-500">Notes</dt>
+              <dt className="text-xs text-fg-muted">Notes</dt>
               {editable ? (
                 <textarea className={`${INPUT} mt-1 w-full`} rows={2} value={notes ?? e.notes ?? ''}
                   onChange={(ev) => { setNotes(ev.target.value); setSaved(false) }} />
-              ) : <dd className="text-sm text-neutral-800">{e.notes ?? '—'}</dd>}
+              ) : <dd className="text-sm text-fg">{e.notes ?? '—'}</dd>}
             </div>
           </dl>
           {editable && (changes || saved) && (
@@ -176,31 +176,31 @@ export default function StaffDetail() {
                     setDepartmentId(null); setNotes(null); setSaved(true)
                   })}>{busy ? 'Saving…' : 'Save'}</button>
                   <button className={SECONDARY_BTN} disabled={busy} onClick={() => { setDepartmentId(null); setNotes(null) }}>Cancel</button>
-                  <span className="text-xs text-amber-700">Not saved yet</span>
+                  <span className="text-xs text-warning-fg">Not saved yet</span>
                 </>
-              ) : <span className="text-sm text-[#085E5E]">Saved</span>}
+              ) : <span className="text-sm text-primary-700">Saved</span>}
             </div>
           )}
-          {e.source === 'adp' && <p className="mt-3 text-xs text-neutral-400">Name, email, job title, ADP department and status come from ADP and are overwritten by each import.</p>}
+          {e.source === 'adp' && <p className="mt-3 text-xs text-fg-muted">Name, email, job title, ADP department and status come from ADP and are overwritten by each import.</p>}
         </section>
 
         <div className="space-y-4">
-          <section className="rounded-xl border border-neutral-200 bg-white p-4">
-            <h2 className="mb-3 text-sm font-semibold text-neutral-900">User</h2>
+          <section className="rounded-xl border border-line bg-surface p-4">
+            <h2 className="mb-3 text-sm font-semibold text-fg">User</h2>
             {e.user ? (
               <>
-                <p className="text-sm text-neutral-800">{e.user.full_name} · {e.user.email} {!e.user.is_active && '(inactive)'}</p>
+                <p className="text-sm text-fg">{e.user.full_name} · {e.user.email} {!e.user.is_active && '(inactive)'}</p>
                 {e.differences.length > 0 && (
                   <table className="mt-3 w-full text-sm">
-                    <thead><tr className="text-left text-xs text-neutral-500"><th className="py-1">Field</th><th>Employee</th><th>User</th><th /></tr></thead>
+                    <thead><tr className="text-left text-xs text-fg-muted"><th className="py-1">Field</th><th>Employee</th><th>User</th><th /></tr></thead>
                     <tbody>
                       {e.differences.map((d) => (
-                        <tr key={d.field} className="border-t border-neutral-100">
+                        <tr key={d.field} className="border-t border-line-subtle">
                           <td className="py-1.5">{d.label}</td>
                           <td>{d.employee ?? '—'}</td>
                           <td>{d.user ?? '—'}</td>
                           <td className="text-right">
-                            {admin && <button className="text-xs font-medium text-[#085E5E] hover:underline" disabled={busy}
+                            {admin && <button className="text-xs font-medium text-primary-700 hover:underline" disabled={busy}
                               onClick={() => applyDifference(d)}>Apply to user</button>}
                           </td>
                         </tr>
@@ -209,11 +209,11 @@ export default function StaffDetail() {
                   </table>
                 )}
               </>
-            ) : <p className="text-sm text-neutral-500">No user account.</p>}
+            ) : <p className="text-sm text-fg-muted">No user account.</p>}
           </section>
 
-          <section className="rounded-xl border border-neutral-200 bg-white p-4">
-            <h2 className="mb-3 text-sm font-semibold text-neutral-900">NC</h2>
+          <section className="rounded-xl border border-line bg-surface p-4">
+            <h2 className="mb-3 text-sm font-semibold text-fg">NC</h2>
             <dl className="grid grid-cols-2 gap-3">
               <Line label="State"><NcPill state={e.nc_state} /></Line>
               <Line label="Person code">{e.nc.person_code}</Line>
@@ -222,21 +222,21 @@ export default function StaffDetail() {
             </dl>
             {e.todos.length > 0 && (
               <ul className="mt-3 space-y-1 text-sm">
-                {e.todos.map((t) => <li key={t.id}><span className="font-medium">{TODO_LABEL[t.type]}</span> <span className="text-neutral-500">{targetText(t)}</span></li>)}
+                {e.todos.map((t) => <li key={t.id}><span className="font-medium">{TODO_LABEL[t.type]}</span> <span className="text-fg-muted">{targetText(t)}</span></li>)}
               </ul>
             )}
           </section>
         </div>
       </div>
 
-      <section className="mt-4 overflow-hidden rounded-xl border border-neutral-200 bg-white">
-        <h2 className="px-4 pt-4 text-sm font-semibold text-neutral-900">History</h2>
+      <section className="mt-4 overflow-hidden rounded-xl border border-line bg-surface">
+        <h2 className="px-4 pt-4 text-sm font-semibold text-fg">History</h2>
         <div className="mt-2 max-h-80 overflow-auto">
           <table className="w-full">
             <thead><tr><th className={TH}>When</th><th className={TH}>Field</th><th className={TH}>Old</th><th className={TH}>New</th><th className={TH}>By</th></tr></thead>
             <tbody>
               {e.history.map((h, i) => (
-                <tr key={i} className="border-t border-neutral-100">
+                <tr key={i} className="border-t border-line-subtle">
                   <td className={TD}>{formatDate(h.at)}</td>
                   <td className={TD}>{h.field}{h.reason ? ` (${h.reason})` : ''}</td>
                   <td className={TD}>{h.old_value ?? '—'}</td>

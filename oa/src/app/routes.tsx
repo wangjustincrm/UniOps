@@ -34,7 +34,7 @@ const ADMIN_PAGE_ROLES = ['system_admin', 'finance_manager']
 function RequireAdmin({ children }: { children: ReactNode }) {
   const role = useOaAuth((s) => s.user?.role)
   if (!role || !ADMIN_PAGE_ROLES.includes(role)) {
-    return <div className="p-8 text-sm text-neutral-500">You don't have access to this page.</div>
+    return <div className="p-8 text-sm text-fg-muted">You don't have access to this page.</div>
   }
   return <>{children}</>
 }

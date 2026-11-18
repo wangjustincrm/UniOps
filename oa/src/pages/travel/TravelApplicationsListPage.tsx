@@ -75,11 +75,11 @@ export default function TravelApplicationsListPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900 flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-fg flex items-center gap-2">
             <Plane className="h-6 w-6 text-primary-700" />
             Travel Applications
           </h1>
-          <p className="mt-0.5 text-sm text-neutral-500">Pre-trip travel authorization requests</p>
+          <p className="mt-0.5 text-sm text-fg-muted">Pre-trip travel authorization requests</p>
         </div>
 
         <button
@@ -92,7 +92,7 @@ export default function TravelApplicationsListPage() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-1 border-b border-neutral-200">
+      <div className="flex gap-1 border-b border-line">
         {TABS.map((s) => (
           <button
             key={s}
@@ -101,7 +101,7 @@ export default function TravelApplicationsListPage() {
               'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
               activeStatus === s
                 ? 'border-primary-700 text-primary-700'
-                : 'border-transparent text-neutral-500 hover:text-neutral-700',
+                : 'border-transparent text-fg-muted hover:text-fg-secondary',
             )}
           >
             {s === 'all' ? 'All' : s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
@@ -110,42 +110,42 @@ export default function TravelApplicationsListPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
         {isLoading ? (
-          <div className="flex items-center justify-center py-16 text-sm text-neutral-400">Loading…</div>
+          <div className="flex items-center justify-center py-16 text-sm text-fg-muted">Loading…</div>
         ) : !data?.items.length ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-100">
-              <Plane className="h-6 w-6 text-neutral-400" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-sunken">
+              <Plane className="h-6 w-6 text-fg-muted" />
             </div>
-            <p className="mt-3 font-medium text-neutral-700">No travel applications</p>
-            <p className="mt-1 text-sm text-neutral-400">Click "New Travel Application" to request travel authorization.</p>
+            <p className="mt-3 font-medium text-fg-secondary">No travel applications</p>
+            <p className="mt-1 text-sm text-fg-muted">Click "New Travel Application" to request travel authorization.</p>
           </div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="border-b border-neutral-100 bg-neutral-50">
+            <thead className="border-b border-line-subtle bg-surface-subtle">
               <tr>
-                <SortTh label="Application #" sortKey="claim_number" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
-                <SortTh label="Applicant" sortKey="employee_name" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
-                <SortTh label="Department" sortKey="department_name" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
-                <SortTh label="Destination" sortKey="travel_destination" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
-                <SortTh label="Date" sortKey="submission_date" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
-                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
-                <th className="px-4 py-3 text-right font-medium text-neutral-500 text-xs uppercase tracking-wide">Actions</th>
+                <SortTh label="Application #" sortKey="claim_number" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs uppercase tracking-wide" />
+                <SortTh label="Applicant" sortKey="employee_name" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs uppercase tracking-wide" />
+                <SortTh label="Department" sortKey="department_name" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs uppercase tracking-wide" />
+                <SortTh label="Destination" sortKey="travel_destination" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs uppercase tracking-wide" />
+                <SortTh label="Date" sortKey="submission_date" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs uppercase tracking-wide" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs uppercase tracking-wide" />
+                <th className="px-4 py-3 text-right font-medium text-fg-muted text-xs uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
             <tbody>
               {data.items.map((a, i) => (
                 <tr
                   key={a.id}
-                  className={cn('border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer', i === data.items.length - 1 && 'border-b-0')}
+                  className={cn('border-b border-line-subtle hover:bg-surface-subtle cursor-pointer', i === data.items.length - 1 && 'border-b-0')}
                   onClick={() => navigate(`/travel/${a.id}`)}
                 >
                   <td className="px-4 py-3 font-mono text-xs text-primary-600 font-medium">{a.claim_number}</td>
-                  <td className="px-4 py-3 text-neutral-700">{a.employee_name}</td>
-                  <td className="px-4 py-3 text-neutral-500">{a.department_name}</td>
-                  <td className="px-4 py-3 text-neutral-700">{a.travel_destination || '—'}</td>
-                  <td className="px-4 py-3 text-neutral-500">{formatDate(a.submission_date)}</td>
+                  <td className="px-4 py-3 text-fg-secondary">{a.employee_name}</td>
+                  <td className="px-4 py-3 text-fg-muted">{a.department_name}</td>
+                  <td className="px-4 py-3 text-fg-secondary">{a.travel_destination || '—'}</td>
+                  <td className="px-4 py-3 text-fg-muted">{formatDate(a.submission_date)}</td>
                   <td className="px-4 py-3"><StatusBadge status={a.status} /></td>
                   <td className="px-4 py-3 text-right">
                     {a.can_delete && (
@@ -153,7 +153,7 @@ export default function TravelApplicationsListPage() {
                         // The row itself navigates to the detail page.
                         onClick={(e) => { e.stopPropagation(); setDeleteError(''); setPendingDelete(a) }}
                         title="Delete this travel application"
-                        className="rounded-lg p-1.5 text-neutral-400 hover:bg-danger-50 hover:text-danger-600"
+                        className="rounded-lg p-1.5 text-fg-muted hover:bg-danger-soft hover:text-danger-fg"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>

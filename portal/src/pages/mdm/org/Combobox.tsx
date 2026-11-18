@@ -42,30 +42,30 @@ export function Combobox({ options, value, onChange, disabled, label, placeholde
     <>
       <button ref={trigger} type="button" aria-label={label} disabled={disabled}
         onClick={() => { setRect(trigger.current?.getBoundingClientRect() ?? null); setOpen((o) => !o) }}
-        className="mt-1 flex h-10 w-full items-center justify-between rounded-lg border border-neutral-200 bg-white px-3 text-left text-sm text-neutral-700 disabled:opacity-50">
+        className="mt-1 flex h-10 w-full items-center justify-between rounded-lg border border-line bg-surface px-3 text-left text-sm text-fg-secondary disabled:opacity-50">
         <span className="truncate">{selected?.label ?? ''}</span>
-        <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
+        <ChevronDown className="h-4 w-4 shrink-0 text-fg-muted" />
       </button>
       {open && rect && createPortal(
         <div ref={pop} style={{ position: 'fixed', top: rect.bottom + 4, right: window.innerWidth - rect.right, width: Math.max(rect.width, 300) }}
-          className="z-[60] rounded-lg border border-neutral-200 bg-white shadow-lg">
+          className="z-[60] rounded-lg border border-line bg-surface shadow-lg">
           <input autoFocus value={q} placeholder={placeholder} onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Escape') setOpen(false)
               if (e.key === 'Enter' && filtered[0]) pick(filtered[0].value)
             }}
-            className="m-2 h-8 w-[calc(100%-1rem)] rounded border border-neutral-300 px-2 text-sm focus:border-primary-400 focus:outline-none" />
+            className="m-2 h-8 w-[calc(100%-1rem)] rounded border border-line-strong px-2 text-sm focus:border-primary-400 focus:outline-none" />
           <ul className="max-h-72 overflow-y-auto pb-1">
             {filtered.map((o) => (
               <li key={o.value}>
                 <button type="button" onClick={() => pick(o.value)}
-                  className={cn('block w-full px-3 py-1.5 text-left text-sm hover:bg-neutral-50', o.value === value && 'bg-[#E9F3F3]')}>
-                  <span className="block truncate text-neutral-800">{o.label}</span>
-                  {o.hint && <span className="block truncate text-xs text-neutral-400">{o.hint}</span>}
+                  className={cn('block w-full px-3 py-1.5 text-left text-sm hover:bg-surface-subtle', o.value === value && 'bg-[#E9F3F3]')}>
+                  <span className="block truncate text-fg">{o.label}</span>
+                  {o.hint && <span className="block truncate text-xs text-fg-muted">{o.hint}</span>}
                 </button>
               </li>
             ))}
-            {filtered.length === 0 && <li className="px-3 py-2 text-sm text-neutral-400">No match</li>}
+            {filtered.length === 0 && <li className="px-3 py-2 text-sm text-fg-muted">No match</li>}
           </ul>
         </div>,
         document.body,

@@ -173,7 +173,7 @@ export const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(
         <canvas
           ref={canvasRef}
           style={{ height, touchAction: 'none' }}
-          className="w-full rounded-lg border border-dashed border-neutral-300 bg-white"
+          className="w-full rounded-lg border border-dashed border-line-strong bg-surface"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endStroke}
@@ -181,14 +181,14 @@ export const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(
           onPointerCancel={endStroke}
         />
         <div className="flex items-center justify-between">
-          <p className="text-xs text-neutral-400">
+          <p className="text-xs text-fg-muted">
             {empty ? 'Sign inside the box above.' : 'Looks right? Save it below.'}
           </p>
           <button
             type="button"
             onClick={clear}
             disabled={empty}
-            className="text-xs font-medium text-neutral-500 hover:text-neutral-700 disabled:opacity-40"
+            className="text-xs font-medium text-fg-muted hover:text-fg-secondary disabled:opacity-40"
           >
             Clear
           </button>

@@ -45,14 +45,14 @@ export default function StaffDepartmentMap() {
 
   return (
     <StaffShell permission="employee.view">
-      <p className="mb-3 text-sm text-neutral-500">
+      <p className="mb-3 text-sm text-fg-muted">
         The department an import gives a new employee, or one whose ADP department changed. Saving also fills it in
         for employees waiting on Needs department. It is a default: a department chosen by hand on an employee stays
         until their ADP department changes.
       </p>
-      {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
-      {notice && <p className="mb-3 text-sm text-[#085E5E]">{notice}</p>}
-      <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+      {error && <p className="mb-3 text-sm text-danger-fg">{error}</p>}
+      {notice && <p className="mb-3 text-sm text-primary-700">{notice}</p>}
+      <div className="overflow-hidden rounded-xl border border-line bg-surface">
         <div className="max-h-[calc(100vh-280px)] overflow-auto">
           <table className="w-full">
             <thead><tr>
@@ -62,7 +62,7 @@ export default function StaffDepartmentMap() {
             </tr></thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.adp_department} className="border-t border-neutral-100">
+                <tr key={r.adp_department} className="border-t border-line-subtle">
                   <td className={TD}>{r.adp_department || '(empty)'}</td>
                   <td className={TD}>{r.employees}</td>
                   <td className={TD}>
@@ -79,7 +79,7 @@ export default function StaffDepartmentMap() {
               ))}
             </tbody>
           </table>
-          {!data?.items.length && <p className="py-8 text-center text-sm text-neutral-400">ADP departments appear here once a roster has been uploaded.</p>}
+          {!data?.items.length && <p className="py-8 text-center text-sm text-fg-muted">ADP departments appear here once a roster has been uploaded.</p>}
         </div>
       </div>
     </StaffShell>

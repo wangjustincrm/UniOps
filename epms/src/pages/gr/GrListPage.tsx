@@ -14,12 +14,12 @@ import type { ApiGr } from '@/services/gr'
 // ─── GR Status badge ──────────────────────────────────────────────────────────
 
 const GR_STATUS_CONFIG: Record<GrStatus, { label: string; variant: 'neutral' | 'warning' | 'info' | 'success' | 'danger'; dot: string }> = {
-  pending_ack:        { label: 'Pending Acknowledgement', variant: 'warning',  dot: 'bg-warning-500' },
-  collection_pending: { label: 'Collection Pending',      variant: 'warning',  dot: 'bg-warning-500' },
-  collected:          { label: 'Collected',               variant: 'success',  dot: 'bg-success-600' },
-  confirmed:          { label: 'Confirmed',               variant: 'success',  dot: 'bg-success-600' },
-  discrepancy:        { label: 'Discrepancy',             variant: 'danger',   dot: 'bg-danger-600'  },
-  cancelled:          { label: 'Cancelled',               variant: 'neutral',  dot: 'bg-neutral-400' },
+  pending_ack:        { label: 'Pending Acknowledgement', variant: 'warning',  dot: 'bg-warning-solid' },
+  collection_pending: { label: 'Collection Pending',      variant: 'warning',  dot: 'bg-warning-solid' },
+  collected:          { label: 'Collected',               variant: 'success',  dot: 'bg-success-solid' },
+  confirmed:          { label: 'Confirmed',               variant: 'success',  dot: 'bg-success-solid' },
+  discrepancy:        { label: 'Discrepancy',             variant: 'danger',   dot: 'bg-danger-solid'  },
+  cancelled:          { label: 'Cancelled',               variant: 'neutral',  dot: 'bg-fg-faint' },
 }
 
 export function GrStatusBadge({ status }: { status: GrStatus }) {
@@ -80,8 +80,8 @@ export default function GrListPage() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Goods Receipt</h1>
-          <p className="mt-1 text-sm text-neutral-500">Record received goods and service confirmations</p>
+          <h1 className="text-2xl font-bold text-fg">Goods Receipt</h1>
+          <p className="mt-1 text-sm text-fg-muted">Record received goods and service confirmations</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="secondary" onClick={() => navigate('/gr/report')} className="gap-2">
@@ -98,15 +98,15 @@ export default function GrListPage() {
       </div>
 
       {/* Filters */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+      <div className="rounded-xl border border-line bg-surface p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
         <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-fg-muted" />
           <input
             type="text"
             placeholder="Search by GR#, PO#, vendor..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-            className="w-full h-9 pl-9 pr-3 rounded-lg border border-neutral-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="w-full h-9 pl-9 pr-3 rounded-lg border border-line-strong bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
           />
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -118,7 +118,7 @@ export default function GrListPage() {
                 'px-3 py-1 rounded-full text-xs font-medium transition-colors',
                 statusFilter === f.value
                   ? 'bg-primary-600 text-white'
-                  : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                  : 'bg-surface-sunken text-fg-secondary hover:bg-surface-strong'
               )}
             >
               {f.label}
@@ -128,19 +128,19 @@ export default function GrListPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
         {isLoading || grs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <Warehouse className="h-10 w-10 text-neutral-300 mb-3" />
-            <p className="text-sm font-medium text-neutral-500">
+            <Warehouse className="h-10 w-10 text-fg-faint mb-3" />
+            <p className="text-sm font-medium text-fg-muted">
               {isLoading ? 'Loading…' : 'No goods receipts found'}
             </p>
-            {!isLoading && <p className="text-xs text-neutral-400 mt-1">Try adjusting your filters</p>}
+            {!isLoading && <p className="text-xs text-fg-muted mt-1">Try adjusting your filters</p>}
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-50">
+              <tr className="border-b border-line bg-surface-subtle">
                 <Th label="GR Number" sortKey="number" sort={sort} onSort={onSort} />
                 <Th label="PO Reference" sortKey="po_number" sort={sort} onSort={onSort} />
                 <Th label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} />
@@ -160,7 +160,7 @@ export default function GrListPage() {
         )}
       </div>
 
-      <div className="rounded-xl border border-neutral-200 bg-white">
+      <div className="rounded-xl border border-line bg-surface">
         <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
       </div>
     </div>
@@ -182,7 +182,7 @@ function Th({
     <SortTh
       label={label} sortKey={sortKey} sort={sort} onSort={onSort} align={align}
       className={cn(
-        'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap',
+        'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap',
         align === 'right' ? 'text-right' : 'text-left',
       )}
     />
@@ -193,7 +193,7 @@ function GrRow({ gr, idx }: { gr: ApiGr; idx: number }) {
   const totalValue = gr.line_items.reduce((s, l) => s + Number(l.line_total), 0)
 
   return (
-    <tr className="border-b border-neutral-100 bg-white hover:bg-primary-50/60 transition-colors">
+    <tr className="border-b border-line-subtle bg-surface hover:bg-primary-50/60 transition-colors">
       <td className="px-4 py-3 font-medium">
         <Link to={`/gr/${gr.id}`} className="text-primary-600 hover:underline font-mono text-xs">
           {gr.number}
@@ -204,11 +204,11 @@ function GrRow({ gr, idx }: { gr: ApiGr; idx: number }) {
           {gr.po_number}
         </Link>
       </td>
-      <td className="px-4 py-3 text-neutral-700">{gr.vendor_name}</td>
+      <td className="px-4 py-3 text-fg-secondary">{gr.vendor_name}</td>
       <td className="px-4 py-3">
         <span className={cn(
           'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-          gr.gr_type === 'physical' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'
+          gr.gr_type === 'physical' ? 'bg-info-soft text-info-fg' : 'bg-cat4-soft text-cat4-fg'
         )}>
           {gr.gr_type === 'physical' ? 'Physical' : 'Service'}
         </span>
@@ -216,11 +216,11 @@ function GrRow({ gr, idx }: { gr: ApiGr; idx: number }) {
       <td className="px-4 py-3">
         <GrStatusBadge status={gr.status} />
       </td>
-      <td className="px-4 py-3 text-neutral-600">{formatDate(gr.received_at)}</td>
-      <td className="px-4 py-3 font-mono text-xs text-neutral-700 text-right">
+      <td className="px-4 py-3 text-fg-secondary">{formatDate(gr.received_at)}</td>
+      <td className="px-4 py-3 font-mono text-xs text-fg-secondary text-right">
         {formatAmount(totalValue, gr.currency)}
       </td>
-      <td className="px-4 py-3 text-neutral-600">{gr.received_by}</td>
+      <td className="px-4 py-3 text-fg-secondary">{gr.received_by}</td>
     </tr>
   )
 }

@@ -55,26 +55,26 @@ const TASK_META: Record<string, {
   revise_expense: {
     label: 'Revise Expense',
     icon: <RotateCcw className="h-4 w-4" />,
-    border: 'border-warning-200',
-    bg: 'bg-warning-50',
-    badge: 'bg-warning-100 text-warning-700',
-    text: 'text-warning-700',
+    border: 'border-warning-line',
+    bg: 'bg-warning-soft',
+    badge: 'bg-warning-soft text-warning-fg',
+    text: 'text-warning-fg',
   },
   pay_expense: {
     label: 'Record Payment',
     icon: <Banknote className="h-4 w-4" />,
-    border: 'border-info-200',
-    bg: 'bg-info-50',
-    badge: 'bg-info-100 text-info-700',
-    text: 'text-info-700',
+    border: 'border-info-line',
+    bg: 'bg-info-soft',
+    badge: 'bg-info-soft text-info-fg',
+    text: 'text-info-fg',
   },
   submitted_expense: {
     label: 'In Review',
     icon: <Clock className="h-4 w-4" />,
-    border: 'border-neutral-200',
-    bg: 'bg-white',
-    badge: 'bg-neutral-100 text-neutral-600',
-    text: 'text-neutral-600',
+    border: 'border-line',
+    bg: 'bg-surface',
+    badge: 'bg-surface-sunken text-fg-secondary',
+    text: 'text-fg-secondary',
   },
 }
 
@@ -149,16 +149,16 @@ function TaskCard({ task }: { task: OaTaskItem }) {
               {meta.icon}
               {meta.label}
             </span>
-            <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-500">
+            <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-xs text-fg-muted">
               {DOC_TYPE_LABELS[task.doc_type] ?? task.doc_type.toUpperCase()}
             </span>
           </div>
 
           {/* Doc number + submitter + amount */}
-          <p className="text-sm font-semibold text-neutral-900 font-mono">
+          <p className="text-sm font-semibold text-fg font-mono">
             {task.doc_number}
           </p>
-          <p className="mt-0.5 text-sm text-neutral-500 truncate">
+          <p className="mt-0.5 text-sm text-fg-muted truncate">
             {task.submitter_name}
             {task.title && task.title !== task.submitter_name
               ? ` · ${task.title}`
@@ -166,17 +166,17 @@ function TaskCard({ task }: { task: OaTaskItem }) {
           </p>
 
           {/* Meta row */}
-          <div className="mt-1.5 flex items-center gap-3 text-xs text-neutral-400 flex-wrap">
-            <span className="font-medium text-neutral-700">
+          <div className="mt-1.5 flex items-center gap-3 text-xs text-fg-muted flex-wrap">
+            <span className="font-medium text-fg-secondary">
               {formatAmount(task.amount, task.currency)}
             </span>
             <span className={cn(
-              'rounded-full px-1.5 py-0.5 text-[11px] font-medium',
+              'rounded-full px-1.5 py-0.5 text-2xs font-medium',
               task.status === STATUS.RETURNED
-                ? 'bg-warning-100 text-warning-700'
+                ? 'bg-warning-soft text-warning-fg'
                 : task.status === STATUS.APPROVED
-                ? 'bg-success-100 text-success-700'
-                : 'bg-neutral-100 text-neutral-600',
+                ? 'bg-success-soft text-success-fg'
+                : 'bg-surface-sunken text-fg-secondary',
             )}>
               {STATUS_LABELS[task.status] ?? task.status}
             </span>
@@ -190,7 +190,7 @@ function TaskCard({ task }: { task: OaTaskItem }) {
         </div>
 
         <button
-          className="shrink-0 rounded-lg p-1.5 text-neutral-400 hover:bg-white/80 hover:text-primary-600 transition-colors"
+          className="shrink-0 rounded-lg p-1.5 text-fg-muted hover:bg-white/80 hover:text-primary-600 transition-colors"
           aria-label="Open document"
           onClick={(e) => { e.stopPropagation(); navigate(href) }}
         >
@@ -212,9 +212,9 @@ function EmptyState({ tab }: { tab: Tab }) {
   const { heading, sub } = messages[tab]
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <Inbox className="h-10 w-10 text-neutral-300 mb-3" />
-      <p className="text-base font-medium text-neutral-500">{heading}</p>
-      <p className="mt-1 text-sm text-neutral-400">{sub}</p>
+      <Inbox className="h-10 w-10 text-fg-faint mb-3" />
+      <p className="text-base font-medium text-fg-muted">{heading}</p>
+      <p className="mt-1 text-sm text-fg-muted">{sub}</p>
     </div>
   )
 }
@@ -280,8 +280,8 @@ export default function TaskListPage() {
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Task Inbox</h1>
-          <p className="mt-1 text-sm text-neutral-500">All pending OA actions</p>
+          <h1 className="text-2xl font-bold text-fg">Task Inbox</h1>
+          <p className="mt-1 text-sm text-fg-muted">All pending OA actions</p>
         </div>
         <Button
           variant="ghost"
@@ -289,7 +289,7 @@ export default function TaskListPage() {
           onClick={refresh}
           disabled={refreshing}
           aria-label="Refresh task list"
-          className="shrink-0 gap-1.5 text-neutral-500"
+          className="shrink-0 gap-1.5 text-fg-muted"
         >
           <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
           Refresh
@@ -307,29 +307,29 @@ export default function TaskListPage() {
           <p className="text-xs text-primary-500 mt-0.5">pending approval</p>
         </div>
 
-        <div className="rounded-xl border border-warning-200 bg-warning-50 px-4 py-3">
+        <div className="rounded-xl border border-warning-line bg-warning-soft px-4 py-3">
           <div className="flex items-center gap-1.5 mb-1">
-            <AlertTriangle className="h-4 w-4 text-warning-600" />
-            <p className="text-xs font-semibold uppercase tracking-wide text-warning-600">Revise</p>
+            <AlertTriangle className="h-4 w-4 text-warning-fg" />
+            <p className="text-xs font-semibold uppercase tracking-wide text-warning-fg">Revise</p>
           </div>
-          <p className="text-2xl font-bold text-warning-700">{reviseCount}</p>
-          <p className="text-xs text-warning-500 mt-0.5">returned to you</p>
+          <p className="text-2xl font-bold text-warning-fg">{reviseCount}</p>
+          <p className="text-xs text-warning-fg mt-0.5">returned to you</p>
         </div>
 
-        <div className="rounded-xl border border-info-200 bg-info-50 px-4 py-3">
+        <div className="rounded-xl border border-info-line bg-info-soft px-4 py-3">
           <div className="flex items-center gap-1.5 mb-1">
-            <Banknote className="h-4 w-4 text-info-600" />
-            <p className="text-xs font-semibold uppercase tracking-wide text-info-600">Pay</p>
+            <Banknote className="h-4 w-4 text-info-fg" />
+            <p className="text-xs font-semibold uppercase tracking-wide text-info-fg">Pay</p>
           </div>
-          <p className="text-2xl font-bold text-info-700">{payCount}</p>
-          <p className="text-xs text-info-500 mt-0.5">awaiting payment</p>
+          <p className="text-2xl font-bold text-info-fg">{payCount}</p>
+          <p className="text-xs text-info-fg mt-0.5">awaiting payment</p>
         </div>
       </div>
 
       {/* Filters */}
       <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
         {/* Tab strip */}
-        <div className="flex items-center gap-1 rounded-lg bg-neutral-100 p-1">
+        <div className="flex items-center gap-1 rounded-lg bg-surface-sunken p-1">
           {TABS.map(t => (
             <button
               key={t.value}
@@ -337,18 +337,18 @@ export default function TaskListPage() {
               className={cn(
                 'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
                 tab === t.value
-                  ? 'bg-white text-neutral-900 shadow-sm'
-                  : 'text-neutral-500 hover:text-neutral-700',
+                  ? 'bg-surface text-fg shadow-sm'
+                  : 'text-fg-muted hover:text-fg-secondary',
               )}
             >
               {t.label}
               {t.value === 'action' && actionCount > 0 && (
-                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-600 px-1 text-[10px] font-bold text-white">
+                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-600 px-1 text-2xs font-bold text-white">
                   {actionCount}
                 </span>
               )}
               {t.value === 'mine' && mineCount > 0 && (
-                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-neutral-400 px-1 text-[10px] font-bold text-white">
+                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-fg-faint px-1 text-2xs font-bold text-white">
                   {mineCount}
                 </span>
               )}
@@ -360,7 +360,7 @@ export default function TaskListPage() {
         <select
           value={docTypeFilter}
           onChange={e => setDocTypeFilter(e.target.value)}
-          className="h-9 rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
+          className="h-9 rounded-lg border border-line bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-500/30"
         >
           <option value="all">All Types</option>
           {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
@@ -373,7 +373,7 @@ export default function TaskListPage() {
       {isLoading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => (
-            <div key={i} className="h-24 animate-pulse rounded-xl bg-neutral-100" />
+            <div key={i} className="h-24 animate-pulse rounded-xl bg-surface-sunken" />
           ))}
         </div>
       ) : filtered.length === 0 ? (
@@ -383,8 +383,8 @@ export default function TaskListPage() {
           {groups.map(group => (
             <section key={group.key}>
               <div className="mb-2 flex items-center gap-2">
-                <h3 className="text-sm font-semibold text-neutral-700">{group.label}</h3>
-                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-neutral-100 px-1.5 text-[11px] font-semibold text-neutral-500">
+                <h3 className="text-sm font-semibold text-fg-secondary">{group.label}</h3>
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-surface-sunken px-1.5 text-2xs font-semibold text-fg-muted">
                   {group.items.length}
                 </span>
               </div>

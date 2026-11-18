@@ -162,8 +162,8 @@ export default function SupplyParametersPage() {
 
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-semibold text-neutral-900">Supply Parameters</h1>
-          <p className="text-xs text-neutral-500">
+          <h1 className="text-lg font-semibold text-fg">Supply Parameters</h1>
+          <p className="text-xs text-fg-muted">
             Lead time and order sizing per material and supplier. Purchase suggestions work
             backwards from the lead time and raise requirements to the minimum order quantity.
           </p>
@@ -183,7 +183,7 @@ export default function SupplyParametersPage() {
       </header>
 
       {(missingLeadTime > 0 || materialsWithoutPrimary > 0) && (
-        <p className="flex items-start gap-1.5 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-800">
+        <p className="flex items-start gap-1.5 rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-fg">
           <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
             {missingLeadTime > 0 && (
@@ -199,7 +199,7 @@ export default function SupplyParametersPage() {
       )}
 
       {materialsQuery.isError && (
-        <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+        <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
           <AlertTriangle aria-hidden className="h-3.5 w-3.5 shrink-0" />
           Could not load the material master — material names and the units on the quantities
           below are missing, and searching by material name will not match.
@@ -211,7 +211,7 @@ export default function SupplyParametersPage() {
         // which reads as "these suppliers have no names on file" rather than
         // "the lookup failed". That is exactly how a wrong page size went
         // unnoticed.
-        <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+        <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
           <AlertTriangle aria-hidden className="h-3.5 w-3.5 shrink-0" />
           Could not load supplier names — codes are shown on their own, and searching by
           supplier name will not match.
@@ -219,8 +219,8 @@ export default function SupplyParametersPage() {
       )}
 
       <div className="flex items-center gap-2">
-        <div className="flex h-11 flex-1 items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 sm:max-w-md">
-          <Search aria-hidden className="h-4 w-4 shrink-0 text-neutral-400" />
+        <div className="flex h-11 flex-1 items-center gap-2 rounded-lg border border-line-strong bg-surface px-3 sm:max-w-md">
+          <Search aria-hidden className="h-4 w-4 shrink-0 text-fg-muted" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -230,21 +230,21 @@ export default function SupplyParametersPage() {
           />
           {query && (
             <button type="button" onClick={() => setQuery('')} aria-label="Clear search"
-              className="shrink-0 text-neutral-400 hover:text-neutral-700">
+              className="shrink-0 text-fg-muted hover:text-fg-secondary">
               <X className="h-4 w-4" />
             </button>
           )}
         </div>
-        <span className="text-xs text-neutral-500">
+        <span className="text-xs text-fg-muted">
           {query
             ? `${rows.length} of ${allRows.length} row(s)`
             : `${allRows.length} row(s)`}
         </span>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+      <div className="overflow-x-auto rounded-lg border border-line bg-surface">
         <table className="min-w-full text-sm">
-          <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
+          <thead className="bg-surface-subtle text-xs uppercase tracking-wide text-fg-muted">
             <tr>
               <SortTh label="Material" sortKey="material" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
               <SortTh label="Supplier" sortKey="supplier" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
@@ -257,21 +257,21 @@ export default function SupplyParametersPage() {
           </thead>
           <tbody>
             {listQuery.isLoading && (
-              <tr><td colSpan={7} className="px-3 py-6 text-center text-neutral-400">Loading…</td></tr>
+              <tr><td colSpan={7} className="px-3 py-6 text-center text-fg-muted">Loading…</td></tr>
             )}
             {!listQuery.isLoading && rows.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-6 text-center text-neutral-400">
+              <tr><td colSpan={7} className="px-3 py-6 text-center text-fg-muted">
                 {allRows.length === 0
                   ? 'No supply parameters yet — add a row, or paste them from your spreadsheet.'
                   : `Nothing matches "${query}".`}
               </td></tr>
             )}
             {sortedRows.map((row) => (
-              <tr key={row.id} className="border-t border-neutral-100">
+              <tr key={row.id} className="border-t border-line-subtle">
                 <td className="px-3 py-2 text-xs">
                   <span className="font-mono">{row.material_code}</span>
                   {materialNameByCode.get(row.material_code) && (
-                    <span className="ml-1.5 text-neutral-500">
+                    <span className="ml-1.5 text-fg-muted">
                       {materialNameByCode.get(row.material_code)}
                     </span>
                   )}
@@ -279,34 +279,34 @@ export default function SupplyParametersPage() {
                 <td className="px-3 py-2 text-xs">
                   <span className="font-mono">{row.partner_code}</span>
                   {supplierNames.get(row.partner_code) && (
-                    <span className="ml-1.5 text-neutral-500">
+                    <span className="ml-1.5 text-fg-muted">
                       {supplierNames.get(row.partner_code)}
                     </span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-right font-mono">
                   {row.lead_time_days === null
-                    ? <span className="text-danger-600">missing</span>
+                    ? <span className="text-danger-fg">missing</span>
                     : `${row.lead_time_days} d`}
                 </td>
-                <td className="px-3 py-2 text-right font-mono text-neutral-600">
+                <td className="px-3 py-2 text-right font-mono text-fg-secondary">
                   {trimZeros(row.moq)}
                   {row.moq !== null && uomByCode.get(row.material_code) && (
-                    <span className="ml-1 text-xs text-neutral-400">
+                    <span className="ml-1 text-xs text-fg-muted">
                       {uomByCode.get(row.material_code)}
                     </span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right font-mono text-neutral-600">
+                <td className="px-3 py-2 text-right font-mono text-fg-secondary">
                   {trimZeros(row.order_multiple)}
                   {row.order_multiple !== null && uomByCode.get(row.material_code) && (
-                    <span className="ml-1 text-xs text-neutral-400">
+                    <span className="ml-1 text-xs text-fg-muted">
                       {uomByCode.get(row.material_code)}
                     </span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-center">
-                  {row.is_primary && <Star aria-label="Primary supplier" className="mx-auto h-3.5 w-3.5 text-warning-500" />}
+                  {row.is_primary && <Star aria-label="Primary supplier" className="mx-auto h-3.5 w-3.5 text-warning-fg" />}
                 </td>
                 <td className="px-3 py-2 text-right">
                   {canWrite && (
@@ -314,13 +314,13 @@ export default function SupplyParametersPage() {
                       <button type="button" onClick={() => setDrawer({ row })}
                         aria-label={`Edit ${row.material_code} / ${row.partner_code}`}
                         title="Edit"
-                        className="text-neutral-400 hover:text-primary-600">
+                        className="text-fg-muted hover:text-primary-600">
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                       <button type="button" onClick={() => setDeleteTarget(row)}
                         aria-label={`Remove ${row.material_code} / ${row.partner_code}`}
                         title="Remove"
-                        className="text-neutral-400 hover:text-danger-600">
+                        className="text-fg-muted hover:text-danger-fg">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </span>
@@ -354,9 +354,9 @@ export default function SupplyParametersPage() {
           onConfirm={() => bulkMutation.mutate(pasteText)}
         >
           <div className="flex flex-col gap-2">
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-fg-muted">
               Copy the columns straight out of Excel, in this order:<br />
-              <span className="font-medium text-neutral-700">{PASTE_COLUMNS}</span><br />
+              <span className="font-medium text-fg-secondary">{PASTE_COLUMNS}</span><br />
               A header row is skipped automatically. Existing rows for the same material and
               supplier are updated; a blank cell leaves that value as it is.
             </p>
@@ -364,11 +364,11 @@ export default function SupplyParametersPage() {
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
               rows={8}
-              className="w-full rounded-lg border border-neutral-300 p-2 font-mono text-xs focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              className="w-full rounded-lg border border-line-strong p-2 font-mono text-xs focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
               placeholder={'CR0001\tSUP-A\t30\t500\t\tyes'}
             />
             {bulkMutation.isPending && (
-              <p className="flex items-center gap-1.5 text-xs text-neutral-500">
+              <p className="flex items-center gap-1.5 text-xs text-fg-muted">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Importing…
               </p>
             )}
@@ -376,7 +376,7 @@ export default function SupplyParametersPage() {
               // Good rows were saved; only the listed ones were not. Saying so
               // matters — otherwise the planner re-pastes everything and
               // wonders why the counts look wrong.
-              <div className="rounded-md border border-danger-200 bg-danger-50 p-2 text-xs text-danger-700">
+              <div className="rounded-md border border-danger-line bg-danger-soft p-2 text-xs text-danger-fg">
                 <p className="font-medium">
                   {result.created + result.updated} row(s) saved, {result.errors.length} could not be:
                 </p>

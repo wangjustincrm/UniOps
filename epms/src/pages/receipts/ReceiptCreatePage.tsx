@@ -76,27 +76,27 @@ export default function ReceiptCreatePage() {
     <div className="flex flex-col gap-6 max-w-4xl">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Link to="/receipts" className="text-neutral-400 hover:text-neutral-600 transition-colors">
+        <Link to="/receipts" className="text-fg-muted hover:text-fg-secondary transition-colors">
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">New Agreement Receipt</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <h1 className="text-2xl font-bold text-fg">New Agreement Receipt</h1>
+          <p className="mt-1 text-sm text-fg-muted">
             Record a counter slip, delivery note, or service sign-off against a house-account agreement
           </p>
         </div>
       </div>
 
       {/* Agreement Selection */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-6 flex flex-col gap-4">
-        <h2 className="text-base font-semibold text-neutral-900">Agreement</h2>
+      <div className="rounded-xl border border-line bg-surface p-6 flex flex-col gap-4">
+        <h2 className="text-base font-semibold text-fg">Agreement</h2>
 
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium text-neutral-700">
-            Select Agreement <span className="text-danger-600">*</span>
+          <label className="text-sm font-medium text-fg-secondary">
+            Select Agreement <span className="text-danger-fg">*</span>
           </label>
           {agreementsLoading ? (
-            <div className="flex items-center gap-2 h-10 px-3 rounded-lg border border-neutral-200 bg-neutral-50 text-sm text-neutral-400">
+            <div className="flex items-center gap-2 h-10 px-3 rounded-lg border border-line bg-surface-subtle text-sm text-fg-muted">
               <Loader2 className="h-4 w-4 animate-spin" />
               Loading agreements…
             </div>
@@ -116,21 +116,21 @@ export default function ReceiptCreatePage() {
                   setSelectedAgreementId('')
                   setShowAgreementDropdown(true)
                 }}
-                className="w-full h-10 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                className="w-full h-10 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               />
               {selectedAgreement && (
                 <button
                   type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
                   onClick={() => { setSelectedAgreementId(''); setAgreementSearch(''); setShowAgreementDropdown(true) }}
                 >
                   ×
                 </button>
               )}
               {showAgreementDropdown && !selectedAgreement && (
-                <div className="absolute z-10 mt-1 w-full rounded-lg border border-neutral-200 bg-white shadow-lg max-h-64 overflow-y-auto">
+                <div className="absolute z-10 mt-1 w-full rounded-lg border border-line bg-surface shadow-lg max-h-64 overflow-y-auto">
                   {filteredAgreements.length === 0 ? (
-                    <div className="px-4 py-3 text-sm text-neutral-400">
+                    <div className="px-4 py-3 text-sm text-fg-muted">
                       No eligible house-account agreements found (must be active, or expired within its grace period)
                     </div>
                   ) : (
@@ -138,7 +138,7 @@ export default function ReceiptCreatePage() {
                       <button
                         key={a.id}
                         type="button"
-                        className="w-full text-left px-4 py-3 hover:bg-primary-50 border-b border-neutral-100 last:border-0"
+                        className="w-full text-left px-4 py-3 hover:bg-primary-50 border-b border-line-subtle last:border-0"
                         onClick={() => {
                           setSelectedAgreementId(a.id)
                           setShowAgreementDropdown(false)
@@ -146,11 +146,11 @@ export default function ReceiptCreatePage() {
                         }}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-sm text-neutral-900 font-mono">{a.number}</span>
-                          <span className="text-xs text-neutral-500">{a.currency}</span>
+                          <span className="font-medium text-sm text-fg font-mono">{a.number}</span>
+                          <span className="text-xs text-fg-muted">{a.currency}</span>
                         </div>
-                        <div className="text-xs text-neutral-500 mt-0.5">{a.vendor_name} · {a.title}</div>
-                        <div className="text-xs text-neutral-400 mt-0.5">
+                        <div className="text-xs text-fg-muted mt-0.5">{a.vendor_name} · {a.title}</div>
+                        <div className="text-xs text-fg-muted mt-0.5">
                           Valid {formatDate(a.valid_from)} – {formatDate(a.valid_to)}
                         </div>
                       </button>
@@ -161,7 +161,7 @@ export default function ReceiptCreatePage() {
             </div>
           )}
           {preselectFailed && (
-            <p className="text-xs text-danger-600">
+            <p className="text-xs text-danger-fg">
               This agreement isn't available for receipts — it may not be a house-account agreement, or it's
               draft/cancelled/past its grace period. Search for a different one above.
             </p>
@@ -170,7 +170,7 @@ export default function ReceiptCreatePage() {
 
         {/* Agreement summary card */}
         {selectedAgreement && (
-          <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+          <div className="rounded-lg border border-line bg-surface-subtle p-4 grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
             <MetaRow label="Vendor" value={selectedAgreement.vendor_name} />
             <MetaRow label="Currency" value={selectedAgreement.currency} />
             <MetaRow label="Valid" value={`${formatDate(selectedAgreement.valid_from)} – ${formatDate(selectedAgreement.valid_to)}`} />
@@ -188,8 +188,8 @@ export default function ReceiptCreatePage() {
       {selectedAgreement && (
         <>
           {/* Receipt Type */}
-          <div className="rounded-xl border border-neutral-200 bg-white p-6 flex flex-col gap-4">
-            <h2 className="text-base font-semibold text-neutral-900">Receipt Type</h2>
+          <div className="rounded-xl border border-line bg-surface p-6 flex flex-col gap-4">
+            <h2 className="text-base font-semibold text-fg">Receipt Type</h2>
             <div className="flex gap-3">
               {TYPE_OPTIONS.map((t) => (
                 <button
@@ -200,7 +200,7 @@ export default function ReceiptCreatePage() {
                     'flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors',
                     receiptType === t
                       ? 'border-primary-600 bg-primary-50 text-primary-700'
-                      : 'border-neutral-300 text-neutral-600 hover:border-neutral-400'
+                      : 'border-line-strong text-fg-secondary hover:border-line-strong'
                   )}
                 >
                   {RECEIPT_TYPE_LABELS[t]}
@@ -213,7 +213,7 @@ export default function ReceiptCreatePage() {
               (Task 5's ReceiptEntryForm) — only the agreement/type it records
               against are now supplied by this page instead of being fixed to
               whatever agreement the form used to be embedded in. */}
-          <div className="rounded-xl border border-neutral-200 bg-white p-6">
+          <div className="rounded-xl border border-line bg-surface p-6">
             {/* replaceTab(cancelHref), not resetForm() alone — Task 10 fix
                 round 1: a form that silently clears itself is indistinguishable
                 from one that silently failed. Navigating to wherever Cancel
@@ -245,8 +245,8 @@ export default function ReceiptCreatePage() {
 function MetaRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex gap-2 text-sm">
-      <span className="text-neutral-500 min-w-36 flex-shrink-0">{label}</span>
-      <span className={cn('text-neutral-800 font-medium', mono && 'font-mono')}>{value}</span>
+      <span className="text-fg-muted min-w-36 flex-shrink-0">{label}</span>
+      <span className={cn('text-fg font-medium', mono && 'font-mono')}>{value}</span>
     </div>
   )
 }

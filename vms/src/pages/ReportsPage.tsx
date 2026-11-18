@@ -62,38 +62,38 @@ export default function ReportsPage() {
 
   return (
     <div className="max-w-3xl">
-      <h1 className="text-2xl font-bold text-neutral-900">Compliance Reports</h1>
-      <p className="mt-1 text-sm text-neutral-500">
+      <h1 className="text-2xl font-bold text-fg">Compliance Reports</h1>
+      <p className="mt-1 text-sm text-fg-muted">
         Export CSV reports for regulator inspections (CFIA) and internal
         compliance review. Every export is recorded in the audit log.
       </p>
 
       {/* Date range */}
-      <div className="mt-5 rounded-lg border border-neutral-200 bg-white p-4">
-        <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+      <div className="mt-5 rounded-lg border border-line bg-surface p-4">
+        <p className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
           Report period
         </p>
         <div className="mt-2 flex flex-wrap items-end gap-3">
           <label className="text-sm">
-            <span className="block text-xs text-neutral-500">From</span>
+            <span className="block text-xs text-fg-muted">From</span>
             <input
               type="date"
               value={from}
               onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
-              className="mt-0.5 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="mt-0.5 rounded-md border border-line-strong px-2 py-1.5 text-sm"
             />
           </label>
           <label className="text-sm">
-            <span className="block text-xs text-neutral-500">To</span>
+            <span className="block text-xs text-fg-muted">To</span>
             <input
               type="date"
               value={to}
               onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
-              className="mt-0.5 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="mt-0.5 rounded-md border border-line-strong px-2 py-1.5 text-sm"
             />
           </label>
           {!validRange && (
-            <p className="text-xs text-danger-600">
+            <p className="text-xs text-danger-fg">
               ‘From’ must be on or before ‘To’.
             </p>
           )}
@@ -102,13 +102,13 @@ export default function ReportsPage() {
 
       {/* Feedback */}
       {error && (
-        <p className="mt-3 flex items-center gap-1.5 rounded-md border border-red-200 bg-danger-50 px-3 py-2 text-xs text-danger-600">
+        <p className="mt-3 flex items-center gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
           <AlertCircle className="h-3.5 w-3.5" />
           {error}
         </p>
       )}
       {lastDownload && !error && (
-        <p className="mt-3 flex items-center gap-1.5 rounded-md border border-emerald-200 bg-success-50 px-3 py-2 text-xs text-success-600">
+        <p className="mt-3 flex items-center gap-1.5 rounded-md border border-success-line bg-success-soft px-3 py-2 text-xs text-success-fg">
           <CheckCircle2 className="h-3.5 w-3.5" />
           Downloaded {lastDownload}
         </p>
@@ -119,11 +119,11 @@ export default function ReportsPage() {
         {REPORTS.map((r) => (
           <div
             key={r.kind}
-            className="flex items-start justify-between gap-4 rounded-lg border border-neutral-200 bg-white p-4"
+            className="flex items-start justify-between gap-4 rounded-lg border border-line bg-surface p-4"
           >
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-neutral-900">{r.label}</p>
-              <p className="mt-0.5 text-xs text-neutral-500">{r.description}</p>
+              <p className="text-sm font-semibold text-fg">{r.label}</p>
+              <p className="mt-0.5 text-xs text-fg-muted">{r.description}</p>
             </div>
             <button
               type="button"
@@ -140,7 +140,7 @@ export default function ReportsPage() {
         ))}
       </div>
 
-      <p className="mt-5 text-xs text-neutral-400">
+      <p className="mt-5 text-xs text-fg-muted">
         CSV format is current interim layout (Excel opens these cleanly).
         Once CFIA confirms a formal template, the column order may change.
       </p>

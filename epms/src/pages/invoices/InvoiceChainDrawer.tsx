@@ -49,11 +49,11 @@ const STEP_CAPTIONS: Record<ChainStepKey, Partial<Record<ChainStepState, string>
 }
 
 const STATE_STYLES: Record<ChainStepState, { ring: string; text: string }> = {
-  done:           { ring: 'bg-success-600 text-white',            text: 'text-neutral-900' },
-  pending:        { ring: 'bg-warning-500 text-white',            text: 'text-neutral-900' },
-  blocked:        { ring: 'bg-neutral-100 text-neutral-400',      text: 'text-neutral-400' },
-  not_applicable: { ring: 'bg-neutral-100 text-neutral-400',      text: 'text-neutral-400' },
-  restricted:     { ring: 'bg-neutral-100 text-neutral-400',      text: 'text-neutral-400' },
+  done:           { ring: 'bg-success-solid text-white',            text: 'text-fg' },
+  pending:        { ring: 'bg-warning-solid text-white',            text: 'text-fg' },
+  blocked:        { ring: 'bg-surface-sunken text-fg-muted',      text: 'text-fg-muted' },
+  not_applicable: { ring: 'bg-surface-sunken text-fg-muted',      text: 'text-fg-muted' },
+  restricted:     { ring: 'bg-surface-sunken text-fg-muted',      text: 'text-fg-muted' },
 }
 
 function StateIcon({ state }: { state: ChainStepState }) {
@@ -97,7 +97,7 @@ function StepRow({ step, last }: { step: ChainStep; last: boolean }) {
         <span className={cn('flex h-6 w-6 items-center justify-center rounded-full', style.ring)}>
           <StateIcon state={step.state} />
         </span>
-        {!last && <span className="w-px flex-1 bg-neutral-200" aria-hidden />}
+        {!last && <span className="w-px flex-1 bg-surface-strong" aria-hidden />}
       </div>
 
       <div className={cn('flex-1', last ? 'pb-0' : 'pb-5')}>
@@ -108,7 +108,7 @@ function StepRow({ step, last }: { step: ChainStep; last: boolean }) {
             {step.refs.map((r) => <RefLink key={r.id} refItem={r} />)}
             {/* For a PA this is its approval status; for Payment, when it was paid. */}
             {step.detail && (
-              <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] capitalize text-neutral-600">
+              <span className="rounded bg-surface-sunken px-1.5 py-0.5 text-2xs capitalize text-fg-secondary">
                 {step.key === 'payment' ? formatDate(step.detail) : step.detail.replace(/_/g, ' ')}
               </span>
             )}
@@ -116,20 +116,20 @@ function StepRow({ step, last }: { step: ChainStep; last: boolean }) {
         )}
 
         {step.refs.length === 0 && step.detail && step.key === 'payment' && (
-          <p className="mt-1 text-xs text-neutral-600">Paid {formatDate(step.detail)}</p>
+          <p className="mt-1 text-xs text-fg-secondary">Paid {formatDate(step.detail)}</p>
         )}
 
-        {caption && <p className="mt-1 text-xs text-neutral-500">{caption}</p>}
+        {caption && <p className="mt-1 text-xs text-fg-muted">{caption}</p>}
       </div>
     </li>
   )
 }
 
 const DUE_HEADLINE: Record<DueTone, string> = {
-  overdue: 'text-danger-600',
-  soon: 'text-warning-700',
-  normal: 'text-neutral-700',
-  settled: 'text-neutral-400',
+  overdue: 'text-danger-fg',
+  soon: 'text-warning-fg',
+  normal: 'text-fg-secondary',
+  settled: 'text-fg-muted',
 }
 
 export function InvoiceChainDrawer({
@@ -156,23 +156,23 @@ export function InvoiceChainDrawer({
       role="presentation"
     >
       <aside
-        className="flex h-full w-full max-w-md flex-col bg-white shadow-xl"
+        className="flex h-full w-full max-w-md flex-col bg-surface shadow-xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label="Invoice status"
       >
-        <header className="flex items-start justify-between border-b border-neutral-200 px-5 py-4">
+        <header className="flex items-start justify-between border-b border-line px-5 py-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+            <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
               Invoice status
             </p>
-            <p className="mt-0.5 font-mono text-sm text-neutral-900">
+            <p className="mt-0.5 font-mono text-sm text-fg">
               {data?.internal_ref ?? '—'}
             </p>
             {data && due && (
               <p className="mt-1 flex items-center gap-2 text-xs">
-                <span className="text-neutral-500">Due {formatDate(data.due_date)}</span>
+                <span className="text-fg-muted">Due {formatDate(data.due_date)}</span>
                 {due.label && (
                   <span className={cn('font-semibold', DUE_HEADLINE[due.tone])}>{due.label}</span>
                 )}
@@ -181,7 +181,7 @@ export function InvoiceChainDrawer({
           </div>
           <button
             onClick={onClose}
-            className="rounded p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600"
+            className="rounded p-1 text-fg-muted transition-colors hover:bg-surface-sunken hover:text-fg-secondary"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -190,12 +190,12 @@ export function InvoiceChainDrawer({
 
         <div className="flex-1 overflow-y-auto px-5 py-5">
           {isLoading && (
-            <div className="flex items-center gap-2 text-sm text-neutral-400">
+            <div className="flex items-center gap-2 text-sm text-fg-muted">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading…
             </div>
           )}
           {isError && (
-            <p className="text-sm text-danger-600">Could not load this invoice's status.</p>
+            <p className="text-sm text-danger-fg">Could not load this invoice's status.</p>
           )}
           {data && (
             <ol>

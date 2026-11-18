@@ -214,13 +214,13 @@ export default function PoEditPage() {
   }
 
   if (isLoading) {
-    return <div className="p-8 text-sm text-neutral-400">Loading…</div>
+    return <div className="p-8 text-sm text-fg-muted">Loading…</div>
   }
 
   if (!po || !['draft', 'returned'].includes(po.status)) {
     return (
       <div className="p-8">
-        <p className="text-sm text-neutral-500">This PO cannot be edited in its current status.</p>
+        <p className="text-sm text-fg-muted">This PO cannot be edited in its current status.</p>
         <BackLink to={`/po/${id}`} className="mt-3 inline-block text-sm text-primary-600 hover:underline">← Back to PO</BackLink>
       </div>
     )
@@ -234,8 +234,8 @@ export default function PoEditPage() {
           <Button variant="ghost" size="icon-sm"><ArrowLeft className="h-4 w-4" /></Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Edit Purchase Order</h1>
-          <p className="text-sm text-neutral-400 mt-0.5">{po.number}</p>
+          <h1 className="text-2xl font-bold text-fg">Edit Purchase Order</h1>
+          <p className="text-sm text-fg-muted mt-0.5">{po.number}</p>
         </div>
       </div>
 
@@ -243,8 +243,8 @@ export default function PoEditPage() {
         <div className="lg:col-span-9 flex flex-col gap-6">
 
           {/* Order Details */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
-            <h2 className="text-base font-semibold text-neutral-900">Order Details</h2>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+            <h2 className="text-base font-semibold text-fg">Order Details</h2>
 
             <FormField label="PO Title / Description" required htmlFor="title" error={errors.title}>
               <Input
@@ -258,11 +258,11 @@ export default function PoEditPage() {
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               {/* Vendor */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">
-                  Vendor <span className="text-danger-600">*</span>
+                <label className="text-sm font-medium text-fg-secondary">
+                  Vendor <span className="text-danger-fg">*</span>
                 </label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
                   <input
                     type="text"
                     placeholder="Search vendor…"
@@ -270,49 +270,49 @@ export default function PoEditPage() {
                     onFocus={() => { setVendorOpen(true); if (selectedVendor) setVendorQuery('') }}
                     onChange={(e) => { setVendorQuery(e.target.value); setSelectedVendor(null); setVendorOpen(true); setErrors((p) => ({ ...p, vendor: '' })) }}
                     className={cn(
-                      'h-10 w-full rounded-md border bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      errors.vendor ? 'border-danger-600' : 'border-neutral-300'
+                      'h-10 w-full rounded-md border bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
+                      errors.vendor ? 'border-danger-solid' : 'border-line-strong'
                     )}
                   />
                   {selectedVendor && (
                     <button type="button" onClick={() => { setSelectedVendor(null); setVendorQuery('') }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600">
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
                       <X className="h-3.5 w-3.5" />
                     </button>
                   )}
                   {vendorOpen && !selectedVendor && (
                     <>
                       <div className="fixed inset-0 z-10" onClick={() => setVendorOpen(false)} />
-                      <div className="absolute z-20 mt-1 w-full rounded-lg border border-neutral-200 bg-white py-1 shadow-lg">
+                      <div className="absolute z-20 mt-1 w-full rounded-lg border border-line bg-surface py-1 shadow-lg">
                         {vendors.map((v) => (
                           <button key={v.id} type="button"
                             className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-primary-50 text-left"
                             onClick={() => { setSelectedVendor(v); setVendorOpen(false); setVendorQuery(''); setErrors((p) => ({ ...p, vendor: '' })) }}>
-                            <span className="font-mono text-xs rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-600">{v.code}</span>
+                            <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
                             {v.name}
                           </button>
                         ))}
-                        {vendors.length === 0 && <p className="px-3 py-2 text-sm text-neutral-400">No vendors found</p>}
+                        {vendors.length === 0 && <p className="px-3 py-2 text-sm text-fg-muted">No vendors found</p>}
                       </div>
                     </>
                   )}
                 </div>
-                {selectedVendor && !vendorInactive && <p className="text-xs text-success-600">✓ {selectedVendor.name}{selectedVendor.code ? ` (${selectedVendor.code})` : ''}</p>}
+                {selectedVendor && !vendorInactive && <p className="text-xs text-success-fg">✓ {selectedVendor.name}{selectedVendor.code ? ` (${selectedVendor.code})` : ''}</p>}
                 {selectedVendor && vendorInactive && (
-                  <p role="alert" className="text-xs text-danger-600">
+                  <p role="alert" className="text-xs text-danger-fg">
                     Vendor {selectedVendor.name} is inactive. Choose another vendor.
                   </p>
                 )}
-                {errors.vendor && <p className="text-xs text-danger-600">{errors.vendor}</p>}
+                {errors.vendor && <p className="text-xs text-danger-fg">{errors.vendor}</p>}
               </div>
 
               {/* Procurement Type */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">Procurement Type</label>
+                <label className="text-sm font-medium text-fg-secondary">Procurement Type</label>
                 <select
                   value={procurementType ?? ''}
                   onChange={(e) => setProcurementType(e.target.value ? Number(e.target.value) as ProcurementType : null)}
-                  className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 >
                   <option value="">Select type…</option>
                   {[1, 2, 3, 4, 5, 6].map((t) => (
@@ -328,20 +328,20 @@ export default function PoEditPage() {
               </FormField>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">Expected Delivery Date</label>
+                <label className="text-sm font-medium text-fg-secondary">Expected Delivery Date</label>
                 <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+                  <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted pointer-events-none" />
                   <input
                     type="date"
                     value={expectedDelivery}
                     onChange={(e) => { setExpectedDelivery(e.target.value); setErrors((p) => ({ ...p, expectedDelivery: '' })) }}
                     className={cn(
-                      'h-10 w-full rounded-md border bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      errors.expectedDelivery ? 'border-danger-600' : 'border-neutral-300'
+                      'h-10 w-full rounded-md border bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
+                      errors.expectedDelivery ? 'border-danger-solid' : 'border-line-strong'
                     )}
                   />
                 </div>
-                {errors.expectedDelivery && <p className="text-xs text-danger-600">{errors.expectedDelivery}</p>}
+                {errors.expectedDelivery && <p className="text-xs text-danger-fg">{errors.expectedDelivery}</p>}
               </div>
             </div>
 
@@ -366,7 +366,7 @@ export default function PoEditPage() {
           </div>
 
           {/* Line Items */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
             <PrLineItems
               procurementType={procurementType}
               items={lineItems}
@@ -376,24 +376,24 @@ export default function PoEditPage() {
           </div>
 
           {/* Currency, Tax & Total */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
             <div className="flex items-center gap-2">
-              <Receipt className="h-4 w-4 text-neutral-400" />
-              <h2 className="text-base font-semibold text-neutral-900">Currency, Tax &amp; Total</h2>
+              <Receipt className="h-4 w-4 text-fg-muted" />
+              <h2 className="text-base font-semibold text-fg">Currency, Tax &amp; Total</h2>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">Currency</label>
+                <label className="text-sm font-medium text-fg-secondary">Currency</label>
                 <select value={currency}
                   onChange={(e) => { const c = e.target.value as Currency; setCurrency(c); if (c !== 'CAD') { setTaxRate(0); setTaxCode(null) } else setTaxRate(0.13) }}
-                  className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
+                  className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
                   {enabledCurrencyOptions(config, currency).map((c) => (
                     <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
                   ))}
                 </select>
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className={cn('text-sm font-medium', currency === 'CAD' ? 'text-neutral-700' : 'text-neutral-400')}>Tax</label>
+                <label className={cn('text-sm font-medium', currency === 'CAD' ? 'text-fg-secondary' : 'text-fg-muted')}>Tax</label>
                 {currency === 'CAD' ? (
                   <select
                     value={taxCode ?? ''}
@@ -402,7 +402,7 @@ export default function PoEditPage() {
                       setTaxCode(c?.code ?? null)
                       setTaxRate(c ? Number(c.rate) : 0)
                     }}
-                    className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
+                    className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
                     {/* keep a saved-but-now-inactive code selectable */}
                     {taxCode && !taxCodes.some((c) => c.code === taxCode) && (
                       <option value={taxCode}>{+(effectiveTaxRate * 100).toFixed(3)}% — {taxCode} (inactive)</option>
@@ -415,22 +415,22 @@ export default function PoEditPage() {
                     ))}
                   </select>
                 ) : (
-                  <div className="flex h-10 items-center rounded-md border border-neutral-200 bg-neutral-100 px-3 text-sm text-neutral-400">
+                  <div className="flex h-10 items-center rounded-md border border-line bg-surface-sunken px-3 text-sm text-fg-muted">
                     0% — Not applicable for {currency}
                   </div>
                 )}
               </div>
             </div>
-            <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-5 py-4 flex flex-col gap-2 max-w-xs ml-auto w-full">
-              <div className="flex justify-between text-sm text-neutral-700">
+            <div className="rounded-lg border border-line bg-surface-subtle px-5 py-4 flex flex-col gap-2 max-w-xs ml-auto w-full">
+              <div className="flex justify-between text-sm text-fg-secondary">
                 <span>Subtotal</span><span>{formatAmount(subtotal, currency)}</span>
               </div>
-              <div className="flex justify-between text-sm text-neutral-700">
+              <div className="flex justify-between text-sm text-fg-secondary">
                 <span>Tax ({Math.round(effectiveTaxRate * 100)}%)</span><span>{formatAmount(taxAmount, currency)}</span>
               </div>
-              <div className="border-t border-neutral-200 mt-1 pt-2 flex justify-between">
-                <span className="text-sm font-bold text-neutral-900">Total ({currency})</span>
-                <span className={cn('text-base font-bold', total > 0 ? 'text-neutral-900' : 'text-neutral-400')}>
+              <div className="border-t border-line mt-1 pt-2 flex justify-between">
+                <span className="text-sm font-bold text-fg">Total ({currency})</span>
+                <span className={cn('text-base font-bold', total > 0 ? 'text-fg' : 'text-fg-muted')}>
                   {formatAmount(total, currency)}
                 </span>
               </div>
@@ -438,12 +438,12 @@ export default function PoEditPage() {
           </div>
 
           {/* Notes */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
-            <h2 className="text-base font-semibold text-neutral-900">Notes</h2>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+            <h2 className="text-base font-semibold text-fg">Notes</h2>
             <FormField label="Buyer Notes / Terms &amp; Conditions" htmlFor="notes">
               <textarea id="notes" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)}
                 placeholder="Payment terms, delivery instructions, special conditions…"
-                className="w-full resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+                className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
             </FormField>
 
             {/* Prepayment Required */}
@@ -453,19 +453,19 @@ export default function PoEditPage() {
                 id="prepayment-po-edit"
                 checked={isPrepaid}
                 onChange={(e) => setIsPrepaid(e.target.checked)}
-                className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
+                className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600"
               />
-              <label htmlFor="prepayment-po-edit" className="text-sm text-neutral-700 cursor-pointer">
+              <label htmlFor="prepayment-po-edit" className="text-sm text-fg-secondary cursor-pointer">
                 Prepayment Required
               </label>
             </div>
           </div>
 
           {/* Attachments */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
             <div>
-              <h2 className="text-base font-semibold text-neutral-900">Attachments</h2>
-              <p className="text-xs text-neutral-400 mt-1">Uploads and removals are saved immediately.</p>
+              <h2 className="text-base font-semibold text-fg">Attachments</h2>
+              <p className="text-xs text-fg-muted mt-1">Uploads and removals are saved immediately.</p>
             </div>
             <AttachmentsEditor
               inputId="po-edit-file-upload"
@@ -479,12 +479,12 @@ export default function PoEditPage() {
           </div>
 
           {/* Footer actions */}
-          <div className="flex items-center justify-between rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-6 py-4">
+          <div className="flex items-center justify-between rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-6 py-4">
             <Link to={`/po/${id}`}>
               <Button variant="ghost">Cancel</Button>
             </Link>
             {submitError && (
-              <p role="alert" className="flex-1 mx-4 text-sm text-danger-600">{submitError}</p>
+              <p role="alert" className="flex-1 mx-4 text-sm text-danger-fg">{submitError}</p>
             )}
             <div className="flex items-center gap-3">
               <Button variant="secondary" onClick={() => handleSave(false)} disabled={isSubmitting}>
@@ -499,20 +499,20 @@ export default function PoEditPage() {
 
         {/* Sidebar */}
         <div className="lg:col-span-3">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
-            <h3 className="text-sm font-semibold text-neutral-700 mb-3">PO Info</h3>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
+            <h3 className="text-sm font-semibold text-fg-secondary mb-3">PO Info</h3>
             <dl className="flex flex-col gap-2 text-xs">
               <div className="flex justify-between">
-                <dt className="text-neutral-500">Number</dt>
-                <dd className="font-mono text-neutral-700">{po.number}</dd>
+                <dt className="text-fg-muted">Number</dt>
+                <dd className="font-mono text-fg-secondary">{po.number}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-neutral-500">Status</dt>
-                <dd className="capitalize text-neutral-700">{po.status}</dd>
+                <dt className="text-fg-muted">Status</dt>
+                <dd className="capitalize text-fg-secondary">{po.status}</dd>
               </div>
               {po.pr_number && (
                 <div className="flex justify-between">
-                  <dt className="text-neutral-500">Linked PR</dt>
+                  <dt className="text-fg-muted">Linked PR</dt>
                   <dd>
                     <Link to={`/pr/${po.pr_id}`} className="text-primary-600 hover:underline font-mono">{po.pr_number}</Link>
                   </dd>

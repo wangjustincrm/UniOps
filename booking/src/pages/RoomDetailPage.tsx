@@ -34,11 +34,11 @@ const EQUIPMENT_ICONS: Record<EquipmentOption, LucideIcon> = {
 
 function Skeleton() {
   return (
-    <div className="animate-pulse space-y-4 rounded-xl border border-neutral-200 bg-white p-6">
-      <div className="h-7 w-1/2 rounded bg-neutral-200" />
-      <div className="h-4 w-1/3 rounded bg-neutral-100" />
-      <div className="h-4 w-1/4 rounded bg-neutral-100" />
-      <div className="mt-6 h-8 w-full rounded bg-neutral-200" />
+    <div className="animate-pulse space-y-4 rounded-xl border border-line bg-surface p-6">
+      <div className="h-7 w-1/2 rounded bg-surface-strong" />
+      <div className="h-4 w-1/3 rounded bg-surface-sunken" />
+      <div className="h-4 w-1/4 rounded bg-surface-sunken" />
+      <div className="mt-6 h-8 w-full rounded bg-surface-strong" />
     </div>
   )
 }
@@ -61,7 +61,7 @@ export default function RoomDetailPage() {
       <div className="h-full overflow-y-auto">
         <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
           <BackLink to="/rooms"
-            className="mb-4 flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 transition-colors"
+            className="mb-4 flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg-secondary transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Rooms
@@ -77,12 +77,12 @@ export default function RoomDetailPage() {
       <div className="h-full overflow-y-auto">
         <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
           <BackLink to="/rooms"
-            className="mb-4 flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700"
+            className="mb-4 flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg-secondary"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Rooms
           </BackLink>
-          <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4 shrink-0" />
             {error instanceof Error ? error.message : 'Room not found.'}
           </div>
@@ -114,24 +114,24 @@ export default function RoomDetailPage() {
       <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 space-y-6">
         {/* Back nav */}
         <BackLink to="/rooms"
-          className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 transition-colors"
+          className="flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg-secondary transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to Rooms
         </BackLink>
 
         {/* Room header card */}
-        <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
+        <div className="rounded-xl border border-line bg-surface p-6 shadow-sm">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="min-w-0">
               <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-2xl font-bold text-neutral-900">{room.name}</h1>
-                <span className="font-mono text-sm text-neutral-400 bg-neutral-50 border border-neutral-200 rounded px-2 py-0.5">
+                <h1 className="text-2xl font-bold text-fg">{room.name}</h1>
+                <span className="font-mono text-sm text-fg-muted bg-surface-subtle border border-line rounded px-2 py-0.5">
                   {room.code}
                 </span>
               </div>
               {locationParts.length > 0 && (
-                <p className="mt-1 text-sm text-neutral-500">{locationParts.join(' · ')}</p>
+                <p className="mt-1 text-sm text-fg-muted">{locationParts.join(' · ')}</p>
               )}
             </div>
             {/* Status badge */}
@@ -145,19 +145,19 @@ export default function RoomDetailPage() {
 
           {/* Capacity + next meeting */}
           <div className="mt-4 flex flex-wrap gap-4">
-            <div className="flex items-center gap-1.5 text-sm text-neutral-600">
-              <Users className="h-4 w-4 text-neutral-400" />
+            <div className="flex items-center gap-1.5 text-sm text-fg-secondary">
+              <Users className="h-4 w-4 text-fg-muted" />
               Capacity: {room.capacity}
             </div>
             {nextTime && (
-              <div className="flex items-center gap-1.5 text-sm text-neutral-500">
-                <Clock className="h-4 w-4 text-neutral-400" />
+              <div className="flex items-center gap-1.5 text-sm text-fg-muted">
+                <Clock className="h-4 w-4 text-fg-muted" />
                 Next meeting: {nextTime}
               </div>
             )}
             {room.open_time_start && room.open_time_end && (
-              <div className="flex items-center gap-1.5 text-sm text-neutral-500">
-                <Clock className="h-4 w-4 text-neutral-400" />
+              <div className="flex items-center gap-1.5 text-sm text-fg-muted">
+                <Clock className="h-4 w-4 text-fg-muted" />
                 Open: {room.open_time_start.slice(0, 5)}–{room.open_time_end.slice(0, 5)}
               </div>
             )}
@@ -172,7 +172,7 @@ export default function RoomDetailPage() {
                 return (
                   <span
                     key={eq}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-neutral-50 border border-neutral-200 px-2 py-1 text-xs text-neutral-600"
+                    className="inline-flex items-center gap-1.5 rounded-md bg-surface-subtle border border-line px-2 py-1 text-xs text-fg-secondary"
                   >
                     {Icon && <Icon className="h-3.5 w-3.5" />}
                     {label}
@@ -184,7 +184,7 @@ export default function RoomDetailPage() {
 
           {/* Maintenance notes */}
           {room.status === 'maintenance' && room.notes && (
-            <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            <div className="mt-4 flex items-start gap-2 rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-fg">
               <Wrench className="h-4 w-4 shrink-0 mt-0.5" />
               <span>{room.notes}</span>
             </div>
@@ -201,7 +201,7 @@ export default function RoomDetailPage() {
                     key={fid}
                     src={`${fileBase}/files/v1/files/${fid}`}
                     alt={room.name}
-                    className="h-20 w-28 rounded-lg object-cover border border-neutral-200"
+                    className="h-20 w-28 rounded-lg object-cover border border-line"
                   />
                 ))}
               </div>
@@ -217,8 +217,8 @@ export default function RoomDetailPage() {
               className={cn(
                 'rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors',
                 isBookable
-                  ? 'bg-[#085E5E] text-white hover:bg-[#074f4f]'
-                  : 'bg-neutral-100 text-neutral-400 cursor-not-allowed',
+                  ? 'bg-primary-700 text-white hover:bg-[#074f4f]'
+                  : 'bg-surface-sunken text-fg-muted cursor-not-allowed',
               )}
             >
               {isBookable ? 'Book this room' : 'Room unavailable for booking'}
@@ -227,8 +227,8 @@ export default function RoomDetailPage() {
         </div>
 
         {/* Timeline card */}
-        <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm space-y-4">
-          <h2 className="text-base font-semibold text-neutral-800">Schedule</h2>
+        <div className="rounded-xl border border-line bg-surface p-6 shadow-sm space-y-4">
+          <h2 className="text-base font-semibold text-fg">Schedule</h2>
 
           {/* Week strip */}
           <WeekStrip
@@ -239,7 +239,7 @@ export default function RoomDetailPage() {
 
           {/* Day timeline for selected day */}
           <div className="mt-3">
-            <p className="mb-2 text-xs font-medium text-neutral-500">
+            <p className="mb-2 text-xs font-medium text-fg-muted">
               {new Date(`${selectedDay}T12:00:00`).toLocaleDateString('en-CA', { weekday: 'long' })}, {formatDate(selectedDay)}
             </p>
             <DayTimeline

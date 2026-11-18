@@ -143,15 +143,15 @@ export function MaterialPicker({
           // "CODE — Long Product Name" spills past the field into the next
           // grid column (covers the Lot Number input).
           className={cn(
-            'flex h-10 w-full min-w-0 flex-1 items-center gap-2 rounded-lg border bg-neutral-100 px-3 text-left text-sm transition-colors',
-            'focus:outline-none focus:bg-white focus:border-primary-600',
+            'flex h-10 w-full min-w-0 flex-1 items-center gap-2 rounded-lg border bg-surface-sunken px-3 text-left text-sm transition-colors',
+            'focus:outline-none focus:bg-surface focus:border-primary-600',
             'disabled:cursor-not-allowed disabled:opacity-60',
-            hasError ? 'border-danger-600 bg-danger-50' : 'border-neutral-200',
-            open && 'border-primary-600 bg-white',
+            hasError ? 'border-danger-solid bg-danger-soft' : 'border-line',
+            open && 'border-primary-600 bg-surface',
           )}
         >
-          <Search className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
-          <span className={cn('min-w-0 flex-1 truncate', value ? 'text-neutral-900' : 'text-neutral-400')}>
+          <Search className="h-3.5 w-3.5 shrink-0 text-fg-muted" />
+          <span className={cn('min-w-0 flex-1 truncate', value ? 'text-fg' : 'text-fg-muted')}>
             {value || placeholder}
           </span>
         </button>
@@ -160,7 +160,7 @@ export function MaterialPicker({
             type="button"
             onClick={onClear}
             aria-label="Clear selected product"
-            className="shrink-0 text-neutral-300 hover:text-danger-500"
+            className="shrink-0 text-fg-faint hover:text-danger-fg"
           >
             <XIcon className="h-4 w-4" />
           </button>
@@ -173,11 +173,11 @@ export function MaterialPicker({
           role="listbox"
           aria-label="Products"
           style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width }}
-          className={`${panelZClass} flex flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-lg`}
+          className={`${panelZClass} flex flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-lg`}
         >
-          <div className="border-b border-neutral-100 p-2">
-            <div className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-2">
-              <Search className="h-3.5 w-3.5 text-neutral-400" />
+          <div className="border-b border-line-subtle p-2">
+            <div className="flex items-center gap-2 rounded-md border border-line bg-surface-subtle px-2">
+              <Search className="h-3.5 w-3.5 text-fg-muted" />
               <input
                 autoFocus
                 type="text"
@@ -190,9 +190,9 @@ export function MaterialPicker({
           </div>
           <div className="max-h-72 overflow-y-auto">
             {isLoading ? (
-              <div className="px-3 py-4 text-xs text-neutral-400">Loading…</div>
+              <div className="px-3 py-4 text-xs text-fg-muted">Loading…</div>
             ) : !shown.length ? (
-              <div className="flex flex-col items-center gap-1 py-6 text-neutral-400">
+              <div className="flex flex-col items-center gap-1 py-6 text-fg-muted">
                 <Package className="h-5 w-5" />
                 <span className="text-xs">No matching products</span>
               </div>
@@ -205,16 +205,16 @@ export function MaterialPicker({
                   aria-selected={m.code === value}
                   onClick={() => handleSelect(m)}
                   className={cn(
-                    'block w-full border-b border-neutral-50 px-3 py-2 text-left transition-colors last:border-0 hover:bg-primary-50',
+                    'block w-full border-b border-line-subtle px-3 py-2 text-left transition-colors last:border-0 hover:bg-primary-50',
                     m.code === value && 'bg-primary-50/60',
                   )}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="shrink-0 font-mono text-[10px] text-primary-600">{m.code}</span>
-                    <span className="truncate text-xs font-medium text-neutral-900">{m.name ?? '—'}</span>
+                    <span className="shrink-0 font-mono text-2xs text-primary-600">{m.code}</span>
+                    <span className="truncate text-xs font-medium text-fg">{m.name ?? '—'}</span>
                   </div>
                   {(m.spec || m.base_uom) && (
-                    <div className="mt-0.5 text-[10px] text-neutral-400">
+                    <div className="mt-0.5 text-2xs text-fg-muted">
                       {[m.spec, m.base_uom].filter(Boolean).join(' · ')}
                     </div>
                   )}
@@ -222,7 +222,7 @@ export function MaterialPicker({
               ))
             )}
             {overflow > 0 && (
-              <div className="border-t border-neutral-100 px-3 py-2 text-center text-[10px] text-neutral-400">
+              <div className="border-t border-line-subtle px-3 py-2 text-center text-2xs text-fg-muted">
                 +{overflow} more — keep typing to narrow
               </div>
             )}

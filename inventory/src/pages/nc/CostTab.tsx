@@ -24,10 +24,10 @@ function Breakdown({ code, date, uom }: { code: string; date: string; uom: strin
   })
   return (
     <section className="flex flex-col gap-1.5">
-      <h3 className="text-xs font-semibold text-neutral-700">Quantity by warehouse and batch</h3>
-      <p className="text-[11px] text-neutral-400">IA costs at material level only — amounts are not split by batch.</p>
+      <h3 className="text-xs font-semibold text-fg-secondary">Quantity by warehouse and batch</h3>
+      <p className="text-2xs text-fg-muted">IA costs at material level only — amounts are not split by batch.</p>
       {q.isError ? <ErrorBox error={q.error} fallback="Could not load the breakdown." /> : (
-        <div className="max-h-72 overflow-auto rounded-md border border-neutral-200 bg-white">
+        <div className="max-h-72 overflow-auto rounded-md border border-line bg-surface">
           <table className="min-w-full text-xs">
             <thead className={thCls}>
               <tr>
@@ -40,10 +40,10 @@ function Breakdown({ code, date, uom }: { code: string; date: string; uom: strin
               {q.isLoading && <LoadingRows cols={3} rows={3} />}
               {q.data && q.data.items.length === 0 && <EmptyRow cols={3}>No quantity on this date.</EmptyRow>}
               {q.data?.items.map((r, i) => (
-                <tr key={`${r.warehouse_code}|${r.batch}|${i}`} className="border-t border-neutral-100">
+                <tr key={`${r.warehouse_code}|${r.batch}|${i}`} className="border-t border-line-subtle">
                   <td className="px-3 py-1.5 font-mono">{r.warehouse_code ?? '—'}</td>
-                  <td className="px-3 py-1.5 font-mono">{r.batch ?? <span className="font-sans text-neutral-400">no batch</span>}</td>
-                  <td className={cn(numCls, isNegative(r.qty) && 'text-danger-600')}>
+                  <td className="px-3 py-1.5 font-mono">{r.batch ?? <span className="font-sans text-fg-muted">no batch</span>}</td>
+                  <td className={cn(numCls, isNegative(r.qty) && 'text-danger-fg')}>
                     {formatQty(r.qty)}<Uom uom={uom} />
                   </td>
                 </tr>
@@ -67,10 +67,10 @@ function Lines({ code, date }: { code: string; date: string }) {
   const cols = showAmt ? 11 : 10
   return (
     <section className="flex flex-col gap-1.5">
-      <h3 className="text-xs font-semibold text-neutral-700">Ledger lines</h3>
+      <h3 className="text-xs font-semibold text-fg-secondary">Ledger lines</h3>
       {q.isError ? <ErrorBox error={q.error} fallback="Could not load the ledger lines." /> : (
         <>
-          <div className="max-h-96 overflow-auto rounded-md border border-neutral-200 bg-white">
+          <div className="max-h-96 overflow-auto rounded-md border border-line bg-surface">
             <table className="min-w-full text-xs">
               <thead className={cn(thCls, 'sticky top-0')}>
                 <tr>
@@ -91,7 +91,7 @@ function Lines({ code, date }: { code: string; date: string }) {
                 {q.isLoading && <LoadingRows cols={cols} rows={4} />}
                 {q.data && q.data.items.length === 0 && <EmptyRow cols={cols}>No ledger lines up to this date.</EmptyRow>}
                 {q.data?.items.map((l, i) => (
-                  <tr key={i} className={cn('border-t border-neutral-100', l.uncosted && 'bg-danger-50/50')}>
+                  <tr key={i} className={cn('border-t border-line-subtle', l.uncosted && 'bg-danger-50/50')}>
                     <td className="px-3 py-1.5 font-mono">{l.period ?? '—'}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap" title={l.biz_date ?? undefined}>
                       {l.biz_date ? formatDate(l.biz_date.slice(0, 10)) : '—'}
@@ -101,21 +101,21 @@ function Lines({ code, date }: { code: string; date: string }) {
                     {showAmt && (
                       <td className={numCls}>
                         {l.uncosted
-                          ? <span className="font-sans font-medium text-danger-600">not costed</span>
+                          ? <span className="font-sans font-medium text-danger-fg">not costed</span>
                           : formatMoney(l.amount)}
                       </td>
                     )}
                     <td className="px-3 py-1.5">
                       <span className="font-mono">{l.trantype_code ?? l.bill_type ?? '—'}</span>
-                      {l.trantype_name && <span className="ml-1.5 text-neutral-500">{l.trantype_name}</span>}
+                      {l.trantype_name && <span className="ml-1.5 text-fg-muted">{l.trantype_name}</span>}
                     </td>
                     <td className="px-3 py-1.5 font-mono">{l.bill_code ?? '—'}</td>
                     <td className="px-3 py-1.5 font-mono">{l.source_code ?? '—'}</td>
                     <td className="px-3 py-1.5 font-mono">{l.batch ?? '—'}</td>
                     <td className="px-3 py-1.5 font-mono">{l.warehouse_code ?? '—'}</td>
                     <td className="px-3 py-1.5">
-                      {l.estimate && <Badge variant="warning" className="text-[10px]">Estimate</Badge>}
-                      {l.uncosted && !showAmt && <span className="ml-1 font-medium text-danger-600">not costed</span>}
+                      {l.estimate && <Badge variant="warning" className="text-2xs">Estimate</Badge>}
+                      {l.uncosted && !showAmt && <span className="ml-1 font-medium text-danger-fg">not costed</span>}
                     </td>
                   </tr>
                 ))}
@@ -143,10 +143,10 @@ function CostRowView({ r, showAmt, open, onToggle, date, cols }: {
   return (
     <>
       <tr
-        className={cn('border-t border-neutral-100', code && 'cursor-pointer hover:bg-neutral-50', open && 'bg-neutral-50')}
+        className={cn('border-t border-line-subtle', code && 'cursor-pointer hover:bg-surface-subtle', open && 'bg-surface-subtle')}
         onClick={code ? onToggle : undefined}
       >
-        <td className="w-8 px-2 py-2 text-neutral-400">
+        <td className="w-8 px-2 py-2 text-fg-muted">
           {code && (
             <button type="button" aria-expanded={open} aria-label={open ? 'Hide details' : 'Show details'}
               onClick={(e) => { e.stopPropagation(); onToggle() }}>
@@ -155,16 +155,16 @@ function CostRowView({ r, showAmt, open, onToggle, date, cols }: {
           )}
         </td>
         <td className="px-3 py-2"><MaterialCell code={code} name={r.material_name} /></td>
-        <td className={cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(r.qty) && 'text-danger-600')}>
+        <td className={cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(r.qty) && 'text-danger-fg')}>
           {formatQty(r.qty)}<Uom uom={r.uom} />
         </td>
         {showAmt && (
-          <td className={cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(r.amount) && 'text-danger-600')}>
+          <td className={cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(r.amount) && 'text-danger-fg')}>
             {formatMoney(r.amount)}
           </td>
         )}
         {showAmt && (
-          <td className={cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(r.unit_price) && 'text-danger-600')}>
+          <td className={cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(r.unit_price) && 'text-danger-fg')}>
             {formatUnitPrice(r.unit_price)}
           </td>
         )}
@@ -173,7 +173,7 @@ function CostRowView({ r, showAmt, open, onToggle, date, cols }: {
         </td>
       </tr>
       {open && code && (
-        <tr className="border-t border-neutral-100 bg-neutral-50/60">
+        <tr className="border-t border-line-subtle bg-surface-subtle/60">
           <td colSpan={cols} className="px-4 py-3">
             <div className="flex flex-col gap-4">
               <Breakdown code={code} date={date} uom={r.uom} />
@@ -265,9 +265,9 @@ export function CostTab({ date, classCode, search }: { date: string; classCode: 
 
 function Tile({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
-    <div className="min-w-[9rem] rounded-lg border border-neutral-200 bg-white px-3 py-2" title={title}>
-      <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">{label}</p>
-      <p className="mt-0.5 font-mono text-sm text-neutral-800">{value}</p>
+    <div className="min-w-[9rem] rounded-lg border border-line bg-surface px-3 py-2" title={title}>
+      <p className="text-2xs font-medium uppercase tracking-wide text-fg-muted">{label}</p>
+      <p className="mt-0.5 font-mono text-sm text-fg">{value}</p>
     </div>
   )
 }

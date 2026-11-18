@@ -34,22 +34,22 @@ export function DeleteConfirm({ schema, record, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="text-base font-semibold text-red-700">
+      <div className="w-full max-w-md rounded-xl bg-surface p-5 shadow-xl">
+        <h3 className="text-base font-semibold text-danger-fg">
           Delete {schema.label} · {String(record[schema.number_field] ?? '')}
         </h3>
-        <p className="mt-2 text-sm text-neutral-600">
+        <p className="mt-2 text-sm text-fg-secondary">
           This cascades across the shared database and cannot be undone.
         </p>
-        <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm">
-          {!cascade && !error && <p className="text-neutral-400">Computing impact…</p>}
+        <div className="mt-3 rounded-lg border border-line bg-surface-subtle p-3 text-sm">
+          {!cascade && !error && <p className="text-fg-muted">Computing impact…</p>}
           {parts && <CascadeBreakdown parts={parts} removedLabel="Will be deleted" />}
         </div>
-        {error && <p className="mt-3 text-xs text-red-600">{error}</p>}
+        {error && <p className="mt-3 text-xs text-danger-fg">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-100">Cancel</button>
+          <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-sunken">Cancel</button>
           <button onClick={confirm} disabled={del.isPending || !cascade || isBlocked}
-            className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+            className="rounded-lg bg-danger-solid px-3 py-1.5 text-sm font-semibold text-white hover:bg-danger-700 disabled:opacity-50">
             {del.isPending ? 'Deleting…' : 'Delete permanently'}
           </button>
         </div>

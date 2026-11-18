@@ -109,12 +109,12 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
     // z-60: this opens from inside the upload modal, which is z-50.
     // Absolute bands rather than a flex column: the viewport box needs a
     // definite height for both the scroll and the fit measurement above.
-    <div className="fixed inset-0 z-[60] bg-neutral-900/80 backdrop-blur-sm" onClick={onClose}>
-      <div className="absolute inset-x-0 top-0 flex h-14 items-center justify-between gap-3 px-5 text-sm text-neutral-100"
+    <div className="fixed inset-0 z-[60] bg-inverse/80 backdrop-blur-sm" onClick={onClose}>
+      <div className="absolute inset-x-0 top-0 flex h-14 items-center justify-between gap-3 px-5 text-sm text-fg-faint"
            onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3">
           <span className="font-medium">Page {page} of {pageCount}</span>
-          <span className="rounded bg-neutral-700 px-2 py-0.5 text-xs">Invoice #{groupIndex + 1}</span>
+          <span className="rounded bg-inverse px-2 py-0.5 text-xs">Invoice #{groupIndex + 1}</span>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -124,31 +124,31 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
             title={page === 1 ? 'The first page always starts the first invoice' : undefined}
             className={cn(
               'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
-              page === 1 ? 'cursor-not-allowed bg-neutral-700 text-neutral-500'
+              page === 1 ? 'cursor-not-allowed bg-inverse text-fg-muted'
                 : startsInvoice ? 'bg-primary-600 text-white hover:bg-primary-700'
-                : 'bg-neutral-700 text-neutral-100 hover:bg-neutral-600',
+                : 'bg-inverse text-fg-faint hover:bg-fg-faint',
             )}
           >
             <Scissors className="h-3.5 w-3.5" />
             {startsInvoice ? 'Starts a new invoice' : 'Start a new invoice here'}
           </button>
           <button type="button" onClick={() => setFit((f) => !f)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-700 px-3 py-1.5 text-xs font-medium text-neutral-100 hover:bg-neutral-600">
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-inverse px-3 py-1.5 text-xs font-medium text-fg-faint hover:bg-fg-faint">
             {fit ? <><Maximize2 className="h-3.5 w-3.5" /> Actual size</>
                  : <><Minimize2 className="h-3.5 w-3.5" /> Fit to window</>}
           </button>
           <button type="button" onClick={onClose}
-                  className="rounded-lg bg-neutral-700 p-1.5 text-neutral-100 hover:bg-neutral-600">
+                  className="rounded-lg bg-inverse p-1.5 text-fg-faint hover:bg-fg-faint">
             <X className="h-4 w-4" />
           </button>
         </div>
       </div>
 
       <div ref={boxRef}
-           className="absolute inset-x-14 bottom-4 top-14 overflow-auto rounded-lg bg-neutral-800 p-3"
+           className="absolute inset-x-14 bottom-4 top-14 overflow-auto rounded-lg bg-inverse p-3"
            onClick={(e) => e.stopPropagation()}>
         {rendering && (
-          <div className="flex h-full items-center justify-center gap-2 text-sm text-neutral-400">
+          <div className="flex h-full items-center justify-center gap-2 text-sm text-fg-muted">
             <Loader2 className="h-4 w-4 animate-spin" /> Rendering…
           </div>
         )}
@@ -156,17 +156,17 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
             overflows its scroll container has its top-left cut off and
             unreachable, which is exactly the state "actual size" produces. */}
         <canvas ref={canvasRef}
-                className={cn('mx-auto block rounded bg-white shadow-lg', rendering && 'hidden')} />
+                className={cn('mx-auto block rounded bg-surface shadow-lg', rendering && 'hidden')} />
       </div>
 
       <button type="button" disabled={page === 1}
               onClick={(e) => { e.stopPropagation(); onGo(page - 1) }}
-              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-neutral-700/90 p-2 text-white hover:bg-neutral-600 disabled:opacity-20">
+              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-inverse/90 p-2 text-white hover:bg-fg-faint disabled:opacity-20">
         <ChevronLeft className="h-5 w-5" />
       </button>
       <button type="button" disabled={page === pageCount}
               onClick={(e) => { e.stopPropagation(); onGo(page + 1) }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-neutral-700/90 p-2 text-white hover:bg-neutral-600 disabled:opacity-20">
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-inverse/90 p-2 text-white hover:bg-fg-faint disabled:opacity-20">
         <ChevronRight className="h-5 w-5" />
       </button>
     </div>,
@@ -253,7 +253,7 @@ export function PdfSplitPanel({ file, onConfirm, onCancel, busy = false }: Props
   const tooManyPages = pageCount > MAX_SPLITTABLE_PAGES
 
   if (failed) return (
-    <div className="flex flex-1 items-center justify-center gap-2 text-sm text-neutral-500">
+    <div className="flex flex-1 items-center justify-center gap-2 text-sm text-fg-muted">
       <AlertTriangle className="h-4 w-4" />
       This PDF could not be read for splitting — continue and it uploads as one invoice.
       <Button size="sm" variant="secondary" onClick={onCancel}>Continue</Button>
@@ -261,7 +261,7 @@ export function PdfSplitPanel({ file, onConfirm, onCancel, busy = false }: Props
   )
 
   if (!pageCount) return (
-    <div className="flex flex-1 items-center justify-center gap-2 text-sm text-neutral-400">
+    <div className="flex flex-1 items-center justify-center gap-2 text-sm text-fg-muted">
       <Loader2 className="h-4 w-4 animate-spin" /> Reading pages…
     </div>
   )
@@ -269,10 +269,10 @@ export function PdfSplitPanel({ file, onConfirm, onCancel, busy = false }: Props
   return (
     <div className="flex flex-1 min-h-0 flex-col gap-4">
       <div>
-        <h3 className="text-sm font-semibold text-neutral-900">
+        <h3 className="text-sm font-semibold text-fg">
           This PDF has {pageCount} pages — how many invoices is it?
         </h3>
-        <p className="mt-1 text-xs text-neutral-500">
+        <p className="mt-1 text-xs text-fg-muted">
           Click a page to see it full size. Click the scissors between two pages
           to start a new invoice there. Each invoice is then read, checked and
           created on its own, with its own pages attached.
@@ -280,7 +280,7 @@ export function PdfSplitPanel({ file, onConfirm, onCancel, busy = false }: Props
       </div>
 
       {tooManyPages ? (
-        <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-700">
+        <div className="flex items-start gap-2 rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-fg">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
             {pageCount} pages is more than this can show at once (limit {MAX_SPLITTABLE_PAGES}).
@@ -290,7 +290,7 @@ export function PdfSplitPanel({ file, onConfirm, onCancel, busy = false }: Props
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-neutral-500">Quick set:</span>
+            <span className="text-xs font-medium text-fg-muted">Quick set:</span>
             <Button size="sm" variant="secondary" onClick={() => applyEvery(1)}>Every page</Button>
             <Button size="sm" variant="secondary" onClick={() => applyEvery(2)}>Every 2 pages</Button>
             <Button size="sm" variant="secondary" onClick={() => setCutsAfter(new Set())}>
@@ -298,7 +298,7 @@ export function PdfSplitPanel({ file, onConfirm, onCancel, busy = false }: Props
             </Button>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+          <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-line bg-surface-subtle p-3">
             <div className="flex flex-wrap items-stretch gap-y-4">
               {Array.from({ length: pageCount }, (_, i) => i + 1).map((page) => {
                 const groupIndex = groups.findIndex((g) => g.includes(page))
@@ -311,20 +311,20 @@ export function PdfSplitPanel({ file, onConfirm, onCancel, busy = false }: Props
                         onClick={() => setPreviewPage(page)}
                         title={`Open page ${page} full size`}
                         className={cn(
-                          'group relative flex h-[134px] w-[100px] items-center justify-center overflow-hidden rounded border bg-white',
+                          'group relative flex h-[134px] w-[100px] items-center justify-center overflow-hidden rounded border bg-surface',
                           'transition hover:ring-2 hover:ring-primary-500',
-                          groupIndex % 2 === 0 ? 'border-primary-200' : 'border-neutral-300',
+                          groupIndex % 2 === 0 ? 'border-primary-200' : 'border-line-strong',
                         )}
                       >
                         {thumbs[page - 1]
                           ? <img src={thumbs[page - 1]} alt={`Page ${page}`} className="max-h-full max-w-full" />
-                          : <Loader2 className="h-4 w-4 animate-spin text-neutral-300" />}
-                        <span className="pointer-events-none absolute inset-0 hidden items-center justify-center bg-neutral-900/50 group-hover:flex">
+                          : <Loader2 className="h-4 w-4 animate-spin text-fg-faint" />}
+                        <span className="pointer-events-none absolute inset-0 hidden items-center justify-center bg-inverse/50 group-hover:flex">
                           <Maximize2 className="h-4 w-4 text-white" />
                         </span>
                       </button>
-                      <span className="text-[11px] text-neutral-500">
-                        p{page} · <span className="font-medium text-neutral-700">#{groupIndex + 1}</span>
+                      <span className="text-2xs text-fg-muted">
+                        p{page} · <span className="font-medium text-fg-secondary">#{groupIndex + 1}</span>
                       </span>
                     </div>
                     {page < pageCount && (
@@ -336,7 +336,7 @@ export function PdfSplitPanel({ file, onConfirm, onCancel, busy = false }: Props
                           'mx-0.5 flex w-6 shrink-0 items-center justify-center rounded transition-colors',
                           isCut
                             ? 'bg-primary-600 text-white hover:bg-primary-700'
-                            : 'text-neutral-300 hover:bg-neutral-200 hover:text-neutral-600',
+                            : 'text-fg-faint hover:bg-surface-strong hover:text-fg-secondary',
                         )}
                       >
                         <Scissors className="h-3.5 w-3.5" />
@@ -363,12 +363,12 @@ export function PdfSplitPanel({ file, onConfirm, onCancel, busy = false }: Props
         />
       )}
 
-      <div className="flex items-center justify-between gap-3 border-t border-neutral-100 pt-3">
-        <p className="text-xs text-neutral-600">
+      <div className="flex items-center justify-between gap-3 border-t border-line-subtle pt-3">
+        <p className="text-xs text-fg-secondary">
           {groups.length === 1
             ? 'Uploads as one invoice.'
             : <>
-                <span className="font-semibold text-neutral-900">{groups.length} invoices</span>
+                <span className="font-semibold text-fg">{groups.length} invoices</span>
                 {' — '}{groups.map(describeGroup).join(' · ')}
               </>}
         </p>

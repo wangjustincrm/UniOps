@@ -73,19 +73,19 @@ const PO_TYPES = [
 
 // ─── Shared UI helpers ────────────────────────────────────────────────────────
 
-const selectCls = 'h-9 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-800 focus:outline-none focus:ring-2 focus:ring-primary-600'
-const inputCls  = 'h-9 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-800 focus:outline-none focus:ring-2 focus:ring-primary-600'
+const selectCls = 'h-9 w-full rounded-lg border border-line bg-surface px-3 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-600'
+const inputCls  = 'h-9 w-full rounded-lg border border-line bg-surface px-3 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 function DateRangeRow({ value, onChange }: { value: DateRange; onChange: (v: DateRange) => void }) {
   return (
     <div className="grid grid-cols-2 gap-2">
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-neutral-500">From</label>
+        <label className="text-xs font-medium text-fg-muted">From</label>
         <input type="date" className={inputCls} value={value.date_from}
           onChange={(e) => onChange({ ...value, date_from: e.target.value })} />
       </div>
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-neutral-500">To</label>
+        <label className="text-xs font-medium text-fg-muted">To</label>
         <input type="date" className={inputCls} value={value.date_to}
           onChange={(e) => onChange({ ...value, date_to: e.target.value })} />
       </div>
@@ -100,7 +100,7 @@ function StatusSelect({ options, value, onChange }: {
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-xs font-medium text-neutral-500">Status</label>
+      <label className="text-xs font-medium text-fg-muted">Status</label>
       <select className={selectCls} value={value} onChange={(e) => onChange(e.target.value)}>
         <option value="">All Statuses</option>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -129,21 +129,21 @@ function ReportCard({
   error: string | null
 }) {
   return (
-    <div className="flex flex-col rounded-2xl border border-neutral-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
+    <div className="flex flex-col rounded-2xl border border-line bg-surface shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
       {/* Header */}
-      <div className="flex items-start gap-3 px-5 py-4 border-b border-neutral-100">
+      <div className="flex items-start gap-3 px-5 py-4 border-b border-line-subtle">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50">
           <Icon className="h-4.5 w-4.5 text-primary-600" />
         </div>
         <div>
-          <p className="text-sm font-semibold text-neutral-900">{title}</p>
-          <p className="text-xs text-neutral-500 mt-0.5">{description}</p>
+          <p className="text-sm font-semibold text-fg">{title}</p>
+          <p className="text-xs text-fg-muted mt-0.5">{description}</p>
         </div>
       </div>
 
       {/* Filters */}
       {children && (
-        <div className="flex flex-col gap-3 px-5 py-4 bg-neutral-50 border-b border-neutral-100">
+        <div className="flex flex-col gap-3 px-5 py-4 bg-surface-subtle border-b border-line-subtle">
           {children}
         </div>
       )}
@@ -151,7 +151,7 @@ function ReportCard({
       {/* Footer */}
       <div className="flex items-center justify-between gap-3 px-5 py-3">
         {error ? (
-          <span className="flex items-center gap-1.5 text-xs text-danger-600">
+          <span className="flex items-center gap-1.5 text-xs text-danger-fg">
             <AlertCircle className="h-3.5 w-3.5 shrink-0" />{error}
           </span>
         ) : <span />}
@@ -191,7 +191,7 @@ function PrReport() {
       <div className="grid grid-cols-2 gap-2">
         <StatusSelect options={PR_STATUSES} value={status} onChange={setStatus} />
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-neutral-500">Cost Center</label>
+          <label className="text-xs font-medium text-fg-muted">Cost Center</label>
           <select className={selectCls} value={costCenterId} onChange={(e) => setCostCenterId(e.target.value)}>
             <option value="">All Cost Centers</option>
             {costCenters.map((cc) => <option key={cc.id} value={cc.id}>{cc.code} — {cc.name}</option>)}
@@ -227,7 +227,7 @@ function PoReport() {
       <div className="grid grid-cols-2 gap-2">
         <StatusSelect options={PO_STATUSES} value={status} onChange={setStatus} />
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-neutral-500">PO Type</label>
+          <label className="text-xs font-medium text-fg-muted">PO Type</label>
           <select className={selectCls} value={poType} onChange={(e) => setPoType(e.target.value)}>
             <option value="">All Types</option>
             {PO_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
@@ -235,7 +235,7 @@ function PoReport() {
         </div>
       </div>
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-neutral-500">Vendor</label>
+        <label className="text-xs font-medium text-fg-muted">Vendor</label>
         <select className={selectCls} value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
           <option value="">All Vendors</option>
           {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
@@ -267,7 +267,7 @@ function GrReport() {
       <div className="grid grid-cols-2 gap-2">
         <StatusSelect options={GR_STATUSES} value={status} onChange={setStatus} />
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-neutral-500">GR Type</label>
+          <label className="text-xs font-medium text-fg-muted">GR Type</label>
           <select className={selectCls} value={grType} onChange={(e) => setGrType(e.target.value)}>
             <option value="">All Types</option>
             <option value="physical">Physical</option>
@@ -302,7 +302,7 @@ function InvoiceReport() {
       <DateRangeRow value={dates} onChange={setDates} />
       <StatusSelect options={INVOICE_STATUSES} value={status} onChange={setStatus} />
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-neutral-500">Vendor</label>
+        <label className="text-xs font-medium text-fg-muted">Vendor</label>
         <select className={selectCls} value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
           <option value="">All Vendors</option>
           {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
@@ -337,7 +337,7 @@ function PaReport() {
       <div className="grid grid-cols-2 gap-2">
         <StatusSelect options={PA_STATUSES} value={status} onChange={setStatus} />
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-neutral-500">PA Type</label>
+          <label className="text-xs font-medium text-fg-muted">PA Type</label>
           <select className={selectCls} value={paType} onChange={(e) => setPaType(e.target.value)}>
             <option value="">All Types</option>
             <option value="regular">Regular</option>
@@ -346,7 +346,7 @@ function PaReport() {
         </div>
       </div>
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-neutral-500">Vendor</label>
+        <label className="text-xs font-medium text-fg-muted">Vendor</label>
         <select className={selectCls} value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
           <option value="">All Vendors</option>
           {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
@@ -397,17 +397,17 @@ function VendorReport() {
     <ReportCard icon={Store} title="Vendors" description="Vendor master list with category, contact info, bank details, and active status." onDownload={handleDownload} loading={loading} error={error}>
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-neutral-500">Category</label>
+          <label className="text-xs font-medium text-fg-muted">Category</label>
           <select className={selectCls} value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="">All Categories</option>
             {VENDOR_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-neutral-500">Active Filter</label>
+          <label className="text-xs font-medium text-fg-muted">Active Filter</label>
           <label className="flex h-9 items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} className="h-4 w-4 rounded border-neutral-300 accent-primary-600" />
-            <span className="text-sm text-neutral-700">Active vendors only</span>
+            <input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} className="h-4 w-4 rounded border-line-strong accent-primary-600" />
+            <span className="text-sm text-fg-secondary">Active vendors only</span>
           </label>
         </div>
       </div>
@@ -421,8 +421,8 @@ export default function ReportCentrePage() {
   return (
     <div className="flex flex-col gap-6 p-6 max-w-5xl mx-auto">
       <div>
-        <h1 className="text-xl font-bold text-neutral-900">Report Centre</h1>
-        <p className="text-sm text-neutral-500 mt-1">Export data as CSV for each module. Apply filters to narrow the export scope.</p>
+        <h1 className="text-xl font-bold text-fg">Report Centre</h1>
+        <p className="text-sm text-fg-muted mt-1">Export data as CSV for each module. Apply filters to narrow the export scope.</p>
       </div>
 
       <div className={cn('grid gap-5', 'grid-cols-1 lg:grid-cols-2')}>

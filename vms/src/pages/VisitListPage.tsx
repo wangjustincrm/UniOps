@@ -36,8 +36,8 @@ export default function VisitListPage({ scope }: { scope: 'today' | 'all' }) {
     <div>
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">{title}</h1>
-          <p className="mt-1 text-sm text-neutral-500">{subtitle}</p>
+          <h1 className="text-2xl font-bold text-fg">{title}</h1>
+          <p className="mt-1 text-sm text-fg-muted">{subtitle}</p>
         </div>
         <Link
           to="/new"
@@ -49,15 +49,15 @@ export default function VisitListPage({ scope }: { scope: 'today' | 'all' }) {
       </div>
 
       {error && (
-        <div className="mt-4 flex items-center gap-2 rounded-md border border-red-200 bg-danger-50 px-3 py-2 text-sm text-danger-600">
+        <div className="mt-4 flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           <AlertCircle className="h-4 w-4" />
           {error.message}
         </div>
       )}
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-neutral-200 bg-white">
-        <table className="min-w-full divide-y divide-neutral-200">
-          <thead className="bg-neutral-50 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500">
+      <div className="mt-6 overflow-hidden rounded-lg border border-line bg-surface">
+        <table className="min-w-full divide-y divide-line">
+          <thead className="bg-surface-subtle text-left text-xs font-semibold uppercase tracking-wider text-fg-muted">
             <tr>
               <SortTh label="Visitor" sortKey="visitor" sort={sort} onSort={onSort} className="px-4 py-2.5" />
               <SortTh label="Company" sortKey="company" sort={sort} onSort={onSort} className="px-4 py-2.5 hidden md:table-cell" />
@@ -66,13 +66,13 @@ export default function VisitListPage({ scope }: { scope: 'today' | 'all' }) {
               <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-2.5" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-neutral-100 bg-white text-sm">
+          <tbody className="divide-y divide-line-subtle bg-surface text-sm">
             {isLoading && (
-              <tr><td colSpan={5} className="px-4 py-6 text-center text-neutral-400">Loading…</td></tr>
+              <tr><td colSpan={5} className="px-4 py-6 text-center text-fg-muted">Loading…</td></tr>
             )}
             {!isLoading && items.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-12 text-center text-neutral-400">
+                <td colSpan={5} className="px-4 py-12 text-center text-fg-muted">
                   No visits {scope === 'today' ? 'today' : 'on record'} yet.
                 </td>
               </tr>
@@ -86,10 +86,10 @@ export default function VisitListPage({ scope }: { scope: 'today' | 'all' }) {
                       : `Visit #${v.id.slice(0, 8)}`}
                   </Link>
                 </td>
-                <td className="px-4 py-2.5 hidden md:table-cell text-neutral-600">
+                <td className="px-4 py-2.5 hidden md:table-cell text-fg-secondary">
                   {v.visitor?.company_name ?? '—'}
                 </td>
-                <td className="px-4 py-2.5 hidden md:table-cell text-neutral-600">
+                <td className="px-4 py-2.5 hidden md:table-cell text-fg-secondary">
                   {formatDateTime(v.planned_arrival)}
                 </td>
                 <td className="px-4 py-2.5">

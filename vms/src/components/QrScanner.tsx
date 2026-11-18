@@ -76,7 +76,7 @@ export function QrScanner({ onDecode, cooldownMs = 1500 }: Props) {
   }, [])
 
   return (
-    <div className="rounded-md border border-neutral-200 bg-neutral-900 overflow-hidden">
+    <div className="rounded-md border border-line bg-inverse overflow-hidden">
       <div className="relative aspect-square w-full max-w-sm mx-auto">
         {/* `playsInline` is critical for iOS Safari. */}
         <video
@@ -94,14 +94,14 @@ export function QrScanner({ onDecode, cooldownMs = 1500 }: Props) {
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 bg-danger-50 px-3 py-2 text-sm text-danger-600">
+        <div className="flex items-start gap-2 bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <p className="font-medium">Camera unavailable</p>
             <p className="text-xs">{error}</p>
             <button
               onClick={() => window.location.reload()}
-              className="mt-1 inline-flex items-center gap-1 text-xs text-danger-600 hover:underline"
+              className="mt-1 inline-flex items-center gap-1 text-xs text-danger-fg hover:underline"
             >
               <RefreshCcw className="h-3 w-3" />
               Reload page to retry

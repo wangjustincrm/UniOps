@@ -32,9 +32,9 @@ import { financeApi, financeUploadFields } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
+const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
+const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 interface Account {
   id: string; name: string; bank_name: string; account_masked: string | null
@@ -79,10 +79,10 @@ function fmtMoney(v: string, ccy?: string): string {
 
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, string> = {
-    matched: 'bg-green-50 text-green-700', unmatched: 'bg-amber-50 text-amber-700',
-    excluded: 'bg-neutral-100 text-neutral-500',
+    matched: 'bg-success-soft text-success-fg', unmatched: 'bg-warning-soft text-warning-fg',
+    excluded: 'bg-surface-sunken text-fg-muted',
   }
-  return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-neutral-100 text-neutral-600')}>{status}</span>
+  return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-surface-sunken text-fg-secondary')}>{status}</span>
 }
 
 // ── header-row parse (tolerant of quoted commas) ─────────────────────────────────
@@ -190,14 +190,14 @@ export default function BankStatementCsvPage() {
       <div className="mx-auto max-w-6xl">
         {banner && (
           <div className={cn('mb-3 rounded-md px-3 py-2 text-sm',
-            banner.kind === 'err' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>
+            banner.kind === 'err' ? 'bg-danger-soft text-danger-fg' : 'bg-success-soft text-success-fg')}>
             {banner.text}
           </div>
         )}
 
         {/* account bar */}
         <div className="mb-4 flex flex-wrap items-center gap-3">
-          <Landmark className="h-5 w-5 text-neutral-400" />
+          <Landmark className="h-5 w-5 text-fg-muted" />
           <select value={accountId} onChange={(e) => setAccountId(e.target.value)}
                   className={cn(inputCls, 'w-80')}>
             <option value="">Select a bank account…</option>
@@ -212,7 +212,7 @@ export default function BankStatementCsvPage() {
             ))}
           </select>
           {account && (
-            <span className="text-xs text-neutral-500">
+            <span className="text-xs text-fg-muted">
               GL: {account.ledger_account_code || '— not mapped —'}
             </span>
           )}
@@ -232,7 +232,7 @@ export default function BankStatementCsvPage() {
         </div>
 
         {!account ? (
-          <div className="rounded-lg border border-dashed border-neutral-300 p-10 text-center text-sm text-neutral-500">
+          <div className="rounded-lg border border-dashed border-line-strong p-10 text-center text-sm text-fg-muted">
             Select a bank account to view statement lines and reconciliation.
           </div>
         ) : (
@@ -276,9 +276,9 @@ export default function BankStatementCsvPage() {
             </div>
 
             {/* transactions */}
-            <div className="overflow-hidden rounded-lg border border-neutral-200">
+            <div className="overflow-hidden rounded-lg border border-line">
               <table className="w-full text-sm">
-                <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+                <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
                   <tr>
                     <SortTh label="Date" sortKey="date" sort={txnSort.sort} onSort={txnSort.onSort} className="px-3 py-2 w-28" />
                     <SortTh label="Description" sortKey="description" sort={txnSort.sort} onSort={txnSort.onSort} className="px-3 py-2" />
@@ -290,21 +290,21 @@ export default function BankStatementCsvPage() {
                 </thead>
                 <tbody>
                   {txnsLoading && (
-                    <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">
+                    <tr><td colSpan={6} className="px-3 py-6 text-center text-fg-muted">
                       <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
                   )}
                   {!txnsLoading && txns.length === 0 && (
-                    <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">
+                    <tr><td colSpan={6} className="px-3 py-6 text-center text-fg-muted">
                       No statement lines. Import a statement to begin.</td></tr>
                   )}
                   {txnSort.rows.map((t, i) => {
                     const amt = Number(t.amount)
                     return (
-                      <tr key={t.id} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
-                        <td className="px-3 py-2 font-mono text-xs text-neutral-600">{formatDate(t.txn_date)}</td>
+                      <tr key={t.id} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
+                        <td className="px-3 py-2 font-mono text-xs text-fg-secondary">{formatDate(t.txn_date)}</td>
                         <td className="px-3 py-2">{t.description}</td>
-                        <td className="px-3 py-2 text-xs text-neutral-500">{t.reference || '—'}</td>
-                        <td className={cn('px-3 py-2 text-right font-mono', amt < 0 ? 'text-red-600' : 'text-green-700')}>
+                        <td className="px-3 py-2 text-xs text-fg-muted">{t.reference || '—'}</td>
+                        <td className={cn('px-3 py-2 text-right font-mono', amt < 0 ? 'text-danger-fg' : 'text-success-fg')}>
                           {fmtMoney(t.amount)}
                         </td>
                         <td className="px-3 py-2"><StatusPill status={t.status} /></td>
@@ -313,22 +313,22 @@ export default function BankStatementCsvPage() {
                             <div className="flex justify-end gap-1.5">
                               {t.status === 'matched' ? (
                                 <button onClick={() => unmatch.mutate(t.id)} title="Unmatch"
-                                        className="rounded p-1 text-neutral-400 hover:text-amber-600">
+                                        className="rounded p-1 text-fg-muted hover:text-warning-fg">
                                   <Undo2 className="h-4 w-4" /></button>
                               ) : t.status === 'excluded' ? (
                                 <button onClick={() => exclude.mutate({ id: t.id, excluded: false })}
-                                        title="Re-include" className="rounded p-1 text-neutral-400 hover:text-[#085E5E]">
+                                        title="Re-include" className="rounded p-1 text-fg-muted hover:text-primary-700">
                                   <Undo2 className="h-4 w-4" /></button>
                               ) : (
                                 <>
                                   {amt < 0 && (
                                     <button onClick={() => setMatchFor(t)} title="Match to payment"
-                                            className="rounded p-1 text-neutral-400 hover:text-[#085E5E]">
+                                            className="rounded p-1 text-fg-muted hover:text-primary-700">
                                       <Link2 className="h-4 w-4" /></button>
                                   )}
                                   <button onClick={() => exclude.mutate({ id: t.id, excluded: true })}
                                           title="Exclude (fee / interest / internal transfer)"
-                                          className="rounded p-1 text-neutral-400 hover:text-neutral-700">
+                                          className="rounded p-1 text-fg-muted hover:text-fg-secondary">
                                     <Ban className="h-4 w-4" /></button>
                                 </>
                               )}
@@ -345,12 +345,12 @@ export default function BankStatementCsvPage() {
             {/* discrepancy: payments not seen on the bank */}
             {recon && recon.unreconciled_payments.length > 0 && (
               <div className="mt-6">
-                <h3 className="mb-2 text-sm font-semibold text-neutral-700">
+                <h3 className="mb-2 text-sm font-semibold text-fg-secondary">
                   Payments not yet seen on any statement ({recon.unreconciled_payments.length})
                 </h3>
-                <div className="overflow-hidden rounded-lg border border-neutral-200">
+                <div className="overflow-hidden rounded-lg border border-line">
                   <table className="w-full text-sm">
-                    <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+                    <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
                       <tr>
                         <SortTh label="Date" sortKey="date" sort={unrecSort.sort} onSort={unrecSort.onSort} className="px-3 py-2 w-28" />
                         <SortTh label="Document" sortKey="document" sort={unrecSort.sort} onSort={unrecSort.onSort} className="px-3 py-2" />
@@ -359,8 +359,8 @@ export default function BankStatementCsvPage() {
                     </thead>
                     <tbody>
                       {unrecSort.rows.map((p) => (
-                        <tr key={p.payment_record_id} className="border-t border-neutral-100">
-                          <td className="px-3 py-2 font-mono text-xs text-neutral-600">{formatDate(p.payment_date)}</td>
+                        <tr key={p.payment_record_id} className="border-t border-line-subtle">
+                          <td className="px-3 py-2 font-mono text-xs text-fg-secondary">{formatDate(p.payment_date)}</td>
                           <td className="px-3 py-2">{p.doc_number || p.payment_record_id.slice(0, 8)}</td>
                           <td className="px-3 py-2 text-right font-mono">{fmtMoney(p.amount, p.currency)}</td>
                         </tr>
@@ -410,10 +410,10 @@ export default function BankStatementCsvPage() {
 }
 
 function SummaryCard({ label, value, tone }: { label: string; value: string; tone?: 'pos' | 'neg' | 'warn' }) {
-  const c = tone === 'pos' ? 'text-green-700' : tone === 'neg' ? 'text-red-600' : tone === 'warn' ? 'text-amber-600' : 'text-neutral-800'
+  const c = tone === 'pos' ? 'text-success-fg' : tone === 'neg' ? 'text-danger-fg' : tone === 'warn' ? 'text-warning-fg' : 'text-fg'
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white px-4 py-3">
-      <div className="text-xs text-neutral-500">{label}</div>
+    <div className="rounded-lg border border-line bg-surface px-4 py-3">
+      <div className="text-xs text-fg-muted">{label}</div>
       <div className={cn('mt-0.5 font-mono text-lg', c)}>{value}</div>
     </div>
   )
@@ -442,7 +442,7 @@ function ImportMappingModal({ account, file, onClose, onDone, onError }: {
   const set = (patch: Partial<ColumnMapping>) => setM((p) => ({ ...p, ...patch }))
   const colSelect = (key: keyof ColumnMapping, label: string, required = false) => (
     <label className="flex flex-col gap-1 text-sm">
-      <span className="text-neutral-600">{label}{required && <span className="text-red-500"> *</span>}</span>
+      <span className="text-fg-secondary">{label}{required && <span className="text-danger-fg"> *</span>}</span>
       <select value={(m[key] as string) ?? ''} onChange={(e) => set({ [key]: e.target.value || undefined } as Partial<ColumnMapping>)}
               className={inputCls}>
         <option value="">— none —</option>
@@ -474,7 +474,7 @@ function ImportMappingModal({ account, file, onClose, onDone, onError }: {
 
   return (
     <Modal title={`Import statement — ${account.name}`} onClose={onClose} wide>
-      <p className="mb-3 text-xs text-neutral-500">
+      <p className="mb-3 text-xs text-fg-muted">
         File: <span className="font-mono">{file.name}</span> · map the columns from this bank's export.
         {saved && ' Pre-filled from this account’s saved mapping.'}
       </p>
@@ -483,7 +483,7 @@ function ImportMappingModal({ account, file, onClose, onDone, onError }: {
         {colSelect('description', 'Description column', true)}
         {colSelect('reference', 'Reference column')}
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">Date format</span>
+          <span className="text-fg-secondary">Date format</span>
           <select value={m.date_format ?? ''} onChange={(e) => set({ date_format: e.target.value || undefined })}
                   className={inputCls}>
             {DATE_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
@@ -491,7 +491,7 @@ function ImportMappingModal({ account, file, onClose, onDone, onError }: {
         </label>
         {m.date_format === '%d %b' && (
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600">Statement year (date has no year)</span>
+            <span className="text-fg-secondary">Statement year (date has no year)</span>
             <input type="number" value={m.default_year ?? ''} placeholder="2026"
                    onChange={(e) => set({ default_year: e.target.value ? Number(e.target.value) : undefined })}
                    className={inputCls} />
@@ -499,7 +499,7 @@ function ImportMappingModal({ account, file, onClose, onDone, onError }: {
         )}
       </div>
 
-      <div className="mt-4 rounded-lg border border-neutral-200 p-3">
+      <div className="mt-4 rounded-lg border border-line p-3">
         <div className="mb-2 flex gap-4 text-sm">
           <label className="flex items-center gap-1.5">
             <input type="radio" checked={amountMode === 'signed'} onChange={() => setAmountMode('signed')} />
@@ -558,31 +558,31 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
     <Modal title={isNew ? 'New bank account' : 'Edit bank account'} onClose={onClose}>
       <div className="grid gap-3">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">Name</span>
+          <span className="text-fg-secondary">Name</span>
           <input value={f.name ?? ''} onChange={(e) => set({ name: e.target.value })} className={inputCls} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">Bank</span>
+          <span className="text-fg-secondary">Bank</span>
           <input value={f.bank_name ?? ''} onChange={(e) => set({ bank_name: e.target.value })} className={inputCls} />
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600">Account (last 4)</span>
+            <span className="text-fg-secondary">Account (last 4)</span>
             <input value={f.account_masked ?? ''} onChange={(e) => set({ account_masked: e.target.value })} className={inputCls} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600">Currency</span>
+            <span className="text-fg-secondary">Currency</span>
             <select value={f.currency ?? 'CAD'} onChange={(e) => set({ currency: e.target.value })} className={inputCls}>
               {['CAD', 'USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}
             </select>
           </label>
         </div>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">GL account code (COA bank account)</span>
+          <span className="text-fg-secondary">GL account code (COA bank account)</span>
           <input value={f.ledger_account_code ?? ''} onChange={(e) => set({ ledger_account_code: e.target.value })}
                  placeholder="e.g. 1010" className={inputCls} />
         </label>
-        <label className="flex items-center gap-1.5 text-sm text-neutral-600">
+        <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
           <input type="checkbox" checked={f.is_active ?? true} onChange={(e) => set({ is_active: e.target.checked })} />
           Active
         </label>
@@ -618,27 +618,27 @@ function ManualMatchModal({ txn, candidates, onClose, onMatched, onError }: {
 
   return (
     <Modal title="Match statement line to a payment" onClose={onClose} wide>
-      <div className="mb-3 rounded-md bg-neutral-50 px-3 py-2 text-sm">
-        <span className="font-mono text-xs text-neutral-500">{formatDate(txn.txn_date)}</span> · {txn.description} ·
-        <span className="ml-1 font-mono text-red-600">{fmtMoney(txn.amount)} {txn.currency}</span>
+      <div className="mb-3 rounded-md bg-surface-subtle px-3 py-2 text-sm">
+        <span className="font-mono text-xs text-fg-muted">{formatDate(txn.txn_date)}</span> · {txn.description} ·
+        <span className="ml-1 font-mono text-danger-fg">{fmtMoney(txn.amount)} {txn.currency}</span>
       </div>
       {sorted.length === 0 ? (
-        <p className="py-6 text-center text-sm text-neutral-400">
+        <p className="py-6 text-center text-sm text-fg-muted">
           No unreconciled {txn.currency} payments to match. Use Exclude if this is a fee or internal transfer.
         </p>
       ) : (
-        <div className="max-h-80 overflow-y-auto rounded-lg border border-neutral-200">
+        <div className="max-h-80 overflow-y-auto rounded-lg border border-line">
           <table className="w-full text-sm">
             <tbody>
               {sorted.map((c) => {
                 const exact = Math.abs(Number(c.amount) - target) < 0.005
                 return (
-                  <tr key={c.payment_record_id} className="border-t border-neutral-100 first:border-t-0">
-                    <td className="px-3 py-2 font-mono text-xs text-neutral-500">{formatDate(c.payment_date)}</td>
+                  <tr key={c.payment_record_id} className="border-t border-line-subtle first:border-t-0">
+                    <td className="px-3 py-2 font-mono text-xs text-fg-muted">{formatDate(c.payment_date)}</td>
                     <td className="px-3 py-2">{c.doc_number || c.payment_record_id.slice(0, 8)}</td>
                     <td className="px-3 py-2 text-right font-mono">
                       {fmtMoney(c.amount, c.currency)}
-                      {exact && <span className="ml-2 rounded bg-green-50 px-1.5 py-0.5 text-xs text-green-700">exact</span>}
+                      {exact && <span className="ml-2 rounded bg-success-soft px-1.5 py-0.5 text-xs text-success-fg">exact</span>}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <button onClick={() => match(c.payment_record_id)} disabled={!!busy}
@@ -654,7 +654,7 @@ function ManualMatchModal({ txn, candidates, onClose, onMatched, onError }: {
           </table>
         </div>
       )}
-      <p className="mt-3 text-xs text-neutral-400">
+      <p className="mt-3 text-xs text-fg-muted">
         Amount mismatches are allowed (bank fees etc.) — the actor is recorded on the match.
       </p>
     </Modal>
@@ -667,11 +667,11 @@ function Modal({ title, children, onClose, wide }: {
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className={cn('w-full rounded-xl bg-white p-5 shadow-xl', wide ? 'max-w-2xl' : 'max-w-md')}
+      <div className={cn('w-full rounded-xl bg-surface p-5 shadow-xl', wide ? 'max-w-2xl' : 'max-w-md')}
            onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-neutral-800">{title}</h2>
-          <button onClick={onClose} className="rounded p-1 text-neutral-400 hover:text-neutral-700">
+          <h2 className="text-base font-semibold text-fg">{title}</h2>
+          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
             <X className="h-5 w-5" />
           </button>
         </div>

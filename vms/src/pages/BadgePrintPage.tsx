@@ -73,7 +73,7 @@ export default function BadgePrintPage() {
       <div className="no-print mb-4 flex items-center justify-between gap-3">
         <BackLink
           to={`/${visitId}`}
-          className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+          className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to visit
@@ -94,7 +94,7 @@ export default function BadgePrintPage() {
 
       {/* Status banner (also hidden in print output) */}
       {print.error && (
-        <div className="no-print mb-4 flex items-start gap-2 rounded-md border border-red-200 bg-danger-50 px-3 py-2 text-sm text-danger-600">
+        <div className="no-print mb-4 flex items-start gap-2 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <p className="font-medium">Could not record this badge print.</p>
@@ -103,13 +103,13 @@ export default function BadgePrintPage() {
         </div>
       )}
       {loading && (
-        <div className="no-print mb-4 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+        <div className="no-print mb-4 flex items-center gap-2 rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-fg">
           <Loader2 className="h-4 w-4 animate-spin" />
           {vLoading ? 'Loading visit…' : 'Recording check-in…'}
         </div>
       )}
       {error && (
-        <div className="no-print mb-4 rounded-md border border-red-200 bg-danger-50 px-3 py-2 text-sm text-danger-600">
+        <div className="no-print mb-4 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           {error.message}
         </div>
       )}

@@ -26,7 +26,7 @@ export function FreightPaEditForm({ pa }: { pa: ApiPa }) {
   if (!['draft', 'returned'].includes(pa.status)) {
     return (
       <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-neutral-500">This PA cannot be edited.</p>
+        <p className="text-fg-muted">This PA cannot be edited.</p>
         <BackLink to={`/pa/${pa.id}`} className="mt-4"><Button variant="secondary">Back</Button></BackLink>
       </div>
     )
@@ -61,12 +61,12 @@ export function FreightPaEditForm({ pa }: { pa: ApiPa }) {
   return (
     <div className="flex flex-col gap-6 p-6 max-w-3xl mx-auto">
       <div className="flex items-center gap-3">
-        <button onClick={() => replaceTab(`/pa/${pa.id}`)} className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500">
+        <button onClick={() => replaceTab(`/pa/${pa.id}`)} className="p-2 rounded-lg hover:bg-surface-sunken text-fg-muted">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Edit Freight PA</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">
+          <h1 className="text-2xl font-bold text-fg">Edit Freight PA</h1>
+          <p className="text-sm text-fg-muted mt-0.5">
             {pa.pa_number} · {pa.status === 'returned' ? 'Returned — revise and resubmit' : 'Draft'} · {formatAmount(Number(pa.payment_amount), pa.currency)}
           </p>
         </div>
@@ -80,15 +80,15 @@ export function FreightPaEditForm({ pa }: { pa: ApiPa }) {
         </span>
       </div>
 
-      <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-4">
+      <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Title *</label>
+          <label className="text-xs font-medium text-fg-secondary">Title *</label>
           <Input value={title} onChange={(e: ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)} maxLength={255} />
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Notes</label>
+          <label className="text-xs font-medium text-fg-secondary">Notes</label>
           <textarea rows={4} value={notes} onChange={(e) => setNotes(e.target.value)}
-            className="w-full resize-none rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+            className="w-full resize-none rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
         </div>
       </div>
 
@@ -102,13 +102,13 @@ export function FreightPaEditForm({ pa }: { pa: ApiPa }) {
         </Button>
       </div>
       {updatePa.isError && (
-        <p role="alert" className="text-right text-sm text-danger-600">
+        <p role="alert" className="text-right text-sm text-danger-fg">
           {updatePa.error instanceof Error && updatePa.error.message
             ? updatePa.error.message : 'Failed to update payment application'}
         </p>
       )}
       {submitError && (
-        <p role="alert" className="text-right text-sm text-danger-600">
+        <p role="alert" className="text-right text-sm text-danger-fg">
           Saved as a draft but not submitted: {submitError}
         </p>
       )}

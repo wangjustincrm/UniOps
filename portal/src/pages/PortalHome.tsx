@@ -233,34 +233,34 @@ function ModuleCard({ icon, iconBg, label, description, href, healthy, loading, 
   const isDown = !comingSoon && !loading && healthy === false
   const statusLabel = comingSoon ? 'Coming Soon' : isDown ? 'Offline' : 'Active'
   const statusColor = comingSoon
-    ? 'bg-neutral-100 text-neutral-400'
+    ? 'bg-surface-sunken text-fg-muted'
     : isDown
-      ? 'bg-red-50 text-red-500'
-      : 'bg-green-50 text-green-600'
+      ? 'bg-danger-soft text-danger-fg'
+      : 'bg-success-soft text-success-fg'
 
   const inner = (
     <div className={cn(
-      'flex h-full flex-col rounded-xl border bg-white p-5 transition-all duration-150',
+      'flex h-full flex-col rounded-xl border bg-surface p-5 transition-all duration-150',
       comingSoon
-        ? 'opacity-50 cursor-not-allowed border-neutral-200'
+        ? 'opacity-50 cursor-not-allowed border-line'
         : isDown
-          ? 'opacity-60 cursor-not-allowed border-neutral-200'
-          : 'cursor-pointer border-neutral-200 hover:border-primary-400 hover:shadow-teal-md group',
+          ? 'opacity-60 cursor-not-allowed border-line'
+          : 'cursor-pointer border-line hover:border-primary-400 hover:shadow-teal-md group',
     )}>
       <div className="flex items-start justify-between mb-4">
         <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', iconBg)}>
           {icon}
         </div>
-        <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', statusColor)}>
+        <span className={cn('rounded-full px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide', statusColor)}>
           {statusLabel}
         </span>
       </div>
-      <p className="text-sm font-bold text-neutral-900">{label}</p>
-      <p className="mt-1 text-xs text-neutral-500 leading-relaxed">{description}</p>
+      <p className="text-sm font-bold text-fg">{label}</p>
+      <p className="mt-1 text-xs text-fg-muted leading-relaxed">{description}</p>
       {!comingSoon && (
         <div className={cn(
           'mt-auto pt-4 flex items-center gap-1 text-xs font-medium transition-colors',
-          isDown ? 'text-neutral-300' : 'text-primary-600 group-hover:text-primary-700',
+          isDown ? 'text-fg-faint' : 'text-primary-600 group-hover:text-primary-700',
         )}>
           Explore Module <ArrowRight className="h-3.5 w-3.5" />
         </div>
@@ -277,8 +277,8 @@ function ModuleCard({ icon, iconBg, label, description, href, healthy, loading, 
 
 const MODULE_STYLE: Record<string, { border: string; badge: string; label: string }> = {
   EPMS:    { border: 'border-l-primary-500',  badge: 'text-primary-600',  label: 'EPMS' },
-  EXPENSE: { border: 'border-l-amber-400',    badge: 'text-amber-600',    label: 'Expense' },
-  VMS:     { border: 'border-l-emerald-500',  badge: 'text-emerald-600',  label: 'Visitor' },
+  EXPENSE: { border: 'border-l-warning-400',    badge: 'text-warning-fg',    label: 'Expense' },
+  VMS:     { border: 'border-l-success-solid',  badge: 'text-success-fg',  label: 'Visitor' },
 }
 
 const MODULE_ORDER: UnifiedTask['module'][] = ['EPMS', 'EXPENSE', 'VMS']
@@ -381,42 +381,42 @@ function TaskRow({ task }: { task: UnifiedTask }) {
     <a
       href={task.href}
       className={cn(
-        'flex items-center gap-4 rounded-xl border border-neutral-200 border-l-4 bg-white px-4 py-3.5 hover:shadow-teal-sm hover:border-l-primary-600 transition-all group',
+        'flex items-center gap-4 rounded-xl border border-line border-l-4 bg-surface px-4 py-3.5 hover:shadow-teal-sm hover:border-l-primary-600 transition-all group',
         style.border,
       )}
     >
       {/* Icon */}
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-50">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-subtle">
         {task.module === 'EPMS' && <Briefcase className="h-4 w-4 text-primary-500" />}
-        {task.module === 'EXPENSE' && <CreditCard className="h-4 w-4 text-amber-500" />}
-        {task.module === 'VMS' && <UserCheck className="h-4 w-4 text-emerald-500" />}
+        {task.module === 'EXPENSE' && <CreditCard className="h-4 w-4 text-warning-fg" />}
+        {task.module === 'VMS' && <UserCheck className="h-4 w-4 text-success-fg" />}
       </div>
 
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5">
-          <span className={cn('text-[10px] font-semibold uppercase tracking-wider', style.badge)}>
+          <span className={cn('text-2xs font-semibold uppercase tracking-wider', style.badge)}>
             {style.label}
           </span>
-          <span className="text-[11px] text-neutral-400">{timeAgo(task.createdAt)}</span>
+          <span className="text-2xs text-fg-muted">{timeAgo(task.createdAt)}</span>
           {task.urgent && (
-            <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-red-500">Urgent</span>
+            <span className="rounded-full bg-danger-soft px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wide text-danger-fg">Urgent</span>
           )}
         </div>
-        <p className="text-sm font-medium text-neutral-800 truncate">{task.title}</p>
-        <p className="mt-0.5 font-mono text-[11px] text-neutral-400">{task.docNumber}</p>
+        <p className="text-sm font-medium text-fg truncate">{task.title}</p>
+        <p className="mt-0.5 font-mono text-2xs text-fg-muted">{task.docNumber}</p>
       </div>
 
       {/* Amount */}
       {task.amount != null && (
         <div className="shrink-0 text-right">
-          <p className="text-sm font-mono font-semibold text-neutral-800">
+          <p className="text-sm font-mono font-semibold text-fg">
             {formatAmount(task.amount, task.currency)}
           </p>
         </div>
       )}
 
-      <ArrowRight className="h-4 w-4 shrink-0 text-neutral-300 group-hover:text-primary-500 transition-colors" />
+      <ArrowRight className="h-4 w-4 shrink-0 text-fg-faint group-hover:text-primary-500 transition-colors" />
     </a>
   )
 }
@@ -442,27 +442,27 @@ function PlatformHealth({
   ]
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-5">
+    <div className="rounded-xl border border-line bg-surface p-5">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
-          <Activity className="h-4 w-4 text-neutral-400" />
+        <h3 className="text-sm font-semibold text-fg flex items-center gap-2">
+          <Activity className="h-4 w-4 text-fg-muted" />
           Platform Health
         </h3>
         {allOk
-          ? <CheckCircle2 className="h-5 w-5 text-green-500" />
-          : <AlertCircle className="h-5 w-5 text-amber-500" />
+          ? <CheckCircle2 className="h-5 w-5 text-success-fg" />
+          : <AlertCircle className="h-5 w-5 text-warning-fg" />
         }
       </div>
 
       {/* Uptime row */}
       <div className="mb-3">
         <div className="flex justify-between text-xs mb-1">
-          <span className="text-neutral-500">Services Online</span>
-          <span className="font-semibold text-neutral-800">{onlineCount}/2</span>
+          <span className="text-fg-muted">Services Online</span>
+          <span className="font-semibold text-fg">{onlineCount}/2</span>
         </div>
-        <div className="h-1.5 w-full rounded-full bg-neutral-100">
+        <div className="h-1.5 w-full rounded-full bg-surface-sunken">
           <div
-            className={cn('h-1.5 rounded-full transition-all', onlineCount === 2 ? 'bg-primary-500' : onlineCount === 1 ? 'bg-amber-400' : 'bg-red-400')}
+            className={cn('h-1.5 rounded-full transition-all', onlineCount === 2 ? 'bg-primary-500' : onlineCount === 1 ? 'bg-warning-400' : 'bg-danger-400')}
             style={{ width: `${(onlineCount / 2) * 100}%` }}
           />
         </div>
@@ -471,14 +471,14 @@ function PlatformHealth({
       {/* Response time */}
       <div className="mb-4">
         <div className="flex justify-between text-xs mb-1">
-          <span className="text-neutral-500">Avg. Response Time</span>
-          <span className="font-semibold text-neutral-800">{avgLatency}ms</span>
+          <span className="text-fg-muted">Avg. Response Time</span>
+          <span className="font-semibold text-fg">{avgLatency}ms</span>
         </div>
-        <div className="h-1.5 w-full rounded-full bg-neutral-100">
+        <div className="h-1.5 w-full rounded-full bg-surface-sunken">
           <div
             className={cn(
               'h-1.5 rounded-full transition-all',
-              avgLatency < 200 ? 'bg-green-500' : avgLatency < 500 ? 'bg-amber-400' : 'bg-red-400',
+              avgLatency < 200 ? 'bg-success-solid' : avgLatency < 500 ? 'bg-warning-400' : 'bg-danger-400',
             )}
             style={{ width: `${latencyPct}%` }}
           />
@@ -486,17 +486,17 @@ function PlatformHealth({
       </div>
 
       {/* Per-service status */}
-      <div className="space-y-2 border-t border-neutral-100 pt-3">
+      <div className="space-y-2 border-t border-line-subtle pt-3">
         {services.map((svc) => (
           <div key={svc.label} className="flex items-center justify-between text-xs">
             <div className="flex items-center gap-2">
               <div className={cn(
                 'h-1.5 w-1.5 rounded-full',
-                svc.ok === null ? 'bg-neutral-300' : svc.ok ? 'bg-green-500' : 'bg-red-500',
+                svc.ok === null ? 'bg-surface-strong' : svc.ok ? 'bg-success-solid' : 'bg-danger-solid',
               )} />
-              <span className="text-neutral-600">{svc.label}</span>
+              <span className="text-fg-secondary">{svc.label}</span>
             </div>
-            <span className={cn('text-[11px]', svc.ok ? 'text-neutral-400' : 'text-red-500')}>
+            <span className={cn('text-2xs', svc.ok ? 'text-fg-muted' : 'text-danger-fg')}>
               {svc.ok === null ? '—' : svc.ok ? `${svc.ms}ms` : 'Offline'}
             </span>
           </div>
@@ -506,10 +506,10 @@ function PlatformHealth({
       {/* Status banner */}
       <div className={cn(
         'mt-3 flex items-center gap-2 rounded-lg px-3 py-2',
-        allOk ? 'bg-green-50' : 'bg-amber-50',
+        allOk ? 'bg-success-soft' : 'bg-warning-soft',
       )}>
-        <Cloud className={cn('h-4 w-4 shrink-0', allOk ? 'text-green-500' : 'text-amber-500')} />
-        <p className={cn('text-xs font-medium', allOk ? 'text-green-700' : 'text-amber-700')}>
+        <Cloud className={cn('h-4 w-4 shrink-0', allOk ? 'text-success-fg' : 'text-warning-fg')} />
+        <p className={cn('text-xs font-medium', allOk ? 'text-success-fg' : 'text-warning-fg')}>
           {allOk ? 'All systems are operational.' : 'Some services are degraded.'}
         </p>
       </div>
@@ -522,22 +522,22 @@ function PlatformHealth({
 function RecentActivity({ tasks }: { tasks: UnifiedTask[] }) {
   const recent = tasks.slice(0, 5)
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-5">
-      <h3 className="mb-4 text-sm font-semibold text-neutral-800">Recent Activity</h3>
+    <div className="rounded-xl border border-line bg-surface p-5">
+      <h3 className="mb-4 text-sm font-semibold text-fg">Recent Activity</h3>
       {recent.length === 0 ? (
-        <p className="text-xs text-neutral-400 text-center py-4">No recent activity</p>
+        <p className="text-xs text-fg-muted text-center py-4">No recent activity</p>
       ) : (
         <div className="space-y-3">
           {recent.map((t) => (
             <a key={t.id} href={t.href} className="flex items-start gap-2.5 group">
-              <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-green-500" />
+              <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-success-solid" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-neutral-800 leading-snug truncate group-hover:text-primary-600 transition-colors">
+                <p className="text-xs font-medium text-fg leading-snug truncate group-hover:text-primary-600 transition-colors">
                   {t.title}
                 </p>
-                <p className="text-[11px] text-neutral-400 font-mono">{t.docNumber}</p>
+                <p className="text-2xs text-fg-muted font-mono">{t.docNumber}</p>
               </div>
-              <span className="shrink-0 text-[11px] text-neutral-400">{timeAgo(t.createdAt)}</span>
+              <span className="shrink-0 text-2xs text-fg-muted">{timeAgo(t.createdAt)}</span>
             </a>
           ))}
         </div>
@@ -810,10 +810,10 @@ export default function PortalHome() {
                 {/* Welcome + actions */}
                 <div className="flex items-start justify-between">
                   <div>
-                    <h1 className="text-2xl font-bold text-neutral-900">
+                    <h1 className="text-2xl font-bold text-fg">
                       Welcome back, {firstName}
                     </h1>
-                    <p className="mt-1 text-sm text-neutral-500">
+                    <p className="mt-1 text-sm text-fg-muted">
                       {isLoading
                         ? 'Loading your tasks…'
                         : taskCount > 0
@@ -844,9 +844,9 @@ export default function PortalHome() {
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <h2 className="text-base font-semibold text-neutral-800">My Task Inbox</h2>
+                      <h2 className="text-base font-semibold text-fg">My Task Inbox</h2>
                       {taskCount > 0 && (
-                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1.5 text-[10px] font-bold text-white">
+                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1.5 text-2xs font-bold text-white">
                           {taskCount > 99 ? '99+' : taskCount}
                         </span>
                       )}
@@ -861,14 +861,14 @@ export default function PortalHome() {
                   {isLoading ? (
                     <div className="space-y-2">
                       {[1, 2, 3].map((i) => (
-                        <div key={i} className="h-[68px] animate-pulse rounded-xl bg-neutral-100" />
+                        <div key={i} className="h-[68px] animate-pulse rounded-xl bg-surface-sunken" />
                       ))}
                     </div>
                   ) : allTasks.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-neutral-200 bg-white py-14 text-center">
+                    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-line bg-surface py-14 text-center">
                       <CheckCircle2 className="h-10 w-10 text-primary-200 mb-3" />
-                      <p className="font-medium text-neutral-700">All caught up!</p>
-                      <p className="mt-1 text-sm text-neutral-400">No pending tasks across any module.</p>
+                      <p className="font-medium text-fg-secondary">All caught up!</p>
+                      <p className="mt-1 text-sm text-fg-muted">No pending tasks across any module.</p>
                     </div>
                   ) : (
                     <div className="space-y-6">
@@ -885,11 +885,11 @@ export default function PortalHome() {
                         return (
                           <div key={mod} className="space-y-3">
                             {/* Module header */}
-                            <div className="flex items-center gap-2 border-b border-neutral-200 pb-1.5">
+                            <div className="flex items-center gap-2 border-b border-line pb-1.5">
                               <span className={cn('text-xs font-bold uppercase tracking-wider', style.badge)}>
                                 {MODULE_HEADING[mod]}
                               </span>
-                              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-neutral-100 px-1.5 text-[10px] font-bold text-neutral-500">
+                              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-surface-sunken px-1.5 text-2xs font-bold text-fg-muted">
                                 {modTasks.length}
                               </span>
                             </div>
@@ -897,8 +897,8 @@ export default function PortalHome() {
                             {groups.map((group) => (
                               <section key={group.key}>
                                 <div className="mb-1.5 flex items-center gap-2 pl-0.5">
-                                  <h3 className="text-xs font-semibold text-neutral-600">{group.label}</h3>
-                                  <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-neutral-100 px-1 text-[10px] font-semibold text-neutral-400">
+                                  <h3 className="text-xs font-semibold text-fg-secondary">{group.label}</h3>
+                                  <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-surface-sunken px-1 text-2xs font-semibold text-fg-muted">
                                     {group.items.length}
                                   </span>
                                 </div>

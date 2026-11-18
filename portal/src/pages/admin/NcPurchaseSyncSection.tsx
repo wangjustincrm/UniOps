@@ -11,16 +11,16 @@ import { AlertTriangle, DatabaseZap, Loader2 } from 'lucide-react'
 import { epmsApi } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
 
-const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
+const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
 
 const FULL_CONFIRM = 'FULL RELOAD'
 
 function SectionHeader({ title, description }: { title: string; description: string }) {
   return (
-    <div className="mb-6 border-b border-neutral-100 pb-4">
-      <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
-      <p className="mt-0.5 text-sm text-neutral-500">{description}</p>
+    <div className="mb-6 border-b border-line-subtle pb-4">
+      <h2 className="text-lg font-semibold text-fg">{title}</h2>
+      <p className="mt-0.5 text-sm text-fg-muted">{description}</p>
     </div>
   )
 }
@@ -63,7 +63,7 @@ export interface NcPurchaseSyncStatus {
 
 function RunCounters({ run }: { run: NcPurchaseSyncRun }) {
   return (
-    <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-xs text-neutral-500 sm:grid-cols-3">
+    <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-xs text-fg-muted sm:grid-cols-3">
       <span>{Number(run.pos_upserted).toLocaleString()} POs</span>
       <span>{Number(run.po_lines_upserted).toLocaleString()} PO lines</span>
       <span>{Number(run.grs_upserted).toLocaleString()} GRs</span>
@@ -82,7 +82,7 @@ function RunCounters({ run }: { run: NcPurchaseSyncRun }) {
       {run.skipped_number_collision > 0 && (
         // This one IS an error: the order is not in UniOps at all. It used to
         // happen on every collision and reached nothing but a container log.
-        <span className="text-danger-600"
+        <span className="text-danger-fg"
               title="No free document number — these orders are NOT in UniOps">
           {Number(run.skipped_number_collision).toLocaleString()} skipped (no free number)
         </span>
@@ -112,13 +112,13 @@ function localTime(iso: string | null | undefined): string {
 
 function RunSummary({ run, label }: { run: NcPurchaseSyncRun; label: string }) {
   return (
-    <div className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
-      <span className="font-medium text-neutral-700">{label}:</span>{' '}
+    <div className="rounded-lg bg-surface-subtle px-3 py-2 text-xs text-fg-secondary">
+      <span className="font-medium text-fg-secondary">{label}:</span>{' '}
       {run.mode} · {run.status}
       {run.started_at && ` · ${localTime(run.started_at)}`}
       {run.watermark_to && <> · watermark {run.watermark_to}</>}
       {run.status !== 'running' && <RunCounters run={run} />}
-      {run.error && <div className="mt-1 text-red-600">{run.error}</div>}
+      {run.error && <div className="mt-1 text-danger-fg">{run.error}</div>}
     </div>
   )
 }
@@ -181,23 +181,23 @@ export function NcPurchaseSyncSection() {
 
       <div className="max-w-lg space-y-3">
         {!status ? (
-          <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
+          <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
         ) : !status.configured ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <div className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-fg">
             NC purchase sync is not configured. Contact an administrator to set up the NC65 connection.
           </div>
         ) : (
           <>
-            <div className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+            <div className="rounded-lg bg-surface-subtle px-3 py-2 text-xs text-fg-secondary">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-medium text-neutral-700">Cutover date:</span>
+                <span className="font-medium text-fg-secondary">Cutover date:</span>
                 <span>{status.cutover ? formatDate(status.cutover.slice(0, 10)) : '—'}</span>
                 {status.can_set_cutover && (
                   <>
-                    <span className="mx-1 text-neutral-300">|</span>
+                    <span className="mx-1 text-fg-faint">|</span>
                     <input
                       type="date"
-                      className="rounded border border-neutral-300 px-2 py-1 text-xs"
+                      className="rounded border border-line-strong px-2 py-1 text-xs"
                       value={cutoverEdit ?? (status.cutover ?? '').slice(0, 10)}
                       onChange={(e) => setCutoverEdit(e.target.value)}
                     />
@@ -212,7 +212,7 @@ export function NcPurchaseSyncSection() {
                   </>
                 )}
               </div>
-              <p className="mt-1 text-[11px] text-neutral-400">
+              <p className="mt-1 text-2xs text-fg-muted">
                 Only NC purchase orders with an order date on/after this are imported. Run a Full reload after changing it.
               </p>
             </div>
@@ -220,8 +220,8 @@ export function NcPurchaseSyncSection() {
             {status.last_run && !running && <RunSummary run={status.last_run} label="Last sync" />}
 
             {running ? (
-              <div className="rounded-lg border border-neutral-200 px-3 py-3 text-sm">
-                <div className="flex items-center gap-2 text-neutral-700">
+              <div className="rounded-lg border border-line px-3 py-3 text-sm">
+                <div className="flex items-center gap-2 text-fg-secondary">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Sync in progress ({running.mode})…
                 </div>
@@ -235,7 +235,7 @@ export function NcPurchaseSyncSection() {
                            onChange={() => setMode('incremental')} className="mt-0.5" />
                     <span>
                       <span className="font-medium">Incremental</span>
-                      <span className="block text-xs text-neutral-500">
+                      <span className="block text-xs text-fg-muted">
                         Import only purchase orders and goods receipts that are new or changed in NC
                         since the last sync watermark.
                       </span>
@@ -246,7 +246,7 @@ export function NcPurchaseSyncSection() {
                            onChange={() => setMode('full')} className="mt-0.5" />
                     <span>
                       <span className="font-medium">Full reload</span>
-                      <span className="block text-xs text-neutral-500">
+                      <span className="block text-xs text-fg-muted">
                         Re-import all NC purchase orders and goods receipts since the cutover date.
                       </span>
                     </span>
@@ -254,8 +254,8 @@ export function NcPurchaseSyncSection() {
                 </div>
 
                 {mode === 'full' && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-                    <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-red-700">
+                  <div className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2">
+                    <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-danger-fg">
                       <AlertTriangle className="h-3.5 w-3.5" />
                       Destructive: re-imports every NC purchase order and goods receipt.
                       Type {FULL_CONFIRM} to enable.
@@ -265,9 +265,9 @@ export function NcPurchaseSyncSection() {
                   </div>
                 )}
 
-                {err && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
+                {err && <div className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{err}</div>}
 
-                <div className="flex justify-end border-t border-neutral-100 pt-3">
+                <div className="flex justify-end border-t border-line-subtle pt-3">
                   <button onClick={start} disabled={!canStart} className={primaryBtn}>
                     {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <DatabaseZap className="h-4 w-4" />}
                     Start Sync

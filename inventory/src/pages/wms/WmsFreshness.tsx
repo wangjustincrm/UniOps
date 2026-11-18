@@ -96,10 +96,10 @@ export function WmsFreshness({ toasts }: { toasts: ReturnType<typeof useToasts> 
     : 'Automatic refresh is off — this data only moves when somebody refreshes it.'
 
   const tone = {
-    fresh: 'text-neutral-500',
-    stale: 'text-amber-700',
-    error: 'text-red-700',
-    unknown: 'text-neutral-400',
+    fresh: 'text-fg-muted',
+    stale: 'text-warning-fg',
+    error: 'text-danger-fg',
+    unknown: 'text-fg-muted',
   }[level]
 
   return (

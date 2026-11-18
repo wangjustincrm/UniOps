@@ -39,13 +39,13 @@ import type { RoomType } from '@/lib/types'
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const STATUS_STYLE: Record<string, string> = {
-  available:   'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  disabled:    'bg-neutral-100 text-neutral-500 ring-neutral-200',
-  maintenance: 'bg-amber-50 text-amber-700 ring-amber-200',
+  available:   'bg-success-soft text-success-fg ring-success-line',
+  disabled:    'bg-surface-sunken text-fg-muted ring-line',
+  maintenance: 'bg-warning-soft text-warning-fg ring-warning-line',
 }
 
 function RoomStatusBadge({ status }: { status: string }) {
-  const style = STATUS_STYLE[status] ?? 'bg-neutral-100 text-neutral-500 ring-neutral-200'
+  const style = STATUS_STYLE[status] ?? 'bg-surface-sunken text-fg-muted ring-line'
   const label = status.charAt(0).toUpperCase() + status.slice(1)
   return (
     <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset', style)}>
@@ -89,15 +89,15 @@ function StatusChangeDialog({ room, onClose }: StatusChangeDialogProps) {
 
   const modal = (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white shadow-xl p-6 space-y-4">
-        <h2 className="text-base font-semibold text-neutral-900">Change Room Status</h2>
-        <p className="text-sm text-neutral-600">
+      <div className="w-full max-w-sm rounded-xl border border-line bg-surface shadow-xl p-6 space-y-4">
+        <h2 className="text-base font-semibold text-fg">Change Room Status</h2>
+        <p className="text-sm text-fg-secondary">
           Room: <span className="font-medium">{room.name}</span> ({room.code})
         </p>
 
         {affectedWarning !== null ? (
           <div className="space-y-3">
-            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            <div className="flex items-start gap-2 rounded-md border border-warning-line bg-warning-soft p-3 text-sm text-warning-fg">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
               <span>
                 <strong>{affectedWarning}</strong> future booking{affectedWarning !== 1 ? 's' : ''} are affected.
@@ -105,7 +105,7 @@ function StatusChangeDialog({ room, onClose }: StatusChangeDialogProps) {
                 <button
                   type="button"
                   onClick={() => navigate(`/admin/bookings?room_id=${room.id}`)}
-                  className="underline text-amber-900 hover:text-amber-700 font-medium"
+                  className="underline text-warning-fg hover:text-warning-fg font-medium"
                 >
                   All Bookings
                 </button>.
@@ -115,14 +115,14 @@ function StatusChangeDialog({ room, onClose }: StatusChangeDialogProps) {
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+                className="rounded-md border border-line-strong px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle"
               >
                 Close
               </button>
               <button
                 type="button"
                 onClick={() => navigate(`/admin/bookings?room_id=${room.id}`)}
-                className="rounded-md bg-[#085E5E] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#085E5E]/90"
+                className="rounded-md bg-primary-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-700/90"
               >
                 View Bookings
               </button>
@@ -131,11 +131,11 @@ function StatusChangeDialog({ room, onClose }: StatusChangeDialogProps) {
         ) : (
           <>
             <div>
-              <label className="block text-xs font-medium text-neutral-700 mb-1">New Status</label>
+              <label className="block text-xs font-medium text-fg-secondary mb-1">New Status</label>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
               >
                 <option value="available">Available</option>
                 <option value="disabled">Disabled</option>
@@ -143,21 +143,21 @@ function StatusChangeDialog({ room, onClose }: StatusChangeDialogProps) {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-neutral-700 mb-1">
-                Notes {status === 'maintenance' && <span className="text-red-500">*</span>}
+              <label className="block text-xs font-medium text-fg-secondary mb-1">
+                Notes {status === 'maintenance' && <span className="text-danger-fg">*</span>}
               </label>
               <textarea
                 rows={2}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 required={status === 'maintenance'}
-                className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-700/40"
                 placeholder={status === 'maintenance' ? 'Describe the maintenance work' : 'Optional reason'}
               />
             </div>
 
             {mut.error && (
-              <p className="text-xs text-red-600 flex items-center gap-1">
+              <p className="text-xs text-danger-fg flex items-center gap-1">
                 <AlertCircle className="h-3.5 w-3.5" />
                 {mut.error.message}
               </p>
@@ -168,7 +168,7 @@ function StatusChangeDialog({ room, onClose }: StatusChangeDialogProps) {
                 type="button"
                 onClick={onClose}
                 disabled={mut.isPending}
-                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                className="rounded-md border border-line-strong px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -176,7 +176,7 @@ function StatusChangeDialog({ room, onClose }: StatusChangeDialogProps) {
                 type="button"
                 onClick={handleApply}
                 disabled={mut.isPending || (status === 'maintenance' && !notes.trim())}
-                className="inline-flex items-center gap-1.5 rounded-md bg-[#085E5E] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#085E5E]/90 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-700/90 disabled:opacity-50"
               >
                 {mut.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 Apply
@@ -224,7 +224,7 @@ export default function RoomsAdminPage() {
     void refetch()
   }
 
-  const thCls = 'px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 text-left'
+  const thCls = 'px-4 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted text-left'
   const tdCls = 'px-4 py-3 text-sm'
 
   return (
@@ -232,12 +232,12 @@ export default function RoomsAdminPage() {
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-neutral-900">Rooms</h1>
+          <h1 className="text-2xl font-bold text-fg">Rooms</h1>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setShowImport(true)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-fg-secondary hover:bg-surface-subtle"
             >
               <Upload className="h-4 w-4" />
               Import
@@ -245,7 +245,7 @@ export default function RoomsAdminPage() {
             <button
               type="button"
               onClick={() => setFormTarget(null)}
-              className="inline-flex items-center gap-1.5 rounded-md bg-[#085E5E] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#085E5E]/90"
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-700/90"
             >
               <Plus className="h-4 w-4" />
               New Room
@@ -255,13 +255,13 @@ export default function RoomsAdminPage() {
 
         {/* Success note */}
         {successNote && (
-          <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">
+          <div className="flex items-center justify-between rounded-md border border-success-line bg-success-soft px-4 py-2.5 text-sm text-success-fg">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4" />
               {successNote}
             </div>
             <button type="button" onClick={() => setSuccessNote(null)}>
-              <XIcon className="h-4 w-4 text-emerald-500" />
+              <XIcon className="h-4 w-4 text-success-fg" />
             </button>
           </div>
         )}
@@ -272,18 +272,18 @@ export default function RoomsAdminPage() {
             value={filters.floor}
             onChange={(e) => setFilters((f) => ({ ...f, floor: e.target.value }))}
             placeholder="Floor…"
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40 w-32"
+            className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40 w-32"
           />
           <input
             value={filters.area}
             onChange={(e) => setFilters((f) => ({ ...f, area: e.target.value }))}
             placeholder="Area…"
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40 w-36"
+            className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40 w-36"
           />
           <select
             value={filters.status}
             onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+            className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
           >
             <option value="">All Statuses</option>
             <option value="available">Available</option>
@@ -294,7 +294,7 @@ export default function RoomsAdminPage() {
             <button
               type="button"
               onClick={() => setFilters({ floor: '', area: '', status: '' })}
-              className="text-xs text-neutral-500 hover:text-neutral-700 underline"
+              className="text-xs text-fg-muted hover:text-fg-secondary underline"
             >
               Clear filters
             </button>
@@ -303,23 +303,23 @@ export default function RoomsAdminPage() {
 
         {/* Content */}
         {isLoading && (
-          <div className="flex items-center justify-center py-16 text-sm text-neutral-500">
+          <div className="flex items-center justify-center py-16 text-sm text-fg-muted">
             <Loader2 className="h-5 w-5 animate-spin mr-2" />
             Loading rooms…
           </div>
         )}
 
         {!isLoading && error && (
-          <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4 shrink-0" />
             Failed to load rooms. Please refresh.
           </div>
         )}
 
         {!isLoading && !error && (
-          <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white shadow-sm">
+          <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-neutral-200 bg-neutral-50">
+              <thead className="border-b border-line bg-surface-subtle">
                 <tr>
                   <SortTh label="Code" sortKey="code" sort={sorted.sort} onSort={sorted.onSort} className={thCls} />
                   <SortTh label="Name" sortKey="name" sort={sorted.sort} onSort={sorted.onSort} className={thCls} />
@@ -333,7 +333,7 @@ export default function RoomsAdminPage() {
               <tbody>
                 {(rooms ?? []).length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-sm text-neutral-400">
+                    <td colSpan={7} className="px-4 py-12 text-center text-sm text-fg-muted">
                       No rooms found. Add one or adjust filters.
                     </td>
                   </tr>
@@ -341,11 +341,11 @@ export default function RoomsAdminPage() {
                   sorted.rows.map((room) => (
                     <tr
                       key={room.id}
-                      className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50 transition-colors"
+                      className="border-b border-line-subtle last:border-0 hover:bg-surface-subtle transition-colors"
                     >
-                      <td className={cn(tdCls, 'font-mono text-xs text-neutral-600')}>{room.code}</td>
-                      <td className={cn(tdCls, 'font-medium text-neutral-900')}>{room.name}</td>
-                      <td className={cn(tdCls, 'text-neutral-500 max-w-[180px] truncate')} title={locationStr(room)}>
+                      <td className={cn(tdCls, 'font-mono text-xs text-fg-secondary')}>{room.code}</td>
+                      <td className={cn(tdCls, 'font-medium text-fg')}>{room.name}</td>
+                      <td className={cn(tdCls, 'text-fg-muted max-w-[180px] truncate')} title={locationStr(room)}>
                         {locationStr(room) || '—'}
                       </td>
                       <td className={tdCls}>{room.capacity}</td>
@@ -360,7 +360,7 @@ export default function RoomsAdminPage() {
                           <button
                             type="button"
                             onClick={() => setFormTarget(room)}
-                            className="inline-flex items-center gap-1 rounded-md border border-[#085E5E]/30 bg-white px-2.5 py-1 text-xs font-medium text-[#085E5E] hover:bg-[#085E5E]/5"
+                            className="inline-flex items-center gap-1 rounded-md border border-primary-700/30 bg-surface px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-700/5"
                           >
                             <Pencil className="h-3 w-3" />
                             Edit
@@ -368,7 +368,7 @@ export default function RoomsAdminPage() {
                           <button
                             type="button"
                             onClick={() => setStatusTarget(room)}
-                            className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-white px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                            className="inline-flex items-center gap-1 rounded-md border border-warning-line bg-surface px-2.5 py-1 text-xs font-medium text-warning-fg hover:bg-warning-soft"
                           >
                             <ShieldAlert className="h-3 w-3" />
                             Status

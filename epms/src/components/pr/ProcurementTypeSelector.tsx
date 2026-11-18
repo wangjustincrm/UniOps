@@ -39,24 +39,24 @@ export function ProcurementTypeSelector({ value, onChange }: ProcurementTypeSele
             className={cn(
               'relative flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition-all',
               disabled
-                ? 'cursor-not-allowed border-neutral-200 bg-neutral-50 opacity-40'
+                ? 'cursor-not-allowed border-line bg-surface-subtle opacity-40'
                 : selected
                   ? 'border-primary-600 bg-primary-600 text-white'
-                  : 'border-neutral-200 bg-white text-neutral-700 hover:border-primary-300 hover:bg-primary-50'
+                  : 'border-line bg-surface text-fg-secondary hover:border-primary-300 hover:bg-primary-50'
             )}
           >
             <span className="text-2xl">{icon}</span>
-            <span className={cn('text-xs font-semibold', selected ? 'text-white' : 'text-neutral-500')}>
+            <span className={cn('text-xs font-semibold', selected ? 'text-white' : 'text-fg-muted')}>
               {label}
             </span>
-            <span className={cn('text-[10px] leading-tight', selected ? 'text-primary-100' : 'text-neutral-400')}>
+            <span className={cn('text-2xs leading-tight', selected ? 'text-primary-100' : 'text-fg-muted')}>
               {sublabel}
             </span>
             {noBudget && !disabled && (
               <span
                 className={cn(
-                  'mt-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-medium',
-                  selected ? 'bg-success-600 text-white' : 'bg-success-50 text-success-700'
+                  'mt-0.5 rounded-full px-1.5 py-0.5 text-2xs font-medium',
+                  selected ? 'bg-success-solid text-white' : 'bg-success-soft text-success-fg'
                 )}
               >
                 No Budget Check

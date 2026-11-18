@@ -578,7 +578,7 @@ export function MatrixGrid({
           >
             <Redo2 className="h-3.5 w-3.5" />
           </Button>
-          <span className="text-xs text-neutral-400">
+          <span className="text-xs text-fg-muted">
             Click a cell, Tab/arrows to move, Enter moves down · paste a block from Excel
             {resolveMaterial && ', or paste a full table (product code, optional name, month values) to add new product rows — even on an empty grid'}
             {' '}· Ctrl+Z/Y undo/redo · select a range + Ctrl+C to copy
@@ -617,7 +617,7 @@ export function MatrixGrid({
             setConfirmPlan(null)
           }}
         >
-          <p className="flex items-start gap-1.5 text-warning-800">
+          <p className="flex items-start gap-1.5 text-warning-fg">
             <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
             <span>
               This paste affects <strong>{confirmPlan.plan.affectedRows}</strong> row{confirmPlan.plan.affectedRows === 1 ? '' : 's'} x{' '}
@@ -645,7 +645,7 @@ export function MatrixGrid({
             setConfirmPlan(null)
           }}
         >
-          <p className="flex items-start gap-1.5 text-warning-800">
+          <p className="flex items-start gap-1.5 text-warning-fg">
             <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
             <span>
               This paste affects <strong>{confirmPlan.plan.totalRows}</strong> product row{confirmPlan.plan.totalRows === 1 ? '' : 's'}
@@ -681,29 +681,29 @@ export function MatrixGrid({
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="overflow-x-auto overflow-y-auto rounded-lg border border-neutral-200"
+        className="overflow-x-auto overflow-y-auto rounded-lg border border-line"
         style={{ height, maxWidth: '100%' }}
       >
         <table className="min-w-full border-collapse text-xs" aria-describedby={report ? `${gridId}-report` : undefined}>
-            <thead className="sticky top-0 z-20 bg-neutral-50">
+            <thead className="sticky top-0 z-20 bg-surface-subtle">
               <tr>
-                <th className="sticky left-0 z-30 bg-neutral-50 border-b border-r border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600 min-w-32">
+                <th className="sticky left-0 z-30 bg-surface-subtle border-b border-r border-line px-3 py-2 text-left text-2xs font-semibold text-fg-secondary min-w-32">
                   {rowHeaderLabel}
                 </th>
                 {cols.map((c) => (
                   <th
                     key={c.id}
                     className={cn(
-                      'border-b border-r border-neutral-200 px-2 py-2 text-right text-[11px] font-semibold min-w-24',
+                      'border-b border-r border-line px-2 py-2 text-right text-2xs font-semibold min-w-24',
                       highlightColIds?.has(c.id)
                         ? 'bg-primary-50 border-b-2 border-b-primary-400 text-primary-700'
-                        : 'text-neutral-600',
+                        : 'text-fg-secondary',
                     )}
                   >
                     {c.label}
                   </th>
                 ))}
-                <th className="border-b border-neutral-200 px-2 py-2 text-right text-[11px] font-semibold text-primary-700 bg-primary-50">
+                <th className="border-b border-line px-2 py-2 text-right text-2xs font-semibold text-primary-700 bg-primary-50">
                   {rowTotalLabel}
                 </th>
               </tr>
@@ -720,8 +720,8 @@ export function MatrixGrid({
                   <tr key={row.id} style={{ height: ROW_HEIGHT }}>
                     <td
                       className={cn(
-                        'sticky left-0 z-10 border-b border-r border-neutral-200 px-3 py-1.5 text-left font-medium text-neutral-800',
-                        tintRowIds?.has(row.id) ? 'bg-amber-50' : 'bg-white',
+                        'sticky left-0 z-10 border-b border-r border-line px-3 py-1.5 text-left font-medium text-fg',
+                        tintRowIds?.has(row.id) ? 'bg-warning-soft' : 'bg-surface',
                       )}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -767,7 +767,7 @@ export function MatrixGrid({
                         />
                       )
                     })}
-                    <td className="border-b border-neutral-200 px-2 py-1.5 text-right font-mono text-xs bg-primary-50 text-primary-800 font-semibold">
+                    <td className="border-b border-line px-2 py-1.5 text-right font-mono text-xs bg-primary-50 text-primary-800 font-semibold">
                       {formatValue(rowTotal(rowIdx))}
                     </td>
                   </tr>
@@ -785,16 +785,16 @@ export function MatrixGrid({
                 the bottom of the scroll container without overlapping the
                 last data row. */}
             <tfoot className="sticky bottom-0 z-20">
-              <tr className="bg-neutral-50">
-                <td className="sticky left-0 z-30 bg-neutral-50 border-t border-r border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-600">
+              <tr className="bg-surface-subtle">
+                <td className="sticky left-0 z-30 bg-surface-subtle border-t border-r border-line px-3 py-2 text-left text-2xs font-semibold uppercase tracking-wide text-fg-secondary">
                   {colTotalLabel}
                 </td>
                 {cols.map((_c, colIdx) => (
-                  <td key={colIdx} className="border-t border-r border-neutral-200 px-2 py-1.5 text-right font-mono text-xs bg-neutral-100 text-neutral-800 font-semibold">
+                  <td key={colIdx} className="border-t border-r border-line px-2 py-1.5 text-right font-mono text-xs bg-surface-sunken text-fg font-semibold">
                     {formatValue(colTotal(colIdx))}
                   </td>
                 ))}
-                <td className="border-t border-neutral-200 px-2 py-1.5 text-right font-mono text-xs bg-primary-100 text-primary-900 font-bold">
+                <td className="border-t border-line px-2 py-1.5 text-right font-mono text-xs bg-primary-100 text-primary-900 font-bold">
                   {formatValue(grandTotal)}
                 </td>
               </tr>
@@ -872,8 +872,8 @@ function MatrixCell({
     return (
       <td
         className={cn(
-          'relative border-b border-r border-neutral-200 px-2 py-1.5 text-right font-mono text-xs',
-          frozen ? 'bg-neutral-100 text-neutral-500' : 'bg-neutral-50 text-neutral-600',
+          'relative border-b border-r border-line px-2 py-1.5 text-right font-mono text-xs',
+          frozen ? 'bg-surface-sunken text-fg-muted' : 'bg-surface-subtle text-fg-secondary',
           selected && 'ring-2 ring-inset ring-primary-400',
         )}
         title={frozen ? 'Frozen — not editable' : undefined}
@@ -891,7 +891,7 @@ function MatrixCell({
           else if (e.key === 'ArrowRight') { e.preventDefault(); onNavigate('right') }
         } : undefined}
       >
-        {frozen && <Lock aria-hidden className="absolute top-0.5 left-0.5 h-2.5 w-2.5 text-neutral-400" />}
+        {frozen && <Lock aria-hidden className="absolute top-0.5 left-0.5 h-2.5 w-2.5 text-fg-muted" />}
         {frozen && <span className="sr-only">Frozen — not editable.</span>}
         {hasEntry ? formatValue(value) : '—'}
         {onHistoryClick && (
@@ -900,7 +900,7 @@ function MatrixCell({
             onClick={onHistoryClick}
             aria-label="View change history"
             title="View change history"
-            className="absolute bottom-0 right-0 p-1 text-neutral-300 hover:text-primary-600"
+            className="absolute bottom-0 right-0 p-1 text-fg-faint hover:text-primary-600"
           >
             <History aria-hidden className="h-2.5 w-2.5" />
           </button>
@@ -912,19 +912,19 @@ function MatrixCell({
   return (
     <td
       className={cn(
-        'relative border-b border-r border-neutral-200 p-0',
-        invalidRaw ? 'bg-danger-50' : modified ? 'bg-amber-50' : 'bg-white',
+        'relative border-b border-r border-line p-0',
+        invalidRaw ? 'bg-danger-soft' : modified ? 'bg-warning-soft' : 'bg-surface',
         selected && 'ring-2 ring-inset ring-primary-400',
       )}
     >
       {modified && !invalidRaw && (
         <span
           aria-hidden
-          className="pointer-events-none absolute top-0 right-0 h-0 w-0 border-t-[6px] border-l-[6px] border-l-transparent border-t-amber-500"
+          className="pointer-events-none absolute top-0 right-0 h-0 w-0 border-t-[6px] border-l-[6px] border-l-transparent border-t-warning-solid"
         />
       )}
       {invalidRaw && (
-        <AlertTriangle aria-hidden className="pointer-events-none absolute top-0.5 right-0.5 h-3 w-3 text-danger-600" />
+        <AlertTriangle aria-hidden className="pointer-events-none absolute top-0.5 right-0.5 h-3 w-3 text-danger-fg" />
       )}
       <input
         type="text"
@@ -954,7 +954,7 @@ function MatrixCell({
           else if (e.key === 'ArrowRight' && (e.currentTarget.selectionStart === local.length)) { commit(); onNavigate('right') }
         }}
         placeholder="0"
-        className="w-full text-right font-mono text-xs px-2 py-1.5 bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+        className="w-full text-right font-mono text-xs px-2 py-1.5 bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
       />
       {invalidRaw && <span className="sr-only">{`Pasted value "${invalidRaw}" was not a valid number and was not applied.`}</span>}
       {onHistoryClick && (
@@ -963,7 +963,7 @@ function MatrixCell({
           onClick={onHistoryClick}
           aria-label="View change history"
           title="View change history"
-          className="absolute bottom-0 right-0 p-1 text-neutral-300 hover:text-primary-600"
+          className="absolute bottom-0 right-0 p-1 text-fg-faint hover:text-primary-600"
         >
           <History aria-hidden className="h-2.5 w-2.5" />
         </button>

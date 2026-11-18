@@ -22,13 +22,13 @@ import {
 import type { PoSignoffState, PoSignoffStatus, PoSignoffStep } from '@/services/po'
 
 export const STATUS_LABELS: Record<PoSignoffStatus, { label: string; className: string }> = {
-  draft:      { label: 'Not started',       className: 'bg-neutral-100 text-neutral-600' },
-  submitted:  { label: 'Awaiting signature', className: 'bg-warning-100 text-warning-700' },
-  in_review:  { label: 'Awaiting signature', className: 'bg-warning-100 text-warning-700' },
-  approved:   { label: 'Signed',            className: 'bg-success-100 text-success-700' },
-  returned:   { label: 'Returned',          className: 'bg-warning-100 text-warning-700' },
-  rejected:   { label: 'Rejected',          className: 'bg-danger-100 text-danger-700' },
-  cancelled:  { label: 'Cancelled',         className: 'bg-neutral-100 text-neutral-500' },
+  draft:      { label: 'Not started',       className: 'bg-surface-sunken text-fg-secondary' },
+  submitted:  { label: 'Awaiting signature', className: 'bg-warning-soft text-warning-fg' },
+  in_review:  { label: 'Awaiting signature', className: 'bg-warning-soft text-warning-fg' },
+  approved:   { label: 'Signed',            className: 'bg-success-soft text-success-fg' },
+  returned:   { label: 'Returned',          className: 'bg-warning-soft text-warning-fg' },
+  rejected:   { label: 'Rejected',          className: 'bg-danger-soft text-danger-fg' },
+  cancelled:  { label: 'Cancelled',         className: 'bg-surface-sunken text-fg-muted' },
 }
 
 export const SLOT_LABELS: Record<string, string> = {
@@ -60,20 +60,20 @@ function StepRow({ step, index, state }: {
   return (
     <div className={cn(
       'flex items-center gap-3 rounded-xl border px-3 py-2.5',
-      current ? 'border-warning-200 bg-warning-50' : 'border-neutral-200 bg-white',
+      current ? 'border-warning-line bg-warning-soft' : 'border-line bg-surface',
     )}>
       <span className={cn(
         'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold',
-        signed ? 'bg-success-100 text-success-700'
-               : current ? 'bg-warning-100 text-warning-700'
-                         : 'bg-neutral-100 text-neutral-500',
+        signed ? 'bg-success-soft text-success-fg'
+               : current ? 'bg-warning-soft text-warning-fg'
+                         : 'bg-surface-sunken text-fg-muted',
       )}>
         {signed ? <Check className="h-3.5 w-3.5" /> : index + 1}
       </span>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-neutral-800">{step.label}</p>
-        <p className="truncate text-xs text-neutral-500">
+        <p className="truncate text-sm font-medium text-fg">{step.label}</p>
+        <p className="truncate text-xs text-fg-muted">
           {signed
             ? `Signed by ${step.signed_by_name} · ${formatDateTime(step.signed_at)}`
             : current ? 'Waiting for signature'
@@ -82,7 +82,7 @@ function StepRow({ step, index, state }: {
         </p>
       </div>
 
-      <span className="shrink-0 rounded-md bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-500">
+      <span className="shrink-0 rounded-md bg-surface-sunken px-2 py-0.5 text-2xs font-medium text-fg-muted">
         {step.sig_slot ? SLOT_LABELS[step.sig_slot] : 'Not on PDF'}
       </span>
     </div>
@@ -102,14 +102,14 @@ function Composer({ title, placeholder, required, confirmLabel, isPending, onCan
   const blocked = isPending || (required && text.trim() === '')
 
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
-      <p className="text-xs font-semibold text-neutral-700">{title}</p>
+    <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface-subtle p-3">
+      <p className="text-xs font-semibold text-fg-secondary">{title}</p>
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={4}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none"
+        className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:border-primary-500 focus:outline-none"
       />
       <div className="flex items-center gap-2">
         <Button
@@ -127,7 +127,7 @@ function Composer({ title, placeholder, required, confirmLabel, isPending, onCan
           type="button"
           onClick={onCancel}
           disabled={isPending}
-          className="text-xs font-medium text-neutral-500 hover:text-neutral-700 disabled:opacity-40"
+          className="text-xs font-medium text-fg-muted hover:text-fg-secondary disabled:opacity-40"
         >
           Cancel
         </button>
@@ -153,8 +153,8 @@ export function PoSignoffPanel({ poId, source }: { poId: string; source: string 
   if (!enabled) return null
   if (isLoading) {
     return (
-      <div className="rounded-lg border border-neutral-200 bg-white px-6 py-5">
-        <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
+      <div className="rounded-lg border border-line bg-surface px-6 py-5">
+        <Loader2 className="h-4 w-4 animate-spin text-fg-muted" />
       </div>
     )
   }
@@ -174,16 +174,16 @@ export function PoSignoffPanel({ poId, source }: { poId: string; source: string 
   const canRestart = state.status === 'draft' || state.status === 'returned'
 
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white">
-      <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4">
+    <div className="rounded-lg border border-line bg-surface">
+      <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
             <PenLine className="h-4 w-4" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-neutral-900">Sign-off</h2>
+            <h2 className="text-sm font-semibold text-fg">Sign-off</h2>
             {state.submitted_by_name && (
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-fg-muted">
                 Raised by {state.submitted_by_name}
                 {state.submitted_at ? ` · ${formatDateTime(state.submitted_at)}` : ''}
               </p>
@@ -203,9 +203,9 @@ export function PoSignoffPanel({ poId, source }: { poId: string; source: string 
         </div>
 
         {canRestart && state.blockers.length > 0 && (
-          <div className="flex flex-col gap-1.5 rounded-xl border border-warning-200 bg-warning-50 px-4 py-3">
+          <div className="flex flex-col gap-1.5 rounded-xl border border-warning-line bg-warning-soft px-4 py-3">
             {state.blockers.map((blocker) => (
-              <p key={blocker} className="flex items-start gap-2 text-xs text-warning-700">
+              <p key={blocker} className="flex items-start gap-2 text-xs text-warning-fg">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 {blocker}
               </p>
@@ -215,22 +215,22 @@ export function PoSignoffPanel({ poId, source }: { poId: string; source: string 
 
         {state.thread.length > 0 && (
           <div className="flex flex-col gap-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+            <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
               Justification &amp; notes
             </p>
             <div className="flex flex-col gap-2">
               {state.thread.map((entry, i) => (
-                <div key={`${entry.at}-${i}`} className="rounded-xl border border-neutral-100 bg-neutral-50 px-3 py-2">
-                  <p className="flex items-center gap-1.5 text-xs text-neutral-500">
+                <div key={`${entry.at}-${i}`} className="rounded-xl border border-line-subtle bg-surface-subtle px-3 py-2">
+                  <p className="flex items-center gap-1.5 text-xs text-fg-muted">
                     <Clock className="h-3 w-3 shrink-0" />
-                    <span className="font-medium text-neutral-700">
+                    <span className="font-medium text-fg-secondary">
                       {entry.actor_name ?? 'Unknown'}
                     </span>
                     · {THREAD_LABELS[entry.action] ?? entry.action}
                     · {formatDateTime(entry.at)}
                   </p>
                   {entry.comment && (
-                    <p className="mt-1 whitespace-pre-wrap text-sm text-neutral-800">{entry.comment}</p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-fg">{entry.comment}</p>
                   )}
                 </div>
               ))}
@@ -239,7 +239,7 @@ export function PoSignoffPanel({ poId, source }: { poId: string; source: string 
         )}
 
         {failure && (
-          <p className="flex items-start gap-1.5 text-xs text-danger-600">
+          <p className="flex items-start gap-1.5 text-xs text-danger-fg">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {failure}
           </p>
         )}
@@ -315,7 +315,7 @@ export function PoSignoffPanel({ poId, source }: { poId: string; source: string 
                 type="button"
                 disabled={pending}
                 onClick={() => setComposer('note')}
-                className="flex items-center gap-1.5 text-xs font-medium text-neutral-500 hover:text-primary-600 disabled:opacity-40"
+                className="flex items-center gap-1.5 text-xs font-medium text-fg-muted hover:text-primary-600 disabled:opacity-40"
               >
                 <MessageSquarePlus className="h-3.5 w-3.5" /> Add note
               </button>
@@ -324,7 +324,7 @@ export function PoSignoffPanel({ poId, source }: { poId: string; source: string 
         )}
 
         {state.status === 'approved' && (
-          <p className="rounded-xl border border-success-200 bg-success-50 px-4 py-3 text-xs text-success-700">
+          <p className="rounded-xl border border-success-line bg-success-soft px-4 py-3 text-xs text-success-fg">
             Every signatory has signed and the PO PDF now carries their
             signatures. The order can be released in NC.
           </p>

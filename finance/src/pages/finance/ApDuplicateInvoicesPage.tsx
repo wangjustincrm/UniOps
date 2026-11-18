@@ -72,13 +72,13 @@ const KIND_TAB: Record<Kind, string> = {
   pending: 'Unapproved drafts',
 }
 const STATUS: Record<Status, { label: string; cls: string; hint: string }> = {
-  stop_approval: { label: 'Stop approval', cls: 'bg-red-50 text-red-700 border-red-200',
+  stop_approval: { label: 'Stop approval', cls: 'bg-danger-soft text-danger-fg border-danger-line',
                    hint: 'A draft repeats an invoice already entered — do not approve it' },
-  stop_payment: { label: 'Stop payment', cls: 'bg-red-50 text-red-700 border-red-200',
+  stop_payment: { label: 'Stop payment', cls: 'bg-danger-soft text-danger-fg border-danger-line',
                   hint: 'An extra copy still has a balance in NC — hold it back from payment' },
-  recover: { label: 'Recover', cls: 'bg-amber-50 text-amber-800 border-amber-200',
+  recover: { label: 'Recover', cls: 'bg-warning-soft text-warning-fg border-warning-line',
              hint: 'Every copy is settled — the supplier was paid more than once' },
-  review: { label: 'Review', cls: 'bg-neutral-50 text-neutral-600 border-neutral-200',
+  review: { label: 'Review', cls: 'bg-surface-subtle text-fg-secondary border-line',
             hint: 'Same vendor and invoice number, different amounts — check it; mark a deliberate split as reviewed' },
 }
 
@@ -110,12 +110,12 @@ function ReviewDialog({ finding, pending, error, onCancel, onDone }: {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-6">
-      <div className="w-full max-w-lg rounded-lg bg-white shadow-xl">
-        <div className="border-b border-neutral-200 px-5 py-4">
-          <h3 className="text-sm font-semibold text-neutral-900">
+      <div className="w-full max-w-lg rounded-lg bg-surface shadow-xl">
+        <div className="border-b border-line px-5 py-4">
+          <h3 className="text-sm font-semibold text-fg">
             Mark invoice {finding.invoice_no ?? finding.invoice_no_norm} as reviewed
           </h3>
-          <p className="mt-0.5 text-xs text-neutral-500">
+          <p className="mt-0.5 text-xs text-fg-muted">
             The group leaves the working list and stops counting toward the AP task. NC is
             not changed. If another bill with this invoice number is entered later, the group
             comes back.
@@ -123,34 +123,34 @@ function ReviewDialog({ finding, pending, error, onCancel, onDone }: {
         </div>
         <div className="space-y-3 px-5 py-4">
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-700">Reason</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Reason</label>
             <select value={reason} onChange={(e) => setReason(e.target.value)}
-                    className="w-full rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm">
+                    className="w-full rounded-lg border border-line-strong px-2.5 py-1.5 text-sm">
               {(data?.reasons ?? []).map((r) => (
                 <option key={r.code} value={r.code}>{r.label}</option>
               ))}
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-700">
-              Note {reason === 'other' && <span className="text-amber-700">(required)</span>}
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">
+              Note {reason === 'other' && <span className="text-warning-fg">(required)</span>}
             </label>
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
                       placeholder="e.g. Supplier issued credit note CN-1042 on 2026-10-02"
-                      className="w-full rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm" />
+                      className="w-full rounded-lg border border-line-strong px-2.5 py-1.5 text-sm" />
           </div>
-          <div className="rounded border border-neutral-200 bg-neutral-50 px-2.5 py-1.5 font-mono text-[11px] text-neutral-500">
+          <div className="rounded border border-line bg-surface-subtle px-2.5 py-1.5 font-mono text-2xs text-fg-muted">
             {finding.bill_nos.join(', ')}
           </div>
-          {error && <p className="text-xs text-red-700">{error}</p>}
+          {error && <p className="text-xs text-danger-fg">{error}</p>}
         </div>
-        <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-3">
+        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
           <button onClick={onCancel}
-                  className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50">
+                  className="rounded-lg border border-line-strong px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle">
             Cancel
           </button>
           <button onClick={() => onDone(reason, note.trim())} disabled={needsNote || pending}
-                  className="rounded-lg bg-[#085E5E] px-3 py-1.5 text-sm text-white hover:bg-[#064a4a] disabled:opacity-40">
+                  className="rounded-lg bg-primary-700 px-3 py-1.5 text-sm text-white hover:bg-primary-800 disabled:opacity-40">
             {pending ? 'Saving…' : 'Mark reviewed'}
           </button>
         </div>
@@ -163,7 +163,7 @@ function BillsTable({ bills }: { bills: Bill[] }) {
   return (
     <table className="w-full text-xs">
       <thead>
-        <tr className="text-left text-[11px] uppercase tracking-wide text-neutral-400">
+        <tr className="text-left text-2xs uppercase tracking-wide text-fg-muted">
           <th className="px-2 py-1.5 font-medium">NC bill</th>
           <th className="px-2 py-1.5 font-medium">Status</th>
           <th className="px-2 py-1.5 font-medium">Bill date</th>
@@ -176,23 +176,23 @@ function BillsTable({ bills }: { bills: Bill[] }) {
       </thead>
       <tbody>
         {bills.map((b) => (
-          <tr key={`${b.bill_no}-${b.supplier_code}`} className="border-t border-neutral-100">
+          <tr key={`${b.bill_no}-${b.supplier_code}`} className="border-t border-line-subtle">
             <td className="px-2 py-1.5 font-mono">{b.bill_no}</td>
             <td className="px-2 py-1.5">
-              <span className={cn(!b.effective && 'font-medium text-red-700')}>{b.status_label}</span>
-              {b.dismissed && <span className="ml-1 text-neutral-400">(ignored)</span>}
+              <span className={cn(!b.effective && 'font-medium text-danger-fg')}>{b.status_label}</span>
+              {b.dismissed && <span className="ml-1 text-fg-muted">(ignored)</span>}
             </td>
             <td className="px-2 py-1.5 font-mono">{day(b.bill_date)}</td>
             <td className="px-2 py-1.5">
-              <span className="font-mono text-neutral-400">{b.supplier_code}</span> {b.supplier_name}
+              <span className="font-mono text-fg-muted">{b.supplier_code}</span> {b.supplier_name}
             </td>
             <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
-                              Number(b.amount) < 0 && 'text-emerald-700')}>{money(b.amount)}</td>
+                              Number(b.amount) < 0 && 'text-success-fg')}>{money(b.amount)}</td>
             <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
-                              Number(b.open) !== 0 && 'font-semibold text-red-700')}>{money(b.open)}</td>
+                              Number(b.open) !== 0 && 'font-semibold text-danger-fg')}>{money(b.open)}</td>
             <td className="px-2 py-1.5 text-right font-mono tabular-nums">{money(b.paid_on_bill)}</td>
-            <td className="px-2 py-1.5 font-mono text-[11px] text-neutral-500">
-              {b.payment_nos ?? '—'}{b.last_paid && <span className="text-neutral-400"> · {day(b.last_paid)}</span>}
+            <td className="px-2 py-1.5 font-mono text-2xs text-fg-muted">
+              {b.payment_nos ?? '—'}{b.last_paid && <span className="text-fg-muted"> · {day(b.last_paid)}</span>}
             </td>
           </tr>
         ))}
@@ -306,7 +306,7 @@ export default function ApDuplicateInvoicesPage() {
       subtitle="Invoice numbers NC has on more than one payable"
     >
       <div className="mx-auto max-w-7xl">
-        <div className="mb-5 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm leading-relaxed text-neutral-700">
+        <div className="mb-5 rounded-lg border border-line bg-surface-subtle px-4 py-3 text-sm leading-relaxed text-fg-secondary">
           <p className="mb-1.5">
             A vendor&rsquo;s invoice number must be unique. NC does not check it, so the same invoice
             can be entered — and paid — more than once. This page is that check: every group is one
@@ -314,7 +314,7 @@ export default function ApDuplicateInvoicesPage() {
             number from two different vendors is not a duplicate. It reads NC&rsquo;s payables after
             every AP sync (hourly), and AP gets a task when something new turns up.
           </p>
-          <p className="text-neutral-500">
+          <p className="text-fg-muted">
             A bill that was reversed by an equal credit is not counted as a copy. The earlier a
             duplicate is caught the cheaper it is: <strong>stop</strong> a draft before approval,
             <strong> hold</strong> an approved copy back from payment, and only a copy already paid
@@ -330,23 +330,23 @@ export default function ApDuplicateInvoicesPage() {
             return (
               <button key={k} onClick={() => { setKind(k); setExpanded(new Set()) }}
                       className={cn('rounded-lg border p-3 text-left transition-colors',
-                                    kind === k ? 'border-[#085E5E] bg-primary-50/60'
-                                               : 'border-neutral-200 hover:bg-neutral-50')}>
+                                    kind === k ? 'border-primary-700 bg-primary-50/60'
+                                               : 'border-line hover:bg-surface-subtle')}>
                 <div className="flex items-center gap-1.5">
                   {s && s.actionable && s.unreviewed > 0
-                    ? <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
-                    : <CheckCircle2 className="h-3.5 w-3.5 text-[#085E5E]" />}
-                  <span className="text-sm font-semibold text-neutral-800">{KIND_TAB[k]}</span>
+                    ? <AlertTriangle className="h-3.5 w-3.5 text-warning-fg" />
+                    : <CheckCircle2 className="h-3.5 w-3.5 text-primary-700" />}
+                  <span className="text-sm font-semibold text-fg">{KIND_TAB[k]}</span>
                 </div>
-                <p className="mt-1.5 text-xs text-neutral-500">
-                  <span className="font-mono text-base font-semibold text-neutral-900">{s?.unreviewed ?? '—'}</span>
+                <p className="mt-1.5 text-xs text-fg-muted">
+                  <span className="font-mono text-base font-semibold text-fg">{s?.unreviewed ?? '—'}</span>
                   {' '}to review{s && s.reviewed > 0 && <> · {s.reviewed} reviewed</>}
                 </p>
                 {k === 'exact' && byCcy.map(([ccy, t]) => (
-                  <p key={ccy} className="mt-0.5 text-[11px] text-neutral-500">
+                  <p key={ccy} className="mt-0.5 text-2xs text-fg-muted">
                     <span className="font-mono">{ccy}</span> billed twice {money(t.extra_amount)}
                     {Number(t.open_exposure) > 0 && (
-                      <span className="font-medium text-red-700"> · {money(t.open_exposure)} still payable</span>
+                      <span className="font-medium text-danger-fg"> · {money(t.open_exposure)} still payable</span>
                     )}
                   </p>
                 ))}
@@ -356,42 +356,42 @@ export default function ApDuplicateInvoicesPage() {
         </div>
 
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-lg border border-neutral-300 p-0.5 text-xs">
+          <div className="inline-flex rounded-lg border border-line-strong p-0.5 text-xs">
             {(['no', 'yes', 'all'] as const).map((r) => (
               <button key={r} onClick={() => setReviewed(r)}
                       className={cn('rounded-md px-2.5 py-1',
-                                    reviewed === r ? 'bg-[#085E5E] text-white' : 'text-neutral-600 hover:bg-neutral-50')}>
+                                    reviewed === r ? 'bg-primary-700 text-white' : 'text-fg-secondary hover:bg-surface-subtle')}>
                 {r === 'no' ? 'To review' : r === 'yes' ? 'Reviewed' : 'All'}
               </button>
             ))}
           </div>
           <input value={search} onChange={(e) => setSearch(e.target.value)}
                  placeholder="Invoice no, supplier, or NC bill no"
-                 className="w-72 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm" />
-          {isFetching && <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />}
-          <span className="ml-auto text-xs text-neutral-500">{data ? `${data.total} groups` : ''}</span>
+                 className="w-72 rounded-lg border border-line-strong px-2.5 py-1.5 text-sm" />
+          {isFetching && <Loader2 className="h-4 w-4 animate-spin text-fg-muted" />}
+          <span className="ml-auto text-xs text-fg-muted">{data ? `${data.total} groups` : ''}</span>
           <button onClick={exportCsv} disabled={!rows.length}
-                  className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-40">
+                  className="inline-flex items-center gap-1 rounded-lg border border-line-strong px-2.5 py-1.5 text-xs text-fg-secondary hover:bg-surface-subtle disabled:opacity-40">
             <Download className="h-3.5 w-3.5" /> CSV
           </button>
         </div>
 
         {error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-lg border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
             {(error as Error).message}
           </div>
         ) : !data ? (
-          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
+          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
         ) : rows.length === 0 ? (
-          <div className="rounded-lg border border-neutral-200 px-4 py-10 text-center text-sm text-neutral-500">
+          <div className="rounded-lg border border-line px-4 py-10 text-center text-sm text-fg-muted">
             {reviewed === 'no' ? 'Nothing left to review here.' : 'No groups.'}
           </div>
         ) : (
           <>
-          <div className="overflow-x-auto rounded-lg border border-neutral-200">
+          <div className="overflow-x-auto rounded-lg border border-line">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50">
-                <tr className="text-left text-xs text-neutral-500">
+              <thead className="bg-surface-subtle">
+                <tr className="text-left text-xs text-fg-muted">
                   <th className="w-6 px-2 py-2" />
                   <SortTh label="Action" sortKey="action" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
                   <SortTh label="Invoice no" sortKey="invoice" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
@@ -412,25 +412,25 @@ export default function ApDuplicateInvoicesPage() {
                     ?? Array.from(new Set(f.bills.map((b) => b.supplier_name))).join(' / ')
                   return (
                     <Fragment key={f.key}>
-                      <tr className="cursor-pointer border-t border-neutral-100 hover:bg-neutral-50"
+                      <tr className="cursor-pointer border-t border-line-subtle hover:bg-surface-subtle"
                           onClick={() => toggle(f.key)}>
-                        <td className="px-2 py-2 text-neutral-400">
+                        <td className="px-2 py-2 text-fg-muted">
                           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         </td>
                         <td className="px-2.5 py-2">
                           <span title={st.hint}
-                                className={cn('inline-block rounded border px-1.5 py-0.5 text-[11px] font-medium', st.cls)}>
+                                className={cn('inline-block rounded border px-1.5 py-0.5 text-2xs font-medium', st.cls)}>
                             {st.label}
                           </span>
                           {f.reopened && (
-                            <span className="ml-1 text-[11px] text-amber-700" title="Reviewed before, but a bill has been added since">
+                            <span className="ml-1 text-2xs text-warning-fg" title="Reviewed before, but a bill has been added since">
                               new copy
                             </span>
                           )}
                         </td>
                         <td className="px-2.5 py-2 font-mono">{f.invoice_no ?? f.invoice_no_norm}</td>
                         <td className="px-2.5 py-2">
-                          {f.supplier_code && <span className="font-mono text-xs text-neutral-400">{f.supplier_code} </span>}
+                          {f.supplier_code && <span className="font-mono text-xs text-fg-muted">{f.supplier_code} </span>}
                           {suppliers}
                         </td>
                         <td className="px-2.5 py-2 font-mono text-xs">{f.currency}</td>
@@ -441,37 +441,37 @@ export default function ApDuplicateInvoicesPage() {
                         )}
                         {showMoney && (
                           <td className={cn('px-2.5 py-2 text-right font-mono tabular-nums',
-                                            Number(f.open_exposure) > 0 && 'font-semibold text-red-700')}>
+                                            Number(f.open_exposure) > 0 && 'font-semibold text-danger-fg')}>
                             {money(f.open_exposure)}
                           </td>
                         )}
                         <td className="px-2.5 py-2" onClick={(e) => e.stopPropagation()}>
                           {f.review ? (
                             <div className="flex items-center gap-2 text-xs">
-                              <span className="text-neutral-600" title={f.review.note ?? ''}>
+                              <span className="text-fg-secondary" title={f.review.note ?? ''}>
                                 {reasonLabel[f.review.reason] ?? f.review.reason} · {f.review.reviewed_by_name ?? '—'} · {day(f.review.reviewed_at)}
                               </span>
                               <button onClick={() => unreview.mutate(f.key)} disabled={unreview.isPending}
                                       title="Put back on the list"
-                                      className="text-neutral-400 hover:text-neutral-700 disabled:opacity-40">
+                                      className="text-fg-muted hover:text-fg-secondary disabled:opacity-40">
                                 <Undo2 className="h-3.5 w-3.5" />
                               </button>
                             </div>
                           ) : (
                             <button onClick={() => { setReviewError(null); setReviewing(f) }}
-                                    className="rounded-lg border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50">
+                                    className="rounded-lg border border-line-strong px-2 py-1 text-xs text-fg-secondary hover:bg-surface-subtle">
                               Mark reviewed
                             </button>
                           )}
                         </td>
                       </tr>
                       {open && (
-                        <tr className="bg-neutral-50/60">
+                        <tr className="bg-surface-subtle/60">
                           <td />
                           <td colSpan={showMoney ? 9 : 7} className="px-2.5 py-2">
                             <BillsTable bills={f.bills} />
                             {f.review?.note && (
-                              <p className="mt-2 text-xs text-neutral-500">Note: {f.review.note}</p>
+                              <p className="mt-2 text-xs text-fg-muted">Note: {f.review.note}</p>
                             )}
                           </td>
                         </tr>
@@ -498,7 +498,7 @@ export default function ApDuplicateInvoicesPage() {
         />
       )}
       {reviewError && !reviewing && (
-        <div className="fixed bottom-4 right-4 z-[60] max-w-sm rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 shadow">
+        <div className="fixed bottom-4 right-4 z-[60] max-w-sm rounded-lg border border-warning-line bg-warning-soft px-4 py-3 text-sm text-warning-fg shadow">
           {reviewError}
           <button onClick={() => setReviewError(null)} className="ml-2 text-xs underline">Dismiss</button>
         </div>

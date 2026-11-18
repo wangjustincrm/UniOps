@@ -25,7 +25,7 @@ import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const PAGE_SIZE = 50
 
 interface ApInvoice {
@@ -84,21 +84,21 @@ function fmtMoney(v: string, ccy?: string): string {
 }
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, string> = {
-    draft: 'bg-neutral-100 text-neutral-600', posted: 'bg-blue-50 text-blue-700',
-    partially_paid: 'bg-amber-50 text-amber-700', paid: 'bg-green-50 text-green-700',
-    void: 'bg-neutral-100 text-neutral-400',
+    draft: 'bg-surface-sunken text-fg-secondary', posted: 'bg-info-soft text-info-fg',
+    partially_paid: 'bg-warning-soft text-warning-fg', paid: 'bg-success-soft text-success-fg',
+    void: 'bg-surface-sunken text-fg-muted',
   }
-  return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-neutral-100 text-neutral-600')}>{statusLabel(status)}</span>
+  return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-surface-sunken text-fg-secondary')}>{statusLabel(status)}</span>
 }
 
 const NC_STATE: Record<NcDoc['state'], { label: string; cls: string; tip: string }> = {
-  saved: { label: 'Saved', cls: 'bg-amber-50 text-amber-700', tip: 'In NC, not yet approved' },
-  approved: { label: 'Approved', cls: 'bg-green-50 text-green-700', tip: 'Approved in NC' },
-  pushed: { label: 'Pushed', cls: 'bg-blue-50 text-blue-700', tip: 'Pushed by UniOps; NC state shows after the next NC sync (hourly)' },
+  saved: { label: 'Saved', cls: 'bg-warning-soft text-warning-fg', tip: 'In NC, not yet approved' },
+  approved: { label: 'Approved', cls: 'bg-success-soft text-success-fg', tip: 'Approved in NC' },
+  pushed: { label: 'Pushed', cls: 'bg-info-soft text-info-fg', tip: 'Pushed by UniOps; NC state shows after the next NC sync (hourly)' },
 }
 
 const NcFlowTag = () => (
-  <span className="w-fit rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600"
+  <span className="w-fit rounded-full bg-surface-sunken px-1.5 py-0.5 text-2xs font-medium text-fg-secondary"
         title="PO imported from NC — NC creates this payable from its purchase invoice. Not pushed from UniOps.">
     NC flow
   </span>
@@ -108,12 +108,12 @@ function NcDocCell({ inv }: { inv: ApInvoice }) {
   const docs = inv.nc_docs ?? []
   if (docs.length === 0) {
     if (inv.nc_push_status === 'failed') {
-      return <span className="flex items-center gap-1 text-xs text-red-600" title={inv.nc_push_error ?? ''}>
+      return <span className="flex items-center gap-1 text-xs text-danger-fg" title={inv.nc_push_error ?? ''}>
         <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> Push failed
       </span>
     }
     if (inv.nc_flow) return <NcFlowTag />
-    return <span className="text-xs text-neutral-400">—</span>
+    return <span className="text-xs text-fg-muted">—</span>
   }
   return (
     <div className="flex flex-col gap-0.5">
@@ -127,11 +127,11 @@ function NcDocCell({ inv }: { inv: ApInvoice }) {
         return (
           <span key={d.bill_no} className="flex flex-col">
             <span className="flex items-center gap-1" title={tip}>
-              <span className="font-mono text-xs text-neutral-700">{d.bill_no}</span>
-              <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-medium', st.cls)}>{st.label}</span>
+              <span className="font-mono text-xs text-fg-secondary">{d.bill_no}</span>
+              <span className={cn('rounded-full px-1.5 py-0.5 text-2xs font-medium', st.cls)}>{st.label}</span>
             </span>
             {d.hyphen_match && (
-              <span className="flex items-center gap-1 text-[11px] text-amber-700" title={hyphenTip}>
+              <span className="flex items-center gap-1 text-2xs text-warning-fg" title={hyphenTip}>
                 <AlertTriangle className="h-3 w-3 shrink-0" /> Hyphens ignored · NC: {d.nc_invoice_no}
               </span>
             )}
@@ -140,7 +140,7 @@ function NcDocCell({ inv }: { inv: ApInvoice }) {
       })}
       {inv.nc_flow && <NcFlowTag />}
       {inv.nc_push_error && (
-        <span className="flex items-center gap-1 text-[11px] text-red-600" title={inv.nc_push_error}>
+        <span className="flex items-center gap-1 text-2xs text-danger-fg" title={inv.nc_push_error}>
           <AlertTriangle className="h-3 w-3 shrink-0" /> Last push failed
         </span>
       )}
@@ -281,8 +281,8 @@ export default function AccountsPayablePage() {
           {([['invoices', 'Invoices'], ['aging', 'Aging']] as const).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)}
                     className={cn('rounded-lg px-4 py-2 text-sm font-medium',
-                      tab === t ? 'bg-[#085E5E] text-white'
-                                : 'border border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50')}>
+                      tab === t ? 'bg-primary-700 text-white'
+                                : 'border border-line-strong bg-surface text-fg-secondary hover:bg-surface-subtle')}>
               {label}
             </button>
           ))}
@@ -304,16 +304,16 @@ export default function AccountsPayablePage() {
                     onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); resetPage() }}>
                 <input value={qInput} onChange={(e) => setQInput(e.target.value)}
                        placeholder="Vendor / vendor inv #…" className={cn(inputCls, 'w-52')} />
-                <button type="submit" className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">Search</button>
+                <button type="submit" className="rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle">Search</button>
               </form>
-              <label className="flex items-center gap-1.5 text-sm text-neutral-600">
+              <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
                 <input type="checkbox" checked={hideInNc}
                        onChange={(e) => { setHideInNc(e.target.checked); resetPage() }} />
                 Hide in NC
               </label>
               <button onClick={runPush} disabled={pushing || pickedCount === 0}
                       title="Create saved payable bills in NC for the selected invoices"
-                      className="ml-auto flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50">
+                      className="ml-auto flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50">
                 {pushing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                 Push to NC{pickedCount > 0 ? ` (${pickedCount})` : ''}
               </button>
@@ -321,8 +321,8 @@ export default function AccountsPayablePage() {
 
             {banner && (
               <div className={cn('mt-3 rounded-md px-3 py-2 text-sm',
-                banner.kind === 'err' ? 'bg-red-50 text-red-700'
-                  : banner.kind === 'warn' ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-700')}>
+                banner.kind === 'err' ? 'bg-danger-soft text-danger-fg'
+                  : banner.kind === 'warn' ? 'bg-warning-soft text-warning-fg' : 'bg-success-soft text-success-fg')}>
                 <div>{banner.text}</div>
                 {banner.lines && banner.lines.length > 0 && (
                   <ul className="mt-1 list-disc pl-5 text-xs">
@@ -333,9 +333,9 @@ export default function AccountsPayablePage() {
             )}
             </div>
 
-            <div className="overflow-clip rounded-lg border border-neutral-200">
+            <div className="overflow-clip rounded-lg border border-line">
               <table className="w-full text-sm">
-                <thead className="sticky z-10 bg-neutral-50 text-left text-xs text-neutral-500 shadow-[0_1px_0_#e5e5e5]"
+                <thead className="sticky z-10 bg-surface-subtle text-left text-xs text-fg-muted shadow-[0_1px_0_#e5e5e5]"
                        style={{ top: barH }}>
                   <tr>
                     <th className="w-9 px-3 py-2" />
@@ -354,11 +354,11 @@ export default function AccountsPayablePage() {
                 </thead>
                 <tbody>
                   {isFetching && (
-                    <tr><td colSpan={12} className="px-3 py-6 text-center text-neutral-400">
+                    <tr><td colSpan={12} className="px-3 py-6 text-center text-fg-muted">
                       <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
                   )}
                   {!isFetching && invoices.length === 0 && (
-                    <tr><td colSpan={12} className="px-3 py-6 text-center text-neutral-400">No AP invoices.</td></tr>
+                    <tr><td colSpan={12} className="px-3 py-6 text-center text-fg-muted">No AP invoices.</td></tr>
                   )}
                   {invoices.map((inv, i) => {
                     const outstanding = Number(inv.total_amount) - Number(inv.paid_amount)
@@ -367,22 +367,22 @@ export default function AccountsPayablePage() {
                       <tr key={inv.id}
                           onClick={() => openInvoiceTab(inv)}
                           title="Open invoice detail in a tab"
-                          className={cn('cursor-pointer border-t border-neutral-100 hover:bg-neutral-100', i % 2 && 'bg-neutral-50/40')}>
+                          className={cn('cursor-pointer border-t border-line-subtle hover:bg-surface-sunken', i % 2 && 'bg-surface-subtle/40')}>
                         <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                           {pushable(inv) && (
                             <input type="checkbox" checked={selected.has(inv.id)}
                                    onChange={() => toggle(inv.id)} />
                           )}
                         </td>
-                        <td className="px-3 py-2 font-mono text-xs text-[#085E5E] underline-offset-2 hover:underline">{inv.ap_invoice_number}</td>
-                        <td className="px-3 py-2 text-xs uppercase text-neutral-500">{inv.source}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-primary-700 underline-offset-2 hover:underline">{inv.ap_invoice_number}</td>
+                        <td className="px-3 py-2 text-xs uppercase text-fg-muted">{inv.source}</td>
                         <td className="px-3 py-2">{inv.vendor_name ?? '—'}</td>
-                        <td className="px-3 py-2 text-xs text-neutral-600">{inv.vendor_invoice_number ?? '—'}</td>
-                        <td className="px-3 py-2 text-xs text-neutral-600">{formatDate(inv.invoice_date)}</td>
-                        <td className="px-3 py-2 text-xs text-neutral-600">{formatDate(inv.due_date)}</td>
+                        <td className="px-3 py-2 text-xs text-fg-secondary">{inv.vendor_invoice_number ?? '—'}</td>
+                        <td className="px-3 py-2 text-xs text-fg-secondary">{formatDate(inv.invoice_date)}</td>
+                        <td className="px-3 py-2 text-xs text-fg-secondary">{formatDate(inv.due_date)}</td>
                         <td className="px-3 py-2 text-right font-mono">{fmtMoney(inv.total_amount, inv.currency)}</td>
                         <td className="px-3 py-2 text-right font-mono">{open ? fmtMoney(String(outstanding)) : '—'}</td>
-                        <td className="px-3 py-2 font-mono text-xs text-neutral-600">{inv.gl_code ?? ''}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-fg-secondary">{inv.gl_code ?? ''}</td>
                         <td className="px-3 py-2"><StatusPill status={inv.status} /></td>
                         <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                           <NcDocCell inv={inv} />
@@ -394,22 +394,22 @@ export default function AccountsPayablePage() {
               </table>
             </div>
 
-            <div className="mt-3 flex items-center justify-between text-sm text-neutral-500">
+            <div className="mt-3 flex items-center justify-between text-sm text-fg-muted">
               <span>{total.toLocaleString()} invoice{total === 1 ? '' : 's'}</span>
               <div className="flex items-center gap-2">
                 <button onClick={() => gotoPage(Math.max(0, page - 1))} disabled={page === 0}
-                        className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">Prev</button>
+                        className="rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50">Prev</button>
                 <span>Page {page + 1} / {pageCount}</span>
                 <button onClick={() => gotoPage(Math.min(pageCount - 1, page + 1))}
                         disabled={page >= pageCount - 1}
-                        className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">Next</button>
+                        className="rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50">Next</button>
               </div>
             </div>
           </>
         ) : (
-          <div className="overflow-hidden rounded-lg border border-neutral-200">
+          <div className="overflow-hidden rounded-lg border border-line">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+              <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
                 <tr>
                   <SortTh label="Vendor" sortKey="vendor" sort={agingSort.sort} onSort={agingSort.onSort} className="px-3 py-2" />
                   <SortTh label="Ccy" sortKey="currency" sort={agingSort.sort} onSort={agingSort.onSort} className="px-3 py-2 w-16" />
@@ -423,17 +423,17 @@ export default function AccountsPayablePage() {
               </thead>
               <tbody>
                 {aging.length === 0 && (
-                  <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">No open payables.</td></tr>
+                  <tr><td colSpan={8} className="px-3 py-6 text-center text-fg-muted">No open payables.</td></tr>
                 )}
                 {agingSort.rows.map((r, i) => (
-                  <tr key={`${r.vendor_id ?? 'none'}-${r.currency}-${i}`} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
+                  <tr key={`${r.vendor_id ?? 'none'}-${r.currency}-${i}`} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
                     <td className="px-3 py-2">{r.vendor_name || '—'}</td>
-                    <td className="px-3 py-2 text-xs text-neutral-500">{r.currency}</td>
+                    <td className="px-3 py-2 text-xs text-fg-muted">{r.currency}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.current)}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.d1_30)}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.d31_60)}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.d61_90)}</td>
-                    <td className={cn('px-3 py-2 text-right font-mono', Number(r.d90_plus) > 0 && 'text-red-600')}>{fmtMoney(r.d90_plus)}</td>
+                    <td className={cn('px-3 py-2 text-right font-mono', Number(r.d90_plus) > 0 && 'text-danger-fg')}>{fmtMoney(r.d90_plus)}</td>
                     <td className="px-3 py-2 text-right font-mono font-semibold">{fmtMoney(r.total, r.currency)}</td>
                   </tr>
                 ))}

@@ -16,7 +16,7 @@ export function CurrentStepHint({ current_step }: { current_step?: CurrentStep |
   parts.push(`${daysSince(since)}d`)
   return (
     <div
-      className="mt-1 text-[11px] leading-tight text-neutral-500 whitespace-nowrap"
+      className="mt-1 text-2xs leading-tight text-fg-muted whitespace-nowrap"
       title={`Awaiting ${label}${approver_name ? ` (${approver_name})` : ''} since ${formatDateTime(since)}`}
     >
       {parts.join(' · ')}

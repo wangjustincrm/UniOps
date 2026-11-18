@@ -196,7 +196,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
         type="date"
         value={trip.trip_date}
         onChange={(e) => updateTrip(idx, { trip_date: e.target.value })}
-        className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
+        className="w-full rounded border border-line px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
       />
     ),
     from: (
@@ -205,7 +205,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
         value={trip.from_location}
         onChange={(e) => updateTrip(idx, { from_location: e.target.value })}
         placeholder="Starting location"
-        className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
+        className="w-full rounded border border-line px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
       />
     ),
     to: (
@@ -214,7 +214,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
         value={trip.to_location}
         onChange={(e) => updateTrip(idx, { to_location: e.target.value })}
         placeholder="Destination"
-        className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
+        className="w-full rounded border border-line px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
       />
     ),
     purpose: (
@@ -223,7 +223,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
         value={trip.purpose}
         onChange={(e) => updateTrip(idx, { purpose: e.target.value })}
         placeholder="Business reason"
-        className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
+        className="w-full rounded border border-line px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
       />
     ),
     roundTrip: (
@@ -242,11 +242,11 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
         value={trip.distance_km}
         onChange={(e) => updateTrip(idx, { distance_km: e.target.value })}
         placeholder="0.0"
-        className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs text-right font-mono focus:outline-none focus:border-primary-400"
+        className="w-full rounded border border-line px-2 py-1.5 text-xs text-right font-mono focus:outline-none focus:border-primary-400"
       />
     ),
     amount: (
-      <div className="rounded bg-neutral-50 px-2 py-1.5 text-xs text-right font-mono text-neutral-700">
+      <div className="rounded bg-surface-subtle px-2 py-1.5 text-xs text-right font-mono text-fg-secondary">
         {parseFloat(trip.amount) > 0 ? `$${parseFloat(trip.amount).toFixed(2)}` : '—'}
       </div>
     ),
@@ -255,7 +255,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
         type="button"
         aria-label={`Remove line ${idx + 1}`}
         onClick={() => setTrips((prev) => prev.filter((_, i) => i !== idx).map((t, i) => ({ ...t, trip_number: i + 1 })))}
-        className="rounded p-1 text-neutral-300 hover:text-danger-400 transition-colors"
+        className="rounded p-1 text-fg-faint hover:text-danger-400 transition-colors"
       >
         <Trash2 className="h-3.5 w-3.5" />
       </button>
@@ -263,7 +263,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
   })
 
   if (loadingClaim) {
-    return <div className="p-8 text-sm text-neutral-500">Loading claim…</div>
+    return <div className="p-8 text-sm text-fg-muted">Loading claim…</div>
   }
   if (loadError) {
     return <ErrorBanner message={loadError.message} />
@@ -274,10 +274,10 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
       {/* Page header — wraps on a phone instead of squeezing the buttons (ISS-0224) */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">
+          <h1 className="text-2xl font-bold text-fg">
             {editing ? `Edit ${editing.claim_number}` : 'New Mileage Claim'}
           </h1>
-          <p className="mt-0.5 text-sm text-neutral-500">Personal vehicle reimbursement at ${currentRate}/km</p>
+          <p className="mt-0.5 text-sm text-fg-muted">Personal vehicle reimbursement at ${currentRate}/km</p>
         </div>
         <div className="flex shrink-0 gap-2">
           <Button type="button" variant="secondary" size="sm" className="whitespace-nowrap"
@@ -291,46 +291,46 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
       </div>
 
       {/* Claim header */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-5">
-        <h2 className="mb-4 text-sm font-semibold text-neutral-700">Claim Details</h2>
+      <div className="rounded-xl border border-line bg-surface p-5">
+        <h2 className="mb-4 text-sm font-semibold text-fg-secondary">Claim Details</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Submission Date</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Submission Date</label>
             <input
               type="date"
               value={submissionDate}
               onChange={(e) => setSubmissionDate(e.target.value)}
               required
-              className="w-full rounded border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
+              className="w-full rounded border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Notes</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Notes</label>
             <input
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Optional"
-              className="w-full rounded border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
+              className="w-full rounded border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Vehicle Description <span className="text-danger-500">*</span></label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Vehicle Description <span className="text-danger-fg">*</span></label>
             <input
               type="text"
               value={vehicleDesc}
               onChange={(e) => setVehicleDesc(e.target.value)}
               placeholder="e.g. 2022 Honda Civic"
               required
-              className="w-full rounded border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
+              className="w-full rounded border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Vehicle Owned By</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Vehicle Owned By</label>
             <select
               value={vehicleOwnedBy}
               onChange={(e) => setVehicleOwnedBy(e.target.value)}
-              className="w-full rounded border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
+              className="w-full rounded border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
             >
               <option value="self">Self</option>
               <option value="company">Company</option>
@@ -341,7 +341,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
 
       {/* Over-km warning */}
       {isOverMaxKm && (
-        <div className="flex items-start gap-3 rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-800">
+        <div className="flex items-start gap-3 rounded-lg border border-warning-line bg-warning-soft px-4 py-3 text-sm text-warning-fg">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
             Total distance ({totalKm.toFixed(1)} km) exceeds the {maxKm.toLocaleString()} km policy limit.
@@ -351,10 +351,10 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
       )}
 
       {/* Trip log */}
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-neutral-100 px-5 py-3">
-          <h2 className="text-sm font-semibold text-neutral-700">Trip Log</h2>
-          <span className="text-xs text-neutral-400">Rate: ${parseFloat(currentRate).toFixed(4)}/km</span>
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-line-subtle px-5 py-3">
+          <h2 className="text-sm font-semibold text-fg-secondary">Trip Log</h2>
+          <span className="text-xs text-fg-muted">Rate: ${parseFloat(currentRate).toFixed(4)}/km</span>
         </div>
 
         {/* A table from lg up; below that each trip is a card with its fields
@@ -363,16 +363,16 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
         {wide && (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 border-b border-neutral-100">
+            <thead className="bg-surface-subtle border-b border-line-subtle">
               <tr>
-                <th className="px-3 py-2 text-left text-xs font-medium text-neutral-500 w-8">#</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-neutral-500 w-32">Date</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-neutral-500">From</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-neutral-500">To</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-neutral-500">Purpose</th>
-                <th className="px-3 py-2 text-center text-xs font-medium text-neutral-500 w-20">Round Trip</th>
-                <th className="px-3 py-2 text-right text-xs font-medium text-neutral-500 w-24">km</th>
-                <th className="px-3 py-2 text-right text-xs font-medium text-neutral-500 w-28">Amount</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-fg-muted w-8">#</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-fg-muted w-32">Date</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-fg-muted">From</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-fg-muted">To</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-fg-muted">Purpose</th>
+                <th className="px-3 py-2 text-center text-xs font-medium text-fg-muted w-20">Round Trip</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-fg-muted w-24">km</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-fg-muted w-28">Amount</th>
                 <th className="w-8" />
               </tr>
             </thead>
@@ -380,8 +380,8 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
               {trips.map((trip, idx) => {
                 const f = renderTrip(trip, idx)
                 return (
-                  <tr key={idx} className="border-b border-neutral-100">
-                    <td className="px-3 py-2 text-xs text-neutral-400 font-mono">{idx + 1}</td>
+                  <tr key={idx} className="border-b border-line-subtle">
+                    <td className="px-3 py-2 text-xs text-fg-muted font-mono">{idx + 1}</td>
                     <td className="px-3 py-2">{f.date}</td>
                     <td className="px-3 py-2">{f.from}</td>
                     <td className="px-3 py-2">{f.to}</td>
@@ -396,8 +396,8 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
             </tbody>
 
             <tfoot>
-              <tr className="border-t-2 border-neutral-200 bg-neutral-50">
-                <td colSpan={6} className="px-3 py-2 text-xs font-semibold text-neutral-700">Total</td>
+              <tr className="border-t-2 border-line bg-surface-subtle">
+                <td colSpan={6} className="px-3 py-2 text-xs font-semibold text-fg-secondary">Total</td>
                 <td className="px-3 py-2 text-right text-xs font-mono font-semibold">{totalKm.toFixed(1)} km</td>
                 <td className="px-3 py-2 text-right text-xs font-mono font-semibold text-primary-700">
                   {formatAmount(totalAmount)}
@@ -415,9 +415,9 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
           {trips.map((trip, idx) => {
             const f = renderTrip(trip, idx)
             return (
-              <div key={idx} className="rounded-lg border border-neutral-200 p-3">
+              <div key={idx} className="rounded-lg border border-line p-3">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-neutral-700">Line {idx + 1}</span>
+                  <span className="text-xs font-semibold text-fg-secondary">Line {idx + 1}</span>
                   {f.remove}
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -427,7 +427,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
                   <CardField label="Purpose">{f.purpose}</CardField>
                   <CardField label="km">{f.km}</CardField>
                   <CardField label="Amount">{f.amount}</CardField>
-                  <label className="flex items-center gap-2 text-xs text-neutral-700">
+                  <label className="flex items-center gap-2 text-xs text-fg-secondary">
                     {f.roundTrip}
                     Round trip
                   </label>
@@ -435,7 +435,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
               </div>
             )
           })}
-          <div className="flex justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs font-semibold text-neutral-700">
+          <div className="flex justify-between rounded-lg border border-line bg-surface-subtle px-3 py-2 text-xs font-semibold text-fg-secondary">
             <span>Total</span>
             <span className="font-mono">
               {totalKm.toFixed(1)} km · <span className="text-primary-700">{formatAmount(totalAmount)}</span>
@@ -444,7 +444,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
         </div>
         )}
 
-        <div className="border-t border-neutral-100 p-3">
+        <div className="border-t border-line-subtle p-3">
           <button
             type="button"
             onClick={() => setTrips((prev) => [...prev, emptyTrip(prev.length + 1, currentRate, defaultAccountId, null, null)])}
@@ -458,7 +458,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
 
       {/* Error */}
       {createMutation.isError && (
-        <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+        <div className="rounded-lg border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
           {(createMutation.error as Error).message}
         </div>
       )}

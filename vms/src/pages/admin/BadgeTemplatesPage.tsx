@@ -32,9 +32,9 @@ const SAMPLE_VISITOR = {
 const SAMPLE_HOST = { id: 'h', full_name: 'Pat Morgan' } as unknown as UserBrief
 
 const inputCls =
-  'rounded-md border border-neutral-300 px-2 py-1 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500'
-const sectionCls = 'rounded-md border border-neutral-200 bg-white p-3 space-y-2'
-const headCls = 'text-xs font-semibold uppercase tracking-wider text-neutral-500'
+  'rounded-md border border-line-strong px-2 py-1 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500'
+const sectionCls = 'rounded-md border border-line bg-surface p-3 space-y-2'
+const headCls = 'text-xs font-semibold uppercase tracking-wider text-fg-muted'
 
 export default function BadgeTemplatesPage() {
   const { data, isLoading } = useBadgeConfig()
@@ -68,8 +68,8 @@ export default function BadgeTemplatesPage() {
     <div className="max-w-5xl">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-base font-semibold text-neutral-900">Badge</h2>
-          <p className="mt-0.5 text-xs text-neutral-500">
+          <h2 className="text-base font-semibold text-fg">Badge</h2>
+          <p className="mt-0.5 text-xs text-fg-muted">
             Edit every label, field, and style on the printed visitor badge.
             The preview matches what prints.
           </p>
@@ -85,9 +85,9 @@ export default function BadgeTemplatesPage() {
       </div>
 
       {save.error && (
-        <p className="mt-2 rounded-md bg-danger-50 px-3 py-2 text-xs text-danger-600">{save.error.message}</p>
+        <p className="mt-2 rounded-md bg-danger-soft px-3 py-2 text-xs text-danger-fg">{save.error.message}</p>
       )}
-      {isLoading && <p className="mt-3 text-xs text-neutral-400">Loading…</p>}
+      {isLoading && <p className="mt-3 text-xs text-fg-muted">Loading…</p>}
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* ── Form ── */}
@@ -95,11 +95,11 @@ export default function BadgeTemplatesPage() {
           {/* Band */}
           <div className={sectionCls}>
             <p className={headCls}>Top band</p>
-            <label className="block text-xs text-neutral-600">Title
+            <label className="block text-xs text-fg-secondary">Title
               <input className={`${inputCls} mt-1 w-full`} value={cfg.band.title}
                 onChange={(e) => update((c) => { c.band.title = e.target.value })} />
             </label>
-            <div className="flex flex-wrap gap-4 text-xs text-neutral-600">
+            <div className="flex flex-wrap gap-4 text-xs text-fg-secondary">
               <label className="inline-flex items-center gap-1.5">
                 <input type="checkbox" checked={cfg.band.show_zone}
                   onChange={(e) => update((c) => { c.band.show_zone = e.target.checked })} /> Show zone
@@ -123,7 +123,7 @@ export default function BadgeTemplatesPage() {
                 })
                 return (
                   <div key={a} className="flex items-center gap-2">
-                    <span className="w-32 shrink-0 truncate text-[11px] text-neutral-500" title={zoneLabel}>{zoneLabel}</span>
+                    <span className="w-32 shrink-0 truncate text-2xs text-fg-muted" title={zoneLabel}>{zoneLabel}</span>
                     <input className={`${inputCls} flex-1`} value={st.label}
                       onChange={(e) => set('label', e.target.value)} />
                     <input type="color" className="h-7 w-9 rounded border" value={st.bg}
@@ -141,7 +141,7 @@ export default function BadgeTemplatesPage() {
           {/* Identity */}
           <div className={sectionCls}>
             <p className={headCls}>Name & company</p>
-            <div className="flex gap-4 text-xs text-neutral-600">
+            <div className="flex gap-4 text-xs text-fg-secondary">
               <label className="inline-flex items-center gap-1.5">
                 <input type="checkbox" checked={cfg.identity.name_uppercase}
                   onChange={(e) => update((c) => { c.identity.name_uppercase = e.target.checked })} /> Uppercase name
@@ -160,13 +160,13 @@ export default function BadgeTemplatesPage() {
               <div key={f.key} className="flex items-center gap-2">
                 <input type="checkbox" checked={f.visible}
                   onChange={(e) => update((c) => { c.meta_fields[i].visible = e.target.checked })} />
-                <span className="w-32 shrink-0 text-[11px] text-neutral-500">{f.key}</span>
+                <span className="w-32 shrink-0 text-2xs text-fg-muted">{f.key}</span>
                 <input className={`${inputCls} flex-1`} value={f.label}
                   onChange={(e) => update((c) => { c.meta_fields[i].label = e.target.value })} />
                 <button onClick={() => moveMeta(i, -1)} disabled={i === 0}
-                  className="rounded p-1 text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" /></button>
+                  className="rounded p-1 text-fg-muted hover:bg-surface-sunken disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" /></button>
                 <button onClick={() => moveMeta(i, 1)} disabled={i === cfg.meta_fields.length - 1}
-                  className="rounded p-1 text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button>
+                  className="rounded p-1 text-fg-muted hover:bg-surface-sunken disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button>
               </div>
             ))}
           </div>
@@ -174,16 +174,16 @@ export default function BadgeTemplatesPage() {
           {/* QR */}
           <div className={sectionCls}>
             <p className={headCls}>QR code</p>
-            <label className="inline-flex items-center gap-1.5 text-xs text-neutral-600">
+            <label className="inline-flex items-center gap-1.5 text-xs text-fg-secondary">
               <input type="checkbox" checked={cfg.qr.show}
                 onChange={(e) => update((c) => { c.qr.show = e.target.checked })} /> Show QR
             </label>
             {!cfg.qr.show && (
-              <p className="rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
+              <p className="rounded bg-warning-soft px-2 py-1 text-2xs text-warning-fg">
                 Hiding the QR disables scan-to-check-out on the printed badge.
               </p>
             )}
-            <label className="block text-xs text-neutral-600">QR caption
+            <label className="block text-xs text-fg-secondary">QR caption
               <input className={`${inputCls} mt-1 w-full`} value={cfg.qr.label}
                 onChange={(e) => update((c) => { c.qr.label = e.target.value })} />
             </label>
@@ -196,7 +196,7 @@ export default function BadgeTemplatesPage() {
               <button className="text-xs text-primary-700 hover:underline"
                 onClick={() => update((c) => { c.footer.lines.push('') })}>+ Add line</button>
             </div>
-            <label className="inline-flex items-center gap-1.5 text-xs text-neutral-600">
+            <label className="inline-flex items-center gap-1.5 text-xs text-fg-secondary">
               <input type="checkbox" checked={cfg.footer.show}
                 onChange={(e) => update((c) => { c.footer.show = e.target.checked })} /> Show footer
             </label>
@@ -204,7 +204,7 @@ export default function BadgeTemplatesPage() {
               <div key={i} className="flex items-center gap-2">
                 <input className={`${inputCls} flex-1`} value={line}
                   onChange={(e) => update((c) => { c.footer.lines[i] = e.target.value })} />
-                <button className="text-xs text-danger-600 hover:underline"
+                <button className="text-xs text-danger-fg hover:underline"
                   onClick={() => update((c) => { c.footer.lines.splice(i, 1) })}>Remove</button>
               </div>
             ))}
@@ -213,7 +213,7 @@ export default function BadgeTemplatesPage() {
           {/* Style */}
           <div className={sectionCls}>
             <p className={headCls}>Style</p>
-            <div className="grid grid-cols-2 gap-2 text-xs text-neutral-600">
+            <div className="grid grid-cols-2 gap-2 text-xs text-fg-secondary">
               <label>Name size (pt)
                 <input type="number" className={`${inputCls} mt-1 w-full`} value={cfg.style.name_size_pt}
                   onChange={(e) => update((c) => { c.style.name_size_pt = Number(e.target.value) })} />
@@ -249,7 +249,7 @@ export default function BadgeTemplatesPage() {
         {/* ── Live preview ── */}
         <div className="lg:sticky lg:top-4 self-start">
           <p className={`${headCls} mb-1`}>Preview</p>
-          <div className="overflow-auto rounded-md border border-neutral-200 bg-neutral-50 p-3">
+          <div className="overflow-auto rounded-md border border-line bg-surface-subtle p-3">
             <BadgePreview visit={SAMPLE_VISIT} visitor={SAMPLE_VISITOR} host={SAMPLE_HOST} config={cfg} />
           </div>
         </div>

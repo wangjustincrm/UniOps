@@ -105,7 +105,7 @@ export default function CapacityRulesPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold text-neutral-900">Capacity Rules</h1>
+        <h1 className="text-lg font-semibold text-fg">Capacity Rules</h1>
         {canWrite && (
           <Button type="button" size="sm" onClick={() => setDrawerRule('new')}>
             <Plus className="h-3.5 w-3.5" /> New rule
@@ -118,7 +118,7 @@ export default function CapacityRulesPage() {
           because a monthly ceiling silently misread as a weekly one is a
           ~4x capacity error with no other signal anywhere in the UI. */}
       {!bannerDismissed && (
-        <div role="status" className="flex items-start justify-between gap-3 rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-800">
+        <div role="status" className="flex items-start justify-between gap-3 rounded-lg border border-warning-line bg-warning-soft px-4 py-3 text-sm text-warning-fg">
           <span>
             Capacity rules now read per week. Existing rules were deactivated by the weekly migration —
             please re-enter them.
@@ -127,7 +127,7 @@ export default function CapacityRulesPage() {
             type="button"
             onClick={dismissBanner}
             aria-label="Dismiss this notice"
-            className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center text-warning-600 hover:text-warning-900"
+            className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center text-warning-fg hover:text-warning-fg"
           >
             <XIcon className="h-4 w-4" />
           </button>
@@ -140,13 +140,13 @@ export default function CapacityRulesPage() {
       <WeekExceptionsSection canWrite={canWrite} notifySuccess={toasts.success} notifyError={toasts.error} />
 
       {rulesQuery.isError && (
-        <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+        <p role="alert" className="rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           {errMsg(rulesQuery.error, 'Could not load capacity rules.')}
         </p>
       )}
 
       {rulesQuery.isLoading ? (
-        <p role="status" className="flex items-center justify-center gap-2 py-12 text-sm text-neutral-400">
+        <p role="status" className="flex items-center justify-center gap-2 py-12 text-sm text-fg-muted">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading capacity rules…
         </p>
       ) : (
@@ -186,7 +186,7 @@ export default function CapacityRulesPage() {
   )
 }
 
-const RULE_TH = 'border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600'
+const RULE_TH = 'border-b border-line px-3 py-2 text-left text-2xs font-semibold text-fg-secondary'
 
 function RulesTable({
   rules, canWrite, onEdit, onDelete,
@@ -207,42 +207,42 @@ function RulesTable({
   })
   if (rules.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-300 py-16 text-center">
-        <p className="text-sm text-neutral-500">No capacity rules yet.</p>
+      <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-line-strong py-16 text-center">
+        <p className="text-sm text-fg-muted">No capacity rules yet.</p>
       </div>
     )
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-neutral-200">
+    <div className="overflow-x-auto rounded-lg border border-line">
       <table className="min-w-full text-sm">
-        <thead className="bg-neutral-50">
+        <thead className="bg-surface-subtle">
           <tr>
             <SortTh label="Scope" sortKey="scope" sort={sort} onSort={onSort} className={RULE_TH} />
             <SortTh label="Constraint" sortKey="constraint" sort={sort} onSort={onSort} className={RULE_TH} />
-            <SortTh label="Limit" sortKey="limit" sort={sort} onSort={onSort} align="right" className="border-b border-neutral-200 px-3 py-2 text-[11px] font-semibold text-neutral-600" />
+            <SortTh label="Limit" sortKey="limit" sort={sort} onSort={onSort} align="right" className="border-b border-line px-3 py-2 text-2xs font-semibold text-fg-secondary" />
             <SortTh label="Unit" sortKey="uom" sort={sort} onSort={onSort} className={RULE_TH} />
             <SortTh label="Effective" sortKey="effective" sort={sort} onSort={onSort} className={RULE_TH} />
             <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={RULE_TH} />
-            {canWrite && <th className="border-b border-neutral-200 px-3 py-2 text-right text-[11px] font-semibold text-neutral-600">Actions</th>}
+            {canWrite && <th className="border-b border-line px-3 py-2 text-right text-2xs font-semibold text-fg-secondary">Actions</th>}
           </tr>
         </thead>
         <tbody>
           {sortedRules.map((rule) => (
-            <tr key={rule.id} className="border-b border-neutral-100 last:border-0 odd:bg-white even:bg-neutral-50/50">
-              <td className="px-3 py-2 text-neutral-800">{scopeLabel(rule)}</td>
-              <td className="px-3 py-2 text-neutral-600">{CONSTRAINT_TYPE_LABEL[rule.constraint_type]}</td>
-              <td className="px-3 py-2 text-right font-mono text-xs text-neutral-800">{formatQty(Number(rule.limit_value))}</td>
-              <td className="px-3 py-2 text-xs text-neutral-600">{rule.uom ?? '—'}</td>
-              <td className="px-3 py-2 text-xs text-neutral-600">
+            <tr key={rule.id} className="border-b border-line-subtle last:border-0 odd:bg-surface even:bg-surface-subtle/50">
+              <td className="px-3 py-2 text-fg">{scopeLabel(rule)}</td>
+              <td className="px-3 py-2 text-fg-secondary">{CONSTRAINT_TYPE_LABEL[rule.constraint_type]}</td>
+              <td className="px-3 py-2 text-right font-mono text-xs text-fg">{formatQty(Number(rule.limit_value))}</td>
+              <td className="px-3 py-2 text-xs text-fg-secondary">{rule.uom ?? '—'}</td>
+              <td className="px-3 py-2 text-xs text-fg-secondary">
                 {formatDate(rule.effective_from)} – {rule.effective_to ? formatDate(rule.effective_to) : 'open-ended'}
               </td>
               <td className="px-3 py-2">
                 <span
                   className={
                     rule.is_active
-                      ? 'inline-flex items-center rounded-full bg-success-50 px-2 py-0.5 text-xs font-medium text-success-700 ring-1 ring-inset ring-emerald-200'
-                      : 'inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500 ring-1 ring-inset ring-neutral-200'
+                      ? 'inline-flex items-center rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success-fg ring-1 ring-inset ring-success-line'
+                      : 'inline-flex items-center rounded-full bg-surface-sunken px-2 py-0.5 text-xs font-medium text-fg-muted ring-1 ring-inset ring-line'
                   }
                 >
                   {rule.is_active ? 'Active' : 'Inactive'}
@@ -259,7 +259,7 @@ function RulesTable({
                       type="button"
                       onClick={() => onEdit(rule)}
                       aria-label={`Edit ${scopeLabel(rule)} rule`}
-                      className="flex h-11 w-11 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                      className="flex h-11 w-11 items-center justify-center rounded-md text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary"
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
@@ -267,7 +267,7 @@ function RulesTable({
                       type="button"
                       onClick={() => onDelete(rule)}
                       aria-label={`Delete ${scopeLabel(rule)} rule`}
-                      className="flex h-11 w-11 items-center justify-center rounded-md text-neutral-400 hover:bg-danger-50 hover:text-danger-600"
+                      className="flex h-11 w-11 items-center justify-center rounded-md text-fg-muted hover:bg-danger-soft hover:text-danger-fg"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>

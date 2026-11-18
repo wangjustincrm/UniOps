@@ -38,8 +38,8 @@ export function PortalChromeLayout({
       {(title || headerActions) && (
         <div className="mb-4 flex items-start justify-between gap-4">
           <div className="min-w-0">
-            {title && <h1 className="text-2xl font-bold text-neutral-900">{title}</h1>}
-            {subtitle && <p className="mt-1 text-sm text-neutral-500">{subtitle}</p>}
+            {title && <h1 className="text-2xl font-bold text-fg">{title}</h1>}
+            {subtitle && <p className="mt-1 text-sm text-fg-muted">{subtitle}</p>}
           </div>
           {headerActions && <div className={cn('flex shrink-0 items-center gap-2')}>{headerActions}</div>}
         </div>

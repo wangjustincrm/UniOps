@@ -15,11 +15,11 @@ import { SortTh, useSortableRows } from '@uniops/shell'
  */
 function PaTypeBadge({ type }: { type: string }) {
   return type === 'prepayment' ? (
-    <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
+    <span className="inline-flex items-center rounded-full bg-cat4-soft px-2 py-0.5 text-xs font-medium text-cat4-fg">
       Prepayment
     </span>
   ) : (
-    <span className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600">
+    <span className="inline-flex items-center rounded-full bg-surface-sunken px-2 py-0.5 text-xs font-medium text-fg-secondary">
       Regular
     </span>
   )
@@ -43,7 +43,7 @@ export default function PaymentOfficerDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-neutral-900">Payment Officer Dashboard</h1>
+      <h1 className="text-2xl font-bold text-fg">Payment Officer Dashboard</h1>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
@@ -69,12 +69,12 @@ export default function PaymentOfficerDashboard() {
         />
       </div>
 
-      <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+      <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-neutral-900">
+          <h2 className="text-base font-semibold text-fg">
             Awaiting Payment
             {awaiting.length > 0 && (
-              <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning-500 px-1 text-[10px] font-bold text-white">
+              <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning-solid px-1 text-2xs font-bold text-white">
                 {awaiting.length}
               </span>
             )}
@@ -84,48 +84,48 @@ export default function PaymentOfficerDashboard() {
 
         {awaiting.length === 0 ? (
           <div className="py-12 text-center">
-            <p className="text-sm font-medium text-neutral-500">Nothing waiting to be paid</p>
-            <p className="mt-1 text-xs text-neutral-400">You're all caught up.</p>
+            <p className="text-sm font-medium text-fg-muted">Nothing waiting to be paid</p>
+            <p className="mt-1 text-xs text-fg-muted">You're all caught up.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-neutral-100 text-left">
-                  <SortTh label="PA #" sortKey="pa_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <SortTh label="PO #" sortKey="po_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <SortTh label="Type" sortKey="pa_type" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <SortTh label="Amount" sortKey="payment_amount" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-neutral-500" />
-                  <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                  <th className="pb-2 font-medium text-neutral-500"></th>
+                <tr className="border-b border-line-subtle text-left">
+                  <SortTh label="PA #" sortKey="pa_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <SortTh label="PO #" sortKey="po_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <SortTh label="Type" sortKey="pa_type" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <SortTh label="Amount" sortKey="payment_amount" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
+                  <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                  <th className="pb-2 font-medium text-fg-muted"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-50">
+              <tbody className="divide-y divide-line-subtle">
                 {awaiting.map((pa) => (
-                  <tr key={pa.id} className="hover:bg-neutral-50">
+                  <tr key={pa.id} className="hover:bg-surface-subtle">
                     <td className="py-2 pr-3">
                       <Link to={`/pa/${pa.id}`} className="font-mono text-xs text-primary-600 hover:underline">
                         {pa.pa_number}
                       </Link>
                     </td>
-                    <td className="py-2 pr-3 max-w-[150px] truncate text-neutral-700">{pa.vendor_name}</td>
+                    <td className="py-2 pr-3 max-w-[150px] truncate text-fg-secondary">{pa.vendor_name}</td>
                     <td className="py-2 pr-3">
                       {/* A payment may settle several POs. The row has space for
                           one, so it names the primary and counts the rest —
                           showing the primary alone reads as the whole payment. */}
-                      <span className="font-mono text-xs text-neutral-600">
+                      <span className="font-mono text-xs text-fg-secondary">
                         {pa.po_number ?? '—'}
                         {(pa.po_numbers?.length ?? 0) > 1 && (
-                          <span className="ml-1 text-neutral-400">+{(pa.po_numbers?.length ?? 1) - 1}</span>
+                          <span className="ml-1 text-fg-muted">+{(pa.po_numbers?.length ?? 1) - 1}</span>
                         )}
                       </span>
                     </td>
                     <td className="py-2 pr-3"><PaTypeBadge type={pa.pa_type} /></td>
-                    <td className="py-2 pr-3 text-right font-mono text-neutral-900">
+                    <td className="py-2 pr-3 text-right font-mono text-fg">
                       {formatAmount(Number(pa.payment_amount), pa.currency)}
                     </td>
-                    <td className="py-2 pr-3 text-neutral-500">{formatDate(pa.created_at)}</td>
+                    <td className="py-2 pr-3 text-fg-muted">{formatDate(pa.created_at)}</td>
                     <td className="py-2">
                       <Link to={`/pa/${pa.id}`} className="text-xs text-primary-600 hover:underline whitespace-nowrap">
                         Process →

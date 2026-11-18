@@ -67,46 +67,46 @@ export default function InventoryPage() {
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <h1 className="text-xl font-semibold text-neutral-900">WMS Inventory</h1>
+            <h1 className="text-xl font-semibold text-fg">WMS Inventory</h1>
             {/* The age of the warehouse snapshot every figure below is read
                 from — see WmsFreshness for why it is stated here and not per
                 tab. */}
             <WmsFreshness toasts={toasts} />
           </div>
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-fg-muted">
             {TABS.find((t) => t.key === tab)?.hint}
           </p>
-          <p className="text-[11px] text-neutral-400">
+          <p className="text-2xs text-fg-muted">
             WMS stock as synced by MRP's WMS sync. For WMS stock on a past date or NC comparison,
-            see <Link to="/reconciliation" className="underline hover:text-neutral-600">Reconciliation</Link>.
+            see <Link to="/reconciliation" className="underline hover:text-fg-secondary">Reconciliation</Link>.
           </p>
           <WmsHistoryNote info={wmsHistory.data} />
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
         {byproductsRelevant && (
-          <label className="flex items-center gap-2 text-xs text-neutral-600">
+          <label className="flex items-center gap-2 text-xs text-fg-secondary">
             <input
               type="checkbox"
               checked={includeByproducts}
               onChange={(e) => setParam('byproducts', e.target.checked ? '1' : '')}
-              className="mt-0.5 h-4 w-4 rounded border-neutral-300"
+              className="mt-0.5 h-4 w-4 rounded border-line-strong"
             />
             <span>
               Animal Feed and Waste
-              <span className="block text-[11px] text-neutral-400">
+              <span className="block text-2xs text-fg-muted">
                 CF00AF, CF00WT — byproducts the ERP files as finished goods
               </span>
             </span>
           </label>
         )}
 
-        <label className="flex items-center gap-2 text-xs text-neutral-600">
+        <label className="flex items-center gap-2 text-xs text-fg-secondary">
           Material class
           <select
             value={erpClass}
             onChange={(e) => setParam('class', e.target.value)}
-            className="h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
           >
             <option value="">All classes</option>
             {MATERIAL_CLASSES.map((c) => (
@@ -121,12 +121,12 @@ export default function InventoryPage() {
           once, here, rather than on each tab: a planner who knows the plant
           buys millions of kilos of milk and sees none of it would otherwise
           reasonably conclude the page is broken. */}
-      <p className="text-[11px] text-neutral-400">
+      <p className="text-2xs text-fg-muted">
         Raw milk (class 0101) is not counted as stock or as on order — it is
         delivered straight into production and its receipts are recorded in the ERP.
       </p>
 
-      <div role="tablist" aria-label="Inventory views" className="flex gap-1 border-b border-neutral-200">
+      <div role="tablist" aria-label="Inventory views" className="flex gap-1 border-b border-line">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -138,7 +138,7 @@ export default function InventoryPage() {
               'flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors',
               tab === key
                 ? 'border-primary-600 text-primary-700'
-                : 'border-transparent text-neutral-500 hover:border-neutral-300 hover:text-neutral-700',
+                : 'border-transparent text-fg-muted hover:border-line-strong hover:text-fg-secondary',
             )}
           >
             <Icon aria-hidden className="h-4 w-4" />

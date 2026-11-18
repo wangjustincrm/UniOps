@@ -138,55 +138,55 @@ export default function TaxSettingsPage() {
       <div className="mb-4 flex justify-end">
         {isAdmin ? (
           <button onClick={openCreate}
-            className="flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A]">
+            className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800">
             <Plus className="h-4 w-4" />Add Tax Code
           </button>
         ) : (
-          <span className="text-sm text-neutral-500">Read-only — tax codes are maintained by System Admin.</span>
+          <span className="text-sm text-fg-muted">Read-only — tax codes are maintained by System Admin.</span>
         )}
       </div>
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
         {isLoading ? (
-          <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
+          <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
         ) : !data?.length ? (
-          <div className="py-10 text-center text-sm text-neutral-400">No tax codes yet.</div>
+          <div className="py-10 text-center text-sm text-fg-muted">No tax codes yet.</div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="border-b border-neutral-100 bg-neutral-50">
+            <thead className="border-b border-line-subtle bg-surface-subtle">
               <tr>
-                <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-                <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-                <SortTh label="Type" sortKey="type" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-                <SortTh label="Prov" sortKey="prov" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-                <SortTh label="Rate" sortKey="rate" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-                <SortTh label="ITC" sortKey="itc" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-                <SortTh label="Effective" sortKey="effective" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+                <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+                <SortTh label="Type" sortKey="type" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+                <SortTh label="Prov" sortKey="prov" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+                <SortTh label="Rate" sortKey="rate" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+                <SortTh label="ITC" sortKey="itc" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+                <SortTh label="Effective" sortKey="effective" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
               </tr>
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={r.id} className={cn('border-b border-neutral-100', i === rows.length - 1 && 'border-b-0')}>
-                  <td className="px-4 py-3 font-mono text-xs text-neutral-700">{r.code}</td>
-                  <td className="px-4 py-3 text-neutral-800">{r.name}</td>
-                  <td className="px-4 py-3 text-xs text-neutral-500">{r.tax_type}</td>
-                  <td className="px-4 py-3 text-xs text-neutral-500">{r.province ?? '—'}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-neutral-700">{pct(r.rate)}</td>
-                  <td className="px-4 py-3 text-xs text-neutral-500">{r.recoverable ? 'Yes' : 'No'}</td>
-                  <td className="px-4 py-3 text-xs text-neutral-500">
+                <tr key={r.id} className={cn('border-b border-line-subtle', i === rows.length - 1 && 'border-b-0')}>
+                  <td className="px-4 py-3 font-mono text-xs text-fg-secondary">{r.code}</td>
+                  <td className="px-4 py-3 text-fg">{r.name}</td>
+                  <td className="px-4 py-3 text-xs text-fg-muted">{r.tax_type}</td>
+                  <td className="px-4 py-3 text-xs text-fg-muted">{r.province ?? '—'}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-fg-secondary">{pct(r.rate)}</td>
+                  <td className="px-4 py-3 text-xs text-fg-muted">{r.recoverable ? 'Yes' : 'No'}</td>
+                  <td className="px-4 py-3 text-xs text-fg-muted">
                     {formatDate(r.effective_from)}{r.effective_to ? ` → ${formatDate(r.effective_to)}` : ''}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', r.active ? 'bg-green-50 text-green-700' : 'bg-neutral-100 text-neutral-500')}>
+                    <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium', r.active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                       {r.active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     {isAdmin && <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => openEdit(r)} className="rounded p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Edit"><Pencil className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => openEdit(r)} className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary" title="Edit"><Pencil className="h-3.5 w-3.5" /></button>
                       {r.active && (
-                        <button onClick={() => handleDeactivate(r)} className="rounded p-1.5 text-neutral-400 hover:bg-amber-50 hover:text-amber-600" title="Deactivate"><Ban className="h-3.5 w-3.5" /></button>
+                        <button onClick={() => handleDeactivate(r)} className="rounded p-1.5 text-fg-muted hover:bg-warning-soft hover:text-warning-fg" title="Deactivate"><Ban className="h-3.5 w-3.5" /></button>
                       )}
                     </div>}
                   </td>
@@ -199,86 +199,86 @@ export default function TaxSettingsPage() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
-              <h3 className="font-semibold text-neutral-900">{modal.mode === 'create' ? 'Add Tax Code' : 'Edit Tax Code'}</h3>
-              <button onClick={() => setModal(null)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100"><X className="h-4 w-4" /></button>
+          <div className="w-full max-w-md rounded-xl border border-line bg-surface shadow-xl">
+            <div className="flex items-center justify-between border-b border-line-subtle px-5 py-4">
+              <h3 className="font-semibold text-fg">{modal.mode === 'create' ? 'Add Tax Code' : 'Edit Tax Code'}</h3>
+              <button onClick={() => setModal(null)} className="rounded p-1 text-fg-muted hover:bg-surface-sunken"><X className="h-4 w-4" /></button>
             </div>
             <form onSubmit={handleSave} className="flex flex-col gap-4 p-5">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-neutral-600">Code</label>
+                  <label className="mb-1 block text-xs font-medium text-fg-secondary">Code</label>
                   <input value={form.code} onChange={(e) => setForm((p) => ({ ...p, code: e.target.value }))}
                     disabled={modal.mode === 'edit'}
-                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400 disabled:bg-neutral-50 disabled:text-neutral-500"
+                    className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400 disabled:bg-surface-subtle disabled:text-fg-muted"
                     placeholder="HST_ON" required />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-neutral-600">Type</label>
+                  <label className="mb-1 block text-xs font-medium text-fg-secondary">Type</label>
                   <select value={form.tax_type} onChange={(e) => setForm((p) => ({ ...p, tax_type: e.target.value as TaxType }))}
-                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
+                    className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
                     {TAX_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-neutral-600">Name</label>
+                <label className="mb-1 block text-xs font-medium text-fg-secondary">Name</label>
                 <input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                  className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
+                  className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
                   placeholder="HST 13% Ontario" required />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-neutral-600">Province</label>
+                  <label className="mb-1 block text-xs font-medium text-fg-secondary">Province</label>
                   <input value={form.province} onChange={(e) => setForm((p) => ({ ...p, province: e.target.value }))}
                     maxLength={2}
-                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm uppercase focus:outline-none focus:border-primary-400"
+                    className="w-full rounded-lg border border-line px-3 py-2 text-sm uppercase focus:outline-none focus:border-primary-400"
                     placeholder="ON (blank = federal)" />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-neutral-600">Rate (%)</label>
+                  <label className="mb-1 block text-xs font-medium text-fg-secondary">Rate (%)</label>
                   <input type="number" step="0.001" min="0" max="100" value={form.ratePct}
                     onChange={(e) => setForm((p) => ({ ...p, ratePct: e.target.value }))}
-                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
+                    className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
                     placeholder="13" required />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-neutral-600">Effective From</label>
+                  <label className="mb-1 block text-xs font-medium text-fg-secondary">Effective From</label>
                   <input type="date" value={form.effective_from}
                     onChange={(e) => setForm((p) => ({ ...p, effective_from: e.target.value }))}
                     disabled={modal.mode === 'edit'}
-                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400 disabled:bg-neutral-50 disabled:text-neutral-500"
+                    className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400 disabled:bg-surface-subtle disabled:text-fg-muted"
                     required />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-neutral-600">Effective To</label>
+                  <label className="mb-1 block text-xs font-medium text-fg-secondary">Effective To</label>
                   <input type="date" value={form.effective_to}
                     onChange={(e) => setForm((p) => ({ ...p, effective_to: e.target.value }))}
-                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
+                    className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
                     placeholder="blank = open-ended" />
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-neutral-700">Recoverable (ITC)</span>
+                <span className="text-sm text-fg-secondary">Recoverable (ITC)</span>
                 <button type="button" onClick={() => setForm((p) => ({ ...p, recoverable: !p.recoverable }))}
-                  className={cn('relative inline-flex h-5 w-9 items-center rounded-full transition-colors', form.recoverable ? 'bg-primary-600' : 'bg-neutral-200')}>
-                  <span className={cn('inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform', form.recoverable ? 'translate-x-4.5' : 'translate-x-0.5')} />
+                  className={cn('relative inline-flex h-5 w-9 items-center rounded-full transition-colors', form.recoverable ? 'bg-primary-600' : 'bg-surface-strong')}>
+                  <span className={cn('inline-block h-3.5 w-3.5 rounded-full bg-surface shadow transition-transform', form.recoverable ? 'translate-x-4.5' : 'translate-x-0.5')} />
                 </button>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-neutral-700">Active</span>
+                <span className="text-sm text-fg-secondary">Active</span>
                 <button type="button" onClick={() => setForm((p) => ({ ...p, active: !p.active }))}
-                  className={cn('relative inline-flex h-5 w-9 items-center rounded-full transition-colors', form.active ? 'bg-primary-600' : 'bg-neutral-200')}>
-                  <span className={cn('inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform', form.active ? 'translate-x-4.5' : 'translate-x-0.5')} />
+                  className={cn('relative inline-flex h-5 w-9 items-center rounded-full transition-colors', form.active ? 'bg-primary-600' : 'bg-surface-strong')}>
+                  <span className={cn('inline-block h-3.5 w-3.5 rounded-full bg-surface shadow transition-transform', form.active ? 'translate-x-4.5' : 'translate-x-0.5')} />
                 </button>
               </div>
-              {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-              <div className="flex justify-end gap-2 border-t border-neutral-100 pt-3">
-                <button type="button" onClick={() => setModal(null)} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">Cancel</button>
+              {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-fg">{error}</p>}
+              <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
+                <button type="button" onClick={() => setModal(null)} className="rounded-lg border border-line px-4 py-2 text-sm text-fg-secondary hover:bg-surface-subtle">Cancel</button>
                 <button type="submit" disabled={saving}
-                  className="rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-60">
+                  className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60">
                   {saving ? 'Saving…' : 'Save Changes'}
                 </button>
               </div>

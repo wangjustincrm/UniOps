@@ -20,9 +20,9 @@ interface Policy {
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-neutral-600">{label}</label>
+      <label className="mb-1 block text-xs font-medium text-fg-secondary">{label}</label>
       {children}
-      {hint && <p className="mt-1 text-[11px] text-neutral-400">{hint}</p>}
+      {hint && <p className="mt-1 text-2xs text-fg-muted">{hint}</p>}
     </div>
   )
 }
@@ -36,7 +36,7 @@ function NumberInput({
     <input
       type="number" min={min} step={step} value={value}
       onChange={e => onChange(e.target.value)}
-      className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm text-right focus:outline-none focus:border-primary-400"
+      className="w-full rounded-lg border border-line px-3 py-2 text-sm text-right focus:outline-none focus:border-primary-400"
     />
   )
 }
@@ -96,7 +96,7 @@ export default function ExpenseConfigPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-fg-muted" />
       </div>
     )
   }
@@ -104,15 +104,15 @@ export default function ExpenseConfigPage() {
   return (
     <form onSubmit={handleSave} className="flex flex-col gap-8 max-w-lg">
       <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Expense Configuration</h1>
-        <p className="mt-0.5 text-sm text-neutral-500">
+        <h1 className="text-2xl font-bold text-fg">Expense Configuration</h1>
+        <p className="mt-0.5 text-sm text-fg-muted">
           Rates and limits applied to all expense claims. Changes take effect immediately on new submissions.
         </p>
       </div>
 
       {/* Tax */}
       <section className="flex flex-col gap-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-500 border-b border-neutral-100 pb-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted border-b border-line-subtle pb-2">
           Tax
         </h2>
         <Field label="HST / GST Rate" hint="Enter as decimal — e.g. 0.13 for 13%">
@@ -122,7 +122,7 @@ export default function ExpenseConfigPage() {
 
       {/* Mileage */}
       <section className="flex flex-col gap-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-500 border-b border-neutral-100 pb-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted border-b border-line-subtle pb-2">
           Mileage (MIL)
         </h2>
         <Field label="Rate per km (CAD)" hint="CRA prescribed rate; applied to all mileage claims">
@@ -135,10 +135,10 @@ export default function ExpenseConfigPage() {
 
       {/* Travel meal limits */}
       <section className="flex flex-col gap-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-500 border-b border-neutral-100 pb-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted border-b border-line-subtle pb-2">
           Travel Meal Limits per Meal (TRV) — CAD
         </h2>
-        <p className="text-xs text-neutral-400">
+        <p className="text-xs text-fg-muted">
           Meal rows exceeding these limits trigger Finance Manager approval. Each limit applies per line (one meal), not to a day's total; a date-range line is checked on its daily rate.
         </p>
         <div className="grid grid-cols-2 gap-4">
@@ -166,7 +166,7 @@ export default function ExpenseConfigPage() {
           Save Configuration
         </button>
         {saved && (
-          <span className="flex items-center gap-1.5 text-sm text-success-600">
+          <span className="flex items-center gap-1.5 text-sm text-success-fg">
             <Check className="h-4 w-4" /> Saved
           </span>
         )}

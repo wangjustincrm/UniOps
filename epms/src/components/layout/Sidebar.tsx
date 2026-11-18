@@ -175,7 +175,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
           <div className="flex items-center gap-2.5 min-w-0">
             {/* Logo image or initials badge */}
             {companyLogoUrl ? (
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white overflow-hidden">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface overflow-hidden">
                 <img
                   src={companyLogoUrl}
                   alt={companyName}
@@ -190,7 +190,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
             <div className="min-w-0">
               <p className="text-sm font-bold text-white/95 leading-tight truncate">{companyName}</p>
               {companyTagline && (
-                <p className="text-[10px] text-white/45 leading-tight truncate">{companyTagline}</p>
+                <p className="text-2xs text-white/45 leading-tight truncate">{companyTagline}</p>
               )}
             </div>
           </div>
@@ -200,7 +200,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
         {collapsed && (
           <div className="mx-auto">
             {companyLogoUrl ? (
-              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white overflow-hidden">
+              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-surface overflow-hidden">
                 <img
                   src={companyLogoUrl}
                   alt={companyName}
@@ -236,7 +236,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
           return (
             <div key={section.title} className="mb-4">
               {!collapsed && (
-                <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-white/40">
+                <p className="mb-1 px-2 text-2xs font-semibold uppercase tracking-wider text-white/40">
                   {section.title}
                 </p>
               )}
@@ -260,12 +260,12 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
                   <span className="shrink-0">{item.icon}</span>
                   {!collapsed && <span className="truncate">{item.label}</span>}
                   {!collapsed && item.badge ? (
-                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-danger-600 px-1 text-[10px] font-bold text-white">
+                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-danger-solid px-1 text-2xs font-bold text-white">
                       {item.badge > 99 ? '99+' : item.badge}
                     </span>
                   ) : null}
                   {collapsed && item.badge ? (
-                    <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-600 text-[9px] font-bold text-white">
+                    <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-solid text-2xs font-bold text-white">
                       {item.badge > 99 ? '99+' : item.badge}
                     </span>
                   ) : null}

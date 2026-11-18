@@ -87,7 +87,7 @@ function useAllUsers() {
 
 function LoadingBlock() {
   return (
-    <div className="flex items-center justify-center gap-2 py-16 text-sm text-neutral-400">
+    <div className="flex items-center justify-center gap-2 py-16 text-sm text-fg-muted">
       <Loader2 className="h-4 w-4 animate-spin" />Loading…
     </div>
   )
@@ -95,7 +95,7 @@ function LoadingBlock() {
 
 function ErrorBlock({ message }: { message: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+    <div className="flex items-center gap-2 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-fg">
       <AlertCircle className="h-4 w-4 shrink-0" />{message}
     </div>
   )
@@ -108,7 +108,7 @@ export default function ApprovalRouting() {
 
   // UI-level gate; the backend independently enforces system_admin on PUT /routing.
   if (user?.role !== 'system_admin') {
-    return <p className="p-6 text-sm text-red-600">You do not have access to Approval Routing.</p>
+    return <p className="p-6 text-sm text-danger-fg">You do not have access to Approval Routing.</p>
   }
 
   return (
@@ -116,7 +116,7 @@ export default function ApprovalRouting() {
       <div className="flex flex-col gap-5">
         <div>
           <h1 className="text-lg font-semibold">Approval Routing</h1>
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-fg-muted">
             Configure which post (GM or OPM) approves each department, that department's director,
             whether its supervisor layer is on, who approves payments spanning several departments,
             and the GM/OPM backup approvers.
@@ -249,20 +249,20 @@ function ApprovalRoutingBody() {
     <div className="flex flex-col gap-4">
       {error && <ErrorBlock message={error} />}
 
-      <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full min-w-max text-sm">
-          <thead className="border-b border-neutral-100 bg-neutral-50">
+          <thead className="border-b border-line-subtle bg-surface-subtle">
             <tr>
-              <SortTh label="Department" sortKey="department" sort={sortedDepts.sort} onSort={sortedDepts.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-              <SortTh label="GM or OPM" sortKey="gm_or_opm" sort={sortedDepts.sort} onSort={sortedDepts.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-              <SortTh label="Director" sortKey="director" sort={sortedDepts.sort} onSort={sortedDepts.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
-              <SortTh label="Supervisor" sortKey="supervisor" sort={sortedDepts.sort} onSort={sortedDepts.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+              <SortTh label="Department" sortKey="department" sort={sortedDepts.sort} onSort={sortedDepts.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+              <SortTh label="GM or OPM" sortKey="gm_or_opm" sort={sortedDepts.sort} onSort={sortedDepts.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+              <SortTh label="Director" sortKey="director" sort={sortedDepts.sort} onSort={sortedDepts.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
+              <SortTh label="Supervisor" sortKey="supervisor" sort={sortedDepts.sort} onSort={sortedDepts.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
             </tr>
           </thead>
           <tbody>
             {departments.length === 0 ? (
               <tr>
-                <td colSpan={4} className="py-10 text-center text-sm text-neutral-400">
+                <td colSpan={4} className="py-10 text-center text-sm text-fg-muted">
                   No active departments found.
                 </td>
               </tr>
@@ -273,18 +273,18 @@ function ApprovalRoutingBody() {
                 return (
                   <tr
                     key={dept.dept_id}
-                    className={cn('border-b border-neutral-100', i === departments.length - 1 && 'border-b-0')}
+                    className={cn('border-b border-line-subtle', i === departments.length - 1 && 'border-b-0')}
                   >
-                    <td className="px-4 py-2.5 text-neutral-700">
+                    <td className="px-4 py-2.5 text-fg-secondary">
                       <span className="font-medium">{dept.dept_code}</span>
-                      <span className="text-neutral-400"> — {dept.dept_name}</span>
-                      {isDirty && <span className="ml-2 inline-block h-1.5 w-1.5 rounded-full bg-amber-400 align-middle" />}
+                      <span className="text-fg-muted"> — {dept.dept_name}</span>
+                      {isDirty && <span className="ml-2 inline-block h-1.5 w-1.5 rounded-full bg-warning-400 align-middle" />}
                     </td>
                     <td className="px-4 py-2.5">
                       <select
                         value={row.gm_or_opm}
                         onChange={(e) => setDeptField(dept, 'gm_or_opm', e.target.value as Post)}
-                        className="rounded-lg border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                        className="rounded-lg border border-line px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
                       >
                         <option value="gm">GM</option>
                         <option value="opm">OPM</option>
@@ -294,7 +294,7 @@ function ApprovalRoutingBody() {
                       <select
                         value={row.director_user_id ?? ''}
                         onChange={(e) => setDeptField(dept, 'director_user_id', e.target.value || null)}
-                        className="max-w-xs rounded-lg border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                        className="max-w-xs rounded-lg border border-line px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
                       >
                         <option value="">None</option>
                         {activeUsers.map((u) => (
@@ -308,9 +308,9 @@ function ApprovalRoutingBody() {
                           type="checkbox"
                           checked={row.supervisor_enabled}
                           onChange={(e) => setDeptField(dept, 'supervisor_enabled', e.target.checked)}
-                          className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-400"
+                          className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-400"
                         />
-                        <span className="text-xs text-neutral-500">{row.supervisor_enabled ? 'Enabled' : 'Disabled'}</span>
+                        <span className="text-xs text-fg-muted">{row.supervisor_enabled ? 'Enabled' : 'Disabled'}</span>
                       </label>
                     </td>
                   </tr>
@@ -321,9 +321,9 @@ function ApprovalRoutingBody() {
         </table>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-neutral-700">Cross-Department Payments</h2>
-        <p className="text-xs text-neutral-500">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4">
+        <h2 className="text-sm font-semibold text-fg-secondary">Cross-Department Payments</h2>
+        <p className="text-xs text-fg-muted">
           A vendor invoice often covers purchase orders from several departments, and such a
           payment is raised as one document. The table above cannot say who approves it — its
           departments may point at different posts — so this setting decides. Those payments
@@ -331,13 +331,13 @@ function ApprovalRoutingBody() {
           timeline, with the reason) and are approved here instead.
         </p>
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+          <label className="text-xs font-medium uppercase tracking-wide text-fg-muted">
             Approved by
           </label>
           <select
             value={effectiveCrossDept}
             onChange={(e) => setCrossDeptEdit(e.target.value as Post)}
-            className="min-w-[240px] max-w-[240px] rounded-lg border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+            className="min-w-[240px] max-w-[240px] rounded-lg border border-line px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
           >
             <option value="gm">GM</option>
             <option value="opm">OPM</option>
@@ -345,21 +345,21 @@ function ApprovalRoutingBody() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-neutral-700">Backup Approvers</h2>
-        <p className="text-xs text-neutral-500">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4">
+        <h2 className="text-sm font-semibold text-fg-secondary">Backup Approvers</h2>
+        <p className="text-xs text-fg-muted">
           Stand-in approver used when the primary GM or OPM is unavailable.
         </p>
         <div className="flex flex-wrap gap-6">
           {(['gm', 'opm'] as const).map((role) => (
             <div key={role} className="flex flex-col gap-1">
-              <label className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+              <label className="text-xs font-medium uppercase tracking-wide text-fg-muted">
                 {role.toUpperCase()} Backup
               </label>
               <select
                 value={effectiveBackups[role] ?? ''}
                 onChange={(e) => setBackupField(role, e.target.value || null)}
-                className="min-w-[240px] rounded-lg border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                className="min-w-[240px] rounded-lg border border-line px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
               >
                 <option value="">None</option>
                 {activeUsers.map((u) => (
@@ -372,19 +372,19 @@ function ApprovalRoutingBody() {
       </div>
 
       {dirtyCount > 0 && (
-        <div className="sticky bottom-4 flex items-center gap-3 self-start rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-lg">
-          <span className="text-sm font-medium text-neutral-700">{dirtyCount} unsaved change{dirtyCount === 1 ? '' : 's'}</span>
+        <div className="sticky bottom-4 flex items-center gap-3 self-start rounded-xl border border-line bg-surface px-4 py-3 shadow-lg">
+          <span className="text-sm font-medium text-fg-secondary">{dirtyCount} unsaved change{dirtyCount === 1 ? '' : 's'}</span>
           <button
             onClick={handleDiscard}
             disabled={save.isPending}
-            className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50 disabled:opacity-60"
+            className="rounded-lg border border-line px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-60"
           >
             Discard
           </button>
           <button
             onClick={handleSave}
             disabled={save.isPending}
-            className="flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-60"
+            className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60"
           >
             {save.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             Save

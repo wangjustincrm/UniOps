@@ -56,26 +56,26 @@ function ConsumedCell({ agreement }: { agreement: ApiAgreement }) {
   return (
     <div className="flex flex-col gap-1 min-w-[150px]">
       <div className="flex items-center justify-between text-xs">
-        <span className={cn('amount font-medium', overCeiling ? 'text-danger-600' : 'text-neutral-900')}>
+        <span className={cn('amount font-medium', overCeiling ? 'text-danger-fg' : 'text-fg')}>
           {formatAmount(consumed, agreement.currency)}
         </span>
-        <span className="amount text-neutral-400">
+        <span className="amount text-fg-muted">
           {ceiling !== null ? `/ ${formatAmount(ceiling, agreement.currency)}` : 'No ceiling'}
         </span>
       </div>
       {ceiling !== null && (
-        <div className="h-1.5 w-full rounded-full bg-neutral-200">
+        <div className="h-1.5 w-full rounded-full bg-surface-strong">
           <div
             style={{ width: `${pct ?? 0}%` }}
             className={cn(
               'h-full rounded-full transition-all',
-              overCeiling ? 'bg-danger-500' : (pct ?? 0) >= 90 ? 'bg-warning-500' : 'bg-primary-500'
+              overCeiling ? 'bg-danger-solid' : (pct ?? 0) >= 90 ? 'bg-warning-solid' : 'bg-primary-500'
             )}
           />
         </div>
       )}
       {overCeiling && (
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-danger-600">Over ceiling</span>
+        <span className="text-2xs font-semibold uppercase tracking-wide text-danger-fg">Over ceiling</span>
       )}
     </div>
   )
@@ -117,7 +117,7 @@ export default function AgreementListPage() {
     <div className="flex flex-col gap-6">
       {/* Page header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Agreements</h1>
+        <h1 className="text-2xl font-bold text-fg">Agreements</h1>
         {canCreate && (
           <Link to="/agreements/new">
             <Button>
@@ -129,10 +129,10 @@ export default function AgreementListPage() {
       </div>
 
       {/* Filters */}
-      <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-4">
+      <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-48">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
             <Input
               placeholder="Search agreement number, title, vendor…"
               value={search}
@@ -143,7 +143,7 @@ export default function AgreementListPage() {
           <select
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
-            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
           >
             {STATUS_FILTER_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -152,7 +152,7 @@ export default function AgreementListPage() {
           <select
             value={vendorFilter}
             onChange={(e) => { setVendorFilter(e.target.value); setPage(1) }}
-            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
           >
             <option value="all">All Vendors</option>
             {vendors.map((v) => (
@@ -162,31 +162,31 @@ export default function AgreementListPage() {
           <select
             value={typeFilter}
             onChange={(e) => { setTypeFilter(e.target.value); setPage(1) }}
-            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
           >
             <option value="all">All Types</option>
             {(Object.entries(TYPE_LABELS) as [AgreementType, string][]).map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
-          <span className="text-sm text-neutral-400">{isLoading ? 'Loading…' : `${total} result${total !== 1 ? 's' : ''}`}</span>
+          <span className="text-sm text-fg-muted">{isLoading ? 'Loading…' : `${total} result${total !== 1 ? 's' : ''}`}</span>
         </div>
       </div>
 
       {/* Table */}
-      <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
+      <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-50">
-                <SortTh label="Number" sortKey="number" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
-                <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
-                <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
-                <SortTh label="Type" sortKey="agreement_type" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
-                <SortTh label="Valid From" sortKey="valid_from" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
-                <SortTh label="Valid Until" sortKey="valid_to" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
-                <SortTh label="Consumed / NTE (pre-tax)" sortKey="consumed_amount" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
-                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+              <tr className="border-b border-line bg-surface-subtle">
+                <SortTh label="Number" sortKey="number" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
+                <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
+                <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
+                <SortTh label="Type" sortKey="agreement_type" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
+                <SortTh label="Valid From" sortKey="valid_from" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
+                <SortTh label="Valid Until" sortKey="valid_to" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
+                <SortTh label="Consumed / NTE (pre-tax)" sortKey="consumed_amount" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -195,7 +195,7 @@ export default function AgreementListPage() {
               {!isLoading && agreements.length === 0 && (
                 <tr>
                   <td colSpan={9} className="px-4 py-16 text-center">
-                    <div className="flex flex-col items-center gap-2 text-neutral-400">
+                    <div className="flex flex-col items-center gap-2 text-fg-muted">
                       <span className="text-3xl">📄</span>
                       <p className="text-sm font-medium">No agreements found</p>
                       <p className="text-xs">Try adjusting your search or filters</p>
@@ -206,7 +206,7 @@ export default function AgreementListPage() {
               {agreements.map((agreement) => (
                 <tr
                   key={agreement.id}
-                  className="border-b border-neutral-100 last:border-0 bg-white hover:bg-primary-50/60 transition-colors"
+                  className="border-b border-line-subtle last:border-0 bg-surface hover:bg-primary-50/60 transition-colors"
                 >
                   <td className="px-4 py-3">
                     <Link to={`/agreements/${agreement.id}`} className="font-mono text-sm font-medium text-primary-700 hover:text-primary-900">
@@ -214,14 +214,14 @@ export default function AgreementListPage() {
                     </Link>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="font-medium text-neutral-900">{agreement.title}</p>
+                    <p className="font-medium text-fg">{agreement.title}</p>
                   </td>
-                  <td className="px-4 py-3 text-neutral-700">{agreement.vendor_name}</td>
+                  <td className="px-4 py-3 text-fg-secondary">{agreement.vendor_name}</td>
                   <td className="px-4 py-3">
-                    <span className="text-xs text-neutral-500">{TYPE_LABELS[agreement.agreement_type]}</span>
+                    <span className="text-xs text-fg-muted">{TYPE_LABELS[agreement.agreement_type]}</span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-neutral-500">{formatDate(agreement.valid_from)}</td>
-                  <td className="px-4 py-3 text-xs text-neutral-500">{formatDate(agreement.valid_to)}</td>
+                  <td className="px-4 py-3 text-xs text-fg-muted">{formatDate(agreement.valid_from)}</td>
+                  <td className="px-4 py-3 text-xs text-fg-muted">{formatDate(agreement.valid_to)}</td>
                   <td className="px-4 py-3">
                     <ConsumedCell agreement={agreement} />
                   </td>

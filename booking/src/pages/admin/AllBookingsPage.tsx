@@ -34,18 +34,18 @@ function fmtTime(iso: string): string {
 }
 
 const STATUS_STYLE: Record<string, string> = {
-  confirmed:  'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  cancelled:  'bg-neutral-100 text-neutral-400 ring-neutral-200',
-  completed:  'bg-sky-50 text-sky-700 ring-sky-200',
-  pending:    'bg-amber-50 text-amber-700 ring-amber-200',
-  no_show:    'bg-red-50 text-red-600 ring-red-200',
+  confirmed:  'bg-success-soft text-success-fg ring-success-line',
+  cancelled:  'bg-surface-sunken text-fg-muted ring-line',
+  completed:  'bg-info-soft text-info-fg ring-info-line',
+  pending:    'bg-warning-soft text-warning-fg ring-warning-line',
+  no_show:    'bg-danger-soft text-danger-fg ring-danger-line',
 }
 
 const SYNC_STYLE: Record<string, string> = {
-  sent:          'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  pending:       'bg-amber-50  text-amber-700  ring-amber-200',
-  compensating:  'bg-amber-50  text-amber-700  ring-amber-200',
-  failed:        'bg-red-50    text-red-600    ring-red-200',
+  sent:          'bg-success-soft text-success-fg ring-success-line',
+  pending:       'bg-warning-soft  text-warning-fg  ring-warning-line',
+  compensating:  'bg-warning-soft  text-warning-fg  ring-warning-line',
+  failed:        'bg-danger-soft    text-danger-fg    ring-danger-line',
 }
 
 const SYNC_LABEL: Record<string, string> = {
@@ -53,7 +53,7 @@ const SYNC_LABEL: Record<string, string> = {
 }
 
 function BookingStatusBadge({ status }: { status: string }) {
-  const style = STATUS_STYLE[status] ?? 'bg-neutral-100 text-neutral-500 ring-neutral-200'
+  const style = STATUS_STYLE[status] ?? 'bg-surface-sunken text-fg-muted ring-line'
   const label = status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')
   return (
     <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset', style)}>
@@ -63,7 +63,7 @@ function BookingStatusBadge({ status }: { status: string }) {
 }
 
 function SyncBadge({ syncStatus }: { syncStatus: string }) {
-  const style = SYNC_STYLE[syncStatus] ?? 'bg-neutral-100 text-neutral-500 ring-neutral-200'
+  const style = SYNC_STYLE[syncStatus] ?? 'bg-surface-sunken text-fg-muted ring-line'
   const label = SYNC_LABEL[syncStatus] ?? syncStatus
   return (
     <span title="Calendar invite delivery" className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset cursor-help', style)}>
@@ -85,9 +85,9 @@ function ForceCancelDialog({ booking, onConfirm, onClose, isPending }: ForceCanc
   const isSeries = !!booking.series_id
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white p-6 shadow-xl space-y-4">
-        <h2 className="text-base font-semibold text-neutral-900">Force Cancel Booking</h2>
-        <p className="text-sm text-neutral-600">
+      <div className="w-full max-w-sm rounded-xl border border-line bg-surface p-6 shadow-xl space-y-4">
+        <h2 className="text-base font-semibold text-fg">Force Cancel Booking</h2>
+        <p className="text-sm text-fg-secondary">
           {isSeries
             ? `"${booking.title}" booked by ${booking.organizer_name} is part of a recurring series. Cancel only this occurrence, or the whole series? Cancelling the series keeps past and in-progress occurrences.`
             : `Cancel "${booking.title}" booked by ${booking.organizer_name}? This cannot be undone.`}
@@ -97,7 +97,7 @@ function ForceCancelDialog({ booking, onConfirm, onClose, isPending }: ForceCanc
             type="button"
             onClick={onClose}
             disabled={isPending}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+            className="rounded-md border border-line-strong px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50"
           >
             Keep
           </button>
@@ -106,7 +106,7 @@ function ForceCancelDialog({ booking, onConfirm, onClose, isPending }: ForceCanc
               type="button"
               onClick={() => onConfirm(false)}
               disabled={isPending}
-              className="rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+              className="rounded-md border border-danger-line px-3 py-1.5 text-sm font-medium text-danger-fg hover:bg-danger-soft disabled:opacity-50"
             >
               This occurrence
             </button>
@@ -115,7 +115,7 @@ function ForceCancelDialog({ booking, onConfirm, onClose, isPending }: ForceCanc
             type="button"
             onClick={() => onConfirm(isSeries)}
             disabled={isPending}
-            className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md bg-danger-solid px-3 py-1.5 text-sm font-semibold text-white hover:bg-danger-700 disabled:opacity-50"
           >
             {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {isSeries ? 'Cancel series' : 'Force cancel'}
@@ -221,7 +221,7 @@ export default function AllBookingsPage() {
     }
   }
 
-  const thCls = 'px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 text-left'
+  const thCls = 'px-4 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted text-left'
   const tdCls = 'px-4 py-3 text-sm'
 
   return (
@@ -229,12 +229,12 @@ export default function AllBookingsPage() {
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-neutral-900">All Bookings</h1>
+          <h1 className="text-2xl font-bold text-fg">All Bookings</h1>
           <button
             type="button"
             onClick={handleExport}
             disabled={exporting}
-            className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50"
           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Export CSV
@@ -243,20 +243,20 @@ export default function AllBookingsPage() {
 
         {/* Banners */}
         {successNote && (
-          <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">
+          <div className="flex items-center justify-between rounded-md border border-success-line bg-success-soft px-4 py-2.5 text-sm text-success-fg">
             <span>{successNote}</span>
-            <button type="button" onClick={() => setSuccessNote(null)}><XIcon className="h-4 w-4 text-emerald-500" /></button>
+            <button type="button" onClick={() => setSuccessNote(null)}><XIcon className="h-4 w-4 text-success-fg" /></button>
           </div>
         )}
         {cancelError && (
-          <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-600">
+          <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-4 py-2.5 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4 shrink-0" />
             {cancelError}
             <button type="button" onClick={() => setCancelError(null)} className="ml-auto"><XIcon className="h-4 w-4" /></button>
           </div>
         )}
         {exportError && (
-          <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-600">
+          <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-4 py-2.5 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4 shrink-0" />
             Export failed: {exportError}
             <button type="button" onClick={() => setExportError(null)} className="ml-auto"><XIcon className="h-4 w-4" /></button>
@@ -268,7 +268,7 @@ export default function AllBookingsPage() {
           <select
             value={roomId}
             onChange={(e) => setRoomId(e.target.value)}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+            className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
           >
             <option value="">All Rooms</option>
             {(rooms ?? []).map((r) => (
@@ -276,27 +276,27 @@ export default function AllBookingsPage() {
             ))}
           </select>
           <div className="flex items-center gap-1.5">
-            <label className="text-xs text-neutral-500">From</label>
+            <label className="text-xs text-fg-muted">From</label>
             <input
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+              className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
             />
           </div>
           <div className="flex items-center gap-1.5">
-            <label className="text-xs text-neutral-500">To</label>
+            <label className="text-xs text-fg-muted">To</label>
             <input
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+              className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
             />
           </div>
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value)}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+            className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
           >
             <option value="">All Statuses</option>
             <option value="confirmed">Confirmed</option>
@@ -308,28 +308,28 @@ export default function AllBookingsPage() {
             value={organizerFilter}
             onChange={(e) => setOrganizerFilter(e.target.value)}
             placeholder="Organizer name…"
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40 w-44"
+            className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40 w-44"
           />
         </div>
 
         {/* Content */}
         {isLoading && (
-          <div className="flex items-center justify-center py-16 text-sm text-neutral-500">
+          <div className="flex items-center justify-center py-16 text-sm text-fg-muted">
             <Loader2 className="h-5 w-5 animate-spin mr-2" />
             Loading bookings…
           </div>
         )}
         {!isLoading && error && (
-          <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4 shrink-0" />
             Failed to load bookings.
           </div>
         )}
         {!isLoading && !error && (
           <>
-            <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white shadow-sm">
+            <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
               <table className="w-full text-left text-sm">
-                <thead className="border-b border-neutral-200 bg-neutral-50">
+                <thead className="border-b border-line bg-surface-subtle">
                   <tr>
                     <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} className={thCls} />
                     <SortTh label="Room" sortKey="room" sort={sort} onSort={onSort} className={thCls} />
@@ -343,31 +343,31 @@ export default function AllBookingsPage() {
                 <tbody>
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-12 text-center text-sm text-neutral-400">
+                      <td colSpan={7} className="px-4 py-12 text-center text-sm text-fg-muted">
                         No bookings found.
                       </td>
                     </tr>
                   ) : (
                     items.map((b) => (
-                      <tr key={b.id} className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50 transition-colors">
+                      <tr key={b.id} className="border-b border-line-subtle last:border-0 hover:bg-surface-subtle transition-colors">
                         <td className={tdCls}>
                           <div className="flex items-center gap-1.5">
-                            <span className="font-medium text-neutral-900">{b.title}</span>
+                            <span className="font-medium text-fg">{b.title}</span>
                             {b.series_id && (
                               <span title={b.rrule ?? 'Recurring'}>
-                                <Repeat className="h-3.5 w-3.5 text-neutral-400" />
+                                <Repeat className="h-3.5 w-3.5 text-fg-muted" />
                               </span>
                             )}
                           </div>
                         </td>
                         <td className={tdCls}>
                           <span className="font-medium">{b.room_name}</span>
-                          <span className="ml-1 text-xs text-neutral-400">({b.room_code})</span>
+                          <span className="ml-1 text-xs text-fg-muted">({b.room_code})</span>
                         </td>
-                        <td className={cn(tdCls, 'text-neutral-600')}>{b.organizer_name}</td>
+                        <td className={cn(tdCls, 'text-fg-secondary')}>{b.organizer_name}</td>
                         <td className={cn(tdCls, 'whitespace-nowrap')}>
-                          <div className="text-neutral-600">{formatDate(b.starts_at)}</div>
-                          <div className="text-xs text-neutral-400">{fmtTime(b.starts_at)}–{fmtTime(b.ends_at)}</div>
+                          <div className="text-fg-secondary">{formatDate(b.starts_at)}</div>
+                          <div className="text-xs text-fg-muted">{fmtTime(b.starts_at)}–{fmtTime(b.ends_at)}</div>
                         </td>
                         <td className={tdCls}>
                           <BookingStatusBadge status={b.status} />
@@ -380,7 +380,7 @@ export default function AllBookingsPage() {
                             <button
                               type="button"
                               onClick={() => setCancelTarget(b)}
-                              className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                              className="inline-flex items-center gap-1 rounded-md border border-danger-line bg-surface px-2.5 py-1 text-xs font-medium text-danger-fg hover:bg-danger-soft"
                             >
                               <XIcon className="h-3 w-3" />
                               Cancel
@@ -396,14 +396,14 @@ export default function AllBookingsPage() {
 
             {/* Pagination */}
             {total > PAGE_SIZE && (
-              <div className="flex items-center justify-between text-sm text-neutral-600">
+              <div className="flex items-center justify-between text-sm text-fg-secondary">
                 <span>{total} total</span>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     disabled={offset === 0}
                     onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
-                    className="rounded-md border border-neutral-300 px-3 py-1 text-sm disabled:opacity-40 hover:bg-neutral-50"
+                    className="rounded-md border border-line-strong px-3 py-1 text-sm disabled:opacity-40 hover:bg-surface-subtle"
                   >
                     Previous
                   </button>
@@ -412,7 +412,7 @@ export default function AllBookingsPage() {
                     type="button"
                     disabled={offset + PAGE_SIZE >= total}
                     onClick={() => setOffset((o) => o + PAGE_SIZE)}
-                    className="rounded-md border border-neutral-300 px-3 py-1 text-sm disabled:opacity-40 hover:bg-neutral-50"
+                    className="rounded-md border border-line-strong px-3 py-1 text-sm disabled:opacity-40 hover:bg-surface-subtle"
                   >
                     Next
                   </button>

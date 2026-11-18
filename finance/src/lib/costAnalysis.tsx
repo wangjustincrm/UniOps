@@ -79,10 +79,10 @@ export function when(v: string | null | undefined): string {
 
 export function SeverityBadge({ severity }: { severity: string }) {
   return (
-    <span className={cn('inline-block rounded border px-1.5 py-0.5 text-[11px] font-medium',
-      severity === 'high' ? 'border-red-200 bg-red-50 text-red-700'
-        : severity === 'info' ? 'border-neutral-200 bg-neutral-50 text-neutral-600'
-        : 'border-amber-200 bg-amber-50 text-amber-800')}>
+    <span className={cn('inline-block rounded border px-1.5 py-0.5 text-2xs font-medium',
+      severity === 'high' ? 'border-danger-line bg-danger-soft text-danger-fg'
+        : severity === 'info' ? 'border-line bg-surface-subtle text-fg-secondary'
+        : 'border-warning-line bg-warning-soft text-warning-fg')}>
       {severity === 'high' ? 'High' : severity === 'info' ? 'Info' : 'Medium'}
     </span>
   )
@@ -91,7 +91,7 @@ export function SeverityBadge({ severity }: { severity: string }) {
 export function OpenPeriodBadge() {
   return (
     <span title="NC has not closed this month yet — its figures can still change."
-          className="ml-1 inline-block rounded border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-[10px] text-neutral-500">
+          className="ml-1 inline-block rounded border border-line bg-surface-subtle px-1.5 py-0.5 text-2xs text-fg-muted">
       Not closed in NC
     </span>
   )
@@ -119,37 +119,37 @@ export function SyncBar() {
   const last = data.last_success
   const failed = data.last_run && data.last_run.status === 'failed' ? data.last_run : null
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-xs text-neutral-600">
+    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-2.5 text-xs text-fg-secondary">
       {!data.configured ? (
-        <span className="text-neutral-500">NC connection is not configured on this server.</span>
+        <span className="text-fg-muted">NC connection is not configured on this server.</span>
       ) : last ? (
         <>
-          <span>NC data as of <strong className="text-neutral-800">{when(last.finished_at)}</strong></span>
+          <span>NC data as of <strong className="text-fg">{when(last.finished_at)}</strong></span>
           {last.tie_out_ok ? (
-            <span className="inline-flex items-center gap-1 text-[#085E5E]">
+            <span className="inline-flex items-center gap-1 text-primary-700">
               <CheckCircle2 className="h-3.5 w-3.5" /> Ties out with NC
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 font-medium text-red-700">
+            <span className="inline-flex items-center gap-1 font-medium text-danger-fg">
               <AlertTriangle className="h-3.5 w-3.5" /> Does not tie out with NC — see Anomalies (A8)
             </span>
           )}
-          <span className="text-neutral-400">From {data.scope_from} · syncs every {data.interval_minutes ? `${data.interval_minutes} min` : '— (off)'}</span>
+          <span className="text-fg-muted">From {data.scope_from} · syncs every {data.interval_minutes ? `${data.interval_minutes} min` : '— (off)'}</span>
         </>
       ) : (
-        <span className="text-neutral-500">Not synced from NC yet.</span>
+        <span className="text-fg-muted">Not synced from NC yet.</span>
       )}
       {failed && (
-        <span className="text-red-700" title={failed.error ?? ''}>Last sync failed {when(failed.finished_at)}</span>
+        <span className="text-danger-fg" title={failed.error ?? ''}>Last sync failed {when(failed.finished_at)}</span>
       )}
       {data.can_sync && data.configured && (
         <button onClick={() => sync.mutate()} disabled={running}
-                className="ml-auto inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
+                className="ml-auto inline-flex items-center gap-1 rounded-lg border border-line-strong px-2.5 py-1 text-xs text-fg-secondary hover:bg-surface-subtle disabled:opacity-50">
           {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           {running ? 'Syncing…' : 'Sync now'}
         </button>
       )}
-      {sync.error && <span className="text-red-700">{(sync.error as Error).message}</span>}
+      {sync.error && <span className="text-danger-fg">{(sync.error as Error).message}</span>}
     </div>
   )
 }
@@ -160,7 +160,7 @@ export function AccessMessage({ error }: { error: unknown }) {
   const denied = /403|permission/i.test(msg)
   return (
     <div className={cn('rounded-lg border px-4 py-3 text-sm',
-      denied ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-red-200 bg-red-50 text-red-700')}>
+      denied ? 'border-warning-line bg-warning-soft text-warning-fg' : 'border-danger-line bg-danger-soft text-danger-fg')}>
       {denied
         ? 'AI Financial Analysis needs the “AI Financial Analysis” permission (finance.analysis.view). It is granted per role in Portal → Access Control.'
         : msg}
@@ -198,10 +198,10 @@ function EvidenceTable({ rows }: { rows: Evidence[] }) {
     <table className="mt-1 w-full text-xs">
       <tbody>
         {rows.map((e, i) => (
-          <tr key={i} className="border-t border-neutral-100">
-            <td className="w-1/2 py-1 pr-3 text-neutral-500">{e.label}</td>
-            <td className="py-1 pr-3 font-mono tabular-nums text-neutral-800">{e.value}</td>
-            <td className="py-1 font-mono text-[11px] text-neutral-400">{e.ref ?? ''}</td>
+          <tr key={i} className="border-t border-line-subtle">
+            <td className="w-1/2 py-1 pr-3 text-fg-muted">{e.label}</td>
+            <td className="py-1 pr-3 font-mono tabular-nums text-fg">{e.value}</td>
+            <td className="py-1 font-mono text-2xs text-fg-muted">{e.ref ?? ''}</td>
           </tr>
         ))}
       </tbody>
@@ -212,30 +212,30 @@ function EvidenceTable({ rows }: { rows: Evidence[] }) {
 export function FindingCard({ f, prefix }: { f: Finding; prefix?: string }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className={cn('rounded-lg border bg-white p-3',
-      f.severity === 'high' ? 'border-red-200'
-        : f.severity === 'info' ? 'border-neutral-200' : 'border-amber-200')}>
+    <div className={cn('rounded-lg border bg-surface p-3',
+      f.severity === 'high' ? 'border-danger-line'
+        : f.severity === 'info' ? 'border-line' : 'border-warning-line')}>
       <div className="flex items-start gap-2">
         <SeverityBadge severity={f.severity} />
-        <p className="text-sm font-semibold text-neutral-900">{prefix && <span className="mr-1 font-mono">{prefix}</span>}{f.title}</p>
+        <p className="text-sm font-semibold text-fg">{prefix && <span className="mr-1 font-mono">{prefix}</span>}{f.title}</p>
       </div>
-      <p className="mt-1.5 text-sm leading-relaxed text-neutral-800">{f.conclusion}</p>
+      <p className="mt-1.5 text-sm leading-relaxed text-fg">{f.conclusion}</p>
       {f.because.length > 0 && (
-        <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm leading-relaxed text-neutral-700">
+        <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm leading-relaxed text-fg-secondary">
           {f.because.map((b, i) => <li key={i}>{b}</li>)}
         </ul>
       )}
       {f.related.length > 0 && (
-        <p className="mt-1.5 text-xs text-neutral-500">
+        <p className="mt-1.5 text-xs text-fg-muted">
           Related:{' '}
           {f.related.map((r, i) => (
             <span key={r}>{i > 0 && ', '}
-              <Link to={traceLink(r, prevMonth(f.period), f.period)} className="font-mono text-[#085E5E] underline">{r}</Link>
+              <Link to={traceLink(r, prevMonth(f.period), f.period)} className="font-mono text-primary-700 underline">{r}</Link>
             </span>
           ))}
         </p>
       )}
-      <button onClick={() => setOpen(!open)} className="mt-2 inline-flex items-center gap-1 text-xs text-[#085E5E]">
+      <button onClick={() => setOpen(!open)} className="mt-2 inline-flex items-center gap-1 text-xs text-primary-700">
         {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         Evidence ({f.evidence.length})
       </button>
@@ -250,38 +250,38 @@ export function DiagnosisPanel({ d, compact = false }: { d: Diagnosis; compact?:
   // Info findings explain something that is not wrong; they don't tint the panel.
   const ok = d.findings.every((f) => f.severity === 'info')
   return (
-    <div className={cn('rounded-lg border p-4', ok ? 'border-neutral-200 bg-neutral-50' : 'border-[#085E5E]/30 bg-primary-50/40')}>
-      <p className="text-xs font-semibold uppercase tracking-wide text-[#085E5E]">Summary</p>
-      <p className="mt-1 text-base font-semibold leading-snug text-neutral-900">{d.headline}</p>
+    <div className={cn('rounded-lg border p-4', ok ? 'border-line bg-surface-subtle' : 'border-primary-700/30 bg-primary-50/40')}>
+      <p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Summary</p>
+      <p className="mt-1 text-base font-semibold leading-snug text-fg">{d.headline}</p>
 
       {d.root_chain.length > 0 && (
         <div className="mt-3">
-          <p className="text-xs font-medium text-neutral-600">Where it comes from</p>
+          <p className="text-xs font-medium text-fg-secondary">Where it comes from</p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="rounded bg-white px-1.5 py-0.5 font-mono font-semibold">{d.material.code}</span>
+            <span className="rounded bg-surface px-1.5 py-0.5 font-mono font-semibold">{d.material.code}</span>
             {d.root_chain.map((h) => (
               <span key={h.material} className="inline-flex items-center gap-1.5">
-                <ArrowLeft className="h-3 w-3 text-neutral-400" />
+                <ArrowLeft className="h-3 w-3 text-fg-muted" />
                 <Link to={traceLink(h.material, prevMonth(h.period), h.period)} title={h.headline}
-                      className="rounded bg-white px-1.5 py-0.5 font-mono text-[#085E5E] underline">
-                  {h.material} <span className="text-neutral-400">{h.period}</span>
+                      className="rounded bg-surface px-1.5 py-0.5 font-mono text-primary-700 underline">
+                  {h.material} <span className="text-fg-muted">{h.period}</span>
                 </Link>
               </span>
             ))}
           </div>
-          <p className="mt-1 text-xs text-neutral-600">{d.root_chain[d.root_chain.length - 1].headline}</p>
+          <p className="mt-1 text-xs text-fg-secondary">{d.root_chain[d.root_chain.length - 1].headline}</p>
         </div>
       )}
 
       {d.chain.length > 0 && !compact && (
         <div className="mt-3">
-          <p className="text-xs font-medium text-neutral-600">What happened, in order</p>
+          <p className="text-xs font-medium text-fg-secondary">What happened, in order</p>
           <ol className="mt-1 space-y-1 text-sm">
             {d.chain.map((s, i) => (
               <li key={i} className="flex gap-2">
-                <span className="w-5 shrink-0 text-right text-xs text-neutral-400">{i + 1}.</span>
-                <span className="shrink-0 font-mono text-xs leading-5 text-neutral-500">{s.period}</span>
-                <span className="text-neutral-800">{s.text}</span>
+                <span className="w-5 shrink-0 text-right text-xs text-fg-muted">{i + 1}.</span>
+                <span className="shrink-0 font-mono text-xs leading-5 text-fg-muted">{s.period}</span>
+                <span className="text-fg">{s.text}</span>
               </li>
             ))}
           </ol>
@@ -294,7 +294,7 @@ export function DiagnosisPanel({ d, compact = false }: { d: Diagnosis; compact?:
         </div>
       )}
       {!compact && (
-        <p className="mt-3 text-[11px] text-neutral-500">
+        <p className="mt-3 text-2xs text-fg-muted">
           Every figure above is computed from NC&rsquo;s own ledger and cost data; the tables below are the evidence.
         </p>
       )}

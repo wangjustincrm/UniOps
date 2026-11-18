@@ -299,13 +299,13 @@ export default function PoImportedEditPage() {
     replaceTab(`/po/${id}`)
   }
 
-  if (isLoading) return <div className="p-6 text-sm text-neutral-500">Loading…</div>
-  if (!po) return <div className="p-6 text-sm text-neutral-500">PO not found.</div>
+  if (isLoading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>
+  if (!po) return <div className="p-6 text-sm text-fg-muted">PO not found.</div>
 
   if (!editable) {
     return (
       <div className="p-6">
-        <p className="text-sm text-neutral-700">
+        <p className="text-sm text-fg-secondary">
           Only POs imported from NC can be edited here.
         </p>
         <BackLink to={`/po/${po.id}`} className="mt-3 inline-flex items-center gap-1 text-sm text-primary-600">
@@ -319,32 +319,32 @@ export default function PoImportedEditPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
       <div>
-        <BackLink to={`/po/${po.id}`} className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-900">
+        <BackLink to={`/po/${po.id}`} className="inline-flex items-center gap-1 text-sm text-fg-muted hover:text-fg">
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to PO
         </BackLink>
-        <h1 className="mt-2 text-xl font-semibold text-neutral-900">
+        <h1 className="mt-2 text-xl font-semibold text-fg">
           Edit Details — {po.number}
         </h1>
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-fg-muted">
           Imported from NC. Vendor, currency and line quantities/prices are read-only.
         </p>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+        <div className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           {error}
         </div>
       )}
 
-      <section className="space-y-4 rounded-lg border border-neutral-200 p-4">
-        <h2 className="text-base font-semibold text-neutral-900">Order</h2>
+      <section className="space-y-4 rounded-lg border border-line p-4">
+        <h2 className="text-base font-semibold text-fg">Order</h2>
         <dl className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
-          <div><dt className="text-xs text-neutral-500">Vendor</dt><dd className="text-neutral-900">{po.vendor_name}</dd></div>
-          <div><dt className="text-xs text-neutral-500">Currency</dt><dd className="text-neutral-900">{po.currency}</dd></div>
-          <div><dt className="text-xs text-neutral-500">Title</dt><dd className="text-neutral-900">{po.title}</dd></div>
-          <div><dt className="text-xs text-neutral-500">Procurement Type</dt><dd className="text-neutral-900">{TYPE_LABELS[po.type] ?? `Type ${po.type}`}</dd></div>
-          <div><dt className="text-xs text-neutral-500">Budget Code</dt><dd className="text-neutral-900">{po.budget_code || '—'}</dd></div>
+          <div><dt className="text-xs text-fg-muted">Vendor</dt><dd className="text-fg">{po.vendor_name}</dd></div>
+          <div><dt className="text-xs text-fg-muted">Currency</dt><dd className="text-fg">{po.currency}</dd></div>
+          <div><dt className="text-xs text-fg-muted">Title</dt><dd className="text-fg">{po.title}</dd></div>
+          <div><dt className="text-xs text-fg-muted">Procurement Type</dt><dd className="text-fg">{TYPE_LABELS[po.type] ?? `Type ${po.type}`}</dd></div>
+          <div><dt className="text-xs text-fg-muted">Budget Code</dt><dd className="text-fg">{po.budget_code || '—'}</dd></div>
         </dl>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -353,7 +353,7 @@ export default function PoImportedEditPage() {
               <Input id="expectedDelivery" type="date" value={expectedDelivery}
                      onChange={(e) => setExpectedDelivery(e.target.value)} />
             ) : (
-              <p id="expectedDelivery" className="text-sm text-neutral-900">{expectedDeliveryDisplay}</p>
+              <p id="expectedDelivery" className="text-sm text-fg">{expectedDeliveryDisplay}</p>
             )}
           </FormField>
           <div className="grid grid-cols-[8rem_1fr] gap-2">
@@ -367,7 +367,7 @@ export default function PoImportedEditPage() {
                 id="incotermsCode"
                 value={incotermsCode}
                 onChange={(e) => setIncotermsCode(e.target.value)}
-                className="h-9 w-full rounded border border-neutral-300 bg-white px-2 text-sm"
+                className="h-9 w-full rounded border border-line-strong bg-surface px-2 text-sm"
               >
                 <option value="">{incotermsRequired ? 'Select…' : '—'}</option>
                 {incotermOptions.map((t) => (
@@ -395,7 +395,7 @@ export default function PoImportedEditPage() {
         <FormField label="Delivery Address" htmlFor="deliveryAddress">
           <textarea id="deliveryAddress" rows={2} value={deliveryAddress}
                     onChange={(e) => { setDeliveryAddress(e.target.value); deliveryAddressTouched.current = true }}
-                    className="w-full rounded border border-neutral-300 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600" />
+                    className="w-full rounded border border-line-strong bg-surface px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600" />
         </FormField>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -415,7 +415,7 @@ export default function PoImportedEditPage() {
                 setTaxCode(chosen?.code ?? null)
                 setTaxRate(chosen ? Number(chosen.rate) : 0)
               }}
-              className="h-9 w-full rounded border border-neutral-300 bg-white px-2 text-sm disabled:bg-neutral-50 disabled:text-neutral-400"
+              className="h-9 w-full rounded border border-line-strong bg-surface px-2 text-sm disabled:bg-surface-subtle disabled:text-fg-muted"
             >
               <option value="">No tax</option>
               {/* keep a saved-but-now-inactive code selectable */}
@@ -427,7 +427,7 @@ export default function PoImportedEditPage() {
               ))}
             </select>
           </FormField>
-          <label className="flex items-end gap-2 pb-2 text-sm text-neutral-700">
+          <label className="flex items-end gap-2 pb-2 text-sm text-fg-secondary">
             <input type="checkbox" checked={isPrepaid}
                    onChange={(e) => setIsPrepaid(e.target.checked)} />
             Prepaid order
@@ -435,8 +435,8 @@ export default function PoImportedEditPage() {
         </div>
       </section>
 
-      <section className="space-y-3 rounded-lg border border-neutral-200 p-4">
-        <h2 className="text-base font-semibold text-neutral-900">Line Items</h2>
+      <section className="space-y-3 rounded-lg border border-line p-4">
+        <h2 className="text-base font-semibold text-fg">Line Items</h2>
         <ImportedPoLineItems
           items={lines}
           onChange={setLines}
@@ -445,31 +445,31 @@ export default function PoImportedEditPage() {
           locked={taxLocked}
         />
         <div className="flex justify-end gap-6 text-sm">
-          <span className="text-neutral-500">Subtotal <span className="ml-2 font-mono text-neutral-900">{formatAmount(subtotal, currency)}</span></span>
-          <span className="text-neutral-500">Tax <span className="ml-2 font-mono text-neutral-900">{formatAmount(taxAmount, currency)}</span></span>
-          <span className="font-semibold text-neutral-900">Total <span className="ml-2 font-mono">{formatAmount(total, currency)}</span></span>
+          <span className="text-fg-muted">Subtotal <span className="ml-2 font-mono text-fg">{formatAmount(subtotal, currency)}</span></span>
+          <span className="text-fg-muted">Tax <span className="ml-2 font-mono text-fg">{formatAmount(taxAmount, currency)}</span></span>
+          <span className="font-semibold text-fg">Total <span className="ml-2 font-mono">{formatAmount(total, currency)}</span></span>
         </div>
       </section>
 
-      <section className="space-y-3 rounded-lg border border-neutral-200 p-4">
-        <h2 className="text-base font-semibold text-neutral-900">Buyer Notes</h2>
+      <section className="space-y-3 rounded-lg border border-line p-4">
+        <h2 className="text-base font-semibold text-fg">Buyer Notes</h2>
         <FormField label="Buyer Notes / Terms &amp; Conditions" htmlFor="buyerNotes">
           <textarea id="buyerNotes" rows={4} value={buyerNotes}
                     onChange={(e) => setBuyerNotes(e.target.value)}
                     placeholder="Printed on the PO sent to the vendor."
-                    className="w-full rounded border border-neutral-300 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600" />
+                    className="w-full rounded border border-line-strong bg-surface px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600" />
         </FormField>
       </section>
 
       <PoSignoffSummary poId={po.id} source={po.source ?? null} />
 
       {blankAddedLine && (
-        <p className="text-right text-sm text-danger-600">
+        <p className="text-right text-sm text-danger-fg">
           Every added line needs a description.
         </p>
       )}
       {missingIncoterms && (
-        <p className="text-right text-sm text-danger-600">
+        <p className="text-right text-sm text-danger-fg">
           Choose an Incoterms code — it decides whether freight and customs invoices are expected.
         </p>
       )}

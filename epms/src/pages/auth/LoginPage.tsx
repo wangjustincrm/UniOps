@@ -82,7 +82,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center p-4">
       <div className="w-full max-w-[480px]">
         {/* Card */}
-        <div className="rounded-xl bg-white shadow-xl px-8 py-10">
+        <div className="rounded-xl bg-surface shadow-xl px-8 py-10">
           {/* Logo */}
           <div className="mb-8 flex flex-col items-center gap-3">
             {branding?.logo_data_url ? (
@@ -93,8 +93,8 @@ export default function LoginPage() {
               </div>
             )}
             <div className="text-center">
-              <h1 className="text-2xl font-bold text-neutral-900">{branding?.name ?? 'EPMS'}</h1>
-              <p className="text-sm text-neutral-500">{branding?.tagline ?? 'Enterprise Procurement Management System'}</p>
+              <h1 className="text-2xl font-bold text-fg">{branding?.name ?? 'EPMS'}</h1>
+              <p className="text-sm text-fg-muted">{branding?.tagline ?? 'Enterprise Procurement Management System'}</p>
             </div>
           </div>
 
@@ -124,7 +124,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -134,7 +134,7 @@ export default function LoginPage() {
 
             {serverError && (
               <div
-                className="rounded-md bg-danger-50 border border-danger-200 px-4 py-3 text-sm text-danger-600"
+                className="rounded-md bg-danger-soft border border-danger-line px-4 py-3 text-sm text-danger-fg"
                 role="alert"
               >
                 {serverError}

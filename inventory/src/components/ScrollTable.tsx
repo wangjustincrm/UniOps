@@ -23,7 +23,7 @@ export const scrollTableMaxH = 'max-h-[calc(100vh-12rem)]'
 export function ScrollTable({ className, children, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div {...rest}
-      className={cn('overflow-auto rounded-lg border border-neutral-200 bg-white', scrollTableMaxH, className)}>
+      className={cn('overflow-auto rounded-lg border border-line bg-surface', scrollTableMaxH, className)}>
       {children}
     </div>
   )
@@ -34,4 +34,4 @@ export function ScrollTable({ className, children, ...rest }: HTMLAttributes<HTM
  *  through; the inset shadow stands in for the bottom border, which
  *  border-collapse would otherwise leave behind with the scrolled rows. */
 export const stickyHeadCls =
-  'sticky top-0 z-10 bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500 shadow-[inset_0_-1px_0_var(--color-neutral-200)]'
+  'sticky top-0 z-10 bg-surface-subtle text-xs uppercase tracking-wide text-fg-muted shadow-[inset_0_-1px_0_var(--color-neutral-200)]'

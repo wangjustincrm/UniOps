@@ -92,8 +92,8 @@ function InlineNewVisitorForm({
   // New-Visit <form>, and HTML forbids nested forms (the inner one is
   // silently dropped, sending the Enter / Save click to the outer form).
   return (
-    <div className="space-y-3 rounded-md border border-neutral-200 bg-white p-3">
-      <p className="text-xs font-medium text-neutral-700">Register a new visitor</p>
+    <div className="space-y-3 rounded-md border border-line bg-surface p-3">
+      <p className="text-xs font-medium text-fg-secondary">Register a new visitor</p>
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
         <Field label="First name *">
           <input value={first} onChange={(e) => setFirst(e.target.value)} className={inputCls} />
@@ -117,13 +117,13 @@ function InlineNewVisitorForm({
         </Field>
       </div>
       {error && (
-        <p className="flex items-center gap-1 text-xs text-danger-600">
+        <p className="flex items-center gap-1 text-xs text-danger-fg">
           <AlertCircle className="h-3 w-3" />
           {error.message}
         </p>
       )}
       <div className="flex justify-end gap-2 pt-1">
-        <button type="button" onClick={onCancel} className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs">
+        <button type="button" onClick={onCancel} className="rounded-md border border-line-strong px-3 py-1.5 text-xs">
           Cancel
         </button>
         <button
@@ -197,12 +197,12 @@ export default function VisitCreatePage() {
 
   return (
     <div className="max-w-3xl">
-      <h1 className="text-2xl font-bold text-neutral-900">New Visit</h1>
-      <p className="mt-1 text-sm text-neutral-500">
+      <h1 className="text-2xl font-bold text-fg">New Visit</h1>
+      <p className="mt-1 text-sm text-fg-muted">
         Pre-register a visitor — you'll print the badge (and check them in) when they arrive.
       </p>
 
-      <form onSubmit={submit} className="mt-6 space-y-6 rounded-lg border border-neutral-200 bg-white p-5">
+      <form onSubmit={submit} className="mt-6 space-y-6 rounded-lg border border-line bg-surface p-5">
         {/* Visitor — primary + companions (each gets their own badge at print time) */}
         <Section title={additionalVisitors.length > 0 ? `Visitors (${additionalVisitors.length + 1})` : 'Visitor'}>
           {showNewVisitor
@@ -258,7 +258,7 @@ export default function VisitCreatePage() {
             </Field>
           </div>
           {areaHint && (
-            <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-700">
+            <p className="mt-2 flex items-start gap-1.5 text-xs text-warning-fg">
               <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               {areaHint}
             </p>
@@ -286,7 +286,7 @@ export default function VisitCreatePage() {
         </Section>
 
         {error && (
-          <div className="flex items-center gap-2 rounded-md border border-red-200 bg-danger-50 px-3 py-2 text-sm text-danger-600">
+          <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4" />
             {error.message}
           </div>
@@ -296,7 +296,7 @@ export default function VisitCreatePage() {
           <button
             type="button"
             onClick={() => replaceTab('/')}
-            className="rounded-md border border-neutral-300 px-4 py-2 text-sm"
+            className="rounded-md border border-line-strong px-4 py-2 text-sm"
           >
             Cancel
           </button>
@@ -317,12 +317,12 @@ export default function VisitCreatePage() {
 // ── Bits ────────────────────────────────────────────────────────────────────-
 
 const inputCls =
-  'w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500'
+  'w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500'
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="block text-sm font-medium text-neutral-700">{label}</span>
+      <span className="block text-sm font-medium text-fg-secondary">{label}</span>
       <div className="mt-1">{children}</div>
     </label>
   )
@@ -331,7 +331,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-neutral-500">{title}</h2>
+      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-fg-muted">{title}</h2>
       {children}
     </section>
   )

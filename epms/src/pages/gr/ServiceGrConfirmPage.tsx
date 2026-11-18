@@ -54,7 +54,7 @@ export default function ServiceGrConfirmPage() {
 
   // ── Guard ──────────────────────────────────────────────────────────────────
 
-  if (isLoading) return <div className="p-8 text-center text-neutral-400">Loading…</div>
+  if (isLoading) return <div className="p-8 text-center text-fg-muted">Loading…</div>
 
   if (!gr) {
     return (
@@ -66,7 +66,7 @@ export default function ServiceGrConfirmPage() {
   if (gr.gr_type !== 'service') {
     return (
       <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-sm text-neutral-500 mb-2">Service confirm is for service GRs only</p>
+        <p className="text-sm text-fg-muted mb-2">Service confirm is for service GRs only</p>
         <BackLink to={`/gr/${gr.id}`} className="text-sm text-primary-600 hover:underline">← Back to GR</BackLink>
       </div>
     )
@@ -75,7 +75,7 @@ export default function ServiceGrConfirmPage() {
   if (!['pending_ack', 'collection_pending'].includes(gr.status)) {
     return (
       <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-sm text-neutral-500 mb-2">This GR is not pending confirmation (status: {gr.status})</p>
+        <p className="text-sm text-fg-muted mb-2">This GR is not pending confirmation (status: {gr.status})</p>
         <BackLink to={`/gr/${gr.id}`} className="text-sm text-primary-600 hover:underline">← Back to GR</BackLink>
       </div>
     )
@@ -139,23 +139,23 @@ export default function ServiceGrConfirmPage() {
     <div className="flex flex-col gap-6 max-w-3xl">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Link to={`/gr/${gr.id}`} className="text-neutral-400 hover:text-neutral-600 transition-colors">
+        <Link to={`/gr/${gr.id}`} className="text-fg-muted hover:text-fg-secondary transition-colors">
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5 text-primary-600" />
-            <h1 className="text-2xl font-bold text-neutral-900">Confirm Service Completion</h1>
+            <h1 className="text-2xl font-bold text-fg">Confirm Service Completion</h1>
           </div>
-          <p className="mt-1 text-sm text-neutral-500">
+          <p className="mt-1 text-sm text-fg-muted">
             {gr.number} · {gr.po_number} · {gr.vendor_name}
           </p>
         </div>
       </div>
 
       {/* Service summary */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-sm font-semibold text-neutral-900 mb-3">Service Details</h2>
+      <div className="rounded-xl border border-line bg-surface p-5">
+        <h2 className="text-sm font-semibold text-fg mb-3">Service Details</h2>
         <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
           <MetaRow label="Vendor"         value={gr.vendor_name} />
           <MetaRow label="Recorded By"    value={gr.received_by} />
@@ -164,25 +164,25 @@ export default function ServiceGrConfirmPage() {
         </div>
 
         {/* Service line items */}
-        <div className="mt-4 rounded-lg border border-neutral-200 overflow-hidden">
+        <div className="mt-4 rounded-lg border border-line overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-50">
-                <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">#</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Description</th>
-                <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Delivered</th>
-                <th className="px-4 py-2.5 text-left  text-xs font-semibold uppercase tracking-wide text-neutral-500 w-16">Unit</th>
-                <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Value</th>
+              <tr className="border-b border-line bg-surface-subtle">
+                <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">#</th>
+                <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Description</th>
+                <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Delivered</th>
+                <th className="px-4 py-2.5 text-left  text-xs font-semibold uppercase tracking-wide text-fg-muted w-16">Unit</th>
+                <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Value</th>
               </tr>
             </thead>
             <tbody>
               {gr.line_items.map((item, idx) => (
-                <tr key={item.id} className={cn('border-b border-neutral-100', idx % 2 === 1 && 'bg-neutral-50/50')}>
-                  <td className="px-4 py-3 text-neutral-400 text-xs text-center">{idx + 1}</td>
-                  <td className="px-4 py-3 text-neutral-800">{item.description}</td>
-                  <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">{formatQty(item.qty_received)}</td>
-                  <td className="px-4 py-3 text-xs text-neutral-500">{item.unit}</td>
-                  <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">
+                <tr key={item.id} className={cn('border-b border-line-subtle', idx % 2 === 1 && 'bg-surface-subtle/50')}>
+                  <td className="px-4 py-3 text-fg-muted text-xs text-center">{idx + 1}</td>
+                  <td className="px-4 py-3 text-fg">{item.description}</td>
+                  <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-fg">{formatQty(item.qty_received)}</td>
+                  <td className="px-4 py-3 text-xs text-fg-muted">{item.unit}</td>
+                  <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-fg">
                     {formatAmount(item.line_total, gr.currency)}
                   </td>
                 </tr>
@@ -192,7 +192,7 @@ export default function ServiceGrConfirmPage() {
         </div>
 
         {gr.notes && (
-          <div className="mt-3 rounded-lg bg-neutral-50 border border-neutral-200 px-4 py-2.5 text-xs text-neutral-600">
+          <div className="mt-3 rounded-lg bg-surface-subtle border border-line px-4 py-2.5 text-xs text-fg-secondary">
             {/* Written by whoever recorded the receipt, not the vendor (ISS-0183). */}
             <span className="font-medium">Receipt notes: </span>{gr.notes}
           </div>
@@ -200,13 +200,13 @@ export default function ServiceGrConfirmPage() {
       </div>
 
       {/* Acceptance form */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-5 flex flex-col gap-5">
-        <h2 className="text-sm font-semibold text-neutral-900">Service Acceptance</h2>
+      <div className="rounded-xl border border-line bg-surface p-5 flex flex-col gap-5">
+        <h2 className="text-sm font-semibold text-fg">Service Acceptance</h2>
 
         {/* Completion date */}
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium text-neutral-700">
-            Service Completion Date <span className="text-danger-600">*</span>
+          <label className="text-sm font-medium text-fg-secondary">
+            Service Completion Date <span className="text-danger-fg">*</span>
           </label>
           <input
             type="date"
@@ -214,20 +214,20 @@ export default function ServiceGrConfirmPage() {
             onChange={(e) => setCompletionDate(e.target.value)}
             className={cn(
               'w-52 h-10 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-              dateError ? 'border-danger-400' : 'border-neutral-300'
+              dateError ? 'border-danger-400' : 'border-line-strong'
             )}
           />
-          {dateError && <p className="text-xs text-danger-600">Required</p>}
+          {dateError && <p className="text-xs text-danger-fg">Required</p>}
         </div>
 
         {/* Quality rating */}
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-medium text-neutral-700">Quality Assessment</label>
+          <label className="text-sm font-medium text-fg-secondary">Quality Assessment</label>
           <div className="flex gap-3">
             {([
-              { value: 'satisfactory', label: 'Satisfactory',    icon: CheckCircle2,   on: 'border-success-400 bg-success-50', iconCls: 'text-success-600' },
-              { value: 'issues',       label: 'Has Issues',      icon: AlertTriangle,  on: 'border-warning-400 bg-warning-50', iconCls: 'text-warning-500' },
-              { value: 'rejected',     label: 'Reject Service',  icon: AlertTriangle,  on: 'border-danger-400 bg-danger-50',   iconCls: 'text-danger-600' },
+              { value: 'satisfactory', label: 'Satisfactory',    icon: CheckCircle2,   on: 'border-success-400 bg-success-soft', iconCls: 'text-success-fg' },
+              { value: 'issues',       label: 'Has Issues',      icon: AlertTriangle,  on: 'border-warning-400 bg-warning-soft', iconCls: 'text-warning-fg' },
+              { value: 'rejected',     label: 'Reject Service',  icon: AlertTriangle,  on: 'border-danger-400 bg-danger-soft',   iconCls: 'text-danger-fg' },
             ] as const).filter((opt) => opt.value !== 'rejected' || canReject).map((opt) => {
               const Icon = opt.icon
               const selected = qualityRating === opt.value
@@ -238,10 +238,10 @@ export default function ServiceGrConfirmPage() {
                   onClick={() => setQualityRating(opt.value)}
                   className={cn(
                     'flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 text-sm font-medium transition-colors',
-                    selected ? opt.on : 'border-neutral-200 text-neutral-500 hover:border-neutral-300'
+                    selected ? opt.on : 'border-line text-fg-muted hover:border-line-strong'
                   )}
                 >
-                  <Icon className={cn('h-4 w-4', selected ? opt.iconCls : 'text-neutral-400')} />
+                  <Icon className={cn('h-4 w-4', selected ? opt.iconCls : 'text-fg-muted')} />
                   {opt.label}
                 </button>
               )
@@ -251,8 +251,8 @@ export default function ServiceGrConfirmPage() {
           {/* Issue details */}
           {qualityRating !== 'satisfactory' && (
             <div className="mt-1 flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-700">
-                Issue Details <span className="text-danger-600">*</span>
+              <label className="text-xs font-medium text-fg-secondary">
+                Issue Details <span className="text-danger-fg">*</span>
               </label>
               <textarea
                 rows={2}
@@ -261,18 +261,18 @@ export default function ServiceGrConfirmPage() {
                 onChange={(e) => setIssueDetails(e.target.value)}
                 className={cn(
                   'w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
-                  issueError ? 'border-danger-400' : 'border-warning-300 bg-warning-50'
+                  issueError ? 'border-danger-400' : 'border-warning-line bg-warning-soft'
                 )}
               />
-              {issueError && <p className="text-xs text-danger-600">Required when issues are reported</p>}
+              {issueError && <p className="text-xs text-danger-fg">Required when issues are reported</p>}
             </div>
           )}
         </div>
 
         {/* Acceptance notes */}
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium text-neutral-700">
-            Acceptance Notes <span className="text-danger-600">*</span>
+          <label className="text-sm font-medium text-fg-secondary">
+            Acceptance Notes <span className="text-danger-fg">*</span>
           </label>
           <textarea
             rows={3}
@@ -281,15 +281,15 @@ export default function ServiceGrConfirmPage() {
             onChange={(e) => setAcceptanceNotes(e.target.value)}
             className={cn(
               'w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none',
-              notesError ? 'border-danger-400' : 'border-neutral-300'
+              notesError ? 'border-danger-400' : 'border-line-strong'
             )}
           />
           <div className="flex justify-between">
             {notesError
-              ? <p className="text-xs text-danger-600">Acceptance notes are required (min 10 characters)</p>
-              : <p className="text-xs text-neutral-400">Briefly describe the service outcome and your acceptance decision</p>
+              ? <p className="text-xs text-danger-fg">Acceptance notes are required (min 10 characters)</p>
+              : <p className="text-xs text-fg-muted">Briefly describe the service outcome and your acceptance decision</p>
             }
-            <span className={cn('text-xs', acceptanceNotes.length < 10 ? 'text-neutral-400' : 'text-success-600')}>
+            <span className={cn('text-xs', acceptanceNotes.length < 10 ? 'text-fg-muted' : 'text-success-fg')}>
               {acceptanceNotes.length} / 10 min
             </span>
           </div>
@@ -297,7 +297,7 @@ export default function ServiceGrConfirmPage() {
 
         {/* File upload */}
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-medium text-neutral-700">Supporting Documents (Optional)</label>
+          <label className="text-sm font-medium text-fg-secondary">Supporting Documents (Optional)</label>
           <div
             onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
             onDragLeave={() => setDragging(false)}
@@ -307,14 +307,14 @@ export default function ServiceGrConfirmPage() {
               'flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed py-8 cursor-pointer transition-colors',
               dragging
                 ? 'border-primary-400 bg-primary-50'
-                : 'border-neutral-200 hover:border-primary-300 hover:bg-neutral-50'
+                : 'border-line hover:border-primary-300 hover:bg-surface-subtle'
             )}
           >
-            <Upload className={cn('h-8 w-8', dragging ? 'text-primary-500' : 'text-neutral-300')} />
-            <p className="text-sm text-neutral-500">
+            <Upload className={cn('h-8 w-8', dragging ? 'text-primary-500' : 'text-fg-faint')} />
+            <p className="text-sm text-fg-muted">
               <span className="font-medium text-primary-600">Click to upload</span> or drag &amp; drop
             </p>
-            <p className="text-xs text-neutral-400">Service completion certificate, photos, reports · Max 25 MB</p>
+            <p className="text-xs text-fg-muted">Service completion certificate, photos, reports · Max 25 MB</p>
             <input
               ref={fileRef}
               type="file"
@@ -327,15 +327,15 @@ export default function ServiceGrConfirmPage() {
           {files.length > 0 && (
             <div className="flex flex-col gap-1.5 mt-1">
               {files.map((f, i) => (
-                <div key={i} className="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2">
+                <div key={i} className="flex items-center justify-between rounded-lg border border-line bg-surface-subtle px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-neutral-400" />
-                    <span className="text-sm text-neutral-700">{f.name}</span>
-                    <span className="text-xs text-neutral-400">{f.size}</span>
+                    <FileText className="h-4 w-4 text-fg-muted" />
+                    <span className="text-sm text-fg-secondary">{f.name}</span>
+                    <span className="text-xs text-fg-muted">{f.size}</span>
                   </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); setFiles((p) => p.filter((_, j) => j !== i)) }}
-                    className="text-neutral-300 hover:text-danger-500 transition-colors"
+                    className="text-fg-faint hover:text-danger-fg transition-colors"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -348,25 +348,25 @@ export default function ServiceGrConfirmPage() {
 
       {/* Confirmation summary banner */}
       {qualityRating === 'satisfactory' ? (
-        <div className="rounded-lg border border-success-200 bg-success-50 p-4 flex gap-3">
-          <CheckCircle2 className="h-5 w-5 text-success-600 flex-shrink-0" />
-          <p className="text-sm text-success-700">
+        <div className="rounded-lg border border-success-line bg-success-soft p-4 flex gap-3">
+          <CheckCircle2 className="h-5 w-5 text-success-fg flex-shrink-0" />
+          <p className="text-sm text-success-fg">
             Confirming service completion will mark this GR as <strong>Confirmed</strong> and record the service as
             received on the PO. The Payment Application follows once the vendor's invoice is matched to this PO.
           </p>
         </div>
       ) : qualityRating === 'issues' ? (
-        <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
-          <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-warning-700">
+        <div className="rounded-lg border border-warning-line bg-warning-soft p-4 flex gap-3">
+          <AlertTriangle className="h-5 w-5 text-warning-fg flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-warning-fg">
             The GR will still be confirmed; payment follows the matched invoice as usual. The issue details are kept in the
             GR's acceptance notes; the Procurement Officer is not notified, so tell them if the vendor needs to be contacted.
           </p>
         </div>
       ) : (
-        <div className="rounded-lg border border-danger-200 bg-danger-50 p-4 flex gap-3">
-          <AlertTriangle className="h-5 w-5 text-danger-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-danger-700">
+        <div className="rounded-lg border border-danger-line bg-danger-soft p-4 flex gap-3">
+          <AlertTriangle className="h-5 w-5 text-danger-fg flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-danger-fg">
             <strong>Rejecting</strong> the service will mark this GR as <strong>Rejected</strong> and close its tasks. Nothing is
             received against the PO. The Procurement Officer is not notified, so tell them if the vendor needs to be contacted.
           </p>
@@ -374,16 +374,16 @@ export default function ServiceGrConfirmPage() {
       )}
 
       {grAction.isError && (
-        <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
-          <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
+        <div className="rounded-lg border border-warning-line bg-warning-soft p-4 flex gap-3">
+          <AlertTriangle className="h-5 w-5 text-warning-fg flex-shrink-0 mt-0.5" />
           <div className="flex-1 flex flex-col gap-2">
-            <p className="text-sm text-warning-700">
+            <p className="text-sm text-warning-fg">
               {grAction.error instanceof Error ? grAction.error.message : 'The confirmation could not be saved'}
             </p>
             {needsOverReason && (
               <>
-                <label className="text-xs font-medium text-warning-700">
-                  Over-receipt reason <span className="text-danger-600">*</span>
+                <label className="text-xs font-medium text-warning-fg">
+                  Over-receipt reason <span className="text-danger-fg">*</span>
                 </label>
                 <textarea
                   rows={2}
@@ -391,8 +391,8 @@ export default function ServiceGrConfirmPage() {
                   onChange={(e) => setOverReceiptReason(e.target.value)}
                   placeholder="Why more than the PO line has open is being confirmed"
                   className={cn(
-                    'w-full px-3 py-1.5 rounded border text-sm bg-white focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
-                    submitted && !overReceiptReason.trim() ? 'border-danger-400' : 'border-warning-300'
+                    'w-full px-3 py-1.5 rounded border text-sm bg-surface focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
+                    submitted && !overReceiptReason.trim() ? 'border-danger-400' : 'border-warning-line'
                   )}
                 />
               </>
@@ -424,8 +424,8 @@ export default function ServiceGrConfirmPage() {
 function MetaRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex gap-2">
-      <span className="text-neutral-400 min-w-32 flex-shrink-0">{label}</span>
-      <span className={cn('text-neutral-800 font-medium', mono && 'font-mono text-xs')}>{value}</span>
+      <span className="text-fg-muted min-w-32 flex-shrink-0">{label}</span>
+      <span className={cn('text-fg font-medium', mono && 'font-mono text-xs')}>{value}</span>
     </div>
   )
 }

@@ -165,24 +165,24 @@ export function AccountPicker({
         key={a.id}
         type="button"
         onClick={() => { onChange(a); close() }}
-        className="flex w-full flex-col px-3 py-2 text-left hover:bg-neutral-50 border-b border-neutral-50"
+        className="flex w-full flex-col px-3 py-2 text-left hover:bg-surface-subtle border-b border-line-subtle"
       >
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-medium text-neutral-800">
-            {withL1 && <span className="text-neutral-500">{l1Label(a.l1_code, a.l1_name)} › </span>}
+          <span className="text-xs font-medium text-fg">
+            {withL1 && <span className="text-fg-muted">{l1Label(a.l1_code, a.l1_name)} › </span>}
             {a.code} — {a.name}
           </span>
-          <span className={cn('shrink-0 text-xs font-mono', isLow ? 'text-danger-600' : 'text-neutral-500')}>
+          <span className={cn('shrink-0 text-xs font-mono', isLow ? 'text-danger-fg' : 'text-fg-muted')}>
             {formatAmount(a.available)}
           </span>
         </div>
-        <div className="mt-1 h-1 w-full rounded-full bg-neutral-100">
+        <div className="mt-1 h-1 w-full rounded-full bg-surface-sunken">
           <div
             className={cn('h-1 rounded-full', pct >= 90 ? 'bg-danger-400' : pct >= 70 ? 'bg-warning-400' : 'bg-primary-400')}
             style={{ width: `${pct}%` }}
           />
         </div>
-        <p className="mt-0.5 text-[10px] text-neutral-400">
+        <p className="mt-0.5 text-2xs text-fg-muted">
           Budget: {formatAmount(a.annual_budget)} · Used: {pct}%
         </p>
       </button>
@@ -197,8 +197,8 @@ export function AccountPicker({
         aria-invalid={invalid || undefined}
         onClick={() => (open ? close() : openPicker())}
         className={cn(
-          'w-full rounded border bg-white px-2 py-1.5 text-left text-xs truncate',
-          selected ? 'border-neutral-200 text-neutral-800' : 'border-neutral-200 text-neutral-400',
+          'w-full rounded border bg-surface px-2 py-1.5 text-left text-xs truncate',
+          selected ? 'border-line text-fg' : 'border-line text-fg-muted',
           invalid && 'border-danger-400 bg-danger-50/40',
           className,
         )}
@@ -209,11 +209,11 @@ export function AccountPicker({
         <>
           <div className="fixed inset-0 z-40" onClick={close} />
           <div
-            className="fixed z-50 rounded-lg border border-neutral-200 bg-white shadow-lg overflow-hidden"
+            className="fixed z-50 rounded-lg border border-line bg-surface shadow-lg overflow-hidden"
             style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width }}
           >
             {/* Header: breadcrumb / back when inside an L1 */}
-            <div className="border-b border-neutral-100 p-2">
+            <div className="border-b border-line-subtle p-2">
               {activeGroup && (
                 <button
                   type="button"
@@ -229,7 +229,7 @@ export function AccountPicker({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={activeGroup ? 'Search accounts…' : 'Search categories or accounts…'}
-                className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
+                className="w-full rounded border border-line px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
               />
             </div>
 
@@ -240,12 +240,12 @@ export function AccountPicker({
                   key={g.l1_id}
                   type="button"
                   onClick={() => { setActiveL1(g.l1_id); setSearch('') }}
-                  className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-neutral-50 border-b border-neutral-50"
+                  className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-surface-subtle border-b border-line-subtle"
                 >
-                  <span className="text-xs font-medium text-neutral-800 truncate">
-                    <span className="font-mono text-neutral-500">{g.l1_code}</span>{g.l1_name && g.l1_name !== g.l1_code ? <span className="ml-1">{g.l1_name}</span> : null}
+                  <span className="text-xs font-medium text-fg truncate">
+                    <span className="font-mono text-fg-muted">{g.l1_code}</span>{g.l1_name && g.l1_name !== g.l1_code ? <span className="ml-1">{g.l1_name}</span> : null}
                   </span>
-                  <span className="flex items-center gap-1 shrink-0 text-[10px] text-neutral-400">
+                  <span className="flex items-center gap-1 shrink-0 text-2xs text-fg-muted">
                     {g.accounts.length}
                     <ChevronRight className="h-3.5 w-3.5" />
                   </span>
@@ -253,13 +253,13 @@ export function AccountPicker({
               ))}
               {/* Search hits among all L2 accounts, shown with their category */}
               {matchedAccts.length > 0 && (
-                <p className="bg-neutral-50 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-neutral-400">
+                <p className="bg-surface-subtle px-3 py-1 text-2xs font-medium uppercase tracking-wide text-fg-muted">
                   Accounts
                 </p>
               )}
               {matchedAccts.map((a) => accountRow(a, true))}
               {!activeGroup && filteredL1.length === 0 && matchedAccts.length === 0 && (
-                <p className="py-4 text-center text-xs text-neutral-400">
+                <p className="py-4 text-center text-xs text-fg-muted">
                   {q ? 'No categories or accounts found' : 'No categories found'}
                 </p>
               )}
@@ -267,7 +267,7 @@ export function AccountPicker({
               {/* Level 2: accounts within the chosen L1 */}
               {activeGroup && filteredAccts.map((a) => accountRow(a, false))}
               {activeGroup && filteredAccts.length === 0 && (
-                <p className="py-4 text-center text-xs text-neutral-400">No accounts found</p>
+                <p className="py-4 text-center text-xs text-fg-muted">No accounts found</p>
               )}
             </div>
           </div>

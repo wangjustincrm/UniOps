@@ -37,9 +37,9 @@ interface ImportedPoLineItemsProps {
 }
 
 const CELL_INPUT =
-  'h-8 w-full rounded border border-neutral-300 bg-white px-2 text-sm ' +
+  'h-8 w-full rounded border border-line-strong bg-surface px-2 text-sm ' +
   'focus:outline-none focus:ring-1 focus:ring-primary-600 ' +
-  'disabled:bg-neutral-50 disabled:text-neutral-400'
+  'disabled:bg-surface-subtle disabled:text-fg-muted'
 
 let addedSeq = 0
 
@@ -76,10 +76,10 @@ export function ImportedPoLineItems({
 
   return (
     <div className="space-y-2">
-      <div className="overflow-x-auto rounded-lg border border-neutral-200">
+      <div className="overflow-x-auto rounded-lg border border-line">
         <table className="w-full min-w-[980px] text-sm">
           <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-xs text-neutral-500">
+            <tr className="border-b border-line bg-surface-subtle text-left text-xs text-fg-muted">
               <th className="w-10 px-3 py-2 font-medium">#</th>
               <th className="px-3 py-2 font-medium">Description</th>
               <th className="w-32 px-3 py-2 font-medium">Material ID</th>
@@ -95,9 +95,9 @@ export function ImportedPoLineItems({
           </thead>
           <tbody>
             {items.map((item, i) => (
-              <tr key={item.id} className="border-b border-neutral-100 last:border-0">
-                <td className="px-3 py-2 text-neutral-400">{i + 1}</td>
-                <td className="px-3 py-2 text-neutral-900">
+              <tr key={item.id} className="border-b border-line-subtle last:border-0">
+                <td className="px-3 py-2 text-fg-muted">{i + 1}</td>
+                <td className="px-3 py-2 text-fg">
                   {item.ncSourced ? item.description : (
                     <input
                       type="text"
@@ -111,16 +111,16 @@ export function ImportedPoLineItems({
                     />
                   )}
                 </td>
-                <td className="px-3 py-2 font-mono text-xs text-neutral-500">
+                <td className="px-3 py-2 font-mono text-xs text-fg-muted">
                   {item.ncSourced ? (item.materialId || '—') : (
                     // A buyer-added line has no material code by design — that
                     // is what keeps a one-off charge out of MRP's supply.
-                    <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-sans text-[11px] text-neutral-600">
+                    <span className="rounded bg-surface-sunken px-1.5 py-0.5 font-sans text-2xs text-fg-secondary">
                       Added
                     </span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right font-mono text-neutral-700">
+                <td className="px-3 py-2 text-right font-mono text-fg-secondary">
                   {item.ncSourced ? item.qty : (
                     <input
                       type="number" step="any" min="0"
@@ -132,7 +132,7 @@ export function ImportedPoLineItems({
                     />
                   )}
                 </td>
-                <td className="px-3 py-2 text-neutral-700">
+                <td className="px-3 py-2 text-fg-secondary">
                   {item.ncSourced ? item.unit : (
                     <input
                       type="text"
@@ -145,7 +145,7 @@ export function ImportedPoLineItems({
                     />
                   )}
                 </td>
-                <td className="px-3 py-2 text-right font-mono text-neutral-700">
+                <td className="px-3 py-2 text-right font-mono text-fg-secondary">
                   {item.ncSourced ? formatUnitPrice(item.unitPrice, currency) : (
                     <input
                       type="number" step="any"
@@ -157,13 +157,13 @@ export function ImportedPoLineItems({
                     />
                   )}
                 </td>
-                <td className="px-3 py-2 text-right font-mono text-neutral-900">
+                <td className="px-3 py-2 text-right font-mono text-fg">
                   {formatAmount(
                     item.ncSourced ? item.lineTotal : lineTotalOf(item),
                     currency,
                   )}
                 </td>
-                <td className="px-3 py-2 text-neutral-500">
+                <td className="px-3 py-2 text-fg-muted">
                   {item.plannedArrivalDate ? formatDate(item.plannedArrivalDate) : '—'}
                 </td>
                 <td className="px-3 py-2">
@@ -194,7 +194,7 @@ export function ImportedPoLineItems({
                       type="button"
                       onClick={() => removeRow(i)}
                       aria-label={`Remove added line ${i + 1}`}
-                      className="text-neutral-400 hover:text-danger-600"
+                      className="text-fg-muted hover:text-danger-fg"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -217,7 +217,7 @@ export function ImportedPoLineItems({
         </button>
       )}
       {canAddLines && locked && (
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-fg-muted">
           Added lines are locked — an invoice has been raised against this PO.
         </p>
       )}

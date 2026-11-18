@@ -21,7 +21,7 @@ function errText(e: unknown, fallback: string): string {
 
 function Qtys({ nc, wms }: { nc: string | null; wms: string | null }) {
   return (
-    <span className="shrink-0 whitespace-nowrap text-[11px] text-neutral-500">
+    <span className="shrink-0 whitespace-nowrap text-2xs text-fg-muted">
       NC {formatQty(nc)} · WMS {formatQty(wms)}
     </span>
   )
@@ -102,13 +102,13 @@ export function MaterialPicker({ id, value, onChange, onDeselect, autoFocus, cla
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="font-mono text-xs text-neutral-900">{o.code}</span>
-              {!o.in_nc && <Badge variant="warning" className="text-[10px]">Not in NC</Badge>}
+              <span className="font-mono text-xs text-fg">{o.code}</span>
+              {!o.in_nc && <Badge variant="warning" className="text-2xs">Not in NC</Badge>}
               {o.no_batch_since && (
-                <Badge variant="neutral" className="text-[10px]">NC stopped by batch</Badge>
+                <Badge variant="neutral" className="text-2xs">NC stopped by batch</Badge>
               )}
             </div>
-            {o.name && <div className="truncate text-xs text-neutral-500">{o.name}</div>}
+            {o.name && <div className="truncate text-xs text-fg-muted">{o.name}</div>}
           </div>
           <Qtys nc={o.nc_qty} wms={o.wms_qty} />
         </div>
@@ -196,15 +196,15 @@ export function BatchPicker({ id, material, value, display, onChange, lockedNote
         ? `Showing ${items.length.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} — type to narrow`
         : undefined}
       renderOption={(o) => isWhole(o) ? (
-        <span className="text-xs italic text-neutral-600">(whole material)</span>
+        <span className="text-xs italic text-fg-secondary">(whole material)</span>
       ) : (
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="font-mono text-xs text-neutral-900">{o.label}</span>
+              <span className="font-mono text-xs text-fg">{o.label}</span>
               <MatchBadge match={o.match} />
             </div>
-            <div className="text-[11px] text-neutral-500">
+            <div className="text-2xs text-fg-muted">
               supplier: {o.supplier_batches.length ? o.supplier_batches.join(', ') : '—'}
               {' · '}{o.wms_lots} WMS lot{o.wms_lots === 1 ? '' : 's'}
               {' · '}<span className="whitespace-nowrap">last moved {formatDate(o.last_movement)}</span>

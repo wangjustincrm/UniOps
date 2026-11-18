@@ -100,7 +100,7 @@ export function TabRefreshButton() {
   }, [fn])
   if (!fn) return null
   return (
-    <div className="flex h-10 shrink-0 items-center border-b border-l border-neutral-200 bg-white px-2">
+    <div className="flex h-10 shrink-0 items-center border-b border-l border-line bg-surface px-2">
       <Button
         variant="ghost"
         size="sm"
@@ -108,7 +108,7 @@ export function TabRefreshButton() {
         disabled={busy}
         aria-label="Refresh this tab"
         title="Re-read this tab's data (other tabs stay open)"
-        className="gap-1.5 text-neutral-500"
+        className="gap-1.5 text-fg-muted"
       >
         <RefreshCw className={cn('h-4 w-4', busy && 'animate-spin')} />
         <span className="hidden sm:inline">Refresh</span>

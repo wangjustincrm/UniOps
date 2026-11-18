@@ -28,15 +28,15 @@ function Field({
 }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-neutral-700 mb-1">{label}</label>
+      <label className="block text-xs font-medium text-fg-secondary mb-1">{label}</label>
       {children}
-      {hint && <p className="mt-0.5 text-xs text-neutral-400">{hint}</p>}
+      {hint && <p className="mt-0.5 text-xs text-fg-muted">{hint}</p>}
     </div>
   )
 }
 
 const inputCls =
-  'w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40'
+  'w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40'
 
 // ── Rules card ────────────────────────────────────────────────────────────────
 
@@ -84,19 +84,19 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
   }
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
-      <div className="px-6 py-4 border-b border-neutral-100">
-        <h2 className="text-sm font-semibold text-neutral-900">Booking Rules</h2>
+    <div className="rounded-xl border border-line bg-surface shadow-sm">
+      <div className="px-6 py-4 border-b border-line-subtle">
+        <h2 className="text-sm font-semibold text-fg">Booking Rules</h2>
       </div>
       <div className="px-6 py-5 space-y-4">
         {success && (
-          <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          <div className="flex items-center gap-2 rounded-md border border-success-line bg-success-soft px-3 py-2 text-sm text-success-fg">
             <CheckCircle2 className="h-4 w-4" />
             Rules saved.
           </div>
         )}
         {error && (
-          <div className="flex items-center justify-between rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+          <div className="flex items-center justify-between rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
             <div className="flex items-center gap-2"><AlertCircle className="h-4 w-4" />{error}</div>
             <button type="button" onClick={() => setError(null)}><XIcon className="h-4 w-4" /></button>
           </div>
@@ -163,9 +163,9 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
             type="checkbox"
             checked={!!form.notify_room_admin}
             onChange={(e) => setForm((f) => ({ ...f, notify_room_admin: e.target.checked }))}
-            className="h-4 w-4 rounded border-neutral-300 text-[#085E5E] focus:ring-[#085E5E]/30"
+            className="h-4 w-4 rounded border-line-strong text-primary-700 focus:ring-primary-700/30"
           />
-          <label htmlFor="notify_room_admin" className="text-sm text-neutral-700">
+          <label htmlFor="notify_room_admin" className="text-sm text-fg-secondary">
             Notify room admin when a booking is made or cancelled
           </label>
         </div>
@@ -185,12 +185,12 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
           </Field>
         )}
       </div>
-      <div className="px-6 py-4 border-t border-neutral-100 flex justify-end">
+      <div className="px-6 py-4 border-t border-line-subtle flex justify-end">
         <button
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="inline-flex items-center gap-1.5 rounded-md bg-[#085E5E] px-4 py-1.5 text-sm font-semibold text-white hover:bg-[#085E5E]/90 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-primary-700/90 disabled:opacity-50"
         >
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Save Rules
@@ -238,19 +238,19 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
   }
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
-      <div className="px-6 py-4 border-b border-neutral-100">
-        <h2 className="text-sm font-semibold text-neutral-900">Email (SMTP)</h2>
+    <div className="rounded-xl border border-line bg-surface shadow-sm">
+      <div className="px-6 py-4 border-b border-line-subtle">
+        <h2 className="text-sm font-semibold text-fg">Email (SMTP)</h2>
       </div>
       <div className="px-6 py-5 space-y-4">
         {success && (
-          <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          <div className="flex items-center gap-2 rounded-md border border-success-line bg-success-soft px-3 py-2 text-sm text-success-fg">
             <CheckCircle2 className="h-4 w-4" />
             Settings saved.
           </div>
         )}
         {error && (
-          <div className="flex items-center justify-between rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+          <div className="flex items-center justify-between rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
             <div className="flex items-center gap-2"><AlertCircle className="h-4 w-4" />{error}</div>
             <button type="button" onClick={() => setError(null)}><XIcon className="h-4 w-4" /></button>
           </div>
@@ -300,7 +300,7 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
               <button
                 type="button"
                 onClick={() => setShowPw((s) => !s)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
               >
                 {showPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
               </button>
@@ -323,9 +323,9 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
             type="checkbox"
             checked={!!form.use_tls}
             onChange={(e) => setForm((f) => ({ ...f, use_tls: e.target.checked }))}
-            className="h-4 w-4 rounded border-neutral-300 text-[#085E5E] focus:ring-[#085E5E]/30"
+            className="h-4 w-4 rounded border-line-strong text-primary-700 focus:ring-primary-700/30"
           />
-          <label htmlFor="use_tls" className="text-sm text-neutral-700">Use TLS</label>
+          <label htmlFor="use_tls" className="text-sm text-fg-secondary">Use TLS</label>
         </div>
 
         <Field
@@ -346,12 +346,12 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
           </select>
         </Field>
       </div>
-      <div className="px-6 py-4 border-t border-neutral-100 flex justify-end">
+      <div className="px-6 py-4 border-t border-line-subtle flex justify-end">
         <button
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="inline-flex items-center gap-1.5 rounded-md bg-[#085E5E] px-4 py-1.5 text-sm font-semibold text-white hover:bg-[#085E5E]/90 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-primary-700/90 disabled:opacity-50"
         >
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Save Email Settings
@@ -378,7 +378,7 @@ export default function SettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full text-sm text-neutral-500">
+      <div className="flex items-center justify-center h-full text-sm text-fg-muted">
         <Loader2 className="h-5 w-5 animate-spin mr-2" />
         Loading settings…
       </div>
@@ -387,7 +387,7 @@ export default function SettingsPage() {
 
   if (error || !config) {
     return (
-      <div className="flex items-center gap-2 m-6 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+      <div className="flex items-center gap-2 m-6 rounded-md border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
         <AlertCircle className="h-4 w-4 shrink-0" />
         Failed to load settings. Please refresh.
       </div>
@@ -420,7 +420,7 @@ export default function SettingsPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-2xl px-4 py-6 sm:px-6 space-y-6">
-        <h1 className="text-2xl font-bold text-neutral-900">Settings</h1>
+        <h1 className="text-2xl font-bold text-fg">Settings</h1>
         <RulesCard
           rules={rules}
           onSave={handleRulesSave}

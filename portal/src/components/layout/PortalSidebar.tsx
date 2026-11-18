@@ -88,7 +88,7 @@ export function PortalSidebar({
 
   return (
     <aside className={cn(
-      'flex h-screen flex-col bg-[#085E5E] transition-all duration-200 shrink-0',
+      'flex h-screen flex-col bg-primary-700 transition-all duration-200 shrink-0',
       collapsed ? 'w-16' : 'w-56',
       'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-2xl max-md:w-56',
       mobileOpen ? 'max-md:translate-x-0 max-md:opacity-100' : 'max-md:-translate-x-full max-md:opacity-0',
@@ -100,7 +100,7 @@ export function PortalSidebar({
             {logoMark}
             <div className="leading-tight min-w-0">
               <p className="truncate text-sm font-bold text-white tracking-tight">{brandName}</p>
-              <p className="truncate text-[9px] font-semibold uppercase tracking-widest text-white/50">{brandTagline}</p>
+              <p className="truncate text-2xs font-semibold uppercase tracking-widest text-white/50">{brandTagline}</p>
             </div>
           </Link>
         ) : (
@@ -147,7 +147,7 @@ export function PortalSidebar({
           return (
             <div key={section.title ?? `s${idx}`} className="mb-4">
               {!collapsed && section.title && (
-                <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-white/40">
+                <p className="mb-1 px-3 text-2xs font-semibold uppercase tracking-wider text-white/40">
                   {section.title}
                 </p>
               )}

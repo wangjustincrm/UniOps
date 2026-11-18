@@ -124,7 +124,7 @@ const ROLE_LABELS: Record<string,string> = {
 // ── Shared UI helpers ─────────────────────────────────────────────────────────
 
 /** Header-cell classes shared by the admin list tables below. */
-const ADMIN_TH = 'px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500'
+const ADMIN_TH = 'px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted'
 
 /** Copy `{ sort, dir }` (or nothing) onto a list's query string. */
 function setSortQs<K extends string>(qs: URLSearchParams, sort: Sort<K> | null) {
@@ -135,30 +135,30 @@ function setSortQs<K extends string>(qs: URLSearchParams, sort: Sort<K> | null) 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-neutral-600">{label}</label>
+      <label className="mb-1 block text-xs font-medium text-fg-secondary">{label}</label>
       {children}
-      {hint && <p className="mt-1 text-[11px] text-neutral-400">{hint}</p>}
+      {hint && <p className="mt-1 text-2xs text-fg-muted">{hint}</p>}
     </div>
   )
 }
 function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={cn('w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-200', className)} {...props} />
+  return <input className={cn('w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-200', className)} {...props} />
 }
 function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={cn('w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400 resize-none', className)} {...props} />
+  return <textarea className={cn('w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400 resize-none', className)} {...props} />
 }
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <button type="button" onClick={() => onChange(!checked)}
-      className={cn('relative inline-flex h-5 w-9 items-center rounded-full transition-colors', checked ? 'bg-primary-600' : 'bg-neutral-200')}>
-      <span className={cn('inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform', checked ? 'translate-x-4.5' : 'translate-x-0.5')} />
+      className={cn('relative inline-flex h-5 w-9 items-center rounded-full transition-colors', checked ? 'bg-primary-600' : 'bg-surface-strong')}>
+      <span className={cn('inline-block h-3.5 w-3.5 rounded-full bg-surface shadow transition-transform', checked ? 'translate-x-4.5' : 'translate-x-0.5')} />
     </button>
   )
 }
 function SaveButton({ loading }: { loading: boolean }) {
   return (
     <button type="submit" disabled={loading}
-      className="flex items-center gap-2 rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-60 transition-colors">
+      className="flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60 transition-colors">
       {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
       {loading ? 'Saving…' : 'Save Changes'}
     </button>
@@ -166,7 +166,7 @@ function SaveButton({ loading }: { loading: boolean }) {
 }
 function Toast({ ok, msg }: { ok: boolean; msg: string }) {
   return (
-    <div className={cn('flex items-center gap-2 rounded-lg px-3 py-2 text-sm', ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700')}>
+    <div className={cn('flex items-center gap-2 rounded-lg px-3 py-2 text-sm', ok ? 'bg-success-soft text-success-fg' : 'bg-danger-soft text-danger-fg')}>
       {ok ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
       {msg}
     </div>
@@ -174,9 +174,9 @@ function Toast({ ok, msg }: { ok: boolean; msg: string }) {
 }
 function SectionHeader({ title, description }: { title: string; description: string }) {
   return (
-    <div className="mb-6 border-b border-neutral-100 pb-4">
-      <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
-      <p className="mt-0.5 text-sm text-neutral-500">{description}</p>
+    <div className="mb-6 border-b border-line-subtle pb-4">
+      <h2 className="text-lg font-semibold text-fg">{title}</h2>
+      <p className="mt-0.5 text-sm text-fg-muted">{description}</p>
     </div>
   )
 }
@@ -303,7 +303,7 @@ function CompanySettings() {
     }
   }
 
-  if (isLoading) return <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
+  if (isLoading) return <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5 max-w-lg">
@@ -313,27 +313,27 @@ function CompanySettings() {
       <Field label="Company Logo" hint="PNG or JPG, recommended 200×60 px. Shown on login page and PDF documents.">
         <div className="flex items-center gap-4 mt-1">
           {/* Preview */}
-          <div className="flex h-16 w-36 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden">
+          <div className="flex h-16 w-36 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-subtle overflow-hidden">
             {currentLogo
               ? <img src={currentLogo} alt="Logo" className="max-h-full max-w-full object-contain p-1" />
-              : <span className="text-xs text-neutral-400">No logo</span>
+              : <span className="text-xs text-fg-muted">No logo</span>
             }
           </div>
           {/* Controls */}
           <div className="flex flex-col gap-2">
-            <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition-colors">
+            <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-fg-secondary hover:bg-surface-subtle transition-colors">
               <Plus className="h-3.5 w-3.5" />
               {currentLogo ? 'Replace' : 'Upload'} Logo
               <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleLogoChange} />
             </label>
             {currentLogo && (
               <button type="button" onClick={handleRemoveLogo}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors">
+                className="inline-flex items-center gap-1.5 rounded-lg border border-danger-line px-3 py-1.5 text-xs font-medium text-danger-fg hover:bg-danger-soft transition-colors">
                 <X className="h-3.5 w-3.5" />Remove
               </button>
             )}
             {currentFileName && (
-              <span className="text-[11px] text-neutral-400 truncate max-w-[140px]">{currentFileName}</span>
+              <span className="text-2xs text-fg-muted truncate max-w-[140px]">{currentFileName}</span>
             )}
           </div>
         </div>
@@ -343,8 +343,8 @@ function CompanySettings() {
 
       {/* Per-module taglines — shared logo + name, but each module shows its own tagline */}
       <div className="flex flex-col gap-3">
-        <p className="text-sm font-semibold text-neutral-700">Module Taglines</p>
-        <p className="text-xs text-neutral-400 -mt-2">
+        <p className="text-sm font-semibold text-fg-secondary">Module Taglines</p>
+        <p className="text-xs text-fg-muted -mt-2">
           Each module shows the shared logo and company name, with its own tagline below.
           Leave a module blank to reuse the Portal tagline.
         </p>
@@ -360,7 +360,7 @@ function CompanySettings() {
       <Field label="Time Zone"
         hint="The plant's time zone. Every module uses it for times on screen, in PDFs and emails, for today's date, accounting periods, document-number dates and the hour daily reminders run. Daylight saving is applied automatically.">
         <select value={currentTimeZone} onChange={(e) => setTimeZone(e.target.value)}
-          className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
           {zoneOptions.map((z) => <option key={z} value={z}>{zoneLabel(z)}</option>)}
         </select>
       </Field>
@@ -398,18 +398,18 @@ function SecuritySettings() {
     }
   }
 
-  if (isLoading) return <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
+  if (isLoading) return <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-6 max-w-lg">
       <SectionHeader title="Security" description="MFA and password policy for all users. Email (SMTP) configuration moved to Notification Settings." />
 
       {/* MFA */}
-      <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+      <div className="rounded-lg border border-line bg-surface-subtle p-4">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-neutral-800">Multi-Factor Authentication</p>
-            <p className="text-xs text-neutral-500 mt-0.5">Require TOTP for all user accounts.</p>
+            <p className="text-sm font-medium text-fg">Multi-Factor Authentication</p>
+            <p className="text-xs text-fg-muted mt-0.5">Require TOTP for all user accounts.</p>
           </div>
           <Toggle checked={mfaVal} onChange={setMfa} />
         </div>
@@ -481,20 +481,20 @@ export function DepartmentManagement() {
       <SectionHeader title="Department Management" description="Departments are shared across EPMS, OA, and all future modules." />
       <div className="mb-4 flex justify-end">
         <button onClick={openCreate}
-          className="flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A]">
+          className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800">
           <Plus className="h-4 w-4" />Add Department
         </button>
       </div>
       {listError && <div className="mb-4"><Toast ok={false} msg={listError} /></div>}
       {dlg.dialog}
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
         {isLoading ? (
-          <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
+          <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
         ) : !data?.items.length ? (
-          <div className="py-10 text-center text-sm text-neutral-400">No departments yet.</div>
+          <div className="py-10 text-center text-sm text-fg-muted">No departments yet.</div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="border-b border-neutral-100 bg-neutral-50">
+            <thead className="border-b border-line-subtle bg-surface-subtle">
               <tr>
                 <SortTh label="Code" sortKey="code" sort={depts.sort} onSort={depts.onSort} className={ADMIN_TH} />
                 <SortTh label="Name" sortKey="name" sort={depts.sort} onSort={depts.onSort} className={ADMIN_TH} />
@@ -504,18 +504,18 @@ export function DepartmentManagement() {
             </thead>
             <tbody>
               {depts.rows.map((d, i) => (
-                <tr key={d.id} className={cn('border-b border-neutral-100', i === depts.rows.length - 1 && 'border-b-0')}>
-                  <td className="px-4 py-3 font-mono text-xs text-neutral-600">{d.code}</td>
-                  <td className="px-4 py-3 font-medium text-neutral-800">{d.name}</td>
+                <tr key={d.id} className={cn('border-b border-line-subtle', i === depts.rows.length - 1 && 'border-b-0')}>
+                  <td className="px-4 py-3 font-mono text-xs text-fg-secondary">{d.code}</td>
+                  <td className="px-4 py-3 font-medium text-fg">{d.name}</td>
                   <td className="px-4 py-3">
-                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', d.is_active ? 'bg-green-50 text-green-700' : 'bg-neutral-100 text-neutral-500')}>
+                    <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium', d.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                       {d.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => openEdit(d)} className="rounded p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><Pencil className="h-3.5 w-3.5" /></button>
-                      <button onClick={() => handleDelete(d.id)} className="rounded p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => openEdit(d)} className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary"><Pencil className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => handleDelete(d.id)} className="rounded p-1.5 text-fg-muted hover:bg-danger-soft hover:text-danger-fg"><Trash2 className="h-3.5 w-3.5" /></button>
                     </div>
                   </td>
                 </tr>
@@ -527,21 +527,21 @@ export function DepartmentManagement() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
-              <h3 className="font-semibold text-neutral-900">{modal.mode === 'create' ? 'Add Department' : 'Edit Department'}</h3>
-              <button onClick={() => setModal(null)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100"><X className="h-4 w-4" /></button>
+          <div className="w-full max-w-sm rounded-xl border border-line bg-surface shadow-xl">
+            <div className="flex items-center justify-between border-b border-line-subtle px-5 py-4">
+              <h3 className="font-semibold text-fg">{modal.mode === 'create' ? 'Add Department' : 'Edit Department'}</h3>
+              <button onClick={() => setModal(null)} className="rounded p-1 text-fg-muted hover:bg-surface-sunken"><X className="h-4 w-4" /></button>
             </div>
             <form onSubmit={handleSave} className="flex flex-col gap-4 p-5">
               <Field label="Code"><Input value={form.code} onChange={(e) => setForm((p) => ({ ...p, code: e.target.value.toUpperCase() }))} placeholder="DEPT-001" required /></Field>
               <Field label="Name"><Input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="Department name" required /></Field>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-neutral-700">Active</span>
+                <span className="text-sm text-fg-secondary">Active</span>
                 <Toggle checked={form.is_active} onChange={(v) => setForm((p) => ({ ...p, is_active: v }))} />
               </div>
               {error && <Toast ok={false} msg={error} />}
-              <div className="flex justify-end gap-2 border-t border-neutral-100 pt-3">
-                <button type="button" onClick={() => setModal(null)} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">Cancel</button>
+              <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
+                <button type="button" onClick={() => setModal(null)} className="rounded-lg border border-line px-4 py-2 text-sm text-fg-secondary hover:bg-surface-subtle">Cancel</button>
                 <SaveButton loading={saving} />
               </div>
             </form>
@@ -702,16 +702,16 @@ export function UserManagement() {
       {/* Toolbar */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {/* Search */}
-        <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 flex-1 min-w-[180px] max-w-xs">
-          <Search className="h-4 w-4 text-neutral-400 shrink-0" />
+        <div className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 flex-1 min-w-[180px] max-w-xs">
+          <Search className="h-4 w-4 text-fg-muted shrink-0" />
           <input className="flex-1 text-sm focus:outline-none" placeholder="Search name or email…"
             value={search} onChange={(e) => handleSearch(e.target.value)} />
-          {search && <button onClick={() => handleSearch('')} className="text-neutral-300 hover:text-neutral-500"><X className="h-3.5 w-3.5" /></button>}
+          {search && <button onClick={() => handleSearch('')} className="text-fg-faint hover:text-fg-muted"><X className="h-3.5 w-3.5" /></button>}
         </div>
 
         {/* Role filter */}
         <select value={roleFilter} onChange={(e) => handleRole(e.target.value)}
-          className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none">
+          className="rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none">
           <option value="">All roles</option>
           {ALL_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
         </select>
@@ -719,14 +719,14 @@ export function UserManagement() {
         <div className="flex items-center gap-2 ml-auto">
           {/* Template */}
           <button onClick={handleDownloadTemplate}
-            className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors"
             title="Download CSV template">
             <FileText className="h-4 w-4" />Template
           </button>
 
           {/* Import */}
           <label className={cn(
-            'flex cursor-pointer items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 transition-colors',
+            'flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors',
             importing && 'opacity-60 cursor-not-allowed',
           )}>
             {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
@@ -736,20 +736,20 @@ export function UserManagement() {
 
           {/* Export */}
           <button onClick={handleExport} disabled={exporting}
-            className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-60 transition-colors">
+            className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-60 transition-colors">
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Export
           </button>
 
           {/* From ERP */}
           <button onClick={() => setShowErpImport(true)}
-            className="flex items-center gap-1.5 rounded-lg border border-[#085E5E] bg-white px-3 py-2 text-sm font-medium text-[#085E5E] hover:bg-[#085E5E]/5 transition-colors">
+            className="flex items-center gap-1.5 rounded-lg border border-primary-700 bg-surface px-3 py-2 text-sm font-medium text-primary-700 hover:bg-primary-700/5 transition-colors">
             <Database className="h-4 w-4" />From ERP
           </button>
 
           {/* Add */}
           <button onClick={openCreate}
-            className="flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] transition-colors">
+            className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors">
             <Plus className="h-4 w-4" />Add User
           </button>
         </div>
@@ -762,17 +762,17 @@ export function UserManagement() {
       {importResult && (
         <div className={cn(
           'mb-4 rounded-lg border px-4 py-3 text-sm',
-          importResult.errors.length ? 'border-amber-200 bg-amber-50' : 'border-green-200 bg-green-50',
+          importResult.errors.length ? 'border-warning-line bg-warning-soft' : 'border-success-line bg-success-soft',
         )}>
           <div className="flex items-center justify-between">
-            <span className={importResult.errors.length ? 'text-amber-800 font-medium' : 'text-green-800 font-medium'}>
+            <span className={importResult.errors.length ? 'text-warning-fg font-medium' : 'text-success-fg font-medium'}>
               Import complete — {importResult.created} created, {importResult.updated} updated
               {importResult.errors.length > 0 && `, ${importResult.errors.length} error(s)`}
             </span>
-            <button onClick={() => setImportResult(null)} className="text-neutral-400 hover:text-neutral-600"><X className="h-4 w-4" /></button>
+            <button onClick={() => setImportResult(null)} className="text-fg-muted hover:text-fg-secondary"><X className="h-4 w-4" /></button>
           </div>
           {importResult.errors.length > 0 && (
-            <ul className="mt-2 space-y-0.5 text-xs text-amber-700">
+            <ul className="mt-2 space-y-0.5 text-xs text-warning-fg">
               {importResult.errors.map((e, i) => <li key={i} className="font-mono">• {e}</li>)}
             </ul>
           )}
@@ -780,14 +780,14 @@ export function UserManagement() {
       )}
 
       {/* Table */}
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
         {isLoading && !data ? (
-          <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
+          <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
         ) : !data?.items.length ? (
-          <div className="py-10 text-center text-sm text-neutral-400">No users found.</div>
+          <div className="py-10 text-center text-sm text-fg-muted">No users found.</div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="border-b border-neutral-100 bg-neutral-50">
+            <thead className="border-b border-line-subtle bg-surface-subtle">
               <tr>
                 <SortTh label="Name / Email" sortKey="full_name" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
                 <SortTh label="Role" sortKey="role" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
@@ -799,27 +799,27 @@ export function UserManagement() {
             </thead>
             <tbody>
               {data.items.map((u, i) => (
-                <tr key={u.id} className={cn('border-b border-neutral-100', i === data.items.length - 1 && 'border-b-0')}>
+                <tr key={u.id} className={cn('border-b border-line-subtle', i === data.items.length - 1 && 'border-b-0')}>
                   <td className="px-4 py-3">
-                    <p className="font-medium text-neutral-800">{u.full_name}</p>
-                    <p className="text-[11px] text-neutral-400">{u.email}</p>
+                    <p className="font-medium text-fg">{u.full_name}</p>
+                    <p className="text-2xs text-fg-muted">{u.email}</p>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="rounded bg-primary-50 px-1.5 py-0.5 text-[11px] font-medium text-primary-700">
+                    <span className="rounded bg-primary-50 px-1.5 py-0.5 text-2xs font-medium text-primary-700">
                       {ROLE_LABELS[u.role] ?? u.role}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-neutral-500">{u.department_name ?? '—'}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-neutral-500">{u.erp_person_code ?? '—'}</td>
+                  <td className="px-4 py-3 text-xs text-fg-muted">{u.department_name ?? '—'}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-fg-muted">{u.erp_person_code ?? '—'}</td>
                   <td className="px-4 py-3">
-                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', u.is_active ? 'bg-green-50 text-green-700' : 'bg-neutral-100 text-neutral-500')}>
+                    <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium', u.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                       {u.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => openEdit(u)} className="rounded p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"><Pencil className="h-3.5 w-3.5" /></button>
-                      <button onClick={() => handleDelete(u.id)} className="rounded p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => openEdit(u)} className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary"><Pencil className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => handleDelete(u.id)} className="rounded p-1.5 text-fg-muted hover:bg-danger-soft hover:text-danger-fg"><Trash2 className="h-3.5 w-3.5" /></button>
                     </div>
                   </td>
                 </tr>
@@ -830,15 +830,15 @@ export function UserManagement() {
 
         {/* Pagination footer */}
         {total > 0 && (
-          <div className="flex items-center justify-between border-t border-neutral-100 px-4 py-3">
-            <span className="text-xs text-neutral-400">
+          <div className="flex items-center justify-between border-t border-line-subtle px-4 py-3">
+            <span className="text-xs text-fg-muted">
               {total === 0 ? 'No users' : `${rangeStart}–${rangeEnd} of ${total} users`}
             </span>
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="flex h-7 w-7 items-center justify-center rounded border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40 transition-colors"
+                className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40 transition-colors"
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
@@ -850,17 +850,17 @@ export function UserManagement() {
                 }, [])
                 .map((p, i) =>
                   p === '…'
-                    ? <span key={`e${i}`} className="px-1 text-xs text-neutral-400">…</span>
+                    ? <span key={`e${i}`} className="px-1 text-xs text-fg-muted">…</span>
                     : <button key={p} onClick={() => setPage(p as number)}
                         className={cn('h-7 min-w-[28px] rounded border px-2 text-xs transition-colors',
-                          page === p ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium' : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50')}>
+                          page === p ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium' : 'border-line text-fg-secondary hover:bg-surface-subtle')}>
                         {p}
                       </button>
                 )}
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                className="flex h-7 w-7 items-center justify-center rounded border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40 transition-colors"
+                className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40 transition-colors"
               >
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
@@ -875,10 +875,10 @@ export function UserManagement() {
       {/* Edit / Create modal */}
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-xl overflow-y-auto max-h-[90vh]">
-            <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
-              <h3 className="font-semibold text-neutral-900">{modal.mode === 'create' ? 'Add User' : 'Edit User'}</h3>
-              <button onClick={closeModal} className="rounded p-1 text-neutral-400 hover:bg-neutral-100"><X className="h-4 w-4" /></button>
+          <div className="w-full max-w-md rounded-xl border border-line bg-surface shadow-xl overflow-y-auto max-h-[90vh]">
+            <div className="flex items-center justify-between border-b border-line-subtle px-5 py-4">
+              <h3 className="font-semibold text-fg">{modal.mode === 'create' ? 'Add User' : 'Edit User'}</h3>
+              <button onClick={closeModal} className="rounded p-1 text-fg-muted hover:bg-surface-sunken"><X className="h-4 w-4" /></button>
             </div>
             <form onSubmit={handleSave} className="flex flex-col gap-4 p-5">
               <div className="grid grid-cols-2 gap-3">
@@ -886,13 +886,13 @@ export function UserManagement() {
                 <Field label="Email"><Input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} required /></Field>
                 <Field label="Role">
                   <select value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))}
-                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
+                    className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
                     {ALL_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                   </select>
                 </Field>
                 <Field label="Department">
                   <select value={form.department_id} onChange={(e) => setForm((p) => ({ ...p, department_id: e.target.value, supervisor_id: '' }))}
-                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
+                    className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
                     <option value="">— None —</option>
                     {depts?.items.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
@@ -900,7 +900,7 @@ export function UserManagement() {
                 <Field label="Supervisor">
                   <select value={form.supervisor_id} onChange={(e) => setForm((p) => ({ ...p, supervisor_id: e.target.value }))}
                     disabled={!form.department_id}
-                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400 disabled:bg-neutral-50 disabled:text-neutral-400">
+                    className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400 disabled:bg-surface-subtle disabled:text-fg-muted">
                     <option value="">{form.department_id ? '— None —' : '— Select a department first —'}</option>
                     {directory?.items
                       .filter((u) => u.id !== modal.user?.id && !!form.department_id && u.department_id === form.department_id)
@@ -913,7 +913,7 @@ export function UserManagement() {
                       onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
                       required={modal.mode === 'create'} />
                     <button type="button" onClick={() => setShowPwd((v) => !v)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600">
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
                       {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
@@ -930,12 +930,12 @@ export function UserManagement() {
                 </Field>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-neutral-700">Active</span>
+                <span className="text-sm text-fg-secondary">Active</span>
                 <Toggle checked={form.is_active} onChange={(v) => setForm((p) => ({ ...p, is_active: v }))} />
               </div>
               {error && <Toast ok={false} msg={error} />}
-              <div className="flex justify-end gap-2 border-t border-neutral-100 pt-3">
-                <button type="button" onClick={closeModal} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">Cancel</button>
+              <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
+                <button type="button" onClick={closeModal} className="rounded-lg border border-line px-4 py-2 text-sm text-fg-secondary hover:bg-surface-subtle">Cancel</button>
                 <SaveButton loading={saving} />
               </div>
             </form>
@@ -983,14 +983,14 @@ function CurrencySettings() {
     } catch (err: any) { setToast({ ok: false, msg: err.message }) }
   }
 
-  if (isLoading) return <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
+  if (isLoading) return <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5 max-w-lg">
       <SectionHeader title="Currency Settings" description="Default currency and enabled currencies apply to all financial modules." />
       <Field label="Default Currency">
         <select value={currDefault} onChange={(e) => setDefaultCurrency(e.target.value)}
-          className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
           {allCurrencies.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       </Field>
@@ -1000,7 +1000,7 @@ function CurrencySettings() {
             const on = currEnabled.includes(c)
             return (
               <button key={c} type="button" onClick={() => toggleEnabled(c)}
-                className={cn('rounded-lg border px-3 py-2 text-sm font-mono font-medium transition-colors', on ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-neutral-200 text-neutral-500 hover:bg-neutral-50')}>
+                className={cn('rounded-lg border px-3 py-2 text-sm font-mono font-medium transition-colors', on ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-line text-fg-muted hover:bg-surface-subtle')}>
                 {c}
               </button>
             )
@@ -1135,16 +1135,16 @@ function NotificationSettings() {
     finally { setTesting(false) }
   }
 
-  if (isLoading) return <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
+  if (isLoading) return <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5 max-w-lg">
       <SectionHeader title="Notification Settings" description="SMTP server and delivery preferences for internal task notifications (approvals, reminders, MFA OTP). PO emails to external vendors are configured separately in EPMS Admin → Email Settings." />
 
       {/* SMTP — internal task notifications */}
-      <div className="rounded-lg border border-neutral-200 p-4">
-        <p className="text-sm font-semibold text-neutral-700 mb-1">SMTP — Task Notifications</p>
-        <p className="text-xs text-neutral-500 mb-3">Used for approval emails, daily reminders, MFA OTPs.</p>
+      <div className="rounded-lg border border-line p-4">
+        <p className="text-sm font-semibold text-fg-secondary mb-1">SMTP — Task Notifications</p>
+        <p className="text-xs text-fg-muted mb-3">Used for approval emails, daily reminders, MFA OTPs.</p>
         <div className="grid grid-cols-2 gap-3">
           <Field label="SMTP Host">
             <Input value={smtpVal.host} onChange={(e) => setSmtp((p) => ({ ...p, host: e.target.value }))} placeholder="smtp.example.com" />
@@ -1160,7 +1160,7 @@ function NotificationSettings() {
               <Input type={showPwd ? 'text' : 'password'} value={smtpVal.password}
                 onChange={(e) => setSmtp((p) => ({ ...p, password: e.target.value }))} />
               <button type="button" onClick={() => setShowPwd((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600">
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
                 {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
@@ -1171,7 +1171,7 @@ function NotificationSettings() {
           <Field label="TLS">
             <div className="flex items-center gap-2 pt-1.5">
               <Toggle checked={smtpVal.use_tls} onChange={(v) => setSmtp((p) => ({ ...p, use_tls: v }))} />
-              <span className="text-xs text-neutral-500">Use TLS/STARTTLS</span>
+              <span className="text-xs text-fg-muted">Use TLS/STARTTLS</span>
             </div>
           </Field>
         </div>
@@ -1181,7 +1181,7 @@ function NotificationSettings() {
         <div className="grid grid-cols-2 gap-2 mt-1">
           {CHANNELS.map(({ value, label }) => (
             <button key={value} type="button" onClick={() => setChannel(value)}
-              className={cn('rounded-lg border px-3 py-2.5 text-sm text-left transition-colors', channelVal === value ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium' : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50')}>
+              className={cn('rounded-lg border px-3 py-2.5 text-sm text-left transition-colors', channelVal === value ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium' : 'border-line text-fg-secondary hover:bg-surface-subtle')}>
               {label}
             </button>
           ))}
@@ -1192,18 +1192,18 @@ function NotificationSettings() {
       </Field>
 
       {/* Role shared mailboxes */}
-      <div className="rounded-lg border border-neutral-200 p-4">
-        <p className="text-sm font-semibold text-neutral-700 mb-1">Role Shared Mailboxes</p>
-        <p className="text-xs text-neutral-500 mb-1">
+      <div className="rounded-lg border border-line p-4">
+        <p className="text-sm font-semibold text-fg-secondary mb-1">Role Shared Mailboxes</p>
+        <p className="text-xs text-fg-muted mb-1">
           Tasks addressed to a role rather than a named person are emailed to this single mailbox
           instead of every holder of the role. Leave empty to notify each member individually.
         </p>
-        <p className="text-xs text-neutral-500 mb-1">
+        <p className="text-xs text-fg-muted mb-1">
           This applies system-wide: the shared task inbox also carries EPMS, OA expense claims,
           Finance budget plans and VMS tasks, so e.g. setting a mailbox for Finance BP here also
           redirects Finance budget-plan notifications for that role.
         </p>
-        <p className="text-xs text-neutral-500 mb-3">
+        <p className="text-xs text-fg-muted mb-3">
           Note: a shared mailbox is delivered by email only. When the Default Notification Channel
           above is set to &ldquo;Teams only&rdquo;, a role with a mailbox configured receives no
           notification at all for role-addressed tasks.
@@ -1211,7 +1211,7 @@ function NotificationSettings() {
         <div className="flex flex-col gap-2">
           {ALL_ROLES.map((code) => (
             <div key={code} className="flex items-center gap-3">
-              <span className="w-44 shrink-0 text-sm text-neutral-600">{ROLE_LABELS[code]}</span>
+              <span className="w-44 shrink-0 text-sm text-fg-secondary">{ROLE_LABELS[code]}</span>
               <Input
                 // 刻意用 text 而非 email:浏览器原生校验会抢在 onSubmit 之前拦下,
                 // 用户只看到气泡提示,看不到我们指名角色的那条内联错误。
@@ -1224,7 +1224,7 @@ function NotificationSettings() {
             </div>
           ))}
         </div>
-        {mailboxError && <p className="mt-2 text-xs text-red-600">{mailboxError}</p>}
+        {mailboxError && <p className="mt-2 text-xs text-danger-fg">{mailboxError}</p>}
       </div>
 
       <Field label="Daily Digest Time" hint="Plant time (Company Settings → Time Zone). When the once-a-day task digest goes out — see Task Notifications below for which tasks it covers. Changes take effect within 15 minutes — no restart needed.">
@@ -1234,14 +1234,14 @@ function NotificationSettings() {
       <Field label="Service Completion Reminder" hint="When on, service and project POs whose expected completion date has passed raise a task asking the PR requester to create a GR. Runs at the digest time above. Off by default.">
         <div className="flex items-center gap-2 pt-1.5">
           <Toggle checked={serviceGrDueVal} onChange={(v) => setServiceGrDue(v)} />
-          <span className="text-xs text-neutral-500">{serviceGrDueVal ? 'On — overdue service POs are chased' : 'Off — no completion reminders'}</span>
+          <span className="text-xs text-fg-muted">{serviceGrDueVal ? 'On — overdue service POs are chased' : 'Off — no completion reminders'}</span>
         </div>
       </Field>
       {serviceGrDueVal && (
         <Field label="Service Completion Reminder — Dry Run" hint="Leave on for the first few days: the sweep still runs, but instead of emailing requesters it sends administrators the list of POs it would have chased. Turn off once that list looks right.">
           <div className="flex items-center gap-2 pt-1.5">
             <Toggle checked={serviceGrDryRunVal} onChange={(v) => setServiceGrDryRun(v)} />
-            <span className="text-xs text-neutral-500">
+            <span className="text-xs text-fg-muted">
               {serviceGrDryRunVal
                 ? 'Dry run — admins get a preview, requesters are not contacted'
                 : 'Live — requesters and their managers are notified'}
@@ -1253,14 +1253,14 @@ function NotificationSettings() {
       <Field label="GR Acknowledgement Reminder" hint="When on, a goods receipt still waiting for acknowledgement past the GR Notification SLA (EPMS → Admin) is reminded daily to the PR owner, and escalated once to their Department Manager. Runs at the digest time above. Off by default.">
         <div className="flex items-center gap-2 pt-1.5">
           <Toggle checked={grAckDueVal} onChange={(v) => setGrAckDue(v)} />
-          <span className="text-xs text-neutral-500">{grAckDueVal ? 'On — waiting receipts are chased' : 'Off — no acknowledgement reminders'}</span>
+          <span className="text-xs text-fg-muted">{grAckDueVal ? 'On — waiting receipts are chased' : 'Off — no acknowledgement reminders'}</span>
         </div>
       </Field>
       {grAckDueVal && (
         <Field label="GR Acknowledgement Reminder — Dry Run" hint="Leave on for the first days: administrators get the list of receipts it would chase, and nobody is reminded. Turn off once the list looks right.">
           <div className="flex items-center gap-2 pt-1.5">
             <Toggle checked={grAckDryRunVal} onChange={(v) => setGrAckDryRun(v)} />
-            <span className="text-xs text-neutral-500">{grAckDryRunVal ? 'Dry run — admins get a preview only' : 'Live — owners and their managers are notified'}</span>
+            <span className="text-xs text-fg-muted">{grAckDryRunVal ? 'Dry run — admins get a preview only' : 'Live — owners and their managers are notified'}</span>
           </div>
         </Field>
       )}
@@ -1268,14 +1268,14 @@ function NotificationSettings() {
       <Field label="Budget Threshold Alerts" hint="When on, every budget line (cost center × account) is checked against Finance → Budget Config thresholds: reaching the warning level sends the Department Manager a daily digest (at the digest time); reaching the over-budget level is reported within the hour by email to the Department Manager, Finance Manager and the department's GM/OPM, plus a Teams card (Teams Webhook URL above) when one of them chose Teams. Once per crossing. Off by default.">
         <div className="flex items-center gap-2 pt-1.5">
           <Toggle checked={budgetAlertVal} onChange={(v) => setBudgetAlert(v)} />
-          <span className="text-xs text-neutral-500">{budgetAlertVal ? 'On — budget lines are checked daily' : 'Off — no budget alert emails'}</span>
+          <span className="text-xs text-fg-muted">{budgetAlertVal ? 'On — budget lines are checked daily' : 'Off — no budget alert emails'}</span>
         </div>
       </Field>
       {budgetAlertVal && (
         <Field label="Budget Threshold Alerts — Dry Run" hint="Leave on first: administrators get the list of lines that would be reported, nobody else is emailed and nothing is marked as sent. Turn off once the list looks right.">
           <div className="flex items-center gap-2 pt-1.5">
             <Toggle checked={budgetAlertDryRunVal} onChange={(v) => setBudgetAlertDryRun(v)} />
-            <span className="text-xs text-neutral-500">{budgetAlertDryRunVal ? 'Dry run — admins get a preview only' : 'Live — managers are emailed'}</span>
+            <span className="text-xs text-fg-muted">{budgetAlertDryRunVal ? 'Dry run — admins get a preview only' : 'Live — managers are emailed'}</span>
           </div>
         </Field>
       )}
@@ -1283,14 +1283,14 @@ function NotificationSettings() {
       <Field label="Agreement Overdue Reminder" hint="When a purchase agreement's billing period is overdue with no invoice, the agreement owner gets a Chase Invoice task and an email. Turning this off stops both the email and the task (the period is still marked overdue on the agreement). On by default.">
         <div className="flex items-center gap-2 pt-1.5">
           <Toggle checked={agreementOverdueVal} onChange={(v) => setAgreementOverdue(v)} />
-          <span className="text-xs text-neutral-500">{agreementOverdueVal ? 'On — overdue agreement periods are chased' : 'Off — no overdue reminders or chase tasks'}</span>
+          <span className="text-xs text-fg-muted">{agreementOverdueVal ? 'On — overdue agreement periods are chased' : 'Off — no overdue reminders or chase tasks'}</span>
         </div>
       </Field>
 
       <Field label="PA Approved — Notify Requester" hint="When on, the person who raised a Payment Application gets an email once it is fully approved. Information only — no task. On by default (PRD PA-007); switch off to stop these emails.">
         <div className="flex items-center gap-2 pt-1.5">
           <Toggle checked={paApprovedNotifyVal} onChange={(v) => setPaApprovedNotify(v)} />
-          <span className="text-xs text-neutral-500">{paApprovedNotifyVal ? 'On — requesters are emailed on final approval' : 'Off — requesters are not emailed'}</span>
+          <span className="text-xs text-fg-muted">{paApprovedNotifyVal ? 'On — requesters are emailed on final approval' : 'Off — requesters are not emailed'}</span>
         </div>
       </Field>
 
@@ -1298,7 +1298,7 @@ function NotificationSettings() {
       <div className="flex items-center gap-2">
         <Input className="flex-1" value={testEmail} onChange={(e) => setTestEmail(e.target.value)} placeholder="Send test notification to…" type="email" />
         <button type="button" onClick={handleTest} disabled={testing || !testEmail}
-          className="flex items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 whitespace-nowrap">
+          className="flex items-center gap-1.5 rounded-lg border border-line px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50 whitespace-nowrap">
           {testing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Test
         </button>
@@ -1434,7 +1434,7 @@ function RemittanceSettings() {
     } catch (err: any) { setToast({ ok: false, msg: err.message }) }
   }
 
-  if (isLoading) return <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
+  if (isLoading) return <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5 max-w-lg">
@@ -1445,7 +1445,7 @@ function RemittanceSettings() {
 
       <label className="flex items-center gap-2.5 cursor-pointer w-fit">
         <Toggle checked={enabledVal} onChange={setEnabled} />
-        <span className="text-sm font-medium text-neutral-700">Send remittance advice emails</span>
+        <span className="text-sm font-medium text-fg-secondary">Send remittance advice emails</span>
       </label>
 
       <div className="grid grid-cols-2 gap-3">
@@ -1462,9 +1462,9 @@ function RemittanceSettings() {
         </div>
       </div>
 
-      <div className="rounded-lg border border-neutral-200 p-4">
-        <p className="text-sm font-semibold text-neutral-700 mb-1">SMTP Credential Override</p>
-        <p className="text-xs text-neutral-500 mb-3">Optional. Leave blank to use the shared SMTP credentials — these exist only for servers that reject a From address that doesn't match the authenticated account.</p>
+      <div className="rounded-lg border border-line p-4">
+        <p className="text-sm font-semibold text-fg-secondary mb-1">SMTP Credential Override</p>
+        <p className="text-xs text-fg-muted mb-3">Optional. Leave blank to use the shared SMTP credentials — these exist only for servers that reject a From address that doesn't match the authenticated account.</p>
         <div className="grid grid-cols-2 gap-3">
           <Field label="SMTP User">
             <Input value={smtpUserVal} onChange={(e) => setSmtpUser(e.target.value)} />
@@ -1474,7 +1474,7 @@ function RemittanceSettings() {
               <Input type={showPwd ? 'text' : 'password'} value={smtpPasswordVal}
                 onChange={(e) => setSmtpPassword(e.target.value)} />
               <button type="button" onClick={() => setShowPwd((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600">
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
                 {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
@@ -1482,9 +1482,9 @@ function RemittanceSettings() {
         </div>
       </div>
 
-      <div className="rounded-lg border border-neutral-200 p-4">
-        <p className="text-sm font-semibold text-neutral-700 mb-1">Email Template</p>
-        <p className="text-xs text-neutral-500 mb-3">Customize the wording and look of the remittance advice email. The payment table itself is generated automatically and cannot be edited.</p>
+      <div className="rounded-lg border border-line p-4">
+        <p className="text-sm font-semibold text-fg-secondary mb-1">Email Template</p>
+        <p className="text-xs text-fg-muted mb-3">Customize the wording and look of the remittance advice email. The payment table itself is generated automatically and cannot be edited.</p>
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <Field label="Subject">
@@ -1510,25 +1510,25 @@ function RemittanceSettings() {
           <Field label="Brand Colour">
             <div className="flex items-center gap-2">
               <input type="color" value={tplBrandColorVal} onChange={(e) => setTplBrandColor(e.target.value)}
-                className="h-9 w-9 cursor-pointer rounded border border-neutral-200 p-0.5" />
-              <span className="text-xs text-neutral-500">{tplBrandColorVal}</span>
+                className="h-9 w-9 cursor-pointer rounded border border-line p-0.5" />
+              <span className="text-xs text-fg-muted">{tplBrandColorVal}</span>
             </div>
           </Field>
           <Field label="Show Company Logo">
             <div className="flex items-center gap-2 pt-1.5">
               <Toggle checked={tplShowLogoVal} onChange={setTplShowLogo} />
-              <span className="text-xs text-neutral-500">Shown at the top of the email, if a logo is set in Company Settings.</span>
+              <span className="text-xs text-fg-muted">Shown at the top of the email, if a logo is set in Company Settings.</span>
             </div>
           </Field>
         </div>
-        <p className="mt-3 text-xs text-neutral-500">
+        <p className="mt-3 text-xs text-fg-muted">
           Available placeholders: {'{{company_name}}'}, {'{{payee_name}}'}, {'{{doc_type}}'}, {'{{reference}}'}, {'{{total}}'}, {'{{payment_method}}'}, {'{{currency}}'}
         </p>
       </div>
 
-      <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
-        <p className="text-sm font-semibold text-neutral-700 mb-3">Preview (sample data — the payment table is added automatically)</p>
-        <div className="rounded-lg border border-neutral-200 bg-white p-5 font-sans text-[#222]">
+      <div className="rounded-lg border border-line bg-surface-subtle p-4">
+        <p className="text-sm font-semibold text-fg-secondary mb-3">Preview (sample data — the payment table is added automatically)</p>
+        <div className="rounded-lg border border-line bg-surface p-5 font-sans text-[#222]">
           {tplShowLogoVal && cfg?.logo_data_url && (
             <img src={cfg.logo_data_url} alt="" className="mb-3 max-h-12" />
           )}
@@ -1537,10 +1537,10 @@ function RemittanceSettings() {
           </h2>
           <p className="mb-2 text-sm">{fillRemittancePreview(tplGreetingVal)}</p>
           <p className="mb-3 text-sm">{fillRemittancePreview(tplIntroVal)}</p>
-          <div className="mb-3 rounded border border-dashed border-neutral-300 bg-neutral-50 px-3 py-6 text-center text-xs text-neutral-400">
+          <div className="mb-3 rounded border border-dashed border-line-strong bg-surface-subtle px-3 py-6 text-center text-xs text-fg-muted">
             [ Payment table appears here ]
           </div>
-          <div className="whitespace-pre-line text-xs text-neutral-500">
+          <div className="whitespace-pre-line text-xs text-fg-muted">
             {fillRemittancePreview(tplFooterVal)}
           </div>
         </div>
@@ -1798,8 +1798,8 @@ function ApprovalWorkflows() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-base font-semibold text-neutral-900">Approval Workflows</h2>
-        <p className="mt-1 text-sm text-neutral-500">
+        <h2 className="text-base font-semibold text-fg">Approval Workflows</h2>
+        <p className="mt-1 text-sm text-fg-muted">
           Configure the approval steps for each document type across all UniOps modules.
           Documents already in approval follow the new steps: approvals already given stand,
           and you will see which documents move before the change is saved.
@@ -1807,7 +1807,7 @@ function ApprovalWorkflows() {
       </div>
 
       {/* Action key tabs */}
-      <div className="flex flex-wrap gap-1 rounded-xl bg-neutral-100 p-1">
+      <div className="flex flex-wrap gap-1 rounded-xl bg-surface-sunken p-1">
         {ACTION_KEYS.map(key => (
           <button
             key={key}
@@ -1815,8 +1815,8 @@ function ApprovalWorkflows() {
             className={cn(
               'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
               activeKey === key
-                ? 'bg-white text-neutral-900 shadow-sm'
-                : 'text-neutral-500 hover:text-neutral-700',
+                ? 'bg-surface text-fg shadow-sm'
+                : 'text-fg-muted hover:text-fg-secondary',
             )}
           >
             {key === 'pa_dir'      ? 'PA-DIR'
@@ -1830,25 +1830,25 @@ function ApprovalWorkflows() {
 
       {/* Step list */}
       <div className="flex flex-col gap-2">
-        <p className="text-xs text-neutral-400 font-medium uppercase tracking-wide">
+        <p className="text-xs text-fg-muted font-medium uppercase tracking-wide">
           {ACTION_KEY_LABELS[activeKey]} — approval chain
         </p>
         {isFreight && (
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-fg-muted">
             Courier invoices (EPMS → Freight) cover several departments at once, so only
             company-level roles can approve them. Department-based roles are not offered.
           </p>
         )}
 
         {steps.length === 0 && (
-          <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-sm text-neutral-400">
+          <div className="rounded-lg border border-dashed border-line py-6 text-center text-sm text-fg-muted">
             No steps configured. Add at least one step.
           </div>
         )}
 
         {steps.map((step, i) => (
-          <div key={step.id} className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#085E5E]/10 text-xs font-bold text-[#085E5E]">
+          <div key={step.id} className="flex items-center gap-2 rounded-xl border border-line bg-surface-subtle px-3 py-2.5">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-700/10 text-xs font-bold text-primary-700">
               {i + 1}
             </span>
 
@@ -1856,13 +1856,13 @@ function ApprovalWorkflows() {
               value={step.label}
               onChange={e => updateStep(i, { label: e.target.value })}
               placeholder="Step label…"
-              className="flex-1 min-w-0 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:border-[#085E5E]"
+              className="flex-1 min-w-0 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary-700"
             />
 
             <select
               value={step.role}
               onChange={e => updateStep(i, { role: e.target.value })}
-              className="h-8 rounded-lg border border-neutral-200 bg-white px-2 text-xs text-neutral-800 focus:outline-none focus:border-[#085E5E]"
+              className="h-8 rounded-lg border border-line bg-surface px-2 text-xs text-fg focus:outline-none focus:border-primary-700"
             >
               {/* A role already saved but not offered here (e.g. a sign-off step
                   left on dept_manager) still needs an entry, or the select would
@@ -1882,7 +1882,7 @@ function ApprovalWorkflows() {
                   sig_slot: (e.target.value || null) as WorkflowNodeDef['sig_slot'],
                 })}
                 title="Where this step's signature is drawn on the PO PDF"
-                className="h-8 rounded-lg border border-neutral-200 bg-white px-2 text-xs text-neutral-800 focus:outline-none focus:border-[#085E5E]"
+                className="h-8 rounded-lg border border-line bg-surface px-2 text-xs text-fg focus:outline-none focus:border-primary-700"
               >
                 {SIG_SLOTS.map(sl => (
                   <option key={sl.value} value={sl.value}>{sl.label}</option>
@@ -1892,15 +1892,15 @@ function ApprovalWorkflows() {
 
             <div className="flex items-center gap-0.5">
               <button onClick={() => moveUp(i)} disabled={i === 0}
-                className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-neutral-200 disabled:opacity-30">
+                className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-surface-strong disabled:opacity-30">
                 <ChevronUp className="h-3.5 w-3.5" />
               </button>
               <button onClick={() => moveDown(i)} disabled={i === steps.length - 1}
-                className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-neutral-200 disabled:opacity-30">
+                className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-surface-strong disabled:opacity-30">
                 <ChevronDown className="h-3.5 w-3.5" />
               </button>
               <button onClick={() => removeStep(i)} disabled={steps.length <= 1}
-                className="flex h-7 w-7 items-center justify-center rounded text-neutral-300 hover:bg-red-50 hover:text-red-500 disabled:opacity-30">
+                className="flex h-7 w-7 items-center justify-center rounded text-fg-faint hover:bg-danger-soft hover:text-danger-fg disabled:opacity-30">
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -1908,12 +1908,12 @@ function ApprovalWorkflows() {
         ))}
 
         <button onClick={addStep}
-          className="flex items-center gap-1.5 self-start text-sm font-medium text-[#085E5E] hover:text-[#064A4A] mt-1">
+          className="flex items-center gap-1.5 self-start text-sm font-medium text-primary-700 hover:text-primary-800 mt-1">
           <Plus className="h-4 w-4" /> Add step
         </button>
 
         {isSignoff && (
-          <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-500">
+          <div className="rounded-lg border border-line bg-surface-subtle px-4 py-3 text-xs text-fg-muted">
             Signatures come from each signer's My Profile. The PO PDF has two
             places for one — initials between the two signature blocks, and the
             signature in our own block. A step set to <strong>Not on PDF</strong>{' '}
@@ -1925,7 +1925,7 @@ function ApprovalWorkflows() {
         )}
 
         {duplicateSlots.length > 0 && (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-600">
+          <div className="rounded-lg border border-danger-line bg-danger-soft px-4 py-3 text-xs text-danger-fg">
             Two steps are set to the same place on the PDF
             ({duplicateSlots.join(', ')}). The PDF has one of each, so the second
             signature would overwrite the first.
@@ -1934,17 +1934,17 @@ function ApprovalWorkflows() {
       </div>
 
       {/* Save */}
-      <div className="flex items-center gap-3 border-t border-neutral-100 pt-4">
+      <div className="flex items-center gap-3 border-t border-line-subtle pt-4">
         <button
           onClick={handleSave}
           disabled={saving || duplicateSlots.length > 0}
-          className="flex items-center gap-2 rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50 transition-colors"
+          className="flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors"
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
           Save Workflow
         </button>
         {saved && (
-          <span className="flex items-center gap-1.5 text-sm text-green-600">
+          <span className="flex items-center gap-1.5 text-sm text-success-fg">
             <CheckCircle2 className="h-4 w-4" /> Saved
           </span>
         )}
@@ -1953,8 +1953,8 @@ function ApprovalWorkflows() {
       {outcome && (
         <div className={cn('rounded-lg border px-4 py-3 text-xs',
           outcome.summary.startsWith('failed') || outcome.errors.length > 0
-            ? 'border-amber-200 bg-amber-50 text-amber-800'
-            : 'border-green-200 bg-green-50 text-green-800')}>
+            ? 'border-warning-line bg-warning-soft text-warning-fg'
+            : 'border-success-line bg-success-soft text-success-fg')}>
           <p className="font-medium">{outcome.summary}</p>
           {outcome.errors.length > 0 && (
             <ul className="mt-1 list-disc pl-5">
@@ -1964,7 +1964,7 @@ function ApprovalWorkflows() {
         </div>
       )}
 
-      <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-600">
+      <div className="rounded-lg border border-info-line bg-info-soft px-4 py-3 text-xs text-info-fg">
         <strong>Documents already in approval</strong> are moved onto the new steps when you save:
         approvals already given stand wherever their step moved; a step added at a point a document
         has already passed is not sent back for; a step not yet given is still required; a document
@@ -1973,30 +1973,30 @@ function ApprovalWorkflows() {
 
       {preview && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-neutral-200 bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
-              <h3 className="font-semibold text-neutral-900">Documents already in approval</h3>
-              <button onClick={() => setPreview(null)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100">
+          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-line bg-surface shadow-xl">
+            <div className="flex items-center justify-between border-b border-line-subtle px-5 py-4">
+              <h3 className="font-semibold text-fg">Documents already in approval</h3>
+              <button onClick={() => setPreview(null)} className="rounded p-1 text-fg-muted hover:bg-surface-sunken">
                 <X className="h-4 w-4" />
               </button>
             </div>
             <div className="flex flex-col gap-3 overflow-y-auto px-5 py-4 text-sm">
               {preview.unavailable ? (
-                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                <p className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-warning-fg">
                   Could not check which documents this change moves ({preview.unavailable}).
                   Saving will still move them; the result is shown after saving.
                 </p>
               ) : (
-                <p className="text-neutral-600">
+                <p className="text-fg-secondary">
                   Saving moves {preview.realigned.length} document{preview.realigned.length === 1 ? '' : 's'} onto
                   the new steps{preview.realigned.some(r => r.completed)
                     ? `; ${preview.realigned.filter(r => r.completed).length} will be fully approved because every step is already given` : ''}.
                 </p>
               )}
               {preview.realigned.length > 0 && (
-                <div className="max-h-80 overflow-y-auto rounded-lg border border-neutral-200">
+                <div className="max-h-80 overflow-y-auto rounded-lg border border-line">
                   <table className="w-full text-xs">
-                    <thead className="sticky top-0 bg-neutral-50 text-left text-neutral-500">
+                    <thead className="sticky top-0 bg-surface-subtle text-left text-fg-muted">
                       <tr>
                         <th className="px-3 py-2 font-medium">Document</th>
                         <th className="px-3 py-2 font-medium">Workflow</th>
@@ -2006,13 +2006,13 @@ function ApprovalWorkflows() {
                     </thead>
                     <tbody>
                       {preview.realigned.map((r, i) => (
-                        <tr key={r.doc_id} className={i % 2 ? 'bg-neutral-50/60' : ''}>
-                          <td className="px-3 py-1.5 font-mono text-neutral-800">
-                            {r.number}{r.status === 'returned' && <span className="ml-1 text-neutral-400">(returned)</span>}
+                        <tr key={r.doc_id} className={i % 2 ? 'bg-surface-subtle/60' : ''}>
+                          <td className="px-3 py-1.5 font-mono text-fg">
+                            {r.number}{r.status === 'returned' && <span className="ml-1 text-fg-muted">(returned)</span>}
                           </td>
-                          <td className="px-3 py-1.5 text-neutral-600">{workflowLabel(r.workflow_key)}</td>
-                          <td className="px-3 py-1.5 text-neutral-600">{r.from}</td>
-                          <td className={cn('px-3 py-1.5', r.completed ? 'font-medium text-green-700' : 'text-neutral-800')}>
+                          <td className="px-3 py-1.5 text-fg-secondary">{workflowLabel(r.workflow_key)}</td>
+                          <td className="px-3 py-1.5 text-fg-secondary">{r.from}</td>
+                          <td className={cn('px-3 py-1.5', r.completed ? 'font-medium text-success-fg' : 'text-fg')}>
                             {r.status === 'returned' ? `${r.to} (on resubmission)` : r.to}
                           </td>
                         </tr>
@@ -2022,7 +2022,7 @@ function ApprovalWorkflows() {
                 </div>
               )}
               {preview.errors.length > 0 && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                <div className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-fg">
                   <p className="font-medium">
                     {preview.errors.length} document{preview.errors.length === 1 ? '' : 's'} cannot be moved
                     and will stay where they are (fix them in Data Maintenance → Edit approval state):
@@ -2033,13 +2033,13 @@ function ApprovalWorkflows() {
                 </div>
               )}
             </div>
-            <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-3">
+            <div className="flex justify-end gap-2 border-t border-line-subtle px-5 py-3">
               <button onClick={() => setPreview(null)}
-                className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+                className="rounded-lg border border-line px-4 py-2 text-sm text-fg-secondary hover:bg-surface-subtle">
                 Cancel
               </button>
               <button onClick={save} disabled={saving}
-                className="flex items-center gap-2 rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50">
+                className="flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                 Save and move documents
               </button>
@@ -2075,11 +2075,11 @@ function ErpMdmSection() {
   return (
     <div>
       <SectionHeader title="ERP MDM" description="Mirror of ERP master data. Sync manually, then import into Users/Vendors or use in PR Type 1." />
-      <div className="mb-4 flex gap-1 border-b border-neutral-200">
+      <div className="mb-4 flex gap-1 border-b border-line">
         {(['material','supplier','person'] as ErpKind[]).map(k => (
           <button key={k} onClick={() => setTab(k)}
             className={cn('px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
-              tab === k ? 'border-[#085E5E] text-[#085E5E]' : 'border-transparent text-neutral-500 hover:text-neutral-700')}>
+              tab === k ? 'border-primary-700 text-primary-700' : 'border-transparent text-fg-muted hover:text-fg-secondary')}>
             {k === 'material' ? 'Materials' : k === 'supplier' ? 'Suppliers' : 'Persons'}
           </button>
         ))}
@@ -2130,32 +2130,32 @@ function ErpSyncToolbar({ kind, onSearchChange, search, filters }: {
 
   return (
     <div className="mb-4 space-y-3">
-      <div className="flex items-center gap-2 text-xs text-neutral-500">
+      <div className="flex items-center gap-2 text-xs text-fg-muted">
         {s ? <>
           Last synced: {s.last_synced_at ? formatDateTime(s.last_synced_at) : '—'}
-          {' · '}<span className={cn(s.last_status === 'success' ? 'text-green-700' : s.last_status === 'failed' ? 'text-red-700' : '')}>{s.last_status || 'never'}</span>
+          {' · '}<span className={cn(s.last_status === 'success' ? 'text-success-fg' : s.last_status === 'failed' ? 'text-danger-fg' : '')}>{s.last_status || 'never'}</span>
           {' · '}{s.last_row_count} rows
         </> : 'Never synced'}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <button onClick={() => trigger(false)} disabled={!!syncing}
-          className="flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-60 transition-colors">
+          className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60 transition-colors">
           {syncing === 'inc' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           Sync Incremental
         </button>
         <button onClick={() => trigger(true)} disabled={!!syncing}
-          className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-60 transition-colors">
+          className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-60 transition-colors">
           {syncing === 'full' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           Full Resync
         </button>
-        <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 ml-auto flex-1 min-w-[180px] max-w-xs">
-          <Search className="h-4 w-4 text-neutral-400 shrink-0" />
+        <div className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 ml-auto flex-1 min-w-[180px] max-w-xs">
+          <Search className="h-4 w-4 text-fg-muted shrink-0" />
           <input className="flex-1 text-sm focus:outline-none" placeholder="Search…"
             value={search} onChange={(e) => onSearchChange(e.target.value)} />
         </div>
         {filters}
       </div>
-      {toast && <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{toast}</div>}
+      {toast && <div className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-fg">{toast}</div>}
       {dlg.dialog}
     </div>
   )
@@ -2193,21 +2193,21 @@ function ErpMaterialsTab() {
         onSearchChange={(v) => { setSearch(v); setPage(1) }}
         filters={
           <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value as 'A' | 'B' | ''); setPage(1) }}
-            className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none">
+            className="rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none">
             <option value="A">Active (A)</option>
             <option value="B">Inactive (B)</option>
             <option value="">All</option>
           </select>
         }
       />
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
         {isLoading && !data ? (
-          <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
+          <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
         ) : !data?.items.length ? (
-          <div className="py-10 text-center text-sm text-neutral-400">No materials. Click Sync Incremental to fetch from ERP.</div>
+          <div className="py-10 text-center text-sm text-fg-muted">No materials. Click Sync Incremental to fetch from ERP.</div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="border-b border-neutral-100 bg-neutral-50">
+            <thead className="border-b border-line-subtle bg-surface-subtle">
               <tr>
                 <SortTh label="Part No" sortKey="erp_part_no" sort={sort} onSort={onSort} className={ADMIN_TH} />
                 <SortTh label="Description" sortKey="description" sort={sort} onSort={onSort} className={ADMIN_TH} />
@@ -2220,19 +2220,19 @@ function ErpMaterialsTab() {
             </thead>
             <tbody>
               {data.items.map(m => (
-                <tr key={m.erp_part_no} className="border-b border-neutral-100">
+                <tr key={m.erp_part_no} className="border-b border-line-subtle">
                   <td className="px-4 py-3 font-mono text-xs">{m.erp_part_no}</td>
-                  <td className="px-4 py-3 text-neutral-800">{m.description}</td>
-                  <td className="px-4 py-3 text-xs text-neutral-500">{m.unit_meas}</td>
-                  <td className="px-4 py-3 text-xs text-neutral-500">{m.dim_quality}</td>
-                  <td className="px-4 py-3 text-xs text-neutral-500">{m.item_mes_type}</td>
+                  <td className="px-4 py-3 text-fg">{m.description}</td>
+                  <td className="px-4 py-3 text-xs text-fg-muted">{m.unit_meas}</td>
+                  <td className="px-4 py-3 text-xs text-fg-muted">{m.dim_quality}</td>
+                  <td className="px-4 py-3 text-xs text-fg-muted">{m.item_mes_type}</td>
                   <td className="px-4 py-3">
-                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium',
-                      m.part_status === 'A' ? 'bg-green-50 text-green-700' : 'bg-neutral-100 text-neutral-500')}>
+                    <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium',
+                      m.part_status === 'A' ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                       {m.part_status || '—'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-[11px] text-neutral-400">
+                  <td className="px-4 py-3 text-2xs text-fg-muted">
                     {m.erp_rowversion ? formatDateTime(m.erp_rowversion) : '—'}
                   </td>
                 </tr>
@@ -2241,18 +2241,18 @@ function ErpMaterialsTab() {
           </table>
         )}
         {total > 0 && (
-          <div className="flex items-center justify-between border-t border-neutral-100 px-4 py-3">
-            <span className="text-xs text-neutral-400">
+          <div className="flex items-center justify-between border-t border-line-subtle px-4 py-3">
+            <span className="text-xs text-fg-muted">
               {(page - 1) * 20 + 1}–{Math.min(page * 20, total)} of {total}
             </span>
             <div className="flex items-center gap-1">
               <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                className="flex h-7 w-7 items-center justify-center rounded border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40">
+                className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40">
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
-              <span className="px-2 text-xs text-neutral-500">{page} / {totalPages}</span>
+              <span className="px-2 text-xs text-fg-muted">{page} / {totalPages}</span>
               <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                className="flex h-7 w-7 items-center justify-center rounded border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40">
+                className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40">
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -2288,11 +2288,11 @@ function ErpSuppliersTab() {
   return (
     <>
       <ErpSyncToolbar kind="supplier" search={search} onSearchChange={(v) => { setSearch(v); setPage(1) }} />
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-        {isLoading && !data ? <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
-          : !data?.items.length ? <div className="py-10 text-center text-sm text-neutral-400">No suppliers. Click Sync.</div>
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+        {isLoading && !data ? <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
+          : !data?.items.length ? <div className="py-10 text-center text-sm text-fg-muted">No suppliers. Click Sync.</div>
           : <table className="w-full text-sm">
-              <thead className="border-b border-neutral-100 bg-neutral-50">
+              <thead className="border-b border-line-subtle bg-surface-subtle">
                 <tr>
                   <SortTh label="Code" sortKey="erp_supplier_code" sort={sort} onSort={onSort} className={ADMIN_TH} />
                   <SortTh label="Name" sortKey="supplier_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
@@ -2303,28 +2303,28 @@ function ErpSuppliersTab() {
               </thead>
               <tbody>
                 {data.items.map(s => (
-                  <tr key={s.erp_supplier_code} className="border-b border-neutral-100">
+                  <tr key={s.erp_supplier_code} className="border-b border-line-subtle">
                     <td className="px-4 py-3 font-mono text-xs">{s.erp_supplier_code}</td>
                     <td className="px-4 py-3">{s.supplier_name}</td>
-                    <td className="px-4 py-3 text-xs text-neutral-500">{s.supplier_type}</td>
-                    <td className="px-4 py-3 text-xs text-neutral-500">{s.supplier_tel}</td>
-                    <td className="px-4 py-3 text-xs text-neutral-500">{s.supplier_address}</td>
+                    <td className="px-4 py-3 text-xs text-fg-muted">{s.supplier_type}</td>
+                    <td className="px-4 py-3 text-xs text-fg-muted">{s.supplier_tel}</td>
+                    <td className="px-4 py-3 text-xs text-fg-muted">{s.supplier_address}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
         }
         {total > 0 && (
-          <div className="flex items-center justify-between border-t border-neutral-100 px-4 py-3">
-            <span className="text-xs text-neutral-400">{(page - 1) * 20 + 1}–{Math.min(page * 20, total)} of {total}</span>
+          <div className="flex items-center justify-between border-t border-line-subtle px-4 py-3">
+            <span className="text-xs text-fg-muted">{(page - 1) * 20 + 1}–{Math.min(page * 20, total)} of {total}</span>
             <div className="flex items-center gap-1">
               <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                className="flex h-7 w-7 items-center justify-center rounded border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40">
+                className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40">
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
-              <span className="px-2 text-xs text-neutral-500">{page} / {totalPages}</span>
+              <span className="px-2 text-xs text-fg-muted">{page} / {totalPages}</span>
               <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                className="flex h-7 w-7 items-center justify-center rounded border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40">
+                className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40">
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -2362,11 +2362,11 @@ function ErpPersonsTab() {
   return (
     <>
       <ErpSyncToolbar kind="person" search={search} onSearchChange={(v) => { setSearch(v); setPage(1) }} />
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-        {isLoading && !data ? <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
-          : !data?.items.length ? <div className="py-10 text-center text-sm text-neutral-400">No persons. Click Sync.</div>
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+        {isLoading && !data ? <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
+          : !data?.items.length ? <div className="py-10 text-center text-sm text-fg-muted">No persons. Click Sync.</div>
           : <table className="w-full text-sm">
-              <thead className="border-b border-neutral-100 bg-neutral-50">
+              <thead className="border-b border-line-subtle bg-surface-subtle">
                 <tr>
                   <SortTh label="Code" sortKey="erp_person_code" sort={sort} onSort={onSort} className={ADMIN_TH} />
                   <SortTh label="Name" sortKey="person_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
@@ -2377,14 +2377,14 @@ function ErpPersonsTab() {
               </thead>
               <tbody>
                 {data.items.map(p => (
-                  <tr key={p.erp_person_code} className="border-b border-neutral-100">
+                  <tr key={p.erp_person_code} className="border-b border-line-subtle">
                     <td className="px-4 py-3 font-mono text-xs">{p.erp_person_code}</td>
                     <td className="px-4 py-3">{p.person_name}</td>
-                    <td className="px-4 py-3 text-xs text-neutral-500">{p.company_name}</td>
-                    <td className="px-4 py-3 text-xs text-neutral-500">{p.department_name} ({p.department_code})</td>
+                    <td className="px-4 py-3 text-xs text-fg-muted">{p.company_name}</td>
+                    <td className="px-4 py-3 text-xs text-fg-muted">{p.department_name} ({p.department_code})</td>
                     <td className="px-4 py-3">
-                      <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium',
-                        p.is_valid ? 'bg-green-50 text-green-700' : 'bg-neutral-100 text-neutral-500')}>
+                      <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium',
+                        p.is_valid ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                         {p.is_valid ? 'Yes' : 'No'}
                       </span>
                     </td>
@@ -2394,16 +2394,16 @@ function ErpPersonsTab() {
             </table>
         }
         {total > 0 && (
-          <div className="flex items-center justify-between border-t border-neutral-100 px-4 py-3">
-            <span className="text-xs text-neutral-400">{(page - 1) * 20 + 1}–{Math.min(page * 20, total)} of {total}</span>
+          <div className="flex items-center justify-between border-t border-line-subtle px-4 py-3">
+            <span className="text-xs text-fg-muted">{(page - 1) * 20 + 1}–{Math.min(page * 20, total)} of {total}</span>
             <div className="flex items-center gap-1">
               <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                className="flex h-7 w-7 items-center justify-center rounded border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40">
+                className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40">
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
-              <span className="px-2 text-xs text-neutral-500">{page} / {totalPages}</span>
+              <span className="px-2 text-xs text-fg-muted">{page} / {totalPages}</span>
               <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                className="flex h-7 w-7 items-center justify-center rounded border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40">
+                className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40">
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -2494,28 +2494,28 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex justify-end">
-      <div className="bg-white w-full max-w-3xl h-full overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
+      <div className="bg-surface w-full max-w-3xl h-full overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between border-b border-line px-4 py-3">
           <h2 className="text-sm font-semibold">Import users from ERP</h2>
-          <button onClick={onClose}><X className="h-4 w-4 text-neutral-500" /></button>
+          <button onClick={onClose}><X className="h-4 w-4 text-fg-muted" /></button>
         </div>
 
         {result ? (
           <div className="flex-1 overflow-auto p-4 space-y-3">
-            <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm">
+            <div className="rounded-lg border border-success-line bg-success-soft px-4 py-3 text-sm">
               <strong>{result.created.length} created</strong>, {result.errors.length} errors.
             </div>
             {result.created.length > 0 && (
               <div>
-                <p className="text-xs font-semibold text-neutral-600 mb-1">Temporary passwords (copy now — not shown again):</p>
-                <table className="w-full text-xs border border-neutral-200">
-                  <thead><tr className="bg-neutral-50">
+                <p className="text-xs font-semibold text-fg-secondary mb-1">Temporary passwords (copy now — not shown again):</p>
+                <table className="w-full text-xs border border-line">
+                  <thead><tr className="bg-surface-subtle">
                     <th className="px-2 py-1 text-left">Email</th>
                     <th className="px-2 py-1 text-left">Temp password</th>
                   </tr></thead>
                   <tbody>
                     {result.created.map((c, i) => (
-                      <tr key={i} className="border-t border-neutral-100">
+                      <tr key={i} className="border-t border-line-subtle">
                         <td className="px-2 py-1 font-mono">{c.email}</td>
                         <td className="px-2 py-1 font-mono">{c.temp_password}</td>
                       </tr>
@@ -2525,55 +2525,55 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
               </div>
             )}
             {result.errors.length > 0 && (
-              <ul className="text-xs text-amber-700 list-disc pl-5">
+              <ul className="text-xs text-warning-fg list-disc pl-5">
                 {result.errors.map((e, i) => <li key={i}>{e.erp_person_code}: {e.reason}</li>)}
               </ul>
             )}
-            <button onClick={onClose} className="rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white">Done</button>
+            <button onClick={onClose} className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white">Done</button>
           </div>
         ) : (
           <>
-            <div className="border-b border-neutral-200 px-4 py-3 space-y-2">
+            <div className="border-b border-line px-4 py-3 space-y-2">
               <div className="flex items-center gap-2">
-                <input className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+                <input className="flex-1 rounded-lg border border-line px-3 py-2 text-sm"
                   placeholder="Search code or name…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
-                <label className="flex items-center gap-1 text-xs text-neutral-600">
+                <label className="flex items-center gap-1 text-xs text-fg-secondary">
                   <input type="checkbox" checked={excludeImported} onChange={e => { setExcludeImported(e.target.checked); setPage(1) }} />
                   Only show not-imported
                 </label>
               </div>
-              <p className="text-xs text-neutral-500">Role defaults to <code>requester</code>. Department auto-maps from ERP department code. Edit later in User Management.</p>
+              <p className="text-xs text-fg-muted">Role defaults to <code>requester</code>. Department auto-maps from ERP department code. Edit later in User Management.</p>
             </div>
 
             <div className="flex-1 overflow-auto p-4">
-              {isLoading ? <div className="text-sm text-neutral-400">Loading…</div>
-                : !data?.items.length ? <div className="text-sm text-neutral-400">No persons to import.</div>
+              {isLoading ? <div className="text-sm text-fg-muted">Loading…</div>
+                : !data?.items.length ? <div className="text-sm text-fg-muted">No persons to import.</div>
                 : <table className="w-full text-sm">
-                    <thead className="border-b border-neutral-200">
+                    <thead className="border-b border-line">
                       <tr>
                         <th className="px-2 py-2"></th>
-                        <SortTh label="Code" sortKey="erp_person_code" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
-                        <SortTh label="Name" sortKey="person_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
-                        <SortTh label="Dept" sortKey="department_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
-                        <th className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500">Email *</th>
+                        <SortTh label="Code" sortKey="erp_person_code" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted" />
+                        <SortTh label="Name" sortKey="person_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted" />
+                        <SortTh label="Dept" sortKey="department_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted" />
+                        <th className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted">Email *</th>
                       </tr>
                     </thead>
                     <tbody>
                       {data.items.map(p => {
                         const isSel = !!selected[p.erp_person_code]
                         return (
-                          <tr key={p.erp_person_code} className="border-b border-neutral-100">
+                          <tr key={p.erp_person_code} className="border-b border-line-subtle">
                             <td className="px-2 py-2"><input type="checkbox" checked={isSel} onChange={() => toggle(p.erp_person_code)} /></td>
                             <td className="px-2 py-2 font-mono text-xs">{p.erp_person_code}</td>
                             <td className="px-2 py-2">{p.person_name}</td>
-                            <td className="px-2 py-2 text-xs text-neutral-500">{p.department_name}</td>
+                            <td className="px-2 py-2 text-xs text-fg-muted">{p.department_name}</td>
                             <td className="px-2 py-2">
                               <input
                                 disabled={!isSel}
                                 placeholder="email@royalmilk.com"
                                 value={selected[p.erp_person_code]?.email || ''}
                                 onChange={e => setSelected(prev => ({ ...prev, [p.erp_person_code]: { email: e.target.value } }))}
-                                className="w-full rounded border border-neutral-200 px-2 py-1 text-xs disabled:bg-neutral-50"
+                                className="w-full rounded border border-line px-2 py-1 text-xs disabled:bg-surface-subtle"
                               />
                             </td>
                           </tr>
@@ -2585,31 +2585,31 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
             </div>
 
             {total > 0 && (
-              <div className="flex items-center justify-between border-t border-neutral-100 px-4 py-2">
-                <span className="text-xs text-neutral-400">{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}</span>
+              <div className="flex items-center justify-between border-t border-line-subtle px-4 py-2">
+                <span className="text-xs text-fg-muted">{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}</span>
                 <div className="flex items-center gap-1">
                   <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                    className="flex h-7 w-7 items-center justify-center rounded border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40">
+                    className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40">
                     <ChevronLeft className="h-3.5 w-3.5" />
                   </button>
-                  <span className="px-2 text-xs text-neutral-500">{page} / {totalPages}</span>
+                  <span className="px-2 text-xs text-fg-muted">{page} / {totalPages}</span>
                   <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                    className="flex h-7 w-7 items-center justify-center rounded border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40">
+                    className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40">
                     <ChevronRight className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>
             )}
 
-            <div className="border-t border-neutral-200 px-4 py-3 flex items-center justify-between">
-              <span className="text-xs text-neutral-500">
+            <div className="border-t border-line px-4 py-3 flex items-center justify-between">
+              <span className="text-xs text-fg-muted">
                 {selectedCount} selected{selectedCount > 0 && !allEmailsFilled && ' · email required for each row'}
               </span>
               <div className="flex items-center gap-2">
-                {error && <span className="text-xs text-red-600">{error}</span>}
-                <button onClick={onClose} className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">Cancel</button>
+                {error && <span className="text-xs text-danger-fg">{error}</span>}
+                <button onClick={onClose} className="rounded-lg border border-line bg-surface px-3 py-2 text-sm">Cancel</button>
                 <button onClick={submit} disabled={!selectedCount || !allEmailsFilled || submitting}
-                  className="rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white disabled:opacity-60 flex items-center gap-1.5">
+                  className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 flex items-center gap-1.5">
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   Import {selectedCount} user{selectedCount === 1 ? '' : 's'}
                 </button>
@@ -2671,7 +2671,7 @@ export default function AdminPanel() {
     <div className="flex h-screen overflow-hidden bg-[#F5F6FA]">
 
       {/* ── Teal sidebar — matches Portal main nav style ─────────────── */}
-      <nav className="w-56 shrink-0 flex flex-col bg-[#085E5E] overflow-hidden">
+      <nav className="w-56 shrink-0 flex flex-col bg-primary-700 overflow-hidden">
         {/* Brand */}
         <div className="flex h-[60px] items-center gap-2.5 border-b border-white/10 px-4 shrink-0">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white font-bold text-sm select-none">
@@ -2679,7 +2679,7 @@ export default function AdminPanel() {
           </div>
           <div className="leading-tight min-w-0">
             <p className="text-sm font-bold text-white tracking-tight">UniOps</p>
-            <p className="text-[9px] font-semibold uppercase tracking-widest text-white/50">Admin Panel</p>
+            <p className="text-2xs font-semibold uppercase tracking-widest text-white/50">Admin Panel</p>
           </div>
         </div>
 
@@ -2716,7 +2716,7 @@ export default function AdminPanel() {
 
           {otherPages.length > 0 && (
             <div className="mt-3 border-t border-white/10 pt-3 space-y-0.5">
-              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/40">
+              <p className="px-3 pb-1 text-2xs font-semibold uppercase tracking-wider text-white/40">
                 More admin pages
               </p>
               {otherPages.map(({ label, icon: Icon, href }) => (
@@ -2738,11 +2738,11 @@ export default function AdminPanel() {
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
 
         {/* Header */}
-        <header className="flex h-[60px] shrink-0 items-center gap-3 border-b border-neutral-200 bg-white px-6">
+        <header className="flex h-[60px] shrink-0 items-center gap-3 border-b border-line bg-surface px-6">
           {currentSection && (
             <div className="flex items-center gap-2">
-              <currentSection.icon className="h-4 w-4 text-neutral-400 shrink-0" />
-              <h1 className="text-sm font-semibold text-neutral-800">{currentSection.label}</h1>
+              <currentSection.icon className="h-4 w-4 text-fg-muted shrink-0" />
+              <h1 className="text-sm font-semibold text-fg">{currentSection.label}</h1>
             </div>
           )}
         </header>

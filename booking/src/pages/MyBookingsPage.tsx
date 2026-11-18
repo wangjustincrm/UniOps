@@ -43,9 +43,9 @@ function StatusBadge({ status }: { status: string }) {
     <span
       className={cn(
         'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset',
-        confirmed && 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-        cancelled && 'bg-red-50 text-red-600 ring-red-200',
-        !confirmed && !cancelled && 'bg-neutral-100 text-neutral-500 ring-neutral-200',
+        confirmed && 'bg-success-soft text-success-fg ring-success-line',
+        cancelled && 'bg-danger-soft text-danger-fg ring-danger-line',
+        !confirmed && !cancelled && 'bg-surface-sunken text-fg-muted ring-line',
       )}
     >
       {confirmed ? 'Confirmed' : cancelled ? 'Cancelled' : status}
@@ -54,10 +54,10 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 const SYNC_STYLE: Record<string, string> = {
-  sent:          'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  pending:       'bg-amber-50  text-amber-700  ring-amber-200',
-  compensating:  'bg-amber-50  text-amber-700  ring-amber-200',
-  failed:        'bg-red-50    text-red-600    ring-red-200',
+  sent:          'bg-success-soft text-success-fg ring-success-line',
+  pending:       'bg-warning-soft  text-warning-fg  ring-warning-line',
+  compensating:  'bg-warning-soft  text-warning-fg  ring-warning-line',
+  failed:        'bg-danger-soft    text-danger-fg    ring-danger-line',
 }
 
 const SYNC_LABEL: Record<string, string> = {
@@ -68,7 +68,7 @@ const SYNC_LABEL: Record<string, string> = {
 }
 
 function SyncBadge({ syncStatus }: { syncStatus: string }) {
-  const style = SYNC_STYLE[syncStatus] ?? 'bg-neutral-100 text-neutral-500 ring-neutral-200'
+  const style = SYNC_STYLE[syncStatus] ?? 'bg-surface-sunken text-fg-muted ring-line'
   const label = SYNC_LABEL[syncStatus] ?? syncStatus
   return (
     <span
@@ -96,9 +96,9 @@ function CancelDialog({ booking, onConfirm, onClose, isPending }: CancelDialogPr
   const isSeries = !!booking.series_id
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white p-6 shadow-xl space-y-4">
-        <h2 className="text-base font-semibold text-neutral-900">Cancel booking</h2>
-        <p className="text-sm text-neutral-600">
+      <div className="w-full max-w-sm rounded-xl border border-line bg-surface p-6 shadow-xl space-y-4">
+        <h2 className="text-base font-semibold text-fg">Cancel booking</h2>
+        <p className="text-sm text-fg-secondary">
           {isSeries
             ? `"${booking.title}" is part of a recurring series. Cancel only this occurrence, or the whole series? Cancelling the series keeps past and in-progress occurrences.`
             : `Are you sure you want to cancel "${booking.title}"? This cannot be undone.`}
@@ -108,7 +108,7 @@ function CancelDialog({ booking, onConfirm, onClose, isPending }: CancelDialogPr
             type="button"
             onClick={onClose}
             disabled={isPending}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+            className="rounded-md border border-line-strong px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50"
           >
             Keep
           </button>
@@ -117,7 +117,7 @@ function CancelDialog({ booking, onConfirm, onClose, isPending }: CancelDialogPr
               type="button"
               onClick={() => onConfirm(false)}
               disabled={isPending}
-              className="rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+              className="rounded-md border border-danger-line px-3 py-1.5 text-sm font-medium text-danger-fg hover:bg-danger-soft disabled:opacity-50"
             >
               This occurrence
             </button>
@@ -126,7 +126,7 @@ function CancelDialog({ booking, onConfirm, onClose, isPending }: CancelDialogPr
             type="button"
             onClick={() => onConfirm(isSeries)}
             disabled={isPending}
-            className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md bg-danger-solid px-3 py-1.5 text-sm font-semibold text-white hover:bg-danger-700 disabled:opacity-50"
           >
             {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {isSeries ? 'Cancel series' : 'Cancel booking'}
@@ -150,37 +150,37 @@ function BookingRow({ booking, showActions, onEdit, onCancel }: RowProps) {
   const isSeries = !!booking.series_id
 
   return (
-    <tr className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50 transition-colors">
+    <tr className="border-b border-line-subtle last:border-0 hover:bg-surface-subtle transition-colors">
       {/* Title + series icon */}
       <td className="px-4 py-3 text-sm">
         <div className="flex items-center gap-1.5">
-          <span className="font-medium text-neutral-900">{booking.title}</span>
+          <span className="font-medium text-fg">{booking.title}</span>
           {isSeries && (
             <span title={booking.rrule ?? 'Recurring meeting'}>
-              <Repeat className="h-3.5 w-3.5 text-neutral-400 shrink-0" />
+              <Repeat className="h-3.5 w-3.5 text-fg-muted shrink-0" />
             </span>
           )}
         </div>
       </td>
       {/* Room */}
-      <td className="px-4 py-3 text-sm text-neutral-600">
+      <td className="px-4 py-3 text-sm text-fg-secondary">
         <span className="font-medium">{booking.room_name}</span>
-        <span className="ml-1 text-xs text-neutral-400">({booking.room_code})</span>
+        <span className="ml-1 text-xs text-fg-muted">({booking.room_code})</span>
       </td>
       {/* Date + time */}
-      <td className="px-4 py-3 text-sm text-neutral-600 whitespace-nowrap">
+      <td className="px-4 py-3 text-sm text-fg-secondary whitespace-nowrap">
         <div className="flex items-center gap-1">
-          <CalendarDays className="h-3.5 w-3.5 text-neutral-400 shrink-0" />
+          <CalendarDays className="h-3.5 w-3.5 text-fg-muted shrink-0" />
           <span>{formatDate(booking.starts_at)}</span>
         </div>
-        <div className="text-xs text-neutral-400 mt-0.5 ml-5">
+        <div className="text-xs text-fg-muted mt-0.5 ml-5">
           {fmtTime(booking.starts_at)}–{fmtTime(booking.ends_at)}
         </div>
       </td>
       {/* Attendees */}
-      <td className="px-4 py-3 text-sm text-neutral-600">
+      <td className="px-4 py-3 text-sm text-fg-secondary">
         <div className="flex items-center gap-1">
-          <Users className="h-3.5 w-3.5 text-neutral-400" />
+          <Users className="h-3.5 w-3.5 text-fg-muted" />
           <span>{booking.attendee_ids.length + 1}</span>
         </div>
       </td>
@@ -200,7 +200,7 @@ function BookingRow({ booking, showActions, onEdit, onCancel }: RowProps) {
               type="button"
               onClick={() => onEdit(booking)}
               title={isSeries ? 'Edit entire series' : 'Edit booking'}
-              className="inline-flex items-center gap-1 rounded-md border border-[#085E5E]/30 bg-white px-2.5 py-1 text-xs font-medium text-[#085E5E] hover:bg-[#085E5E]/5 transition-colors"
+              className="inline-flex items-center gap-1 rounded-md border border-primary-700/30 bg-surface px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-700/5 transition-colors"
             >
               <Pencil className="h-3 w-3" />
               Edit
@@ -209,7 +209,7 @@ function BookingRow({ booking, showActions, onEdit, onCancel }: RowProps) {
             <button
               type="button"
               onClick={() => onCancel(booking)}
-              className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+              className="inline-flex items-center gap-1 rounded-md border border-danger-line bg-surface px-2.5 py-1 text-xs font-medium text-danger-fg hover:bg-danger-soft transition-colors"
             >
               <XIcon className="h-3 w-3" />
               Cancel
@@ -226,7 +226,7 @@ function BookingRow({ booking, showActions, onEdit, onCancel }: RowProps) {
 function EmptyState({ message }: { message: string }) {
   return (
     <tr>
-      <td colSpan={6} className="px-4 py-12 text-center text-sm text-neutral-400">
+      <td colSpan={6} className="px-4 py-12 text-center text-sm text-fg-muted">
         {message}
       </td>
     </tr>
@@ -313,24 +313,24 @@ export default function MyBookingsPage() {
     cn(
       'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
       activeTab === t
-        ? 'border-[#085E5E] text-[#085E5E]'
-        : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300',
+        ? 'border-primary-700 text-primary-700'
+        : 'border-transparent text-fg-muted hover:text-fg-secondary hover:border-line-strong',
     )
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 space-y-4">
         {/* Header */}
-        <h1 className="text-2xl font-bold text-neutral-900">My Bookings</h1>
+        <h1 className="text-2xl font-bold text-fg">My Bookings</h1>
 
         {/* Success note */}
         {successNote && (
-          <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          <div className="flex items-center justify-between rounded-md border border-success-line bg-success-soft px-4 py-3 text-sm text-success-fg">
             <span>{successNote}</span>
             <button
               type="button"
               onClick={() => setSuccessNote(null)}
-              className="ml-3 text-emerald-500 hover:text-emerald-700"
+              className="ml-3 text-success-fg hover:text-success-fg"
             >
               <XIcon className="h-4 w-4" />
             </button>
@@ -339,7 +339,7 @@ export default function MyBookingsPage() {
 
         {/* Cancel error */}
         {cancelError && (
-          <div className="flex items-center justify-between rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <div className="flex items-center justify-between rounded-md border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
             <div className="flex items-center gap-2">
               <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{cancelError}</span>
@@ -347,7 +347,7 @@ export default function MyBookingsPage() {
             <button
               type="button"
               onClick={() => setCancelError(null)}
-              className="ml-3 text-red-400 hover:text-red-600"
+              className="ml-3 text-danger-400 hover:text-danger-fg"
             >
               <XIcon className="h-4 w-4" />
             </button>
@@ -355,11 +355,11 @@ export default function MyBookingsPage() {
         )}
 
         {/* Tabs */}
-        <div className="flex border-b border-neutral-200">
+        <div className="flex border-b border-line">
           <button type="button" className={tabCls('upcoming')} onClick={() => setActiveTab('upcoming')}>
             Upcoming
             {upcomingTotal > 0 && (
-              <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-[#085E5E]/10 px-1.5 py-0.5 text-xs font-semibold text-[#085E5E]">
+              <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-primary-700/10 px-1.5 py-0.5 text-xs font-semibold text-primary-700">
                 {upcomingTotal}
               </span>
             )}
@@ -371,30 +371,30 @@ export default function MyBookingsPage() {
 
         {/* Content */}
         {isLoading && (
-          <div className="flex items-center justify-center py-16 text-sm text-neutral-500">
+          <div className="flex items-center justify-center py-16 text-sm text-fg-muted">
             <Loader2 className="h-5 w-5 animate-spin mr-2" />
             Loading bookings…
           </div>
         )}
 
         {!isLoading && error && (
-          <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4 shrink-0" />
             Failed to load bookings. Please refresh.
           </div>
         )}
 
         {!isLoading && !error && (
-          <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white shadow-sm">
+          <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-neutral-200 bg-neutral-50">
+              <thead className="border-b border-line bg-surface-subtle">
                 <tr>
-                  <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500" />
-                  <SortTh label="Room" sortKey="room" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500" />
-                  <SortTh label="Date / Time" sortKey="starts_at" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500" />
-                  <SortTh label="Attendees" sortKey="attendees" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500" />
-                  <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500" />
-                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">Actions</th>
+                  <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted" />
+                  <SortTh label="Room" sortKey="room" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted" />
+                  <SortTh label="Date / Time" sortKey="starts_at" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted" />
+                  <SortTh label="Attendees" sortKey="attendees" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted" />
+                  <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted" />
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted">Actions</th>
                 </tr>
               </thead>
               <tbody>

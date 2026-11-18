@@ -39,10 +39,10 @@ interface Resp {
 }
 
 function pctCls(v: number | null | undefined, flagged: boolean) {
-  if (v === null || v === undefined) return 'text-neutral-300'
-  if (v < 0) return 'bg-red-50 font-semibold text-red-700'
-  if (flagged) return 'bg-amber-50 text-amber-900'
-  return 'text-neutral-800'
+  if (v === null || v === undefined) return 'text-fg-faint'
+  if (v < 0) return 'bg-danger-soft font-semibold text-danger-fg'
+  if (flagged) return 'bg-warning-soft text-warning-fg'
+  return 'text-fg'
 }
 
 export default function GrossMarginPage() {
@@ -78,35 +78,35 @@ export default function GrossMarginPage() {
       <div className="mx-auto max-w-7xl">
         <SyncBar />
         <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-          <label className="text-xs text-neutral-500">From</label>
-          <input type="month" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-lg border border-neutral-300 px-2 py-1" />
-          <label className="text-xs text-neutral-500">To</label>
-          <input type="month" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-neutral-300 px-2 py-1" />
-          {isFetching && <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />}
+          <label className="text-xs text-fg-muted">From</label>
+          <input type="month" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-lg border border-line-strong px-2 py-1" />
+          <label className="text-xs text-fg-muted">To</label>
+          <input type="month" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-line-strong px-2 py-1" />
+          {isFetching && <Loader2 className="h-4 w-4 animate-spin text-fg-muted" />}
         </div>
 
         {error ? <AccessMessage error={error} /> : !data ? (
-          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /><p className="mt-2 text-xs text-neutral-500">Analysing every product-month…</p></div>
+          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /><p className="mt-2 text-xs text-fg-muted">Analysing every product-month…</p></div>
         ) : (
           <>
-            <div className="mb-6 rounded-lg border border-[#085E5E]/30 bg-primary-50/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-[#085E5E]">Summary</p>
-              <p className="mt-1 text-base font-semibold leading-snug text-neutral-900">{data.summary.headline}</p>
+            <div className="mb-6 rounded-lg border border-primary-700/30 bg-primary-50/40 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Summary</p>
+              <p className="mt-1 text-base font-semibold leading-snug text-fg">{data.summary.headline}</p>
               <div className="mt-3 space-y-2">
                 {shown.map((f, i) => <FindingCard key={i} f={f} prefix={`${f.material_code} ${f.period} ·`} />)}
               </div>
               {findings.length > 6 && (
-                <button onClick={() => setShowAll(!showAll)} className="mt-2 text-xs text-[#085E5E] underline">
+                <button onClick={() => setShowAll(!showAll)} className="mt-2 text-xs text-primary-700 underline">
                   {showAll ? 'Show the first 6' : `Show all ${findings.length}`}
                 </button>
               )}
             </div>
 
-            <h2 className="mb-3 border-b border-neutral-200 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">Supporting data</h2>
-            <p className="mb-2 text-xs text-neutral-500">Gross margin % by product and month. Red = negative; amber = explained above. Click a cell for its figures.</p>
-            <div className="overflow-x-auto rounded-lg border border-neutral-200">
+            <h2 className="mb-3 border-b border-line pb-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">Supporting data</h2>
+            <p className="mb-2 text-xs text-fg-muted">Gross margin % by product and month. Red = negative; amber = explained above. Click a cell for its figures.</p>
+            <div className="overflow-x-auto rounded-lg border border-line">
               <table className="w-full text-xs">
-                <thead className="bg-neutral-50 text-neutral-500">
+                <thead className="bg-surface-subtle text-fg-muted">
                   <tr>
                     <SortTh label="Product" sortKey="product" sort={sort} onSort={onSort} className="px-2 py-1.5 text-left font-medium" />
                     {data.periods.map((p) => (
@@ -121,11 +121,11 @@ export default function GrossMarginPage() {
                 <tbody>
                   {rows.map((r) => (
                     <Fragment key={r.material_code}>
-                      <tr className="border-t border-neutral-100">
+                      <tr className="border-t border-line-subtle">
                         <td className="px-2 py-1.5">
-                          <Link to={traceLink(r.material_code, from, to)} className="font-mono text-[#085E5E] underline">{r.material_code}</Link>
-                          <span className="ml-1 text-neutral-500">{r.material_name}</span>
-                          {r.byproduct && <span className="ml-1 rounded border border-neutral-200 px-1 text-[10px] text-neutral-500">by-product · {r.byproduct}</span>}
+                          <Link to={traceLink(r.material_code, from, to)} className="font-mono text-primary-700 underline">{r.material_code}</Link>
+                          <span className="ml-1 text-fg-muted">{r.material_name}</span>
+                          {r.byproduct && <span className="ml-1 rounded border border-line px-1 text-2xs text-fg-muted">by-product · {r.byproduct}</span>}
                         </td>
                         {data.periods.map((p) => {
                           const c = r.months[p]
@@ -134,32 +134,32 @@ export default function GrossMarginPage() {
                             <td key={p} onClick={() => c && setOpen(open === k ? null : k)}
                                 title={c ? `Revenue ${num(c.revenue)} · cost ${num(c.cost)} · ${qty(c.qty)} sold` : ''}
                                 className={cn('cursor-pointer px-2 py-1.5 text-right font-mono tabular-nums',
-                                  pctCls(c?.margin_pct, flagged.has(k)), open === k && 'ring-2 ring-[#085E5E] ring-inset')}>
+                                  pctCls(c?.margin_pct, flagged.has(k)), open === k && 'ring-2 ring-primary-700 ring-inset')}>
                               {c ? (c.margin_pct === null ? '—' : `${c.margin_pct}`) : ''}
                             </td>
                           )
                         })}
                         <td className="px-2 py-1.5 text-right font-mono tabular-nums">{num(r.total.revenue, 0)}</td>
-                        <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', r.total.margin < 0 && 'text-red-700')}>{num(r.total.margin, 0)}</td>
-                        <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', (r.total.margin_pct ?? 0) < 0 && 'text-red-700')}>{r.total.margin_pct ?? '—'}</td>
+                        <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', r.total.margin < 0 && 'text-danger-fg')}>{num(r.total.margin, 0)}</td>
+                        <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums', (r.total.margin_pct ?? 0) < 0 && 'text-danger-fg')}>{r.total.margin_pct ?? '—'}</td>
                       </tr>
                       {data.periods.map((p) => {
                         const c = r.months[p]
                         if (!c || open !== `${r.material_code}|${p}`) return null
                         return (
-                          <tr key={`${p}-d`} className="bg-neutral-50/70">
+                          <tr key={`${p}-d`} className="bg-surface-subtle/70">
                             <td colSpan={data.periods.length + 4} className="px-3 py-2">
                               <div className="flex flex-wrap gap-x-6 gap-y-1">
-                                <span><span className="text-neutral-500">{r.material_code} {p}:</span> {qty(c.qty)} sold</span>
+                                <span><span className="text-fg-muted">{r.material_code} {p}:</span> {qty(c.qty)} sold</span>
                                 <span>Revenue <b className="font-mono">{num(c.revenue)}</b> ({num(c.unit_price, 4)}/unit)</span>
                                 <span>Cost of sales <b className="font-mono">{num(c.cost)}</b> ({num(c.unit_cost, 4)}/unit)</span>
-                                <span className={cn(c.margin < 0 && 'text-red-700')}>Margin <b className="font-mono">{num(c.margin)}</b> ({c.margin_pct ?? '—'}%)</span>
-                                <Link to={traceLink(r.material_code, from, p)} className="text-[#085E5E] underline">Trace</Link>
-                                <Link to={`/finance/analysis/chain/${encodeURIComponent(r.material_code)}?period=${p}`} className="text-[#085E5E] underline">Cost chain</Link>
-                                <Link to={`/finance/analysis/batches/${encodeURIComponent(r.material_code)}?from=${from}&to=${p}`} className="text-[#085E5E] underline">Batches</Link>
-                                <Link to={`/finance/analysis/standard/${encodeURIComponent(r.material_code)}?from=${from}&to=${to}`} className="text-[#085E5E] underline">Standard cost</Link>
+                                <span className={cn(c.margin < 0 && 'text-danger-fg')}>Margin <b className="font-mono">{num(c.margin)}</b> ({c.margin_pct ?? '—'}%)</span>
+                                <Link to={traceLink(r.material_code, from, p)} className="text-primary-700 underline">Trace</Link>
+                                <Link to={`/finance/analysis/chain/${encodeURIComponent(r.material_code)}?period=${p}`} className="text-primary-700 underline">Cost chain</Link>
+                                <Link to={`/finance/analysis/batches/${encodeURIComponent(r.material_code)}?from=${from}&to=${p}`} className="text-primary-700 underline">Batches</Link>
+                                <Link to={`/finance/analysis/standard/${encodeURIComponent(r.material_code)}?from=${from}&to=${to}`} className="text-primary-700 underline">Standard cost</Link>
                               </div>
-                              <p className="mt-1 font-mono text-[11px] text-neutral-400">Invoices: {c.invoices.join(', ')}</p>
+                              <p className="mt-1 font-mono text-2xs text-fg-muted">Invoices: {c.invoices.join(', ')}</p>
                             </td>
                           </tr>
                         )
@@ -170,18 +170,18 @@ export default function GrossMarginPage() {
               </table>
             </div>
             {data.costed_in_a_later_month.length > 0 && (
-              <p className="mt-3 text-xs text-neutral-500">
+              <p className="mt-3 text-xs text-fg-muted">
                 Costed by NC in a later month, counted in the month of the sale: {data.costed_in_a_later_month.map((x) => `${x.material_code} ${x.invoice} (${x.invoice_month} → ${x.cost_period})`).join('; ')}.
               </p>
             )}
             {data.pending_invoices.length > 0 && (
-              <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-700">
+              <div className="mt-4 rounded-lg border border-line bg-surface-subtle p-3 text-xs text-fg-secondary">
                 <p className="font-medium">Invoices not approved in NC — not counted as revenue</p>
                 <ul className="mt-1 list-disc pl-5">{data.pending_invoices.map((x, i) => <li key={i}><span className="font-mono">{x.invoice} {x.material_code}</span> {formatDate(x.date)} · {num(x.amount)} (status {x.status_flag ?? '—'})</li>)}</ul>
               </div>
             )}
             {data.a7.length > 0 && (
-              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              <div className="mt-4 rounded-lg border border-warning-line bg-warning-soft p-3 text-xs text-warning-fg">
                 <p className="font-medium">Sales without a matching cost of sales, or the reverse (A7)</p>
                 <ul className="mt-1 list-disc pl-5">{data.a7.map((x, i) => <li key={i}><span className="font-mono">{x.material_code} {x.invoice}</span> — {x.side}</li>)}</ul>
               </div>

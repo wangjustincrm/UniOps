@@ -73,55 +73,55 @@ function TimelineStep({
     <div className="flex gap-3">
       <div className="flex flex-col items-center">
         <div className={cn('h-7 w-7 rounded-full flex items-center justify-center shrink-0', {
-          'bg-success-600':  status === 'done' && !isAutoApproved,
+          'bg-success-solid':  status === 'done' && !isAutoApproved,
           'bg-success-400':  status === 'done' && isAutoApproved,
           'bg-primary-600 ring-4 ring-primary-100': status === 'active',
-          'bg-neutral-200':  status === 'pending',
-          'border-2 border-dashed border-neutral-300 bg-white': status === 'skipped',
-          'bg-warning-500': status === 'returned',
-          'bg-danger-600': status === 'rejected',
+          'bg-surface-strong':  status === 'pending',
+          'border-2 border-dashed border-line-strong bg-surface': status === 'skipped',
+          'bg-warning-solid': status === 'returned',
+          'bg-danger-solid': status === 'rejected',
         })}>
           {status === 'done'
             ? <CheckCircle2 className="h-4 w-4 text-white" />
             : status === 'active'
               ? <Clock className="h-3.5 w-3.5 text-white animate-pulse" />
               : status === 'skipped'
-                ? <SkipForward className="h-3.5 w-3.5 text-neutral-300" />
+                ? <SkipForward className="h-3.5 w-3.5 text-fg-faint" />
                 : status === 'returned'
                   ? <RotateCcw className="h-3.5 w-3.5 text-white" />
                   : status === 'rejected'
                     ? <X className="h-3.5 w-3.5 text-white" />
-                    : <div className="h-2 w-2 rounded-full bg-neutral-400" />}
+                    : <div className="h-2 w-2 rounded-full bg-fg-faint" />}
         </div>
-        <div className="w-px flex-1 bg-neutral-200 mt-1" />
+        <div className="w-px flex-1 bg-surface-strong mt-1" />
       </div>
       <div className="pb-5">
-        <p className={cn('text-sm font-semibold text-neutral-800', status === 'skipped' && 'line-through text-neutral-400')}>{actor ? `${label} — ${actor}` : label}</p>
-        {date && <p className="text-xs text-neutral-400 mt-0.5">{dateOnly ? formatDate(date) : formatDateTime(date)}</p>}
+        <p className={cn('text-sm font-semibold text-fg', status === 'skipped' && 'line-through text-fg-muted')}>{actor ? `${label} — ${actor}` : label}</p>
+        {date && <p className="text-xs text-fg-muted mt-0.5">{dateOnly ? formatDate(date) : formatDateTime(date)}</p>}
         {isAutoApproved && (
-          <span className="inline-flex items-center mt-1 rounded-full bg-neutral-100 border border-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
+          <span className="inline-flex items-center mt-1 rounded-full bg-surface-sunken border border-line px-2 py-0.5 text-2xs font-medium text-fg-muted">
             Auto-approved
           </span>
         )}
         {status === 'skipped' && (
-          <span className="inline-flex items-center mt-1 rounded-full bg-neutral-100 border border-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
+          <span className="inline-flex items-center mt-1 rounded-full bg-surface-sunken border border-line px-2 py-0.5 text-2xs font-medium text-fg-muted">
             Auto-skipped
           </span>
         )}
         {status === 'returned' && (
-          <span className="inline-flex items-center mt-1 rounded-full bg-warning-50 px-2 py-0.5 text-[10px] font-medium text-warning-700">
+          <span className="inline-flex items-center mt-1 rounded-full bg-warning-soft px-2 py-0.5 text-2xs font-medium text-warning-fg">
             Returned
           </span>
         )}
         {status === 'rejected' && (
-          <span className="inline-flex items-center mt-1 rounded-full bg-danger-50 px-2 py-0.5 text-[10px] font-medium text-danger-700">
+          <span className="inline-flex items-center mt-1 rounded-full bg-danger-soft px-2 py-0.5 text-2xs font-medium text-danger-fg">
             Rejected
           </span>
         )}
         {/* Quoted for a real comment somebody typed; unquoted for a skip
             reason, which is the system explaining itself, not a person. */}
         {note && !isAutoApproved && (
-          <p className="text-xs text-neutral-500 mt-1 italic">
+          <p className="text-xs text-fg-muted mt-1 italic">
             {status === 'skipped' ? note : `"${note}"`}
           </p>
         )}
@@ -129,7 +129,7 @@ function TimelineStep({
           <p className="text-xs text-primary-600 mt-0.5 font-medium">Awaiting action</p>
         )}
         {status === 'returned' && (
-          <p className="text-xs text-neutral-500 mt-1">Returned for revision — waiting for the requester to resubmit</p>
+          <p className="text-xs text-fg-muted mt-1">Returned for revision — waiting for the requester to resubmit</p>
         )}
       </div>
     </div>
@@ -153,36 +153,36 @@ function ApprovalModal({ action, paNumber, onConfirm, onClose, isPending, error 
   const [comment, setComment] = useState('')
   const needsComment = action !== 'approve'
   const cfg = {
-    approve: { title: 'Approve Payment Application', label: 'Approve', icon: <CheckCircle2 className="h-5 w-5 text-success-600" />, bg: 'bg-success-50', btn: 'bg-success-600 hover:bg-success-700 text-white', placeholder: 'Add an optional comment…', commentLabel: 'Comment (optional)' },
-    reject:  { title: 'Reject Payment Application',  label: 'Reject',  icon: <XCircle className="h-5 w-5 text-danger-600" />,  bg: 'bg-danger-50',  btn: 'bg-danger-600 hover:bg-danger-700 text-white',   placeholder: 'Explain why this PA is being rejected…', commentLabel: 'Reason for rejection *' },
-    return:  { title: 'Return for Revision',          label: 'Return',  icon: <RotateCcw className="h-5 w-5 text-warning-600" />, bg: 'bg-warning-50', btn: 'bg-warning-500 hover:bg-warning-600 text-white', placeholder: 'Describe what needs to be revised…', commentLabel: 'Revision instructions *' },
+    approve: { title: 'Approve Payment Application', label: 'Approve', icon: <CheckCircle2 className="h-5 w-5 text-success-fg" />, bg: 'bg-success-soft', btn: 'bg-success-solid hover:bg-success-700 text-white', placeholder: 'Add an optional comment…', commentLabel: 'Comment (optional)' },
+    reject:  { title: 'Reject Payment Application',  label: 'Reject',  icon: <XCircle className="h-5 w-5 text-danger-fg" />,  bg: 'bg-danger-soft',  btn: 'bg-danger-solid hover:bg-danger-700 text-white',   placeholder: 'Explain why this PA is being rejected…', commentLabel: 'Reason for rejection *' },
+    return:  { title: 'Return for Revision',          label: 'Return',  icon: <RotateCcw className="h-5 w-5 text-warning-fg" />, bg: 'bg-warning-soft', btn: 'bg-warning-solid hover:bg-warning-solid text-white', placeholder: 'Describe what needs to be revised…', commentLabel: 'Revision instructions *' },
   }[action]
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl">
+        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
           <div className="flex items-center gap-3">
             <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', cfg.bg)}>{cfg.icon}</div>
             <div>
-              <h2 className="text-sm font-semibold text-neutral-900">{cfg.title}</h2>
-              <p className="text-xs text-neutral-500">{paNumber}</p>
+              <h2 className="text-sm font-semibold text-fg">{cfg.title}</h2>
+              <p className="text-xs text-fg-muted">{paNumber}</p>
             </div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100"><X className="h-4 w-4" /></button>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken"><X className="h-4 w-4" /></button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">{cfg.commentLabel}</label>
+            <label className="text-xs font-medium text-fg-secondary">{cfg.commentLabel}</label>
             <div className="relative">
-              <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-neutral-400" />
+              <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-fg-muted" />
               <textarea rows={3} value={comment} onChange={(e) => setComment(e.target.value)}
                 placeholder={cfg.placeholder} autoFocus
-                className="w-full resize-none rounded-lg border border-neutral-300 bg-white pl-8 pr-3 pt-2 pb-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+                className="w-full resize-none rounded-lg border border-line-strong bg-surface pl-8 pr-3 pt-2 pb-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
             </div>
           </div>
-          {error && <p role="alert" className="text-xs text-danger-600">{error}</p>}
+          {error && <p role="alert" className="text-xs text-danger-fg">{error}</p>}
           <div className="flex justify-end gap-2">
-            <button onClick={onClose} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50">Cancel</button>
+            <button onClick={onClose} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle">Cancel</button>
             <button disabled={(needsComment && !comment.trim()) || isPending} onClick={() => onConfirm(comment)}
               className={cn('inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed', cfg.btn)}>
               {cfg.icon}{isPending ? 'Working…' : cfg.label}
@@ -267,31 +267,31 @@ function ProcessModal({ paId, paNumber, currency, amount, busy, error, onConfirm
           .map((c) => c.credit_id))
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl">
+        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-50">
               <CreditCard className="h-5 w-5 text-primary-600" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-neutral-900">Mark as Processed</h2>
-              <p className="text-xs text-neutral-500">{paNumber} · {formatAmount(net, currency)}</p>
+              <h2 className="text-sm font-semibold text-fg">Mark as Processed</h2>
+              <p className="text-xs text-fg-muted">{paNumber} · {formatAmount(net, currency)}</p>
             </div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100"><X className="h-4 w-4" /></button>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken"><X className="h-4 w-4" /></button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
           {Number(suggestion?.already_paid ?? 0) > 0 && (
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            <p className="rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning-fg">
               {formatAmount(Number(suggestion!.already_paid), currency)} of this PA was already paid in a payment batch.
               This pays the remaining {formatAmount(gross, currency)}.
             </p>
           )}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Pay from (bank account or credit card) *</label>
+            <label className="text-xs font-medium text-fg-secondary">Pay from (bank account or credit card) *</label>
             <select value={bankId} onChange={(e) => setBankId(e.target.value)}
-              className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
+              className="w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
               <option value="">Select a {currency} payment source…</option>
               {options.map((a) => (
                 <option key={a.id} value={a.id}>
@@ -300,12 +300,12 @@ function ProcessModal({ paId, paNumber, currency, amount, busy, error, onConfirm
               ))}
             </select>
             {!isLoading && options.length === 0 && (
-              <p className="text-xs text-amber-600">No active {currency} accounts. Add one under Finance → Bank &amp; Cards.</p>
+              <p className="text-xs text-warning-fg">No active {currency} accounts. Add one under Finance → Bank &amp; Cards.</p>
             )}
           </div>
 
           {creditsError && (
-            <p className="text-xs text-amber-600">
+            <p className="text-xs text-warning-fg">
               Could not load the vendor-credit preview. Any approved credit for this
               vendor will still be applied automatically, so the amount actually sent
               may be less than shown.
@@ -316,29 +316,29 @@ function ProcessModal({ paId, paNumber, currency, amount, busy, error, onConfirm
               in, even with no credits, so this block reads as the
               authoritative statement of what leaves the bank. */}
           {suggestion && (
-            <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-xs">
-              <div className="flex items-center justify-between text-neutral-600">
+            <div className="rounded-lg border border-line bg-surface-subtle px-3 py-2.5 text-xs">
+              <div className="flex items-center justify-between text-fg-secondary">
                 <span>Gross</span>
                 <span className="font-mono">{formatAmount(gross, currency)}</span>
               </div>
-              <div className="mt-1 flex items-center justify-between text-neutral-600">
+              <div className="mt-1 flex items-center justify-between text-fg-secondary">
                 <span>Credits applied</span>
                 <span className="font-mono">{applied > 0 ? '−' : ''}{formatAmount(applied, currency)}</span>
               </div>
-              <div className="mt-1.5 flex items-center justify-between border-t border-neutral-200 pt-1.5 font-semibold text-neutral-900">
+              <div className="mt-1.5 flex items-center justify-between border-t border-line pt-1.5 font-semibold text-fg">
                 <span>Net to pay</span>
                 <span className="font-mono">{formatAmount(net, currency)}</span>
               </div>
 
               {hasCredits && (
-                <div className="mt-2.5 flex flex-col gap-1 border-t border-neutral-200 pt-2">
-                  <span className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
+                <div className="mt-2.5 flex flex-col gap-1 border-t border-line pt-2">
+                  <span className="text-2xs font-medium uppercase tracking-wide text-fg-muted">
                     Vendor credits
                   </span>
                   {suggestion.suggested.map((c) => {
                     const take = takeById.get(c.credit_id)
                     return (
-                      <label key={c.credit_id} className="flex items-center gap-2 text-neutral-600">
+                      <label key={c.credit_id} className="flex items-center gap-2 text-fg-secondary">
                         <input type="checkbox" checked={!off.has(c.credit_id)}
                                onChange={() => setOff((prev) => {
                                  const next = new Set(prev)
@@ -351,14 +351,14 @@ function ProcessModal({ paId, paNumber, currency, amount, busy, error, onConfirm
                             both: credit_number to find the record here,
                             vendor_credit_number to talk to the vendor about
                             it. */}
-                        <span className="font-mono text-neutral-400">{c.vendor_credit_number}</span>
-                        <span className="text-neutral-400">{formatDate(c.credit_date)}</span>
+                        <span className="font-mono text-fg-muted">{c.vendor_credit_number}</span>
+                        <span className="text-fg-muted">{formatDate(c.credit_date)}</span>
                         {/* The recomputed take, never c.apply: deselecting one
                             credit reshuffles what every later credit
                             contributes. Excluded (or unreached) credits show
                             their remaining balance struck through. */}
                         {take === undefined
-                          ? <span className="ml-auto font-mono text-neutral-300 line-through">{formatAmount(Number(c.remaining), currency)}</span>
+                          ? <span className="ml-auto font-mono text-fg-faint line-through">{formatAmount(Number(c.remaining), currency)}</span>
                           : <span className="ml-auto font-mono">{formatAmount(take, currency)}</span>}
                       </label>
                     )
@@ -369,11 +369,11 @@ function ProcessModal({ paId, paNumber, currency, amount, busy, error, onConfirm
           )}
 
           {error && (
-            <p className="text-xs text-danger-600">{error}</p>
+            <p className="text-xs text-danger-fg">{error}</p>
           )}
 
           <div className="flex justify-end gap-2">
-            <button onClick={onClose} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50">Cancel</button>
+            <button onClick={onClose} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle">Cancel</button>
             {/* Disabled while the preview is in flight (initial load OR the
                 forced refetch-on-mount): confirming before it lands would put
                 a stale or gross-fallback figure on the button and
@@ -406,26 +406,26 @@ function HeaderActionConfirm({ action, paNumber, onConfirm, onClose }: {
   useCloseOnEscape(true, onClose)
   const recall = action === 'recall'
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true">
-        <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl" role="dialog" aria-modal="true">
+        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', recall ? 'bg-warning-50' : 'bg-danger-50')}>
+            <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', recall ? 'bg-warning-soft' : 'bg-danger-soft')}>
               {recall
-                ? <RotateCcw className="h-5 w-5 text-warning-600" />
-                : <XCircle className="h-5 w-5 text-danger-600" />}
+                ? <RotateCcw className="h-5 w-5 text-warning-fg" />
+                : <XCircle className="h-5 w-5 text-danger-fg" />}
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-neutral-900">{recall ? 'Recall PA' : 'Withdraw PA'}</h2>
-              <p className="text-xs text-neutral-500">{paNumber}</p>
+              <h2 className="text-sm font-semibold text-fg">{recall ? 'Recall PA' : 'Withdraw PA'}</h2>
+              <p className="text-xs text-fg-muted">{paNumber}</p>
             </div>
           </div>
-          <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600">
+          <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary">
             <X className="h-4 w-4" />
           </button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
-          <p className="text-sm text-neutral-700">
+          <p className="text-sm text-fg-secondary">
             {recall
               ? 'It will be moved back to Draft; the next submit starts from the first approval step.'
               : 'This will cancel the PA.'}
@@ -437,7 +437,7 @@ function HeaderActionConfirm({ action, paNumber, onConfirm, onClose }: {
               autoFocus
               className={cn(
                 'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-white transition-colors',
-                recall ? 'bg-primary-600 hover:bg-primary-700' : 'bg-danger-600 hover:bg-danger-700',
+                recall ? 'bg-primary-600 hover:bg-primary-700' : 'bg-danger-solid hover:bg-danger-700',
               )}
             >
               {recall ? <RotateCcw className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
@@ -543,7 +543,7 @@ export default function PaDetailPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-24">
-        <p className="text-neutral-400 text-sm">Loading…</p>
+        <p className="text-fg-muted text-sm">Loading…</p>
       </div>
     )
   }
@@ -723,23 +723,23 @@ export default function PaDetailPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/pa')} className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500">
+          <button onClick={() => navigate('/pa')} className="p-2 rounded-lg hover:bg-surface-sunken text-fg-muted">
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-bold text-neutral-900">{pa.pa_number}</h1>
+              <h1 className="text-xl font-bold text-fg">{pa.pa_number}</h1>
               <PaStatusBadge status={pa.status} />
               {pa.pa_type === 'prepayment' && (
-                <span className="inline-flex items-center rounded-full bg-info-50 border border-info-200 px-2 py-0.5 text-[10px] font-semibold text-info-700 uppercase">Prepayment</span>
+                <span className="inline-flex items-center rounded-full bg-info-soft border border-info-line px-2 py-0.5 text-2xs font-semibold text-info-fg uppercase">Prepayment</span>
               )}
             </div>
-            <p className="text-sm text-neutral-500 mt-0.5">
+            <p className="text-sm text-fg-muted mt-0.5">
               {pa.title}
-              <span className="ml-2 text-neutral-400">·</span>
+              <span className="ml-2 text-fg-muted">·</span>
               {(() => {
                 const n = isFreight || isDirect ? pa.invoice_ids.length : linkedInvoices.length
-                return <span className="ml-2 text-neutral-400">{n} invoice{n !== 1 ? 's' : ''}</span>
+                return <span className="ml-2 text-fg-muted">{n} invoice{n !== 1 ? 's' : ''}</span>
               })()}
             </p>
           </div>
@@ -772,7 +772,7 @@ export default function PaDetailPage() {
           {canWithdraw && (
             <Button
               variant="secondary"
-              className="border-danger-200 text-danger-600 hover:bg-danger-50"
+              className="border-danger-line text-danger-fg hover:bg-danger-soft"
               disabled={paHeaderAction.isPending}
               onClick={() => setConfirmHeader('cancel')}
             >
@@ -812,12 +812,12 @@ export default function PaDetailPage() {
       {/* Refused header actions (Submit / Recall / Withdraw). Its own row: a long
           reason inside the button bar squeezed the header (ISS-0166 retest). */}
       {paHeaderAction.isError && (
-        <p role="alert" className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+        <p role="alert" className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
           {paHeaderAction.error instanceof Error ? paHeaderAction.error.message : 'The action was refused'}
         </p>
       )}
       {createSubmitError && pa.status === 'draft' && !paHeaderAction.isError && (
-        <p role="alert" className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+        <p role="alert" className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
           {createSubmitError}
         </p>
       )}
@@ -826,7 +826,7 @@ export default function PaDetailPage() {
         {/* Main content */}
         <div className="lg:col-span-2 min-w-0 flex flex-col gap-5">
           {/* Tabs */}
-          <div className="flex gap-1 border-b border-neutral-200">
+          <div className="flex gap-1 border-b border-line">
             {(['details', 'attachments', 'history'] as const).map((t) => (
               <button
                 key={t}
@@ -835,7 +835,7 @@ export default function PaDetailPage() {
                   'px-4 py-2 text-sm font-medium capitalize transition-colors',
                   activeTab === t
                     ? 'border-b-2 border-primary-600 text-primary-700'
-                    : 'text-neutral-500 hover:text-neutral-700'
+                    : 'text-fg-muted hover:text-fg-secondary'
                 )}
               >
                 {t}
@@ -846,8 +846,8 @@ export default function PaDetailPage() {
           {activeTab === 'details' && (
             <>
               {/* PA Details */}
-              <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
-                <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-4">Payment Details</h3>
+              <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+                <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-4">Payment Details</h3>
                 <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
                   {[
                     { label: 'PA Number',    value: pa.pa_number },
@@ -867,23 +867,23 @@ export default function PaDetailPage() {
                     ] : []),
                   ].map(({ label, value }) => (
                     <div key={label}>
-                      <p className="text-xs text-neutral-500">{label}</p>
-                      <p className="font-medium text-neutral-900 mt-0.5">{value}</p>
+                      <p className="text-xs text-fg-muted">{label}</p>
+                      <p className="font-medium text-fg mt-0.5">{value}</p>
                     </div>
                   ))}
                 </div>
 
                 {pa.notes && (
-                  <div className="mt-4 pt-4 border-t border-neutral-100">
-                    <p className="text-xs text-neutral-500 mb-1">{isDirect ? 'Reason for payment' : 'Notes'}</p>
-                    <p className="whitespace-pre-wrap break-words text-sm text-neutral-700">{pa.notes}</p>
+                  <div className="mt-4 pt-4 border-t border-line-subtle">
+                    <p className="text-xs text-fg-muted mb-1">{isDirect ? 'Reason for payment' : 'Notes'}</p>
+                    <p className="whitespace-pre-wrap break-words text-sm text-fg-secondary">{pa.notes}</p>
                   </div>
                 )}
               </div>
 
               {/* Charge Breakdown */}
-              <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
-                <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-4">Charge Breakdown</h3>
+              <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+                <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-4">Charge Breakdown</h3>
                 <div className="flex flex-col gap-2 text-sm">
                   {[
                     { label: 'Pre-tax Amount', value: formatAmount(Number(pa.subtotal), pa.currency) },
@@ -901,14 +901,14 @@ export default function PaDetailPage() {
                       ? [{ label: 'Less: Prepayment Applied', value: `−${formatAmount(Number(pa.prepayment_applied), pa.currency)}` }]
                       : []),
                   ].map(({ label, value }) => (
-                    <div key={label} className="flex items-center justify-between py-1 border-b border-neutral-100 last:border-0">
-                      <span className="text-neutral-600">{label}</span>
-                      <span className="font-mono text-neutral-800">{value}</span>
+                    <div key={label} className="flex items-center justify-between py-1 border-b border-line-subtle last:border-0">
+                      <span className="text-fg-secondary">{label}</span>
+                      <span className="font-mono text-fg">{value}</span>
                     </div>
                   ))}
-                  <div className="flex items-center justify-between pt-2 mt-1 border-t-2 border-neutral-200">
-                    <span className="font-semibold text-neutral-800">Total Payment</span>
-                    <span className="font-mono font-bold text-lg text-neutral-900">{formatAmount(Number(pa.payment_amount), pa.currency)}</span>
+                  <div className="flex items-center justify-between pt-2 mt-1 border-t-2 border-line">
+                    <span className="font-semibold text-fg">Total Payment</span>
+                    <span className="font-mono font-bold text-lg text-fg">{formatAmount(Number(pa.payment_amount), pa.currency)}</span>
                   </div>
                 </div>
               </div>
@@ -926,17 +926,17 @@ export default function PaDetailPage() {
               {pa.pa_type === 'prepayment' && (
                 <div className={cn(
                   'rounded-xl border p-5 shadow-sm',
-                  pa.settlement_status === 'settled'  ? 'border-success-200 bg-success-50' :
-                  pa.settlement_status === 'disputed' ? 'border-warning-200 bg-warning-50' :
-                  'border-neutral-200 bg-white'
+                  pa.settlement_status === 'settled'  ? 'border-success-line bg-success-soft' :
+                  pa.settlement_status === 'disputed' ? 'border-warning-line bg-warning-soft' :
+                  'border-line bg-surface'
                 )}>
-                  <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-3">Settlement Status</h3>
+                  <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-3">Settlement Status</h3>
                   {pa.settlement_status === 'pending' && pa.status !== 'processed' && (
-                    <p className="text-sm text-neutral-500">Settlement required after payment is processed and final invoice received.</p>
+                    <p className="text-sm text-fg-muted">Settlement required after payment is processed and final invoice received.</p>
                   )}
                   {pa.settlement_status === 'pending' && pa.status === 'processed' && (
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-warning-700">
+                      <div className="flex items-center gap-2 text-warning-fg">
                         <AlertTriangle className="h-4 w-4" />
                         <span className="text-sm font-medium">Settlement pending</span>
                       </div>
@@ -956,14 +956,14 @@ export default function PaDetailPage() {
                         { label: 'Variance',   value: pa.settlement_variance !== undefined ? formatAmount(pa.settlement_variance, pa.currency) : '—' },
                       ].map(({ label, value }) => (
                         <div key={label}>
-                          <p className="text-xs text-neutral-500">{label}</p>
-                          <p className="font-medium text-neutral-900 mt-0.5">{value}</p>
+                          <p className="text-xs text-fg-muted">{label}</p>
+                          <p className="font-medium text-fg mt-0.5">{value}</p>
                         </div>
                       ))}
                       {pa.settlement_note && (
                         <div className="col-span-2">
-                          <p className="text-xs text-neutral-500">Settlement Note</p>
-                          <p className="text-sm text-neutral-700 mt-0.5">{pa.settlement_note}</p>
+                          <p className="text-xs text-fg-muted">Settlement Note</p>
+                          <p className="text-sm text-fg-secondary mt-0.5">{pa.settlement_note}</p>
                         </div>
                       )}
                     </div>
@@ -972,14 +972,14 @@ export default function PaDetailPage() {
               )}
 
               {/* PA Line Items */}
-              <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-                <div className="px-5 py-3 border-b border-neutral-200 bg-neutral-50">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+              <div className="rounded-xl border border-line bg-surface overflow-hidden">
+                <div className="px-5 py-3 border-b border-line bg-surface-subtle">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
                     PA Line Items ({pa.line_items.length})
                   </h3>
                 </div>
                 {pa.line_items.length === 0 ? (
-                  <div className="px-5 py-6 text-center text-xs text-neutral-400 italic">
+                  <div className="px-5 py-6 text-center text-xs text-fg-muted italic">
                     No line items recorded for this PA
                   </div>
                 ) : (
@@ -987,36 +987,36 @@ export default function PaDetailPage() {
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="border-b border-neutral-200 bg-neutral-50">
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 w-8">#</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Description</th>
-                            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500 w-20">Qty</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 w-16">Unit</th>
-                            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500 w-28">Unit Price</th>
-                            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500 w-28">Line Total</th>
+                          <tr className="border-b border-line bg-surface-subtle">
+                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted w-8">#</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Description</th>
+                            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted w-20">Qty</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted w-16">Unit</th>
+                            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted w-28">Unit Price</th>
+                            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted w-28">Line Total</th>
                           </tr>
                         </thead>
                         <tbody>
                           {pa.line_items.map((line, idx) => (
-                            <tr key={line.id} className={cn('border-b border-neutral-100 last:border-0', idx % 2 === 1 && 'bg-neutral-50/50')}>
-                              <td className="px-4 py-3 text-center text-neutral-400 text-xs">{idx + 1}</td>
+                            <tr key={line.id} className={cn('border-b border-line-subtle last:border-0', idx % 2 === 1 && 'bg-surface-subtle/50')}>
+                              <td className="px-4 py-3 text-center text-fg-muted text-xs">{idx + 1}</td>
                               <td className="px-4 py-3">
-                                <div className="text-neutral-800">{line.description}</div>
-                                {line.notes && <div className="whitespace-pre-wrap break-words text-xs text-neutral-400 mt-0.5">{line.notes}</div>}
+                                <div className="text-fg">{line.description}</div>
+                                {line.notes && <div className="whitespace-pre-wrap break-words text-xs text-fg-muted mt-0.5">{line.notes}</div>}
                               </td>
-                              <td className="px-4 py-3 text-right font-mono text-xs text-neutral-700">{formatQty(line.qty)}</td>
-                              <td className="px-4 py-3 text-xs text-neutral-500">{line.unit}</td>
-                              <td className="px-4 py-3 text-right font-mono text-xs text-neutral-700">{formatUnitPrice(line.unit_price, pa.currency)}</td>
-                              <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">{formatAmount(line.line_total, pa.currency)}</td>
+                              <td className="px-4 py-3 text-right font-mono text-xs text-fg-secondary">{formatQty(line.qty)}</td>
+                              <td className="px-4 py-3 text-xs text-fg-muted">{line.unit}</td>
+                              <td className="px-4 py-3 text-right font-mono text-xs text-fg-secondary">{formatUnitPrice(line.unit_price, pa.currency)}</td>
+                              <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-fg">{formatAmount(line.line_total, pa.currency)}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
-                    <div className="px-4 py-3 border-t border-neutral-200 flex justify-end">
+                    <div className="px-4 py-3 border-t border-line flex justify-end">
                       <div className="flex items-center gap-4 text-sm">
-                        <span className="text-neutral-500">Lines Total</span>
-                        <span className="font-mono font-semibold text-neutral-900">
+                        <span className="text-fg-muted">Lines Total</span>
+                        <span className="font-mono font-semibold text-fg">
                           {formatAmount(pa.line_items.reduce((s, l) => s + Number(l.line_total), 0), pa.currency)}
                         </span>
                       </div>
@@ -1030,13 +1030,13 @@ export default function PaDetailPage() {
 
               {/* Linked documents */}
               {!isFreight && (
-              <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
-                <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-4">Linked Documents</h3>
+              <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+                <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-4">Linked Documents</h3>
                 <div className="flex flex-col gap-2">
                   {/* PO(s) — one payment may settle several purchase orders. */}
                   {paPoLinks.length > 0 && (
-                    <div className="flex items-start justify-between gap-3 rounded-lg border border-neutral-100 bg-neutral-50 px-4 py-2.5">
-                      <span className="text-xs font-medium text-neutral-600 shrink-0">
+                    <div className="flex items-start justify-between gap-3 rounded-lg border border-line-subtle bg-surface-subtle px-4 py-2.5">
+                      <span className="text-xs font-medium text-fg-secondary shrink-0">
                         {paPoLinks.length > 1 ? `POs (${paPoLinks.length})` : 'PO'}
                       </span>
                       <div className="flex flex-col items-end gap-1">
@@ -1055,16 +1055,16 @@ export default function PaDetailPage() {
 
                   {/* Invoices */}
                   {linkedInvoices.length > 0 ? linkedInvoices.map((inv) => (
-                    <div key={inv.id} className="flex items-center justify-between rounded-lg border border-neutral-100 bg-neutral-50 px-4 py-2.5">
-                      <span className="text-xs font-medium text-neutral-600">Invoice</span>
+                    <div key={inv.id} className="flex items-center justify-between rounded-lg border border-line-subtle bg-surface-subtle px-4 py-2.5">
+                      <span className="text-xs font-medium text-fg-secondary">Invoice</span>
                       <Link to={`/invoices/${inv.id}`} className="flex items-center gap-1 font-mono text-xs text-primary-700 hover:underline">
                         {inv.internal_ref} · {formatAmount(inv.total_amount, inv.currency)} <ExternalLink className="h-3 w-3" />
                       </Link>
                     </div>
                   )) : (
-                    <div className="flex items-center justify-between rounded-lg border border-neutral-100 bg-neutral-50 px-4 py-2.5">
-                      <span className="text-xs font-medium text-neutral-600">Invoice</span>
-                      <span className="text-xs text-neutral-400 italic">No invoices linked</span>
+                    <div className="flex items-center justify-between rounded-lg border border-line-subtle bg-surface-subtle px-4 py-2.5">
+                      <span className="text-xs font-medium text-fg-secondary">Invoice</span>
+                      <span className="text-xs text-fg-muted italic">No invoices linked</span>
                     </div>
                   )}
                 </div>
@@ -1096,9 +1096,9 @@ export default function PaDetailPage() {
           )}
 
           {activeTab === 'attachments' && (
-            <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
+            <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Attachments</h3>
+                <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Attachments</h3>
                 {['approved', 'processed'].includes(pa.status) && (
                   <button
                     type="button"
@@ -1113,7 +1113,7 @@ export default function PaDetailPage() {
                 )}
               </div>
               {downloadError && (
-                <div className="mb-3 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-600">
+                <div className="mb-3 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
                   {downloadError}
                 </div>
               )}
@@ -1135,25 +1135,25 @@ export default function PaDetailPage() {
           )}
 
           {activeTab === 'history' && (
-            <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
-              <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-4">Activity History</h3>
+            <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+              <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-4">Activity History</h3>
               <div className="flex flex-col text-sm">
                 {events && events.length > 0 ? (
                   [...events].reverse().map((evt, i) => {
                     const line = historyLine(evt, workflowSteps)
                     return (
-                      <div key={i} className="flex gap-4 pb-4 border-b border-neutral-100 last:border-0 last:pb-0">
-                        <div className="text-xs text-neutral-400 w-32 shrink-0 mt-0.5">{formatDateTime(evt.created_at)}</div>
+                      <div key={i} className="flex gap-4 pb-4 border-b border-line-subtle last:border-0 last:pb-0">
+                        <div className="text-xs text-fg-muted w-32 shrink-0 mt-0.5">{formatDateTime(evt.created_at)}</div>
                         <div>
-                          <p className="text-sm font-medium text-neutral-800 capitalize">{line.action}</p>
-                          <p className="text-xs text-neutral-500 mt-0.5">
+                          <p className="text-sm font-medium text-fg capitalize">{line.action}</p>
+                          <p className="text-xs text-fg-muted mt-0.5">
                             {line.role}
-                            {line.actorName && <span className="text-neutral-400"> — {line.actorName}</span>}
+                            {line.actorName && <span className="text-fg-muted"> — {line.actorName}</span>}
                           </p>
                           {/* Quoted for what a person wrote; unquoted for a skip
                               reason, which is the system explaining itself. */}
                           {line.note && (
-                            <p className="text-xs text-neutral-400 mt-0.5 italic">
+                            <p className="text-xs text-fg-muted mt-0.5 italic">
                               {evt.kind === 'skipped' ? line.note : `"${line.note}"`}
                             </p>
                           )}
@@ -1163,9 +1163,9 @@ export default function PaDetailPage() {
                   })
                 ) : (
                   <div className="flex gap-4 pb-4">
-                    <div className="text-xs text-neutral-400 w-32 shrink-0 mt-0.5">{formatDateTime(pa.created_at)}</div>
+                    <div className="text-xs text-fg-muted w-32 shrink-0 mt-0.5">{formatDateTime(pa.created_at)}</div>
                     <div>
-                      <p className="text-sm font-medium text-neutral-800">PA created</p>
+                      <p className="text-sm font-medium text-fg">PA created</p>
                     </div>
                   </div>
                 )}
@@ -1176,8 +1176,8 @@ export default function PaDetailPage() {
 
         {/* Right sidebar — timeline + document chain */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm sticky top-6">
-            <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-4">Approval Progress</p>
+          <div className="rounded-xl border border-line bg-surface p-5 shadow-sm sticky top-6">
+            <p className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-4">Approval Progress</p>
             {steps.map((step, i) => (
               <TimelineStep key={i} {...step} />
             ))}
@@ -1186,7 +1186,7 @@ export default function PaDetailPage() {
                 Direct PA (its invoices are under Linked Documents). */}
             {!isFreight && !isDirect && <DocumentChainTree currentType="pa" id={pa.id} />}
             {isDirect && (
-              <div className="mt-6 border-t border-neutral-100 pt-4">
+              <div className="mt-6 border-t border-line-subtle pt-4">
                 <DirectPaBudgetPanel costCenterId={pa.cost_center_id} budgetCode={pa.budget_account_code}
                   amount={Number(pa.subtotal)} currency={pa.currency}
                   showAfter={!(['processed', 'cancelled', 'rejected'] as PaStatus[]).includes(pa.status)} />
@@ -1198,29 +1198,29 @@ export default function PaDetailPage() {
 
       {/* Fixed bottom approver action bar */}
       {canApprove && (
-        <div className="fixed bottom-0 left-60 right-0 z-10 bg-white border-t border-neutral-200 px-6 py-3 flex items-center justify-between shadow-[0_-1px_8px_rgba(0,0,0,0.06)] max-md:left-0">
-          <p className="text-sm text-neutral-500">
-            Reviewing <span className="font-medium text-neutral-900">{pa.pa_number}</span>
+        <div className="fixed bottom-0 left-60 right-0 z-10 bg-surface border-t border-line px-6 py-3 flex items-center justify-between shadow-[0_-1px_8px_rgba(0,0,0,0.06)] max-md:left-0">
+          <p className="text-sm text-fg-muted">
+            Reviewing <span className="font-medium text-fg">{pa.pa_number}</span>
           </p>
           <div className="flex items-center gap-2">
             <div className="relative" ref={moreRef}>
               <button
                 onClick={() => setMoreOpen((v) => !v)}
-                className="inline-flex h-9 items-center gap-1 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors"
+                className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-surface px-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors"
               >
                 More <ChevronDown className="h-3.5 w-3.5" />
               </button>
               {moreOpen && (
-                <div className="absolute right-0 bottom-full mb-1 w-44 rounded-lg border border-neutral-200 bg-white py-1 shadow-lg z-20">
+                <div className="absolute right-0 bottom-full mb-1 w-44 rounded-lg border border-line bg-surface py-1 shadow-lg z-20">
                   <button
                     onClick={() => { setPendingAction('return'); setMoreOpen(false) }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-warning-700 hover:bg-warning-50"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-warning-fg hover:bg-warning-soft"
                   >
                     <RotateCcw className="h-4 w-4" /> Return for Revision
                   </button>
                   <button
                     onClick={() => { setPendingAction('reject'); setMoreOpen(false) }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger-600 hover:bg-danger-50"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger-fg hover:bg-danger-soft"
                   >
                     <XCircle className="h-4 w-4" /> Reject
                   </button>
@@ -1229,7 +1229,7 @@ export default function PaDetailPage() {
             </div>
             <button
               onClick={() => setPendingAction('approve')}
-              className="inline-flex items-center gap-2 h-9 px-5 rounded-lg bg-success-600 text-white text-sm font-semibold hover:bg-success-700 transition-colors"
+              className="inline-flex items-center gap-2 h-9 px-5 rounded-lg bg-success-solid text-white text-sm font-semibold hover:bg-success-700 transition-colors"
             >
               <CheckCircle2 className="h-4 w-4" /> Approve
             </button>
@@ -1282,48 +1282,48 @@ function FreightCostAllocation({ pa }: { pa: ApiPa }) {
   const amount = rows.reduce((t, r) => t + Number(r.amount), 0)
   const tax = rows.reduce((t, r) => t + Number(r.tax_amount), 0)
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-      <div className="px-5 py-3 border-b border-neutral-200 bg-neutral-50">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+    <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <div className="px-5 py-3 border-b border-line bg-surface-subtle">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
           Cost Allocation ({pa.invoice_ids.length} courier invoice{pa.invoice_ids.length !== 1 ? 's' : ''})
         </h3>
       </div>
       {rows.length === 0 ? (
-        <div className="px-5 py-6 text-center text-xs text-neutral-400 italic">No cost allocation recorded for this PA</div>
+        <div className="px-5 py-6 text-center text-xs text-fg-muted italic">No cost allocation recorded for this PA</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-50">
+              <tr className="border-b border-line bg-surface-subtle">
                 {['Invoice', 'Department', 'Cost Center', 'Budget Code', 'Amount', 'Tax'].map((h) => (
-                  <th key={h} className={cn('px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500', ['Amount', 'Tax'].includes(h) ? 'text-right' : 'text-left')}>{h}</th>
+                  <th key={h} className={cn('px-4 py-3 text-xs font-semibold uppercase tracking-wide text-fg-muted', ['Amount', 'Tax'].includes(h) ? 'text-right' : 'text-left')}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={`${r.invoice_id}-${r.cost_center_id}`} className={cn('border-b border-neutral-100 last:border-0', i % 2 === 1 && 'bg-neutral-50/50')}>
+                <tr key={`${r.invoice_id}-${r.cost_center_id}`} className={cn('border-b border-line-subtle last:border-0', i % 2 === 1 && 'bg-surface-subtle/50')}>
                   <td className="px-4 py-2.5">
                     <Link to={`/invoices/${r.invoice_id}`} className="flex items-center gap-1 font-mono text-xs text-primary-700 hover:underline">
                       {r.invoice_number ?? r.invoice_id.slice(0, 8)} <ExternalLink className="h-3 w-3" />
                     </Link>
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-neutral-700">{r.department_name ?? '—'}</td>
-                  <td className="px-4 py-2.5 text-xs text-neutral-700">
+                  <td className="px-4 py-2.5 text-xs text-fg-secondary">{r.department_name ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-xs text-fg-secondary">
                     <span className="font-mono">{r.cost_center_code ?? '—'}</span>
-                    {r.cost_center_name && <span className="text-neutral-500"> — {r.cost_center_name}</span>}
+                    {r.cost_center_name && <span className="text-fg-muted"> — {r.cost_center_name}</span>}
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{r.budget_code}</td>
-                  <td className="px-4 py-2.5 text-right font-mono text-xs text-neutral-900">{formatAmount(Number(r.amount), pa.currency)}</td>
-                  <td className="px-4 py-2.5 text-right font-mono text-xs text-neutral-700">{formatAmount(Number(r.tax_amount), pa.currency)}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-fg-secondary">{r.budget_code}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs text-fg">{formatAmount(Number(r.amount), pa.currency)}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs text-fg-secondary">{formatAmount(Number(r.tax_amount), pa.currency)}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
-              <tr className="border-t-2 border-neutral-200 bg-neutral-50 font-semibold">
-                <td colSpan={4} className="px-4 py-2.5 text-right text-xs text-neutral-600">Total</td>
-                <td className="px-4 py-2.5 text-right font-mono text-xs text-neutral-900">{formatAmount(Math.round(amount * 100) / 100, pa.currency)}</td>
-                <td className="px-4 py-2.5 text-right font-mono text-xs text-neutral-900">{formatAmount(Math.round(tax * 100) / 100, pa.currency)}</td>
+              <tr className="border-t-2 border-line bg-surface-subtle font-semibold">
+                <td colSpan={4} className="px-4 py-2.5 text-right text-xs text-fg-secondary">Total</td>
+                <td className="px-4 py-2.5 text-right font-mono text-xs text-fg">{formatAmount(Math.round(amount * 100) / 100, pa.currency)}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-xs text-fg">{formatAmount(Math.round(tax * 100) / 100, pa.currency)}</td>
               </tr>
             </tfoot>
           </table>

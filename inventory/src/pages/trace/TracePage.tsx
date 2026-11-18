@@ -27,9 +27,9 @@ import { exportTrace } from './exportTrace'
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
 const inputCls =
-  'h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-400'
+  'h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-fg-muted'
 const btnCls =
-  'inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50'
+  'inline-flex h-9 items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50'
 
 export default function TracePage() {
   const { material } = useParams()
@@ -57,27 +57,27 @@ function TraceStart() {
   return (
     <div className="flex flex-col gap-4">
       <header>
-        <h1 className="text-xl font-semibold text-neutral-900">Trace</h1>
-        <p className="text-xs text-neutral-500">
+        <h1 className="text-xl font-semibold text-fg">Trace</h1>
+        <p className="text-xs text-fg-muted">
           NC and WMS movements of one material side by side, from the start of WMS history (2025-02-03) to a date — with running
           balances, pairing and the first point where the two stop agreeing.
         </p>
       </header>
       <form onSubmit={submit}
-        className="flex flex-wrap items-end gap-3 rounded-lg border border-neutral-200 bg-white px-3 py-3">
-        <div className="flex flex-col gap-1 text-xs text-neutral-600">
+        className="flex flex-wrap items-end gap-3 rounded-lg border border-line bg-surface px-3 py-3">
+        <div className="flex flex-col gap-1 text-xs text-fg-secondary">
           <label htmlFor="trace-material">Material</label>
           <MaterialPicker id="trace-material" value={material?.code ?? ''} autoFocus className="w-64"
             onChange={(o) => { if (o.code !== material?.code) setBatch(''); setMaterial(o) }}
             onDeselect={() => { setMaterial(null); setBatch('') }} />
         </div>
-        <div className="flex flex-col gap-1 text-xs text-neutral-600">
+        <div className="flex flex-col gap-1 text-xs text-fg-secondary">
           <label htmlFor="trace-batch">Batch (optional)</label>
           <BatchPicker key={material?.code ?? ''} id="trace-batch" material={material?.code ?? null}
             value={batch} onChange={(b) => setBatch(b)} className="w-72"
             lockedNote={batchLocked ? noBatchNote(noBatchSince!) : null} />
         </div>
-        <label className="flex flex-col gap-1 text-xs text-neutral-600">
+        <label className="flex flex-col gap-1 text-xs text-fg-secondary">
           To date
           <input type="date" value={date} max={today} onChange={(e) => setDate(e.target.value || today)} className={inputCls} />
         </label>
@@ -85,8 +85,8 @@ function TraceStart() {
           className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary-600 px-4 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50">
           <Route aria-hidden className="h-4 w-4" />Trace
         </button>
-        {batchLocked && <p className="basis-full text-xs text-neutral-500">{noBatchNote(noBatchSince!)}</p>}
-        <p className="basis-full text-[11px] text-neutral-400">
+        {batchLocked && <p className="basis-full text-xs text-fg-muted">{noBatchNote(noBatchSince!)}</p>}
+        <p className="basis-full text-2xs text-fg-muted">
           Leave the batch empty to trace the whole material. A batch number matches its whole batch group
           (NC batch, WMS QC batch or supplier batch).
         </p>
@@ -99,10 +99,10 @@ function TraceStart() {
 
 function Tile({ label, children, tone }: { label: string; children: React.ReactNode; tone?: 'bad' }) {
   return (
-    <div className={cn('min-w-[8rem] rounded-lg border bg-white px-3 py-2',
-      tone === 'bad' ? 'border-danger-200' : 'border-neutral-200')}>
-      <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">{label}</p>
-      <div className="mt-0.5 font-mono text-sm text-neutral-800">{children}</div>
+    <div className={cn('min-w-[8rem] rounded-lg border bg-surface px-3 py-2',
+      tone === 'bad' ? 'border-danger-line' : 'border-line')}>
+      <p className="text-2xs font-medium uppercase tracking-wide text-fg-muted">{label}</p>
+      <div className="mt-0.5 font-mono text-sm text-fg">{children}</div>
     </div>
   )
 }
@@ -215,16 +215,16 @@ function TraceView({ material }: { material: string }) {
     <div className="flex flex-col gap-4">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-0.5">
-          <h1 className="flex flex-wrap items-baseline gap-x-2 text-xl font-semibold text-neutral-900">
+          <h1 className="flex flex-wrap items-baseline gap-x-2 text-xl font-semibold text-fg">
             Trace <span className="font-mono">{material}</span>
-            {t?.material.name && <span className="text-base font-normal text-neutral-600">{t.material.name}</span>}
-            {t?.material.uom && <span className="text-xs font-normal text-neutral-400">{t.material.uom}</span>}
-            {t && !t.material.in_nc && <Badge variant="warning" className="text-[10px]">Not in NC</Badge>}
+            {t?.material.name && <span className="text-base font-normal text-fg-secondary">{t.material.name}</span>}
+            {t?.material.uom && <span className="text-xs font-normal text-fg-muted">{t.material.uom}</span>}
+            {t && !t.material.in_nc && <Badge variant="warning" className="text-2xs">Not in NC</Badge>}
           </h1>
           {t && (
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-fg-muted">
               From {formatDate(t.start)} (WMS history start) to {formatDate(t.date)}
-              <span className="text-neutral-400"> · {t.scope_note} NC clock: {t.nc_time_zone}.</span>
+              <span className="text-fg-muted"> · {t.scope_note} NC clock: {t.nc_time_zone}.</span>
             </p>
           )}
           {t && <WmsHistoryNote info={t.wms_history} />}
@@ -238,16 +238,16 @@ function TraceView({ material }: { material: string }) {
         </div>
       </header>
 
-      <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-3">
+      <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface px-3 py-3">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 text-xs text-neutral-600">
+          <div className="flex items-center gap-2 text-xs text-fg-secondary">
             <label htmlFor="trace-view-material">Material</label>
             <MaterialPicker key={material} id="trace-view-material" value={material} className="w-56"
               onChange={(o) => {
                 if (o.code !== material) openTrace(o.code, { date: date !== today ? date : null })
               }} />
           </div>
-          <div className="flex items-center gap-2 text-xs text-neutral-600">
+          <div className="flex items-center gap-2 text-xs text-fg-secondary">
             <label htmlFor="trace-view-batch">Batch</label>
             <BatchPicker key={`${material}|${batch}|${batchDisplay}`} id="trace-view-batch" material={material}
               value={batch} display={batchDisplay}
@@ -257,34 +257,34 @@ function TraceView({ material }: { material: string }) {
                 setParams({ batch: b })
               }} className="w-72" />
           </div>
-          <label className="flex items-center gap-2 text-xs text-neutral-600">
+          <label className="flex items-center gap-2 text-xs text-fg-secondary">
             To date
             <input type="date" value={date} max={today}
               onChange={(e) => setParams({ date: e.target.value && e.target.value !== today ? e.target.value : '' })}
               className={inputCls} />
           </label>
-          {q.isFetching && <Loader2 aria-label="Loading" className="h-4 w-4 animate-spin text-neutral-400" />}
+          {q.isFetching && <Loader2 aria-label="Loading" className="h-4 w-4 animate-spin text-fg-muted" />}
         </div>
-        {batchLocked && <p className="text-xs text-neutral-500">{noBatchNote(t!.no_batch_since!)}</p>}
+        {batchLocked && <p className="text-xs text-fg-muted">{noBatchNote(t!.no_batch_since!)}</p>}
         {t?.batch && (
-          <div className="flex flex-col gap-1 text-xs text-neutral-600">
+          <div className="flex flex-col gap-1 text-xs text-fg-secondary">
             <span>
-              Batch group <span className="font-mono font-medium text-neutral-800">{t.batch_group ?? t.batch}</span>
-              {t.batch_group && t.batch_group !== t.batch && <span className="text-neutral-400"> (from “{t.batch}”)</span>}
+              Batch group <span className="font-mono font-medium text-fg">{t.batch_group ?? t.batch}</span>
+              {t.batch_group && t.batch_group !== t.batch && <span className="text-fg-muted"> (from “{t.batch}”)</span>}
             </span>
             {scopeEmpty ? (
-              <p className="flex items-center gap-1.5 text-warning-800">
+              <p className="flex items-center gap-1.5 text-warning-fg">
                 <AlertTriangle aria-hidden className="h-3.5 w-3.5" />
                 No NC batch or WMS lot of {material} matches “{t.batch}” — check the number, or clear the batch.
               </p>
             ) : (
-              <details className="text-[11px] text-neutral-500">
+              <details className="text-2xs text-fg-muted">
                 <summary className="cursor-pointer select-none">
                   {t.batch_scope.nc_batches?.length ?? 0} NC batch(es) · {t.batch_scope.wms_lots?.length ?? 0} WMS lot(s) in this group
                 </summary>
                 <div className="mt-1 grid gap-1 sm:grid-cols-2">
-                  <p><span className="text-neutral-400">NC batches: </span><span className="font-mono">{t.batch_scope.nc_batches?.join(', ') || '—'}</span></p>
-                  <p><span className="text-neutral-400">WMS lots: </span><span className="font-mono">{t.batch_scope.wms_lots?.join(', ') || '—'}</span></p>
+                  <p><span className="text-fg-muted">NC batches: </span><span className="font-mono">{t.batch_scope.nc_batches?.join(', ') || '—'}</span></p>
+                  <p><span className="text-fg-muted">WMS lots: </span><span className="font-mono">{t.batch_scope.wms_lots?.join(', ') || '—'}</span></p>
                 </div>
               </details>
             )}
@@ -313,47 +313,47 @@ function TraceView({ material }: { material: string }) {
           <section className="flex flex-col gap-3">
             <div className="flex flex-wrap gap-2">
               <Tile label="Opening">
-                <span className="text-neutral-400">NC </span>{formatQty(t.opening.nc)}
-                <span className="text-neutral-400"> · WMS </span>{formatQty(t.opening.wms)}
+                <span className="text-fg-muted">NC </span>{formatQty(t.opening.nc)}
+                <span className="text-fg-muted"> · WMS </span>{formatQty(t.opening.wms)}
               </Tile>
               <Tile label={`Closing ${formatDate(t.date)}`} tone={isZero(t.closing.diff) ? undefined : 'bad'}>
-                <span className="text-neutral-400">NC </span>{formatQty(t.closing.nc)}
-                <span className="text-neutral-400"> · WMS </span>{formatQty(t.closing.wms)}
-                <span className="text-neutral-400"> · diff </span>
-                <span className={isZero(t.closing.diff) ? 'text-neutral-500' : 'font-semibold text-danger-600'}>
+                <span className="text-fg-muted">NC </span>{formatQty(t.closing.nc)}
+                <span className="text-fg-muted"> · WMS </span>{formatQty(t.closing.wms)}
+                <span className="text-fg-muted"> · diff </span>
+                <span className={isZero(t.closing.diff) ? 'text-fg-muted' : 'font-semibold text-danger-fg'}>
                   {formatQty(t.closing.diff)}
                 </span>
               </Tile>
               <Tile label="Movements">
                 <span className="text-xs">
-                  <span className="text-neutral-400">paired by document </span>{t.counts.paired_by_document}
-                  <span className="text-neutral-400"> · by quantity </span>{t.counts.paired_by_quantity}
-                  <span className="text-neutral-400"> · NC only </span>
-                  <span className={t.counts.nc_only ? 'text-danger-600' : undefined}>{t.counts.nc_only}</span>
-                  <span className="text-neutral-400"> · WMS only </span>
-                  <span className={t.counts.wms_only ? 'text-danger-600' : undefined}>{t.counts.wms_only}</span>
+                  <span className="text-fg-muted">paired by document </span>{t.counts.paired_by_document}
+                  <span className="text-fg-muted"> · by quantity </span>{t.counts.paired_by_quantity}
+                  <span className="text-fg-muted"> · NC only </span>
+                  <span className={t.counts.nc_only ? 'text-danger-fg' : undefined}>{t.counts.nc_only}</span>
+                  <span className="text-fg-muted"> · WMS only </span>
+                  <span className={t.counts.wms_only ? 'text-danger-fg' : undefined}>{t.counts.wms_only}</span>
                 </span>
               </Tile>
             </div>
 
             {div ? (
-              <div role="alert" className="flex flex-col gap-1.5 rounded-lg border-2 border-danger-300 bg-danger-50 px-4 py-3">
-                <p className="flex items-center gap-1.5 text-sm font-semibold text-danger-800">
+              <div role="alert" className="flex flex-col gap-1.5 rounded-lg border-2 border-danger-line bg-danger-soft px-4 py-3">
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-danger-fg">
                   <AlertTriangle aria-hidden className="h-4 w-4" />First divergence
                   {div.diverged_from_start && (
-                    <span className="text-xs font-normal text-danger-700">— the two balances never agree in this window</span>
+                    <span className="text-xs font-normal text-danger-fg">— the two balances never agree in this window</span>
                   )}
                 </p>
                 <button type="button" onClick={() => jumpTo(divIndex)} disabled={divIndex < 0}
-                  className="w-fit text-left text-sm text-danger-900 underline decoration-danger-300 underline-offset-2 hover:decoration-danger-700 disabled:no-underline"
+                  className="w-fit text-left text-sm text-danger-fg underline decoration-danger-300 underline-offset-2 hover:decoration-danger-fg disabled:no-underline"
                   title={divIndex >= 0 ? 'Show this movement in the table below' : undefined}>
                   {div.summary}
                 </button>
                 {div.main && (
-                  <p className="text-xs text-danger-800">
+                  <p className="text-xs text-danger-fg">
                     Largest unmatched since then:{' '}
                     <button type="button" onClick={() => jumpTo(mainIndex)} disabled={mainIndex < 0}
-                      className="text-left underline decoration-danger-300 underline-offset-2 hover:decoration-danger-700 disabled:no-underline"
+                      className="text-left underline decoration-danger-300 underline-offset-2 hover:decoration-danger-fg disabled:no-underline"
                       title={mainIndex >= 0 ? 'Show this document in the table below' : undefined}>
                       {div.main.summary}
                     </button>
@@ -361,11 +361,11 @@ function TraceView({ material }: { material: string }) {
                 )}
               </div>
             ) : isZero(t.closing.diff) ? (
-              <p className="flex items-center gap-1.5 rounded-lg border border-success-200 bg-success-50 px-4 py-3 text-sm text-success-800">
+              <p className="flex items-center gap-1.5 rounded-lg border border-success-line bg-success-soft px-4 py-3 text-sm text-success-fg">
                 <CheckCircle2 aria-hidden className="h-4 w-4" />NC and WMS agree at the end of the window.
               </p>
             ) : (
-              <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
+              <p className="rounded-lg border border-line bg-surface-subtle px-4 py-3 text-sm text-fg-secondary">
                 The closing difference is within the quantity tolerance — no divergence to point at.
               </p>
             )}
@@ -374,10 +374,10 @@ function TraceView({ material }: { material: string }) {
           {/* Category summary + movements */}
           <section className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-neutral-800">By category</h2>
-              <label className="flex items-center gap-2 text-xs text-neutral-600">
+              <h2 className="text-sm font-semibold text-fg">By category</h2>
+              <label className="flex items-center gap-2 text-xs text-fg-secondary">
                 <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)}
-                  className="h-4 w-4 rounded border-neutral-300" />
+                  className="h-4 w-4 rounded border-line-strong" />
                 Show internal moves &amp; state changes
               </label>
             </div>
@@ -386,8 +386,8 @@ function TraceView({ material }: { material: string }) {
 
           <section className="flex flex-col gap-2">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-sm font-semibold text-neutral-800">Movements</h2>
-              <span className="text-[11px] text-neutral-400">
+              <h2 className="text-sm font-semibold text-fg">Movements</h2>
+              <span className="text-2xs text-fg-muted">
                 {indices.length.toLocaleString('en-US')} row(s) shown
                 {hiddenRows > 0 && ` · ${hiddenRows.toLocaleString('en-US')} internal / state-change row(s) hidden`}
                 {' · '}balances are each side's running total; NC opening {formatQty(t.opening.nc)}, WMS starts at 0

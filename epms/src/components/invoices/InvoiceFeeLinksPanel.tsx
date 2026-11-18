@@ -157,9 +157,9 @@ export function InvoiceFeeLinksPanel({
   }))
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-5">
+    <div className="rounded-xl border border-line bg-surface p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+        <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-fg-muted">
           <Link2 className="h-3.5 w-3.5" />
           Link to PO
         </h3>
@@ -171,7 +171,7 @@ export function InvoiceFeeLinksPanel({
         )}
       </div>
 
-      <p className="mb-3 text-xs text-neutral-500">
+      <p className="mb-3 text-xs text-fg-muted">
         For a freight or customs invoice that belongs to a PO — an NC order (raw material, packaging or milk) or
         a PO raised in EPMS. Shows on that PO&apos;s Freight &amp; Customs panel. Payment is unchanged — this
         invoice is still paid by a Direct PA.
@@ -180,36 +180,36 @@ export function InvoiceFeeLinksPanel({
 
       {/* Current (or draft) links */}
       {shown.length === 0 ? (
-        <p className="text-sm text-neutral-400">Not linked to any PO.</p>
+        <p className="text-sm text-fg-muted">Not linked to any PO.</p>
       ) : (
         <ul className="mb-3 flex flex-col gap-1.5">
           {shown.map((l) => (
-            <li key={keyOf(l)} className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-100 bg-neutral-50 px-3 py-1.5 text-sm">
-              <span className="rounded bg-white px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-600 border border-neutral-200">
+            <li key={keyOf(l)} className="flex flex-wrap items-center gap-2 rounded-lg border border-line-subtle bg-surface-subtle px-3 py-1.5 text-sm">
+              <span className="rounded bg-surface px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-fg-secondary border border-line">
                 {FEE_TYPE_LABEL[l.fee_type]}
               </span>
               <Link to={`/po/${l.po_id}`} className="font-mono text-xs font-semibold text-primary-700 hover:underline">
                 {l.po_number}
               </Link>
-              <span className="text-xs text-neutral-500">
+              <span className="text-xs text-fg-muted">
                 {l.gr_number ? `arrival ${l.gr_number}` : 'whole PO, no arrival'}
               </span>
-              <span className="text-xs text-neutral-400">· {lineLabel(l.invoice_line_id)}</span>
+              <span className="text-xs text-fg-muted">· {lineLabel(l.invoice_line_id)}</span>
               {l.fee_type === 'other' && (editing ? (
                 <input
-                  className={`h-7 min-w-[12rem] flex-1 rounded border bg-white px-2 text-xs ${(l.note ?? '').trim() ? 'border-neutral-300' : 'border-danger-500'}`}
+                  className={`h-7 min-w-[12rem] flex-1 rounded border bg-surface px-2 text-xs ${(l.note ?? '').trim() ? 'border-line-strong' : 'border-danger-solid'}`}
                   placeholder="What is this fee? (required)"
                   maxLength={200}
                   value={l.note ?? ''}
                   onChange={(e) => setNote(keyOf(l), e.target.value)}
                 />
               ) : l.note && (
-                <span className="text-xs text-neutral-700">— {l.note}</span>
+                <span className="text-xs text-fg-secondary">— {l.note}</span>
               ))}
               {editing && (
                 <button
                   type="button"
-                  className="ml-auto text-neutral-400 hover:text-danger-600"
+                  className="ml-auto text-fg-muted hover:text-danger-fg"
                   aria-label="Remove link"
                   onClick={() => setDraft((prev) => prev.filter((d) => keyOf(d) !== keyOf(l)))}
                 >
@@ -222,16 +222,16 @@ export function InvoiceFeeLinksPanel({
       )}
 
       {editing && (
-        <div className="flex flex-col gap-3 border-t border-neutral-100 pt-3">
+        <div className="flex flex-col gap-3 border-t border-line-subtle pt-3">
           {linkable && (
             <>
               <div className="grid gap-2 sm:grid-cols-[1fr_9rem]">
-                <label className="flex flex-col gap-1 text-xs text-neutral-500">
+                <label className="flex flex-col gap-1 text-xs text-fg-muted">
                   Part of the invoice
                   <select
                     value={applyTo}
                     onChange={(e) => chooseApplyTo(e.target.value)}
-                    className="h-9 rounded border border-neutral-300 bg-white px-2 text-sm text-neutral-900"
+                    className="h-9 rounded border border-line-strong bg-surface px-2 text-sm text-fg"
                   >
                     <option value="*">Whole invoice</option>
                     {lineItems.filter((l) => l.id).map((l) => (
@@ -241,12 +241,12 @@ export function InvoiceFeeLinksPanel({
                     ))}
                   </select>
                 </label>
-                <label className="flex flex-col gap-1 text-xs text-neutral-500">
+                <label className="flex flex-col gap-1 text-xs text-fg-muted">
                   Fee type
                   <select
                     value={feeType}
                     onChange={(e) => setFeeType(e.target.value as FeeType)}
-                    className="h-9 rounded border border-neutral-300 bg-white px-2 text-sm text-neutral-900"
+                    className="h-9 rounded border border-line-strong bg-surface px-2 text-sm text-fg"
                   >
                     {(Object.keys(FEE_TYPE_LABEL) as FeeType[]).map((t) => (
                       <option key={t} value={t}>{FEE_TYPE_LABEL[t]}</option>
@@ -256,7 +256,7 @@ export function InvoiceFeeLinksPanel({
               </div>
 
               {feeType === 'other' && (
-                <label className="flex flex-col gap-1 text-xs text-neutral-500">
+                <label className="flex flex-col gap-1 text-xs text-fg-muted">
                   Note — what is this fee? <span className="sr-only">(required)</span>
                   <Input
                     value={otherNote}
@@ -264,12 +264,12 @@ export function InvoiceFeeLinksPanel({
                     placeholder="e.g. inspection, cold storage, demurrage (required)"
                     onChange={(e) => setOtherNote(e.target.value)}
                   />
-                  {needsNote && <span className="text-danger-600">Enter a note before ticking arrivals.</span>}
+                  {needsNote && <span className="text-danger-fg">Enter a note before ticking arrivals.</span>}
                 </label>
               )}
 
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
                 <Input
                   className="pl-9"
                   placeholder="Search POs by PO number, supplier or arrival number…"
@@ -278,42 +278,42 @@ export function InvoiceFeeLinksPanel({
                 />
               </div>
 
-              <div className="max-h-72 overflow-y-auto rounded-lg border border-neutral-200">
+              <div className="max-h-72 overflow-y-auto rounded-lg border border-line">
                 {isFetching && !candidates ? (
-                  <div className="flex justify-center py-6 text-neutral-400"><Loader2 className="h-4 w-4 animate-spin" /></div>
+                  <div className="flex justify-center py-6 text-fg-muted"><Loader2 className="h-4 w-4 animate-spin" /></div>
                 ) : !candidates?.length ? (
-                  <p className="px-3 py-4 text-sm text-neutral-400">No POs match.</p>
+                  <p className="px-3 py-4 text-sm text-fg-muted">No POs match.</p>
                 ) : (
-                  <ul className="divide-y divide-neutral-100">
+                  <ul className="divide-y divide-line-subtle">
                     {candidates.map((po) => (
                       <li key={po.id} className="px-3 py-2">
                         <div className="flex flex-wrap items-baseline gap-2 text-sm">
-                          <span className="font-mono text-xs font-semibold text-neutral-800">{po.number}</span>
-                          <span className="text-neutral-600">{po.vendor_name}</span>
+                          <span className="font-mono text-xs font-semibold text-fg">{po.number}</span>
+                          <span className="text-fg-secondary">{po.vendor_name}</span>
                           {po.source === 'epms' && (
-                            <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600">EPMS</span>
+                            <span className="rounded bg-surface-sunken px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-fg-secondary">EPMS</span>
                           )}
                           {po.is_milk && (
-                            <span className="rounded bg-primary-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700">Milk</span>
+                            <span className="rounded bg-primary-50 px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-primary-700">Milk</span>
                           )}
-                          {po.incoterms_code && <span className="text-xs text-neutral-400">{po.incoterms_code}</span>}
+                          {po.incoterms_code && <span className="text-xs text-fg-muted">{po.incoterms_code}</span>}
                         </div>
                         <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
                           {po.arrivals.length === 0 && (
-                            <label className="flex items-center gap-1.5 text-xs text-neutral-600">
+                            <label className="flex items-center gap-1.5 text-xs text-fg-secondary">
                               <input type="checkbox" checked={isTicked(po.id, null)}
                                      disabled={needsNote && !isTicked(po.id, null)}
                                      onChange={() => toggle(po.id, po.number, null, null)} />
-                              Whole PO <span className="text-neutral-400">(no arrival yet)</span>
+                              Whole PO <span className="text-fg-muted">(no arrival yet)</span>
                             </label>
                           )}
                           {po.arrivals.map((a) => (
-                            <label key={a.id} className="flex items-center gap-1.5 text-xs text-neutral-600">
+                            <label key={a.id} className="flex items-center gap-1.5 text-xs text-fg-secondary">
                               <input type="checkbox" checked={isTicked(po.id, a.id)}
                                      disabled={needsNote && !isTicked(po.id, a.id)}
                                      onChange={() => toggle(po.id, po.number, a.id, a.number)} />
                               <span className="font-mono">{a.number}</span>
-                              <span className="text-neutral-400">{formatDate(a.received_at)}</span>
+                              <span className="text-fg-muted">{formatDate(a.received_at)}</span>
                             </label>
                           ))}
                         </div>
@@ -322,7 +322,7 @@ export function InvoiceFeeLinksPanel({
                   </ul>
                 )}
                 {page && page.total > page.items.length && (
-                  <div className="flex items-center justify-between gap-3 border-t border-neutral-100 bg-neutral-50 px-3 py-2 text-xs text-neutral-500">
+                  <div className="flex items-center justify-between gap-3 border-t border-line-subtle bg-surface-subtle px-3 py-2 text-xs text-fg-muted">
                     <span>
                       Showing {page.items.length} of {page.total} — latest arrivals first, then POs with none yet. Search to find a specific PO.
                     </span>
@@ -334,12 +334,12 @@ export function InvoiceFeeLinksPanel({
                 )}
               </div>
               {feeType !== 'other' && (
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-fg-muted">
                   Milk orders without Incoterms are listed under fee type Other only — set the order&apos;s Incoterms
                   in Edit Details to link freight or customs to it.
                 </p>
               )}
-              <p className="text-xs text-neutral-400">
+              <p className="text-xs text-fg-muted">
                 Ticks apply to the part of the invoice and fee type chosen above. A freight bill the carrier
                 combined can tick several arrivals; for a customs invoice, pick each line in turn and tick its PO.
                 An EPMS PO with no arrival yet is ticked as Whole PO.
@@ -347,7 +347,7 @@ export function InvoiceFeeLinksPanel({
             </>
           )}
 
-          {error && <p className="text-sm text-danger-600">{error}</p>}
+          {error && <p className="text-sm text-danger-fg">{error}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={() => setEditing(false)} disabled={save.isPending}>
               <X className="h-3.5 w-3.5" />

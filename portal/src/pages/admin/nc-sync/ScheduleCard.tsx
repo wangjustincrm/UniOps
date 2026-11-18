@@ -112,7 +112,7 @@ export function ScheduleCard({ endpoint, title, maxMinutes = DEFAULT_MAX_MINUTES
 
   if (isLoading) {
     return (
-      <div className="rounded-xl border border-neutral-200 bg-white px-4 py-6 text-center text-sm text-neutral-400">
+      <div className="rounded-xl border border-line bg-surface px-4 py-6 text-center text-sm text-fg-muted">
         Loading schedule…
       </div>
     )
@@ -126,55 +126,55 @@ export function ScheduleCard({ endpoint, title, maxMinutes = DEFAULT_MAX_MINUTES
   // `minutes: 0`, actually disabling a schedule that was still running.
   if (isError || data === undefined) {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-6 text-center text-sm text-red-700">
+      <div className="rounded-xl border border-danger-line bg-danger-soft px-4 py-6 text-center text-sm text-danger-fg">
         Failed to load schedule. Try refreshing the page.
       </div>
     )
   }
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-4">
+    <div className="rounded-xl border border-line bg-surface p-4">
       <div className="mb-3 flex items-center gap-2">
-        <Clock className="h-4 w-4 text-neutral-500" />
-        <h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
+        <Clock className="h-4 w-4 text-fg-muted" />
+        <h3 className="text-sm font-semibold text-fg">{title}</h3>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 text-sm text-neutral-700">
+        <label className="flex items-center gap-2 text-sm text-fg-secondary">
           <input type="checkbox" checked={enabled}
                  onChange={(e) => setEnabled(e.target.checked)} className="h-4 w-4" />
           Run automatically
         </label>
 
-        <span className="text-sm text-neutral-500">every</span>
+        <span className="text-sm text-fg-muted">every</span>
         <input type="number" min={1} value={amount} disabled={!enabled}
                onChange={(e) => setAmount(e.target.value)}
-               className="h-9 w-20 rounded-lg border border-neutral-300 bg-white px-2 text-sm disabled:bg-neutral-50 disabled:text-neutral-400" />
+               className="h-9 w-20 rounded-lg border border-line-strong bg-surface px-2 text-sm disabled:bg-surface-subtle disabled:text-fg-muted" />
         <select value={unit} disabled={!enabled}
                 onChange={(e) => setUnit(e.target.value as 'minutes' | 'hours')}
-                className="h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm disabled:bg-neutral-50 disabled:text-neutral-400">
+                className="h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm disabled:bg-surface-subtle disabled:text-fg-muted">
           <option value="minutes">Minutes</option>
           <option value="hours">Hours</option>
         </select>
 
         <button type="button" disabled={save.isPending}
                 onClick={() => { if (!save.isPending) save.mutate() }}
-                className={cn('ml-auto flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2',
-                              'text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50')}>
+                className={cn('ml-auto flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2',
+                              'text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50')}>
           {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
           Save
         </button>
       </div>
 
-      <div className="mt-3 border-t border-neutral-100 pt-3 text-xs text-neutral-500">
+      <div className="mt-3 border-t border-line-subtle pt-3 text-xs text-fg-muted">
         Next run: {enabled ? formatWhen(data?.next_due_at ?? null) : 'Disabled'}
       </div>
 
-      <p className="mt-2 text-[11px] text-neutral-400">
+      <p className="mt-2 text-2xs text-fg-muted">
         Scheduled runs are always incremental. A full reload must be started manually.
       </p>
 
-      {err && <div className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
+      {err && <div className="mt-2 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{err}</div>}
     </div>
   )
 }

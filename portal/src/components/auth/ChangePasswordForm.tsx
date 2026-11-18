@@ -25,25 +25,25 @@ export function PwdField({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-medium text-neutral-700">{label} <span className="text-red-500">*</span></label>
+      <label className="text-xs font-medium text-fg-secondary">{label} <span className="text-danger-fg">*</span></label>
       <div className="relative">
         <input
           type={show ? 'text' : 'password'}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className={cn(
-            'h-10 w-full rounded-lg border bg-white px-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors',
-            error ? 'border-red-500' : 'border-neutral-300',
+            'h-10 w-full rounded-lg border bg-surface px-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors',
+            error ? 'border-danger-solid' : 'border-line-strong',
           )}
           placeholder={placeholder}
           autoFocus={autoFocus}
         />
         <button type="button" onClick={onToggle}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600">
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
           {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </button>
       </div>
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-danger-fg">{error}</p>}
     </div>
   )
 }
@@ -95,10 +95,10 @@ export function ChangePasswordForm({ onSuccess, onCancel }: {
   if (success) {
     return (
       <div className="flex flex-col items-center gap-3 py-6 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-50">
-          <CheckCircle2 className="h-6 w-6 text-green-600" />
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success-soft">
+          <CheckCircle2 className="h-6 w-6 text-success-fg" />
         </div>
-        <p className="text-sm font-medium text-neutral-900">Password changed successfully</p>
+        <p className="text-sm font-medium text-fg">Password changed successfully</p>
       </div>
     )
   }
@@ -120,7 +120,7 @@ export function ChangePasswordForm({ onSuccess, onCancel }: {
       <div className="flex justify-end gap-2 pt-1">
         {onCancel && (
           <button onClick={onCancel}
-            className="rounded-lg px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-100">
+            className="rounded-lg px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-sunken">
             Cancel
           </button>
         )}

@@ -34,7 +34,7 @@ export function PaymentTermsField({ value, onChange, hint, invalid }: {
       <div className="flex gap-2">
         <select
           aria-label="Payment terms"
-          className={cn(inputCls, invalid || error ? 'border-danger-400' : 'border-neutral-300')}
+          className={cn(inputCls, invalid || error ? 'border-danger-400' : 'border-line-strong')}
           value={mode}
           onChange={(e) => {
             const v = e.target.value
@@ -50,7 +50,7 @@ export function PaymentTermsField({ value, onChange, hint, invalid }: {
           <div className="relative w-32 shrink-0">
             <input
               type="number" min={1} max={MAX_NET_DAYS} step={1} inputMode="numeric" aria-label="Net days"
-              className={cn(inputCls, 'pr-11', error ? 'border-danger-400' : 'border-neutral-300')}
+              className={cn(inputCls, 'pr-11', error ? 'border-danger-400' : 'border-line-strong')}
               value={days}
               placeholder="21"
               onChange={(e) => {
@@ -59,12 +59,12 @@ export function PaymentTermsField({ value, onChange, hint, invalid }: {
                 if ('terms' in r) { setError(null); onChange(r.terms) } else { setError(r.error); onChange('') }
               }}
             />
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400">days</span>
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-fg-muted">days</span>
           </div>
         )}
       </div>
-      {error ? <p className="text-xs text-danger-600">{error}</p>
-        : hint ? <p className="text-xs text-neutral-400">{hint}</p> : null}
+      {error ? <p className="text-xs text-danger-fg">{error}</p>
+        : hint ? <p className="text-xs text-fg-muted">{hint}</p> : null}
     </div>
   )
 }

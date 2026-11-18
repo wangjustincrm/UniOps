@@ -206,8 +206,8 @@ export default function BudgetDashboard() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Budget Dashboard</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">
+          <h1 className="text-2xl font-bold text-fg">Budget Dashboard</h1>
+          <p className="text-sm text-fg-muted mt-0.5">
             Plan vs Actual · FY {fiscalYear}
             {scopeLabel && (
               <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-primary-50 border border-primary-200 px-2 py-0.5 text-xs text-primary-700 font-medium">
@@ -217,28 +217,28 @@ export default function BudgetDashboard() {
             )}
           </p>
           {!scopeLoading && !scopeError && scope && !scope.full_access && scope.cost_centers.length === 0 && (
-            <p className="text-sm text-warning-700 mt-1">
+            <p className="text-sm text-warning-fg mt-1">
               No budget is visible for your account. Contact your administrator if this is unexpected.
             </p>
           )}
         </div>
         <div className="flex items-center gap-2">
           <select value={fiscalYear} onChange={(e) => setFiscalYear(Number(e.target.value))}
-            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600">
+            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600">
             {yearOptions.map((y) => <option key={y} value={y}>FY {y}</option>)}
           </select>
           {(visibleCCs.length > 1 || (!isFullAccess && visibleCCs.length >= 1)) && (
             <select value={ccId} onChange={(e) => setCcId(e.target.value)}
-              className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600">
+              className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600">
               <option value="all">All Cost Centers</option>
               {visibleCCs.map((cc) => <option key={cc.id} value={cc.id}>{cc.code} — {cc.name}</option>)}
             </select>
           )}
-          <label className="inline-flex cursor-pointer select-none items-center gap-1.5 text-sm text-neutral-700"
+          <label className="inline-flex cursor-pointer select-none items-center gap-1.5 text-sm text-fg-secondary"
                  title="Also count vouchers entered in NC but not yet tallied (记账). Discarded or deleted vouchers never count.">
             <input type="checkbox" checked={includeUnposted}
                    onChange={(e) => setIncludeUnposted(e.target.checked)}
-                   className="h-4 w-4 cursor-pointer rounded border-neutral-300 accent-primary-600" />
+                   className="h-4 w-4 cursor-pointer rounded border-line-strong accent-primary-600" />
             Include unposted vouchers
           </label>
           <Link to="/budget/plans" className="inline-flex items-center gap-1 text-sm text-primary-600 hover:underline">
@@ -262,10 +262,10 @@ export default function BudgetDashboard() {
             { label: 'Total Actual Spent',  value: totalNcSpent, sub: ncLabel },
             { label: 'Total Available',     value: totalAvailable, sub: `${totalPct}% utilised`, alert: totalAvailable < 0 },
           ].map((s) => (
-            <Card key={s.label} className={cn('p-4', s.alert && 'ring-1 ring-danger-200')}>
-              <p className="text-xs text-neutral-500">{s.label}</p>
-              <p className={cn('text-xl font-bold mt-1 font-mono', s.alert ? 'text-danger-600' : 'text-neutral-900')}><CompactAmount value={s.value} /></p>
-              <p className="text-xs text-neutral-400 mt-0.5">{s.sub}</p>
+            <Card key={s.label} className={cn('p-4', s.alert && 'ring-1 ring-danger-line')}>
+              <p className="text-xs text-fg-muted">{s.label}</p>
+              <p className={cn('text-xl font-bold mt-1 font-mono', s.alert ? 'text-danger-fg' : 'text-fg')}><CompactAmount value={s.value} /></p>
+              <p className="text-xs text-fg-muted mt-0.5">{s.sub}</p>
             </Card>
           ))}
         </div>
@@ -273,23 +273,23 @@ export default function BudgetDashboard() {
 
       {/* Over-budget alerts */}
       {overBudget.length > 0 && (
-        <div className="rounded-xl border border-danger-200 bg-danger-50 p-4">
+        <div className="rounded-xl border border-danger-line bg-danger-soft p-4">
           <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle className="h-4 w-4 text-danger-600 shrink-0" />
-            <h2 className="text-sm font-semibold text-danger-700">
+            <AlertTriangle className="h-4 w-4 text-danger-fg shrink-0" />
+            <h2 className="text-sm font-semibold text-danger-fg">
               {overBudget.length} account{overBudget.length !== 1 ? 's' : ''} over budget ({ncLabel})
             </h2>
           </div>
           <div className="flex flex-wrap gap-2">
             {overBudget.map((a) => (
               <button type="button" key={a.account_id} onClick={() => jumpToAccount(a.account_id)}
-                className="rounded-md border border-danger-200 bg-white px-3 py-2 text-xs text-left transition-colors hover:border-danger-400 hover:bg-danger-50"
+                className="rounded-md border border-danger-line bg-surface px-3 py-2 text-xs text-left transition-colors hover:border-danger-400 hover:bg-danger-soft"
                 title="Jump to this account in the table">
-                <span className="font-mono font-semibold text-danger-700">{a.account_code}</span>
-                <span className="text-neutral-500 mx-1">·</span>
-                <span className="text-neutral-700">{a.account_name}</span>
-                <span className="ml-2 font-semibold text-danger-600">{a.nc_util}%</span>
-                <div className="text-[10px] text-danger-500 mt-0.5">
+                <span className="font-mono font-semibold text-danger-fg">{a.account_code}</span>
+                <span className="text-fg-muted mx-1">·</span>
+                <span className="text-fg-secondary">{a.account_name}</span>
+                <span className="ml-2 font-semibold text-danger-fg">{a.nc_util}%</span>
+                <div className="text-2xs text-danger-fg mt-0.5">
                   Over by {formatAmount(a.nc_over, 'CAD')}
                 </div>
               </button>
@@ -300,22 +300,22 @@ export default function BudgetDashboard() {
 
       {/* Near-budget warnings */}
       {nearBudget.length > 0 && (
-        <div className="rounded-xl border border-warning-200 bg-warning-50 p-4">
+        <div className="rounded-xl border border-warning-line bg-warning-soft p-4">
           <div className="flex items-center gap-2 mb-3">
-            <TrendingUp className="h-4 w-4 text-warning-600 shrink-0" />
-            <h2 className="text-sm font-semibold text-warning-700">
+            <TrendingUp className="h-4 w-4 text-warning-fg shrink-0" />
+            <h2 className="text-sm font-semibold text-warning-fg">
               {nearBudget.length} account{nearBudget.length !== 1 ? 's' : ''} approaching budget limit ({ncLabel})
             </h2>
           </div>
           <div className="flex flex-wrap gap-2">
             {nearBudget.map((a) => (
               <button type="button" key={a.account_id} onClick={() => jumpToAccount(a.account_id)}
-                className="rounded-md border border-warning-200 bg-white px-3 py-2 text-xs text-left transition-colors hover:border-warning-400 hover:bg-warning-50"
+                className="rounded-md border border-warning-line bg-surface px-3 py-2 text-xs text-left transition-colors hover:border-warning-400 hover:bg-warning-soft"
                 title="Jump to this account in the table">
-                <span className="font-mono font-semibold text-warning-700">{a.account_code}</span>
-                <span className="text-neutral-500 mx-1">·</span>
-                <span className="text-neutral-700">{a.account_name}</span>
-                <span className="ml-2 font-semibold text-warning-600">{a.nc_util}%</span>
+                <span className="font-mono font-semibold text-warning-fg">{a.account_code}</span>
+                <span className="text-fg-muted mx-1">·</span>
+                <span className="text-fg-secondary">{a.account_name}</span>
+                <span className="ml-2 font-semibold text-warning-fg">{a.nc_util}%</span>
               </button>
             ))}
           </div>
@@ -326,37 +326,37 @@ export default function BudgetDashboard() {
       <Card className="overflow-hidden">
         <CardHeader>
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-base font-semibold text-neutral-900">Monthly Plan vs Actual</h2>
+            <h2 className="text-base font-semibold text-fg">Monthly Plan vs Actual</h2>
             <div className="flex items-center gap-2 text-xs">
-              <label className="inline-flex cursor-pointer select-none items-center gap-1 text-neutral-600"
+              <label className="inline-flex cursor-pointer select-none items-center gap-1 text-fg-secondary"
                      title="In the exported file, list each budget account's NC actual by vendor under the account row">
                 <input type="checkbox" checked={exportByVendor} disabled={exporting}
                        onChange={(e) => setExportByVendor(e.target.checked)}
-                       className="h-3.5 w-3.5 cursor-pointer rounded border-neutral-300 accent-primary-600" />
+                       className="h-3.5 w-3.5 cursor-pointer rounded border-line-strong accent-primary-600" />
                 Expand vendor
               </label>
               <button type="button" onClick={handleExport} disabled={exporting}
-                className="rounded-md border border-primary-300 bg-white px-2.5 py-1 font-medium text-primary-700 hover:bg-primary-50 disabled:opacity-50">
+                className="rounded-md border border-primary-300 bg-surface px-2.5 py-1 font-medium text-primary-700 hover:bg-primary-50 disabled:opacity-50">
                 {exporting ? 'Exporting…' : 'Export XLSX'}
               </button>
-              <span className="text-neutral-300">·</span>
+              <span className="text-fg-faint">·</span>
               <button type="button" onClick={expandAll} className="text-primary-600 hover:underline">Expand all</button>
-              <span className="text-neutral-300">·</span>
+              <span className="text-fg-faint">·</span>
               <button type="button" onClick={collapseAll} className="text-primary-600 hover:underline">Collapse all</button>
             </div>
           </div>
-          <p className="text-xs text-neutral-500 mt-0.5">
-            Each cell: <span className="text-neutral-600 font-medium">plan</span> /{' '}
-            <span className="text-emerald-700 font-medium">{ncLabel} actual</span> · over budget in red
-            {ccId === 'all' && <span className="ml-2 text-neutral-400">· Aggregated across cost centers</span>}
+          <p className="text-xs text-fg-muted mt-0.5">
+            Each cell: <span className="text-fg-secondary font-medium">plan</span> /{' '}
+            <span className="text-success-fg font-medium">{ncLabel} actual</span> · over budget in red
+            {ccId === 'all' && <span className="ml-2 text-fg-muted">· Aggregated across cost centers</span>}
           </p>
-          {exportError && <p role="alert" className="mt-1 text-xs text-danger-600">{exportError}</p>}
+          {exportError && <p role="alert" className="mt-1 text-xs text-danger-fg">{exportError}</p>}
         </CardHeader>
 
         {monthlyLoading ? (
-          <div className="py-12 text-center text-sm text-neutral-400">Loading monthly data…</div>
+          <div className="py-12 text-center text-sm text-fg-muted">Loading monthly data…</div>
         ) : monthlyAccounts.length === 0 ? (
-          <div className="py-12 text-center text-sm text-neutral-400">
+          <div className="py-12 text-center text-sm text-fg-muted">
             No approved plan for FY {fiscalYear} in this scope yet.{' '}
             <Link to="/budget/plans" className="text-primary-600 hover:underline">Create a plan →</Link>
           </div>
@@ -370,15 +370,15 @@ export default function BudgetDashboard() {
             </colgroup>
             <thead>
               <tr>
-                <th className="sticky top-0 z-20 border-b-2 border-neutral-300 bg-neutral-200 py-2.5 px-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                <th className="sticky top-0 z-20 border-b-2 border-line-strong bg-surface-strong py-2.5 px-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">
                   Account
                 </th>
                 {MONTHS.map((m) => (
-                  <th key={m} className="sticky top-0 z-20 border-b-2 border-neutral-300 bg-neutral-200 py-2.5 px-1.5 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  <th key={m} className="sticky top-0 z-20 border-b-2 border-line-strong bg-surface-strong py-2.5 px-1.5 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">
                     {m}
                   </th>
                 ))}
-                <th className="sticky top-0 z-20 border-b-2 border-neutral-300 bg-neutral-200 py-2.5 px-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-700">
+                <th className="sticky top-0 z-20 border-b-2 border-line-strong bg-surface-strong py-2.5 px-2 text-right text-xs font-semibold uppercase tracking-wide text-fg-secondary">
                   Year
                 </th>
               </tr>
@@ -393,15 +393,15 @@ export default function BudgetDashboard() {
             </tbody>
             <tfoot>
               <tr>
-                <td className="sticky bottom-0 z-20 border-t-2 border-neutral-400 bg-neutral-200 py-3 px-3 text-sm font-bold text-neutral-900 uppercase tracking-wide">
+                <td className="sticky bottom-0 z-20 border-t-2 border-line-strong bg-surface-strong py-3 px-3 text-sm font-bold text-fg uppercase tracking-wide">
                   Total
                 </td>
                 {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                  <td key={m} className="sticky bottom-0 z-20 border-t-2 border-neutral-400 bg-neutral-200 py-3 px-1.5">
+                  <td key={m} className="sticky bottom-0 z-20 border-t-2 border-line-strong bg-surface-strong py-3 px-1.5">
                     <PlanActualCell plan={monthlyGrandTotals.plan[m]} nc={monthlyGrandTotals.nc[m]} strong />
                   </td>
                 ))}
-                <td className="sticky bottom-0 z-20 border-t-2 border-neutral-400 bg-neutral-300 py-3 px-2">
+                <td className="sticky bottom-0 z-20 border-t-2 border-line-strong bg-surface-strong py-3 px-2">
                   <PlanActualCell plan={monthlyGrandTotals.planYear} nc={monthlyGrandTotals.ncYear} strong />
                 </td>
               </tr>
@@ -429,13 +429,13 @@ function PlanActualCell({ plan, nc, strong }: { plan: number; nc?: number; stron
   const over = nc !== undefined && nc > plan && (plan > 0 || nc > 0)
   return (
     <div className="flex flex-col items-end leading-tight font-mono">
-      <span className={cn('text-[11px] whitespace-nowrap text-neutral-500', strong && 'font-semibold text-neutral-600')}>
+      <span className={cn('text-2xs whitespace-nowrap text-fg-muted', strong && 'font-semibold text-fg-secondary')}>
         {plan ? <CompactAmount value={plan} hint="Plan" /> : '–'}
       </span>
       {nc !== undefined && (
         <span className={cn(
-          'text-[11px] whitespace-nowrap',
-          over ? 'text-danger-600 font-bold' : 'text-emerald-700',
+          'text-2xs whitespace-nowrap',
+          over ? 'text-danger-fg font-bold' : 'text-success-fg',
           strong && 'font-semibold',
         )}>
           {nc ? <CompactAmount value={nc} hint="NC actual (red = over budget)" /> : '–'}
@@ -477,17 +477,17 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterI
 
   return (
     <>
-      <tr className="border-t-2 border-neutral-300 bg-neutral-100 cursor-pointer hover:bg-neutral-200" onClick={onToggle}>
-        <td className="py-2.5 px-3 text-sm font-semibold text-neutral-800">
-          <span className="mr-1 text-[10px] text-neutral-500">{expanded ? '▾' : '▸'}</span>
-          <span className="font-mono text-xs text-neutral-500">{l1Code}</span>
+      <tr className="border-t-2 border-line-strong bg-surface-sunken cursor-pointer hover:bg-surface-strong" onClick={onToggle}>
+        <td className="py-2.5 px-3 text-sm font-semibold text-fg">
+          <span className="mr-1 text-2xs text-fg-muted">{expanded ? '▾' : '▸'}</span>
+          <span className="font-mono text-xs text-fg-muted">{l1Code}</span>
         </td>
         {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
           <td key={m} className="py-2.5 px-1.5">
             <PlanActualCell plan={totals.plan[m]} nc={totals.nc[m]} strong />
           </td>
         ))}
-        <td className="py-2.5 px-2 bg-neutral-200">
+        <td className="py-2.5 px-2 bg-surface-strong">
           <PlanActualCell plan={totals.planYear} nc={totals.ncYear} strong />
         </td>
       </tr>
@@ -496,16 +496,16 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterI
         return (
           <Fragment key={a.account_id}>
             <tr id={`ba-row-${a.account_id}`}
-                className={cn('border-b border-neutral-100 transition-colors hover:bg-primary-50/60',
-                  highlightId === a.account_id ? 'bg-amber-100' : 'bg-white')}>
+                className={cn('border-b border-line-subtle transition-colors hover:bg-primary-50/60',
+                  highlightId === a.account_id ? 'bg-warning-soft' : 'bg-surface')}>
               <td className="py-2 px-3">
                 <button type="button"
                   onClick={() => setExpandedAcct((id) => (id === a.account_id ? null : a.account_id))}
                   className="flex items-start gap-1 text-left hover:underline"
                   title="Break down NC actual by vendor/customer">
-                  <span className="mt-0.5 w-3 shrink-0 text-[10px] text-neutral-400">{isOpen ? '▾' : '▸'}</span>
+                  <span className="mt-0.5 w-3 shrink-0 text-2xs text-fg-muted">{isOpen ? '▾' : '▸'}</span>
                   <span>
-                    <span className="font-mono text-xs text-neutral-500 mr-2">{a.account_code}</span>
+                    <span className="font-mono text-xs text-fg-muted mr-2">{a.account_code}</span>
                     <span className="text-xs text-primary-700 break-words">{a.account_name}</span>
                   </span>
                 </button>
@@ -516,7 +516,7 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterI
                     nc={Number(ncByAccount[a.account_id]?.[m] ?? 0)} />
                 </td>
               ))}
-              <td className="py-2 px-2 bg-neutral-50">
+              <td className="py-2 px-2 bg-surface-subtle">
                 <PlanActualCell plan={Number(a.plan_year)} nc={ncYearFor(a.account_id)} strong />
               </td>
             </tr>
@@ -556,10 +556,10 @@ function PartnerRows({ account, fiscalYear, costCenterId, includeUnposted }: {
   const [voucherKey, setVoucherKey] = useState<string | null>(null)  // `${partnerId}:${month}`
 
   if (isLoading) {
-    return <tr><td colSpan={14} className="bg-emerald-50 py-2 pl-10 pr-3 text-xs text-neutral-400">Loading vendor breakdown…</td></tr>
+    return <tr><td colSpan={14} className="bg-success-soft py-2 pl-10 pr-3 text-xs text-fg-muted">Loading vendor breakdown…</td></tr>
   }
   if (partners.length === 0) {
-    return <tr><td colSpan={14} className="bg-emerald-50 py-2 pl-10 pr-3 text-xs text-neutral-400">No NC actuals for this item in the current scope.</td></tr>
+    return <tr><td colSpan={14} className="bg-success-soft py-2 pl-10 pr-3 text-xs text-fg-muted">No NC actuals for this item in the current scope.</td></tr>
   }
   return (
     <>
@@ -567,15 +567,15 @@ function PartnerRows({ account, fiscalYear, costCenterId, includeUnposted }: {
         const pid = p.key
         return (
           <Fragment key={`${pid}-${i}`}>
-            <tr className="border-b border-neutral-100 bg-emerald-50">
-              <td className="py-1.5 pl-10 pr-3 text-xs text-neutral-600 break-words">
-                {p.partner_name || <span className="text-neutral-400">{NO_VENDOR_LABEL[p.source]}</span>}
+            <tr className="border-b border-line-subtle bg-success-soft">
+              <td className="py-1.5 pl-10 pr-3 text-xs text-fg-secondary break-words">
+                {p.partner_name || <span className="text-fg-muted">{NO_VENDOR_LABEL[p.source]}</span>}
                 {/* NC hangs the vendor on the payable line, not the expense
                     line, so most of these are read off the voucher rather than
                     off the line the money is on. Say so — a vendor that is not
                     on the line in NC must not look like one that is. */}
                 {(p.source === 'voucher' || p.source === 'mixed') && p.partner_name && (
-                  <span className="ml-1.5 rounded bg-emerald-100 px-1 py-0.5 text-[10px] text-emerald-800"
+                  <span className="ml-1.5 rounded bg-success-soft px-1 py-0.5 text-2xs text-success-fg"
                         title={p.source === 'voucher'
                           ? 'Vendor taken from the voucher (the expense line itself names none)'
                           : `Partly from the voucher: ${p.inferred_total} of ${p.year_total}`}>
@@ -589,16 +589,16 @@ function PartnerRows({ account, fiscalYear, costCenterId, includeUnposted }: {
                 return (
                   <td key={m} className="py-1.5 px-1.5 text-right">
                     {v ? (
-                      <button className={cn('font-mono text-[11px] hover:underline',
-                        voucherKey === key ? 'font-semibold text-emerald-900' : 'text-emerald-700')}
+                      <button className={cn('font-mono text-2xs hover:underline',
+                        voucherKey === key ? 'font-semibold text-success-fg' : 'text-success-fg')}
                         onClick={() => setVoucherKey((k) => (k === key ? null : key))}>
                         <CompactAmount value={v} />
                       </button>
-                    ) : <span className="text-[11px] text-neutral-300">–</span>}
+                    ) : <span className="text-2xs text-fg-faint">–</span>}
                   </td>
                 )
               })}
-              <td className="py-1.5 px-2 text-right font-mono text-[11px] font-semibold bg-emerald-100"><CompactAmount value={Number(p.year_total)} /></td>
+              <td className="py-1.5 px-2 text-right font-mono text-2xs font-semibold bg-success-soft"><CompactAmount value={Number(p.year_total)} /></td>
             </tr>
             {voucherKey && voucherKey.startsWith(`${pid}:`) && (
               <VoucherRow account={account} fiscalYear={fiscalYear} costCenterId={costCenterId}
@@ -629,18 +629,18 @@ function VoucherRow({ account, fiscalYear, costCenterId, includeUnposted, partne
   const rows = data?.rows ?? []
   return (
     <tr>
-      <td colSpan={14} className="border-l-4 border-emerald-400 bg-neutral-100 px-10 py-2">
-        <div className="mb-1 text-[11px] font-semibold text-neutral-600">
+      <td colSpan={14} className="border-l-4 border-success-400 bg-surface-sunken px-10 py-2">
+        <div className="mb-1 text-2xs font-semibold text-fg-secondary">
           Vouchers · {partnerName || '(no vendor)'} · {MONTHS[month - 1]} {fiscalYear}
         </div>
         {isLoading ? (
-          <div className="text-xs text-neutral-400">Loading…</div>
+          <div className="text-xs text-fg-muted">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="text-xs text-neutral-400">No vouchers.</div>
+          <div className="text-xs text-fg-muted">No vouchers.</div>
         ) : (
-          <table className="w-full text-[11px]">
+          <table className="w-full text-2xs">
             <thead>
-              <tr className="text-neutral-500">
+              <tr className="text-fg-muted">
                 <th className="px-2 py-1 text-left font-medium">Date</th>
                 <th className="px-2 py-1 text-left font-medium">Voucher</th>
                 <th className="px-2 py-1 text-left font-medium">Account</th>
@@ -650,19 +650,19 @@ function VoucherRow({ account, fiscalYear, costCenterId, includeUnposted, partne
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={`${r.jv_id}-${i}`} className="border-t border-neutral-100">
-                  <td className="px-2 py-1 font-mono text-neutral-600">{formatDate(r.voucher_date)}</td>
+                <tr key={`${r.jv_id}-${i}`} className="border-t border-line-subtle">
+                  <td className="px-2 py-1 font-mono text-fg-secondary">{formatDate(r.voucher_date)}</td>
                   <td className="px-2 py-1 font-mono">
                     {r.jv_number}
                     {r.posted === false && (
-                      <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 font-sans text-[10px] font-medium text-amber-700"
+                      <span className="ml-1.5 rounded bg-warning-soft px-1.5 py-0.5 font-sans text-2xs font-medium text-warning-fg"
                             title="Entered in NC, not yet tallied">
                         Unposted
                       </span>
                     )}
                   </td>
-                  <td className="px-2 py-1 font-mono text-neutral-600">{r.account_code}</td>
-                  <td className="px-2 py-1 text-neutral-700">{r.summary || '—'}</td>
+                  <td className="px-2 py-1 font-mono text-fg-secondary">{r.account_code}</td>
+                  <td className="px-2 py-1 text-fg-secondary">{r.summary || '—'}</td>
                   <td className="px-2 py-1 text-right font-mono"><CompactAmount value={Number(r.local_debit)} /></td>
                 </tr>
               ))}

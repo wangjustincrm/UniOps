@@ -11,5 +11,5 @@ export default function FreightInvoiceRedirect() {
   const { id = '' } = useParams<{ id: string }>()
   const replaceTab = useReplaceTab(epmsRoutes)
   useEffect(() => { if (id) replaceTab(`/invoices/${id}`) }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
-  return <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-neutral-300" /></div>
+  return <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-fg-faint" /></div>
 }

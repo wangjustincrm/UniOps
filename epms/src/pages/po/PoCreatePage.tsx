@@ -212,7 +212,7 @@ export default function PoCreatePage() {
   const showFieldErrors = () => {
     setSubmitError('Some fields need attention — see the fields marked in red above.')
     requestAnimationFrame(() => {
-      document.querySelector('[data-po-create] .border-danger-600, [data-po-create] .border-danger-400, [data-po-create] [aria-invalid="true"]')
+      document.querySelector('[data-po-create] .border-danger-solid, [data-po-create] .border-danger-400, [data-po-create] [aria-invalid="true"]')
         ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     })
   }
@@ -305,9 +305,9 @@ export default function PoCreatePage() {
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">New Purchase Order</h1>
+          <h1 className="text-2xl font-bold text-fg">New Purchase Order</h1>
           {linkedPr && (
-            <p className="text-sm text-neutral-400 mt-0.5">
+            <p className="text-sm text-fg-muted mt-0.5">
               Pre-filled from{' '}
               <Link to={`/pr/${prId}`} className="text-primary-600 hover:underline">
                 {linkedPr.number}
@@ -322,15 +322,15 @@ export default function PoCreatePage() {
         <div data-po-create className="lg:col-span-9 flex flex-col gap-6">
 
           {/* Basic Details */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
-            <h2 className="text-base font-semibold text-neutral-900">Order Details</h2>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+            <h2 className="text-base font-semibold text-fg">Order Details</h2>
 
             <FormField label="Linked PR" htmlFor="linkedPr" hint="Optional. Pre-fills the vendor, lines, budget code and other fields from the PR.">
               <select
                 id="linkedPr"
                 value={prId ?? ''}
                 onChange={(e) => navigate(e.target.value ? `/po/new?prId=${e.target.value}` : '/po/new')}
-                className="h-10 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                className="h-10 w-full rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               >
                 <option value="">None</option>
                 {prId && linkedPrData && !linkablePrs.some((p) => p.id === prId) && (
@@ -358,11 +358,11 @@ export default function PoCreatePage() {
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               {/* Vendor */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">
-                  Vendor <span className="text-danger-600">*</span>
+                <label className="text-sm font-medium text-fg-secondary">
+                  Vendor <span className="text-danger-fg">*</span>
                 </label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
                   <input
                     type="text"
                     placeholder="Search vendor by name or code…"
@@ -370,15 +370,15 @@ export default function PoCreatePage() {
                     onFocus={() => { setVendorOpen(true); if (selectedVendor) setVendorQuery('') }}
                     onChange={(e) => { setVendorQuery(e.target.value); setSelectedVendor(null); setVendorOpen(true); setErrors((p) => ({ ...p, vendor: '' })) }}
                     className={cn(
-                      'h-10 w-full rounded-md border bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      errors.vendor ? 'border-danger-600' : 'border-neutral-300'
+                      'h-10 w-full rounded-md border bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
+                      errors.vendor ? 'border-danger-solid' : 'border-line-strong'
                     )}
                   />
                   {selectedVendor && (
                     <button
                       type="button"
                       onClick={() => { setSelectedVendor(null); setVendorQuery('') }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -386,7 +386,7 @@ export default function PoCreatePage() {
                   {vendorOpen && !selectedVendor && (
                     <>
                       <div className="fixed inset-0 z-10" onClick={() => setVendorOpen(false)} />
-                      <div className="absolute z-20 mt-1 w-full rounded-lg border border-neutral-200 bg-white py-1 shadow-lg">
+                      <div className="absolute z-20 mt-1 w-full rounded-lg border border-line bg-surface py-1 shadow-lg">
                         {filteredVendors.map((v) => (
                           <button
                             key={v.id}
@@ -394,12 +394,12 @@ export default function PoCreatePage() {
                             className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-primary-50 text-left"
                             onClick={() => { setSelectedVendor(v); setVendorOpen(false); setVendorQuery(''); setErrors((p) => ({ ...p, vendor: '' })) }}
                           >
-                            <span className="font-mono text-xs rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-600">{v.code}</span>
+                            <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
                             {v.name}
                           </button>
                         ))}
                         {filteredVendors.length === 0 && (
-                          <p className="px-3 py-2 text-sm text-neutral-400">No vendors found</p>
+                          <p className="px-3 py-2 text-sm text-fg-muted">No vendors found</p>
                         )}
                       </div>
                     </>
@@ -407,24 +407,24 @@ export default function PoCreatePage() {
                 </div>
                 {/* A vendor prefilled from the PR may not be in the loaded page of the
                     list, so its code is unknown — no empty "()" (ISS-0183). */}
-                {selectedVendor && !vendorInactive && <p className="text-xs text-success-600">✓ {selectedVendor.name}{selectedVendor.code ? ` (${selectedVendor.code})` : ''}</p>}
+                {selectedVendor && !vendorInactive && <p className="text-xs text-success-fg">✓ {selectedVendor.name}{selectedVendor.code ? ` (${selectedVendor.code})` : ''}</p>}
                 {/* PO-006: a vendor deactivated after the PR was raised still
                     comes in with it — say so before anyone tries to submit. */}
                 {vendorInactive && !errors.vendor && (
-                  <p role="alert" className="text-xs text-danger-600">
+                  <p role="alert" className="text-xs text-danger-fg">
                     Vendor {selectedVendor.name} is inactive. Choose another vendor.
                   </p>
                 )}
-                {errors.vendor && <p className="text-xs text-danger-600">{errors.vendor}</p>}
+                {errors.vendor && <p className="text-xs text-danger-fg">{errors.vendor}</p>}
               </div>
 
               {/* Procurement Type */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">Procurement Type</label>
+                <label className="text-sm font-medium text-fg-secondary">Procurement Type</label>
                 <select
                   value={procurementType ?? ''}
                   onChange={(e) => setProcurementType(e.target.value ? Number(e.target.value) as ProcurementType : null)}
-                  className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 >
                   <option value="">Select type…</option>
                   {[1, 2, 3, 4, 5, 6].map((t) => (
@@ -446,22 +446,22 @@ export default function PoCreatePage() {
 
               {/* Expected Delivery */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">
-                  Expected Delivery Date <span className="text-danger-600">*</span>
+                <label className="text-sm font-medium text-fg-secondary">
+                  Expected Delivery Date <span className="text-danger-fg">*</span>
                 </label>
                 <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+                  <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted pointer-events-none" />
                   <input
                     type="date"
                     value={expectedDelivery}
                     onChange={(e) => { setExpectedDelivery(e.target.value); setErrors((p) => ({ ...p, expectedDelivery: '' })) }}
                     className={cn(
-                      'h-10 w-full rounded-md border bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      errors.expectedDelivery ? 'border-danger-600' : 'border-neutral-300'
+                      'h-10 w-full rounded-md border bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
+                      errors.expectedDelivery ? 'border-danger-solid' : 'border-line-strong'
                     )}
                   />
                 </div>
-                {errors.expectedDelivery && <p className="text-xs text-danger-600">{errors.expectedDelivery}</p>}
+                {errors.expectedDelivery && <p className="text-xs text-danger-fg">{errors.expectedDelivery}</p>}
               </div>
             </div>
 
@@ -492,7 +492,7 @@ export default function PoCreatePage() {
           </div>
 
           {/* Line Items */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
             <PrLineItems
               procurementType={procurementType}
               items={lineItems}
@@ -502,16 +502,16 @@ export default function PoCreatePage() {
           </div>
 
           {/* Currency, Tax & Total */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
             <div className="flex items-center gap-2">
-              <Receipt className="h-4 w-4 text-neutral-400" />
-              <h2 className="text-base font-semibold text-neutral-900">Currency, Tax &amp; Total</h2>
+              <Receipt className="h-4 w-4 text-fg-muted" />
+              <h2 className="text-base font-semibold text-fg">Currency, Tax &amp; Total</h2>
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {/* Currency */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700">Currency <span className="text-danger-600">*</span></label>
+                <label className="text-sm font-medium text-fg-secondary">Currency <span className="text-danger-fg">*</span></label>
                 <select
                   value={currency}
                   onChange={(e) => {
@@ -520,7 +520,7 @@ export default function PoCreatePage() {
                     if (c !== 'CAD') { setTaxRate(0); setTaxCode(null) }
                     else setTaxRate(0.13)
                   }}
-                  className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 >
                   {enabledCurrencyOptions(config, currency).map((c) => (
                     <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
@@ -530,7 +530,7 @@ export default function PoCreatePage() {
 
               {/* Tax — from Finance Tax Settings (mdm-api), only enabled for CAD */}
               <div className="flex flex-col gap-1.5">
-                <label className={cn('text-sm font-medium', currency === 'CAD' ? 'text-neutral-700' : 'text-neutral-400')}>Tax</label>
+                <label className={cn('text-sm font-medium', currency === 'CAD' ? 'text-fg-secondary' : 'text-fg-muted')}>Tax</label>
                 {currency === 'CAD' ? (
                   <select
                     value={taxCode ?? ''}
@@ -539,7 +539,7 @@ export default function PoCreatePage() {
                       setTaxCode(c?.code ?? null)
                       setTaxRate(c ? Number(c.rate) : 0)
                     }}
-                    className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                   >
                     {taxCodes.length === 0 && <option value="">Loading tax codes…</option>}
                     {taxCodes.map((c) => (
@@ -549,25 +549,25 @@ export default function PoCreatePage() {
                     ))}
                   </select>
                 ) : (
-                  <div className="flex h-10 items-center rounded-md border border-neutral-200 bg-neutral-100 px-3 text-sm text-neutral-400">
+                  <div className="flex h-10 items-center rounded-md border border-line bg-surface-sunken px-3 text-sm text-fg-muted">
                     0% — Not applicable for {currency}
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-5 py-4 flex flex-col gap-2 max-w-xs ml-auto w-full">
-              <div className="flex justify-between text-sm text-neutral-700">
+            <div className="rounded-lg border border-line bg-surface-subtle px-5 py-4 flex flex-col gap-2 max-w-xs ml-auto w-full">
+              <div className="flex justify-between text-sm text-fg-secondary">
                 <span>Subtotal</span>
                 <span className="amount">{formatAmount(subtotal, currency)}</span>
               </div>
-              <div className="flex justify-between text-sm text-neutral-700">
+              <div className="flex justify-between text-sm text-fg-secondary">
                 <span>Tax ({Math.round(effectiveTaxRate * 100)}%)</span>
                 <span className="amount">{formatAmount(taxAmount, currency)}</span>
               </div>
-              <div className="border-t border-neutral-200 mt-1 pt-2 flex justify-between">
-                <span className="text-sm font-bold text-neutral-900">Total ({currency})</span>
-                <span className={cn('amount text-base font-bold', total > 0 ? 'text-neutral-900' : 'text-neutral-400')}>
+              <div className="border-t border-line mt-1 pt-2 flex justify-between">
+                <span className="text-sm font-bold text-fg">Total ({currency})</span>
+                <span className={cn('amount text-base font-bold', total > 0 ? 'text-fg' : 'text-fg-muted')}>
                   {formatAmount(total, currency)}
                 </span>
               </div>
@@ -575,8 +575,8 @@ export default function PoCreatePage() {
           </div>
 
           {/* Terms & Notes */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
-            <h2 className="text-base font-semibold text-neutral-900">Terms &amp; Notes</h2>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+            <h2 className="text-base font-semibold text-fg">Terms &amp; Notes</h2>
             <FormField label="Buyer Notes / Terms &amp; Conditions" htmlFor="notes">
               <textarea
                 id="notes"
@@ -584,7 +584,7 @@ export default function PoCreatePage() {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Payment terms, delivery instructions, special conditions…"
-                className="w-full resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               />
             </FormField>
 
@@ -595,36 +595,36 @@ export default function PoCreatePage() {
                 id="prepayment-po"
                 checked={isPrepaid}
                 onChange={(e) => setIsPrepaid(e.target.checked)}
-                className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
+                className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600"
               />
-              <label htmlFor="prepayment-po" className="text-sm text-neutral-700 cursor-pointer">
+              <label htmlFor="prepayment-po" className="text-sm text-fg-secondary cursor-pointer">
                 Prepayment Required
               </label>
             </div>
 
             {/* Attachments */}
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium text-neutral-700">Supporting Documents</label>
-              <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-neutral-300 bg-neutral-50 py-6 text-center transition-colors hover:border-primary-400 hover:bg-primary-50">
-                <Upload className="h-6 w-6 text-neutral-400" />
-                <span className="text-sm text-neutral-500">Drag &amp; drop or click to upload</span>
-                <span className="text-xs text-neutral-400">{ATTACHMENT_RULE.hint}</span>
+              <label className="text-sm font-medium text-fg-secondary">Supporting Documents</label>
+              <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line-strong bg-surface-subtle py-6 text-center transition-colors hover:border-primary-400 hover:bg-primary-50">
+                <Upload className="h-6 w-6 text-fg-muted" />
+                <span className="text-sm text-fg-muted">Drag &amp; drop or click to upload</span>
+                <span className="text-xs text-fg-muted">{ATTACHMENT_RULE.hint}</span>
                 <input type="file" multiple accept={ATTACHMENT_RULE.accept} className="hidden" onChange={handleFileInput} />
               </label>
-              {attachmentError && <p role="alert" className="text-xs text-danger-600">{attachmentError}</p>}
+              {attachmentError && <p role="alert" className="text-xs text-danger-fg">{attachmentError}</p>}
               {attachments.length > 0 && (
                 <ul className="flex flex-col gap-1.5">
                   {attachments.map((f, i) => (
-                    <li key={i} className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
-                      <span className="flex items-center gap-2 text-neutral-700">
-                        <Upload className="h-3.5 w-3.5 text-neutral-400" />
+                    <li key={i} className="flex items-center justify-between rounded-lg border border-line bg-surface px-3 py-2 text-sm">
+                      <span className="flex items-center gap-2 text-fg-secondary">
+                        <Upload className="h-3.5 w-3.5 text-fg-muted" />
                         {f.name}
-                        <span className="text-neutral-400">({formatBytes(f.size)})</span>
+                        <span className="text-fg-muted">({formatBytes(f.size)})</span>
                       </span>
                       <button
                         type="button"
                         onClick={() => setAttachments((a) => a.filter((_, j) => j !== i))}
-                        className="text-neutral-400 hover:text-danger-500"
+                        className="text-fg-muted hover:text-danger-fg"
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -636,12 +636,12 @@ export default function PoCreatePage() {
           </div>
 
           {/* Footer actions */}
-          <div className="flex items-center justify-between rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-6 py-4">
+          <div className="flex items-center justify-between rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-6 py-4">
             <Link to="/po">
               <Button variant="ghost">Cancel</Button>
             </Link>
             {submitError && (
-              <p role="alert" className="flex-1 mx-4 text-sm text-danger-600">{submitError}</p>
+              <p role="alert" className="flex-1 mx-4 text-sm text-danger-fg">{submitError}</p>
             )}
             <div className="flex items-center gap-3">
               <Button
@@ -663,9 +663,9 @@ export default function PoCreatePage() {
 
         {/* Sidebar — Tips */}
         <div className="lg:col-span-3 flex flex-col gap-4">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
-            <h3 className="text-sm font-semibold text-neutral-700 mb-3">💡 Tips</h3>
-            <ul className="flex flex-col gap-2.5 text-xs text-neutral-500 leading-relaxed">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
+            <h3 className="text-sm font-semibold text-fg-secondary mb-3">💡 Tips</h3>
+            <ul className="flex flex-col gap-2.5 text-xs text-fg-muted leading-relaxed">
               <li>• Tax rate defaults to 13% HST. Adjust for your province or for tax-exempt purchases.</li>
               <li>• Line items are pre-filled from the PR when linked — adjust quantities or prices if negotiated differently.</li>
               <li>• Delivery address defaults from the PR. Leave blank if the vendor will confirm separately.</li>
@@ -674,14 +674,14 @@ export default function PoCreatePage() {
             </ul>
 
             {linkedPr && (
-              <div className="mt-4 border-t border-neutral-100 pt-4">
-                <p className="text-xs font-medium text-neutral-500 mb-2">Linked PR</p>
+              <div className="mt-4 border-t border-line-subtle pt-4">
+                <p className="text-xs font-medium text-fg-muted mb-2">Linked PR</p>
                 <Link
                   to={`/pr/${prId}`}
-                  className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-primary-700 hover:bg-primary-50 transition-colors"
+                  className="flex items-center gap-2 rounded-lg border border-line bg-surface-subtle px-3 py-2 text-xs text-primary-700 hover:bg-primary-50 transition-colors"
                 >
                   <span className="font-mono">{linkedPr.number}</span>
-                  <span className="text-neutral-400">→</span>
+                  <span className="text-fg-muted">→</span>
                   <span className="truncate">{linkedPr.title}</span>
                 </Link>
               </div>

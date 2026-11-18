@@ -9,7 +9,7 @@ export function DueWindowNotice({ invoices }: { invoices: { internal_ref: string
   const v = dueWindowViolation(invoices)
   if (!v) return null
   return (
-    <p role="alert" className="flex items-start gap-1.5 rounded-lg border border-danger-300 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+    <p role="alert" className="flex items-start gap-1.5 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
       <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
       <span>
         Invoices on one payment must fall due within {PA_INVOICE_DUE_WINDOW_DAYS} days of each other.{' '}

@@ -60,18 +60,18 @@ export function CoaSyncModal({ onClose, onSynced }:
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
-        <h2 className="mb-1 text-lg font-semibold text-neutral-900">Sync Chart of Accounts from NC</h2>
-        <p className="mb-4 text-sm text-neutral-500">
+      <div className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-surface p-5 shadow-xl">
+        <h2 className="mb-1 text-lg font-semibold text-fg">Sync Chart of Accounts from NC</h2>
+        <p className="mb-4 text-sm text-fg-muted">
           NC is the source of truth. Accounts NC no longer returns are deactivated, never deleted.
         </p>
 
         {err && (
-          <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>
+          <div className="mb-3 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-fg">{err}</div>
         )}
 
         {!preview && !result && (
-          <button className={`${btn} bg-[#085E5E] text-white`} disabled={busy === 'preview'}
+          <button className={`${btn} bg-primary-700 text-white`} disabled={busy === 'preview'}
                   onClick={runPreview}>
             {busy === 'preview' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Preview changes'}
           </button>
@@ -85,13 +85,13 @@ export function CoaSyncModal({ onClose, onSynced }:
               <Stat label="Deactivated" value={preview.accounts.to_deactivate} />
               <Stat label="Unchanged" value={preview.accounts.unchanged} />
             </div>
-            <p className="mb-3 text-sm text-neutral-600">
+            <p className="mb-3 text-sm text-fg-secondary">
               Aux dimensions: +{preview.aux_items.to_insert} / −{preview.aux_items.to_delete}
               {' '}(unchanged {preview.aux_items.unchanged})
             </p>
 
             {preview.referenced_by_mappings.length > 0 && (
-              <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <div className="mb-3 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning-fg">
                 <AlertTriangle className="mr-1 inline h-4 w-4" />
                 {preview.referenced_by_mappings.length} account(s) about to be deactivated are
                 still referenced by posting mappings:{' '}
@@ -101,19 +101,19 @@ export function CoaSyncModal({ onClose, onSynced }:
             )}
 
             {preview.accounts.updates.length > 0 && (
-              <div className="mb-3 max-h-64 overflow-y-auto rounded-lg border border-neutral-200">
+              <div className="mb-3 max-h-64 overflow-y-auto rounded-lg border border-line">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-neutral-50 text-neutral-600">
+                  <thead className="bg-surface-subtle text-fg-secondary">
                     <tr><th className="p-2">Account</th><th className="p-2">Field</th>
                         <th className="p-2">Before</th><th className="p-2">After</th></tr>
                   </thead>
                   <tbody>
                     {preview.accounts.updates.flatMap((u) =>
                       Object.entries(u.changes).map(([f, [before, after]]) => (
-                        <tr key={`${u.code}-${f}`} className="border-t border-neutral-100">
+                        <tr key={`${u.code}-${f}`} className="border-t border-line-subtle">
                           <td className="p-2 font-mono">{u.code}{u.reactivated ? ' (reactivated)' : ''}</td>
                           <td className="p-2">{f}</td>
-                          <td className="p-2 text-neutral-500">{String(before)}</td>
+                          <td className="p-2 text-fg-muted">{String(before)}</td>
                           <td className="p-2 font-medium">{String(after)}</td>
                         </tr>
                       )))}
@@ -124,17 +124,17 @@ export function CoaSyncModal({ onClose, onSynced }:
 
             {preview.accounts.deactivations.length > 0 && (
               <div className="mb-3">
-                <p className="mb-1 text-xs font-medium text-neutral-600">
+                <p className="mb-1 text-xs font-medium text-fg-secondary">
                   Accounts to be deactivated (not deleted — historical postings keep resolving):
                 </p>
-                <div className="max-h-64 overflow-y-auto rounded-lg border border-neutral-200">
+                <div className="max-h-64 overflow-y-auto rounded-lg border border-line">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-neutral-50 text-neutral-600">
+                    <thead className="bg-surface-subtle text-fg-secondary">
                       <tr><th className="p-2">Code</th><th className="p-2">Name</th></tr>
                     </thead>
                     <tbody>
                       {preview.accounts.deactivations.map((d) => (
-                        <tr key={d.code} className="border-t border-neutral-100">
+                        <tr key={d.code} className="border-t border-line-subtle">
                           <td className="p-2 font-mono">{d.code}</td>
                           <td className="p-2">{d.name}</td>
                         </tr>
@@ -146,8 +146,8 @@ export function CoaSyncModal({ onClose, onSynced }:
             )}
 
             <div className="flex justify-end gap-2">
-              <button className={`${btn} border border-neutral-300`} onClick={onClose}>Cancel</button>
-              <button className={`${btn} bg-[#085E5E] text-white`} disabled={busy === 'apply'}
+              <button className={`${btn} border border-line-strong`} onClick={onClose}>Cancel</button>
+              <button className={`${btn} bg-primary-700 text-white`} disabled={busy === 'apply'}
                       onClick={runApply}>
                 {busy === 'apply' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Apply'}
               </button>
@@ -157,13 +157,13 @@ export function CoaSyncModal({ onClose, onSynced }:
 
         {result && (
           <>
-            <div className="mb-4 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+            <div className="mb-4 rounded-lg bg-success-soft px-3 py-2 text-sm text-success-fg">
               Synced. Accounts: +{result.accounts_inserted} / ~{result.accounts_updated} /
               −{result.accounts_deactivated}. Aux: +{result.aux_items_inserted} /
               −{result.aux_items_deleted}.
             </div>
             <div className="flex justify-end">
-              <button className={`${btn} bg-[#085E5E] text-white`} onClick={onSynced}>Close</button>
+              <button className={`${btn} bg-primary-700 text-white`} onClick={onSynced}>Close</button>
             </div>
           </>
         )}
@@ -174,9 +174,9 @@ export function CoaSyncModal({ onClose, onSynced }:
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg border border-neutral-200 p-2 text-center">
-      <div className="text-lg font-semibold text-neutral-900">{value}</div>
-      <div className="text-xs text-neutral-500">{label}</div>
+    <div className="rounded-lg border border-line p-2 text-center">
+      <div className="text-lg font-semibold text-fg">{value}</div>
+      <div className="text-xs text-fg-muted">{label}</div>
     </div>
   )
 }

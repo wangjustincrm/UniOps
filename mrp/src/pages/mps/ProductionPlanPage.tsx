@@ -78,17 +78,17 @@ function AdjustCellPicker({
 
   return createPortal(
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">
-      <div role="dialog" aria-modal="true" aria-label={`Select a line to adjust for ${code}`} className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
+      <div role="dialog" aria-modal="true" aria-label={`Select a line to adjust for ${code}`} className="w-full max-w-sm rounded-xl border border-line bg-surface shadow-xl">
+        <div className="flex items-center justify-between border-b border-line px-5 py-4">
           <div>
-            <h2 className="text-base font-semibold text-neutral-900">Select a line</h2>
-            <p className="font-mono text-xs text-neutral-500">{code}{name && name !== code ? ` · ${name}` : ''}</p>
+            <h2 className="text-base font-semibold text-fg">Select a line</h2>
+            <p className="font-mono text-xs text-fg-muted">{code}{name && name !== code ? ` · ${name}` : ''}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center text-neutral-400 hover:text-neutral-600"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center text-fg-muted hover:text-fg-secondary"
           >
             <XIcon className="h-5 w-5" />
           </button>
@@ -101,8 +101,8 @@ function AdjustCellPicker({
               onClick={() => onPick(line)}
               className="flex min-h-[44px] w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-primary-50 focus:outline-none focus:ring-1 focus:ring-primary-500"
             >
-              <span className="text-neutral-600">demand {line.demand_month}</span>
-              <span className="font-mono text-neutral-900">{formatValue(Number(line.qty))}</span>
+              <span className="text-fg-secondary">demand {line.demand_month}</span>
+              <span className="font-mono text-fg">{formatValue(Number(line.qty))}</span>
             </button>
           ))}
         </div>
@@ -543,13 +543,13 @@ export default function ProductionPlanPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold text-neutral-900">Production Plan</h1>
+        <h1 className="text-lg font-semibold text-fg">Production Plan</h1>
         {run && (
-          <div className="flex items-center gap-2 text-sm text-neutral-600">
-            <span className="font-mono text-xs text-neutral-500">{run.run_no}</span>
+          <div className="flex items-center gap-2 text-sm text-fg-secondary">
+            <span className="font-mono text-xs text-fg-muted">{run.run_no}</span>
             <StatusBadge status={run.status} />
             {runVersion && (
-              <span className="text-xs text-neutral-500">
+              <span className="text-xs text-fg-muted">
                 from {runVersion.version_no} · anchor {runVersion.source_anchor_month ?? '—'}
               </span>
             )}
@@ -558,7 +558,7 @@ export default function ProductionPlanPage() {
       </div>
 
       {/* ── Toolbar: version picker + unit toggle + Generate/Recalculate/Export/Release ── */}
-      <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg border border-neutral-200 bg-white p-3">
+      <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg border border-line bg-surface p-3">
         <div className="flex flex-wrap items-end gap-3">
           <FormField
             label="Forecast Version"
@@ -570,7 +570,7 @@ export default function ProductionPlanPage() {
               value={selectedVersionId ?? ''}
               onChange={(e) => setManualVersionId(e.target.value || null)}
               disabled={confirmedVersions.length === 0 || generating}
-              className="flex h-10 min-w-[220px] rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-10 min-w-[220px] rounded-lg border border-line bg-surface px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {confirmedVersions.length === 0 && <option value="">No confirmed versions</option>}
               {confirmedVersions.map((v) => (
@@ -580,7 +580,7 @@ export default function ProductionPlanPage() {
           </FormField>
 
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-medium text-neutral-500">Version</span>
+            <span className="text-2xs font-medium text-fg-muted">Version</span>
             <RunPicker
               runs={runs}
               selectedId={runId}
@@ -590,7 +590,7 @@ export default function ProductionPlanPage() {
             {/* An empty picker and a failed request look identical — which is
                 how a stale list read as "no plans exist". Say which it is. */}
             {runsQuery.isError && (
-              <span role="alert" className="text-xs text-danger-600">
+              <span role="alert" className="text-xs text-danger-fg">
                 Could not load the version list — retry or reload.
               </span>
             )}
@@ -616,8 +616,8 @@ export default function ProductionPlanPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-medium text-neutral-500">Unit</span>
-            <div role="group" aria-label="Display unit" className="inline-flex overflow-hidden rounded-lg border border-neutral-200">
+            <span className="text-2xs font-medium text-fg-muted">Unit</span>
+            <div role="group" aria-label="Display unit" className="inline-flex overflow-hidden rounded-lg border border-line">
               <Button
                 type="button"
                 size="sm"
@@ -634,7 +634,7 @@ export default function ProductionPlanPage() {
                 variant={displayUnit === 't' ? 'primary' : 'secondary'}
                 aria-pressed={displayUnit === 't'}
                 onClick={() => setDisplayUnit('t')}
-                className="h-11 min-w-11 rounded-none border-0 border-l border-neutral-200"
+                className="h-11 min-w-11 rounded-none border-0 border-l border-line"
               >
                 Tonne
               </Button>
@@ -658,7 +658,7 @@ export default function ProductionPlanPage() {
                   }}
                   disabled={generating}
                   title="Applies when you Generate a new run; Recalculate keeps the run's lead."
-                  className="flex h-11 w-20 rounded-lg border border-neutral-200 bg-white px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex h-11 w-20 rounded-lg border border-line bg-surface px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
                 />
               </FormField>
               <Button
@@ -703,25 +703,25 @@ export default function ProductionPlanPage() {
       </div>
 
       {isReleased && (
-        <p role="status" className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-600">
+        <p role="status" className="rounded-md border border-line bg-surface-subtle px-3 py-2 text-sm text-fg-secondary">
           This run is released and immutable — lines can no longer be locked, adjusted, or recalculated.
         </p>
       )}
 
       {!runId && (
-        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-300 py-16 text-center">
-          <p className="text-sm text-neutral-500">Pick a confirmed forecast version and Generate to produce a schedule.</p>
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-line-strong py-16 text-center">
+          <p className="text-sm text-fg-muted">Pick a confirmed forecast version and Generate to produce a schedule.</p>
         </div>
       )}
 
       {runQuery.isError && (
-        <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+        <p role="alert" className="rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           {errMsg(runQuery.error, 'Could not load this MPS run.')}
         </p>
       )}
 
       {runId && runQuery.isLoading && (
-        <p role="status" className="flex items-center justify-center gap-2 py-12 text-sm text-neutral-400">
+        <p role="status" className="flex items-center justify-center gap-2 py-12 text-sm text-fg-muted">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading run…
         </p>
       )}
@@ -749,7 +749,7 @@ export default function ProductionPlanPage() {
           real gap) from "not scheduled because it isn't a real material
           yet" (expected, not a gap at all). */}
       {run && skippedIntent.length > 0 && (
-        <div role="status" className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-800">
+        <div role="status" className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-fg">
           <p className="flex items-center gap-1.5 font-medium">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
             {skippedIntent.length} intent product{skippedIntent.length === 1 ? '' : 's'} not scheduled this run:
@@ -766,7 +766,7 @@ export default function ProductionPlanPage() {
       )}
 
       {exceptionsQuery.isError && (
-        <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+        <p role="alert" className="rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           {errMsg(exceptionsQuery.error, 'Could not load capacity exceptions — maintenance-week markers below may be incomplete.')}
         </p>
       )}
@@ -805,7 +805,7 @@ export default function ProductionPlanPage() {
       {isHistorical && (
         <p
           role="status"
-          className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-600"
+          className="flex items-center gap-2 rounded-lg border border-line bg-surface-subtle px-3 py-2 text-sm text-fg-secondary"
         >
           <AlertTriangle aria-hidden className="h-4 w-4 shrink-0" />
           A newer plan group has taken over — this version is read-only. It stays here for
@@ -946,7 +946,7 @@ export default function ProductionPlanPage() {
               legitimate (deliberate rollback) so this warns, it does not
               block — the button below stays enabled either way. */}
           {!isLatestOutlook && (
-            <p role="alert" className="flex items-start gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-danger-800">
+            <p role="alert" className="flex items-start gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-danger-fg">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>
                 This MPS was generated from an older outlook
@@ -962,7 +962,7 @@ export default function ProductionPlanPage() {
           </p>
           <p>This run becomes immutable once released — no further locking, adjusting, or recalculating.</p>
           {releaseSummary.gapCount > 0 && (
-            <p className="flex items-start gap-1.5 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-warning-800">
+            <p className="flex items-start gap-1.5 rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-warning-fg">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>
                 <strong>{releaseSummary.gapCount}</strong> line{releaseSummary.gapCount === 1 ? '' : 's'} {releaseSummary.gapCount === 1 ? 'has' : 'have'} an unresolved capacity gap and will be

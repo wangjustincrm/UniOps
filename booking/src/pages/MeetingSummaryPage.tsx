@@ -78,23 +78,23 @@ function RoomHeader({ room, onClick }: { room: DaySummaryRoom; onClick: () => vo
     <div
       onClick={onClick}
       className={cn(
-        'flex flex-col gap-0.5 px-3 py-2 border-b border-r border-neutral-200 cursor-pointer select-none',
-        'hover:bg-neutral-50 transition-colors',
-        isMaint && 'bg-neutral-100',
+        'flex flex-col gap-0.5 px-3 py-2 border-b border-r border-line cursor-pointer select-none',
+        'hover:bg-surface-subtle transition-colors',
+        isMaint && 'bg-surface-sunken',
       )}
       title={isMaint ? `${room.name} — Maintenance` : room.name}
     >
       <div className="flex items-center gap-1.5 min-w-0">
-        <span className={cn('text-sm font-semibold truncate', isMaint ? 'text-neutral-400' : 'text-neutral-800')}>
+        <span className={cn('text-sm font-semibold truncate', isMaint ? 'text-fg-muted' : 'text-fg')}>
           {room.name}
         </span>
         {isMaint && (
-          <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200">
+          <span className="shrink-0 rounded-full bg-warning-soft px-1.5 py-0.5 text-2xs font-semibold text-warning-fg ring-1 ring-inset ring-warning-line">
             Maintenance
           </span>
         )}
       </div>
-      <div className="flex items-center gap-2 text-[11px] text-neutral-400">
+      <div className="flex items-center gap-2 text-2xs text-fg-muted">
         <span>{room.code}</span>
         <span>·</span>
         <span>{room.capacity} pax</span>
@@ -134,13 +134,13 @@ function BookingBlock({ booking, openStartMin, openSpanMin, displayTz }: Booking
       title={tooltip}
       style={{ top: `${topPct}%`, height: `${heightPct}%` }}
       className={cn(
-        'absolute inset-x-1 rounded-sm border-l-[3px] border-[#085E5E] bg-[#085E5E]/10 px-1.5 py-0.5',
+        'absolute inset-x-1 rounded-sm border-l-[3px] border-primary-700 bg-primary-700/10 px-1.5 py-0.5',
         'overflow-hidden select-none',
       )}
     >
-      <p className="truncate text-[11px] font-semibold text-[#085E5E] leading-tight">{booking.title}</p>
-      <p className="truncate text-[10px] text-[#085E5E]/70 leading-tight">{startLabel}–{endLabel}</p>
-      <p className="truncate text-[10px] text-[#085E5E]/60 leading-tight">{booking.organizer_name}</p>
+      <p className="truncate text-2xs font-semibold text-primary-700 leading-tight">{booking.title}</p>
+      <p className="truncate text-2xs text-primary-700/70 leading-tight">{startLabel}–{endLabel}</p>
+      <p className="truncate text-2xs text-primary-700/60 leading-tight">{booking.organizer_name}</p>
     </div>
   )
 }
@@ -170,8 +170,8 @@ function CurrentTimeLine({ openStartMin, openSpanMin, displayTz }: CurrentTimeLi
       className="absolute left-0 right-0 z-20 flex items-center pointer-events-none"
       style={{ top: `${topPct}%` }}
     >
-      <div className="h-2 w-2 rounded-full bg-red-500 -translate-x-1 shrink-0" />
-      <div className="flex-1 border-t-2 border-red-500" />
+      <div className="h-2 w-2 rounded-full bg-danger-solid -translate-x-1 shrink-0" />
+      <div className="flex-1 border-t-2 border-danger-solid" />
     </div>
   )
 }
@@ -222,11 +222,11 @@ export default function MeetingSummaryPage() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* ── Header bar ─────────────────────────────────────────────────────── */}
-      <div className="no-print flex shrink-0 items-center gap-3 border-b border-neutral-200 bg-white px-4 py-3">
-        <CalendarDays className="h-5 w-5 text-[#085E5E]" />
-        <h1 className="text-base font-semibold text-neutral-800">Meeting Summary</h1>
+      <div className="no-print flex shrink-0 items-center gap-3 border-b border-line bg-surface px-4 py-3">
+        <CalendarDays className="h-5 w-5 text-primary-700" />
+        <h1 className="text-base font-semibold text-fg">Meeting Summary</h1>
 
-        <div className="mx-2 h-5 w-px bg-neutral-200" />
+        <div className="mx-2 h-5 w-px bg-surface-strong" />
 
         {/* Today button */}
         <button
@@ -234,8 +234,8 @@ export default function MeetingSummaryPage() {
           className={cn(
             'rounded-md border px-3 py-1 text-sm font-medium transition-colors',
             isToday
-              ? 'border-[#085E5E] bg-[#085E5E] text-white'
-              : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50',
+              ? 'border-primary-700 bg-primary-700 text-white'
+              : 'border-line-strong bg-surface text-fg-secondary hover:bg-surface-subtle',
           )}
         >
           Today
@@ -244,14 +244,14 @@ export default function MeetingSummaryPage() {
         {/* Arrows */}
         <button
           onClick={() => setSelectedDate(d => addDays(d, -1))}
-          className="rounded p-1 text-neutral-500 hover:bg-neutral-100 transition-colors"
+          className="rounded p-1 text-fg-muted hover:bg-surface-sunken transition-colors"
           aria-label="Previous day"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
         <button
           onClick={() => setSelectedDate(d => addDays(d, 1))}
-          className="rounded p-1 text-neutral-500 hover:bg-neutral-100 transition-colors"
+          className="rounded p-1 text-fg-muted hover:bg-surface-sunken transition-colors"
           aria-label="Next day"
         >
           <ChevronRight className="h-4 w-4" />
@@ -262,28 +262,28 @@ export default function MeetingSummaryPage() {
           type="date"
           value={selectedDate}
           onChange={e => e.target.value && setSelectedDate(e.target.value)}
-          className="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+          className="rounded-md border border-line-strong px-2 py-1 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-700/40"
         />
 
         {/* Weekday label */}
-        <span className="text-sm text-neutral-500">{formatWeekday(selectedDate)}</span>
+        <span className="text-sm text-fg-muted">{formatWeekday(selectedDate)}</span>
       </div>
 
       {/* ── Loading / error states ─────────────────────────────────────────── */}
       {isLoading && (
-        <div className="flex flex-1 items-center justify-center text-sm text-neutral-400">
+        <div className="flex flex-1 items-center justify-center text-sm text-fg-muted">
           Loading schedule…
         </div>
       )}
       {isError && (
-        <div className="flex flex-1 items-center justify-center text-sm text-red-500">
+        <div className="flex flex-1 items-center justify-center text-sm text-danger-fg">
           Failed to load schedule. Please try again.
         </div>
       )}
 
       {/* ── No rooms ──────────────────────────────────────────────────────── */}
       {data && data.rooms.length === 0 && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 text-sm text-neutral-400">
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 text-sm text-fg-muted">
           <CalendarDays className="h-8 w-8 opacity-30" />
           <p>No meeting rooms found.</p>
           <p className="text-xs">Ask an admin to configure rooms in Rooms Admin.</p>
@@ -295,7 +295,7 @@ export default function MeetingSummaryPage() {
         <div className="relative flex-1 overflow-auto">
           {/* Sticky room header row */}
           <div
-            className="sticky top-0 z-10 flex bg-white"
+            className="sticky top-0 z-10 flex bg-surface"
             style={{ paddingLeft: GUTTER_W }}
           >
             {data.rooms.map(room => (
@@ -313,7 +313,7 @@ export default function MeetingSummaryPage() {
           <div className="flex" style={{ minWidth: GUTTER_W + data.rooms.length * ROOM_MIN_W }}>
             {/* Time gutter */}
             <div
-              className="sticky left-0 z-10 shrink-0 bg-white border-r border-neutral-200 relative"
+              className="sticky left-0 z-10 shrink-0 bg-surface border-r border-line relative"
               style={{ width: GUTTER_W, height: gridH }}
             >
               {hours.map(h => {
@@ -322,7 +322,7 @@ export default function MeetingSummaryPage() {
                 return (
                   <div
                     key={h}
-                    className="absolute right-2 -translate-y-2 text-[10px] text-neutral-400 select-none"
+                    className="absolute right-2 -translate-y-2 text-2xs text-fg-muted select-none"
                     style={{ top: `${topPct}%` }}
                   >
                     {String(h).padStart(2, '0')}:00
@@ -340,7 +340,7 @@ export default function MeetingSummaryPage() {
                 return (
                   <div
                     key={h}
-                    className="absolute left-0 right-0 border-t border-neutral-200"
+                    className="absolute left-0 right-0 border-t border-line"
                     style={{ top: `${topPct}%` }}
                   />
                 )
@@ -352,7 +352,7 @@ export default function MeetingSummaryPage() {
                 return (
                   <div
                     key={`${h}-30`}
-                    className="absolute left-0 right-0 border-t border-neutral-100"
+                    className="absolute left-0 right-0 border-t border-line-subtle"
                     style={{ top: `${topPct}%` }}
                   />
                 )
@@ -371,15 +371,15 @@ export default function MeetingSummaryPage() {
                   <div
                     key={room.id}
                     className={cn(
-                      'relative shrink-0 border-r border-neutral-200',
-                      isMaint && 'bg-neutral-50/60',
+                      'relative shrink-0 border-r border-line',
+                      isMaint && 'bg-surface-subtle/60',
                     )}
                     style={{ width: ROOM_MIN_W, height: '100%' }}
                   >
                     {/* No-meetings overlay (only on first column when all visible rooms empty) */}
                     {roomBookings.length === 0 && !isMaint && visibleBookingCount === 0 && idx === 0 && (
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-[11px] text-neutral-300 select-none">No meetings scheduled</span>
+                        <span className="text-2xs text-fg-faint select-none">No meetings scheduled</span>
                       </div>
                     )}
                     {roomBookings.map(b => (

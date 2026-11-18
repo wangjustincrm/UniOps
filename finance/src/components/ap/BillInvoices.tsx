@@ -42,23 +42,23 @@ export function BillInvoices({ invoices, amount = 'money_bal' }: {
   invoices: BillInvoice[]
   amount?: 'money_cr' | 'money_bal'
 }) {
-  if (invoices.length === 0) return <span className="text-neutral-400">—</span>
+  if (invoices.length === 0) return <span className="text-fg-muted">—</span>
   if (invoices.length === 1) {
     const i = invoices[0]
     return <span title={i.summary ?? undefined}>{i.invoice_no ?? '—'}</span>
   }
   return (
     <div className="min-w-[11rem]">
-      <div className="mb-0.5 font-sans text-[10px] uppercase tracking-wide text-neutral-400">
+      <div className="mb-0.5 font-sans text-2xs uppercase tracking-wide text-fg-muted">
         {invoices.length} invoices
       </div>
       <ul className="space-y-0.5">
         {invoices.map((i, k) => (
           <li key={k} className="flex justify-between gap-3" title={i.summary ?? undefined}>
-            <span className={i.invoice_no ? undefined : 'italic text-neutral-400'}>
+            <span className={i.invoice_no ? undefined : 'italic text-fg-muted'}>
               {i.invoice_no ?? 'no number'}
             </span>
-            <span className="tabular-nums text-neutral-500">{money(i[amount])}</span>
+            <span className="tabular-nums text-fg-muted">{money(i[amount])}</span>
           </li>
         ))}
       </ul>

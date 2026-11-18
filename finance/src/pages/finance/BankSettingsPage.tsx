@@ -24,9 +24,9 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 // refuses to shrink below its content's min-content width — so that one select
 // widened the whole column and every field in the dialog overflowed the
 // max-w-md panel. Invisible until a full NC sync put real rows in the picker.
-const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
+const inputCls = 'h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
+const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 interface Account {
   id: string; name: string; bank_name: string; kind: string
@@ -41,7 +41,7 @@ function KindBadge({ kind }: { kind: string }) {
   const card = kind === 'credit_card'
   return (
     <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
-      card ? 'bg-violet-50 text-violet-700' : 'bg-sky-50 text-sky-700')}>
+      card ? 'bg-cat4-soft text-cat4-fg' : 'bg-info-soft text-info-fg')}>
       {card ? <CreditCard className="h-3 w-3" /> : <Landmark className="h-3 w-3" />}
       {KIND_LABEL[kind] ?? kind}
     </span>
@@ -90,7 +90,7 @@ export default function BankSettingsPage() {
       <div className="mx-auto max-w-6xl">
         {banner && (
           <div className={cn('mb-3 rounded-md px-3 py-2 text-sm',
-            banner.kind === 'err' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>
+            banner.kind === 'err' ? 'bg-danger-soft text-danger-fg' : 'bg-success-soft text-success-fg')}>
             {banner.text}
           </div>
         )}
@@ -109,9 +109,9 @@ export default function BankSettingsPage() {
           )}
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-neutral-200">
+        <div className="overflow-hidden rounded-lg border border-line">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+            <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
               <tr>
                 <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className="px-3 py-2" />
                 <SortTh label="Bank / Issuer" sortKey="bank" sort={sort} onSort={onSort} className="px-3 py-2" />
@@ -126,34 +126,34 @@ export default function BankSettingsPage() {
             </thead>
             <tbody>
               {isFetching && (
-                <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-fg-muted">
                   <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
               )}
               {!isFetching && rows.length === 0 && (
-                <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">No accounts.</td></tr>
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-fg-muted">No accounts.</td></tr>
               )}
               {rows.map((a, i) => (
-                <tr key={a.id} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40', !a.is_active && 'opacity-50')}>
-                  <td className="px-3 py-2 font-medium text-neutral-800">{a.name}</td>
-                  <td className="px-3 py-2 text-neutral-600">{a.bank_name}</td>
+                <tr key={a.id} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40', !a.is_active && 'opacity-50')}>
+                  <td className="px-3 py-2 font-medium text-fg">{a.name}</td>
+                  <td className="px-3 py-2 text-fg-secondary">{a.bank_name}</td>
                   <td className="px-3 py-2"><KindBadge kind={a.kind} /></td>
-                  <td className="px-3 py-2 font-mono text-xs text-neutral-500">{a.account_masked ? `…${a.account_masked}` : '—'}</td>
-                  <td className="px-3 py-2 text-xs text-neutral-500">{a.currency}</td>
-                  <td className="px-3 py-2 font-mono text-xs">{a.ledger_account_code || <span className="text-amber-600">unmapped</span>}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-fg-muted">{a.account_masked ? `…${a.account_masked}` : '—'}</td>
+                  <td className="px-3 py-2 text-xs text-fg-muted">{a.currency}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{a.ledger_account_code || <span className="text-warning-fg">unmapped</span>}</td>
                   <td className="px-3 py-2 font-mono text-xs">
                     {a.nc_bank_account_code
                       ? a.nc_bank_account_code
-                      : <span className="text-amber-600" title="Without this the account has no ledger side to reconcile against">not linked</span>}
+                      : <span className="text-warning-fg" title="Without this the account has no ledger side to reconcile against">not linked</span>}
                   </td>
                   <td className="px-3 py-2">
                     <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium',
-                      a.is_active ? 'bg-green-50 text-green-700' : 'bg-neutral-100 text-neutral-500')}>
+                      a.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                       {a.is_active ? 'active' : 'inactive'}
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right">
                     {canManage && (
-                      <button onClick={() => setEditing(a)} className="rounded p-1 text-neutral-400 hover:text-[#085E5E]">
+                      <button onClick={() => setEditing(a)} className="rounded p-1 text-fg-muted hover:text-primary-700">
                         <Pencil className="h-4 w-4" />
                       </button>
                     )}
@@ -163,7 +163,7 @@ export default function BankSettingsPage() {
             </tbody>
           </table>
         </div>
-        <p className="mt-2 text-xs text-neutral-400">
+        <p className="mt-2 text-xs text-fg-muted">
           Credit cards map to a liability GL account (e.g. 2050 Credit Card Payable); bank accounts map to a cash asset (e.g. 1010).
         </p>
       </div>
@@ -220,51 +220,51 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-md rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-neutral-800">{isNew ? 'New account' : 'Edit account'}</h2>
-          <button onClick={onClose} className="rounded p-1 text-neutral-400 hover:text-neutral-700"><X className="h-5 w-5" /></button>
+          <h2 className="text-base font-semibold text-fg">{isNew ? 'New account' : 'Edit account'}</h2>
+          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary"><X className="h-5 w-5" /></button>
         </div>
         <div className="grid gap-3">
           <label className="flex min-w-0 flex-col gap-1 text-sm">
-            <span className="text-neutral-600">Type</span>
+            <span className="text-fg-secondary">Type</span>
             <select value={f.kind ?? 'bank'} onChange={(e) => set({ kind: e.target.value })} className={inputCls}>
               <option value="bank">Bank Account</option>
               <option value="credit_card">Credit Card</option>
             </select>
           </label>
           <label className="flex min-w-0 flex-col gap-1 text-sm">
-            <span className="text-neutral-600">{isCard ? 'Card name' : 'Account name'}</span>
+            <span className="text-fg-secondary">{isCard ? 'Card name' : 'Account name'}</span>
             <input value={f.name ?? ''} onChange={(e) => set({ name: e.target.value })}
                    placeholder={isCard ? 'e.g. Amex Corporate' : 'e.g. RBC Operating'} className={inputCls} />
           </label>
           <div className="grid grid-cols-2 gap-3">
             <label className="flex min-w-0 flex-col gap-1 text-sm">
-              <span className="text-neutral-600">{isCard ? 'Card issuer' : 'Bank'}</span>
+              <span className="text-fg-secondary">{isCard ? 'Card issuer' : 'Bank'}</span>
               <input value={f.bank_name ?? ''} onChange={(e) => set({ bank_name: e.target.value })}
                      placeholder={isCard ? 'Visa / MC / Amex' : 'Royal Bank of Canada'} className={inputCls} />
             </label>
             <label className="flex min-w-0 flex-col gap-1 text-sm">
-              <span className="text-neutral-600">{isCard ? 'Card last 4' : 'Account last 4'}</span>
+              <span className="text-fg-secondary">{isCard ? 'Card last 4' : 'Account last 4'}</span>
               <input value={f.account_masked ?? ''} onChange={(e) => set({ account_masked: e.target.value })} className={inputCls} />
             </label>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <label className="flex min-w-0 flex-col gap-1 text-sm">
-              <span className="text-neutral-600">Currency</span>
+              <span className="text-fg-secondary">Currency</span>
               <select value={f.currency ?? 'CAD'} onChange={(e) => set({ currency: e.target.value })} className={inputCls}>
                 {['CAD', 'USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}
               </select>
             </label>
             <label className="flex min-w-0 flex-col gap-1 text-sm">
-              <span className="text-neutral-600">GL account code</span>
+              <span className="text-fg-secondary">GL account code</span>
               <input value={f.ledger_account_code ?? ''} onChange={(e) => set({ ledger_account_code: e.target.value })}
                      placeholder={isCard ? '2050 (liability)' : '1010 (cash)'} className={cn(inputCls, 'font-mono')} />
             </label>
           </div>
           {!isCard && (
             <label className="flex min-w-0 flex-col gap-1 text-sm">
-              <span className="text-neutral-600">NC bank account</span>
+              <span className="text-fg-secondary">NC bank account</span>
               <select value={f.nc_bank_account_code ?? ''}
                       onChange={(e) => set({ nc_bank_account_code: e.target.value || null })}
                       className={cn(inputCls, 'truncate')}>
@@ -273,17 +273,17 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
                   <option key={n.code} value={n.code}>{n.label} · {n.currency}</option>
                 ))}
               </select>
-              <span className="text-xs text-neutral-400">
+              <span className="text-xs text-fg-muted">
                 {ncHint ?? 'Which account NC\u2019s 100201 calls this one. Bank Reconciliation reads the ledger side through it \u2014 without it there is nothing to reconcile against.'}
               </span>
             </label>
           )}
-          <p className="text-xs text-neutral-400">
+          <p className="text-xs text-fg-muted">
             {isCard
               ? 'Card payments credit this liability (Credit Card Payable). Pay the card statement later from a bank account.'
               : 'Bank payments credit this cash asset account.'}
           </p>
-          <label className="flex items-center gap-1.5 text-sm text-neutral-600">
+          <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
             <input type="checkbox" checked={f.is_active ?? true} onChange={(e) => set({ is_active: e.target.checked })} />
             Active
           </label>

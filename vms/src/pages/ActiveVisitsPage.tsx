@@ -48,9 +48,9 @@ export default function ActiveVisitsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <UserCheck className="h-6 w-6 text-primary-600" />
-          <h1 className="text-2xl font-bold text-neutral-900">On-Site Now</h1>
+          <h1 className="text-2xl font-bold text-fg">On-Site Now</h1>
           {!isLoading && (
-            <span className="rounded-full bg-success-50 px-2.5 py-0.5 text-xs font-semibold text-success-600 ring-1 ring-inset ring-emerald-200">
+            <span className="rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-semibold text-success-fg ring-1 ring-inset ring-success-line">
               {items.length}
             </span>
           )}
@@ -60,7 +60,7 @@ export default function ActiveVisitsPage() {
           <button
             onClick={onBatchClose}
             disabled={confirming || batch.isPending}
-            className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50"
           >
             {(confirming || batch.isPending)
               ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -71,19 +71,19 @@ export default function ActiveVisitsPage() {
       </div>
 
       {batch.error && (
-        <p className="mt-3 rounded-md bg-danger-50 px-3 py-2 text-sm text-danger-600">
+        <p className="mt-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           {batch.error.message}
         </p>
       )}
       {batch.data && (
-        <p className="mt-3 rounded-md bg-success-50 px-3 py-2 text-sm text-success-600">
+        <p className="mt-3 rounded-md bg-success-soft px-3 py-2 text-sm text-success-fg">
           Closed {batch.data.closed} visit{batch.data.closed === 1 ? '' : 's'}.
         </p>
       )}
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-neutral-200 bg-white">
-        <table className="min-w-full divide-y divide-neutral-200">
-          <thead className="bg-neutral-50 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500">
+      <div className="mt-6 overflow-hidden rounded-lg border border-line bg-surface">
+        <table className="min-w-full divide-y divide-line">
+          <thead className="bg-surface-subtle text-left text-xs font-semibold uppercase tracking-wider text-fg-muted">
             <tr>
               <SortTh label="Visit" sortKey="visit" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-2.5" />
               <SortTh label="Area" sortKey="area" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-2.5" />
@@ -91,13 +91,13 @@ export default function ActiveVisitsPage() {
               <SortTh label="Duration" sortKey="duration" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-2.5" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-neutral-100 bg-white text-sm">
+          <tbody className="divide-y divide-line-subtle bg-surface text-sm">
             {isLoading && (
-              <tr><td colSpan={4} className="px-4 py-6 text-center text-neutral-400">Loading…</td></tr>
+              <tr><td colSpan={4} className="px-4 py-6 text-center text-fg-muted">Loading…</td></tr>
             )}
             {!isLoading && items.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-12 text-center text-neutral-400">
+                <td colSpan={4} className="px-4 py-12 text-center text-fg-muted">
                   No visitors are currently on-site.
                 </td>
               </tr>
@@ -114,16 +114,16 @@ export default function ActiveVisitsPage() {
                     {isVisitOverdue(v) && <OverdueBadge />}
                   </span>
                   {v.visitor?.company_name && (
-                    <p className="text-xs text-neutral-500">{v.visitor.company_name}</p>
+                    <p className="text-xs text-fg-muted">{v.visitor.company_name}</p>
                   )}
                 </td>
                 <td className="px-4 py-2.5">
                   <AccessAreaBadge area={v.access_area} />
                 </td>
-                <td className="px-4 py-2.5 hidden md:table-cell text-neutral-600">
+                <td className="px-4 py-2.5 hidden md:table-cell text-fg-secondary">
                   {formatDateTime(v.actual_arrival)}
                 </td>
-                <td className="px-4 py-2.5 text-neutral-600">
+                <td className="px-4 py-2.5 text-fg-secondary">
                   {timeAgo(v.actual_arrival)}
                 </td>
               </tr>

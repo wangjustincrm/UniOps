@@ -38,8 +38,8 @@ export function InventorySummary({
 }) {
   if (isLoading) {
     return (
-      <div className="rounded-lg border border-neutral-200 bg-white p-4">
-        <p className="text-xs text-neutral-400">Loading totals…</p>
+      <div className="rounded-lg border border-line bg-surface p-4">
+        <p className="text-xs text-fg-muted">Loading totals…</p>
       </div>
     )
   }
@@ -50,12 +50,12 @@ export function InventorySummary({
   const multiUnit = summary.length > 1
 
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-neutral-100 px-4 py-2">
-        <h2 className="text-sm font-semibold text-neutral-900">
+    <div className="rounded-lg border border-line bg-surface">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line-subtle px-4 py-2">
+        <h2 className="text-sm font-semibold text-fg">
           Totals for what you are looking at
         </h2>
-        <span className="text-[11px] text-neutral-400">
+        <span className="text-2xs text-fg-muted">
           every matching row, not just this page
         </span>
       </div>
@@ -63,7 +63,7 @@ export function InventorySummary({
       <div className="overflow-x-auto">
         <table className="min-w-full">
           <thead>
-            <tr className="text-[11px] uppercase tracking-wide text-neutral-500">
+            <tr className="text-2xs uppercase tracking-wide text-fg-muted">
               {/* The unit column only earns its space when there is more than
                   one unit in scope; with a single unit it rides along with the
                   numbers instead. */}
@@ -82,14 +82,14 @@ export function InventorySummary({
               const unit = line.uom ?? 'no unit'
               const hasExpiring = isPositiveQty(line.expiring_soon_qty)
               return (
-                <tr key={unit} className="border-t border-neutral-100">
+                <tr key={unit} className="border-t border-line-subtle">
                   {multiUnit && (
-                    <td className="px-4 py-3 text-xs font-medium text-neutral-600">
+                    <td className="px-4 py-3 text-xs font-medium text-fg-secondary">
                       {line.uom ?? (
                         // 495 lots belong to materials the master has no row
                         // for. Saying so beats an empty cell that reads as a
                         // rendering fault.
-                        <span className="text-neutral-400">no unit on file</span>
+                        <span className="text-fg-muted">no unit on file</span>
                       )}
                     </td>
                   )}
@@ -119,8 +119,8 @@ export function InventorySummary({
                       }}
                       className={cn(
                         'rounded-md px-2 py-1 text-right transition-colors',
-                        expiringFilterActive && 'bg-warning-100 ring-1 ring-warning-500',
-                        hasExpiring && !expiringFilterActive && 'hover:bg-warning-50',
+                        expiringFilterActive && 'bg-warning-soft ring-1 ring-warning-solid',
+                        hasExpiring && !expiringFilterActive && 'hover:bg-warning-soft',
                         !hasExpiring && !expiringFilterActive && 'cursor-default',
                       )}
                       title={hasExpiring
@@ -130,13 +130,13 @@ export function InventorySummary({
                         : undefined}
                     >
                       <span className={cn('block text-lg font-semibold tabular-nums',
-                        hasExpiring ? 'text-warning-800' : 'text-neutral-400')}>
+                        hasExpiring ? 'text-warning-fg' : 'text-fg-muted')}>
                         {qty(line.expiring_soon_qty)}
                         {!multiUnit && (
-                          <span className="ml-1 text-xs font-normal text-neutral-400">{unit}</span>
+                          <span className="ml-1 text-xs font-normal text-fg-muted">{unit}</span>
                         )}
                       </span>
-                      <span className="block text-[11px] text-neutral-500">
+                      <span className="block text-2xs text-fg-muted">
                         {line.expiring_soon_batches.toLocaleString('en-US')} batches
                       </span>
                     </button>
@@ -148,8 +148,8 @@ export function InventorySummary({
         </table>
       </div>
 
-      <p className="flex items-start gap-1.5 border-t border-neutral-100 px-4 py-2 text-[11px] text-neutral-500">
-        <Info aria-hidden className="mt-0.5 h-3 w-3 shrink-0 text-neutral-400" />
+      <p className="flex items-start gap-1.5 border-t border-line-subtle px-4 py-2 text-2xs text-fg-muted">
+        <Info aria-hidden className="mt-0.5 h-3 w-3 shrink-0 text-fg-muted" />
         <span>
           These overlap and do not add up to the total — expired stock is usually
           blocked too, and stock expiring soon is still available today.
@@ -160,8 +160,8 @@ export function InventorySummary({
       </p>
 
       {summary.length > 1 && (
-        <p className="flex items-start gap-1.5 border-t border-neutral-100 px-4 py-2 text-[11px] text-neutral-500">
-          <AlertTriangle aria-hidden className="mt-0.5 h-3 w-3 shrink-0 text-neutral-400" />
+        <p className="flex items-start gap-1.5 border-t border-line-subtle px-4 py-2 text-2xs text-fg-muted">
+          <AlertTriangle aria-hidden className="mt-0.5 h-3 w-3 shrink-0 text-fg-muted" />
           <span>
             This selection spans {summary.length} units of measure, so the totals
             are shown per unit — adding kilograms to pieces would produce a number
@@ -186,14 +186,14 @@ function Metric({
     <td className="px-4 py-3 text-right">
       <span className={cn(
         'block text-lg font-semibold tabular-nums',
-        tone === 'good' && 'text-success-700',
-        tone === 'bad' && 'text-danger-600',
-        !tone && 'text-neutral-900',
+        tone === 'good' && 'text-success-fg',
+        tone === 'bad' && 'text-danger-fg',
+        !tone && 'text-fg',
       )}>
         {qty(value)}
-        {showUnit && <span className="ml-1 text-xs font-normal text-neutral-400">{unit}</span>}
+        {showUnit && <span className="ml-1 text-xs font-normal text-fg-muted">{unit}</span>}
       </span>
-      {sub && <span className="block text-[11px] text-neutral-500">{sub}</span>}
+      {sub && <span className="block text-2xs text-fg-muted">{sub}</span>}
     </td>
   )
 }

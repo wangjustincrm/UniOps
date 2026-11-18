@@ -67,7 +67,7 @@ function Why({ a }: { a: Anomaly }) {
     staleTime: 60_000,
   })
   if (!enabled) return null
-  if (isLoading) return <p className="flex items-center gap-1 text-xs text-neutral-500"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Analysing…</p>
+  if (isLoading) return <p className="flex items-center gap-1 text-xs text-fg-muted"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Analysing…</p>
   if (error || !data) return null
   return <DiagnosisPanel d={data} compact />
 }
@@ -75,14 +75,14 @@ function Why({ a }: { a: Anomaly }) {
 function Detail({ a }: { a: Anomaly }) {
   const m = a.metrics
   return (
-    <div className="space-y-2 text-xs text-neutral-600">
+    <div className="space-y-2 text-xs text-fg-secondary">
       <Why a={a} />
-      <p className="text-neutral-500">{RULE_HELP[a.rule]}</p>
+      <p className="text-fg-muted">{RULE_HELP[a.rule]}</p>
       {a.rule === 'A5' && (
         <div className="grid gap-2 sm:grid-cols-2">
           {(['in', 'out'] as const).map((side) => (
-            <div key={side} className="rounded border border-neutral-200 bg-white p-2">
-              <p className="font-medium text-neutral-700">{side === 'in' ? 'Receipt leg' : 'Issue leg'}</p>
+            <div key={side} className="rounded border border-line bg-surface p-2">
+              <p className="font-medium text-fg-secondary">{side === 'in' ? 'Receipt leg' : 'Issue leg'}</p>
               <p>Qty {qty(m[side]?.qty)} · Amount {num(m[side]?.amount)}</p>
               <p className="font-mono">{(m[side]?.bills ?? []).join(', ') || 'none'}</p>
             </div>
@@ -98,16 +98,16 @@ function Detail({ a }: { a: Anomaly }) {
           {m.nc_balance ? `${qty(m.nc_balance.qty)} / ${num(m.nc_balance.amount)}` : 'none'}.</p>
       )}
       {a.rule === 'A8' && m.diffs && (
-        <pre className="max-h-48 overflow-auto rounded bg-white p-2 text-[11px]">{JSON.stringify(m.diffs, null, 2)}</pre>
+        <pre className="max-h-48 overflow-auto rounded bg-surface p-2 text-2xs">{JSON.stringify(m.diffs, null, 2)}</pre>
       )}
       {a.next_month && (
         <div>
-          <p className="font-medium text-neutral-700">Where this stock went the following month</p>
+          <p className="font-medium text-fg-secondary">Where this stock went the following month</p>
           {a.next_month.length === 0 ? (
-            <p className="text-neutral-500">Not consumed yet.</p>
+            <p className="text-fg-muted">Not consumed yet.</p>
           ) : (
             <table className="mt-1 w-full max-w-2xl text-xs">
-              <thead><tr className="text-left text-neutral-400">
+              <thead><tr className="text-left text-fg-muted">
                 <th className="py-1 pr-3 font-medium">Production order</th>
                 <th className="py-1 pr-3 font-medium">Made</th>
                 <th className="py-1 pr-3 text-right font-medium">Qty</th>
@@ -116,11 +116,11 @@ function Detail({ a }: { a: Anomaly }) {
               </tr></thead>
               <tbody>
                 {a.next_month.map((f, i) => (
-                  <tr key={i} className="border-t border-neutral-100">
+                  <tr key={i} className="border-t border-line-subtle">
                     <td className="py-1 pr-3 font-mono">{f.mo_code ?? '—'}</td>
                     <td className="py-1 pr-3">{f.products.map((p) => `${p.material_code} ${p.material_name ?? ''}`).join('; ') || '—'}</td>
                     <td className="py-1 pr-3 text-right font-mono tabular-nums">{qty(f.qty)}</td>
-                    <td className={cn('py-1 pr-3 text-right font-mono tabular-nums', (f.amount ?? 0) < 0 && 'text-red-700')}>{num(f.amount)}</td>
+                    <td className={cn('py-1 pr-3 text-right font-mono tabular-nums', (f.amount ?? 0) < 0 && 'text-danger-fg')}>{num(f.amount)}</td>
                     <td className="py-1 text-right font-mono tabular-nums">{num(f.unit, 4)}</td>
                   </tr>
                 ))}
@@ -196,28 +196,28 @@ export default function CostAnomaliesPage() {
         <SyncBar />
 
         <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-          <label className="text-xs text-neutral-500">From</label>
+          <label className="text-xs text-fg-muted">From</label>
           <input type="month" value={from} onChange={(e) => setFrom(e.target.value)}
-                 className="rounded-lg border border-neutral-300 px-2 py-1" />
-          <label className="text-xs text-neutral-500">To</label>
+                 className="rounded-lg border border-line-strong px-2 py-1" />
+          <label className="text-xs text-fg-muted">To</label>
           <input type="month" value={to} onChange={(e) => setTo(e.target.value)}
-                 className="rounded-lg border border-neutral-300 px-2 py-1" />
+                 className="rounded-lg border border-line-strong px-2 py-1" />
           <div className="relative">
-            <Search className="pointer-events-none absolute left-2 top-2 h-3.5 w-3.5 text-neutral-400" />
+            <Search className="pointer-events-none absolute left-2 top-2 h-3.5 w-3.5 text-fg-muted" />
             <input value={search} onChange={(e) => setSearch(e.target.value)}
                    placeholder="Material or NC document"
-                   className="w-64 rounded-lg border border-neutral-300 py-1 pl-7 pr-2" />
+                   className="w-64 rounded-lg border border-line-strong py-1 pl-7 pr-2" />
           </div>
-          {isFetching && <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />}
+          {isFetching && <Loader2 className="h-4 w-4 animate-spin text-fg-muted" />}
           {data && data.open_periods.length > 0 && (
-            <span className="ml-auto text-xs text-neutral-500">
+            <span className="ml-auto text-xs text-fg-muted">
               Not closed in NC yet: {data.open_periods.join(', ')} — figures there can still change.
             </span>
           )}
         </div>
 
         {error ? <AccessMessage error={error} /> : !data ? (
-          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
+          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
         ) : (
           <>
             <div className="mb-4 grid gap-2 sm:grid-cols-4 lg:grid-cols-7">
@@ -227,27 +227,27 @@ export default function CostAnomaliesPage() {
                 return (
                   <button key={r} onClick={() => setRule(rule === r ? null : r)} title={RULE_HELP[r]}
                           className={cn('rounded-lg border p-2.5 text-left transition-colors',
-                            rule === r ? 'border-[#085E5E] bg-primary-50/60' : 'border-neutral-200 hover:bg-neutral-50')}>
+                            rule === r ? 'border-primary-700 bg-primary-50/60' : 'border-line hover:bg-surface-subtle')}>
                     <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs text-neutral-400">{r}</span>
+                      <span className="font-mono text-xs text-fg-muted">{r}</span>
                       {n > 0 && <SeverityBadge severity={info?.severity ?? 'medium'} />}
                     </div>
-                    <p className="mt-1 text-xs font-medium leading-snug text-neutral-700">{info?.title}</p>
-                    <p className="mt-1 font-mono text-lg font-semibold text-neutral-900">{n}</p>
+                    <p className="mt-1 text-xs font-medium leading-snug text-fg-secondary">{info?.title}</p>
+                    <p className="mt-1 font-mono text-lg font-semibold text-fg">{n}</p>
                   </button>
                 )
               })}
             </div>
 
             {rows.length === 0 ? (
-              <div className="rounded-lg border border-neutral-200 px-4 py-10 text-center text-sm text-neutral-500">
+              <div className="rounded-lg border border-line px-4 py-10 text-center text-sm text-fg-muted">
                 Nothing found for this range.
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-neutral-200">
+              <div className="overflow-x-auto rounded-lg border border-line">
                 <table className="w-full text-sm">
-                  <thead className="bg-neutral-50">
-                    <tr className="text-left text-xs text-neutral-500">
+                  <thead className="bg-surface-subtle">
+                    <tr className="text-left text-xs text-fg-muted">
                       <th className="w-6 px-2 py-2" />
                       <SortTh label="Severity" sortKey="severity" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
                       <SortTh label="Rule" sortKey="rule" sort={sort} onSort={onSort} className="px-2.5 py-2 font-medium" />
@@ -263,31 +263,31 @@ export default function CostAnomaliesPage() {
                       const href = traceHref(a, from, to)
                       return (
                         <Fragment key={i}>
-                          <tr className="cursor-pointer border-t border-neutral-100 hover:bg-neutral-50" onClick={() => toggle(i)}>
-                            <td className="px-2 py-2 text-neutral-400">
+                          <tr className="cursor-pointer border-t border-line-subtle hover:bg-surface-subtle" onClick={() => toggle(i)}>
+                            <td className="px-2 py-2 text-fg-muted">
                               {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             </td>
                             <td className="px-2.5 py-2"><SeverityBadge severity={a.severity} /></td>
-                            <td className="px-2.5 py-2 text-xs"><span className="font-mono text-neutral-400">{a.rule}</span> {a.title}</td>
+                            <td className="px-2.5 py-2 text-xs"><span className="font-mono text-fg-muted">{a.rule}</span> {a.title}</td>
                             <td className="whitespace-nowrap px-2.5 py-2 font-mono text-xs">
                               {a.period ?? '—'}{a.period_closed === false && <OpenPeriodBadge />}
                             </td>
                             <td className="px-2.5 py-2">
                               {a.material_code && <span className="font-mono text-xs">{a.material_code}</span>}
-                              <span className="ml-1 text-xs text-neutral-500">{a.material_name}</span>
+                              <span className="ml-1 text-xs text-fg-muted">{a.material_name}</span>
                             </td>
                             <td className="px-2.5 py-2 text-xs">{summary(a)}</td>
                             <td className="px-2.5 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                               {href && (
                                 <Link to={href} onClick={() => retarget(href)}
-                                      className="whitespace-nowrap text-xs text-[#085E5E] underline">
+                                      className="whitespace-nowrap text-xs text-primary-700 underline">
                                   Trace
                                 </Link>
                               )}
                             </td>
                           </tr>
                           {open && (
-                            <tr className="bg-neutral-50/60">
+                            <tr className="bg-surface-subtle/60">
                               <td />
                               <td colSpan={6} className="px-2.5 py-3"><Detail a={a} /></td>
                             </tr>

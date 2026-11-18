@@ -70,10 +70,10 @@ export function ReceiptScanButton({
         title={err || 'Scan a receipt image/PDF to auto-fill this line'}
         onClick={() => ref.current?.click()}
         className={cn(
-          'inline-flex items-center gap-1 rounded border px-1.5 py-1 text-[10px] font-medium transition-colors',
+          'inline-flex items-center gap-1 rounded border px-1.5 py-1 text-2xs font-medium transition-colors',
           err
-            ? 'border-danger-200 text-danger-500 hover:bg-danger-50'
-            : 'border-neutral-200 text-neutral-500 hover:text-primary-700 hover:border-primary-300',
+            ? 'border-danger-line text-danger-fg hover:bg-danger-soft'
+            : 'border-line text-fg-muted hover:text-primary-700 hover:border-primary-300',
           loading && 'opacity-60',
         )}
       >
@@ -88,7 +88,7 @@ export function ReceiptScanButton({
         onChange={handle}
       />
       {err && !loading && (
-        <span role="alert" className="text-[10px] leading-tight text-danger-600">{err}</span>
+        <span role="alert" className="text-2xs leading-tight text-danger-fg">{err}</span>
       )}
     </span>
   )

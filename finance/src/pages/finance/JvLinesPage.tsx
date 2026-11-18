@@ -20,8 +20,8 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { ListPager } from '@/components/ListPager'
 import { JvDetailModal } from './JvDetailModal'
 
-const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
+const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 const PAGE_SIZE = 50
 const SUBSYSTEMS = [
@@ -147,7 +147,7 @@ export default function JvLinesPage() {
             <input type="month" value={periodFrom} aria-label="Period from"
                    onChange={(e) => { setPeriodFrom(e.target.value); reset() }}
                    className={cn(inputCls, 'w-36')} />
-            <span className="text-sm text-neutral-400">–</span>
+            <span className="text-sm text-fg-muted">–</span>
             <input type="month" value={periodTo} aria-label="Period to"
                    onChange={(e) => { setPeriodTo(e.target.value); reset() }}
                    className={cn(inputCls, 'w-36')} />
@@ -171,7 +171,7 @@ export default function JvLinesPage() {
           <input list="jv-lines-aux-values" value={auxValue} disabled={!auxCode}
                  placeholder="Auxiliary code" aria-label="Auxiliary code"
                  onChange={(e) => { setAuxValue(e.target.value); reset() }}
-                 className={cn(inputCls, 'w-40 disabled:bg-neutral-100')} />
+                 className={cn(inputCls, 'w-40 disabled:bg-surface-sunken')} />
           <datalist id="jv-lines-aux-values">
             {(auxValues?.items ?? []).map((v) => <option key={v} value={v} />)}
           </datalist>
@@ -183,21 +183,21 @@ export default function JvLinesPage() {
           {(subsystem || account || currency || auxCode || q) && (
             <button type="button"
                     onClick={() => { setSubsystem(''); setAccount(''); setCurrency(''); setAuxCode(''); setAuxValue(''); setQ(''); setQInput(''); reset() }}
-                    className="flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-700">
+                    className="flex items-center gap-1 text-sm text-fg-muted hover:text-fg-secondary">
               <X className="h-3.5 w-3.5" /> Clear
             </button>
           )}
         </div>
 
-        {err && <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
+        {err && <div className="mb-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{err}</div>}
 
         {list.isFetching && !list.data ? (
-          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
+          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
         ) : (
           <>
-            <div className="max-h-[calc(100vh-15rem)] min-h-[16rem] overflow-auto rounded-lg border border-neutral-200">
+            <div className="max-h-[calc(100vh-15rem)] min-h-[16rem] overflow-auto rounded-lg border border-line">
               <table className="w-full text-sm">
-                <thead className="sticky top-0 z-10 bg-neutral-50 text-left text-xs text-neutral-500 shadow-[0_1px_0_#e5e5e5]">
+                <thead className="sticky top-0 z-10 bg-surface-subtle text-left text-xs text-fg-muted shadow-[0_1px_0_#e5e5e5]">
                   <tr>
                     <SortTh label="Date" sortKey="voucher_date" sort={sort} onSort={onSort} className="px-3 py-2 whitespace-nowrap" />
                     <SortTh label="Voucher No." sortKey="jv_number" sort={sort} onSort={onSort} className="px-3 py-2 whitespace-nowrap" />
@@ -215,25 +215,25 @@ export default function JvLinesPage() {
                 </thead>
                 <tbody>
                   {items.length === 0 && (
-                    <tr><td colSpan={8 + dimCols.length} className="px-3 py-6 text-center text-neutral-400">No voucher lines match the filters.</td></tr>
+                    <tr><td colSpan={8 + dimCols.length} className="px-3 py-6 text-center text-fg-muted">No voucher lines match the filters.</td></tr>
                   )}
                   {items.map((l, i) => (
                     <tr key={`${l.jv_id}-${l.line_no}`} onClick={() => setDetailId(l.jv_id)}
                         title="Open the voucher"
-                        className={cn('cursor-pointer border-t border-neutral-100 align-top hover:bg-primary-50/40', i % 2 && 'bg-neutral-50/40')}>
-                      <td className="px-3 py-2 font-mono text-xs text-neutral-600 whitespace-nowrap">{formatDate(l.voucher_date)}</td>
+                        className={cn('cursor-pointer border-t border-line-subtle align-top hover:bg-primary-50/40', i % 2 && 'bg-surface-subtle/40')}>
+                      <td className="px-3 py-2 font-mono text-xs text-fg-secondary whitespace-nowrap">{formatDate(l.voucher_date)}</td>
                       <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{l.jv_number}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-neutral-400">{l.line_no}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-fg-muted">{l.line_no}</td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         <span className="font-mono text-xs">{l.account_code ?? '—'}</span>
-                        {l.account_name && <span className="ml-1 text-xs text-neutral-600">{l.account_name}</span>}
+                        {l.account_name && <span className="ml-1 text-xs text-fg-secondary">{l.account_name}</span>}
                       </td>
-                      <td className="px-3 py-2 text-neutral-700 break-words">{l.summary || '—'}</td>
-                      <td className="px-3 py-2 text-xs text-neutral-600">{l.currency}</td>
+                      <td className="px-3 py-2 text-fg-secondary break-words">{l.summary || '—'}</td>
+                      <td className="px-3 py-2 text-xs text-fg-secondary">{l.currency}</td>
                       <td className="px-3 py-2 text-right font-mono whitespace-nowrap">{money(l.local_debit)}</td>
                       <td className="px-3 py-2 text-right font-mono whitespace-nowrap">{money(l.local_credit)}</td>
                       {dimCols.map((c) => (
-                        <td key={c.code} className="px-3 py-2 text-xs text-neutral-700 whitespace-nowrap">{l.aux[c.code] ?? ''}</td>
+                        <td key={c.code} className="px-3 py-2 text-xs text-fg-secondary whitespace-nowrap">{l.aux[c.code] ?? ''}</td>
                       ))}
                     </tr>
                   ))}

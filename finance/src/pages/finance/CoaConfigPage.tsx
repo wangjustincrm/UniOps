@@ -71,9 +71,9 @@ const EMPTY_FORM: AccountForm = {
   mnemonic: null, is_off_balance: false,
 }
 
-const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
+const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
+const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 // ── Account edit/create modal ──────────────────────────────────────────────────
 
@@ -103,34 +103,34 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+      <div className="w-full max-w-lg rounded-xl bg-surface p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-neutral-800">
+          <h3 className="text-lg font-semibold text-fg">
             {isNew ? 'New Account' : `Edit Account ${initial.code}`}
           </h3>
-          <button onClick={onClose}><X className="h-5 w-5 text-neutral-400" /></button>
+          <button onClick={onClose}><X className="h-5 w-5 text-fg-muted" /></button>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <label className="text-sm">
-            <span className="mb-1 block text-neutral-600">Code</span>
+            <span className="mb-1 block text-fg-secondary">Code</span>
             <input value={form.code} disabled={!isNew}
                    onChange={(e) => set({ code: e.target.value.trim() })}
-                   className={cn(inputCls, 'w-full disabled:bg-neutral-100')} />
+                   className={cn(inputCls, 'w-full disabled:bg-surface-sunken')} />
           </label>
           <label className="text-sm">
-            <span className="mb-1 block text-neutral-600">Parent</span>
+            <span className="mb-1 block text-fg-secondary">Parent</span>
             <input value={form.parent_code ?? ''} placeholder="(top level)"
                    onChange={(e) => set({ parent_code: e.target.value.trim() || null })}
                    className={cn(inputCls, 'w-full')} />
           </label>
           <label className="col-span-2 text-sm">
-            <span className="mb-1 block text-neutral-600">Name</span>
+            <span className="mb-1 block text-fg-secondary">Name</span>
             <input value={form.name} onChange={(e) => set({ name: e.target.value })}
                    className={cn(inputCls, 'w-full')} />
           </label>
           <label className="text-sm">
-            <span className="mb-1 block text-neutral-600">Type</span>
+            <span className="mb-1 block text-fg-secondary">Type</span>
             <select value={form.account_type}
                     onChange={(e) => set({ account_type: e.target.value })}
                     className={cn(inputCls, 'w-full')}>
@@ -138,7 +138,7 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
             </select>
           </label>
           <label className="text-sm">
-            <span className="mb-1 block text-neutral-600">Normal Balance</span>
+            <span className="mb-1 block text-fg-secondary">Normal Balance</span>
             <select value={form.normal_balance}
                     onChange={(e) => set({ normal_balance: e.target.value })}
                     className={cn(inputCls, 'w-full')}>
@@ -146,54 +146,54 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
               <option value="credit">Credit</option>
             </select>
           </label>
-          <label className="flex items-center gap-2 text-sm text-neutral-700">
+          <label className="flex items-center gap-2 text-sm text-fg-secondary">
             <input type="checkbox" checked={form.is_postable}
                    onChange={(e) => set({ is_postable: e.target.checked })} />
             Postable (uncheck = summary/header account)
           </label>
-          <label className="flex items-center gap-2 text-sm text-neutral-700">
+          <label className="flex items-center gap-2 text-sm text-fg-secondary">
             <input type="checkbox" checked={form.is_active}
                    onChange={(e) => set({ is_active: e.target.checked })} />
             Active
           </label>
 
           {/* NC-parity metadata */}
-          <label className="flex items-center gap-2 text-sm text-neutral-700">
+          <label className="flex items-center gap-2 text-sm text-fg-secondary">
             <input type="checkbox" checked={form.quantity_accounting}
                    onChange={(e) => set({ quantity_accounting: e.target.checked })} />
             Quantity accounting
           </label>
           <label className="text-sm">
-            <span className="mb-1 block text-neutral-600">Default UoM</span>
+            <span className="mb-1 block text-fg-secondary">Default UoM</span>
             <input value={form.default_uom ?? ''} placeholder="e.g. kg"
                    onChange={(e) => set({ default_uom: e.target.value.trim() || null })}
                    className={cn(inputCls, 'w-full')} />
           </label>
           <label className="text-sm">
-            <span className="mb-1 block text-neutral-600">Default Currency</span>
+            <span className="mb-1 block text-fg-secondary">Default Currency</span>
             <input value={form.default_currency ?? ''} placeholder="(entity default)"
                    onChange={(e) => set({ default_currency: e.target.value.trim().toUpperCase() || null })}
                    className={cn(inputCls, 'w-full')} />
           </label>
           <label className="text-sm">
-            <span className="mb-1 block text-neutral-600">Mnemonic</span>
+            <span className="mb-1 block text-fg-secondary">Mnemonic</span>
             <input value={form.mnemonic ?? ''}
                    onChange={(e) => set({ mnemonic: e.target.value.trim() || null })}
                    className={cn(inputCls, 'w-full')} />
           </label>
           <label className="text-sm">
-            <span className="mb-1 block text-neutral-600">Effective From</span>
+            <span className="mb-1 block text-fg-secondary">Effective From</span>
             <input type="date" value={form.effective_from ?? ''}
                    onChange={(e) => set({ effective_from: e.target.value || null })}
                    className={cn(inputCls, 'w-full')} />
           </label>
           <label className="text-sm">
-            <span className="mb-1 block text-neutral-600">Cash Flow Category</span>
+            <span className="mb-1 block text-fg-secondary">Cash Flow Category</span>
             <input value={form.cash_flow_category ?? ''} placeholder="operating / investing / financing"
                    onChange={(e) => set({ cash_flow_category: e.target.value.trim() || null })}
                    className={cn(inputCls, 'w-full')} />
           </label>
-          <label className="flex items-center gap-2 text-sm text-neutral-700">
+          <label className="flex items-center gap-2 text-sm text-fg-secondary">
             <input type="checkbox" checked={form.is_off_balance}
                    onChange={(e) => set({ is_off_balance: e.target.checked })} />
             Off-balance-sheet
@@ -201,9 +201,9 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
         </div>
 
         <div className="mt-4">
-          <div className="mb-2 text-sm font-medium text-neutral-700">
+          <div className="mb-2 text-sm font-medium text-fg-secondary">
             Auxiliary Dimensions
-            <span className="ml-2 font-normal text-neutral-400">
+            <span className="ml-2 font-normal text-fg-muted">
               read-only — managed by NC Sync
             </span>
           </div>
@@ -215,16 +215,16 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
                         title="Managed by NC Sync — read-only"
                         className={cn(
                           'flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-sm cursor-not-allowed opacity-70',
-                          !state && 'border-neutral-200 text-neutral-500 hover:bg-neutral-50',
+                          !state && 'border-line text-fg-muted hover:bg-surface-subtle',
                           state && !state.required && 'border-primary-600/40 bg-primary-50 text-primary-700',
-                          state?.required && 'border-[#085E5E] bg-[#085E5E] text-white',
+                          state?.required && 'border-primary-700 bg-primary-700 text-white',
                         )}>
                   <span className="flex items-center gap-1.5">
                     {state && <Check className="h-3.5 w-3.5" />}
                     {d.name}
                   </span>
                   {state && (
-                    <span className={cn('text-[10px] font-semibold uppercase tracking-wide',
+                    <span className={cn('text-2xs font-semibold uppercase tracking-wide',
                                         state.required ? 'text-white/90' : 'text-primary-600')}>
                       {state.required ? 'Required' : 'Optional'}
                     </span>
@@ -236,7 +236,7 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
         </div>
 
         {error && (
-          <div className="mt-3 flex items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="mt-3 flex items-center gap-2 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4" /> {error}
           </div>
         )}
@@ -285,7 +285,7 @@ function MappingsTab({ accounts, canManage }: { accounts: Account[]; canManage: 
 
   const acctSelect = (value: string, onChange: (v: string) => void) => (
     <select value={value} disabled={!canManage} onChange={(e) => onChange(e.target.value)}
-            className={cn(inputCls, 'h-8 py-0 disabled:bg-neutral-50')}>
+            className={cn(inputCls, 'h-8 py-0 disabled:bg-surface-subtle')}>
       <option value="">— Select account —</option>
       {postable.map((a) => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}
     </select>
@@ -293,28 +293,28 @@ function MappingsTab({ accounts, canManage }: { accounts: Account[]; canManage: 
 
   return (
     <div className="flex flex-col gap-6">
-      {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+      {error && <div className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{error}</div>}
       {groups.map(([mtype, title, rows]) => (
-        <div key={mtype} className="rounded-lg border border-neutral-200 bg-white p-4">
-          <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{title}</h3>
-          {rows.length === 0 && <div className="mb-2 text-sm text-neutral-400">No mappings yet.</div>}
+        <div key={mtype} className="rounded-lg border border-line bg-surface p-4">
+          <h3 className="mb-3 text-2xs font-semibold uppercase tracking-wide text-fg-muted">{title}</h3>
+          {rows.length === 0 && <div className="mb-2 text-sm text-fg-muted">No mappings yet.</div>}
           <div className="flex flex-col gap-2">
             {rows.map((m) => (
               <div key={m.id} className="flex items-center gap-3 text-sm">
-                <span className="inline-flex w-48 items-center rounded-md bg-neutral-100 px-2 py-0.5 font-mono text-[11px] font-semibold text-neutral-700">
+                <span className="inline-flex w-48 items-center rounded-md bg-surface-sunken px-2 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">
                   {m.source_code}
                 </span>
-                <span className="text-neutral-400">→</span>
+                <span className="text-fg-muted">→</span>
                 {acctSelect(m.account_code, (v) =>
                   v && upsert.mutate({ mtype, src: m.source_code, acct: v }))}
               </div>
             ))}
             {mtype === 'budget_account' && canManage && (
-              <div className="mt-2 flex items-center gap-3 border-t border-neutral-100 pt-3 text-sm">
+              <div className="mt-2 flex items-center gap-3 border-t border-line-subtle pt-3 text-sm">
                 <input value={newSrc} onChange={(e) => setNewSrc(e.target.value)}
                        placeholder="Budget account code"
                        className={cn(inputCls, 'h-8 w-48 py-0')} />
-                <span className="text-neutral-400">→</span>
+                <span className="text-fg-muted">→</span>
                 {acctSelect(newAcct, setNewAcct)}
                 <button disabled={!newSrc || !newAcct || upsert.isPending}
                         onClick={() => upsert.mutate({ mtype, src: newSrc, acct: newAcct })}
@@ -427,7 +427,7 @@ export default function CoaConfigPage() {
       subtitle="Accounts, auxiliary dimensions, and account mappings — export/import CSV to manage the chart wholesale"
       headerActions={ncStatus?.configured && ncStatus?.can_sync ? (
         <button onClick={() => setShowCoaSync(true)}
-                className="flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+                className="flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle">
           <RefreshCw className="h-4 w-4" /> NC Sync
         </button>
       ) : undefined}
@@ -438,8 +438,8 @@ export default function CoaConfigPage() {
              ['aux', 'Aux Dimensions']] as const).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)}
                     className={cn('rounded-lg px-4 py-2 text-sm font-medium',
-                      tab === t ? 'bg-[#085E5E] text-white'
-                                : 'border border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50')}>
+                      tab === t ? 'bg-primary-700 text-white'
+                                : 'border border-line-strong bg-surface text-fg-secondary hover:bg-surface-subtle')}>
               {label}
             </button>
           ))}
@@ -447,7 +447,7 @@ export default function CoaConfigPage() {
 
         {banner && (
           <div className={cn('mb-3 rounded-md px-3 py-2 text-sm',
-            banner.kind === 'err' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>
+            banner.kind === 'err' ? 'bg-danger-soft text-danger-fg' : 'bg-success-soft text-success-fg')}>
             {banner.text}
           </div>
         )}
@@ -457,7 +457,7 @@ export default function CoaConfigPage() {
           <>
             <div className="mb-3 flex flex-wrap items-center gap-3">
               <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-neutral-400" />
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-fg-muted" />
                 <input value={search} onChange={(e) => setSearch(e.target.value)}
                        placeholder="Search code or name"
                        className={cn(inputCls, 'w-56 pl-8')} />
@@ -467,7 +467,7 @@ export default function CoaConfigPage() {
                 <option value="">All types</option>
                 {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
               </select>
-              <label className="flex items-center gap-1.5 text-sm text-neutral-600">
+              <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
                 <input type="checkbox" checked={showInactive}
                        onChange={(e) => setShowInactive(e.target.checked)} />
                 Include inactive
@@ -494,43 +494,43 @@ export default function CoaConfigPage() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-lg border border-neutral-200">
+            <div className="overflow-hidden rounded-lg border border-line">
               {isLoading ? (
-                <div className="py-10 text-center text-sm text-neutral-400">Loading accounts…</div>
+                <div className="py-10 text-center text-sm text-fg-muted">Loading accounts…</div>
               ) : !filtered.length ? (
-                <div className="py-10 text-center text-sm text-neutral-400">
+                <div className="py-10 text-center text-sm text-fg-muted">
                   <BookOpenCheck className="mx-auto mb-2 h-8 w-8" />No matching accounts.
                 </div>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-neutral-200 bg-neutral-50">
-                      <SortTh label="Code" sortKey="code" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
-                      <SortTh label="Name" sortKey="name" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
-                      <SortTh label="Type" sortKey="type" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
-                      <SortTh label="Balance" sortKey="balance" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
-                      <SortTh label="Aux Dimensions" sortKey="aux" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
-                      <SortTh label="Status" sortKey="status" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500 w-24" />
-                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500 w-24" />
+                    <tr className="border-b border-line bg-surface-subtle">
+                      <SortTh label="Code" sortKey="code" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
+                      <SortTh label="Name" sortKey="name" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
+                      <SortTh label="Type" sortKey="type" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
+                      <SortTh label="Balance" sortKey="balance" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
+                      <SortTh label="Aux Dimensions" sortKey="aux" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
+                      <SortTh label="Status" sortKey="status" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted w-24" />
+                      <th className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted w-24" />
                     </tr>
                   </thead>
                   <tbody>
                     {acctSort.rows.map((a, i) => (
                       <tr key={a.id}
-                          className={cn('border-b border-neutral-100 last:border-b-0',
-                                        i % 2 === 1 ? 'bg-neutral-50' : 'bg-white',
+                          className={cn('border-b border-line-subtle last:border-b-0',
+                                        i % 2 === 1 ? 'bg-surface-subtle' : 'bg-surface',
                                         !a.is_active && 'opacity-50')}>
                         <td className={cn('px-4 py-2.5', a.parent_code && 'pl-8')}>
-                          <span className="inline-flex items-center rounded-md bg-neutral-100 px-2 py-0.5 font-mono text-[11px] font-semibold text-neutral-700">
+                          <span className="inline-flex items-center rounded-md bg-surface-sunken px-2 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">
                             {a.code}
                           </span>
                         </td>
-                        <td className={cn('px-4 py-2.5 text-neutral-800', !a.is_postable && 'font-semibold')}>
+                        <td className={cn('px-4 py-2.5 text-fg', !a.is_postable && 'font-semibold')}>
                           {a.name}
-                          {!a.is_postable && <span className="ml-2 text-[11px] font-normal text-neutral-400">header</span>}
+                          {!a.is_postable && <span className="ml-2 text-2xs font-normal text-fg-muted">header</span>}
                         </td>
-                        <td className="px-4 py-2.5 text-xs text-neutral-600">{TYPE_LABEL[a.account_type]}</td>
-                        <td className="px-4 py-2.5 text-xs text-neutral-600">
+                        <td className="px-4 py-2.5 text-xs text-fg-secondary">{TYPE_LABEL[a.account_type]}</td>
+                        <td className="px-4 py-2.5 text-xs text-fg-secondary">
                           {a.normal_balance === 'debit' ? 'Dr' : 'Cr'}
                         </td>
                         <td className="px-4 py-2.5">
@@ -538,16 +538,16 @@ export default function CoaConfigPage() {
                             {a.aux_dimensions.map((d) => (
                               <span key={d.code}
                                     title={d.required ? 'Required on postings' : 'Optional'}
-                                    className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium',
-                                      d.required ? 'bg-[#085E5E] text-white' : 'bg-primary-50 text-primary-700')}>
+                                    className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium',
+                                      d.required ? 'bg-primary-700 text-white' : 'bg-primary-50 text-primary-700')}>
                                 {auxLabel(d.code)}{d.required && '*'}
                               </span>
                             ))}
                           </div>
                         </td>
                         <td className="px-4 py-2.5">
-                          <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium',
-                            a.is_active ? 'bg-green-50 text-green-700' : 'bg-neutral-100 text-neutral-500')}>
+                          <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium',
+                            a.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                             {a.is_active ? 'Active' : 'Inactive'}
                           </span>
                         </td>
@@ -557,23 +557,23 @@ export default function CoaConfigPage() {
                               {deleteConfirm === a.code ? (
                                 <>
                                   <button onClick={() => { deleteMut.mutate(a.code); setDeleteConfirm(null) }}
-                                          className="flex h-7 w-7 items-center justify-center rounded text-red-600 hover:bg-red-50">
+                                          className="flex h-7 w-7 items-center justify-center rounded text-danger-fg hover:bg-danger-soft">
                                     <Check className="h-3.5 w-3.5" />
                                   </button>
                                   <button onClick={() => setDeleteConfirm(null)}
-                                          className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100">
+                                          className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-surface-sunken">
                                     <X className="h-3.5 w-3.5" />
                                   </button>
                                 </>
                               ) : (
                                 <>
                                   <button onClick={() => { setEditing({ form: { ...a }, isNew: false }); setDeleteConfirm(null) }}
-                                          className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-primary-50 hover:text-primary-600">
+                                          className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-primary-50 hover:text-primary-600">
                                     <Pencil className="h-3.5 w-3.5" />
                                   </button>
                                   <button onClick={() => setDeleteConfirm(a.code)}
                                           title="Delete (only if never referenced)"
-                                          className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-red-50 hover:text-red-500">
+                                          className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-danger-soft hover:text-danger-fg">
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
                                 </>
@@ -586,7 +586,7 @@ export default function CoaConfigPage() {
                   </tbody>
                 </table>
               )}
-              <div className="border-t border-neutral-200 bg-neutral-50 px-4 py-2 text-[11px] text-neutral-500">
+              <div className="border-t border-line bg-surface-subtle px-4 py-2 text-2xs text-fg-muted">
                 {filtered.length} of {accounts.length} account{accounts.length !== 1 ? 's' : ''}
               </div>
             </div>
@@ -634,9 +634,9 @@ function AuxTypesTab({ auxTypes, canManage }: { auxTypes: AuxType[]; canManage: 
   })
 
   return (
-    <div className="overflow-hidden rounded-lg border border-neutral-200">
+    <div className="overflow-hidden rounded-lg border border-line">
       {canManage && (
-        <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 bg-neutral-50 p-3">
+        <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-subtle p-3">
           <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="code (e.g. grant_program)"
                  className={cn(inputCls, 'w-56')} />
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Display name"
@@ -645,41 +645,41 @@ function AuxTypesTab({ auxTypes, canManage }: { auxTypes: AuxType[]; canManage: 
                   onClick={() => create.mutate()} className={primaryBtn}>
             <Plus className="h-4 w-4" /> Add Dimension
           </button>
-          {error && <span className="text-sm text-red-600">{error}</span>}
+          {error && <span className="text-sm text-danger-fg">{error}</span>}
         </div>
       )}
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-neutral-200 bg-neutral-50">
-            <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
-            <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
-            <SortTh label="Storage" sortKey="storage" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
-            <SortTh label="Source" sortKey="source" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
-            <SortTh label="Built-in" sortKey="builtin" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
-            <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
-            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+          <tr className="border-b border-line bg-surface-subtle">
+            <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
+            <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
+            <SortTh label="Storage" sortKey="storage" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
+            <SortTh label="Source" sortKey="source" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
+            <SortTh label="Built-in" sortKey="builtin" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
+            <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
+            <th className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
           </tr>
         </thead>
         <tbody>
           {rows.map((t, i) => (
-            <tr key={t.id} className={cn('border-b border-neutral-100 last:border-0', i % 2 === 1 && 'bg-neutral-50')}>
-              <td className="px-4 py-2.5 font-mono text-[11px]">{t.code}</td>
-              <td className="px-4 py-2.5 text-neutral-800">{t.name}</td>
-              <td className="px-4 py-2.5 text-xs text-neutral-500">
+            <tr key={t.id} className={cn('border-b border-line-subtle last:border-0', i % 2 === 1 && 'bg-surface-subtle')}>
+              <td className="px-4 py-2.5 font-mono text-2xs">{t.code}</td>
+              <td className="px-4 py-2.5 text-fg">{t.name}</td>
+              <td className="px-4 py-2.5 text-xs text-fg-muted">
                 {t.storage === 'column' ? 'spine column' : 'side table'}
               </td>
-              <td className="px-4 py-2.5 text-xs text-neutral-500">{t.master_source ?? '—'}</td>
-              <td className="px-4 py-2.5 text-xs text-neutral-400">{t.builtin ? 'yes' : ''}</td>
+              <td className="px-4 py-2.5 text-xs text-fg-muted">{t.master_source ?? '—'}</td>
+              <td className="px-4 py-2.5 text-xs text-fg-muted">{t.builtin ? 'yes' : ''}</td>
               <td className="px-4 py-2.5">
-                <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium',
-                  t.is_active ? 'bg-green-50 text-green-700' : 'bg-neutral-100 text-neutral-500')}>
+                <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium',
+                  t.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                   {t.is_active ? 'Active' : 'Inactive'}
                 </span>
               </td>
               <td className="px-4 py-2.5 text-right">
                 {canManage && !t.builtin && (
                   <button onClick={() => toggle.mutate(t)}
-                          className="text-xs text-neutral-400 hover:text-[#085E5E]">
+                          className="text-xs text-fg-muted hover:text-primary-700">
                     {t.is_active ? 'Deactivate' : 'Activate'}
                   </button>
                 )}

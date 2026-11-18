@@ -85,18 +85,18 @@ export function UnallocatedLinesModal({ fiscalYear, window: win, windowLabel,
   const total = Number(data?.debit_total ?? 0)
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-6"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 p-6"
          onClick={onClose}>
-      <div className="flex max-h-[85vh] w-full max-w-5xl flex-col rounded-xl bg-white shadow-2xl"
+      <div className="flex max-h-[85vh] w-full max-w-5xl flex-col rounded-xl bg-surface shadow-2xl"
            role="dialog" aria-label={`Lines behind ${label}`}
            onClick={(e) => e.stopPropagation()}>
-        <header className="flex items-center gap-2 border-b border-neutral-100 px-4 py-3">
-          <h2 className="text-sm font-semibold text-neutral-900">{label}</h2>
-          <span className="text-xs text-neutral-500">{windowLabel} {fiscalYear}</span>
-          <span className="ml-auto flex items-center gap-2 text-xs text-neutral-400">
+        <header className="flex items-center gap-2 border-b border-line-subtle px-4 py-3">
+          <h2 className="text-sm font-semibold text-fg">{label}</h2>
+          <span className="text-xs text-fg-muted">{windowLabel} {fiscalYear}</span>
+          <span className="ml-auto flex items-center gap-2 text-xs text-fg-muted">
             {data ? `${lineCount} lines` : <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             <button onClick={onClose} aria-label="Close"
-                    className="cursor-pointer rounded-md p-1.5 text-neutral-500 transition-colors hover:bg-neutral-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+                    className="cursor-pointer rounded-md p-1.5 text-fg-muted transition-colors hover:bg-surface-sunken focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
               <X className="h-4 w-4" />
             </button>
           </span>
@@ -105,7 +105,7 @@ export function UnallocatedLinesModal({ fiscalYear, window: win, windowLabel,
         <div className="flex-1 overflow-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 z-10">
-              <tr className="border-b border-neutral-200 bg-neutral-50/95 text-xs font-medium text-neutral-600 backdrop-blur">
+              <tr className="border-b border-line bg-surface-subtle/95 text-xs font-medium text-fg-secondary backdrop-blur">
                 <SortTh label="Voucher" sortKey="voucher" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
                 <SortTh label="Account" sortKey="account" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
                 <SortTh label="Dept" sortKey="dept" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
@@ -118,47 +118,47 @@ export function UnallocatedLinesModal({ fiscalYear, window: win, windowLabel,
             <tbody>
               {!data && (
                 <tr><td colSpan={7} className="px-3 py-8 text-center">
-                  <Loader2 className="mx-auto h-4 w-4 animate-spin text-neutral-400" /></td></tr>
+                  <Loader2 className="mx-auto h-4 w-4 animate-spin text-fg-muted" /></td></tr>
               )}
               {data && rows.length === 0 && (
-                <tr><td colSpan={7} className="px-3 py-8 text-center text-xs text-neutral-400">
+                <tr><td colSpan={7} className="px-3 py-8 text-center text-xs text-fg-muted">
                   No lines in this window.</td></tr>
               )}
               {rows.map((r, i) => (
                 <tr key={`${r.jv_id}-${r.line_no}`}
-                    className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
+                    className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
                   <td className="px-3 py-1.5">
                     <button onClick={() => onOpenJv(r.jv_id)}
-                            className="cursor-pointer font-mono text-xs text-[#085E5E] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+                            className="cursor-pointer font-mono text-xs text-primary-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
                       {r.jv_number}
                     </button>
-                    <span className="ml-1 text-xs text-neutral-400">#{r.line_no}</span>
+                    <span className="ml-1 text-xs text-fg-muted">#{r.line_no}</span>
                     {r.posted === false && (
-                      <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                      <span className="ml-1.5 rounded bg-warning-soft px-1.5 py-0.5 text-2xs font-medium text-warning-fg">
                         Unposted
                       </span>
                     )}
-                    <div className="text-xs text-neutral-400">{r.fiscal_period}</div>
+                    <div className="text-xs text-fg-muted">{r.fiscal_period}</div>
                   </td>
                   <td className="px-3 py-1.5 font-mono text-xs">{r.account_code}</td>
-                  <td className="px-3 py-1.5 font-mono text-xs text-neutral-600">
+                  <td className="px-3 py-1.5 font-mono text-xs text-fg-secondary">
                     {r.department_code ?? '—'}
                   </td>
-                  <td className="px-3 py-1.5 font-mono text-xs text-neutral-600">
-                    {r.nc_income_expense ?? <span className="text-danger-600">(none)</span>}
+                  <td className="px-3 py-1.5 font-mono text-xs text-fg-secondary">
+                    {r.nc_income_expense ?? <span className="text-danger-fg">(none)</span>}
                   </td>
-                  <td className="px-3 py-1.5 text-xs text-neutral-600">{whyLabel(r)}</td>
+                  <td className="px-3 py-1.5 text-xs text-fg-secondary">{whyLabel(r)}</td>
                   <td className="px-3 py-1.5 text-right font-mono tabular-nums">
                     {Number(r.debit).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </td>
-                  <td className="max-w-md truncate px-3 py-1.5 text-xs text-neutral-600"
+                  <td className="max-w-md truncate px-3 py-1.5 text-xs text-fg-secondary"
                       title={r.summary ?? undefined}>{r.summary}</td>
                 </tr>
               ))}
             </tbody>
             {rows.length > 0 && (
               <tfoot className="sticky bottom-0">
-                <tr className="border-t-2 border-neutral-300 bg-neutral-50 font-semibold">
+                <tr className="border-t-2 border-line-strong bg-surface-subtle font-semibold">
                   <td colSpan={5} className="px-3 py-2 text-xs">
                     Total of all {lineCount} lines
                   </td>
@@ -172,7 +172,7 @@ export function UnallocatedLinesModal({ fiscalYear, window: win, windowLabel,
           </table>
         </div>
         <ListPager page={page} pageSize={PAGE_SIZE} total={lineCount} noun="lines" onPage={setPage}
-                   className="flex items-center justify-between border-t border-neutral-100 px-4 py-2 text-sm text-neutral-500" />
+                   className="flex items-center justify-between border-t border-line-subtle px-4 py-2 text-sm text-fg-muted" />
       </div>
     </div>,
     document.body,

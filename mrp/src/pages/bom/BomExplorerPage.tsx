@@ -136,20 +136,20 @@ export default function BomExplorerPage() {
     <div className="flex flex-col gap-4">
       {/* Header — title + always-visible sync freshness / Sync button */}
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <h1 className="flex items-center gap-2 text-lg font-semibold text-neutral-900">
+        <h1 className="flex items-center gap-2 text-lg font-semibold text-fg">
           <Network className="h-5 w-5 text-primary-600" /> BOM Explorer
         </h1>
         <SyncSection canSync={canSync} toasts={toasts} />
       </div>
 
       {/* Mode toggle */}
-      <div className="flex gap-1 rounded-lg bg-neutral-100 p-1 w-fit">
+      <div className="flex gap-1 rounded-lg bg-surface-sunken p-1 w-fit">
         <button
           type="button"
           onClick={() => setMode('explode')}
           className={cn(
             'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-            mode === 'explode' ? 'bg-white text-primary-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-700',
+            mode === 'explode' ? 'bg-surface text-primary-700 shadow-sm' : 'text-fg-muted hover:text-fg-secondary',
           )}
         >
           Explode
@@ -159,7 +159,7 @@ export default function BomExplorerPage() {
           onClick={() => setMode('where-used')}
           className={cn(
             'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-            mode === 'where-used' ? 'bg-white text-primary-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-700',
+            mode === 'where-used' ? 'bg-surface text-primary-700 shadow-sm' : 'text-fg-muted hover:text-fg-secondary',
           )}
         >
           Where-used
@@ -167,7 +167,7 @@ export default function BomExplorerPage() {
       </div>
 
       {/* Toolbar */}
-      <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg border border-neutral-200 bg-white p-3">
+      <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg border border-line bg-surface p-3">
         <div className="flex flex-wrap items-end gap-3">
           {mode === 'explode' ? (
             <FormField label="Product" htmlFor="bom-product">
@@ -244,19 +244,19 @@ export default function BomExplorerPage() {
       {mode === 'explode' && (
         <>
           {!productCode && (
-            <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-300 py-16 text-center">
-              <p className="text-sm text-neutral-500">Select a product to explode its BOM.</p>
+            <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-line-strong py-16 text-center">
+              <p className="text-sm text-fg-muted">Select a product to explode its BOM.</p>
             </div>
           )}
 
           {explodeQuery.isError && (
-            <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+            <p role="alert" className="rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
               {errMsg(explodeQuery.error, 'Could not load the BOM explosion.')}
             </p>
           )}
 
           {explodeQuery.isLoading && productCode && (
-            <p role="status" className="flex items-center justify-center gap-2 py-12 text-sm text-neutral-400">
+            <p role="status" className="flex items-center justify-center gap-2 py-12 text-sm text-fg-muted">
               <Loader2 className="h-4 w-4 animate-spin" /> Exploding BOM…
             </p>
           )}
@@ -268,9 +268,9 @@ export default function BomExplorerPage() {
                   than the table scrolls the rows out from under a header
                   that stays put, and every column label points at the wrong
                   column. */}
-              <div className="overflow-x-auto rounded-lg border border-neutral-200">
+              <div className="overflow-x-auto rounded-lg border border-line">
                 <div className="min-w-[1080px]">
-                  <div className="flex items-center gap-3 border-b border-neutral-200 bg-neutral-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+                  <div className="flex items-center gap-3 border-b border-line bg-surface-subtle px-2 py-2 text-2xs font-semibold uppercase tracking-wide text-fg-muted">
                     <div className="min-w-[280px] flex-1">Component</div>
                     <div className="w-28">Type</div>
                     <div className="w-40">Version</div>
@@ -297,7 +297,7 @@ export default function BomExplorerPage() {
               </div>
 
               {flags.length > 0 && (
-                <div className="max-h-32 overflow-y-auto rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-800">
+                <div className="max-h-32 overflow-y-auto rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-fg">
                   {flags.map((f, i) => (
                     <p key={i}>! <span className="font-mono">{f.material_code}</span>: {FLAG_TEXT[f.reason]}</p>
                   ))}
@@ -312,19 +312,19 @@ export default function BomExplorerPage() {
       {mode === 'where-used' && (
         <>
           {!queriedComponent && (
-            <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-300 py-16 text-center">
-              <p className="text-sm text-neutral-500">Enter a component to see which finished goods use it.</p>
+            <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-line-strong py-16 text-center">
+              <p className="text-sm text-fg-muted">Enter a component to see which finished goods use it.</p>
             </div>
           )}
 
           {whereUsedQuery.isError && (
-            <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+            <p role="alert" className="rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
               {errMsg(whereUsedQuery.error, 'Could not load where-used results.')}
             </p>
           )}
 
           {whereUsedQuery.isLoading && (
-            <p role="status" className="flex items-center justify-center gap-2 py-12 text-sm text-neutral-400">
+            <p role="status" className="flex items-center justify-center gap-2 py-12 text-sm text-fg-muted">
               <Loader2 className="h-4 w-4 animate-spin" /> Searching…
             </p>
           )}
@@ -343,28 +343,28 @@ export default function BomExplorerPage() {
 function WhereUsedResults({ results }: { results: WhereUsedResult[] }) {
   if (results.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-300 py-12 text-center">
-        <p className="text-sm text-neutral-500">No usage found for this component as of the selected date.</p>
+      <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-line-strong py-12 text-center">
+        <p className="text-sm text-fg-muted">No usage found for this component as of the selected date.</p>
       </div>
     )
   }
   return (
     <div className="flex flex-col gap-2">
       {results.map((r, i) => (
-        <div key={i} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
-          <div className="flex flex-wrap items-center gap-1 font-mono text-xs text-neutral-700">
+        <div key={i} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-sm">
+          <div className="flex flex-wrap items-center gap-1 font-mono text-xs text-fg-secondary">
             {r.path.map((code, j) => (
               <span key={j} className="flex items-center gap-1">
-                {j > 0 && <span className="text-neutral-300">→</span>}
+                {j > 0 && <span className="text-fg-faint">→</span>}
                 <span className={cn(j === r.path.length - 1 && 'font-semibold text-primary-700')}>{code}</span>
               </span>
             ))}
           </div>
-          <div className="flex items-center gap-3 text-xs text-neutral-500">
+          <div className="flex items-center gap-3 text-xs text-fg-muted">
             <span>{r.levels} level{r.levels === 1 ? '' : 's'} up</span>
-            <span className="font-semibold text-neutral-900">{formatQty(r.qty_accumulated)} per 1 unit of {r.top_product}</span>
+            <span className="font-semibold text-fg">{formatQty(r.qty_accumulated)} per 1 unit of {r.top_product}</span>
             {r.cycle_detected && (
-              <span className="rounded-full bg-warning-100 px-2 py-0.5 font-medium text-warning-800">cycle detected</span>
+              <span className="rounded-full bg-warning-soft px-2 py-0.5 font-medium text-warning-fg">cycle detected</span>
             )}
           </div>
         </div>

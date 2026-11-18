@@ -52,7 +52,7 @@ function ReceiptAttachmentsCell({ agreementId, receiptId }: { agreementId: strin
   const attachments = data ?? []
   // A failed download, shown in the cell (was a browser alert).
   const [downloadError, setDownloadError] = useState<string | null>(null)
-  if (attachments.length === 0) return <span className="text-neutral-300">—</span>
+  if (attachments.length === 0) return <span className="text-fg-faint">—</span>
   return (
     <div className="flex flex-col gap-0.5">
       {attachments.map((att) => (
@@ -70,7 +70,7 @@ function ReceiptAttachmentsCell({ agreementId, receiptId }: { agreementId: strin
           <span className="truncate">{att.filename}</span>
         </button>
       ))}
-      {downloadError && <span role="alert" className="max-w-[9rem] text-xs text-danger-600">{downloadError}</span>}
+      {downloadError && <span role="alert" className="max-w-[9rem] text-xs text-danger-fg">{downloadError}</span>}
     </div>
   )
 }
@@ -151,7 +151,7 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
 
   if (receipts.length === 0) {
     return (
-      <div className="py-8 text-center text-sm text-neutral-400">
+      <div className="py-8 text-center text-sm text-fg-muted">
         No receipts recorded yet.
       </div>
     )
@@ -160,34 +160,34 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
   return (
     <div className="flex flex-col gap-3">
       {agedCount > 0 && (
-        <div className="flex items-center gap-1.5 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs font-semibold text-warning-700">
+        <div className="flex items-center gap-1.5 rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-xs font-semibold text-warning-fg">
           <AlertTriangle className="h-3.5 w-3.5" />
           {agedCount} receipt{agedCount === 1 ? '' : 's'} over {RECEIPT_AGING_DAYS} days unreconciled
         </div>
       )}
       {/* A refused Approve / Reject (was a browser alert). */}
       {apReview.isError && (
-        <p role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+        <p role="alert" className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           {errorMessage(apReview.error, 'Failed to record AP review')}
         </p>
       )}
-      <div className="rounded-lg border border-neutral-200 overflow-hidden">
+      <div className="rounded-lg border border-line overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-50">
-                <SortTh label="Date" sortKey="receipt_date" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
-                <SortTh label="Reference #" sortKey="receipt_ref" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
+              <tr className="border-b border-line bg-surface-subtle">
+                <SortTh label="Date" sortKey="receipt_date" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
+                <SortTh label="Reference #" sortKey="receipt_ref" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
                 {/* Renders total_amount (tax-inclusive) — ReceiptEntryForm labels the
                     tax-exclusive field "Amount (before tax)", so this column must say
                     "Total", not "Amount", or the same word means two different things
                     on the two halves of this feature. */}
                 <SortTh label="Total" sortKey="total" sort={sort} onSort={onSort} align="right"
-                  className="px-4 py-2.5 text-right text-xs font-semibold text-neutral-500" />
-                <SortTh label="Received by" sortKey="received_by" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
-                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Attachments</th>
-                {!readOnly && <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Actions</th>}
+                  className="px-4 py-2.5 text-right text-xs font-semibold text-fg-muted" />
+                <SortTh label="Received by" sortKey="received_by" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Attachments</th>
+                {!readOnly && <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -200,28 +200,28 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
                 const rowApprovePending = apReview.isPending && pendingReviewKey === `${receipt.id}:approve`
                 const rowRejectPending = apReview.isPending && pendingReviewKey === `${receipt.id}:reject`
                 return (
-                  <tr key={receipt.id} className="border-b border-neutral-100 last:border-0 bg-white">
-                    <td className="px-4 py-2.5 text-xs text-neutral-500">
+                  <tr key={receipt.id} className="border-b border-line-subtle last:border-0 bg-surface">
+                    <td className="px-4 py-2.5 text-xs text-fg-muted">
                       <div className="flex items-center gap-1.5">
                         {formatDate(receipt.receipt_date)}
                         {aged && (
                           <span title={`Open ${RECEIPT_AGING_DAYS}+ days without reconciliation`}>
-                            <AlertTriangle className="h-3.5 w-3.5 text-warning-600" />
+                            <AlertTriangle className="h-3.5 w-3.5 text-warning-fg" />
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 text-neutral-700">{receipt.receipt_ref ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-fg-secondary">{receipt.receipt_ref ?? '—'}</td>
                     {/* An em-dash, not CA$0.00: a delivery note / service
                         sign-off carries no amount at all (ag09), and rendering
                         it as zero dollars states a figure the document never
                         had. */}
-                    <td className="px-4 py-2.5 text-right amount font-medium text-neutral-900">
+                    <td className="px-4 py-2.5 text-right amount font-medium text-fg">
                       {receiptTotal(receipt) === null
-                        ? <span className="text-neutral-400">—</span>
+                        ? <span className="text-fg-muted">—</span>
                         : formatAmount(receiptTotal(receipt)!, currency)}
                     </td>
-                    <td className="px-4 py-2.5 text-neutral-900">{receivedByName ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-fg">{receivedByName ?? '—'}</td>
                     <td className="px-4 py-2.5">
                       <StatusBadge status={receipt.status as DocumentStatus} />
                       {/* The entire point of the AP-review step is to weigh this reason —
@@ -230,7 +230,7 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
                           multi-line reason in a table cell. */}
                       {receipt.status === 'pending_ap_review' && receipt.missing_receipt_reason && (
                         <p
-                          className="mt-1 max-w-[14rem] truncate text-xs text-neutral-500"
+                          className="mt-1 max-w-[14rem] truncate text-xs text-fg-muted"
                           title={receipt.missing_receipt_reason}
                         >
                           {receipt.missing_receipt_reason}
@@ -271,13 +271,13 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
                               variant="secondary"
                               onClick={() => handleVoid(receipt.id, receipt.receipt_ref)}
                               disabled={voidReceipt.isPending}
-                              className={cn('text-danger-600 hover:text-danger-700')}
+                              className={cn('text-danger-fg hover:text-danger-fg')}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                               {rowVoidPending ? 'Working…' : 'Remove'}
                             </Button>
                           )}
-                          {!canReview && !canVoid && <span className="text-neutral-300">—</span>}
+                          {!canReview && !canVoid && <span className="text-fg-faint">—</span>}
                         </div>
                       </td>
                     )}

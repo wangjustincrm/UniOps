@@ -27,10 +27,10 @@ import type { NotificationLogOut } from '@/lib/types'
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const STATUS_STYLE: Record<string, string> = {
-  sent:     'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  pending:  'bg-amber-50  text-amber-700  ring-amber-200',
-  failed:   'bg-red-50    text-red-600    ring-red-200',
-  retrying: 'bg-amber-50  text-amber-700  ring-amber-200',
+  sent:     'bg-success-soft text-success-fg ring-success-line',
+  pending:  'bg-warning-soft  text-warning-fg  ring-warning-line',
+  failed:   'bg-danger-soft    text-danger-fg    ring-danger-line',
+  retrying: 'bg-warning-soft  text-warning-fg  ring-warning-line',
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -38,7 +38,7 @@ const TYPE_LABELS: Record<string, string> = {
 }
 
 function NotifStatusBadge({ status }: { status: string }) {
-  const style = STATUS_STYLE[status] ?? 'bg-neutral-100 text-neutral-500 ring-neutral-200'
+  const style = STATUS_STYLE[status] ?? 'bg-surface-sunken text-fg-muted ring-line'
   const label = status.charAt(0).toUpperCase() + status.slice(1)
   return (
     <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset', style)}>
@@ -69,18 +69,18 @@ function NotifRow({ log, resendingId, onResend }: RowProps) {
   const tdCls = 'px-3 py-3 text-sm'
 
   return (
-    <tr className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50 transition-colors">
-      <td className={cn(tdCls, 'text-neutral-500 whitespace-nowrap text-xs')}>{formatDateTime(log.created_at)}</td>
-      <td className={cn(tdCls, 'text-neutral-700')}>{typeFmt}</td>
-      <td className={cn(tdCls, 'text-neutral-600 max-w-[160px]')}>
+    <tr className="border-b border-line-subtle last:border-0 hover:bg-surface-subtle transition-colors">
+      <td className={cn(tdCls, 'text-fg-muted whitespace-nowrap text-xs')}>{formatDateTime(log.created_at)}</td>
+      <td className={cn(tdCls, 'text-fg-secondary')}>{typeFmt}</td>
+      <td className={cn(tdCls, 'text-fg-secondary max-w-[160px]')}>
         <span title={recipFull}>{recipDisp || '—'}</span>
       </td>
       <td className={tdCls}><NotifStatusBadge status={log.status} /></td>
-      <td className={cn(tdCls, 'text-neutral-500 text-center')}>{log.retry_count}</td>
-      <td className={cn(tdCls, 'text-red-600 max-w-[180px] text-xs')}>
+      <td className={cn(tdCls, 'text-fg-muted text-center')}>{log.retry_count}</td>
+      <td className={cn(tdCls, 'text-danger-fg max-w-[180px] text-xs')}>
         {errorTrunc ? <span title={log.error ?? undefined}>{errorTrunc}</span> : '—'}
       </td>
-      <td className={cn(tdCls, 'text-neutral-500 whitespace-nowrap text-xs')}>
+      <td className={cn(tdCls, 'text-fg-muted whitespace-nowrap text-xs')}>
         {log.sent_at ? formatDateTime(log.sent_at) : '—'}
       </td>
       <td className={tdCls}>
@@ -88,7 +88,7 @@ function NotifRow({ log, resendingId, onResend }: RowProps) {
           type="button"
           disabled={isResending}
           onClick={() => onResend(log.id)}
-          className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded-md border border-line-strong bg-surface px-2.5 py-1 text-xs font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50"
         >
           {isResending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
           Resend
@@ -145,23 +145,23 @@ export default function NotificationsPage() {
     })
   }
 
-  const thCls = 'px-3 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500 text-left'
+  const thCls = 'px-3 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted text-left'
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 space-y-4">
         {/* Header */}
-        <h1 className="text-2xl font-bold text-neutral-900">Notification Log</h1>
+        <h1 className="text-2xl font-bold text-fg">Notification Log</h1>
 
         {/* Resend warning banner */}
         {showWarning && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div className="flex items-start gap-2 rounded-md border border-warning-line bg-warning-soft px-4 py-3 text-sm text-warning-fg">
             <Info className="h-4 w-4 shrink-0 mt-0.5" />
             <span className="flex-1">
               Resending a notification will send a new email to the original recipients, even if the
               previous attempt succeeded. Use this to recover from delivery failures, not to correct content.
             </span>
-            <button type="button" onClick={() => setShowWarning(false)} className="text-amber-600 hover:text-amber-800">
+            <button type="button" onClick={() => setShowWarning(false)} className="text-warning-fg hover:text-warning-fg">
               <XIcon className="h-4 w-4" />
             </button>
           </div>
@@ -169,13 +169,13 @@ export default function NotificationsPage() {
 
         {/* Banners */}
         {resendSuccess && (
-          <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">
+          <div className="flex items-center justify-between rounded-md border border-success-line bg-success-soft px-4 py-2.5 text-sm text-success-fg">
             <span>{resendSuccess}</span>
-            <button type="button" onClick={() => setResendSuccess(null)}><XIcon className="h-4 w-4 text-emerald-500" /></button>
+            <button type="button" onClick={() => setResendSuccess(null)}><XIcon className="h-4 w-4 text-success-fg" /></button>
           </div>
         )}
         {resendError && (
-          <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-600">
+          <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-4 py-2.5 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4 shrink-0" />
             {resendError}
             <button type="button" onClick={() => setResendError(null)} className="ml-auto"><XIcon className="h-4 w-4" /></button>
@@ -187,7 +187,7 @@ export default function NotificationsPage() {
           <select
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setOffset(0) }}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+            className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
           >
             <option value="">All Statuses</option>
             <option value="sent">Sent</option>
@@ -199,28 +199,28 @@ export default function NotificationsPage() {
             value={typeFilter}
             onChange={(e) => { setTypeFilter(e.target.value); setOffset(0) }}
             placeholder="Type filter…"
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40 w-44"
+            className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40 w-44"
           />
         </div>
 
         {/* Content */}
         {isLoading && (
-          <div className="flex items-center justify-center py-16 text-sm text-neutral-500">
+          <div className="flex items-center justify-center py-16 text-sm text-fg-muted">
             <Loader2 className="h-5 w-5 animate-spin mr-2" />
             Loading notifications…
           </div>
         )}
         {!isLoading && error && (
-          <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4 shrink-0" />
             Failed to load notifications.
           </div>
         )}
         {!isLoading && !error && (
           <>
-            <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white shadow-sm">
+            <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
               <table className="w-full text-left text-sm">
-                <thead className="border-b border-neutral-200 bg-neutral-50">
+                <thead className="border-b border-line bg-surface-subtle">
                   <tr>
                     <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className={thCls} />
                     <SortTh label="Type" sortKey="notif_type" sort={sort} onSort={onSort} className={thCls} />
@@ -235,7 +235,7 @@ export default function NotificationsPage() {
                 <tbody>
                   {(data?.items ?? []).length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-12 text-center text-sm text-neutral-400">
+                      <td colSpan={8} className="px-4 py-12 text-center text-sm text-fg-muted">
                         No notifications found.
                       </td>
                     </tr>
@@ -255,14 +255,14 @@ export default function NotificationsPage() {
 
             {/* Pagination */}
             {total > PAGE_SIZE && (
-              <div className="flex items-center justify-between text-sm text-neutral-600">
+              <div className="flex items-center justify-between text-sm text-fg-secondary">
                 <span>{total} total</span>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     disabled={offset === 0}
                     onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
-                    className="rounded-md border border-neutral-300 px-3 py-1 text-sm disabled:opacity-40 hover:bg-neutral-50"
+                    className="rounded-md border border-line-strong px-3 py-1 text-sm disabled:opacity-40 hover:bg-surface-subtle"
                   >
                     Previous
                   </button>
@@ -271,7 +271,7 @@ export default function NotificationsPage() {
                     type="button"
                     disabled={offset + PAGE_SIZE >= total}
                     onClick={() => setOffset((o) => o + PAGE_SIZE)}
-                    className="rounded-md border border-neutral-300 px-3 py-1 text-sm disabled:opacity-40 hover:bg-neutral-50"
+                    className="rounded-md border border-line-strong px-3 py-1 text-sm disabled:opacity-40 hover:bg-surface-subtle"
                   >
                     Next
                   </button>

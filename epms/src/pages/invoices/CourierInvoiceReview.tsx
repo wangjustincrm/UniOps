@@ -267,12 +267,12 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
         </div>
         {ocrError && (
           <div className={cn('rounded-lg border px-3 py-2.5 text-xs',
-            ocrError.kind === 'service' ? 'border-warning-200 bg-warning-50 text-warning-700' : 'border-danger-200 bg-danger-50 text-danger-600')}>
+            ocrError.kind === 'service' ? 'border-warning-line bg-warning-soft text-warning-fg' : 'border-danger-line bg-danger-soft text-danger-fg')}>
             {ocrError.msg}
           </div>
         )}
         {(ocr?.warnings.length ?? 0) > 0 && (
-          <div className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-700">
+          <div className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2.5 text-xs text-warning-fg">
             <p className="font-semibold mb-1 flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" /> Check these before saving</p>
             <ul className="list-disc pl-5 space-y-0.5">
               {ocr!.warnings.map((w, i) => <li key={i}>{w}</li>)}
@@ -280,7 +280,7 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
           </div>
         )}
         {ocrCarrierMismatch && (
-          <div className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-700">
+          <div className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-fg">
             This reads like a {ocr!.carrier} invoice, but the vendor is {carrier.vendor_name ?? carrier.name}'s ({carrier.name}). Check the vendor.
           </div>
         )}
@@ -288,46 +288,46 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
         {/* Header */}
         <div className={cn('grid grid-cols-2 gap-3', !embedded && 'md:grid-cols-4')}>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Carrier</label>
-            <div className="flex h-10 items-center rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm font-medium text-neutral-800">
+            <label className="text-xs font-medium text-fg-secondary">Carrier</label>
+            <div className="flex h-10 items-center rounded-lg border border-line bg-surface-subtle px-3 text-sm font-medium text-fg">
               {carrier.name}
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Invoice number *</label>
+            <label className="text-xs font-medium text-fg-secondary">Invoice number *</label>
             <Input value={invoiceNo} onChange={(e: ChangeEvent<HTMLInputElement>) => setInvoiceNo(e.target.value)}
               className="font-mono" error={dup.duplicate} />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Invoice date *</label>
+            <label className="text-xs font-medium text-fg-secondary">Invoice date *</label>
             <Input type="date" value={invoiceDate} onChange={(e: ChangeEvent<HTMLInputElement>) => changeInvoiceDate(e.target.value)} />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Due date *</label>
+            <label className="text-xs font-medium text-fg-secondary">Due date *</label>
             <Input type="date" value={dueDate} onChange={(e: ChangeEvent<HTMLInputElement>) => { setDueDate(e.target.value); setDueTouched(true) }} />
-            {!dueTouched && dueDate && <p className="text-[10px] text-neutral-400">Not printed — invoice date + 30 days</p>}
+            {!dueTouched && dueDate && <p className="text-2xs text-fg-muted">Not printed — invoice date + 30 days</p>}
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Currency</label>
+            <label className="text-xs font-medium text-fg-secondary">Currency</label>
             <Input value={currency} onChange={(e: ChangeEvent<HTMLInputElement>) => setCurrency(e.target.value)} maxLength={3} className="uppercase" />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Amount before tax *</label>
+            <label className="text-xs font-medium text-fg-secondary">Amount before tax *</label>
             <Input type="number" step="0.01" value={amount} onChange={(e: ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)} className="font-mono" />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Tax</label>
+            <label className="text-xs font-medium text-fg-secondary">Tax</label>
             <Input type="number" step="0.01" value={tax} onChange={(e: ChangeEvent<HTMLInputElement>) => setTax(e.target.value)} className="font-mono" />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Total</label>
-            <div className="flex h-10 items-center rounded-lg border border-neutral-200 bg-neutral-50 px-3 font-mono text-sm font-semibold text-neutral-800">
+            <label className="text-xs font-medium text-fg-secondary">Total</label>
+            <div className="flex h-10 items-center rounded-lg border border-line bg-surface-subtle px-3 font-mono text-sm font-semibold text-fg">
               {formatAmount(cents(headerAmount + headerTax), currency || 'CAD')}
             </div>
           </div>
         </div>
         {dup.duplicate && (
-          <p className="-mt-3 text-xs font-medium text-danger-600">
+          <p className="-mt-3 text-xs font-medium text-danger-fg">
             Invoice {invoiceNo.trim()} from {carrier.name} is already recorded{dup.detail ? ` (${dup.detail})` : ''}. It cannot be saved twice.
           </p>
         )}
@@ -346,9 +346,9 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
         {embedded ? (
           <div className="flex flex-col gap-2">
             {lines.map((l, i) => (
-              <div key={l.key} className="rounded-lg border border-neutral-200 bg-white p-3 flex flex-col gap-2">
+              <div key={l.key} className="rounded-lg border border-line bg-surface p-3 flex flex-col gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="w-5 text-xs text-neutral-400">{i + 1}</span>
+                  <span className="w-5 text-xs text-fg-muted">{i + 1}</span>
                   <select value={l.charge_type} onChange={(e) => updateLine(l.key, { charge_type: e.target.value as ChargeType })}
                     className={cn(SELECT_SM_CLS, 'w-32')} aria-label={`Line ${i + 1} type`}>
                     {Object.entries(CHARGE_TYPE_LABEL).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
@@ -364,7 +364,7 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
                       className={cn(INPUT_SM_CLS, 'w-20 text-right font-mono')} aria-label={`Line ${i + 1} tax`} />
                     <button type="button" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}
                       disabled={lines.length === 1}
-                      className="rounded-md p-1.5 text-neutral-400 hover:bg-danger-50 hover:text-danger-600 disabled:opacity-30" aria-label="Remove line">
+                      className="rounded-md p-1.5 text-fg-muted hover:bg-danger-soft hover:text-danger-fg disabled:opacity-30" aria-label="Remove line">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
@@ -381,24 +381,24 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
                 </div>
               </div>
             ))}
-            <div className="flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2 text-xs font-semibold">
+            <div className="flex items-center justify-between rounded-lg bg-surface-subtle px-3 py-2 text-xs font-semibold">
               <button type="button" onClick={() => setLines((ls) => [...ls, emptyLine()])}
                 className="inline-flex items-center gap-1 text-primary-700 hover:underline">
                 <Plus className="h-3.5 w-3.5" /> Add line
               </button>
               <span className="font-mono">
-                <span className={amountOk ? 'text-neutral-800' : 'text-danger-600'}>{formatAmount(linesAmount, currency || 'CAD')}</span>
-                <span className="text-neutral-400"> · tax </span>
-                <span className={taxOk ? 'text-neutral-800' : 'text-warning-600'}>{formatAmount(linesTax, currency || 'CAD')}</span>
+                <span className={amountOk ? 'text-fg' : 'text-danger-fg'}>{formatAmount(linesAmount, currency || 'CAD')}</span>
+                <span className="text-fg-muted"> · tax </span>
+                <span className={taxOk ? 'text-fg' : 'text-warning-fg'}>{formatAmount(linesTax, currency || 'CAD')}</span>
               </span>
             </div>
           </div>
         ) : (
-        <div className="rounded-xl border border-neutral-200 overflow-hidden">
+        <div className="rounded-xl border border-line overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-neutral-100 bg-neutral-50">
+                <tr className="border-b border-line-subtle bg-surface-subtle">
                   {['#', 'Type', 'Tracking No', 'Other packages', 'Reference', 'Date', 'Description', 'Amount', 'Tax', ''].map((h) => (
                     <th key={h} className={cn(TH_CLS, ['Amount', 'Tax'].includes(h) && 'text-right')}>{h}</th>
                   ))}
@@ -406,8 +406,8 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
               </thead>
               <tbody>
                 {lines.map((l, i) => (
-                  <tr key={l.key} className="border-b border-neutral-100 last:border-0 align-top">
-                    <td className="px-3 py-2 text-xs text-neutral-400">{i + 1}</td>
+                  <tr key={l.key} className="border-b border-line-subtle last:border-0 align-top">
+                    <td className="px-3 py-2 text-xs text-fg-muted">{i + 1}</td>
                     <td className="px-2 py-1.5">
                       <select value={l.charge_type} onChange={(e) => updateLine(l.key, { charge_type: e.target.value as ChargeType })} className={SELECT_SM_CLS}>
                         {Object.entries(CHARGE_TYPE_LABEL).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
@@ -423,7 +423,7 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
                     <td className="px-2 py-1.5">
                       <button type="button" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}
                         disabled={lines.length === 1}
-                        className="rounded-md p-1.5 text-neutral-400 hover:bg-danger-50 hover:text-danger-600 disabled:opacity-30" aria-label="Remove line">
+                        className="rounded-md p-1.5 text-fg-muted hover:bg-danger-soft hover:text-danger-fg disabled:opacity-30" aria-label="Remove line">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </td>
@@ -431,15 +431,15 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
                 ))}
               </tbody>
               <tfoot>
-                <tr className="border-t border-neutral-200 bg-neutral-50 text-xs font-semibold">
+                <tr className="border-t border-line bg-surface-subtle text-xs font-semibold">
                   <td colSpan={7} className="px-3 py-2">
                     <button type="button" onClick={() => setLines((ls) => [...ls, emptyLine()])}
                       className="inline-flex items-center gap-1 text-primary-700 hover:underline">
                       <Plus className="h-3.5 w-3.5" /> Add line
                     </button>
                   </td>
-                  <td className={cn('px-3 py-2 text-right font-mono', amountOk ? 'text-neutral-800' : 'text-danger-600')}>{formatAmount(linesAmount, currency || 'CAD')}</td>
-                  <td className={cn('px-3 py-2 text-right font-mono', taxOk ? 'text-neutral-800' : 'text-warning-600')}>{formatAmount(linesTax, currency || 'CAD')}</td>
+                  <td className={cn('px-3 py-2 text-right font-mono', amountOk ? 'text-fg' : 'text-danger-fg')}>{formatAmount(linesAmount, currency || 'CAD')}</td>
+                  <td className={cn('px-3 py-2 text-right font-mono', taxOk ? 'text-fg' : 'text-warning-fg')}>{formatAmount(linesTax, currency || 'CAD')}</td>
                   <td />
                 </tr>
               </tfoot>
@@ -449,15 +449,15 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
         )}
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Notes</label>
+          <label className="text-xs font-medium text-fg-secondary">Notes</label>
           <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
-            className="w-full resize-none rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+            className="w-full resize-none rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
         </div>
 
-        {saveError && <p className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-600">{saveError}</p>}
+        {saveError && <p className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">{saveError}</p>}
 
-        <div className={cn('flex justify-end gap-2', embedded && 'sticky bottom-0 -mx-1 border-t border-neutral-100 bg-white px-1 py-3')}>
-          {queueLabel && embedded && <span className="mr-auto self-center text-xs text-neutral-500">{queueLabel}</span>}
+        <div className={cn('flex justify-end gap-2', embedded && 'sticky bottom-0 -mx-1 border-t border-line-subtle bg-surface px-1 py-3')}>
+          {queueLabel && embedded && <span className="mr-auto self-center text-xs text-fg-muted">{queueLabel}</span>}
           <Button variant="secondary" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
           <Button size="sm" onClick={save} disabled={saving || dup.duplicate || dup.checking}>
             {createInvoice.isPending ? 'Saving…' : uploadAttachment.isPending ? 'Attaching PDF…' : 'Save and match'}
@@ -478,8 +478,8 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
 function CheckChip({ ok, okText, badText, soft = false }: { ok: boolean; okText: string; badText: string; soft?: boolean }) {
   return (
     <div className={cn('flex items-start gap-1.5 rounded-lg border px-3 py-2',
-      ok ? 'border-success-200 bg-success-50 text-success-700'
-        : soft ? 'border-warning-200 bg-warning-50 text-warning-700' : 'border-danger-200 bg-danger-50 text-danger-600')}>
+      ok ? 'border-success-line bg-success-soft text-success-fg'
+        : soft ? 'border-warning-line bg-warning-soft text-warning-fg' : 'border-danger-line bg-danger-soft text-danger-fg')}>
       {ok ? <CheckCircle2 className="h-3.5 w-3.5 mt-px shrink-0" /> : <AlertTriangle className="h-3.5 w-3.5 mt-px shrink-0" />}
       <span>{ok ? okText : badText}</span>
     </div>

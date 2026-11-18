@@ -27,30 +27,30 @@ const PAGE_SIZE = 25
 
 const CARD_STYLE: Record<AgingBucketKey, { idle: string; active: string }> = {
   expired: {
-    idle: 'border-danger-200 bg-danger-50/60 hover:bg-danger-50',
-    active: 'border-danger-500 bg-danger-50 ring-1 ring-danger-500',
+    idle: 'border-danger-line bg-danger-50/60 hover:bg-danger-soft',
+    active: 'border-danger-solid bg-danger-soft ring-1 ring-danger-solid',
   },
   under_30: {
-    idle: 'border-warning-200 bg-warning-50/60 hover:bg-warning-50',
-    active: 'border-warning-500 bg-warning-50 ring-1 ring-warning-500',
+    idle: 'border-warning-line bg-warning-50/60 hover:bg-warning-soft',
+    active: 'border-warning-solid bg-warning-soft ring-1 ring-warning-solid',
   },
   '30_to_60': {
-    idle: 'border-neutral-200 bg-white hover:bg-neutral-50',
+    idle: 'border-line bg-surface hover:bg-surface-subtle',
     active: 'border-primary-500 bg-primary-50 ring-1 ring-primary-500',
   },
   // 60-90 shares the 30-60 treatment rather than the neutral one: within the
   // 90-day warning horizon the summary uses, so it is still something to plan
   // around, not just something to know.
   '60_to_90': {
-    idle: 'border-neutral-200 bg-white hover:bg-neutral-50',
+    idle: 'border-line bg-surface hover:bg-surface-subtle',
     active: 'border-primary-500 bg-primary-50 ring-1 ring-primary-500',
   },
   '90_to_180': {
-    idle: 'border-neutral-200 bg-white hover:bg-neutral-50',
+    idle: 'border-line bg-surface hover:bg-surface-subtle',
     active: 'border-primary-500 bg-primary-50 ring-1 ring-primary-500',
   },
   over_180: {
-    idle: 'border-neutral-200 bg-white hover:bg-neutral-50',
+    idle: 'border-line bg-surface hover:bg-surface-subtle',
     active: 'border-primary-500 bg-primary-50 ring-1 ring-primary-500',
   },
 }
@@ -115,7 +115,7 @@ export function AgingTab({
   return (
     <div className="flex flex-col gap-3">
       {agingQuery.isError && (
-        <p role="alert" className="flex items-start gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+        <p role="alert" className="flex items-start gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
           <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           {errMsg(agingQuery.error, 'Could not load the shelf-life summary.')}
         </p>
@@ -136,17 +136,17 @@ export function AgingTab({
                 active ? CARD_STYLE[key].active : CARD_STYLE[key].idle,
               )}
             >
-              <div className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
+              <div className="text-2xs font-medium uppercase tracking-wide text-fg-muted">
                 {bucket?.label ?? key}
               </div>
-              <div className="mt-1 text-xl font-semibold tabular-nums text-neutral-900">
+              <div className="mt-1 text-xl font-semibold tabular-nums text-fg">
                 {agingQuery.isLoading ? '—' : (bucket?.batches ?? 0).toLocaleString('en-US')}
-                <span className="ml-1 text-xs font-normal text-neutral-500">batches</span>
+                <span className="ml-1 text-xs font-normal text-fg-muted">batches</span>
               </div>
-              <div className="text-xs tabular-nums text-neutral-500">
+              <div className="text-xs tabular-nums text-fg-muted">
                 {agingQuery.isLoading ? '' : qty(bucket?.qty ?? '0')}
                 {!agingQuery.isLoading && (
-                  <span className="text-neutral-400">
+                  <span className="text-fg-muted">
                     {' · '}{(bucket?.lots ?? 0).toLocaleString('en-US')} lots
                   </span>
                 )}
@@ -159,8 +159,8 @@ export function AgingTab({
       {/* Excluded, and how many — never silently dropped. Without the reason,
           "1,640 lots not shown" reads as a bug. */}
       {agingQuery.data && agingQuery.data.no_expiry_lots > 0 && (
-        <p className="flex items-start gap-1.5 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
-          <Info aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-400" />
+        <p className="flex items-start gap-1.5 rounded-md border border-line bg-surface-subtle px-3 py-2 text-xs text-fg-secondary">
+          <Info aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fg-muted" />
           <span>
             {agingQuery.data.no_expiry_batches.toLocaleString('en-US')} batch(es)
             ({agingQuery.data.no_expiry_lots.toLocaleString('en-US')} lots,
@@ -171,7 +171,7 @@ export function AgingTab({
       )}
 
       {lotsQuery.isError && (
-        <p role="alert" className="flex items-start gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+        <p role="alert" className="flex items-start gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
           <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           {errMsg(lotsQuery.error, 'Could not load the stock in this band.')}
         </p>
@@ -193,57 +193,57 @@ export function AgingTab({
           </thead>
           <tbody>
             {lotsQuery.isLoading && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-neutral-400">Loading stock…</td></tr>
+              <tr><td colSpan={8} className="px-3 py-8 text-center text-fg-muted">Loading stock…</td></tr>
             )}
             {!lotsQuery.isLoading && items.length === 0 && !lotsQuery.isError && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-neutral-400">
+              <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-fg-muted">
                 Nothing in this band.
               </td></tr>
             )}
             {items.map((lot) => (
               <tr
                 key={`${lot.warehouse_id}|${lot.material_code}|${lot.supplier_batch ?? ''}`}
-                className="border-t border-neutral-100"
+                className="border-t border-line-subtle"
               >
                 <td className="px-3 py-2">
                   <span className="font-mono text-xs">{lot.material_code}</span>
                   {lot.material_name && (
-                    <span className="ml-1.5 text-xs text-neutral-500">{lot.material_name}</span>
+                    <span className="ml-1.5 text-xs text-fg-muted">{lot.material_name}</span>
                   )}
                 </td>
                 <td className="px-3 py-2 font-mono text-xs">
                   {lot.supplier_batch ?? (
-                    <span className="font-sans text-neutral-400">no supplier batch</span>
+                    <span className="font-sans text-fg-muted">no supplier batch</span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-right font-mono">
                   {qty(lot.qty)}
                   {lot.base_uom && (
-                    <span className="ml-1 font-sans text-xs text-neutral-400">{lot.base_uom}</span>
+                    <span className="ml-1 font-sans text-xs text-fg-muted">{lot.base_uom}</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right font-mono text-xs text-neutral-500">{lot.lots}</td>
-                <td className="px-3 py-2 text-xs text-neutral-600">
+                <td className="px-3 py-2 text-right font-mono text-xs text-fg-muted">{lot.lots}</td>
+                <td className="px-3 py-2 text-xs text-fg-secondary">
                   {formatDateOnly(lot.production_date)}
                 </td>
-                <td className="px-3 py-2 text-xs text-neutral-600">
+                <td className="px-3 py-2 text-xs text-fg-secondary">
                   {formatDateOnly(lot.expiry_date)}
                   {lot.expiry_spans_dates && (
                     <span
-                      className="ml-1 cursor-help text-neutral-400"
+                      className="ml-1 cursor-help text-fg-muted"
                       title="This batch's lots have different expiry dates — the earliest is shown"
                     >+</span>
                   )}
                 </td>
                 <td className={cn(
                   'px-3 py-2 text-right font-mono text-xs',
-                  lot.days_to_expiry !== null && lot.days_to_expiry < 0 && 'text-danger-600',
+                  lot.days_to_expiry !== null && lot.days_to_expiry < 0 && 'text-danger-fg',
                   lot.days_to_expiry !== null && lot.days_to_expiry >= 0 && lot.days_to_expiry < 30
-                    && 'text-warning-700',
+                    && 'text-warning-fg',
                 )}>
                   {lot.days_to_expiry ?? '—'}
                 </td>
-                <td className="px-3 py-2 text-xs text-neutral-600">
+                <td className="px-3 py-2 text-xs text-fg-secondary">
                   {lot.quality_status_label ?? '—'}
                 </td>
               </tr>
@@ -253,20 +253,20 @@ export function AgingTab({
       </ScrollTable>
 
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] text-neutral-500">
+        <span className="text-2xs text-fg-muted">
           {total.toLocaleString('en-US')} batch(es) in this band
           {asOf && <> · shelf life measured from {formatDateOnly(asOf)}</>}
         </span>
         <div className="flex items-center gap-1">
           <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1 || lotsQuery.isFetching} aria-label="Previous page"
-            className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40">
+            className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40">
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="text-[11px] text-neutral-500">Page {page} of {pageCount}</span>
+          <span className="text-2xs text-fg-muted">Page {page} of {pageCount}</span>
           <button type="button" onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
             disabled={page >= pageCount || lotsQuery.isFetching} aria-label="Next page"
-            className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40">
+            className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40">
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>

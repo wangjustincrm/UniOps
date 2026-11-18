@@ -49,9 +49,9 @@ function FeeLinesSection({ invoice }: { invoice: ApiInvoice }) {
   const total = feeLineTotal(invoice)
 
   return (
-    <div className="rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden">
-      <div className="px-3 py-2 border-b border-neutral-200">
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+    <div className="rounded-lg border border-line bg-surface-subtle overflow-hidden">
+      <div className="px-3 py-2 border-b border-line">
+        <h4 className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
           Not compared to PO (billed as invoiced)
         </h4>
       </div>
@@ -59,16 +59,16 @@ function FeeLinesSection({ invoice }: { invoice: ApiInvoice }) {
         <table className="w-full text-sm min-w-[360px]">
           <tbody>
             {lines.map((line, idx) => (
-              <tr key={idx} className="border-b border-neutral-200 last:border-0">
-                <td className="px-3 py-2 text-xs text-neutral-500">{line.description}</td>
-                <td className="px-3 py-2 text-right font-mono text-xs text-neutral-500">
+              <tr key={idx} className="border-b border-line last:border-0">
+                <td className="px-3 py-2 text-xs text-fg-muted">{line.description}</td>
+                <td className="px-3 py-2 text-right font-mono text-xs text-fg-muted">
                   {formatAmount(line.amount, invoice.currency)}
                 </td>
               </tr>
             ))}
             <tr>
-              <td className="px-3 py-2 text-xs font-medium text-neutral-600">Fee lines total</td>
-              <td className="px-3 py-2 text-right font-mono text-xs font-medium text-neutral-600">
+              <td className="px-3 py-2 text-xs font-medium text-fg-secondary">Fee lines total</td>
+              <td className="px-3 py-2 text-right font-mono text-xs font-medium text-fg-secondary">
                 {formatAmount(total, invoice.currency)}
               </td>
             </tr>
@@ -100,7 +100,7 @@ function HouseAccountReceiptPanel({ invoice }: { invoice: ApiInvoice }): JSX.Ele
   const receipts = invoice.claimed_receipts ?? []
 
   return (
-    <div className="rounded-xl border overflow-hidden border-danger-200 bg-danger-50">
+    <div className="rounded-xl border overflow-hidden border-danger-line bg-danger-soft">
       <div className="w-full flex items-center gap-2 pl-4 pr-2 py-2">
         <Link
           to={`/invoices/${invoice.id}`}
@@ -118,9 +118,9 @@ function HouseAccountReceiptPanel({ invoice }: { invoice: ApiInvoice }): JSX.Ele
           aria-label={expanded ? 'Collapse receipt variance detail' : 'Expand receipt variance detail'}
         >
           {expanded
-            ? <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
-            : <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" />}
-          <span className="text-sm font-semibold truncate text-danger-700">
+            ? <ChevronDown className="h-4 w-4 shrink-0 text-fg-muted" />
+            : <ChevronRight className="h-4 w-4 shrink-0 text-fg-muted" />}
+          <span className="text-sm font-semibold truncate text-danger-fg">
             · Receipts differ from invoice by {summary.variance >= 0 ? '+' : ''}{formatAmount(summary.variance, invoice.currency)}
           </span>
         </Button>
@@ -129,30 +129,30 @@ function HouseAccountReceiptPanel({ invoice }: { invoice: ApiInvoice }): JSX.Ele
           ISS-0116) — shown with the difference, not behind the expander, since
           it is what the approver needs to read. Evidence saved before the
           reason became required may have none; say so rather than nothing. */}
-      <p className="px-4 pb-2 text-xs text-danger-700">
+      <p className="px-4 pb-2 text-xs text-danger-fg">
         {invoice.receipt_variance_reason
-          ? <>Reason: <span className="text-neutral-800">{invoice.receipt_variance_reason}</span></>
+          ? <>Reason: <span className="text-fg">{invoice.receipt_variance_reason}</span></>
           : <span className="italic">No reason was given for the difference</span>}
       </p>
 
       {expanded && (
-        <div className="border-t border-inherit px-4 py-4 bg-white flex flex-col gap-4">
-          <div className="overflow-x-auto rounded-lg border border-neutral-200">
+        <div className="border-t border-inherit px-4 py-4 bg-surface flex flex-col gap-4">
+          <div className="overflow-x-auto rounded-lg border border-line">
             <table className="w-full text-sm min-w-[480px]">
               <thead>
-                <tr className="border-b border-neutral-200 bg-neutral-50">
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Reference</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Date</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Type</th>
-                  <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Amount</th>
+                <tr className="border-b border-line bg-surface-subtle">
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Reference</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Date</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Type</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Amount</th>
                 </tr>
               </thead>
               <tbody>
                 {receipts.map((r) => (
-                  <tr key={r.id} className="border-b border-neutral-100 last:border-0">
-                    <td className="px-3 py-2.5 font-mono text-xs text-neutral-800">{r.receipt_ref ?? '—'}</td>
-                    <td className="px-3 py-2.5 text-xs text-neutral-600">{formatDate(r.receipt_date)}</td>
-                    <td className="px-3 py-2.5 text-xs text-neutral-600">
+                  <tr key={r.id} className="border-b border-line-subtle last:border-0">
+                    <td className="px-3 py-2.5 font-mono text-xs text-fg">{r.receipt_ref ?? '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-fg-secondary">{formatDate(r.receipt_date)}</td>
+                    <td className="px-3 py-2.5 text-xs text-fg-secondary">
                       {RECEIPT_TYPE_LABELS[r.receipt_type as ReceiptType] ?? r.receipt_type}
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono text-xs">
@@ -160,7 +160,7 @@ function HouseAccountReceiptPanel({ invoice }: { invoice: ApiInvoice }): JSX.Ele
                         // Delivery / service evidence carries no amount — shown, but
                         // visibly excluded from the total below (matches
                         // InvoiceReceiptsPanel's candidate-row convention).
-                        ? <span className="text-neutral-400 italic">no amount</span>
+                        ? <span className="text-fg-muted italic">no amount</span>
                         : formatAmount(Number(r.total_amount), invoice.currency)}
                     </td>
                   </tr>
@@ -168,10 +168,10 @@ function HouseAccountReceiptPanel({ invoice }: { invoice: ApiInvoice }): JSX.Ele
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={3} className="px-3 py-2 text-xs font-medium text-neutral-600">
+                  <td colSpan={3} className="px-3 py-2 text-xs font-medium text-fg-secondary">
                     Priced receipts total ({summary.pricedCount} of {receipts.length})
                   </td>
-                  <td className="px-3 py-2 text-right font-mono text-xs font-medium text-neutral-600">
+                  <td className="px-3 py-2 text-right font-mono text-xs font-medium text-fg-secondary">
                     {formatAmount(summary.receiptTotal, invoice.currency)}
                   </td>
                 </tr>
@@ -226,9 +226,9 @@ function PoRouteVariancePanel({
       : variancePctAbs <= tolerancePct ? 'warning' : 'danger'
 
   const toneClasses: Record<typeof tone, { border: string; bg: string; text: string }> = {
-    success: { border: 'border-success-200', bg: 'bg-success-50', text: 'text-success-700' },
-    warning: { border: 'border-warning-200', bg: 'bg-warning-50', text: 'text-warning-700' },
-    danger: { border: 'border-danger-200', bg: 'bg-danger-50', text: 'text-danger-700' },
+    success: { border: 'border-success-line', bg: 'bg-success-soft', text: 'text-success-fg' },
+    warning: { border: 'border-warning-line', bg: 'bg-warning-soft', text: 'text-warning-fg' },
+    danger: { border: 'border-danger-line', bg: 'bg-danger-soft', text: 'text-danger-fg' },
   }
   const tc = toneClasses[tone]
 
@@ -261,8 +261,8 @@ function PoRouteVariancePanel({
           aria-label={expanded ? 'Collapse invoice-to-PO variance detail' : 'Expand invoice-to-PO variance detail'}
         >
           {expanded
-            ? <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
-            : <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" />}
+            ? <ChevronDown className="h-4 w-4 shrink-0 text-fg-muted" />
+            : <ChevronRight className="h-4 w-4 shrink-0 text-fg-muted" />}
           <span className={cn('text-sm font-semibold truncate', tc.text)}>
             {/* Whole-branch review (finding 4a): this collapsed header is the
                 most prominent number on the row, and a DIFFERENT measure from
@@ -278,7 +278,7 @@ function PoRouteVariancePanel({
       </div>
 
       {expanded && (
-        <div className="border-t border-inherit px-4 py-4 bg-white flex flex-col gap-4">
+        <div className="border-t border-inherit px-4 py-4 bg-surface flex flex-col gap-4">
           {mode === 'by-line' ? (
             <>
               {/* Column label + caption (review finding, Task 8): this figure
@@ -296,8 +296,8 @@ function PoRouteVariancePanel({
               <div className="overflow-x-auto">
                 <table className="w-full text-sm min-w-[720px]">
                   <thead>
-                    <tr className="border-b border-neutral-200 bg-neutral-50">
-                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Invoice Line</th>
+                    <tr className="border-b border-line bg-surface-subtle">
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Invoice Line</th>
                       {/* Whole-branch review (finding 6): one invoice can span several
                           POs, but the caller only has ONE PO's line items on hand
                           (PaDetailPage's usePo(pa.po_id)) — an allocation pointing at
@@ -305,17 +305,17 @@ function PoRouteVariancePanel({
                           with a description, which read as corrupt data. This column
                           makes which PO the row belongs to explicit and clickable,
                           same as the by-amount table below already does. */}
-                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">PO</th>
-                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">PO Line</th>
-                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">PO line variance (all invoices)</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">PO</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">PO Line</th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">PO line variance (all invoices)</th>
                     </tr>
                   </thead>
                   <tbody>
                     {comparisons.map((row) => (
-                      <tr key={row.allocationId} className="border-b border-neutral-100 last:border-0 align-top">
+                      <tr key={row.allocationId} className="border-b border-line-subtle last:border-0 align-top">
                         <td className="px-3 py-2.5">
-                          <p className="text-xs font-medium text-neutral-800">{row.invoiceLineDescription}</p>
-                          <p className="text-[11px] text-neutral-500">
+                          <p className="text-xs font-medium text-fg">{row.invoiceLineDescription}</p>
+                          <p className="text-2xs text-fg-muted">
                             {row.invoiceQty ?? '—'} × {row.invoiceUnitPrice != null ? formatAmount(row.invoiceUnitPrice, invoice.currency) : '—'}
                             {' = '}{formatAmount(row.invoiceAmount, invoice.currency)}
                           </p>
@@ -328,24 +328,24 @@ function PoRouteVariancePanel({
                         <td className="px-3 py-2.5">
                           {row.poLineDescription != null ? (
                             <>
-                              <p className="text-xs font-medium text-neutral-800">{row.poLineDescription}</p>
+                              <p className="text-xs font-medium text-fg">{row.poLineDescription}</p>
                               {row.poLineResolved ? (
-                                <p className="text-[11px] text-neutral-500">
+                                <p className="text-2xs text-fg-muted">
                                   {row.poQty ?? '—'} × {row.poUnitPrice != null ? formatAmount(row.poUnitPrice, invoice.currency) : '—'}
                                   {' = '}{row.poAmount != null ? formatAmount(row.poAmount, invoice.currency) : '—'}
                                 </p>
                               ) : (
-                                <p className="text-[11px] text-neutral-400 italic">
+                                <p className="text-2xs text-fg-muted italic">
                                   Qty/price not loaded on this page — see {row.poNumber ?? 'the PO'} above
                                 </p>
                               )}
                             </>
                           ) : (
-                            <p className="text-xs text-neutral-400 italic">PO line not available</p>
+                            <p className="text-xs text-fg-muted italic">PO line not available</p>
                           )}
                         </td>
                         <td className={cn('px-3 py-2.5 text-right font-mono text-xs',
-                          centsEqual(row.variance, 0) ? 'text-success-600' : 'text-danger-600')}>
+                          centsEqual(row.variance, 0) ? 'text-success-fg' : 'text-danger-fg')}>
                           {row.variance >= 0 ? '+' : ''}{formatAmount(row.variance, invoice.currency)}
                         </td>
                       </tr>
@@ -353,7 +353,7 @@ function PoRouteVariancePanel({
                   </tbody>
                 </table>
               </div>
-              <p className="text-[11px] text-neutral-400 italic">
+              <p className="text-2xs text-fg-muted italic">
                 PO line variance figures are cumulative across every invoice matched to that PO line, not this invoice's share alone.
               </p>
               {hasFeeLines && <FeeLinesSection invoice={invoice} />}
@@ -364,21 +364,21 @@ function PoRouteVariancePanel({
             // in the match — see the module docstring.
             <div className="flex flex-col gap-4">
               <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">Invoice Line Items</h4>
-                <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-2">Invoice Line Items</h4>
+                <div className="overflow-x-auto rounded-lg border border-line">
                   <table className="w-full text-sm min-w-[480px]">
                     <thead>
-                      <tr className="border-b border-neutral-200 bg-neutral-50">
-                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Description</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Qty</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Unit Price</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Amount</th>
+                      <tr className="border-b border-line bg-surface-subtle">
+                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Description</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Qty</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Unit Price</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
                       {invoice.line_items.map((line, idx) => (
-                        <tr key={line.id ?? idx} className="border-b border-neutral-100 last:border-0">
-                          <td className="px-3 py-2.5 text-xs text-neutral-800">{line.description}</td>
+                        <tr key={line.id ?? idx} className="border-b border-line-subtle last:border-0">
+                          <td className="px-3 py-2.5 text-xs text-fg">{line.description}</td>
                           <td className="px-3 py-2.5 text-right font-mono text-xs">{Number(line.quantity)}</td>
                           <td className="px-3 py-2.5 text-right font-mono text-xs">{formatAmount(Number(line.unit_price), invoice.currency)}</td>
                           <td className="px-3 py-2.5 text-right font-mono text-xs">{formatAmount(Number(line.line_total), invoice.currency)}</td>
@@ -390,7 +390,7 @@ function PoRouteVariancePanel({
               </div>
 
               <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">Amount Allocated per PO</h4>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-2">Amount Allocated per PO</h4>
                 {/* Column label + caption (fix round 1, Important — same
                     finding as the by-line table above, widened to here):
                     total-value (by-amount) matches take the po_line_id IS
@@ -403,20 +403,20 @@ function PoRouteVariancePanel({
                     number is correct; only a bare "Variance" label would
                     misread as this invoice's own shortfall/overage. Do not
                     recompute — no per-invoice reference exists in the data. */}
-                <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                <div className="overflow-x-auto rounded-lg border border-line">
                   <table className="w-full text-sm min-w-[420px]">
                     <thead>
-                      <tr className="border-b border-neutral-200 bg-neutral-50">
-                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">PO</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Allocated</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">PO variance (all invoices)</th>
+                      <tr className="border-b border-line bg-surface-subtle">
+                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">PO</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Allocated</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">PO variance (all invoices)</th>
                       </tr>
                     </thead>
                     <tbody>
                       {allocations.map((a) => {
                         const allocVariance = a.variance != null ? Number(a.variance) : null
                         return (
-                          <tr key={a.id} className="border-b border-neutral-100 last:border-0">
+                          <tr key={a.id} className="border-b border-line-subtle last:border-0">
                             <td className="px-3 py-2.5">
                               <Link to={`/po/${a.po_id}`} className="font-mono text-xs text-primary-700 hover:underline">
                                 {a.po_number ?? a.po_id.slice(0, 8)}
@@ -426,7 +426,7 @@ function PoRouteVariancePanel({
                               {formatAmount(Number(a.allocated_amount), invoice.currency)}
                             </td>
                             <td className={cn('px-3 py-2.5 text-right font-mono text-xs',
-                              allocVariance == null || centsEqual(allocVariance, 0) ? 'text-success-600' : 'text-danger-600')}>
+                              allocVariance == null || centsEqual(allocVariance, 0) ? 'text-success-fg' : 'text-danger-fg')}>
                               {allocVariance == null ? '—' : `${allocVariance >= 0 ? '+' : ''}${formatAmount(allocVariance, invoice.currency)}`}
                             </td>
                           </tr>
@@ -435,7 +435,7 @@ function PoRouteVariancePanel({
                     </tbody>
                   </table>
                 </div>
-                <p className="text-[11px] text-neutral-400 italic mt-1">
+                <p className="text-2xs text-fg-muted italic mt-1">
                   PO variance figures are cumulative across every invoice matched to that PO, not this invoice's share alone.
                 </p>
               </div>

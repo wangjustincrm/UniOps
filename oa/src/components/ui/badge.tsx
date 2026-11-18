@@ -11,22 +11,22 @@ type BadgeVariant = 'neutral' | 'warning' | 'info' | 'success' | 'danger' | 'dar
 // modules. Keep raw Tailwind color literals OUT of pages — add new statuses here.
 const STATUS_CONFIG: Record<string, { label: string; variant: BadgeVariant; dot: string }> = {
   // Workflow statuses (expenses / PA)
-  draft:       { label: 'Draft',       variant: 'neutral', dot: 'bg-neutral-400' },
-  submitted:   { label: 'Submitted',   variant: 'warning', dot: 'bg-warning-500' },
+  draft:       { label: 'Draft',       variant: 'neutral', dot: 'bg-fg-faint' },
+  submitted:   { label: 'Submitted',   variant: 'warning', dot: 'bg-warning-solid' },
   in_review:   { label: 'In Review',   variant: 'info',    dot: 'bg-primary-500' },
-  approved:    { label: 'Approved',    variant: 'success', dot: 'bg-success-600' },
-  returned:    { label: 'Returned',    variant: 'warning', dot: 'bg-warning-500' },
-  rejected:    { label: 'Rejected',    variant: 'danger',  dot: 'bg-danger-600' },
-  cancelled:   { label: 'Cancelled',   variant: 'danger',  dot: 'bg-danger-600' },
-  paid:        { label: 'Paid',        variant: 'dark',    dot: 'bg-neutral-400' },
-  processed:   { label: 'Processed',   variant: 'dark',    dot: 'bg-neutral-400' },
+  approved:    { label: 'Approved',    variant: 'success', dot: 'bg-success-solid' },
+  returned:    { label: 'Returned',    variant: 'warning', dot: 'bg-warning-solid' },
+  rejected:    { label: 'Rejected',    variant: 'danger',  dot: 'bg-danger-solid' },
+  cancelled:   { label: 'Cancelled',   variant: 'danger',  dot: 'bg-danger-solid' },
+  paid:        { label: 'Paid',        variant: 'dark',    dot: 'bg-fg-faint' },
+  processed:   { label: 'Processed',   variant: 'dark',    dot: 'bg-fg-faint' },
   // Invoice statuses
-  unmatched:   { label: 'Unmatched',   variant: 'warning', dot: 'bg-warning-500' },
-  matched:     { label: 'Matched',     variant: 'success', dot: 'bg-success-600' },
-  exception:   { label: 'Exception',   variant: 'danger',  dot: 'bg-danger-600' },
-  uploaded:    { label: 'Uploaded',    variant: 'neutral', dot: 'bg-neutral-400' },
+  unmatched:   { label: 'Unmatched',   variant: 'warning', dot: 'bg-warning-solid' },
+  matched:     { label: 'Matched',     variant: 'success', dot: 'bg-success-solid' },
+  exception:   { label: 'Exception',   variant: 'danger',  dot: 'bg-danger-solid' },
+  uploaded:    { label: 'Uploaded',    variant: 'neutral', dot: 'bg-fg-faint' },
   reviewed:    { label: 'Reviewed',    variant: 'info',    dot: 'bg-primary-500' },
-  used:        { label: 'Used',        variant: 'success', dot: 'bg-success-600' },
+  used:        { label: 'Used',        variant: 'success', dot: 'bg-success-solid' },
 }
 
 function titleCase(status: string): string {
@@ -37,7 +37,7 @@ export function StatusBadge({ status, label }: { status: string; label?: string 
   const config = STATUS_CONFIG[status]
   return (
     <Badge variant={config?.variant ?? 'neutral'}>
-      <span className={cn('size-1.5 rounded-full', config?.dot ?? 'bg-neutral-400')} />
+      <span className={cn('size-1.5 rounded-full', config?.dot ?? 'bg-fg-faint')} />
       {label ?? config?.label ?? titleCase(status)}
     </Badge>
   )

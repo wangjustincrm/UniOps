@@ -106,7 +106,7 @@ export function BudgetAccountCascade(props: {
           onChange({ costCenterId: cc?.id, budgetCode: '' })
         }}
         disabled={disabled || !departmentId}
-        className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400"
+        className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
       >
         <option value="">Select Cost Center…</option>
         {costCenters.map((cc) => (
@@ -123,7 +123,7 @@ export function BudgetAccountCascade(props: {
           onChange({ costCenterId, budgetCode: '' })
         }}
         disabled={disabled || !selectedCostCenterCode}
-        className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400"
+        className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
       >
         <option value="">Select L1 Category…</option>
         {ccL1Groups.map((l1) => (
@@ -131,7 +131,7 @@ export function BudgetAccountCascade(props: {
         ))}
       </select>
       {budgetError && (
-        <p className="text-xs text-danger-600">
+        <p className="text-xs text-danger-fg">
           Couldn't load the budget categories — the budget service is unreachable. This is not
           an empty catalog; try again shortly.
         </p>
@@ -141,7 +141,7 @@ export function BudgetAccountCascade(props: {
         value={budgetCode}
         onChange={(e) => onChange({ costCenterId, budgetCode: e.target.value })}
         disabled={disabled || !selectedL1}
-        className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400"
+        className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
       >
         <option value="">Select L2 Sub-account…</option>
         {ccL2Accounts.map((l2) => (

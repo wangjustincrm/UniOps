@@ -123,11 +123,11 @@ interface ApprovalStep {
 // ── Badges ────────────────────────────────────────────────────────────────────
 
 const ACTION_ICONS: Record<string, React.ReactNode> = {
-  [ACTION.SUBMIT]:  <CheckCircle className="h-4 w-4 text-info-500" />,
-  [ACTION.APPROVE]: <CheckCircle className="h-4 w-4 text-success-500" />,
-  [ACTION.REJECT]:  <XCircle className="h-4 w-4 text-danger-500" />,
-  [ACTION.RETURN]:  <RotateCcw className="h-4 w-4 text-warning-500" />,
-  [ACTION.PAY]:     <Banknote className="h-4 w-4 text-success-500" />,
+  [ACTION.SUBMIT]:  <CheckCircle className="h-4 w-4 text-info-fg" />,
+  [ACTION.APPROVE]: <CheckCircle className="h-4 w-4 text-success-fg" />,
+  [ACTION.REJECT]:  <XCircle className="h-4 w-4 text-danger-fg" />,
+  [ACTION.RETURN]:  <RotateCcw className="h-4 w-4 text-warning-fg" />,
+  [ACTION.PAY]:     <Banknote className="h-4 w-4 text-success-fg" />,
 }
 
 const ACTION_LABELS: Record<string, string> = {
@@ -243,10 +243,10 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
   }
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-neutral-100">
-        <h2 className="text-sm font-semibold text-neutral-700 flex items-center gap-2">
-          <Paperclip className="h-4 w-4 text-neutral-400" />
+    <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-line-subtle">
+        <h2 className="text-sm font-semibold text-fg-secondary flex items-center gap-2">
+          <Paperclip className="h-4 w-4 text-fg-muted" />
           Attachments {attachments.length > 0 && `(${attachments.length})`}
         </h2>
         <div className="flex items-center gap-4">
@@ -294,19 +294,19 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
       )}
 
       {attachments.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-8 text-center text-sm text-neutral-400">
+        <div className="flex flex-col items-center justify-center py-8 text-center text-sm text-fg-muted">
           <Paperclip className="h-6 w-6 mb-2 opacity-40" />
           No attachments
           {canUpload && <p className="text-xs mt-1">Click "Upload file" to add receipts or supporting documents</p>}
         </div>
       ) : (
-        <div className="divide-y divide-neutral-100">
+        <div className="divide-y divide-line-subtle">
           {attachments.map(att => (
             <div key={att.id} className="flex items-center gap-3 px-5 py-3">
-              <Paperclip className="h-4 w-4 text-neutral-400 shrink-0" />
+              <Paperclip className="h-4 w-4 text-fg-muted shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-neutral-800 truncate">{att.file_name}</p>
-                <p className="text-xs text-neutral-400">{formatSize(att.file_size_bytes)}</p>
+                <p className="text-sm font-medium text-fg truncate">{att.file_name}</p>
+                <p className="text-xs text-fg-muted">{formatSize(att.file_size_bytes)}</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {att.download_url && (
@@ -317,7 +317,7 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
                 )}
                 {canUpload && (
                   <button onClick={() => deleteMutation.mutate(att.id)}
-                    className="text-neutral-300 hover:text-danger-500 transition-colors">
+                    className="text-fg-faint hover:text-danger-fg transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 )}
@@ -367,11 +367,11 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
 
   const stateIcon = (state: ApprovalStep['state']) => {
     switch (state) {
-      case 'approved': return <CheckCircle className="h-5 w-5 text-success-500" />
+      case 'approved': return <CheckCircle className="h-5 w-5 text-success-fg" />
       case 'current':  return <Clock className="h-5 w-5 text-primary-700" />
-      case 'returned': return <RotateCcw className="h-5 w-5 text-warning-500" />
-      case 'rejected': return <XCircle className="h-5 w-5 text-danger-500" />
-      default:         return <Circle className="h-5 w-5 text-neutral-300" />
+      case 'returned': return <RotateCcw className="h-5 w-5 text-warning-fg" />
+      case 'rejected': return <XCircle className="h-5 w-5 text-danger-fg" />
+      default:         return <Circle className="h-5 w-5 text-fg-faint" />
     }
   }
   const stateLabel: Record<ApprovalStep['state'], string> = {
@@ -379,35 +379,35 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
     returned: 'Returned', rejected: 'Rejected',
   }
   const stateBadge: Record<ApprovalStep['state'], string> = {
-    approved: 'bg-success-50 text-success-700',
+    approved: 'bg-success-soft text-success-fg',
     current:  'bg-primary-700/10 text-primary-700',
-    waiting:  'bg-neutral-100 text-neutral-500',
-    returned: 'bg-warning-50 text-warning-700',
-    rejected: 'bg-danger-50 text-danger-700',
+    waiting:  'bg-surface-sunken text-fg-muted',
+    returned: 'bg-warning-soft text-warning-fg',
+    rejected: 'bg-danger-soft text-danger-fg',
   }
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-neutral-100">
-        <h2 className="text-sm font-semibold text-neutral-700">Approval Status</h2>
-        <span className="text-xs text-neutral-400">{approvedCount} of {steps.length} approved</span>
+    <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-line-subtle">
+        <h2 className="text-sm font-semibold text-fg-secondary">Approval Status</h2>
+        <span className="text-xs text-fg-muted">{approvedCount} of {steps.length} approved</span>
       </div>
-      <ol className="divide-y divide-neutral-50">
+      <ol className="divide-y divide-line-subtle">
         {steps.map((s, i) => (
           <li key={s.step_idx} className="flex items-start gap-3 px-5 py-3">
             <div className="flex flex-col items-center">
               {stateIcon(s.state)}
-              {i < steps.length - 1 && <div className="mt-1 h-6 w-px bg-neutral-200" />}
+              {i < steps.length - 1 && <div className="mt-1 h-6 w-px bg-surface-strong" />}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-neutral-800">{s.label}</span>
-                <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', stateBadge[s.state])}>
+                <span className="text-sm font-medium text-fg">{s.label}</span>
+                <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium', stateBadge[s.state])}>
                   {stateLabel[s.state]}
                 </span>
               </div>
               {s.state === 'approved' && s.actor_name && (
-                <p className="mt-0.5 text-xs text-neutral-500">
+                <p className="mt-0.5 text-xs text-fg-muted">
                   by {s.actor_name}{s.acted_at ? ` · ${formatDate(s.acted_at)}` : ''}
                 </p>
               )}
@@ -415,29 +415,29 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
                   and why, so the claimant sees where it stopped (ISS-0194). */}
               {(s.state === 'returned' || s.state === 'rejected') && s.actor_name && (
                 <>
-                  <p className="mt-0.5 text-xs text-neutral-500">
+                  <p className="mt-0.5 text-xs text-fg-muted">
                     by {s.actor_name}{s.acted_at ? ` · ${formatDate(s.acted_at)}` : ''}
                   </p>
                   {s.comment && (
-                    <p className="mt-1 whitespace-pre-line rounded bg-neutral-50 px-2 py-1.5 text-xs text-neutral-700">{s.comment}</p>
+                    <p className="mt-1 whitespace-pre-line rounded bg-surface-subtle px-2 py-1.5 text-xs text-fg-secondary">{s.comment}</p>
                   )}
                 </>
               )}
               {s.state === 'current' && (
                 <>
-                  <p className="mt-0.5 text-xs text-neutral-400">
+                  <p className="mt-0.5 text-xs text-fg-muted">
                     {s.approver_name ? `Awaiting ${s.approver_name}` : 'Awaiting this approver'}
                   </p>
                   <button
                     type="button"
                     onClick={() => remindMutation.mutate()}
                     disabled={remindMutation.isPending}
-                    className="mt-1 text-xs text-primary-700 hover:underline disabled:cursor-not-allowed disabled:text-neutral-400 disabled:no-underline"
+                    className="mt-1 text-xs text-primary-700 hover:underline disabled:cursor-not-allowed disabled:text-fg-muted disabled:no-underline"
                   >
                     {remindMutation.isPending ? 'Sending reminder…' : 'Send reminder'}
                   </button>
                   {reminderMsg && !remindMutation.isPending && (
-                    <p className={cn('mt-1 text-xs', reminderMsg.ok ? 'text-success-700' : 'text-warning-700')}>
+                    <p className={cn('mt-1 text-xs', reminderMsg.ok ? 'text-success-fg' : 'text-warning-fg')}>
                       {reminderMsg.text}
                     </p>
                   )}
@@ -445,7 +445,7 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
               )}
               {/* Approval comments are shown once, in the Approval Timeline below. */}
             </div>
-            <span className="shrink-0 text-[10px] font-mono text-neutral-300">Step {s.step_idx + 1}</span>
+            <span className="shrink-0 text-2xs font-mono text-fg-faint">Step {s.step_idx + 1}</span>
           </li>
         ))}
       </ol>
@@ -532,10 +532,10 @@ export default function ExpenseDetailPage() {
   })
 
   if (isLoading) {
-    return <div className="flex items-center justify-center py-24 text-sm text-neutral-400">Loading…</div>
+    return <div className="flex items-center justify-center py-24 text-sm text-fg-muted">Loading…</div>
   }
   if (!claim) {
-    return <div className="py-24 text-center text-sm text-danger-500">Expense claim not found</div>
+    return <div className="py-24 text-center text-sm text-danger-fg">Expense claim not found</div>
   }
 
   const TYPE_LABELS: Record<string, string> = {
@@ -576,7 +576,7 @@ export default function ExpenseDetailPage() {
       <div>
         <button
           onClick={() => navigate(backHref)}
-          className="mb-4 flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700"
+          className="mb-4 flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg-secondary"
         >
           <ArrowLeft className="h-4 w-4" />
           {backLabel}
@@ -584,16 +584,16 @@ export default function ExpenseDetailPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-neutral-900">{claim.claim_number}</h1>
+              <h1 className="text-2xl font-bold text-fg">{claim.claim_number}</h1>
               <StatusBadge status={claim.status} />
               {claim.is_over_budget && (
-                <span className="flex items-center gap-1 rounded-full bg-warning-50 border border-warning-200 px-2 py-0.5 text-xs text-warning-700">
+                <span className="flex items-center gap-1 rounded-full bg-warning-soft border border-warning-line px-2 py-0.5 text-xs text-warning-fg">
                   <AlertTriangle className="h-3 w-3" />
                   Over Budget
                 </span>
               )}
             </div>
-            <p className="mt-1 text-sm text-neutral-500">
+            <p className="mt-1 text-sm text-fg-muted">
               {typeLabel} · {claim.employee_name} · {claim.department_name}
             </p>
           </div>
@@ -617,7 +617,7 @@ export default function ExpenseDetailPage() {
             {isEditable(claim.status) && canEdit && (
               <button
                 onClick={() => navigate(`/expenses/${claim.id}/edit`)}
-                className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+                className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle"
               >
                 Edit
               </button>
@@ -626,19 +626,19 @@ export default function ExpenseDetailPage() {
               <>
                 <button
                   onClick={() => setActiveAction(ACTION.RETURN)}
-                  className="rounded-lg border border-warning-200 px-4 py-2 text-sm font-medium text-warning-700 hover:bg-warning-50"
+                  className="rounded-lg border border-warning-line px-4 py-2 text-sm font-medium text-warning-fg hover:bg-warning-soft"
                 >
                   Return
                 </button>
                 <button
                   onClick={() => setActiveAction(ACTION.REJECT)}
-                  className="rounded-lg border border-danger-200 px-4 py-2 text-sm font-medium text-danger-600 hover:bg-danger-50"
+                  className="rounded-lg border border-danger-line px-4 py-2 text-sm font-medium text-danger-fg hover:bg-danger-soft"
                 >
                   Reject
                 </button>
                 <button
                   onClick={() => setActiveAction(ACTION.APPROVE)}
-                  className="rounded-lg bg-success-600 px-4 py-2 text-sm font-medium text-white hover:bg-success-700"
+                  className="rounded-lg bg-success-solid px-4 py-2 text-sm font-medium text-white hover:bg-success-700"
                 >
                   Approve
                 </button>
@@ -647,7 +647,7 @@ export default function ExpenseDetailPage() {
             {claim.status === STATUS.APPROVED && canPay && (
               <button
                 onClick={() => setActiveAction(ACTION.PAY)}
-                className="rounded-lg bg-success-600 px-4 py-2 text-sm font-medium text-white hover:bg-success-700"
+                className="rounded-lg bg-success-solid px-4 py-2 text-sm font-medium text-white hover:bg-success-700"
               >
                 Mark as Processed
               </button>
@@ -655,7 +655,7 @@ export default function ExpenseDetailPage() {
             {canDelete && (
               <button
                 onClick={() => { setDeleteError(''); setConfirmingDelete(true) }}
-                className="inline-flex items-center gap-2 rounded-lg border border-danger-200 px-4 py-2 text-sm font-medium text-danger-600 hover:bg-danger-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-danger-line px-4 py-2 text-sm font-medium text-danger-fg hover:bg-danger-soft"
               >
                 <Trash2 className="h-4 w-4" />
                 Delete
@@ -671,49 +671,49 @@ export default function ExpenseDetailPage() {
       <div className="lg:col-span-8 flex flex-col gap-6 min-w-0">
 
       {/* Claim summary */}
-      <div className="grid grid-cols-2 gap-4 rounded-xl border border-neutral-200 bg-white p-5">
+      <div className="grid grid-cols-2 gap-4 rounded-xl border border-line bg-surface p-5">
         <div>
-          <p className="text-xs font-medium text-neutral-500">Submission Date</p>
-          <p className="mt-0.5 text-sm font-medium text-neutral-800">{formatDate(claim.submission_date)}</p>
+          <p className="text-xs font-medium text-fg-muted">Submission Date</p>
+          <p className="mt-0.5 text-sm font-medium text-fg">{formatDate(claim.submission_date)}</p>
         </div>
         <div>
-          <p className="text-xs font-medium text-neutral-500">Currency</p>
-          <p className="mt-0.5 text-sm font-medium text-neutral-800">{claim.currency}</p>
+          <p className="text-xs font-medium text-fg-muted">Currency</p>
+          <p className="mt-0.5 text-sm font-medium text-fg">{claim.currency}</p>
         </div>
         {claim.vehicle_description && (
           <div>
-            <p className="text-xs font-medium text-neutral-500">Vehicle</p>
-            <p className="mt-0.5 text-sm font-medium text-neutral-800">{claim.vehicle_description}</p>
+            <p className="text-xs font-medium text-fg-muted">Vehicle</p>
+            <p className="mt-0.5 text-sm font-medium text-fg">{claim.vehicle_description}</p>
           </div>
         )}
         {/* Only a mileage claim has km (user, 2026-10-14) — a general expense
             once carried total_km = 0 from a save bug and showed "Total km". */}
         {claim.claim_type === 'MIL' && claim.total_km != null && (
           <div>
-            <p className="text-xs font-medium text-neutral-500">Total km</p>
-            <p className="mt-0.5 text-sm font-mono font-medium text-neutral-800">{Number(claim.total_km).toFixed(1)} km</p>
+            <p className="text-xs font-medium text-fg-muted">Total km</p>
+            <p className="mt-0.5 text-sm font-mono font-medium text-fg">{Number(claim.total_km).toFixed(1)} km</p>
           </div>
         )}
         {notesText && (
           <div className="col-span-2">
-            <p className="text-xs font-medium text-neutral-500">Notes</p>
-            <p className="mt-0.5 whitespace-pre-line text-sm text-neutral-700">{notesText}</p>
+            <p className="text-xs font-medium text-fg-muted">Notes</p>
+            <p className="mt-0.5 whitespace-pre-line text-sm text-fg-secondary">{notesText}</p>
           </div>
         )}
         {/* A custom form carries no lines and no amount (CFM-002). */}
         {!isCfm && (
-        <div className="col-span-2 border-t border-neutral-100 pt-3 mt-1">
+        <div className="col-span-2 border-t border-line-subtle pt-3 mt-1">
           <div className="flex justify-between text-sm">
-            <span className="text-neutral-500">Subtotal (pre-tax)</span>
+            <span className="text-fg-muted">Subtotal (pre-tax)</span>
             <span className="font-mono">{formatAmount(claim.net_amount, claim.currency)}</span>
           </div>
           {Number(claim.tax_amount) > 0 && (
             <div className="flex justify-between text-sm mt-1">
-              <span className="text-neutral-500">Tax (HST)</span>
-              <span className="font-mono text-neutral-600">{formatAmount(claim.tax_amount, claim.currency)}</span>
+              <span className="text-fg-muted">Tax (HST)</span>
+              <span className="font-mono text-fg-secondary">{formatAmount(claim.tax_amount, claim.currency)}</span>
             </div>
           )}
-          <div className="flex justify-between text-sm mt-1 font-semibold border-t border-neutral-100 pt-2">
+          <div className="flex justify-between text-sm mt-1 font-semibold border-t border-line-subtle pt-2">
             <span>Total (Reimbursable)</span>
             <span className="font-mono text-primary-700">{formatAmount(claim.total_amount, claim.currency)}</span>
           </div>
@@ -723,15 +723,15 @@ export default function ExpenseDetailPage() {
 
       {/* Custom form answers, labelled as on the claim PDF (OA.md §6.2) */}
       {isCfm && claim.form_fields && (
-        <div className="rounded-xl border border-neutral-200 bg-white p-5 flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-neutral-700">
+        <div className="rounded-xl border border-line bg-surface p-5 flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-fg-secondary">
             Form Details{claim.form_name ? ` — ${claim.form_name}` : ''}
           </h2>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
             {claim.form_fields.map((f, i) => (
               <div key={i}>
-                <dt className="text-neutral-500">{f.label}</dt>
-                <dd className="whitespace-pre-line text-neutral-800">{f.value || '—'}</dd>
+                <dt className="text-fg-muted">{f.label}</dt>
+                <dd className="whitespace-pre-line text-fg">{f.value || '—'}</dd>
               </div>
             ))}
           </dl>
@@ -740,77 +740,77 @@ export default function ExpenseDetailPage() {
 
       {/* Travel Application details (TRA — no money/line items, has its own PDF) */}
       {claim.claim_type === 'TRA' && (
-        <div className="rounded-xl border border-neutral-200 bg-white p-5 flex flex-col gap-3">
+        <div className="rounded-xl border border-line bg-surface p-5 flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-neutral-700">Travel Application</h2>
+            <h2 className="text-sm font-semibold text-fg-secondary">Travel Application</h2>
             <button onClick={() => regenPdf.mutate()} disabled={regenPdf.isPending}
               className="text-xs font-medium text-primary-700 hover:text-primary-900 disabled:opacity-50">
               {regenPdf.isPending ? 'Generating…' : 'Regenerate PDF'}
             </button>
           </div>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
-            <div><dt className="text-neutral-500">Travelers</dt>
+            <div><dt className="text-fg-muted">Travelers</dt>
               <dd>{(claim.travelers ?? []).map((t) => t.user_name).join(', ') || '—'}</dd></div>
-            <div><dt className="text-neutral-500">Number of Persons</dt>
+            <div><dt className="text-fg-muted">Number of Persons</dt>
               <dd>{(claim.travelers ?? []).length}</dd></div>
-            <div><dt className="text-neutral-500">Destination</dt><dd>{claim.travel_destination || '—'}</dd></div>
-            <div><dt className="text-neutral-500">Dates</dt>
+            <div><dt className="text-fg-muted">Destination</dt><dd>{claim.travel_destination || '—'}</dd></div>
+            <div><dt className="text-fg-muted">Dates</dt>
               <dd>{formatDate(claim.travel_from_date)} → {formatDate(claim.travel_to_date)}</dd></div>
-            <div className="sm:col-span-2"><dt className="text-neutral-500">Reasons</dt><dd>{claim.purpose || '—'}</dd></div>
-            <div className="sm:col-span-2"><dt className="text-neutral-500">Transportation & Accommodation</dt>
+            <div className="sm:col-span-2"><dt className="text-fg-muted">Reasons</dt><dd>{claim.purpose || '—'}</dd></div>
+            <div className="sm:col-span-2"><dt className="text-fg-muted">Transportation & Accommodation</dt>
               <dd>{(claim.transport_modes ?? []).join(', ') || '—'}</dd></div>
-            <div><dt className="text-neutral-500">Leave</dt>
+            <div><dt className="text-fg-muted">Leave</dt>
               <dd>{claim.leave_from_date ? `${formatDate(claim.leave_from_date)} → ${formatDate(claim.leave_to_date)}` : '—'}</dd></div>
-            <div className="sm:col-span-2"><dt className="text-neutral-500">Remarks</dt><dd>{claim.notes || '—'}</dd></div>
+            <div className="sm:col-span-2"><dt className="text-fg-muted">Remarks</dt><dd>{claim.notes || '—'}</dd></div>
           </dl>
         </div>
       )}
 
       {/* Line items (EXP / TRV / CFM — MIL uses the trip log below, TRA has no line items) */}
       {claim.claim_type !== 'MIL' && claim.claim_type !== 'TRA' && claim.line_items.length > 0 && (
-        <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-          <div className="border-b border-neutral-100 px-5 py-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-neutral-700">Line Items</h2>
+        <div className="rounded-xl border border-line bg-surface overflow-hidden">
+          <div className="border-b border-line-subtle px-5 py-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-fg-secondary">Line Items</h2>
             {claim.claim_type === 'TRV' && claim.travel_country && claim.travel_country !== 'CA' && (
-              <span className="text-xs text-neutral-500">Outside Canada ({claim.travel_country}) — no sales tax</span>
+              <span className="text-xs text-fg-muted">Outside Canada ({claim.travel_country}) — no sales tax</span>
             )}
           </div>
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 border-b border-neutral-100">
+            <thead className="bg-surface-subtle border-b border-line-subtle">
               <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500 w-8">#</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500 w-28">Date</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500">Description</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500">Budget Account</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-neutral-500">Total</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-neutral-500">Tax</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-neutral-500">Net</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-fg-muted w-8">#</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-fg-muted w-28">Date</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-fg-muted">Description</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-fg-muted">Budget Account</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-fg-muted">Total</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-fg-muted">Tax</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-fg-muted">Net</th>
               </tr>
             </thead>
             <tbody>
               {claim.line_items.map((li) => (
-                <tr key={li.id} className="border-b border-neutral-100">
-                  <td className="px-4 py-2 text-xs text-neutral-400 font-mono">{li.line_number}</td>
-                  <td className="px-4 py-2 text-xs text-neutral-600">
+                <tr key={li.id} className="border-b border-line-subtle">
+                  <td className="px-4 py-2 text-xs text-fg-muted font-mono">{li.line_number}</td>
+                  <td className="px-4 py-2 text-xs text-fg-secondary">
                     {li.period_from
                       ? <>{formatDate(li.period_from)} –<br />{formatDate(li.period_to!)}</>
                       : formatDate(li.expense_date)}
                   </td>
-                  <td className="px-4 py-2 text-xs text-neutral-800">
+                  <td className="px-4 py-2 text-xs text-fg">
                     {li.description}
                     {li.period_from && (
-                      <div className="text-neutral-500">{li.period_days} days × {formatAmount(li.daily_rate ?? 0, claim.currency)}</div>
+                      <div className="text-fg-muted">{li.period_days} days × {formatAmount(li.daily_rate ?? 0, claim.currency)}</div>
                     )}
                     {claim.claim_type === 'TRV' && li.tax_code && (
-                      <div className="text-neutral-500">Tax {li.tax_code}</div>
+                      <div className="text-fg-muted">Tax {li.tax_code}</div>
                     )}
                     {li.invoice_amount != null && (
-                      <div className="text-neutral-500">Invoice {formatAmount(li.invoice_amount, claim.currency)}</div>
+                      <div className="text-fg-muted">Invoice {formatAmount(li.invoice_amount, claim.currency)}</div>
                     )}
                   </td>
-                  <td className="px-4 py-2 text-xs text-neutral-600">{li.budget_account_code} — {li.budget_account_name}</td>
+                  <td className="px-4 py-2 text-xs text-fg-secondary">{li.budget_account_code} — {li.budget_account_name}</td>
                   <td className="px-4 py-2 text-right text-xs font-mono">{formatAmount(li.total_amount, claim.currency)}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono text-neutral-500">{formatAmount(li.tax_amount, claim.currency)}</td>
+                  <td className="px-4 py-2 text-right text-xs font-mono text-fg-muted">{formatAmount(li.tax_amount, claim.currency)}</td>
                   <td className="px-4 py-2 text-right text-xs font-mono font-medium text-primary-700">{formatAmount(li.net_amount, claim.currency)}</td>
                 </tr>
               ))}
@@ -821,34 +821,34 @@ export default function ExpenseDetailPage() {
 
       {/* Trip items (MIL) */}
       {claim.claim_type === 'MIL' && claim.trip_items.length > 0 && (
-        <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-          <div className="border-b border-neutral-100 px-5 py-3">
-            <h2 className="text-sm font-semibold text-neutral-700">Trip Log</h2>
+        <div className="rounded-xl border border-line bg-surface overflow-hidden">
+          <div className="border-b border-line-subtle px-5 py-3">
+            <h2 className="text-sm font-semibold text-fg-secondary">Trip Log</h2>
           </div>
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 border-b border-neutral-100">
+            <thead className="bg-surface-subtle border-b border-line-subtle">
               <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500 w-8">#</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500 w-28">Date</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500">Route</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500">Purpose</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-neutral-500">km</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-neutral-500">Rate</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-neutral-500">Amount</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-fg-muted w-8">#</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-fg-muted w-28">Date</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-fg-muted">Route</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-fg-muted">Purpose</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-fg-muted">km</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-fg-muted">Rate</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-fg-muted">Amount</th>
               </tr>
             </thead>
             <tbody>
               {claim.trip_items.map((ti) => (
-                <tr key={ti.id} className="border-b border-neutral-100">
-                  <td className="px-4 py-2 text-xs text-neutral-400 font-mono">{ti.trip_number}</td>
-                  <td className="px-4 py-2 text-xs text-neutral-600">{formatDate(ti.trip_date)}</td>
-                  <td className="px-4 py-2 text-xs text-neutral-800">
+                <tr key={ti.id} className="border-b border-line-subtle">
+                  <td className="px-4 py-2 text-xs text-fg-muted font-mono">{ti.trip_number}</td>
+                  <td className="px-4 py-2 text-xs text-fg-secondary">{formatDate(ti.trip_date)}</td>
+                  <td className="px-4 py-2 text-xs text-fg">
                     {ti.from_location} → {ti.to_location}
-                    {ti.is_round_trip && <span className="ml-1.5 text-[10px] text-neutral-400 bg-neutral-100 rounded px-1 py-0.5">Round trip</span>}
+                    {ti.is_round_trip && <span className="ml-1.5 text-2xs text-fg-muted bg-surface-sunken rounded px-1 py-0.5">Round trip</span>}
                   </td>
-                  <td className="px-4 py-2 text-xs text-neutral-600">{ti.purpose}</td>
+                  <td className="px-4 py-2 text-xs text-fg-secondary">{ti.purpose}</td>
                   <td className="px-4 py-2 text-right text-xs font-mono">{Number(ti.distance_km).toFixed(1)}{ti.is_round_trip ? ' ×2' : ''}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono text-neutral-500">${Number(ti.rate_per_km).toFixed(4)}</td>
+                  <td className="px-4 py-2 text-right text-xs font-mono text-fg-muted">${Number(ti.rate_per_km).toFixed(4)}</td>
                   <td className="px-4 py-2 text-right text-xs font-mono font-medium text-primary-700">{formatAmount(ti.amount, claim.currency)}</td>
                 </tr>
               ))}
@@ -859,7 +859,7 @@ export default function ExpenseDetailPage() {
 
       {/* Attachment requirement hint */}
       {missingAttachment && (
-        <div className="flex items-start gap-3 rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-800">
+        <div className="flex items-start gap-3 rounded-lg border border-warning-line bg-warning-soft px-4 py-3 text-sm text-warning-fg">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>At least one receipt attachment is required before this claim can be submitted.</span>
         </div>
@@ -882,23 +882,23 @@ export default function ExpenseDetailPage() {
 
         {/* Approval timeline — every action on the claim, with its comment */}
         {claim.approval_events.length > 0 && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-5">
-            <h2 className="mb-4 text-sm font-semibold text-neutral-700">Approval Timeline</h2>
+          <div className="rounded-xl border border-line bg-surface p-5">
+            <h2 className="mb-4 text-sm font-semibold text-fg-secondary">Approval Timeline</h2>
             <div className="space-y-3">
               {claim.approval_events.map((evt) => (
                 <div key={evt.id} className="flex items-start gap-3">
-                  <div className="mt-0.5 shrink-0">{ACTION_ICONS[evt.action] ?? <CheckCircle className="h-4 w-4 text-neutral-400" />}</div>
+                  <div className="mt-0.5 shrink-0">{ACTION_ICONS[evt.action] ?? <CheckCircle className="h-4 w-4 text-fg-muted" />}</div>
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-x-2">
-                      <span className="text-sm font-medium text-neutral-800">{evt.actor_name}</span>
-                      <span className="text-xs text-neutral-500">
+                      <span className="text-sm font-medium text-fg">{evt.actor_name}</span>
+                      <span className="text-xs text-fg-muted">
                         {ACTION_LABELS[evt.action] ?? evt.action}
                         {stepLabel(evt) && ` at ${stepLabel(evt)}`}
                       </span>
                     </div>
-                    <p className="text-xs text-neutral-400">{formatDate(evt.created_at)}</p>
+                    <p className="text-xs text-fg-muted">{formatDate(evt.created_at)}</p>
                     {evt.comment && (
-                      <p className="mt-1 whitespace-pre-line rounded bg-neutral-50 px-2 py-1.5 text-xs text-neutral-700">{evt.comment}</p>
+                      <p className="mt-1 whitespace-pre-line rounded bg-surface-subtle px-2 py-1.5 text-xs text-fg-secondary">{evt.comment}</p>
                     )}
                   </div>
                 </div>

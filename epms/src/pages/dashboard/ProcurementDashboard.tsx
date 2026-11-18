@@ -5,18 +5,18 @@ import { formatAmount, formatDate } from '@/lib/utils'
 import { SortTh, useSortableRows } from '@uniops/shell'
 
 const PO_STATUS_STYLES: Record<string, string> = {
-  draft:      'bg-neutral-100 text-neutral-600',
-  submitted:  'bg-warning-100 text-warning-700',
-  in_review:  'bg-blue-100 text-blue-700',
-  approved:   'bg-success-100 text-success-700',
+  draft:      'bg-surface-sunken text-fg-secondary',
+  submitted:  'bg-warning-soft text-warning-fg',
+  in_review:  'bg-info-soft text-info-fg',
+  approved:   'bg-success-soft text-success-fg',
   issued:     'bg-primary-100 text-primary-700',
-  closed:     'bg-neutral-100 text-neutral-500',
-  cancelled:  'bg-danger-100 text-danger-700',
+  closed:     'bg-surface-sunken text-fg-muted',
+  cancelled:  'bg-danger-soft text-danger-fg',
 }
 
 function PoStatusBadge({ status }: { status: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${PO_STATUS_STYLES[status] ?? 'bg-neutral-100 text-neutral-600'}`}>
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${PO_STATUS_STYLES[status] ?? 'bg-surface-sunken text-fg-secondary'}`}>
       {status.replace('_', ' ')}
     </span>
   )
@@ -37,7 +37,7 @@ export default function ProcurementDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-neutral-900">Procurement Dashboard</h1>
+      <h1 className="text-2xl font-bold text-fg">Procurement Dashboard</h1>
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -56,36 +56,36 @@ export default function ProcurementDashboard() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Recent POs table */}
         <div className="lg:col-span-7">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-neutral-900">Recent Purchase Orders</h2>
+              <h2 className="text-base font-semibold text-fg">Recent Purchase Orders</h2>
               <Link to="/po" className="text-xs text-primary-600 hover:underline">View all →</Link>
             </div>
             {recentPos.length === 0 ? (
-              <p className="py-8 text-center text-sm text-neutral-400">No purchase orders yet.</p>
+              <p className="py-8 text-center text-sm text-fg-muted">No purchase orders yet.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-neutral-100 text-left">
-                      <SortTh label="PO #" sortKey="number" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                      <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                      <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                      <SortTh label="Amount" sortKey="total" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-neutral-500" />
-                      <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
+                    <tr className="border-b border-line-subtle text-left">
+                      <SortTh label="PO #" sortKey="number" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                      <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                      <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                      <SortTh label="Amount" sortKey="total" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
+                      <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-50">
+                  <tbody className="divide-y divide-line-subtle">
                     {recentPos.map((po) => (
-                      <tr key={po.id} className="group hover:bg-neutral-50">
+                      <tr key={po.id} className="group hover:bg-surface-subtle">
                         <td className="py-2 pr-3">
                           <Link to={`/po/${po.id}`} className="font-mono text-xs text-primary-600 hover:underline">
                             {po.number}
                           </Link>
                         </td>
-                        <td className="py-2 pr-3 text-neutral-700 max-w-[140px] truncate">{po.title}</td>
-                        <td className="py-2 pr-3 text-neutral-500 max-w-[120px] truncate">{po.vendor_name}</td>
-                        <td className="py-2 pr-3 text-right font-mono text-neutral-900">
+                        <td className="py-2 pr-3 text-fg-secondary max-w-[140px] truncate">{po.title}</td>
+                        <td className="py-2 pr-3 text-fg-muted max-w-[120px] truncate">{po.vendor_name}</td>
+                        <td className="py-2 pr-3 text-right font-mono text-fg">
                           {formatAmount(Number(po.total), po.currency)}
                         </td>
                         <td className="py-2"><PoStatusBadge status={po.status} /></td>
@@ -100,20 +100,20 @@ export default function ProcurementDashboard() {
 
         {/* Quick links */}
         <div className="lg:col-span-5">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
-            <h2 className="mb-4 text-base font-semibold text-neutral-900">Quick Actions</h2>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+            <h2 className="mb-4 text-base font-semibold text-fg">Quick Actions</h2>
             <div className="flex flex-col gap-3">
               <Link to="/po/new" className="flex items-center justify-between rounded-lg bg-primary-600 px-4 py-3 text-sm font-semibold text-white hover:bg-primary-700 transition-colors">
                 <span>New Purchase Order</span><span>→</span>
               </Link>
-              <Link to="/po" className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors">
-                <span>View All POs</span><span className="text-neutral-400">→</span>
+              <Link to="/po" className="flex items-center justify-between rounded-lg border border-line bg-surface px-4 py-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors">
+                <span>View All POs</span><span className="text-fg-muted">→</span>
               </Link>
-              <Link to="/gr" className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors">
-                <span>Goods Receipts</span><span className="text-neutral-400">→</span>
+              <Link to="/gr" className="flex items-center justify-between rounded-lg border border-line bg-surface px-4 py-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors">
+                <span>Goods Receipts</span><span className="text-fg-muted">→</span>
               </Link>
-              <Link to="/invoices" className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors">
-                <span>Invoices</span><span className="text-neutral-400">→</span>
+              <Link to="/invoices" className="flex items-center justify-between rounded-lg border border-line bg-surface px-4 py-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors">
+                <span>Invoices</span><span className="text-fg-muted">→</span>
               </Link>
             </div>
           </div>

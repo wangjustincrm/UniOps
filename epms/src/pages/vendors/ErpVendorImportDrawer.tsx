@@ -90,53 +90,53 @@ export function ErpVendorImportDrawer({ vendorCategories, onClose }: ErpVendorIm
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex justify-end">
-      <div className="bg-white w-full max-w-3xl h-full overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
+      <div className="bg-surface w-full max-w-3xl h-full overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between border-b border-line px-4 py-3">
           <h2 className="text-sm font-semibold">Import vendors from ERP</h2>
-          <button onClick={onClose}><X className="h-4 w-4 text-neutral-500" /></button>
+          <button onClick={onClose}><X className="h-4 w-4 text-fg-muted" /></button>
         </div>
 
         {result ? (
           <div className="flex-1 overflow-auto p-4 space-y-3">
-            <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm">
+            <div className="rounded-lg border border-success-line bg-success-soft px-4 py-3 text-sm">
               <strong>{result.created} created</strong>, {result.errors.length} errors.
             </div>
             {result.errors.length > 0 && (
-              <ul className="text-xs text-amber-700 list-disc pl-5">
+              <ul className="text-xs text-warning-fg list-disc pl-5">
                 {result.errors.map((e, i) => <li key={i}>{e.erp_supplier_code}: {e.reason}</li>)}
               </ul>
             )}
-            <p className="text-xs text-neutral-500">Vendor contact emails are placeholders (<code>code@erp.local</code>). Update them in the vendor list.</p>
-            <button onClick={onClose} className="rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white">Done</button>
+            <p className="text-xs text-fg-muted">Vendor contact emails are placeholders (<code>code@erp.local</code>). Update them in the vendor list.</p>
+            <button onClick={onClose} className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white">Done</button>
           </div>
         ) : (
           <>
-            <div className="border-b border-neutral-200 px-4 py-3 space-y-2">
+            <div className="border-b border-line px-4 py-3 space-y-2">
               <div className="grid grid-cols-3 gap-2">
                 <label className="text-xs">Category
-                  <select className="block w-full mt-1 rounded border border-neutral-200 px-2 py-1 text-sm"
+                  <select className="block w-full mt-1 rounded border border-line px-2 py-1 text-sm"
                     value={category} onChange={e => setCategory(e.target.value)}>
                     {vendorCategories.map(c => <option key={c} value={c}>{c}</option>)}
                     {!vendorCategories.includes('other') && <option value="other">other</option>}
                   </select>
                 </label>
                 <label className="text-xs">Payment terms
-                  <select className="block w-full mt-1 rounded border border-neutral-200 px-2 py-1 text-sm"
+                  <select className="block w-full mt-1 rounded border border-line px-2 py-1 text-sm"
                     value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)}>
                     {PRESET_PAYMENT_TERMS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
                 </label>
                 <label className="text-xs">Currency
-                  <select className="block w-full mt-1 rounded border border-neutral-200 px-2 py-1 text-sm"
+                  <select className="block w-full mt-1 rounded border border-line px-2 py-1 text-sm"
                     value={currency} onChange={e => setCurrency(e.target.value)}>
                     {['CAD','USD','EUR','CNY'].map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </label>
               </div>
               <div className="flex items-center gap-2">
-                <input className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+                <input className="flex-1 rounded-lg border border-line px-3 py-2 text-sm"
                   placeholder="Search code or name…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
-                <label className="flex items-center gap-1 text-xs text-neutral-600">
+                <label className="flex items-center gap-1 text-xs text-fg-secondary">
                   <input type="checkbox" checked={excludeImported} onChange={e => { setExcludeImported(e.target.checked); setPage(1) }} />
                   Only not-imported
                 </label>
@@ -144,29 +144,29 @@ export function ErpVendorImportDrawer({ vendorCategories, onClose }: ErpVendorIm
             </div>
 
             <div className="flex-1 overflow-auto p-4">
-              {isLoading ? <div className="text-sm text-neutral-400">Loading…</div>
+              {isLoading ? <div className="text-sm text-fg-muted">Loading…</div>
                 : loadError ? (
-                    <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    <div className="rounded-lg border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
                       Could not load ERP suppliers: {loadError instanceof Error ? loadError.message : String(loadError)}
                     </div>
                   )
-                : !data?.items.length ? <div className="text-sm text-neutral-400">No suppliers.</div>
+                : !data?.items.length ? <div className="text-sm text-fg-muted">No suppliers.</div>
                 : <table className="w-full text-sm">
-                    <thead className="border-b border-neutral-200">
+                    <thead className="border-b border-line">
                       <tr>
                         <th className="px-2 py-2"></th>
-                        <SortTh label="Code" sortKey="erp_supplier_code" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
-                        <SortTh label="Name" sortKey="supplier_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
-                        <SortTh label="Tel" sortKey="supplier_tel" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
+                        <SortTh label="Code" sortKey="erp_supplier_code" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted" />
+                        <SortTh label="Name" sortKey="supplier_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted" />
+                        <SortTh label="Tel" sortKey="supplier_tel" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted" />
                       </tr>
                     </thead>
                     <tbody>
                       {data.items.map(s => (
-                        <tr key={s.erp_supplier_code} className="border-b border-neutral-100">
+                        <tr key={s.erp_supplier_code} className="border-b border-line-subtle">
                           <td className="px-2 py-2"><input type="checkbox" checked={selected.has(s.erp_supplier_code)} onChange={() => toggle(s.erp_supplier_code)} /></td>
                           <td className="px-2 py-2 font-mono text-xs">{s.erp_supplier_code}</td>
                           <td className="px-2 py-2">{s.supplier_name}</td>
-                          <td className="px-2 py-2 text-xs text-neutral-500">{s.supplier_tel}</td>
+                          <td className="px-2 py-2 text-xs text-fg-muted">{s.supplier_tel}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -174,28 +174,28 @@ export function ErpVendorImportDrawer({ vendorCategories, onClose }: ErpVendorIm
               }
             </div>
 
-            <div className="border-t border-neutral-200 px-4 py-2 flex items-center justify-between text-xs text-neutral-500">
+            <div className="border-t border-line px-4 py-2 flex items-center justify-between text-xs text-fg-muted">
               <span>{total === 0 ? 'No suppliers' : `Showing ${rangeStart}–${rangeEnd} of ${total.toLocaleString()}`}</span>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page <= 1 || isLoading}
-                  className="rounded border border-neutral-200 px-2 py-1 disabled:opacity-40">Prev</button>
+                  className="rounded border border-line px-2 py-1 disabled:opacity-40">Prev</button>
                 <span>Page {page} / {totalPages}</span>
                 <button
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page >= totalPages || isLoading}
-                  className="rounded border border-neutral-200 px-2 py-1 disabled:opacity-40">Next</button>
+                  className="rounded border border-line px-2 py-1 disabled:opacity-40">Next</button>
               </div>
             </div>
 
-            <div className="border-t border-neutral-200 px-4 py-3 flex items-center justify-between">
-              <span className="text-xs text-neutral-500">{selected.size} selected · contact_email will be placeholder</span>
+            <div className="border-t border-line px-4 py-3 flex items-center justify-between">
+              <span className="text-xs text-fg-muted">{selected.size} selected · contact_email will be placeholder</span>
               <div className="flex items-center gap-2">
-                {error && <span className="text-xs text-red-600">{error}</span>}
-                <button onClick={onClose} className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">Cancel</button>
+                {error && <span className="text-xs text-danger-fg">{error}</span>}
+                <button onClick={onClose} className="rounded-lg border border-line bg-surface px-3 py-2 text-sm">Cancel</button>
                 <button onClick={submit} disabled={!selected.size || submitting}
-                  className="rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white disabled:opacity-60 flex items-center gap-1.5">
+                  className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 flex items-center gap-1.5">
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   Import {selected.size} vendor{selected.size === 1 ? '' : 's'}
                 </button>

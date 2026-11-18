@@ -29,7 +29,7 @@ import { financeApi } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-const linkBtn = 'text-xs font-medium text-[#085E5E] hover:underline'
+const linkBtn = 'text-xs font-medium text-primary-700 hover:underline'
 const PAGE = 200
 
 interface MirrorState {
@@ -287,11 +287,11 @@ export default function ApReconciliationPage() {
           <div className={cn(
             'mb-4 flex flex-wrap items-center gap-2 rounded-lg border px-4 py-2.5 text-sm',
             mirror.tie_out_ok === false
-              ? 'border-danger-200 bg-danger-50 text-danger-900'
-              : 'border-neutral-200 bg-neutral-50 text-neutral-600')}>
+              ? 'border-danger-line bg-danger-soft text-danger-fg'
+              : 'border-line bg-surface-subtle text-fg-secondary')}>
             {mirror.tie_out_ok === false
               ? <AlertTriangle className="h-4 w-4 shrink-0" />
-              : <CheckCircle2 className="h-4 w-4 shrink-0 text-[#085E5E]" />}
+              : <CheckCircle2 className="h-4 w-4 shrink-0 text-primary-700" />}
             {mirror.synced_at ? (
               <span>
                 NC mirror as of <strong>{formatDateTime(mirror.synced_at)}</strong>
@@ -306,24 +306,24 @@ export default function ApReconciliationPage() {
         )}
 
         <div className="mb-4 flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-1.5 text-sm text-neutral-600">
+          <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
             <input type="checkbox" checked={includePaid}
                    onChange={(e) => { setIncludePaid(e.target.checked); setOffset(0) }} />
             Include invoices we have marked paid
           </label>
           <button onClick={exportCsv}
-                  className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50">
+                  className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-line-strong px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle">
             <Download className="h-4 w-4" /> Export CSV
           </button>
         </div>
 
         {loadingSummary && !summary ? (
-          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
+          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
         ) : (
-          <div className="mb-5 overflow-x-auto rounded-lg border border-neutral-200">
+          <div className="mb-5 overflow-x-auto rounded-lg border border-line">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
-                <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
+                <tr className="border-b border-line-subtle bg-surface-subtle text-xs text-fg-muted">
                   <th className="px-3 py-2 text-left font-medium">Category</th>
                   <th className="px-3 py-2 text-right font-medium">Invoices</th>
                   <th className="px-3 py-2 text-right font-medium">Our total</th>
@@ -336,19 +336,19 @@ export default function ApReconciliationPage() {
                   const n = r?.invoices ?? 0
                   return (
                     <tr key={c.key}
-                        className={cn('border-t border-neutral-100',
+                        className={cn('border-t border-line-subtle',
                                       category === c.key && 'bg-primary-50/60',
-                                      n === 0 && 'text-neutral-400')}>
+                                      n === 0 && 'text-fg-muted')}>
                       <td className="px-3 py-2">
-                        <button className={cn(linkBtn, n === 0 && 'text-neutral-400 hover:no-underline')}
+                        <button className={cn(linkBtn, n === 0 && 'text-fg-muted hover:no-underline')}
                                 disabled={n === 0} onClick={() => pick(c.key)}>
                           {c.label}
                         </button>
                         {c.tone === 'bad' && n > 0 && (
-                          <span className="ml-2 rounded bg-danger-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-danger-700">action</span>
+                          <span className="ml-2 rounded bg-danger-soft px-1.5 py-0.5 text-2xs font-semibold uppercase text-danger-fg">action</span>
                         )}
                         {c.tone === 'warn' && n > 0 && (
-                          <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800">check</span>
+                          <span className="ml-2 rounded bg-warning-soft px-1.5 py-0.5 text-2xs font-semibold uppercase text-warning-fg">check</span>
                         )}
                       </td>
                       <td className="px-3 py-2 text-right font-mono tabular-nums">{n.toLocaleString()}</td>
@@ -363,13 +363,13 @@ export default function ApReconciliationPage() {
         )}
 
         {active && (
-          <p className="mb-3 max-w-3xl text-xs leading-relaxed text-neutral-500">{active.help}</p>
+          <p className="mb-3 max-w-3xl text-xs leading-relaxed text-fg-muted">{active.help}</p>
         )}
 
-        <div className="overflow-x-auto rounded-lg border border-neutral-200">
+        <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full min-w-[900px] text-sm">
             <thead>
-              <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
+              <tr className="border-b border-line-subtle bg-surface-subtle text-xs text-fg-muted">
                 <SortTh label="AP No." sortKey="ap_invoice_number" sort={itemSort} onSort={onItemSort} className="px-3 py-2 font-medium text-left" />
                 <SortTh label="Vendor" sortKey="vendor_name" sort={itemSort} onSort={onItemSort} className="px-3 py-2 font-medium text-left" />
                 <SortTh label="Our invoice no." sortKey="vendor_invoice_number" sort={itemSort} onSort={onItemSort} className="px-3 py-2 font-medium text-left" />
@@ -398,55 +398,55 @@ export default function ApReconciliationPage() {
             <tbody>
               {loadingItems && !items ? (
                 <tr><td colSpan={11} className="px-3 py-8 text-center">
-                  <Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" />
+                  <Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" />
                 </td></tr>
               ) : itemsError ? (
                 // A failed request must never read as "nothing here" — that is
                 // how a summary saying 145 sits next to an empty table with no
                 // hint that anything went wrong.
-                <tr><td colSpan={11} className="px-3 py-8 text-center text-danger-700">
+                <tr><td colSpan={11} className="px-3 py-8 text-center text-danger-fg">
                   Could not load this category: {String((itemsError as Error).message ?? itemsError)}
                 </td></tr>
               ) : (items?.items.length ?? 0) === 0 ? (
-                <tr><td colSpan={11} className="px-3 py-8 text-center text-neutral-400">
+                <tr><td colSpan={11} className="px-3 py-8 text-center text-fg-muted">
                   Nothing in this category.
                 </td></tr>
               ) : items!.items.map((r) => (
-                <tr key={r.id} className="border-t border-neutral-100 hover:bg-neutral-50/60">
+                <tr key={r.id} className="border-t border-line-subtle hover:bg-surface-subtle/60">
                   <td className="px-3 py-2 font-mono text-xs">{r.ap_invoice_number ?? '—'}</td>
                   <td className="px-3 py-2">{r.vendor_name ?? '—'}</td>
                   <td className="px-3 py-2 font-mono text-xs">{r.vendor_invoice_number ?? '—'}</td>
                   <td className="px-3 py-2 text-right font-mono tabular-nums">{money(r.total_amount)}</td>
-                  <td className="px-3 py-2 text-xs text-neutral-600">{day(r.invoice_date)}</td>
-                  <td className="px-3 py-2 text-xs text-neutral-600">{day(r.due_date)}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-neutral-500">
+                  <td className="px-3 py-2 text-xs text-fg-secondary">{day(r.invoice_date)}</td>
+                  <td className="px-3 py-2 text-xs text-fg-secondary">{day(r.due_date)}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-fg-muted">
                     {r.po_number ?? (r.unapproved_bill_no
-                      ? <span className="text-amber-700">{r.unapproved_bill_no}</span>
+                      ? <span className="text-warning-fg">{r.unapproved_bill_no}</span>
                       : '—')}
                   </td>
                   {category === 'invoice_no_mismatch' ? (
                     <>
-                      <td className="px-3 py-2 font-mono text-xs text-amber-800">
+                      <td className="px-3 py-2 font-mono text-xs text-warning-fg">
                         {r.nc_amount_match?.invoice_no ?? '—'}
                       </td>
-                      <td className="px-3 py-2 font-mono text-xs text-neutral-500">
+                      <td className="px-3 py-2 font-mono text-xs text-fg-muted">
                         {r.nc_amount_match?.bill_no ?? '—'}
                       </td>
                       {/* A small gap means the same invoice keyed wrong; a large
                           one may just be next period's identical charge. */}
                       <td className={cn('px-3 py-2 text-right font-mono tabular-nums text-xs',
                                         (r.nc_amount_match?.day_gap ?? 0) > 60
-                                          ? 'text-neutral-400' : 'text-neutral-700')}>
+                                          ? 'text-fg-muted' : 'text-fg-secondary')}>
                         {r.nc_amount_match?.day_gap ?? '—'}d
                       </td>
                     </>
                   ) : (
                     <>
-                      <td className="px-3 py-2 font-mono text-xs text-neutral-500">{r.nc?.bill_no ?? '—'}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-fg-muted">{r.nc?.bill_no ?? '—'}</td>
                       <td className="px-3 py-2 text-right font-mono tabular-nums">
                         {money(r.nc?.money_cr)}
                         {r.nc?.amount_differs && (
-                          <div className={cn('text-[11px]', r.nc.is_credit ? 'text-neutral-500' : 'text-amber-700')}>
+                          <div className={cn('text-2xs', r.nc.is_credit ? 'text-fg-muted' : 'text-warning-fg')}>
                             {r.nc.is_credit
                               ? 'credit note'
                               : <>{Number(r.nc.amount_gap) > 0 ? '+' : ''}{money(r.nc.amount_gap)} vs ours</>}
@@ -462,15 +462,15 @@ export default function ApReconciliationPage() {
           </table>
         </div>
 
-        <div className="mt-3 flex items-center gap-3 text-sm text-neutral-500">
+        <div className="mt-3 flex items-center gap-3 text-sm text-fg-muted">
           <span>{(items?.total ?? 0).toLocaleString()} invoices</span>
           <div className="ml-auto flex gap-2">
             <button disabled={offset === 0}
                     onClick={() => setOffset(Math.max(0, offset - PAGE))}
-                    className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm disabled:opacity-40">Prev</button>
+                    className="rounded-lg border border-line-strong px-3 py-1.5 text-sm disabled:opacity-40">Prev</button>
             <button disabled={offset + PAGE >= (items?.total ?? 0)}
                     onClick={() => setOffset(offset + PAGE)}
-                    className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm disabled:opacity-40">Next</button>
+                    className="rounded-lg border border-line-strong px-3 py-1.5 text-sm disabled:opacity-40">Next</button>
           </div>
         </div>
 
@@ -481,23 +481,23 @@ export default function ApReconciliationPage() {
             invoices out of the open list, which is the cash-flow figure. */}
         <div className="mt-8">
           <button onClick={() => setShowGaps((v) => !v)}
-                  className="inline-flex items-center gap-2 text-sm font-medium text-neutral-700 hover:text-[#085E5E]">
+                  className="inline-flex items-center gap-2 text-sm font-medium text-fg-secondary hover:text-primary-700">
             <Scale className="h-4 w-4" />
             Matched, but NC billed a different amount
-            <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold',
+            <span className={cn('rounded px-1.5 py-0.5 text-2xs font-semibold',
                                 (gaps?.total ?? 0) > 0
-                                  ? 'bg-danger-100 text-danger-700' : 'bg-neutral-100 text-neutral-500')}>
+                                  ? 'bg-danger-soft text-danger-fg' : 'bg-surface-sunken text-fg-muted')}>
               {gaps?.total ?? 0}
             </span>
           </button>
           {showGaps && (
             <>
-              <p className="mt-2 max-w-3xl text-xs leading-relaxed text-neutral-500">
+              <p className="mt-2 max-w-3xl text-xs leading-relaxed text-fg-muted">
                 Same invoice number, same supplier, different money. These pass every other
                 check on this page — matched, on NC&rsquo;s books, shown as reconciled — which is
                 what makes them worth looking at.{' '}
                 {gaps && gaps.nc_billed_more.invoices > gaps.nc_billed_less.invoices * 3 && (
-                  <span className="text-neutral-600">
+                  <span className="text-fg-secondary">
                     <strong>NC is higher in {gaps.nc_billed_more.invoices} of {gaps.total}</strong>,
                     by {money(gaps.nc_billed_more.amount)} in total. That is a direction, not keying
                     noise: freight, deposits and environmental fees printed on an invoice fall
@@ -509,10 +509,10 @@ export default function ApReconciliationPage() {
                     differ and are excluded — a draft can still be edited.</>
                 )}
               </p>
-              <div className="mt-3 overflow-x-auto rounded-lg border border-neutral-200">
+              <div className="mt-3 overflow-x-auto rounded-lg border border-line">
                 <table className="w-full min-w-[860px] text-sm">
                   <thead>
-                    <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
+                    <tr className="border-b border-line-subtle bg-surface-subtle text-xs text-fg-muted">
                       <SortTh label="AP No." sortKey="ap_invoice_number" sort={gapSort.sort} onSort={gapSort.onSort} className="px-3 py-2 font-medium text-left" />
                       <SortTh label="Vendor" sortKey="vendor" sort={gapSort.sort} onSort={gapSort.onSort} className="px-3 py-2 font-medium text-left" />
                       <SortTh label="Invoice no." sortKey="invoice" sort={gapSort.sort} onSort={gapSort.onSort} className="px-3 py-2 font-medium text-left" />
@@ -526,40 +526,40 @@ export default function ApReconciliationPage() {
                   </thead>
                   <tbody>
                     {(gaps?.items.length ?? 0) === 0 ? (
-                      <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">
+                      <tr><td colSpan={9} className="px-3 py-6 text-center text-fg-muted">
                         Every matched invoice agrees with NC to the cent.
                       </td></tr>
                     ) : gapSort.rows.map((r) => (
-                      <tr key={r.id} className="border-t border-neutral-100 hover:bg-neutral-50/60">
+                      <tr key={r.id} className="border-t border-line-subtle hover:bg-surface-subtle/60">
                         <td className="px-3 py-2 font-mono text-xs">{r.ap_invoice_number ?? '—'}</td>
                         <td className="px-3 py-2">{r.vendor_name ?? '—'}</td>
                         <td className="px-3 py-2 font-mono text-xs">{r.vendor_invoice_number ?? '—'}</td>
                         {/* Every one of these carries a PO — so the money that
                             went missing is money against a purchase order. */}
-                        <td className="px-3 py-2 font-mono text-xs text-neutral-500">{r.po_number ?? '—'}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-fg-muted">{r.po_number ?? '—'}</td>
                         <td className="px-3 py-2 text-right font-mono tabular-nums">{money(r.total_amount)}</td>
                         <td className="px-3 py-2 text-right font-mono tabular-nums">{money(r.nc_money_cr)}</td>
                         <td className={cn('px-3 py-2 text-right font-mono tabular-nums font-semibold',
-                                          r.is_credit ? 'text-neutral-500' : 'text-danger-700')}>
+                                          r.is_credit ? 'text-fg-muted' : 'text-danger-fg')}>
                           {Number(r.amount_gap) > 0 ? '+' : ''}{money(r.amount_gap)}
                         </td>
-                        <td className="px-3 py-2 font-mono text-xs text-neutral-500">
+                        <td className="px-3 py-2 font-mono text-xs text-fg-muted">
                           {r.nc_bill_no ?? '—'}
                           {(r.nc_lines ?? 1) > 1 && (
-                            <span className="ml-1 text-[10px] text-neutral-400">{r.nc_lines} lines</span>
+                            <span className="ml-1 text-2xs text-fg-muted">{r.nc_lines} lines</span>
                           )}
                         </td>
                         <td className="px-3 py-2 text-xs">
                           {r.is_credit ? (
-                            <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] font-semibold text-neutral-600">
+                            <span className="rounded bg-surface-strong px-1.5 py-0.5 text-2xs font-semibold text-fg-secondary">
                               credit note
                             </span>
                           ) : r.category === 'in_nc_open' ? (
-                            <span className="text-neutral-600">open · {money(r.nc_money_bal)}</span>
+                            <span className="text-fg-secondary">open · {money(r.nc_money_bal)}</span>
                           ) : (
                             // Already paid at NC's figure — nothing left to
                             // correct on the money, only on our record.
-                            <span className="text-neutral-400">settled</span>
+                            <span className="text-fg-muted">settled</span>
                           )}
                         </td>
                       </tr>
@@ -576,27 +576,27 @@ export default function ApReconciliationPage() {
             competes with the reconciliation counts. */}
         <div className="mt-8">
           <button onClick={() => setShowAnomalies((v) => !v)}
-                  className="inline-flex items-center gap-2 text-sm font-medium text-neutral-700 hover:text-[#085E5E]">
+                  className="inline-flex items-center gap-2 text-sm font-medium text-fg-secondary hover:text-primary-700">
             <CalendarX2 className="h-4 w-4" />
             Impossible invoice dates
-            <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold',
+            <span className={cn('rounded px-1.5 py-0.5 text-2xs font-semibold',
                                 (anomalies?.total ?? 0) > 0
-                                  ? 'bg-amber-100 text-amber-800' : 'bg-neutral-100 text-neutral-500')}>
+                                  ? 'bg-warning-soft text-warning-fg' : 'bg-surface-sunken text-fg-muted')}>
               {anomalies?.total ?? 0}
             </span>
           </button>
           {showAnomalies && (
             <>
-              <p className="mt-2 max-w-3xl text-xs leading-relaxed text-neutral-500">
+              <p className="mt-2 max-w-3xl text-xs leading-relaxed text-fg-muted">
                 A due date before the invoice date, or an invoice dated in the future — almost
                 always a day/month swap out of OCR. These feed the cash-flow buckets directly,
                 so a September invoice read as December moves real money into a month it will
                 never be paid in.
               </p>
-              <div className="mt-3 overflow-x-auto rounded-lg border border-neutral-200">
+              <div className="mt-3 overflow-x-auto rounded-lg border border-line">
                 <table className="w-full min-w-[720px] text-sm">
                   <thead>
-                    <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
+                    <tr className="border-b border-line-subtle bg-surface-subtle text-xs text-fg-muted">
                       <SortTh label="AP No." sortKey="ap_invoice_number" sort={anomalySort.sort} onSort={anomalySort.onSort} className="px-3 py-2 font-medium text-left" />
                       <SortTh label="Vendor" sortKey="vendor" sort={anomalySort.sort} onSort={anomalySort.onSort} className="px-3 py-2 font-medium text-left" />
                       <SortTh label="Invoice no." sortKey="invoice" sort={anomalySort.sort} onSort={anomalySort.onSort} className="px-3 py-2 font-medium text-left" />
@@ -608,18 +608,18 @@ export default function ApReconciliationPage() {
                   </thead>
                   <tbody>
                     {(anomalies?.items.length ?? 0) === 0 ? (
-                      <tr><td colSpan={7} className="px-3 py-6 text-center text-neutral-400">
+                      <tr><td colSpan={7} className="px-3 py-6 text-center text-fg-muted">
                         No impossible dates.
                       </td></tr>
                     ) : anomalySort.rows.map((r) => (
-                      <tr key={r.id} className="border-t border-neutral-100">
+                      <tr key={r.id} className="border-t border-line-subtle">
                         <td className="px-3 py-2 font-mono text-xs">{r.ap_invoice_number ?? '—'}</td>
                         <td className="px-3 py-2">{r.vendor_name ?? '—'}</td>
                         <td className="px-3 py-2 font-mono text-xs">{r.vendor_invoice_number ?? '—'}</td>
                         <td className="px-3 py-2 text-right font-mono tabular-nums">{money(r.total_amount)}</td>
-                        <td className="px-3 py-2 text-xs text-amber-800">{day(r.invoice_date)}</td>
-                        <td className="px-3 py-2 text-xs text-neutral-600">{day(r.due_date)}</td>
-                        <td className="px-3 py-2 text-xs text-neutral-500">{anomalyReason(r.reason)}</td>
+                        <td className="px-3 py-2 text-xs text-warning-fg">{day(r.invoice_date)}</td>
+                        <td className="px-3 py-2 text-xs text-fg-secondary">{day(r.due_date)}</td>
+                        <td className="px-3 py-2 text-xs text-fg-muted">{anomalyReason(r.reason)}</td>
                       </tr>
                     ))}
                   </tbody>

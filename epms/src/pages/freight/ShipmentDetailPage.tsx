@@ -13,8 +13,8 @@ import { ShipmentDialog } from './ShipmentsTab'
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <dt className="text-xs font-medium uppercase tracking-wide text-neutral-400">{label}</dt>
-      <dd className="text-sm text-neutral-800">{children}</dd>
+      <dt className="text-xs font-medium uppercase tracking-wide text-fg-muted">{label}</dt>
+      <dd className="text-sm text-fg">{children}</dd>
     </div>
   )
 }
@@ -30,7 +30,7 @@ export default function ShipmentDetailPage() {
   if (isPending) {
     return (
       <div className="flex items-center justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-neutral-300" />
+        <Loader2 className="h-6 w-6 animate-spin text-fg-faint" />
       </div>
     )
   }
@@ -48,14 +48,14 @@ export default function ShipmentDetailPage() {
     <div className="flex flex-col gap-6 p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <BackLink to="/freight" className="mb-2 inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-700">
+          <BackLink to="/freight" className="mb-2 inline-flex items-center gap-1 text-sm text-fg-muted hover:text-fg-secondary">
             <ArrowLeft className="h-4 w-4" /> Back to Freight
           </BackLink>
           <div className="flex items-center gap-3">
-            <h1 className="font-mono text-2xl font-bold text-neutral-900">{s.tracking_no}</h1>
+            <h1 className="font-mono text-2xl font-bold text-fg">{s.tracking_no}</h1>
             <ShipmentStatusBadge status={s.status} />
           </div>
-          <p className="mt-0.5 text-sm text-neutral-500">
+          <p className="mt-0.5 text-sm text-fg-muted">
             {s.carrier_code ?? '—'} shipment · registered by {s.created_by_name ?? '—'} on {formatDate(s.created_at)}
           </p>
         </div>
@@ -66,8 +66,8 @@ export default function ShipmentDetailPage() {
         )}
       </div>
 
-      <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-4 text-sm font-semibold text-neutral-700">Shipment</h2>
+      <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+        <h2 className="mb-4 text-sm font-semibold text-fg-secondary">Shipment</h2>
         <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Carrier">{s.carrier_code ?? '—'}</Field>
           <Field label="Tracking No"><span className="font-mono">{s.tracking_no}</span></Field>
@@ -78,7 +78,7 @@ export default function ShipmentDetailPage() {
             <Field label="Project">
               <ProjectBadge className="mr-1.5" />
               <span className="whitespace-pre-wrap">{s.project_info}</span>
-              <div className="mt-0.5 text-xs text-neutral-400">The cost center is set when the carrier's invoice is matched</div>
+              <div className="mt-0.5 text-xs text-fg-muted">The cost center is set when the carrier's invoice is matched</div>
             </Field>
           ) : (<>
             <Field label="Department">{s.department_name ?? '—'}</Field>
@@ -89,13 +89,13 @@ export default function ShipmentDetailPage() {
           <Field label="Recorded">
             {s.source === 'from_invoice' ? 'Added while matching an invoice' : 'Registered at ship time'}
           </Field>
-          <Field label="Ship Date">{s.ship_date ? formatDate(s.ship_date) : <span className="text-neutral-400">Filled from the invoice once billed</span>}</Field>
+          <Field label="Ship Date">{s.ship_date ? formatDate(s.ship_date) : <span className="text-fg-muted">Filled from the invoice once billed</span>}</Field>
           <Field label="Invoice">
             {s.invoice_id ? (
               <Link to={`/invoices/${s.invoice_id}`} className="font-mono text-primary-700 hover:underline">
                 {s.invoice_number ?? 'Invoice'}
               </Link>
-            ) : <span className="text-neutral-400">Not billed yet</span>}
+            ) : <span className="text-fg-muted">Not billed yet</span>}
           </Field>
           <Field label="Billed (before tax)">
             {s.billed_amount != null
@@ -104,15 +104,15 @@ export default function ShipmentDetailPage() {
           </Field>
           <div className="sm:col-span-2 lg:col-span-3">
             <Field label="Note">
-              {s.note ? <span className="whitespace-pre-wrap">{s.note}</span> : <span className="text-neutral-400">—</span>}
+              {s.note ? <span className="whitespace-pre-wrap">{s.note}</span> : <span className="text-fg-muted">—</span>}
             </Field>
           </div>
         </dl>
       </div>
 
-      <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-1 text-sm font-semibold text-neutral-700">Attachments</h2>
-        <p className="mb-4 text-xs text-neutral-400">
+      <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+        <h2 className="mb-1 text-sm font-semibold text-fg-secondary">Attachments</h2>
+        <p className="mb-4 text-xs text-fg-muted">
           {s.status === 'void'
             ? 'This shipment is void — its files can be viewed but not changed.'
             : 'The scanned shipping label and any supporting documents.'}

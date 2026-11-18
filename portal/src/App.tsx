@@ -70,7 +70,7 @@ function ReturnUrlGate({ children }: { children: React.ReactNode }) {
 
   if (leaving) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-neutral-500">
+      <div className="flex min-h-screen items-center justify-center text-sm text-fg-muted">
         Signing you in…
       </div>
     )

@@ -44,24 +44,24 @@ export function BomTreeRow({
   const ncBatch = formatNcBatchQty(node.qty_per_batch, node.parent_batch_output_qty)
 
   const prefix = ancestorContinues.map((cont, i) => (
-    <span key={i} className="inline-block w-4 shrink-0 text-neutral-300">{cont ? '│' : ' '}</span>
+    <span key={i} className="inline-block w-4 shrink-0 text-fg-faint">{cont ? '│' : ' '}</span>
   ))
 
   return (
     <div>
       <div
         className={cn(
-          'flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-neutral-100 px-2 py-1.5 text-sm last:border-0',
+          'flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-subtle px-2 py-1.5 text-sm last:border-0',
           node.missing_bom && 'bg-danger-50/50',
           node.cycle_detected && 'bg-warning-50/50',
-          !node.missing_bom && !node.cycle_detected && 'odd:bg-white even:bg-neutral-50/40',
+          !node.missing_bom && !node.cycle_detected && 'odd:bg-surface even:bg-surface-subtle/40',
         )}
       >
         {/* Tree column: connector prefix + expand toggle + code/name */}
         <div className="flex min-w-[280px] flex-1 items-center font-mono text-xs">
           {!isRoot && prefix}
           {!isRoot && (
-            <span className="inline-block w-4 shrink-0 text-neutral-300">{isLast ? '└' : '├'}</span>
+            <span className="inline-block w-4 shrink-0 text-fg-faint">{isLast ? '└' : '├'}</span>
           )}
           <button
             type="button"
@@ -71,18 +71,18 @@ export function BomTreeRow({
             aria-label={hasChildren ? (expanded ? `Collapse ${node.material_code}` : `Expand ${node.material_code}`) : undefined}
             className={cn(
               'flex h-5 w-5 shrink-0 items-center justify-center rounded',
-              hasChildren ? 'text-neutral-500 hover:bg-neutral-200' : 'text-transparent',
+              hasChildren ? 'text-fg-muted hover:bg-surface-strong' : 'text-transparent',
             )}
           >
             {hasChildren && (expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
           </button>
           <span className="shrink-0 font-semibold text-primary-700">{node.material_code}</span>
-          <span className="ml-1.5 truncate font-sans text-neutral-700">{node.name ?? '—'}</span>
+          <span className="ml-1.5 truncate font-sans text-fg-secondary">{node.name ?? '—'}</span>
         </div>
 
         {/* bom_type badge */}
         <div className="w-28 shrink-0">
-          {bomType ? <StatusBadge status={bomType} /> : <span className="text-xs text-neutral-300">—</span>}
+          {bomType ? <StatusBadge status={bomType} /> : <span className="text-xs text-fg-faint">—</span>}
         </div>
 
         {/* Version — click to expand what selection detail is available */}
@@ -91,38 +91,38 @@ export function BomTreeRow({
             <button
               type="button"
               onClick={() => setVersionOpen((v) => !v)}
-              className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
+              className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-fg-secondary hover:bg-surface-sunken hover:text-fg"
               aria-expanded={versionOpen}
             >
               {versionOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
               v{node.version} ({node.version_candidates_count} approved)
             </button>
           ) : (
-            <span className="text-neutral-300">—</span>
+            <span className="text-fg-faint">—</span>
           )}
         </div>
 
         {/* This level's qty_per */}
-        <div className="w-28 shrink-0 text-right text-xs tabular-nums text-neutral-700">
+        <div className="w-28 shrink-0 text-right text-xs tabular-nums text-fg-secondary">
           {isRoot ? '—' : `${formatQty(node.qty_per)} ${node.uom ?? ''}`}
         </div>
 
         {/* NC's own batch-scale numbers for this line — `NITEMNUM / batch
             size`, exactly as they read on the NC BOM screen. */}
         <div
-          className="w-44 shrink-0 text-right text-xs tabular-nums text-neutral-500"
+          className="w-44 shrink-0 text-right text-xs tabular-nums text-fg-muted"
           title={
             node.parent_batch_output_qty
               ? `As shown on the NC BOM screen: ${formatQty(node.qty_per_batch)} ${node.uom ?? ''} per one ${formatQty(node.parent_batch_output_qty)} batch of the parent BOM`
               : undefined
           }
         >
-          {ncBatch ?? <span className="text-neutral-300">—</span>}
+          {ncBatch ?? <span className="text-fg-faint">—</span>}
         </div>
 
         {/* Accumulated qty — the number planners actually need, scaled to the
             chosen basis (per N units of the top product) */}
-        <div className="w-32 shrink-0 text-right text-xs font-semibold tabular-nums text-neutral-900" title={`Per ${basis} units of ${topLabel}`}>
+        <div className="w-32 shrink-0 text-right text-xs font-semibold tabular-nums text-fg" title={`Per ${basis} units of ${topLabel}`}>
           {formatQty(accumScaled)} {node.uom ?? ''}
         </div>
       </div>
@@ -132,7 +132,7 @@ export function BomTreeRow({
           breakdown — see bomApi.ts header comment) rather than fabricating
           detail the backend doesn't provide. */}
       {versionOpen && node.version && (
-        <div className="ml-8 border-b border-neutral-100 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+        <div className="ml-8 border-b border-line-subtle bg-surface-subtle px-3 py-2 text-xs text-fg-secondary">
           <p>Selected version <strong>v{node.version}</strong> for the query date.</p>
           {node.batch_output_qty !== null && (
             <p className="mt-0.5">
@@ -197,8 +197,8 @@ function RowNotice({ icon, tone, children }: { icon: React.ReactNode; tone: 'dan
     <p
       role="alert"
       className={cn(
-        'ml-8 flex items-start gap-1.5 border-b border-neutral-100 px-3 py-1.5 text-xs',
-        tone === 'danger' ? 'bg-danger-50 text-danger-700' : 'bg-warning-50 text-warning-800',
+        'ml-8 flex items-start gap-1.5 border-b border-line-subtle px-3 py-1.5 text-xs',
+        tone === 'danger' ? 'bg-danger-soft text-danger-fg' : 'bg-warning-soft text-warning-fg',
       )}
     >
       <span className="mt-0.5 shrink-0">{icon}</span>

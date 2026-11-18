@@ -91,7 +91,7 @@ export function LossRatesSection({ canWrite }: { canWrite: boolean }) {
       && draft[key].trim() !== current[key]
     return (
       <div key={key} className="flex flex-col gap-1">
-        <label htmlFor={key} className="text-sm font-medium text-neutral-800">{label}</label>
+        <label htmlFor={key} className="text-sm font-medium text-fg">{label}</label>
         <div className="flex items-center gap-2">
           <input
             id={key}
@@ -99,9 +99,9 @@ export function LossRatesSection({ canWrite }: { canWrite: boolean }) {
             value={value}
             onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
             disabled={!canWrite || paramsQuery.isLoading || mutation.isPending}
-            className="h-11 w-24 rounded-lg border border-neutral-300 px-3 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-neutral-50"
+            className="h-11 w-24 rounded-lg border border-line-strong px-3 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-surface-subtle"
           />
-          <span className="text-sm text-neutral-500">%</span>
+          <span className="text-sm text-fg-muted">%</span>
           {canWrite && (
             <Button
               type="button" size="sm" className="min-h-[44px]"
@@ -113,12 +113,12 @@ export function LossRatesSection({ canWrite }: { canWrite: boolean }) {
             </Button>
           )}
         </div>
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-fg-muted">
           {/* The saved value, stated separately from the input. While
               somebody is typing, the box shows their draft — and without
               this line there is nothing on screen saying what the setting
               actually IS. */}
-          <span className="font-medium text-neutral-700">
+          <span className="font-medium text-fg-secondary">
             {paramsQuery.isLoading
               ? 'Loading current value…'
               : current[key] === ''
@@ -132,9 +132,9 @@ export function LossRatesSection({ canWrite }: { canWrite: boolean }) {
   }
 
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-4">
-      <h2 className="text-sm font-semibold text-neutral-900">Loss Rates</h2>
-      <p className="mt-1 text-xs text-neutral-500">
+    <section className="rounded-lg border border-line bg-surface p-4">
+      <h2 className="text-sm font-semibold text-fg">Loss Rates</h2>
+      <p className="mt-1 text-xs text-fg-muted">
         BOM quantities are treated as exact. Loss is added when material requirements are
         calculated: each component is inflated by the rate for its own category, at every
         level of the explosion.
@@ -147,7 +147,7 @@ export function LossRatesSection({ canWrite }: { canWrite: boolean }) {
           'Applies to packaging materials (codes starting CP).')}
       </div>
 
-      <p className="mt-3 flex items-start gap-1.5 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-800">
+      <p className="mt-3 flex items-start gap-1.5 rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-fg">
         <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <span>
           <strong>Leave packaging loss at 0 for now.</strong> Powder and dry-mix BOMs carry
@@ -158,9 +158,9 @@ export function LossRatesSection({ canWrite }: { canWrite: boolean }) {
         </span>
       </p>
 
-      {note && <p role="status" className="mt-2 text-xs text-success-700">{note}</p>}
+      {note && <p role="status" className="mt-2 text-xs text-success-fg">{note}</p>}
       {error && (
-        <p role="alert" className="mt-2 flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+        <p role="alert" className="mt-2 flex items-center gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
         </p>
       )}

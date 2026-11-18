@@ -16,8 +16,8 @@ export function WmsHistoryNote({ info, warn = false, className }: {
     <p className={cn(
       'flex items-start gap-1.5 text-xs',
       warn
-        ? 'rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-warning-700'
-        : 'text-neutral-400',
+        ? 'rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-warning-fg'
+        : 'text-fg-muted',
       className)}>
       <Info aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <span>{info.note}</span>

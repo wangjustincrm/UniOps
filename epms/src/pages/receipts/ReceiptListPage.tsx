@@ -141,8 +141,8 @@ export default function ReceiptListPage() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Agreement Receipts</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <h1 className="text-2xl font-bold text-fg">Agreement Receipts</h1>
+          <p className="mt-1 text-sm text-fg-muted">
             Counter slips, delivery notes, and service sign-offs recorded against house-account agreements
           </p>
         </div>
@@ -158,27 +158,27 @@ export default function ReceiptListPage() {
 
       {/* A refused Approve / Reject (was a browser alert). */}
       {apReview.isError && (
-        <p role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+        <p role="alert" className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           {errorMessage(apReview.error, 'Failed to record AP review')}
         </p>
       )}
 
       {/* Filters */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+      <div className="rounded-xl border border-line bg-surface p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
         <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-fg-muted" />
           <input
             type="text"
             placeholder="Search by reference # or agreement #..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-            className="w-full h-9 pl-9 pr-3 rounded-lg border border-neutral-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="w-full h-9 pl-9 pr-3 rounded-lg border border-line-strong bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
           />
         </div>
         <select
           value={typeFilter}
           onChange={(e) => { setTypeFilter(e.target.value as ReceiptType | 'all'); setPage(1) }}
-          className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+          className="h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
         >
           {TYPE_FILTERS.map((f) => (
             <option key={f.value} value={f.value}>{f.label}</option>
@@ -193,7 +193,7 @@ export default function ReceiptListPage() {
                 'px-3 py-1 rounded-full text-xs font-medium transition-colors',
                 statusFilter === f.value
                   ? 'bg-primary-600 text-white'
-                  : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                  : 'bg-surface-sunken text-fg-secondary hover:bg-surface-strong'
               )}
             >
               {f.label}
@@ -203,19 +203,19 @@ export default function ReceiptListPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
         {isLoading || receipts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <Receipt className="h-10 w-10 text-neutral-300 mb-3" />
-            <p className="text-sm font-medium text-neutral-500">
+            <Receipt className="h-10 w-10 text-fg-faint mb-3" />
+            <p className="text-sm font-medium text-fg-muted">
               {isLoading ? 'Loading…' : 'No agreement receipts found'}
             </p>
-            {!isLoading && <p className="text-xs text-neutral-400 mt-1">Try adjusting your filters</p>}
+            {!isLoading && <p className="text-xs text-fg-muted mt-1">Try adjusting your filters</p>}
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-50">
+              <tr className="border-b border-line bg-surface-subtle">
                 <SortHead label="Date" sortKey="receipt_date" sort={sort} onSort={onSort} />
                 <SortHead label="Type" sortKey="receipt_type" sort={sort} onSort={onSort} />
                 <SortHead label="Reference #" sortKey="receipt_ref" sort={sort} onSort={onSort} />
@@ -273,7 +273,7 @@ export default function ReceiptListPage() {
         )}
       </div>
 
-      <div className="rounded-xl border border-neutral-200 bg-white">
+      <div className="rounded-xl border border-line bg-surface">
         <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
       </div>
 
@@ -305,7 +305,7 @@ function SortHead({ label, sortKey, sort, onSort, align = 'left' }: {
     <SortTh
       label={label} sortKey={sortKey} sort={sort} onSort={onSort} align={align}
       className={cn(
-        'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap',
+        'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap',
         align === 'right' ? 'text-right' : 'text-left'
       )}
     />
@@ -316,7 +316,7 @@ function Th({ children, align = 'left' }: { children: React.ReactNode; align?: '
   return (
     <th
       className={cn(
-        'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap',
+        'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap',
         align === 'right' ? 'text-right' : 'text-left'
       )}
     >
@@ -353,11 +353,11 @@ function ReceiptRow({
   return (
     <>
     <tr className={cn(
-      'bg-white hover:bg-primary-50/60 transition-colors',
-      showReason ? 'border-b-0' : 'border-b border-neutral-100',
+      'bg-surface hover:bg-primary-50/60 transition-colors',
+      showReason ? 'border-b-0' : 'border-b border-line-subtle',
     )}>
-      <td className="px-4 py-3 text-neutral-600">{formatDate(receipt.receipt_date)}</td>
-      <td className="px-4 py-3 text-neutral-700">{RECEIPT_TYPE_LABELS[receipt.receipt_type]}</td>
+      <td className="px-4 py-3 text-fg-secondary">{formatDate(receipt.receipt_date)}</td>
+      <td className="px-4 py-3 text-fg-secondary">{RECEIPT_TYPE_LABELS[receipt.receipt_type]}</td>
       <td className="px-4 py-3">
         {/* The way into the receipt itself (Task 12) — until this existed the
             only link on a row was the parent AGREEMENT's, so a recorder who
@@ -370,7 +370,7 @@ function ReceiptRow({
           to={`/receipts/${receipt.id}`}
           className={cn(
             'text-primary-600 hover:underline font-mono text-xs',
-            !receipt.receipt_ref && 'italic text-neutral-500',
+            !receipt.receipt_ref && 'italic text-fg-muted',
           )}
         >
           {receipt.receipt_ref ?? 'No reference #'}
@@ -378,7 +378,7 @@ function ReceiptRow({
       </td>
       <td className="px-4 py-3">
         {receipt.vendor_name ? (
-          <span className="inline-flex items-center gap-1.5 text-xs text-neutral-700">
+          <span className="inline-flex items-center gap-1.5 text-xs text-fg-secondary">
             <span className="max-w-[10rem] truncate" title={receipt.vendor_name}>{receipt.vendor_name}</span>
             {/* Bound to the vendor master, or just the text off the slip? The
                 verdict beside it means different things in the two cases (an
@@ -389,7 +389,7 @@ function ReceiptRow({
                 would train people to ignore the amber badge that isn't. */}
             {!receipt.vendor_matched && (
               <span
-                className="rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500"
+                className="rounded-full bg-surface-sunken px-1.5 py-0.5 text-2xs font-medium text-fg-muted"
                 title={`"${receipt.vendor_name}" is the text recorded from the receipt — it isn't linked to a vendor in the vendor list, so the check against agreement ${receipt.agreement_number} compares names, not records.`}
               >
                 Text only
@@ -403,7 +403,7 @@ function ReceiptRow({
                 (vendor_mismatch) — never recomputed here. */}
             {receipt.vendor_mismatch && (
               <span
-                className="inline-flex items-center gap-1 rounded-full bg-warning-50 px-1.5 py-0.5 text-[11px] font-medium text-warning-700"
+                className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-1.5 py-0.5 text-2xs font-medium text-warning-fg"
                 title={`This receipt is from "${receipt.vendor_name}", but agreement ${receipt.agreement_number} is with "${receipt.agreement_vendor_name}". Check it was charged to the right house account.`}
               >
                 <AlertTriangle className="h-3 w-3" />
@@ -414,7 +414,7 @@ function ReceiptRow({
         ) : (
           // Blank is not a problem to flag: OCR returns nothing when the slip
           // header is illegible, and a blank vendor is never a mismatch.
-          <span className="text-neutral-300">—</span>
+          <span className="text-fg-faint">—</span>
         )}
       </td>
       <td className="px-4 py-3">
@@ -424,7 +424,7 @@ function ReceiptRow({
           {receipt.agreement_number}
         </Link>
       </td>
-      <td className="px-4 py-3 font-mono text-xs text-neutral-700 text-right">
+      <td className="px-4 py-3 font-mono text-xs text-fg-secondary text-right">
         {/* This list spans multiple agreements, which can each be a
             different currency (fix round 1, Critical) — must use THIS row's
             own currency, never a hardcoded one. */}
@@ -432,16 +432,16 @@ function ReceiptRow({
             (ag09) — an em-dash rather than a CA$0.00 that was never on the
             document. */}
         {receiptTotal(receipt) === null
-          ? <span className="text-neutral-400">—</span>
+          ? <span className="text-fg-muted">—</span>
           : formatAmount(receiptTotal(receipt)!, receipt.currency)}
       </td>
-      <td className="px-4 py-3 text-neutral-600">{receivedByName ?? '—'}</td>
+      <td className="px-4 py-3 text-fg-secondary">{receivedByName ?? '—'}</td>
       <td className="px-4 py-3">
         <StatusBadge status={receipt.status as DocumentStatus} />
       </td>
       <td className="px-4 py-3">
         {hasPhoto ? (
-          <span className="inline-flex items-center gap-1 text-xs text-neutral-600" title={`${receipt.attachment_count} file(s) attached`}>
+          <span className="inline-flex items-center gap-1 text-xs text-fg-secondary" title={`${receipt.attachment_count} file(s) attached`}>
             <Paperclip className="h-3.5 w-3.5" />
             {receipt.attachment_count}
           </span>
@@ -449,7 +449,7 @@ function ReceiptRow({
           // Not a neutral dash: "no photo" is the condition that sends a
           // receipt to AP review in the first place, and on an already-open
           // or reconciled row it is what a reviewer needs to notice.
-          <span className="inline-flex items-center gap-1 text-xs font-medium text-warning-700" title="No photo or proof file attached to this receipt">
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-warning-fg" title="No photo or proof file attached to this receipt">
             <AlertTriangle className="h-3.5 w-3.5" />
             No photo
           </span>
@@ -465,7 +465,7 @@ function ReceiptRow({
             {receipt.invoice_ref ?? receipt.invoice_id.slice(0, 8)}
           </Link>
         ) : (
-          <span className="text-neutral-300">—</span>
+          <span className="text-fg-faint">—</span>
         )}
       </td>
       <td className="px-4 py-3">
@@ -496,7 +496,7 @@ function ReceiptRow({
               variant="secondary"
               onClick={onVoid}
               disabled={anyVoidPending || anyReviewPending}
-              className={cn('text-danger-600 hover:text-danger-700')}
+              className={cn('text-danger-fg hover:text-danger-fg')}
             >
               <Trash2 className="h-3.5 w-3.5" />
               {voidPending ? 'Working…' : 'Remove'}
@@ -511,11 +511,11 @@ function ReceiptRow({
       </td>
     </tr>
     {showReason && (
-      <tr className="border-b border-neutral-100 bg-warning-50/40">
+      <tr className="border-b border-line-subtle bg-warning-50/40">
         {/* colSpan must match the header's column count: Date, Type,
             Reference #, Vendor on Receipt, Agreement, Amount, Received By,
             Status, Evidence, Linked Invoice, Actions = 11. */}
-        <td colSpan={11} className="px-4 pb-3 pt-0 text-xs text-warning-800">
+        <td colSpan={11} className="px-4 pb-3 pt-0 text-xs text-warning-fg">
           <span className="font-medium">Why this needs AP review: </span>
           {/* The reason is what create()/update() route a receipt to
               pending_ap_review on — a receipt can only get here by carrying

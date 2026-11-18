@@ -10,9 +10,9 @@ export function ListPager({ page, pageSize, total, noun, onPage, className }: {
   className?: string
 }) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize))
-  const btn = 'rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
+  const btn = 'rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
   return (
-    <div className={className ?? 'mt-3 flex items-center justify-between text-sm text-neutral-500'}>
+    <div className={className ?? 'mt-3 flex items-center justify-between text-sm text-fg-muted'}>
       <span>{total.toLocaleString()} {noun}</span>
       {pageCount > 1 && (
         <div className="flex items-center gap-2">

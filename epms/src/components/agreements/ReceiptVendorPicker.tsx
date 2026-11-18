@@ -242,7 +242,7 @@ export function ReceiptVendorPicker({
   return (
     <div ref={anchorRef} className="flex flex-col gap-1">
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
         <input
           id={inputId}
           type="text"
@@ -257,8 +257,8 @@ export function ReceiptVendorPicker({
           onFocus={() => { if (!disabled) setOpen(true) }}
           onChange={(e) => typed(e.target.value)}
           className={cn(
-            'h-10 w-full rounded-md border bg-white pl-9 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-            'border-neutral-300 disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-500',
+            'h-10 w-full rounded-md border bg-surface pl-9 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
+            'border-line-strong disabled:cursor-not-allowed disabled:bg-surface-subtle disabled:text-fg-muted',
           )}
         />
         {value.vendorName !== '' && !disabled && (
@@ -266,7 +266,7 @@ export function ReceiptVendorPicker({
             type="button"
             onClick={clear}
             aria-label="Clear vendor"
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -282,12 +282,12 @@ export function ReceiptVendorPicker({
               className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-primary-50 text-left"
               onClick={() => pick(v)}
             >
-              <span className="font-mono text-xs rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-600">{v.code}</span>
+              <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
               {v.name}
             </button>
           ))}
           {options.length === 0 && (
-            <p className="px-3 py-2 text-sm text-neutral-400">
+            <p className="px-3 py-2 text-sm text-fg-muted">
               No vendor found — the text above is saved with the receipt as it is
             </p>
           )}
@@ -304,14 +304,14 @@ export function ReceiptVendorPicker({
         // RENTALS" auto-bound to "Princess Auto" leaves nothing anywhere for
         // the recorder to catch it by. That is exactly the promise the AI
         // badge makes: a machine filled this in, check it before relying on it.
-        <p className="flex items-center text-xs text-success-600">
+        <p className="flex items-center text-xs text-success-fg">
           {aiBound && aiText
             ? `Matched from "${aiText}"`
             : 'Matched to the vendor list'}
           {aiBound && <AiBadge />}
         </p>
       ) : value.vendorName.trim() ? (
-        <p className="flex items-center text-xs text-neutral-500">
+        <p className="flex items-center text-xs text-fg-muted">
           Not in the vendor list — saved as the text printed on the receipt
           {aiText && <AiBadge />}
         </p>
@@ -323,7 +323,7 @@ export function ReceiptVendorPicker({
           warning): different stores of the same group are fine, so nothing is
           blocked — the recorder is only asked to look. */}
       {differs && (
-        <p className="flex items-start gap-1 text-xs text-warning-700">
+        <p className="flex items-start gap-1 text-xs text-warning-fg">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
             Differs from the agreement's vendor ({vendorCheck!.agreement_vendor_name}) — check

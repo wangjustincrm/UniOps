@@ -29,20 +29,20 @@ export function SuggestionPanel({ conflicts, occurrenceConflicts, suggestions, o
   if (!hasConflicts && !suggestions) return null
 
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-4">
+    <div className="rounded-lg border border-warning-line bg-warning-soft p-4 space-y-4">
       {/* Single-booking conflicts */}
       {conflicts.length > 0 && (
         <div>
           <div className="flex items-center gap-1.5 mb-2">
-            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-            <span className="text-sm font-semibold text-amber-800">
+            <AlertTriangle className="h-4 w-4 text-warning-fg shrink-0" />
+            <span className="text-sm font-semibold text-warning-fg">
               {conflicts.length} conflict{conflicts.length !== 1 ? 's' : ''}
             </span>
           </div>
           <ul className="space-y-1">
             {conflicts.map((c) => (
-              <li key={c.id} className="flex items-start gap-2 text-xs text-amber-700">
-                <Clock className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-500" />
+              <li key={c.id} className="flex items-start gap-2 text-xs text-warning-fg">
+                <Clock className="h-3.5 w-3.5 shrink-0 mt-0.5 text-warning-fg" />
                 <span>
                   <span className="font-medium">{c.title}</span>
                   {' · '}
@@ -60,19 +60,19 @@ export function SuggestionPanel({ conflicts, occurrenceConflicts, suggestions, o
       {occurrenceConflicts.length > 0 && (
         <div>
           <div className="flex items-center gap-1.5 mb-2">
-            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-            <span className="text-sm font-semibold text-amber-800">
+            <AlertTriangle className="h-4 w-4 text-warning-fg shrink-0" />
+            <span className="text-sm font-semibold text-warning-fg">
               {occurrenceConflicts.length} occurrence{occurrenceConflicts.length !== 1 ? 's' : ''} with conflicts
             </span>
           </div>
           <ul className="space-y-2">
             {occurrenceConflicts.map((oc) => (
-              <li key={oc.date} className="text-xs text-amber-700">
+              <li key={oc.date} className="text-xs text-warning-fg">
                 <p className="font-medium mb-0.5">{formatDate(oc.date)}</p>
                 <ul className="ml-3 space-y-0.5">
                   {oc.conflicts.map((c) => (
                     <li key={c.id} className="flex items-start gap-1.5">
-                      <Clock className="h-3 w-3 shrink-0 mt-0.5 text-amber-500" />
+                      <Clock className="h-3 w-3 shrink-0 mt-0.5 text-warning-fg" />
                       <span>
                         {c.title}
                         {' · '}
@@ -90,7 +90,7 @@ export function SuggestionPanel({ conflicts, occurrenceConflicts, suggestions, o
       {/* Nearest slots */}
       {(suggestions?.nearest_slots?.length ?? 0) > 0 && (
         <div>
-          <p className="text-xs font-semibold text-neutral-600 mb-2">Nearest available slots:</p>
+          <p className="text-xs font-semibold text-fg-secondary mb-2">Nearest available slots:</p>
           <div className="flex flex-wrap gap-2">
             {suggestions!.nearest_slots.map((slot, i) => (
               <button
@@ -98,8 +98,8 @@ export function SuggestionPanel({ conflicts, occurrenceConflicts, suggestions, o
                 type="button"
                 onClick={() => onPickSlot(slot.starts_at, slot.ends_at)}
                 className={cn(
-                  'inline-flex items-center gap-1 rounded-md border border-[#085E5E] bg-white px-2.5 py-1',
-                  'text-xs font-medium text-[#085E5E] hover:bg-[#085E5E]/5 transition-colors',
+                  'inline-flex items-center gap-1 rounded-md border border-primary-700 bg-surface px-2.5 py-1',
+                  'text-xs font-medium text-primary-700 hover:bg-primary-700/5 transition-colors',
                 )}
               >
                 <CheckCircle2 className="h-3 w-3" />
@@ -113,7 +113,7 @@ export function SuggestionPanel({ conflicts, occurrenceConflicts, suggestions, o
       {/* Alternative rooms */}
       {(suggestions?.alternative_rooms?.length ?? 0) > 0 && (
         <div>
-          <p className="text-xs font-semibold text-neutral-600 mb-2">Alternative rooms:</p>
+          <p className="text-xs font-semibold text-fg-secondary mb-2">Alternative rooms:</p>
           <div className="flex flex-col gap-2">
             {suggestions!.alternative_rooms.map((room) => {
               const locationParts = [room.floor, room.area].filter(Boolean)
@@ -123,25 +123,25 @@ export function SuggestionPanel({ conflicts, occurrenceConflicts, suggestions, o
                   type="button"
                   onClick={() => onPickRoom(room)}
                   className={cn(
-                    'flex items-center gap-3 rounded-lg border border-neutral-200 bg-white p-3 text-left',
-                    'hover:border-[#085E5E]/40 hover:bg-[#085E5E]/5 transition-colors',
+                    'flex items-center gap-3 rounded-lg border border-line bg-surface p-3 text-left',
+                    'hover:border-primary-700/40 hover:bg-primary-700/5 transition-colors',
                   )}
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-neutral-900 truncate">{room.name}</p>
+                    <p className="text-sm font-semibold text-fg truncate">{room.name}</p>
                     <div className="flex items-center gap-3 mt-0.5">
                       {locationParts.length > 0 && (
-                        <span className="flex items-center gap-1 text-xs text-neutral-500">
+                        <span className="flex items-center gap-1 text-xs text-fg-muted">
                           <MapPin className="h-3 w-3" />
                           {locationParts.join(' · ')}
                         </span>
                       )}
-                      <span className="flex items-center gap-1 text-xs text-neutral-500">
+                      <span className="flex items-center gap-1 text-xs text-fg-muted">
                         <Users className="h-3 w-3" />
                         {room.capacity}
                       </span>
                       {room.equipment.includes('video_conf') && (
-                        <span className="flex items-center gap-1 text-xs text-neutral-500">
+                        <span className="flex items-center gap-1 text-xs text-fg-muted">
                           <Video className="h-3 w-3" />
                           Video
                         </span>

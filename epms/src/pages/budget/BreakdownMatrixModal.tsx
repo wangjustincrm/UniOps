@@ -543,7 +543,7 @@ export function BreakdownMatrixModal({
   if (factors.length === 0) {
     return (
       <ModalShell title={`Breakdown — ${MONTHS[month]}`} subtitle={`${accountCode} · ${accountName}`} onClose={onClose}>
-        <div className="p-6 text-center text-sm text-neutral-500">
+        <div className="p-6 text-center text-sm text-fg-muted">
           No active factors configured for this Account. Configure factors on the Catalog page first.
         </div>
       </ModalShell>
@@ -563,8 +563,8 @@ export function BreakdownMatrixModal({
         {/* Main panel */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Tool strip */}
-          <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-2.5 flex items-center gap-3 flex-wrap shrink-0">
-            <span className="text-xs text-neutral-500">
+          <div className="border-b border-line bg-surface-subtle px-4 py-2.5 flex items-center gap-3 flex-wrap shrink-0">
+            <span className="text-xs text-fg-muted">
               <strong>Rows</strong>: {rowFactor.factor_name}
               {colFactor && <> · <strong>Cols</strong>: {colFactor.factor_name}</>}
               {subColFactor && <> · <strong>Sub</strong>: {subColFactor.factor_name}</>}
@@ -576,7 +576,7 @@ export function BreakdownMatrixModal({
                   <button
                     type="button"
                     onClick={() => setSpreadOpen((v) => !v)}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-2.5 py-1 text-xs font-medium text-fg-secondary hover:bg-surface-subtle"
                     title="Distribute a value across row, column, or all cells"
                   >
                     <Sparkles className="h-3.5 w-3.5" /> Spread
@@ -595,7 +595,7 @@ export function BreakdownMatrixModal({
                   <button
                     type="button"
                     onClick={handleCopyFromLastYear}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-2.5 py-1 text-xs font-medium text-fg-secondary hover:bg-surface-subtle"
                     title="Replace matrix with last year same-month breakdowns"
                   >
                     <Copy className="h-3.5 w-3.5" /> Copy Last Year
@@ -605,7 +605,7 @@ export function BreakdownMatrixModal({
                   type="button"
                   onClick={undo}
                   disabled={!canUndo}
-                  className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
+                  className="inline-flex items-center gap-1 rounded-md border border-line-strong bg-surface px-2 py-1 text-xs font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-40"
                   title={`Undo (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Z)`}
                 >
                   <Undo2 className="h-3.5 w-3.5" />
@@ -614,7 +614,7 @@ export function BreakdownMatrixModal({
                   type="button"
                   onClick={redo}
                   disabled={!canRedo}
-                  className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
+                  className="inline-flex items-center gap-1 rounded-md border border-line-strong bg-surface px-2 py-1 text-xs font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-40"
                   title={`Redo (${navigator.platform.includes('Mac') ? '⌘⇧' : 'Ctrl+Shift'}+Z)`}
                 >
                   <Redo2 className="h-3.5 w-3.5" />
@@ -623,14 +623,14 @@ export function BreakdownMatrixModal({
                   type="button"
                   onClick={handleReset}
                   disabled={netChange === 0}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-2.5 py-1 text-xs font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-40"
                   title="Discard unsaved edits"
                 >
                   <RotateCcw className="h-3.5 w-3.5" /> Reset
                 </button>
               </>
             )}
-            <label className="inline-flex items-center gap-1.5 text-[11px] text-neutral-600 cursor-pointer select-none">
+            <label className="inline-flex items-center gap-1.5 text-2xs text-fg-secondary cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={showInactive}
@@ -643,7 +643,7 @@ export function BreakdownMatrixModal({
 
           {/* Grandfathered notice */}
           {grandFathered && (
-            <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs text-amber-800">
+            <div className="bg-warning-soft border-b border-warning-line px-4 py-2 text-xs text-warning-fg">
               This Account has more than 3 factors. The matrix uses the first 3 by sort order;
               additional factors are preserved in the database but not editable here.
             </div>
@@ -675,30 +675,30 @@ export function BreakdownMatrixModal({
           </div>
 
           {/* Bottom status bar */}
-          <div className="border-t border-neutral-200 bg-neutral-50 px-4 py-2 flex items-center gap-3 text-xs text-neutral-600 shrink-0">
+          <div className="border-t border-line bg-surface-subtle px-4 py-2 flex items-center gap-3 text-xs text-fg-secondary shrink-0">
             <span>
               Net change:{' '}
               <span className={cn(
                 'font-mono font-semibold',
-                netChange > 0 ? 'text-success-700' : netChange < 0 ? 'text-danger-700' : 'text-neutral-500',
+                netChange > 0 ? 'text-success-fg' : netChange < 0 ? 'text-danger-fg' : 'text-fg-muted',
               )}>
                 {netChange >= 0 ? '+' : ''}{formatAmount(netChange, 'CAD')}
               </span>
             </span>
-            <span className="text-neutral-300">|</span>
+            <span className="text-fg-faint">|</span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded border border-neutral-200 bg-white" /> editable
-              <span className="ml-2 inline-block h-3 w-3 rounded border border-neutral-200 bg-neutral-100" /> computed
-              <span className="ml-2 inline-block h-3 w-3 rounded border border-amber-200 bg-amber-100" /> modified
+              <span className="inline-block h-3 w-3 rounded border border-line bg-surface" /> editable
+              <span className="ml-2 inline-block h-3 w-3 rounded border border-line bg-surface-sunken" /> computed
+              <span className="ml-2 inline-block h-3 w-3 rounded border border-warning-line bg-warning-soft" /> modified
             </span>
             <div className="flex-1" />
-            <span className="text-neutral-400">
+            <span className="text-fg-muted">
               Tab moves · Esc closes · {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Enter saves · {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Z undo · Paste from Excel
             </span>
           </div>
 
           {saveError && (
-            <div className="border-t border-danger-200 bg-danger-50 px-4 py-2 text-xs text-danger-700 shrink-0">
+            <div className="border-t border-danger-line bg-danger-soft px-4 py-2 text-xs text-danger-fg shrink-0">
               {saveError}
             </div>
           )}
@@ -717,7 +717,7 @@ export function BreakdownMatrixModal({
       </div>
 
       {/* Footer */}
-      <div className="border-t border-neutral-200 px-5 py-3 flex items-center justify-end gap-2 shrink-0">
+      <div className="border-t border-line px-5 py-3 flex items-center justify-end gap-2 shrink-0">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         {editable && (
           <Button size="sm" onClick={handleSave} disabled={replaceMut.isPending}>
@@ -745,17 +745,17 @@ function ModalShell({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
         className={cn(
-          'bg-white rounded-xl shadow-xl max-h-[92vh] flex flex-col overflow-hidden',
+          'bg-surface rounded-xl shadow-xl max-h-[92vh] flex flex-col overflow-hidden',
           wide ? 'w-full max-w-6xl' : 'w-full max-w-md',
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-3 border-b border-neutral-200 shrink-0">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-line shrink-0">
           <div>
-            <h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
-            <p className="text-xs text-neutral-500 mt-0.5">{subtitle}</p>
+            <h3 className="text-sm font-semibold text-fg">{title}</h3>
+            <p className="text-xs text-fg-muted mt-0.5">{subtitle}</p>
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-neutral-100">
+          <button onClick={onClose} className="p-1 rounded hover:bg-surface-sunken">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -800,22 +800,22 @@ function MatrixTable(props: MatrixTableProps) {
 
   return (
     <table className="min-w-full border-collapse text-xs">
-      <thead className="sticky top-0 bg-neutral-50 z-10">
+      <thead className="sticky top-0 bg-surface-subtle z-10">
         {/* Top header row (only when 3 factors → col group labels) */}
         {subColFactor && (
           <tr>
-            <th className="sticky left-0 bg-neutral-50 border-b border-r border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600" />
+            <th className="sticky left-0 bg-surface-subtle border-b border-r border-line px-3 py-2 text-left text-2xs font-semibold text-fg-secondary" />
             {colValues.map((cv) => (
               <th
                 key={cv.id}
                 colSpan={subColValues.length + 1}
-                className="border-b border-r border-neutral-200 px-2 py-2 text-center text-[11px] font-semibold text-neutral-700 bg-neutral-100"
+                className="border-b border-r border-line px-2 py-2 text-center text-2xs font-semibold text-fg-secondary bg-surface-sunken"
               >
                 {colFactor!.factor_name}: {cv.value_name}
-                {!cv.is_active && <span className="ml-1 text-neutral-400 line-through">·</span>}
+                {!cv.is_active && <span className="ml-1 text-fg-muted line-through">·</span>}
               </th>
             ))}
-            <th rowSpan={2} className="border-b border-neutral-200 px-2 py-2 text-right text-[11px] font-semibold text-primary-700 bg-primary-50 align-bottom">
+            <th rowSpan={2} className="border-b border-line px-2 py-2 text-right text-2xs font-semibold text-primary-700 bg-primary-50 align-bottom">
               Row Total
             </th>
           </tr>
@@ -823,13 +823,13 @@ function MatrixTable(props: MatrixTableProps) {
 
         {/* Leaf header row */}
         <tr>
-          <th className="sticky left-0 bg-neutral-50 border-b border-r border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600 min-w-32">
+          <th className="sticky left-0 bg-surface-subtle border-b border-r border-line px-3 py-2 text-left text-2xs font-semibold text-fg-secondary min-w-32">
             {rowFactor.factor_name}
           </th>
           {leafCols.map((lc, i) => {
             if (lc.kind === 'amount') {
               return (
-                <th key={i} className="border-b border-r border-neutral-200 px-2 py-2 text-right text-[11px] font-semibold text-neutral-600 min-w-24">
+                <th key={i} className="border-b border-r border-line px-2 py-2 text-right text-2xs font-semibold text-fg-secondary min-w-24">
                   Amount
                 </th>
               )
@@ -839,8 +839,8 @@ function MatrixTable(props: MatrixTableProps) {
                 <th
                   key={i}
                   className={cn(
-                    'border-b border-r border-neutral-200 px-2 py-2 text-right text-[11px] font-semibold text-neutral-600 min-w-24',
-                    !lc.col.is_active && 'text-neutral-400 line-through',
+                    'border-b border-r border-line px-2 py-2 text-right text-2xs font-semibold text-fg-secondary min-w-24',
+                    !lc.col.is_active && 'text-fg-muted line-through',
                   )}
                 >
                   {colFactor!.factor_name}: {lc.col.value_name}
@@ -852,8 +852,8 @@ function MatrixTable(props: MatrixTableProps) {
                 <th
                   key={i}
                   className={cn(
-                    'border-b border-r border-neutral-200 px-2 py-2 text-right text-[11px] font-semibold text-neutral-600 min-w-20',
-                    !lc.sub.is_active && 'text-neutral-400 line-through',
+                    'border-b border-r border-line px-2 py-2 text-right text-2xs font-semibold text-fg-secondary min-w-20',
+                    !lc.sub.is_active && 'text-fg-muted line-through',
                   )}
                 >
                   {lc.sub.value_name}
@@ -861,13 +861,13 @@ function MatrixTable(props: MatrixTableProps) {
               )
             }
             return (
-              <th key={i} className="border-b border-r border-neutral-200 px-2 py-2 text-right text-[11px] font-semibold text-neutral-700 bg-neutral-100">
+              <th key={i} className="border-b border-r border-line px-2 py-2 text-right text-2xs font-semibold text-fg-secondary bg-surface-sunken">
                 Sum
               </th>
             )
           })}
           {!subColFactor && (
-            <th className="border-b border-neutral-200 px-2 py-2 text-right text-[11px] font-semibold text-primary-700 bg-primary-50">
+            <th className="border-b border-line px-2 py-2 text-right text-2xs font-semibold text-primary-700 bg-primary-50">
               Row Total
             </th>
           )}
@@ -878,8 +878,8 @@ function MatrixTable(props: MatrixTableProps) {
         {rowValues.map((rv) => (
           <tr key={rv.id} className={cn(!rv.is_active && 'opacity-50')}>
             <td className={cn(
-              'sticky left-0 bg-white border-b border-r border-neutral-200 px-3 py-1.5 text-left font-medium text-neutral-800',
-              !rv.is_active && 'line-through text-neutral-400',
+              'sticky left-0 bg-surface border-b border-r border-line px-3 py-1.5 text-left font-medium text-fg',
+              !rv.is_active && 'line-through text-fg-muted',
             )}>
               {rv.value_name}
             </td>
@@ -935,18 +935,18 @@ function MatrixTable(props: MatrixTableProps) {
                 return c ? s + cellValue(c) : s
               }, 0)
               return (
-                <td key={i} className="border-b border-r border-neutral-200 px-2 py-1.5 text-right font-mono text-xs bg-neutral-50 text-neutral-700">
+                <td key={i} className="border-b border-r border-line px-2 py-1.5 text-right font-mono text-xs bg-surface-subtle text-fg-secondary">
                   {formatAmount(rowColSum, 'CAD')}
                 </td>
               )
             })}
             {!subColFactor && (
-              <td className="border-b border-neutral-200 px-2 py-1.5 text-right font-mono text-xs bg-primary-50 text-primary-800 font-semibold">
+              <td className="border-b border-line px-2 py-1.5 text-right font-mono text-xs bg-primary-50 text-primary-800 font-semibold">
                 {formatAmount(rowTotal(rv), 'CAD')}
               </td>
             )}
             {subColFactor && (
-              <td className="border-b border-neutral-200 px-2 py-1.5 text-right font-mono text-xs bg-primary-50 text-primary-800 font-semibold">
+              <td className="border-b border-line px-2 py-1.5 text-right font-mono text-xs bg-primary-50 text-primary-800 font-semibold">
                 {formatAmount(rowTotal(rv), 'CAD')}
               </td>
             )}
@@ -954,40 +954,40 @@ function MatrixTable(props: MatrixTableProps) {
         ))}
 
         {/* Column total footer */}
-        <tr className="bg-neutral-50">
-          <td className="sticky left-0 bg-neutral-50 border-t border-r border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-600">
+        <tr className="bg-surface-subtle">
+          <td className="sticky left-0 bg-surface-subtle border-t border-r border-line px-3 py-2 text-left text-2xs font-semibold uppercase tracking-wide text-fg-secondary">
             Total
           </td>
           {leafCols.map((lc, i) => {
             if (lc.kind === 'amount') {
               const total = rowValues.reduce((s, rv) => s + rowTotal(rv), 0)
               return (
-                <td key={i} className="border-t border-r border-neutral-200 px-2 py-1.5 text-right font-mono text-xs bg-neutral-100 text-neutral-800 font-semibold">
+                <td key={i} className="border-t border-r border-line px-2 py-1.5 text-right font-mono text-xs bg-surface-sunken text-fg font-semibold">
                   {formatAmount(total, 'CAD')}
                 </td>
               )
             }
             if (lc.kind === 'col') {
               return (
-                <td key={i} className="border-t border-r border-neutral-200 px-2 py-1.5 text-right font-mono text-xs bg-neutral-100 text-neutral-800 font-semibold">
+                <td key={i} className="border-t border-r border-line px-2 py-1.5 text-right font-mono text-xs bg-surface-sunken text-fg font-semibold">
                   {formatAmount(colTotal(lc.col), 'CAD')}
                 </td>
               )
             }
             if (lc.kind === 'sub') {
               return (
-                <td key={i} className="border-t border-r border-neutral-200 px-2 py-1.5 text-right font-mono text-xs bg-neutral-100 text-neutral-800 font-semibold">
+                <td key={i} className="border-t border-r border-line px-2 py-1.5 text-right font-mono text-xs bg-surface-sunken text-fg font-semibold">
                   {formatAmount(subColTotal(lc.col, lc.sub), 'CAD')}
                 </td>
               )
             }
             return (
-              <td key={i} className="border-t border-r border-neutral-200 px-2 py-1.5 text-right font-mono text-xs bg-neutral-200 text-neutral-800 font-semibold">
+              <td key={i} className="border-t border-r border-line px-2 py-1.5 text-right font-mono text-xs bg-surface-strong text-fg font-semibold">
                 {formatAmount(colTotal(lc.col), 'CAD')}
               </td>
             )
           })}
-          <td className="border-t border-neutral-200 px-2 py-1.5 text-right font-mono text-xs bg-primary-100 text-primary-900 font-bold">
+          <td className="border-t border-line px-2 py-1.5 text-right font-mono text-xs bg-primary-100 text-primary-900 font-bold">
             {formatAmount(grandTotal, 'CAD')}
           </td>
         </tr>
@@ -1021,13 +1021,13 @@ function EditableCell({
     <span
       aria-hidden
       title="Has note — see Reference panel"
-      className="pointer-events-none absolute top-0 right-0 h-0 w-0 border-t-[6px] border-l-[6px] border-l-transparent border-t-amber-500"
+      className="pointer-events-none absolute top-0 right-0 h-0 w-0 border-t-[6px] border-l-[6px] border-l-transparent border-t-warning-solid"
     />
   ) : null
 
   if (!editable) {
     return (
-      <td className="relative border-b border-r border-neutral-200 px-2 py-1.5 text-right font-mono text-xs text-neutral-500 bg-neutral-50">
+      <td className="relative border-b border-r border-line px-2 py-1.5 text-right font-mono text-xs text-fg-muted bg-surface-subtle">
         {noteIndicator}
         {value > 0 ? formatAmount(value, 'CAD') : '—'}
       </td>
@@ -1037,8 +1037,8 @@ function EditableCell({
   return (
     <td
       className={cn(
-        'relative border-b border-r border-neutral-200 p-0',
-        modified ? 'bg-amber-50' : 'bg-white',
+        'relative border-b border-r border-line p-0',
+        modified ? 'bg-warning-soft' : 'bg-surface',
       )}
     >
       {noteIndicator}
@@ -1054,7 +1054,7 @@ function EditableCell({
           onChange(Number.isFinite(n) && n >= 0 ? n : 0)
         }}
         placeholder="0"
-        className="w-full text-right font-mono text-xs px-2 py-1.5 bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:bg-white"
+        className="w-full text-right font-mono text-xs px-2 py-1.5 bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:bg-surface"
       />
     </td>
   )
@@ -1083,27 +1083,27 @@ function SpreadMenu({
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="absolute right-0 top-full mt-1 w-72 rounded-lg border border-neutral-200 bg-white shadow-lg z-50 p-3 flex flex-col gap-2.5">
+      <div className="absolute right-0 top-full mt-1 w-72 rounded-lg border border-line bg-surface shadow-lg z-50 p-3 flex flex-col gap-2.5">
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold">Scope</label>
+          <label className="text-2xs uppercase tracking-wide text-fg-muted font-semibold">Scope</label>
           <div className="grid grid-cols-3 gap-1">
             <ScopeBtn active={scope === 'row'} disabled={!hasFocus} onClick={() => setScope('row')}>Row</ScopeBtn>
             <ScopeBtn active={scope === 'col'} disabled={!hasFocus || !hasColAxis} onClick={() => setScope('col')}>Column</ScopeBtn>
             <ScopeBtn active={scope === 'all'} onClick={() => setScope('all')}>All</ScopeBtn>
           </div>
           {(scope === 'row' || scope === 'col') && !hasFocus && (
-            <p className="text-[10px] text-neutral-400">Click a cell first to anchor row/column.</p>
+            <p className="text-2xs text-fg-muted">Click a cell first to anchor row/column.</p>
           )}
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold">Method</label>
+          <label className="text-2xs uppercase tracking-wide text-fg-muted font-semibold">Method</label>
           <div className="grid grid-cols-3 gap-1">
             <ScopeBtn active={method === 'evenly'} onClick={() => setMethod('evenly')}>Evenly</ScopeBtn>
             <ScopeBtn active={method === 'proportional'} onClick={() => setMethod('proportional')}>Proportional</ScopeBtn>
             <ScopeBtn active={method === 'fill'} onClick={() => setMethod('fill')}>Fill</ScopeBtn>
           </div>
-          <p className="text-[10px] text-neutral-500 leading-snug">
+          <p className="text-2xs text-fg-muted leading-snug">
             {method === 'evenly' && 'Equal value in every target cell. Total = entered value.'}
             {method === 'proportional' && 'Weighted by current cell values. Total = entered value.'}
             {method === 'fill' && 'Set every target cell to the entered value.'}
@@ -1111,7 +1111,7 @@ function SpreadMenu({
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold">
+          <label className="text-2xs uppercase tracking-wide text-fg-muted font-semibold">
             {method === 'fill' ? 'Value per cell' : 'Target total'}
           </label>
           <input
@@ -1119,7 +1119,7 @@ function SpreadMenu({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="0.00"
-            className="h-8 text-xs rounded border border-neutral-300 px-2 font-mono"
+            className="h-8 text-xs rounded border border-line-strong px-2 font-mono"
             autoFocus
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit() } }}
           />
@@ -1148,10 +1148,10 @@ function ScopeBtn({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'h-7 rounded text-[11px] font-medium transition-colors',
+        'h-7 rounded text-2xs font-medium transition-colors',
         active
           ? 'bg-primary-600 text-white'
-          : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200',
+          : 'bg-surface-sunken text-fg-secondary hover:bg-surface-strong',
         disabled && 'opacity-40 cursor-not-allowed',
       )}
     >
@@ -1201,10 +1201,10 @@ function BaselineSidebar({
   useEffect(() => { setNoteDraft(selectedNote) }, [selectedNote, focusedKey])
 
   return (
-    <aside className="w-64 shrink-0 border-l border-neutral-200 bg-neutral-50/60 overflow-y-auto">
+    <aside className="w-64 shrink-0 border-l border-line bg-surface-subtle/60 overflow-y-auto">
       <div className="p-4 flex flex-col gap-4 text-xs">
         <div>
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-2">
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-fg-muted mb-2">
             <Info className="h-3 w-3" /> Reference
           </div>
         </div>
@@ -1212,27 +1212,27 @@ function BaselineSidebar({
         <Section label="Last year · same month">
           {lastYear != null ? (
             <>
-              <p className="font-mono text-sm font-semibold text-neutral-800">{formatAmount(lastYear, 'CAD')}</p>
+              <p className="font-mono text-sm font-semibold text-fg">{formatAmount(lastYear, 'CAD')}</p>
               {yoyDelta != null && (
                 <p className={cn(
-                  'text-[11px] mt-0.5',
-                  yoyDelta > 0 ? 'text-success-700' : yoyDelta < 0 ? 'text-danger-700' : 'text-neutral-500',
+                  'text-2xs mt-0.5',
+                  yoyDelta > 0 ? 'text-success-fg' : yoyDelta < 0 ? 'text-danger-fg' : 'text-fg-muted',
                 )}>
                   {yoyDelta >= 0 ? '+' : ''}{yoyDelta.toFixed(1)}% vs current total
                 </p>
               )}
             </>
-          ) : <p className="text-neutral-400">—</p>}
+          ) : <p className="text-fg-muted">—</p>}
         </Section>
 
         <Section label="Actual · this month">
-          <p className="font-mono text-sm text-neutral-700">
+          <p className="font-mono text-sm text-fg-secondary">
             {actual != null ? formatAmount(actual, 'CAD') : '—'}
           </p>
         </Section>
 
         <Section label="Actual · YTD">
-          <p className="font-mono text-sm text-neutral-700">
+          <p className="font-mono text-sm text-fg-secondary">
             {ytd != null ? formatAmount(ytd, 'CAD') : '—'}
           </p>
         </Section>
@@ -1240,14 +1240,14 @@ function BaselineSidebar({
         <Section label="Selected cell">
           {selectedCombo ? (
             <>
-              <p className="text-[11px] text-neutral-600">
+              <p className="text-2xs text-fg-secondary">
                 {Object.entries(selectedCombo).map(([k, v]) => `${k}=${v}`).join(' × ')}
               </p>
-              <p className="font-mono text-sm font-semibold text-neutral-800 mt-1">
+              <p className="font-mono text-sm font-semibold text-fg mt-1">
                 {formatAmount(selectedValue, 'CAD')}
               </p>
               <div className="mt-2">
-                <label className="text-[10px] uppercase tracking-wide text-neutral-500 font-medium flex items-center gap-1 mb-1">
+                <label className="text-2xs uppercase tracking-wide text-fg-muted font-medium flex items-center gap-1 mb-1">
                   <MessageSquare className="h-3 w-3" /> Note
                 </label>
                 {editable ? (
@@ -1261,23 +1261,23 @@ function BaselineSidebar({
                     }}
                     placeholder="Add a note for this cell…"
                     rows={3}
-                    className="w-full text-[11px] rounded border border-neutral-300 bg-white px-1.5 py-1 resize-y focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    className="w-full text-2xs rounded border border-line-strong bg-surface px-1.5 py-1 resize-y focus:outline-none focus:ring-1 focus:ring-primary-500"
                   />
                 ) : (
-                  <p className="text-[11px] text-neutral-600 whitespace-pre-wrap">
-                    {selectedNote || <span className="text-neutral-400">—</span>}
+                  <p className="text-2xs text-fg-secondary whitespace-pre-wrap">
+                    {selectedNote || <span className="text-fg-muted">—</span>}
                   </p>
                 )}
               </div>
             </>
-          ) : <p className="text-neutral-400">Click a cell</p>}
+          ) : <p className="text-fg-muted">Click a cell</p>}
         </Section>
 
         <Section label="Matrix total">
           <p className="font-mono text-sm font-bold text-primary-800">
             {formatAmount(grandTotal, 'CAD')}
           </p>
-          <p className="text-[11px] text-neutral-500 mt-0.5">
+          <p className="text-2xs text-fg-muted mt-0.5">
             Saved to plan_line.amount on Save.
           </p>
         </Section>
@@ -1289,7 +1289,7 @@ function BaselineSidebar({
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="text-[10px] uppercase tracking-wide text-neutral-500 font-medium mb-1">{label}</p>
+      <p className="text-2xs uppercase tracking-wide text-fg-muted font-medium mb-1">{label}</p>
       {children}
     </div>
   )

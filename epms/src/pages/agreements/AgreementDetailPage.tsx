@@ -117,30 +117,30 @@ function NteBar({ consumedAmount, notToExceed, currency }: { consumedAmount: str
   const overCeiling = ceiling !== null && consumed > ceiling
 
   return (
-    <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-5 py-4 flex flex-col gap-2 max-w-sm">
+    <div className="rounded-lg border border-line bg-surface-subtle px-5 py-4 flex flex-col gap-2 max-w-sm">
       <div className="flex justify-between text-sm">
-        <span className="text-neutral-700">Consumed (pre-tax)</span>
-        <span className={cn('amount font-semibold', overCeiling ? 'text-danger-600' : 'text-neutral-900')}>
+        <span className="text-fg-secondary">Consumed (pre-tax)</span>
+        <span className={cn('amount font-semibold', overCeiling ? 'text-danger-fg' : 'text-fg')}>
           {formatAmount(consumed, currency)}
         </span>
       </div>
       <div className="flex justify-between text-sm">
-        <span className="text-neutral-700">Not to Exceed (pre-tax)</span>
-        <span className="amount text-neutral-900">{ceiling !== null ? formatAmount(ceiling, currency) : 'No ceiling'}</span>
+        <span className="text-fg-secondary">Not to Exceed (pre-tax)</span>
+        <span className="amount text-fg">{ceiling !== null ? formatAmount(ceiling, currency) : 'No ceiling'}</span>
       </div>
       {ceiling !== null && (
-        <div className="h-2 w-full rounded-full bg-neutral-200 mt-1">
+        <div className="h-2 w-full rounded-full bg-surface-strong mt-1">
           <div
             style={{ width: `${pct ?? 0}%` }}
             className={cn(
               'h-full rounded-full transition-all',
-              overCeiling ? 'bg-danger-500' : (pct ?? 0) >= 90 ? 'bg-warning-500' : 'bg-primary-500'
+              overCeiling ? 'bg-danger-solid' : (pct ?? 0) >= 90 ? 'bg-warning-solid' : 'bg-primary-500'
             )}
           />
         </div>
       )}
       {overCeiling && (
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-danger-600 mt-0.5">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-danger-fg mt-0.5">
           <AlertTriangle className="h-3.5 w-3.5" />
           Over ceiling — this is a warning only, no action is blocked.
         </div>
@@ -170,65 +170,65 @@ function ApprovalModal({ action, agreementNumber, onConfirm, onClose, isPending,
     approve: {
       title: 'Approve Agreement',
       label: 'Approve',
-      icon: <CheckCircle2 className="h-5 w-5 text-success-600" />,
-      bgIcon: 'bg-success-50',
-      btn: 'bg-success-600 hover:bg-success-700 text-white',
+      icon: <CheckCircle2 className="h-5 w-5 text-success-fg" />,
+      bgIcon: 'bg-success-soft',
+      btn: 'bg-success-solid hover:bg-success-700 text-white',
       commentLabel: 'Comment (optional)',
       placeholder: 'Add an optional comment…',
     },
     return: {
       title: 'Return for Revision',
       label: 'Return',
-      icon: <RotateCcw className="h-5 w-5 text-warning-600" />,
-      bgIcon: 'bg-warning-50',
-      btn: 'bg-warning-500 hover:bg-warning-600 text-white',
+      icon: <RotateCcw className="h-5 w-5 text-warning-fg" />,
+      bgIcon: 'bg-warning-soft',
+      btn: 'bg-warning-solid hover:bg-warning-solid text-white',
       commentLabel: 'Revision instructions *',
       placeholder: 'Describe what needs to be revised…',
     },
     reject: {
       title: 'Reject Agreement',
       label: 'Reject',
-      icon: <XCircle className="h-5 w-5 text-danger-600" />,
-      bgIcon: 'bg-danger-50',
-      btn: 'bg-danger-600 hover:bg-danger-700 text-white',
+      icon: <XCircle className="h-5 w-5 text-danger-fg" />,
+      bgIcon: 'bg-danger-soft',
+      btn: 'bg-danger-solid hover:bg-danger-700 text-white',
       commentLabel: 'Reason for rejection *',
       placeholder: 'Explain why this agreement is being rejected…',
     },
   }[action]
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl">
+        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
           <div className="flex items-center gap-3">
             <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', config.bgIcon)}>
               {config.icon}
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-neutral-900">{config.title}</h2>
-              <p className="text-xs text-neutral-500">{agreementNumber}</p>
+              <h2 className="text-sm font-semibold text-fg">{config.title}</h2>
+              <p className="text-xs text-fg-muted">{agreementNumber}</p>
             </div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary">
             <X className="h-4 w-4" />
           </button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">{config.commentLabel}</label>
+            <label className="text-xs font-medium text-fg-secondary">{config.commentLabel}</label>
             <div className="relative">
-              <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-neutral-400" />
+              <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-fg-muted" />
               <textarea
                 rows={3}
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 placeholder={config.placeholder}
                 autoFocus
-                className="w-full resize-none rounded-lg border border-neutral-300 bg-white pl-8 pr-3 pt-2 pb-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                className="w-full resize-none rounded-lg border border-line-strong bg-surface pl-8 pr-3 pt-2 pb-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               />
             </div>
           </div>
-          {error && <p className="text-xs text-danger-600">{error}</p>}
+          {error && <p className="text-xs text-danger-fg">{error}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
             <button
@@ -469,14 +469,14 @@ export default function AgreementDetailPage() {
     )
   }
 
-  if (isLoading) return <div className="p-8 text-center text-neutral-400">Loading…</div>
+  if (isLoading) return <div className="p-8 text-center text-fg-muted">Loading…</div>
 
   if (!agreement) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <div className="text-5xl mb-4">🔍</div>
-        <h2 className="text-xl font-semibold text-neutral-700">Agreement Not Found</h2>
-        <p className="mt-2 text-sm text-neutral-400">The agreement you're looking for doesn't exist.</p>
+        <h2 className="text-xl font-semibold text-fg-secondary">Agreement Not Found</h2>
+        <p className="mt-2 text-sm text-fg-muted">The agreement you're looking for doesn't exist.</p>
         <BackLink to="/agreements" className="mt-4">
           <Button variant="secondary">Back to Agreements</Button>
         </BackLink>
@@ -498,7 +498,7 @@ export default function AgreementDetailPage() {
   return (
     <div className={cn('flex flex-col gap-6', canApprove && 'pb-16')}>
       {/* Page header */}
-      <div className="rounded-lg border border-neutral-200 bg-white px-6 py-4">
+      <div className="rounded-lg border border-line bg-surface px-6 py-4">
         <div className="flex items-center gap-3 mb-3">
           <BackLink to="/agreements">
             <Button variant="ghost" size="sm">
@@ -510,7 +510,7 @@ export default function AgreementDetailPage() {
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-bold text-neutral-900">{agreement.number}</h1>
+              <h1 className="text-xl font-bold text-fg">{agreement.number}</h1>
               <StatusBadge status={agreement.status as DocumentStatus} />
               <Badge variant="neutral">{TYPE_LABELS[agreement.agreement_type]}</Badge>
               {legacySettlementCount > 0 && (
@@ -519,7 +519,7 @@ export default function AgreementDetailPage() {
                 </span>
               )}
             </div>
-            <p className="mt-1 text-neutral-600">{agreement.title} — {agreement.vendor_name}</p>
+            <p className="mt-1 text-fg-secondary">{agreement.title} — {agreement.vendor_name}</p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -543,7 +543,7 @@ export default function AgreementDetailPage() {
                   Submit for Approval
                 </Button>
                 {missingOwner && (
-                  <span className="text-xs text-danger-600">
+                  <span className="text-xs text-danger-fg">
                     Set an Owner (Edit) before submitting — the owner confirms each period.
                   </span>
                 )}
@@ -569,7 +569,7 @@ export default function AgreementDetailPage() {
               </Button>
             )}
             {agreementRecall.isError && (
-              <span className="text-xs text-danger-600">
+              <span className="text-xs text-danger-fg">
                 {agreementRecall.error instanceof Error ? agreementRecall.error.message : 'Could not recall the agreement'}
               </span>
             )}
@@ -608,7 +608,7 @@ export default function AgreementDetailPage() {
       </div>
 
       {(agreementAction.isError || (createSubmitError && agreement.status === 'draft')) && (
-        <p role="alert" className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+        <p role="alert" className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
           {agreementAction.isError
             ? (agreementAction.error instanceof Error ? agreementAction.error.message : 'The agreement action failed')
             : createSubmitError}
@@ -619,9 +619,9 @@ export default function AgreementDetailPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Left: details */}
         <div className="lg:col-span-8 flex flex-col gap-6">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-6">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-6">
             <section>
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">Terms</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">Terms</h2>
               <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2 text-sm">
                 {([
                   ['Vendor', agreement.vendor_name],
@@ -639,19 +639,19 @@ export default function AgreementDetailPage() {
                   ['Created', formatDate(agreement.created_at)],
                 ] as [string, string][]).map(([label, value]) => (
                   <div key={label} className="flex flex-col gap-0.5">
-                    <dt className="text-xs font-medium text-neutral-500">{label}</dt>
-                    <dd className="text-neutral-900">{value}</dd>
+                    <dt className="text-xs font-medium text-fg-muted">{label}</dt>
+                    <dd className="text-fg">{value}</dd>
                   </div>
                 ))}
                 <div className="flex flex-col gap-0.5 sm:col-span-2">
-                  <dt className="text-xs font-medium text-neutral-500">Notes</dt>
-                  <dd className="whitespace-pre-wrap break-words text-neutral-900">{agreement.notes || '—'}</dd>
+                  <dt className="text-xs font-medium text-fg-muted">Notes</dt>
+                  <dd className="whitespace-pre-wrap break-words text-fg">{agreement.notes || '—'}</dd>
                 </div>
               </dl>
             </section>
 
             <section>
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">Consumed / Not to Exceed (pre-tax)</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">Consumed / Not to Exceed (pre-tax)</h2>
               <NteBar consumedAmount={agreement.consumed_amount} notToExceed={agreement.not_to_exceed} currency={agreement.currency} />
             </section>
           </div>
@@ -661,15 +661,15 @@ export default function AgreementDetailPage() {
               ensure_period_rows only fires for recurring_type; milestone rows are
               never generated for house_account either), so nothing renders here. */}
           {agreement.agreement_type === 'recurring' && (
-            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-                  Payment Schedule <span className="normal-case font-normal text-neutral-400">({periodRows.length})</span>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+                  Payment Schedule <span className="normal-case font-normal text-fg-muted">({periodRows.length})</span>
                 </h2>
                 <div className="flex items-center gap-2 text-xs">
-                  <span className="text-neutral-500">{periodReceived} of {periodRows.length} periods received</span>
+                  <span className="text-fg-muted">{periodReceived} of {periodRows.length} periods received</span>
                   {periodOverdue > 0 && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-danger-50 border border-danger-200 px-2 py-0.5 font-semibold text-danger-700">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-danger-soft border border-danger-line px-2 py-0.5 font-semibold text-danger-fg">
                       <AlertTriangle className="h-3 w-3" />
                       {periodOverdue} overdue
                     </span>
@@ -689,12 +689,12 @@ export default function AgreementDetailPage() {
           )}
 
           {agreement.agreement_type === 'milestone' && (
-            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-                  Payment Schedule <span className="normal-case font-normal text-neutral-400">({milestoneRows.length})</span>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+                  Payment Schedule <span className="normal-case font-normal text-fg-muted">({milestoneRows.length})</span>
                 </h2>
-                <div className="text-xs text-neutral-500">
+                <div className="text-xs text-fg-muted">
                   {milestoneInvoiced} of {milestoneRows.length} stages invoiced — {formatAmount(milestoneAmountSum, agreement.currency)}
                   {agreement.not_to_exceed !== null && <> of {formatAmount(Number(agreement.not_to_exceed), agreement.currency)} NTE</>}
                 </div>
@@ -729,10 +729,10 @@ export default function AgreementDetailPage() {
               creating one is a separate page — recording now happens on the
               standalone /receipts/new page (linked below), not inline. */}
           {(receipts.length > 0 || (canRecordReceipt && isAgreementAdmissible(agreement))) && (
-            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-                  Agreement Receipts <span className="normal-case font-normal text-neutral-400">({receipts.length})</span>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+                  Agreement Receipts <span className="normal-case font-normal text-fg-muted">({receipts.length})</span>
                 </h2>
                 {/* Same admissibility gate the old inline form used (isAgreementAdmissible,
                     defined above) — status alone (agreement_type check above) isn't enough:
@@ -761,13 +761,13 @@ export default function AgreementDetailPage() {
           )}
 
           {/* Invoices matched to this agreement */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-                Matched Invoices <span className="normal-case font-normal text-neutral-400">({invoices.length})</span>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+                Matched Invoices <span className="normal-case font-normal text-fg-muted">({invoices.length})</span>
               </h2>
               {legacySettlementCount > 0 && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-warning-50 border border-warning-200 px-2.5 py-1 text-xs font-semibold text-warning-700">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-warning-soft border border-warning-line px-2.5 py-1 text-xs font-semibold text-warning-fg">
                   <AlertTriangle className="h-3.5 w-3.5" />
                   {legacySettlementCount} settled without receipt
                 </span>
@@ -775,41 +775,41 @@ export default function AgreementDetailPage() {
             </div>
 
             {invoicesLoading ? (
-              <div className="py-8 text-center text-sm text-neutral-400">Loading…</div>
+              <div className="py-8 text-center text-sm text-fg-muted">Loading…</div>
             ) : invoices.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <FileText className="h-8 w-8 text-neutral-300 mb-2" />
-                <p className="text-sm text-neutral-400">No invoices matched to this agreement yet.</p>
+                <FileText className="h-8 w-8 text-fg-faint mb-2" />
+                <p className="text-sm text-fg-muted">No invoices matched to this agreement yet.</p>
               </div>
             ) : (
-              <div className="rounded-lg border border-neutral-200 overflow-hidden">
+              <div className="rounded-lg border border-line overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-neutral-200 bg-neutral-50">
-                        <SortTh label="Invoice" sortKey="internal_ref" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
-                        <SortTh label="Vendor Invoice #" sortKey="vendor_invoice_number" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
+                      <tr className="border-b border-line bg-surface-subtle">
+                        <SortTh label="Invoice" sortKey="internal_ref" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
+                        <SortTh label="Vendor Invoice #" sortKey="vendor_invoice_number" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
                         <SortTh label="Amount" sortKey="total_amount" sort={invSort} onSort={onInvSort} align="right"
-                          className="px-4 py-2.5 text-right text-xs font-semibold text-neutral-500" />
-                        <SortTh label="Date" sortKey="invoice_date" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
-                        <SortTh label="Status" sortKey="status" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
-                        <SortTh label="Receipt" sortKey="receipt" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
+                          className="px-4 py-2.5 text-right text-xs font-semibold text-fg-muted" />
+                        <SortTh label="Date" sortKey="invoice_date" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
+                        <SortTh label="Status" sortKey="status" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
+                        <SortTh label="Receipt" sortKey="receipt" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted" />
                       </tr>
                     </thead>
                     <tbody>
                       {sortedInvoices.map((inv) => {
                         const invStatusCfg = INVOICE_STATUS_CFG[inv.status] ?? { label: inv.status, variant: 'neutral' as const }
                         return (
-                          <tr key={inv.id} className="border-b border-neutral-100 last:border-0 bg-white hover:bg-primary-50/60 transition-colors">
+                          <tr key={inv.id} className="border-b border-line-subtle last:border-0 bg-surface hover:bg-primary-50/60 transition-colors">
                             <td className="px-4 py-2.5">
                               <Link to={`/invoices/${inv.id}`} className="inline-flex items-center gap-1 font-mono text-xs font-medium text-primary-700 hover:text-primary-900">
                                 {inv.internal_ref}
                                 <ExternalLink className="h-3 w-3" />
                               </Link>
                             </td>
-                            <td className="px-4 py-2.5 text-neutral-600">{inv.vendor_invoice_number}</td>
-                            <td className="px-4 py-2.5 text-right amount font-medium text-neutral-900">{formatAmount(inv.total_amount, inv.currency)}</td>
-                            <td className="px-4 py-2.5 text-xs text-neutral-500">{formatDate(inv.invoice_date)}</td>
+                            <td className="px-4 py-2.5 text-fg-secondary">{inv.vendor_invoice_number}</td>
+                            <td className="px-4 py-2.5 text-right amount font-medium text-fg">{formatAmount(inv.total_amount, inv.currency)}</td>
+                            <td className="px-4 py-2.5 text-xs text-fg-muted">{formatDate(inv.invoice_date)}</td>
                             <td className="px-4 py-2.5">
                               <Badge variant={invStatusCfg.variant}>{invStatusCfg.label}</Badge>
                             </td>
@@ -819,7 +819,7 @@ export default function AgreementDetailPage() {
                                   <Badge variant="warning">Settled without receipt</Badge>
                                 </span>
                               ) : (
-                                <span className="text-neutral-300">—</span>
+                                <span className="text-fg-faint">—</span>
                               )}
                             </td>
                           </tr>
@@ -833,10 +833,10 @@ export default function AgreementDetailPage() {
           </div>
 
           {/* Attachments */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-                Attachments <span className="normal-case font-normal text-neutral-400">({attachments.length})</span>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+                Attachments <span className="normal-case font-normal text-fg-muted">({attachments.length})</span>
               </h2>
               {canWrite && (
                 <label
@@ -868,29 +868,29 @@ export default function AgreementDetailPage() {
                 </label>
               )}
             </div>
-            {canWrite && <p className="-mt-2 mb-3 text-xs text-neutral-400">{ATTACHMENT_RULE.hint}</p>}
-            {attachmentProblem && <p role="alert" className="mb-3 text-xs text-danger-600">{attachmentProblem}</p>}
+            {canWrite && <p className="-mt-2 mb-3 text-xs text-fg-muted">{ATTACHMENT_RULE.hint}</p>}
+            {attachmentProblem && <p role="alert" className="mb-3 text-xs text-danger-fg">{attachmentProblem}</p>}
             {(uploadAttachment.isError || deleteAttachment.isError) && (
-              <p role="alert" className="mb-3 text-xs text-danger-600">
+              <p role="alert" className="mb-3 text-xs text-danger-fg">
                 {uploadAttachment.isError
                   ? errorMessage(uploadAttachment.error, 'Failed to upload attachment')
                   : errorMessage(deleteAttachment.error, 'Failed to delete attachment')}
               </p>
             )}
             {attachmentsLoading ? (
-              <div className="py-8 text-center text-sm text-neutral-400">Loading…</div>
+              <div className="py-8 text-center text-sm text-fg-muted">Loading…</div>
             ) : attachments.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Paperclip className="h-8 w-8 text-neutral-300 mb-3" />
-                <p className="text-sm text-neutral-400">No attachments uploaded</p>
+                <Paperclip className="h-8 w-8 text-fg-faint mb-3" />
+                <p className="text-sm text-fg-muted">No attachments uploaded</p>
               </div>
             ) : (
               <div className="flex flex-col gap-2">
                 {attachments.map((att) => (
-                  <div key={att.id} className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
-                    <Paperclip className="h-4 w-4 shrink-0 text-neutral-400" />
-                    <span className="flex-1 truncate text-sm text-neutral-700">{att.filename}</span>
-                    <span className="text-xs text-neutral-400">{formatBytes(att.file_size)}</span>
+                  <div key={att.id} className="flex items-center gap-3 rounded-lg border border-line bg-surface-subtle px-4 py-3">
+                    <Paperclip className="h-4 w-4 shrink-0 text-fg-muted" />
+                    <span className="flex-1 truncate text-sm text-fg-secondary">{att.filename}</span>
+                    <span className="text-xs text-fg-muted">{formatBytes(att.file_size)}</span>
                     <button
                       type="button"
                       onClick={() => agreementAttachmentService.download(agreement.id, att.id, att.filename)}
@@ -903,7 +903,7 @@ export default function AgreementDetailPage() {
                         type="button"
                         onClick={() => { uploadAttachment.reset(); deleteAttachment.mutate(att.id) }}
                         disabled={deleteAttachment.isPending}
-                        className="text-neutral-300 hover:text-danger-500 disabled:opacity-40"
+                        className="text-fg-faint hover:text-danger-fg disabled:opacity-40"
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -922,35 +922,35 @@ export default function AgreementDetailPage() {
               not just the date (PO's History tab shows the date alone) — submit
               and cancel are routinely seconds apart, and a date alone puts them
               on the same line with no order. */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">Audit History</h2>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">Audit History</h2>
             {events && events.length > 0 ? (
               <ul className="flex flex-col gap-3">
                 {events.map((e) => {
                   const line = historyLine(e, workflowNodes)
                   return (
                     <li key={e.id} className="flex gap-3 text-sm">
-                      <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDateTime(e.created_at)}</span>
+                      <span className="text-xs text-fg-muted whitespace-nowrap pt-0.5">{formatDateTime(e.created_at)}</span>
                       <div>
-                        <span className="font-medium text-neutral-800 capitalize">{line.action}</span>
-                        <span className="text-neutral-500 ml-1">{line.role}</span>
-                        {line.actorName && <span className="text-neutral-400 ml-1">— {line.actorName}</span>}
-                        {line.note && <p className="text-neutral-400 text-xs mt-0.5 italic">{line.note}</p>}
+                        <span className="font-medium text-fg capitalize">{line.action}</span>
+                        <span className="text-fg-muted ml-1">{line.role}</span>
+                        {line.actorName && <span className="text-fg-muted ml-1">— {line.actorName}</span>}
+                        {line.note && <p className="text-fg-muted text-xs mt-0.5 italic">{line.note}</p>}
                       </div>
                     </li>
                   )
                 })}
               </ul>
             ) : (
-              <div className="text-sm text-neutral-400 text-center py-8">No history yet</div>
+              <div className="text-sm text-fg-muted text-center py-8">No history yet</div>
             )}
           </div>
         </div>
 
         {/* Right: approval timeline */}
         <div className="lg:col-span-4">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">Approval Timeline</h2>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">Approval Timeline</h2>
             <ApprovalTimeline steps={approvalSteps} />
 
             {/* Document Chain */}
@@ -961,9 +961,9 @@ export default function AgreementDetailPage() {
 
       {/* Fixed bottom approver action bar */}
       {canApprove && (
-        <div className="fixed bottom-0 left-60 right-0 z-10 bg-white border-t border-neutral-200 px-6 py-3 flex items-center justify-between shadow-[0_-1px_8px_rgba(0,0,0,0.06)] max-md:left-0">
-          <p className="text-sm text-neutral-500">
-            Reviewing <span className="font-medium text-neutral-900">{agreement.number}</span>
+        <div className="fixed bottom-0 left-60 right-0 z-10 bg-surface border-t border-line px-6 py-3 flex items-center justify-between shadow-[0_-1px_8px_rgba(0,0,0,0.06)] max-md:left-0">
+          <p className="text-sm text-fg-muted">
+            Reviewing <span className="font-medium text-fg">{agreement.number}</span>
           </p>
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={() => setPendingAction('return')} className="gap-1.5">
@@ -973,13 +973,13 @@ export default function AgreementDetailPage() {
               variant="secondary"
               size="sm"
               onClick={() => setPendingAction('reject')}
-              className="gap-1.5 border-danger-200 text-danger-600 hover:bg-danger-50"
+              className="gap-1.5 border-danger-line text-danger-fg hover:bg-danger-soft"
             >
               <XCircle className="h-3.5 w-3.5" /> Reject
             </Button>
             <button
               onClick={() => setPendingAction('approve')}
-              className="inline-flex items-center gap-2 h-9 px-5 rounded-lg bg-success-600 text-white text-sm font-semibold hover:bg-success-700 transition-colors"
+              className="inline-flex items-center gap-2 h-9 px-5 rounded-lg bg-success-solid text-white text-sm font-semibold hover:bg-success-700 transition-colors"
             >
               <CheckCircle2 className="h-4 w-4" /> Approve
             </button>

@@ -26,8 +26,8 @@ const MAX_FACTORS = 3
 /** Role label for sort_order position in the matrix layout. */
 const ROLE_BY_INDEX = [
   { label: 'Primary · Rows',     bg: 'bg-primary-50',  fg: 'text-primary-700',  icon: '🔻' },
-  { label: '2nd · Columns',      bg: 'bg-blue-50',     fg: 'text-blue-700',     icon: '➡' },
-  { label: '3rd · Sub-Columns',  bg: 'bg-purple-50',   fg: 'text-purple-700',   icon: '⬇' },
+  { label: '2nd · Columns',      bg: 'bg-info-soft',     fg: 'text-info-fg',     icon: '➡' },
+  { label: '3rd · Sub-Columns',  bg: 'bg-cat4-soft',   fg: 'text-cat4-fg',   icon: '⬇' },
 ] as const
 
 export function FactorConfigPanel({ accountId, canEdit }: Props) {
@@ -49,7 +49,7 @@ export function FactorConfigPanel({ accountId, canEdit }: Props) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
           Decomposition Factors ({activeCount} / {MAX_FACTORS})
         </h3>
         {canEdit && !showAdd && !showPicker && (
@@ -79,14 +79,14 @@ export function FactorConfigPanel({ accountId, canEdit }: Props) {
       </div>
 
       {grandFathered && (
-        <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] text-amber-800 leading-snug">
+        <div className="rounded-md bg-warning-soft border border-warning-line px-3 py-2 text-2xs text-warning-fg leading-snug">
           This Account has {factors.length} factors. The Matrix editor uses the first 3 by sort order;
           additional factors are preserved but not editable. Deactivate or remove extras to clean up.
         </div>
       )}
 
       {isLoading ? (
-        <p className="text-xs text-neutral-400">Loading…</p>
+        <p className="text-xs text-fg-muted">Loading…</p>
       ) : (
         <div className="flex flex-col gap-2">
           {factors.map((f, idx) => (
@@ -112,7 +112,7 @@ export function FactorConfigPanel({ accountId, canEdit }: Props) {
             />
           )}
           {factors.length === 0 && !showAdd && (
-            <p className="text-xs text-neutral-400 px-2 py-1">No factors configured yet.</p>
+            <p className="text-xs text-fg-muted px-2 py-1">No factors configured yet.</p>
           )}
         </div>
       )}
@@ -181,25 +181,25 @@ function FactorCard({
   return (
     <div className={cn(
       'rounded-lg border p-3',
-      outOfMatrix ? 'border-amber-200 bg-amber-50/40' : 'border-neutral-200 bg-white',
+      outOfMatrix ? 'border-warning-line bg-warning-soft/40' : 'border-line bg-surface',
     )}>
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 flex-wrap">
           {role && (
             <span
-              className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold', role.bg, role.fg)}
+              className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-semibold', role.bg, role.fg)}
               title={`This factor is the ${role.label} axis in the matrix editor`}
             >
               <span aria-hidden>{role.icon}</span>{role.label}
             </span>
           )}
           {outOfMatrix && (
-            <span className="text-[10px] rounded-full bg-amber-100 text-amber-700 px-2 py-0.5">Out of matrix</span>
+            <span className="text-2xs rounded-full bg-warning-soft text-warning-fg px-2 py-0.5">Out of matrix</span>
           )}
-          <span className="font-mono text-xs text-neutral-500">{factor.factor_code}</span>
-          <span className="text-sm font-medium text-neutral-900">{factor.factor_name}</span>
+          <span className="font-mono text-xs text-fg-muted">{factor.factor_code}</span>
+          <span className="text-sm font-medium text-fg">{factor.factor_name}</span>
           {!factor.is_active && (
-            <span className="text-[10px] rounded-full bg-neutral-100 text-neutral-500 px-2 py-0.5">Inactive</span>
+            <span className="text-2xs rounded-full bg-surface-sunken text-fg-muted px-2 py-0.5">Inactive</span>
           )}
         </div>
         {canEdit && (
@@ -208,7 +208,7 @@ function FactorCard({
               {factor.is_active ? 'Deactivate' : 'Activate'}
             </Button>
             <Button size="icon-sm" variant="ghost" onClick={handleDeleteFactor} title="Delete factor">
-              <Trash2 className="h-3.5 w-3.5 text-danger-600" />
+              <Trash2 className="h-3.5 w-3.5 text-danger-fg" />
             </Button>
           </div>
         )}
@@ -217,7 +217,7 @@ function FactorCard({
       {/* Values list */}
       <div className="flex flex-wrap gap-1.5 mb-2">
         {factor.values.length === 0 && (
-          <p className="text-xs text-neutral-400">No values yet</p>
+          <p className="text-xs text-fg-muted">No values yet</p>
         )}
         {factor.values.map((v) => (
           <FactorValueChip key={v.id} value={v} canEdit={canEdit} />
@@ -232,13 +232,13 @@ function FactorCard({
               value={newValueCode}
               onChange={(e) => setNewValueCode(e.target.value)}
               placeholder="VALUE_CODE"
-              className="h-8 text-xs rounded border border-neutral-300 px-2 font-mono"
+              className="h-8 text-xs rounded border border-line-strong px-2 font-mono"
             />
             <input
               value={newValueName}
               onChange={(e) => setNewValueName(e.target.value)}
               placeholder="Value name"
-              className="h-8 text-xs rounded border border-neutral-300 px-2"
+              className="h-8 text-xs rounded border border-line-strong px-2"
             />
           </div>
           <Button size="sm" variant="secondary" onClick={handleAddValue} disabled={createValMut.isPending}>
@@ -246,7 +246,7 @@ function FactorCard({
           </Button>
         </div>
       )}
-      {valueError && <p className="text-xs text-danger-600 mt-1">{valueError}</p>}
+      {valueError && <p className="text-xs text-danger-fg mt-1">{valueError}</p>}
       {confirmDlg.dialog}
     </div>
   )
@@ -282,15 +282,15 @@ function NewFactorForm({ accountId, onClose }: { accountId: string; onClose: () 
       <p className="text-xs font-semibold text-primary-700 mb-2">New Factor</p>
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-neutral-600">Factor Code</label>
+          <label className="text-2xs font-medium text-fg-secondary">Factor Code</label>
           <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="brand" className="h-8 text-xs font-mono" />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-neutral-600">Factor Name</label>
+          <label className="text-2xs font-medium text-fg-secondary">Factor Name</label>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Brand" className="h-8 text-xs" />
         </div>
       </div>
-      {error && <p className="text-xs text-danger-600 mt-1">{error}</p>}
+      {error && <p className="text-xs text-danger-fg mt-1">{error}</p>}
       <div className="flex items-center justify-end gap-2 mt-2">
         <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
         <Button size="sm" onClick={handleSubmit} disabled={createMut.isPending}>
@@ -343,7 +343,7 @@ function FactorValueChip({ value, canEdit }: { value: ApiFactorValue; canEdit: b
   if (editing) {
     return (
       <div className="inline-flex items-center gap-1.5 rounded-md border border-primary-300 bg-primary-50 pl-2 pr-1 py-0.5 text-xs">
-        <span className="font-mono text-neutral-500">{value.value_code}</span>
+        <span className="font-mono text-fg-muted">{value.value_code}</span>
         <input
           autoFocus
           value={draftName}
@@ -352,7 +352,7 @@ function FactorValueChip({ value, canEdit }: { value: ApiFactorValue; canEdit: b
             if (e.key === 'Enter') { e.preventDefault(); saveEdit() }
             else if (e.key === 'Escape') { e.preventDefault(); cancelEdit() }
           }}
-          className="h-5 text-xs rounded border border-neutral-300 bg-white px-1.5 min-w-32"
+          className="h-5 text-xs rounded border border-line-strong bg-surface px-1.5 min-w-32"
           disabled={updateMut.isPending}
         />
         <button
@@ -366,7 +366,7 @@ function FactorValueChip({ value, canEdit }: { value: ApiFactorValue; canEdit: b
         <button
           onClick={cancelEdit}
           disabled={updateMut.isPending}
-          className="rounded p-0.5 hover:bg-neutral-200 text-neutral-500"
+          className="rounded p-0.5 hover:bg-surface-strong text-fg-muted"
           title="Cancel (Esc)"
         >
           <X className="h-3 w-3" />
@@ -376,15 +376,15 @@ function FactorValueChip({ value, canEdit }: { value: ApiFactorValue; canEdit: b
   }
 
   return (
-    <div className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 bg-neutral-50 pl-2 pr-1 py-0.5 text-xs">
-      <span className="font-mono text-neutral-500">{value.value_code}</span>
-      <span className={value.is_active ? 'text-neutral-700' : 'text-neutral-400 line-through'}>
+    <div className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface-subtle pl-2 pr-1 py-0.5 text-xs">
+      <span className="font-mono text-fg-muted">{value.value_code}</span>
+      <span className={value.is_active ? 'text-fg-secondary' : 'text-fg-muted line-through'}>
         {value.value_name}
       </span>
       {canEdit && value.is_active && (
         <button
           onClick={startEdit}
-          className="rounded p-0.5 hover:bg-neutral-200 text-neutral-500"
+          className="rounded p-0.5 hover:bg-surface-strong text-fg-muted"
           title="Rename value"
         >
           <Pencil className="h-3 w-3" />
@@ -404,7 +404,7 @@ function FactorValueChip({ value, canEdit }: { value: ApiFactorValue; canEdit: b
         <button
           onClick={() => deleteMut.mutate(value.id)}
           disabled={deleteMut.isPending}
-          className="rounded p-0.5 hover:bg-neutral-200 text-neutral-500"
+          className="rounded p-0.5 hover:bg-surface-strong text-fg-muted"
           title="Deactivate value"
         >
           <X className="h-3 w-3" />
@@ -461,21 +461,21 @@ function FactorLibraryPicker({
     <div className="rounded-lg border border-primary-300 bg-primary-50/30 p-3">
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs font-semibold text-primary-700">Pick from Factor Library</p>
-        <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600">
+        <button onClick={onClose} className="text-fg-muted hover:text-fg-secondary">
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
 
       {isLoading ? (
-        <p className="text-xs text-neutral-400">Loading templates…</p>
+        <p className="text-xs text-fg-muted">Loading templates…</p>
       ) : templates.length === 0 ? (
-        <p className="text-xs text-neutral-500 italic">
+        <p className="text-xs text-fg-muted italic">
           The Factor Library is empty. Ask an admin to add a template in
           Portal &rarr; Finance &rarr; Factor Library.
         </p>
       ) : (
         <>
-          <div className="max-h-44 overflow-y-auto rounded border border-neutral-200 bg-white">
+          <div className="max-h-44 overflow-y-auto rounded border border-line bg-surface">
             <ul>
               {templates.map((t) => {
                 const codeUsedAlready = existingCodes.includes(t.factor_code.toLowerCase())
@@ -494,15 +494,15 @@ function FactorLibraryPicker({
                         selectedId === t.id && 'bg-primary-100',
                       )}
                     >
-                      <span className="inline-flex items-center rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-neutral-700">
+                      <span className="inline-flex items-center rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">
                         {t.factor_code}
                       </span>
-                      <span className="flex-1 font-medium text-neutral-800">{t.factor_name}</span>
-                      <span className="text-[10px] text-neutral-500">
+                      <span className="flex-1 font-medium text-fg">{t.factor_name}</span>
+                      <span className="text-2xs text-fg-muted">
                         {t.values.filter((v) => v.is_active).length} values
                       </span>
                       {codeUsedAlready && (
-                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700" title="This code already exists on this account — override the code below to attach anyway">
+                        <span className="rounded-full bg-warning-soft px-1.5 py-0.5 text-2xs text-warning-fg" title="This code already exists on this account — override the code below to attach anyway">
                           code in use
                         </span>
                       )}
@@ -516,7 +516,7 @@ function FactorLibraryPicker({
           {selected && (
             <div className="mt-2 grid grid-cols-2 gap-2">
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-medium text-neutral-600">
+                <label className="text-2xs font-medium text-fg-secondary">
                   Factor code on this account (override optional)
                 </label>
                 <Input
@@ -527,7 +527,7 @@ function FactorLibraryPicker({
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-medium text-neutral-600">
+                <label className="text-2xs font-medium text-fg-secondary">
                   Factor name on this account (override optional)
                 </label>
                 <Input
@@ -541,7 +541,7 @@ function FactorLibraryPicker({
           )}
 
           {selected && (
-            <p className="mt-2 text-[10px] text-neutral-500 leading-relaxed">
+            <p className="mt-2 text-2xs text-fg-muted leading-relaxed">
               {selected.values.filter((v) => v.is_active).length} active value(s) will be copied:
               {' '}
               {selected.values.filter((v) => v.is_active).map((v) => v.value_code).join(', ') || '(none)'}.
@@ -552,7 +552,7 @@ function FactorLibraryPicker({
         </>
       )}
 
-      {error && <p className="text-xs text-danger-600 mt-2">{error}</p>}
+      {error && <p className="text-xs text-danger-fg mt-2">{error}</p>}
 
       <div className="flex items-center justify-end gap-2 mt-3">
         <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>

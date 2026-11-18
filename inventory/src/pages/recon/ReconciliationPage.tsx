@@ -37,7 +37,7 @@ const SORTS: { key: ReconSort; label: string }[] = [
 ]
 
 const selectCls =
-  'h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500'
+  'h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500'
 
 function Chip({ active, onClick, children, title }: {
   active: boolean
@@ -48,7 +48,7 @@ function Chip({ active, onClick, children, title }: {
   return (
     <button type="button" aria-pressed={active} onClick={onClick} title={title}
       className={cn('rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors',
-        active ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-neutral-300 bg-white text-neutral-500 hover:bg-neutral-50')}>
+        active ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-line-strong bg-surface text-fg-muted hover:bg-surface-subtle')}>
       {children}
     </button>
   )
@@ -56,18 +56,18 @@ function Chip({ active, onClick, children, title }: {
 
 function Tile({ label, value, sub, title }: { label: string; value: string; sub?: string; title?: string }) {
   return (
-    <div className="min-w-[9rem] rounded-lg border border-neutral-200 bg-white px-3 py-2" title={title}>
-      <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">{label}</p>
-      <p className="mt-0.5 font-mono text-sm text-neutral-800">{value}</p>
-      {sub && <p className="font-mono text-[11px] text-neutral-500">{sub}</p>}
+    <div className="min-w-[9rem] rounded-lg border border-line bg-surface px-3 py-2" title={title}>
+      <p className="text-2xs font-medium uppercase tracking-wide text-fg-muted">{label}</p>
+      <p className="mt-0.5 font-mono text-sm text-fg">{value}</p>
+      {sub && <p className="font-mono text-2xs text-fg-muted">{sub}</p>}
     </div>
   )
 }
 
 const STATUS_TILE: Record<ReconStatus, string> = {
-  ok: 'border-success-200 text-success-700',
+  ok: 'border-success-line text-success-fg',
   explained: 'border-primary-200 text-primary-700',
-  unexplained: 'border-danger-200 text-danger-700',
+  unexplained: 'border-danger-line text-danger-fg',
 }
 
 function listParam(raw: string | null): string[] {
@@ -210,21 +210,21 @@ export default function ReconciliationPage() {
     <div className="flex flex-col gap-4">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-neutral-900">Reconciliation</h1>
-          <p className="text-xs text-neutral-500">
+          <h1 className="text-xl font-semibold text-fg">Reconciliation</h1>
+          <p className="text-xs text-fg-muted">
             WMS vs NC stock (IC) vs NC cost (IA) vs NC general ledger (GL), with each difference attributed to a cause
           </p>
         </div>
         <button type="button" onClick={onExport} disabled={exporting || !data}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50">
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50">
           {exporting ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <Download aria-hidden className="h-4 w-4" />}
           {exporting ? 'Exporting…' : 'Export'}
         </button>
       </header>
 
-      <div className="flex flex-col gap-2.5 rounded-lg border border-neutral-200 bg-white px-3 py-3">
+      <div className="flex flex-col gap-2.5 rounded-lg border border-line bg-surface px-3 py-3">
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-xs text-neutral-600">
+          <label className="flex items-center gap-2 text-xs text-fg-secondary">
             Date
             <input type="date" value={date} max={today}
               onChange={(e) => {
@@ -234,26 +234,26 @@ export default function ReconciliationPage() {
               }}
               className={selectCls} />
           </label>
-          <label className="flex items-center gap-2 text-xs text-neutral-600">
+          <label className="flex items-center gap-2 text-xs text-fg-secondary">
             Material class
             <select value={classCode} onChange={(e) => setParams({ class: e.target.value })} className={selectCls}>
               <option value="">All</option>
               {MATERIAL_CLASSES.map((c) => <option key={c.code} value={c.code}>{c.code} {c.label}</option>)}
             </select>
           </label>
-          <div className="flex h-9 w-64 items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3">
-            <Search aria-hidden className="h-4 w-4 shrink-0 text-neutral-400" />
+          <div className="flex h-9 w-64 items-center gap-2 rounded-lg border border-line-strong bg-surface px-3">
+            <Search aria-hidden className="h-4 w-4 shrink-0 text-fg-muted" />
             <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Material or name…" aria-label="Search" maxLength={100}
               className="w-full text-sm focus:outline-none" />
             {searchInput && (
               <button type="button" onClick={() => setSearchInput('')} aria-label="Clear search"
-                className="shrink-0 text-neutral-400 hover:text-neutral-700">
+                className="shrink-0 text-fg-muted hover:text-fg-secondary">
                 <X className="h-4 w-4" />
               </button>
             )}
           </div>
-          <label className="flex items-center gap-2 text-xs text-neutral-600">
+          <label className="flex items-center gap-2 text-xs text-fg-secondary">
             Sort
             <select value={presetSort} onChange={(e) => setParams({ sort: e.target.value === 'material' ? '' : e.target.value, dir: '' })}
               className={selectCls}>
@@ -265,26 +265,26 @@ export default function ReconciliationPage() {
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Status">
-            <span className="text-xs text-neutral-500">Status</span>
+            <span className="text-xs text-fg-muted">Status</span>
             {STATUSES.map((s) => (
               <Chip key={s.key} active={status.includes(s.key)} onClick={() => toggleStatus(s.key)}>{s.label}</Chip>
             ))}
           </div>
-          <label className="flex items-center gap-2 text-sm text-neutral-700">
+          <label className="flex items-center gap-2 text-sm text-fg-secondary">
             <input type="checkbox" checked={expandBatches} onChange={(e) => setParams({ batches: e.target.checked ? '1' : '' })}
-              className="h-4 w-4 rounded border-neutral-300" />
+              className="h-4 w-4 rounded border-line-strong" />
             Expand batches
           </label>
-          <label className="flex items-center gap-2 text-sm text-neutral-700">
+          <label className="flex items-center gap-2 text-sm text-fg-secondary">
             <input type="checkbox" checked={includeUnposted} onChange={(e) => setParams({ unposted: e.target.checked ? '' : '0' })}
-              className="h-4 w-4 rounded border-neutral-300" />
+              className="h-4 w-4 rounded border-line-strong" />
             Include unposted GL vouchers
           </label>
         </div>
 
         {data && (
           <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Causes">
-            <span className="text-xs text-neutral-500">Causes</span>
+            <span className="text-xs text-fg-muted">Causes</span>
             {data.categories.map((c) => (
               <Chip key={c.code} active={category.includes(c.code)} onClick={() => toggleCategory(c.code)} title={c.label}>
                 {c.label}
@@ -292,7 +292,7 @@ export default function ReconciliationPage() {
             ))}
             {category.length > 0 && (
               <button type="button" onClick={() => setParams({ cat: '' })}
-                className="text-xs text-neutral-500 underline hover:text-neutral-800">Clear</button>
+                className="text-xs text-fg-muted underline hover:text-fg">Clear</button>
             )}
           </div>
         )}
@@ -300,7 +300,7 @@ export default function ReconciliationPage() {
 
       {data && (
         <div className="flex flex-col gap-1.5">
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-fg-muted">
             As of {formatDate(data.date)} · NC clock {data.nc_time_zone} · tolerance qty {data.tolerance.qty} / amount {data.tolerance.amount}
             {!data.include_unposted && ' · posted GL vouchers only'}
           </p>
@@ -326,14 +326,14 @@ export default function ReconciliationPage() {
               return (
                 <button key={s} type="button" onClick={() => setStatus([s])} aria-pressed={active}
                   title={`Show only ${STATUSES.find((x) => x.key === s)?.label} materials`}
-                  className={cn('min-w-[8rem] rounded-lg border bg-white px-3 py-2 text-left hover:bg-neutral-50',
+                  className={cn('min-w-[8rem] rounded-lg border bg-surface px-3 py-2 text-left hover:bg-surface-subtle',
                     STATUS_TILE[s], active && 'ring-2 ring-primary-300')}>
-                  <p className="text-[11px] font-medium uppercase tracking-wide">{STATUSES.find((x) => x.key === s)?.label}</p>
+                  <p className="text-2xs font-medium uppercase tracking-wide">{STATUSES.find((x) => x.key === s)?.label}</p>
                   <p className="mt-0.5 font-mono text-sm">{t.by_status[s].toLocaleString('en-US')}</p>
                 </button>
               )
             })}
-            <span className="text-[11px] text-neutral-400">
+            <span className="text-2xs text-fg-muted">
               of {t.materials.toLocaleString('en-US')} materials · totals ignore the table filters; quantities are summed across units
             </span>
           </div>

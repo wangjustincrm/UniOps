@@ -65,16 +65,16 @@ export function AddIntentProductModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">
-      <div role="dialog" aria-modal="true" aria-label="Add intent product" className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-200">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-neutral-900">
-            <Lightbulb className="h-4 w-4 text-warning-600" /> Add Intent Product
+      <div role="dialog" aria-modal="true" aria-label="Add intent product" className="w-full max-w-md rounded-xl border border-line bg-surface shadow-xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
+          <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
+            <Lightbulb className="h-4 w-4 text-warning-fg" /> Add Intent Product
           </h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="-m-2.5 flex min-h-[44px] min-w-[44px] items-center justify-center text-neutral-400 hover:text-neutral-600"
+            className="-m-2.5 flex min-h-[44px] min-w-[44px] items-center justify-center text-fg-muted hover:text-fg-secondary"
           >
             <XIcon className="h-5 w-5" />
           </button>
@@ -82,7 +82,7 @@ export function AddIntentProductModal({
 
         <form onSubmit={handleSubmit}>
           <div className="px-5 py-4 space-y-4">
-            <p className="text-sm text-neutral-600">
+            <p className="text-sm text-fg-secondary">
               A planned SKU with no ERP material code yet. It gets a placeholder code and can be
               forecast right away — bind it to a real material code once one exists, and its numbers
               move over automatically.
@@ -107,18 +107,18 @@ export function AddIntentProductModal({
                 onChange={(e) => setNote(e.target.value)}
                 disabled={submitting}
                 rows={3}
-                className="w-full rounded-lg border border-neutral-200 bg-neutral-100 px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 transition-colors focus:outline-none focus:bg-white focus:border-primary-600 focus:shadow-[0_0_0_3px_rgba(10,124,124,0.10)] disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-400"
+                className="w-full rounded-lg border border-line bg-surface-sunken px-3 py-2 text-sm text-fg placeholder:text-fg-faint transition-colors focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-[0_0_0_3px_rgba(10,124,124,0.10)] disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-fg-muted"
               />
             </FormField>
 
             {submitError && (
-              <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+              <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
                 <AlertTriangle className="h-4 w-4 shrink-0" /> {submitError}
               </p>
             )}
           </div>
 
-          <div className="flex justify-end gap-2 px-5 py-4 border-t border-neutral-200">
+          <div className="flex justify-end gap-2 px-5 py-4 border-t border-line">
             <Button type="button" variant="secondary" size="sm" onClick={onClose} disabled={submitting}>Cancel</Button>
             <Button type="submit" size="sm" disabled={submitting}>
               {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}

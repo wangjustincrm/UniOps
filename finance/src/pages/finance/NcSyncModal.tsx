@@ -9,9 +9,9 @@ import { AlertTriangle, DatabaseZap, Loader2, X } from 'lucide-react'
 import { financeApi } from '@/lib/api'
 import { cn, formatDateTime } from '@/lib/utils'
 
-const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
+const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
+const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 const FULL_CONFIRM = 'FULL RELOAD'
 
@@ -30,8 +30,8 @@ export interface NcSyncStatus {
 
 function RunSummary({ run, label }: { run: NcSyncRun; label: string }) {
   return (
-    <div className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
-      <span className="font-medium text-neutral-700">{label}:</span>{' '}
+    <div className="rounded-lg bg-surface-subtle px-3 py-2 text-xs text-fg-secondary">
+      <span className="font-medium text-fg-secondary">{label}:</span>{' '}
       {run.mode} · {run.status}
       {run.started_at && ` · ${formatDateTime(run.started_at)}`}
       {run.status !== 'running' && (
@@ -41,7 +41,7 @@ function RunSummary({ run, label }: { run: NcSyncRun; label: string }) {
         </>
       )}
       {run.watermark_to && <> · watermark {run.watermark_to}</>}
-      {run.error && <div className="mt-1 text-red-600">{run.error}</div>}
+      {run.error && <div className="mt-1 text-danger-fg">{run.error}</div>}
     </div>
   )
 }
@@ -91,12 +91,12 @@ export function NcSyncModal({ onClose, onSynced }: { onClose: () => void; onSync
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-lg rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-neutral-800">
-            <DatabaseZap className="h-4 w-4 text-neutral-400" /> NC Voucher Sync
+          <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
+            <DatabaseZap className="h-4 w-4 text-fg-muted" /> NC Voucher Sync
           </h2>
-          <button onClick={onClose} className="rounded p-1 text-neutral-400 hover:text-neutral-700">
+          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -105,12 +105,12 @@ export function NcSyncModal({ onClose, onSynced }: { onClose: () => void; onSync
           {status?.last_run && !running && <RunSummary run={status.last_run} label="Last sync" />}
 
           {running ? (
-            <div className="rounded-lg border border-neutral-200 px-3 py-3 text-sm">
-              <div className="flex items-center gap-2 text-neutral-700">
+            <div className="rounded-lg border border-line px-3 py-3 text-sm">
+              <div className="flex items-center gap-2 text-fg-secondary">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Sync in progress ({running.mode})…
               </div>
-              <div className="mt-2 font-mono text-xs text-neutral-500">
+              <div className="mt-2 font-mono text-xs text-fg-muted">
                 {Number(running.vouchers_inserted).toLocaleString()} vouchers ·{' '}
                 {Number(running.lines_inserted).toLocaleString()} lines ·{' '}
                 {Number(running.dims_inserted).toLocaleString()} dims
@@ -124,7 +124,7 @@ export function NcSyncModal({ onClose, onSynced }: { onClose: () => void; onSync
                          onChange={() => setMode('incremental')} className="mt-0.5" />
                   <span>
                     <span className="font-medium">Incremental</span>
-                    <span className="block text-xs text-neutral-500">
+                    <span className="block text-xs text-fg-muted">
                       Import only vouchers that are new in NC (by source pk, creationtime watermark).
                       Existing vouchers are never touched.
                     </span>
@@ -135,7 +135,7 @@ export function NcSyncModal({ onClose, onSynced }: { onClose: () => void; onSync
                          onChange={() => setMode('full')} className="mt-0.5" />
                   <span>
                     <span className="font-medium">Full reload</span>
-                    <span className="block text-xs text-neutral-500">
+                    <span className="block text-xs text-fg-muted">
                       Delete ALL NC-sourced vouchers (~39.8k) and re-import everything.
                     </span>
                   </span>
@@ -143,8 +143,8 @@ export function NcSyncModal({ onClose, onSynced }: { onClose: () => void; onSync
               </div>
 
               {mode === 'full' && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-                  <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-red-700">
+                <div className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2">
+                  <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-danger-fg">
                     <AlertTriangle className="h-3.5 w-3.5" />
                     Destructive: deletes every NC-sourced voucher before re-importing.
                     Type {FULL_CONFIRM} to enable.
@@ -154,9 +154,9 @@ export function NcSyncModal({ onClose, onSynced }: { onClose: () => void; onSync
                 </div>
               )}
 
-              {err && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
+              {err && <div className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{err}</div>}
 
-              <div className="flex justify-end gap-2 border-t border-neutral-100 pt-3">
+              <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
                 <button onClick={onClose} className={secondaryBtn}>Close</button>
                 <button onClick={start} disabled={!canStart} className={primaryBtn}>
                   {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <DatabaseZap className="h-4 w-4" />}

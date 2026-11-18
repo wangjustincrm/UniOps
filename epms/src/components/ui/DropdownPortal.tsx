@@ -38,7 +38,7 @@ export function DropdownPortal({ anchorRect, onClose, children }: { anchorRect: 
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
         style={{ position: 'fixed', top: anchorRect.bottom + 4, left: anchorRect.left, width: anchorRect.width }}
-        className="z-50 max-h-64 overflow-y-auto rounded-lg border border-neutral-200 bg-white py-1 shadow-lg"
+        className="z-50 max-h-64 overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-lg"
       >
         {children}
       </div>

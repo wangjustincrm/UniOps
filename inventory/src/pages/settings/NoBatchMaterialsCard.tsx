@@ -59,7 +59,7 @@ function EntryForm({ initial, existing, onDone, toasts }: {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+    <form onSubmit={submit} className="space-y-3 rounded-lg border border-line bg-surface-subtle p-4">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-[12rem_12rem_1fr]">
         <div className="space-y-1.5">
           <Label htmlFor="nb-code">Material code</Label>
@@ -84,7 +84,7 @@ function EntryForm({ initial, existing, onDone, toasts }: {
           />
         </div>
       </div>
-      {error && <p role="alert" className="text-sm text-danger-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-danger-fg">{error}</p>}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={onDone} disabled={save.isPending}>
           Cancel
@@ -129,7 +129,7 @@ export function NoBatchMaterialsCard({ canAdmin, toasts }: {
       <CardHeader className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <CardTitle>Materials not tracked by batch in NC</CardTitle>
-          <p className="mt-0.5 text-xs text-neutral-500">
+          <p className="mt-0.5 text-xs text-fg-muted">
             From the since date on, these are compared by material only and never expanded by batch.
           </p>
         </div>
@@ -147,14 +147,14 @@ export function NoBatchMaterialsCard({ canAdmin, toasts }: {
             onDone={() => setForm(null)}
           />
         )}
-        {q.isLoading && <p className="text-sm text-neutral-500">Loading…</p>}
-        {q.isError && <p className="text-sm text-danger-600">Could not load the list: {(q.error as Error).message}</p>}
-        {q.data && items.length === 0 && <p className="text-sm text-neutral-500">No materials on the list.</p>}
+        {q.isLoading && <p className="text-sm text-fg-muted">Loading…</p>}
+        {q.isError && <p className="text-sm text-danger-fg">Could not load the list: {(q.error as Error).message}</p>}
+        {q.data && items.length === 0 && <p className="text-sm text-fg-muted">No materials on the list.</p>}
         {items.length > 0 && (
-          <div className="overflow-x-auto rounded-lg border border-neutral-200">
+          <div className="overflow-x-auto rounded-lg border border-line">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50">
-                <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-500">
+              <thead className="bg-surface-subtle">
+                <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-fg-muted">
                   <SortTh label="Material code" sortKey="code" sort={sort} onSort={onSort} className={th} />
                   <SortTh label="Since" sortKey="since" sort={sort} onSort={onSort} className={th} />
                   <SortTh label="Note" sortKey="note" sort={sort} onSort={onSort} className={th} />
@@ -163,10 +163,10 @@ export function NoBatchMaterialsCard({ canAdmin, toasts }: {
               </thead>
               <tbody>
                 {rows.map((m) => (
-                  <tr key={m.material_code} className="border-b border-neutral-100 last:border-0">
+                  <tr key={m.material_code} className="border-b border-line-subtle last:border-0">
                     <td className="px-3 py-2 font-mono text-xs">{m.material_code}</td>
                     <td className="px-3 py-2 tabular-nums">{formatDate(m.since_date)}</td>
-                    <td className="px-3 py-2 text-neutral-600">{m.note || '—'}</td>
+                    <td className="px-3 py-2 text-fg-secondary">{m.note || '—'}</td>
                     {canAdmin && (
                       <td className="px-3 py-2">
                         <div className="flex justify-end gap-1">
@@ -178,7 +178,7 @@ export function NoBatchMaterialsCard({ canAdmin, toasts }: {
                           </Button>
                           <Button
                             size="icon-sm" variant="ghost" aria-label={`Remove ${m.material_code}`}
-                            className="text-danger-600"
+                            className="text-danger-fg"
                             onClick={() => setDeleting(m)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -205,7 +205,7 @@ export function NoBatchMaterialsCard({ canAdmin, toasts }: {
           <p>
             Remove <span className="font-mono">{deleting.material_code}</span> (since {formatDate(deleting.since_date)}) from the list?
           </p>
-          <p className="text-neutral-500">
+          <p className="text-fg-muted">
             Its WMS-vs-NC difference will no longer be explained as "NC does not track batches".
           </p>
         </ConfirmDialog>

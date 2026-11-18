@@ -16,7 +16,7 @@ import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 const PAGE_SIZE = 50
 const LINES_PAGE_SIZE = 100
 
-const num = (v: string | null) => cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(v) && 'text-danger-600')
+const num = (v: string | null) => cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(v) && 'text-danger-fg')
 
 function AccountsTable({ accounts, impairment, showAmt }: {
   accounts: LedgerAccountRow[]
@@ -38,19 +38,19 @@ function AccountsTable({ accounts, impairment, showAmt }: {
         <tbody>
           {accounts.length === 0 && <EmptyRow cols={cols}>No inventory account balances on this date.</EmptyRow>}
           {accounts.map((a) => (
-            <tr key={a.account_code} className="border-t border-neutral-100">
+            <tr key={a.account_code} className="border-t border-line-subtle">
               <td className="px-3 py-2 font-mono text-xs">{a.account_code}</td>
-              <td className="px-3 py-2 text-xs text-neutral-600">{a.account_name ?? '—'}</td>
+              <td className="px-3 py-2 text-xs text-fg-secondary">{a.account_name ?? '—'}</td>
               <td className={num(a.qty)}>{formatQty(a.qty)}</td>
               {showAmt && <td className={num(a.amount)}>{formatMoney(a.amount)}</td>}
             </tr>
           ))}
           {impairment.map((a) => (
-            <tr key={a.account_code} className="border-t-2 border-neutral-200 bg-neutral-50/60">
+            <tr key={a.account_code} className="border-t-2 border-line bg-surface-subtle/60">
               <td className="px-3 py-2 font-mono text-xs">{a.account_code}</td>
-              <td className="px-3 py-2 text-xs text-neutral-600">
+              <td className="px-3 py-2 text-xs text-fg-secondary">
                 {a.account_name ?? '—'}
-                <span className="block text-[11px] text-neutral-400">
+                <span className="block text-2xs text-fg-muted">
                   Impairment provision — shown separately, not compared per material.
                 </span>
               </td>
@@ -82,7 +82,7 @@ function VoucherLines({ row, date, includeUnposted }: { row: LedgerRow; date: st
   if (q.isError) return <ErrorBox error={q.error} fallback="Could not load the voucher lines." />
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="max-h-96 overflow-auto rounded-md border border-neutral-200 bg-white">
+      <div className="max-h-96 overflow-auto rounded-md border border-line bg-surface">
         <table className="min-w-full text-xs">
           <thead className={cn(thCls, 'sticky top-0')}>
             <tr>
@@ -100,7 +100,7 @@ function VoucherLines({ row, date, includeUnposted }: { row: LedgerRow; date: st
             {q.isLoading && <LoadingRows cols={cols} rows={4} />}
             {q.data && q.data.items.length === 0 && <EmptyRow cols={cols}>No voucher lines up to this date.</EmptyRow>}
             {q.data?.items.map((l, i) => (
-              <tr key={i} className="border-t border-neutral-100">
+              <tr key={i} className="border-t border-line-subtle">
                 <td className="px-3 py-1.5 font-mono">{l.year}-{l.period}</td>
                 <td className="px-3 py-1.5 font-mono">{l.voucher_num ?? '—'}</td>
                 <td className="px-3 py-1.5 whitespace-nowrap" title={l.prepared ?? undefined}>
@@ -108,11 +108,11 @@ function VoucherLines({ row, date, includeUnposted }: { row: LedgerRow; date: st
                 </td>
                 <td className="px-3 py-1.5">
                   {l.posted
-                    ? <span className="text-success-700" aria-label="Posted">✓</span>
-                    : <span className="text-warning-600" aria-label="Not posted" title="Not posted yet">—</span>}
+                    ? <span className="text-success-fg" aria-label="Posted">✓</span>
+                    : <span className="text-warning-fg" aria-label="Not posted" title="Not posted yet">—</span>}
                 </td>
                 <td className="px-3 py-1.5 font-mono">{l.source ?? '—'}</td>
-                <td className="max-w-md px-3 py-1.5 text-neutral-600">{l.explanation ?? '—'}</td>
+                <td className="max-w-md px-3 py-1.5 text-fg-secondary">{l.explanation ?? '—'}</td>
                 <td className={num(l.qty)}>{formatQty(l.qty)}</td>
                 {showAmt && <td className={num(l.amount)}>{formatMoney(l.amount)}</td>}
               </tr>
@@ -168,9 +168,9 @@ export function LedgerTab({ date, classCode, search, includeUnposted, onIncludeU
 
   return (
     <div className="flex flex-col gap-3">
-      <label className="flex items-center gap-2 text-sm text-neutral-700">
+      <label className="flex items-center gap-2 text-sm text-fg-secondary">
         <input type="checkbox" checked={includeUnposted} onChange={(e) => onIncludeUnposted(e.target.checked)}
-          className="h-4 w-4 rounded border-neutral-300" />
+          className="h-4 w-4 rounded border-line-strong" />
         Include unposted vouchers
       </label>
 
@@ -183,7 +183,7 @@ export function LedgerTab({ date, classCode, search, includeUnposted, onIncludeU
       )}
       {data && <AccountsTable accounts={data.accounts} impairment={data.impairment} showAmt={showAmt} />}
       {data && data.impairment.length === 0 && (
-        <p className="text-[11px] text-neutral-400">No impairment provision (1471) balance on this date.</p>
+        <p className="text-2xs text-fg-muted">No impairment provision (1471) balance on this date.</p>
       )}
 
       {!(q.isError && !data) && (
@@ -211,9 +211,9 @@ export function LedgerTab({ date, classCode, search, includeUnposted, onIncludeU
                 const open = drillable && expanded.has(key)
                 return [
                   <tr key={key}
-                    className={cn('border-t border-neutral-100', drillable && 'cursor-pointer hover:bg-neutral-50', open && 'bg-neutral-50')}
+                    className={cn('border-t border-line-subtle', drillable && 'cursor-pointer hover:bg-surface-subtle', open && 'bg-surface-subtle')}
                     onClick={drillable ? () => toggle(key) : undefined}>
-                    <td className="w-8 px-2 py-2 text-neutral-400">
+                    <td className="w-8 px-2 py-2 text-fg-muted">
                       {drillable && (
                         <button type="button" aria-expanded={open} aria-label={open ? 'Hide voucher lines' : 'Show voucher lines'}
                           onClick={(e) => { e.stopPropagation(); toggle(key) }}>
@@ -223,21 +223,21 @@ export function LedgerTab({ date, classCode, search, includeUnposted, onIncludeU
                     </td>
                     <td className="px-3 py-2">
                       <span className="font-mono text-xs">{r.account_code}</span>
-                      {r.account_name && <span className="ml-1.5 text-xs text-neutral-500">{r.account_name}</span>}
+                      {r.account_name && <span className="ml-1.5 text-xs text-fg-muted">{r.account_name}</span>}
                     </td>
                     <td className="px-3 py-2">
                       {r.material_code ? (
                         <>
                           <span className="font-mono text-xs">{r.material_code}</span>
-                          {r.material_name && <span className="ml-1.5 text-xs text-neutral-500">{r.material_name}</span>}
+                          {r.material_name && <span className="ml-1.5 text-xs text-fg-muted">{r.material_name}</span>}
                         </>
                       ) : (
-                        <span className="text-xs italic text-neutral-400">
+                        <span className="text-xs italic text-fg-muted">
                           {r.material_name != null ? '(no material)' : '(material not in NC mirror)'}
                         </span>
                       )}
                       {r.unposted_lines > 0 && (
-                        <Badge variant="warning" className="ml-2 text-[10px]">
+                        <Badge variant="warning" className="ml-2 text-2xs">
                           {r.unposted_lines.toLocaleString('en-US')} unposted
                         </Badge>
                       )}
@@ -246,7 +246,7 @@ export function LedgerTab({ date, classCode, search, includeUnposted, onIncludeU
                     {showAmt && <td className={num(r.amount)}>{formatMoney(r.amount)}</td>}
                   </tr>,
                   open && (
-                    <tr key={`${key}-lines`} className="border-t border-neutral-100 bg-neutral-50/60">
+                    <tr key={`${key}-lines`} className="border-t border-line-subtle bg-surface-subtle/60">
                       <td colSpan={cols} className="px-4 py-3">
                         <VoucherLines row={r} date={date} includeUnposted={includeUnposted} />
                       </td>

@@ -16,9 +16,9 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { JvDetailModal, JvStatusBadge, type JvHeader } from './JvDetailModal'
 import { NcSyncModal, type NcSyncStatus } from './NcSyncModal'
 
-const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
+const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
+const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 const PAGE_SIZE = 50
 const STATUSES = ['', 'draft', 'reviewed', 'posted', 'reversed'] as const
@@ -62,7 +62,7 @@ export function dimLabel(code: string) { return DIM_LABELS[code] ?? code }
 function AdvField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium text-neutral-500">{label}</span>
+      <span className="mb-1 block text-xs font-medium text-fg-muted">{label}</span>
       {children}
     </label>
   )
@@ -207,7 +207,7 @@ export default function JournalVouchersPage() {
       subtitle="Voucher center — review, post, and trace formal GL journal vouchers"
       headerActions={ncStatus?.configured && ncStatus?.can_sync ? (
         <button onClick={() => setShowNcSync(true)}
-                className="flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+                className="flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle">
           <DatabaseZap className="h-4 w-4" /> NC Sync
         </button>
       ) : undefined}
@@ -218,7 +218,7 @@ export default function JournalVouchersPage() {
             <input type="month" value={periodFrom} aria-label="Period from"
                    onChange={(e) => { setPeriodFrom(e.target.value); resetPage() }}
                    className={cn(inputCls, 'w-36')} />
-            <span className="text-sm text-neutral-400">–</span>
+            <span className="text-sm text-fg-muted">–</span>
             <input type="month" value={periodTo} aria-label="Period to"
                    onChange={(e) => { setPeriodTo(e.target.value); resetPage() }}
                    className={cn(inputCls, 'w-36')} />
@@ -243,7 +243,7 @@ export default function JournalVouchersPage() {
           </button>
           {advCount > 0 && (
             <button type="button" onClick={() => { setAdv({}); resetPage() }}
-                    className="flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-700">
+                    className="flex items-center gap-1 text-sm text-fg-muted hover:text-fg-secondary">
               <X className="h-3.5 w-3.5" /> Clear
             </button>
           )}
@@ -265,7 +265,7 @@ export default function JournalVouchersPage() {
             behind a toggle so the common case stays a two-control bar, but the
             active count is on the button so a filter can never be silently on. */}
         {showAdvanced && (
-          <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-neutral-50/60 p-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-line bg-surface-subtle/60 p-3 sm:grid-cols-2 lg:grid-cols-4">
             <AdvField label="Date from">
               <input type="date" value={adv.date_from ?? ''} className={cn(inputCls, 'w-full')}
                      onChange={(e) => { setAdvField('date_from', e.target.value); resetPage() }} />
@@ -342,7 +342,7 @@ export default function JournalVouchersPage() {
             </AdvField>
             <AdvField label="Auxiliary value">
               <input list="jv-aux-values" value={adv.aux_value ?? ''} disabled={!adv.aux_code}
-                     className={cn(inputCls, 'w-full disabled:bg-neutral-100')}
+                     className={cn(inputCls, 'w-full disabled:bg-surface-sunken')}
                      onChange={(e) => { setAdvField('aux_value', e.target.value); resetPage() }} />
               <datalist id="jv-aux-values">
                 {(auxValues?.items ?? []).map((v) => <option key={v} value={v} />)}
@@ -353,13 +353,13 @@ export default function JournalVouchersPage() {
 
         {banner && (
           <div className={cn('mb-3 rounded-md px-3 py-2 text-sm',
-            banner.kind === 'err' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>
+            banner.kind === 'err' ? 'bg-danger-soft text-danger-fg' : 'bg-success-soft text-success-fg')}>
             {banner.text}
           </div>
         )}
 
         {list.isFetching && !list.data ? (
-          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
+          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
         ) : (
           <>
             {/* table-fixed, and every column but Summary carries a width.
@@ -369,9 +369,9 @@ export default function JournalVouchersPage() {
                 09-0276" wrapped onto three lines while Summary had space to
                 spare. Fixed layout makes the w-* classes authoritative and
                 leaves Summary exactly the remainder. */}
-            <div className="overflow-x-auto rounded-lg border border-neutral-200">
+            <div className="overflow-x-auto rounded-lg border border-line">
               <table className="w-full min-w-[80rem] table-fixed text-sm">
-                <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+                <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
                   <tr>
                     {canAct && (
                       <th className="w-9 px-3 py-2">
@@ -394,11 +394,11 @@ export default function JournalVouchersPage() {
                 </thead>
                 <tbody>
                   {items.length === 0 && (
-                    <tr><td colSpan={canAct ? 9 : 8} className="px-3 py-6 text-center text-neutral-400">No vouchers match the filters.</td></tr>
+                    <tr><td colSpan={canAct ? 9 : 8} className="px-3 py-6 text-center text-fg-muted">No vouchers match the filters.</td></tr>
                   )}
                   {items.map((v, i) => (
                     <tr key={v.id} onClick={() => setDetailId(v.id)}
-                        className={cn('cursor-pointer border-t border-neutral-100 hover:bg-primary-50/40', i % 2 && 'bg-neutral-50/40')}>
+                        className={cn('cursor-pointer border-t border-line-subtle hover:bg-primary-50/40', i % 2 && 'bg-surface-subtle/40')}>
                       {canAct && (
                         <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                           {(v.status === 'draft' || v.status === 'reviewed') && (
@@ -407,17 +407,17 @@ export default function JournalVouchersPage() {
                         </td>
                       )}
                       <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{v.voucher_word} · {v.jv_number}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-neutral-600 whitespace-nowrap">{formatDate(v.voucher_date)}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-fg-secondary whitespace-nowrap">{formatDate(v.voucher_date)}</td>
                       {/* The only column allowed to wrap; break-words so a long
                           unbroken token cannot push the row wider than its share. */}
-                      <td className="px-3 py-2 text-neutral-700 break-words">{v.summary || '—'}</td>
+                      <td className="px-3 py-2 text-fg-secondary break-words">{v.summary || '—'}</td>
                       {/* Doc number on its own line: "ap_invoice · AP-20260916-0010"
                           on one line needs ~28 mono chars, and the number is the
                           half people scan for. */}
-                      <td className="px-3 py-2 text-xs text-neutral-500">
+                      <td className="px-3 py-2 text-xs text-fg-muted">
                         {v.source_doc_type ? (
                           <>
-                            <span className="block font-mono text-neutral-600 truncate"
+                            <span className="block font-mono text-fg-secondary truncate"
                                   title={v.source_doc_number ?? undefined}>
                               {v.source_doc_number || '—'}
                             </span>
@@ -431,10 +431,10 @@ export default function JournalVouchersPage() {
                           "Gain/Loss Carry-Forward" spelled out costs 160px of a
                           row whose useful content is Summary, and AP / AR / GL
                           is what finance reads anyway. */}
-                      <td className="px-3 py-2 text-xs text-neutral-500">
+                      <td className="px-3 py-2 text-xs text-fg-muted">
                         {v.nc_prepared_name || v.nc_checked_name ? (
                           <>
-                            <span className="block truncate text-neutral-700"
+                            <span className="block truncate text-fg-secondary"
                                   title={v.nc_prepared_name ?? undefined}>
                               {v.nc_prepared_name || '—'}
                             </span>
@@ -448,7 +448,7 @@ export default function JournalVouchersPage() {
                           </>
                         ) : '—'}
                       </td>
-                      <td className="px-3 py-2 font-mono text-xs text-neutral-600"
+                      <td className="px-3 py-2 font-mono text-xs text-fg-secondary"
                           title={v.source_subsystem_label ?? undefined}>
                         {v.source_subsystem ?? '—'}
                       </td>
@@ -460,7 +460,7 @@ export default function JournalVouchersPage() {
                             would be pure noise — but a discarded one must be
                             impossible to miss, since it used to be invisible. */}
                         {v.nc_voucher_state && v.nc_voucher_state !== 'normal' && (
-                          <span className="mt-1 block w-fit rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
+                          <span className="mt-1 block w-fit rounded bg-warning-soft px-1.5 py-0.5 text-2xs font-medium text-warning-fg">
                             {v.nc_voucher_state === 'discarded' ? 'Discarded'
                               : v.nc_voucher_state === 'tempsave' ? 'Temp-saved'
                               : v.nc_voucher_state === 'deleted' ? 'Deleted in NC' : 'Error'}
@@ -473,7 +473,7 @@ export default function JournalVouchersPage() {
               </table>
             </div>
 
-            <div className="mt-3 flex items-center justify-between text-sm text-neutral-500">
+            <div className="mt-3 flex items-center justify-between text-sm text-fg-muted">
               <span>{total.toLocaleString()} voucher{total === 1 ? '' : 's'}</span>
               <div className="flex items-center gap-2">
                 <button onClick={() => gotoPage(Math.max(0, page - 1))} disabled={page === 0} className={secondaryBtn}>

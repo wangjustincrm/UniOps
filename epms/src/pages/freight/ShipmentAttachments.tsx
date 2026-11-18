@@ -12,7 +12,7 @@ import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 export function ShippingLabelBadge() {
   return (
-    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-medium text-primary-700">
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary-50 px-2 py-0.5 text-2xs font-medium text-primary-700">
       <ScanLine className="h-3 w-3" /> Shipping label
     </span>
   )
@@ -94,18 +94,18 @@ export function ShipmentAttachmentsPanel({ shipmentId, editable }: { shipmentId:
   return (
     <div className="flex flex-col gap-2">
       {isPending ? (
-        <p className="text-xs text-neutral-400">Loading attachments…</p>
+        <p className="text-xs text-fg-muted">Loading attachments…</p>
       ) : atts.length === 0 ? (
-        <p className="text-xs text-neutral-400">No attachments.</p>
+        <p className="text-xs text-fg-muted">No attachments.</p>
       ) : atts.map((a) => (
-        <div key={a.id} className="flex items-center gap-3 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
-          <Paperclip className="h-4 w-4 shrink-0 text-neutral-400" />
+        <div key={a.id} className="flex items-center gap-3 rounded-md border border-line bg-surface-subtle px-3 py-2 text-sm">
+          <Paperclip className="h-4 w-4 shrink-0 text-fg-muted" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="truncate text-neutral-700">{a.filename}</span>
+              <span className="truncate text-fg-secondary">{a.filename}</span>
               {a.kind === 'waybill' && <ShippingLabelBadge />}
             </div>
-            <div className="text-[11px] text-neutral-400">
+            <div className="text-2xs text-fg-muted">
               {formatBytes(a.file_size)} · {a.uploaded_by_name ?? '—'} · {formatDate(a.created_at)}
             </div>
           </div>
@@ -119,7 +119,7 @@ export function ShipmentAttachmentsPanel({ shipmentId, editable }: { shipmentId:
           </button>
           {editable && (
             <button type="button" disabled={remove.isPending} onClick={() => handleDelete(a)}
-              className="text-neutral-400 hover:text-danger-600 disabled:opacity-50" aria-label={`Remove ${a.filename}`}>
+              className="text-fg-muted hover:text-danger-fg disabled:opacity-50" aria-label={`Remove ${a.filename}`}>
               <X className="h-3.5 w-3.5" />
             </button>
           )}
@@ -129,10 +129,10 @@ export function ShipmentAttachmentsPanel({ shipmentId, editable }: { shipmentId:
       {editable && (
         <div className="flex items-center gap-3">
           <AddFilesButton onFiles={addFiles} busy={upload.isPending} />
-          <span className="text-xs text-neutral-400">{ATTACHMENT_RULE.hint}</span>
+          <span className="text-xs text-fg-muted">{ATTACHMENT_RULE.hint}</span>
         </div>
       )}
-      {error && <p className="text-xs text-danger-600">{error}</p>}
+      {error && <p className="text-xs text-danger-fg">{error}</p>}
       {confirmDlg.dialog}
     </div>
   )
@@ -161,13 +161,13 @@ export function StagedShipmentAttachments({ label, onRemoveLabel, files, onFiles
   }
 
   const row = (name: string, size: number, isLabel: boolean, onRemove: () => void, key: string) => (
-    <div key={key} className="flex items-center gap-3 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
-      <Paperclip className="h-4 w-4 shrink-0 text-neutral-400" />
-      <span className="min-w-0 flex-1 truncate text-neutral-700">{name}</span>
+    <div key={key} className="flex items-center gap-3 rounded-md border border-line bg-surface-subtle px-3 py-2 text-sm">
+      <Paperclip className="h-4 w-4 shrink-0 text-fg-muted" />
+      <span className="min-w-0 flex-1 truncate text-fg-secondary">{name}</span>
       {isLabel && <ShippingLabelBadge />}
-      <span className="text-xs text-neutral-400">{formatBytes(size)}</span>
+      <span className="text-xs text-fg-muted">{formatBytes(size)}</span>
       <button type="button" disabled={disabled} onClick={onRemove}
-        className="text-neutral-400 hover:text-danger-600 disabled:opacity-50" aria-label={`Remove ${name}`}>
+        className="text-fg-muted hover:text-danger-fg disabled:opacity-50" aria-label={`Remove ${name}`}>
         <X className="h-3.5 w-3.5" />
       </button>
     </div>
@@ -179,11 +179,11 @@ export function StagedShipmentAttachments({ label, onRemoveLabel, files, onFiles
       {files.map((f, i) => row(f.name, f.size, false, () => onFilesChange(files.filter((_, j) => j !== i)), `f${i}`))}
       <div className="flex items-center gap-3">
         <AddFilesButton onFiles={addFiles} disabled={disabled} />
-        <span className="text-xs text-neutral-400">
+        <span className="text-xs text-fg-muted">
           {label ? ATTACHMENT_RULE.hint : `The scanned waybill is kept here too · ${ATTACHMENT_RULE.hint}`}
         </span>
       </div>
-      {error && <p className="text-xs text-danger-600">{error}</p>}
+      {error && <p className="text-xs text-danger-fg">{error}</p>}
     </div>
   )
 }

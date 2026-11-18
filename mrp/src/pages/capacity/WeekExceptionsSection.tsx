@@ -249,11 +249,11 @@ export function WeekExceptionsSection({
   }
 
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-4">
+    <section className="rounded-lg border border-line bg-surface p-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-semibold text-neutral-900">Week Exceptions</h2>
-          <p className="mt-1 text-xs text-neutral-500">
+          <h2 className="text-sm font-semibold text-fg">Week Exceptions</h2>
+          <p className="mt-1 text-xs text-fg-muted">
             A one-week override of a standing rule — e.g. a <code>Max output / week</code> of 0 for an
             annual maintenance shutdown.
           </p>
@@ -266,52 +266,52 @@ export function WeekExceptionsSection({
       </div>
 
       {deactivateError && (
-        <p role="alert" className="mt-3 flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+        <p role="alert" className="mt-3 flex items-center gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           <AlertTriangle className="h-4 w-4 shrink-0" /> {deactivateError}
         </p>
       )}
 
       {exceptionsQuery.isError && (
-        <p role="alert" className="mt-3 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+        <p role="alert" className="mt-3 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           {errMsg(exceptionsQuery.error, 'Could not load week exceptions.')}
         </p>
       )}
 
       {exceptionsQuery.isLoading ? (
-        <p role="status" className="flex items-center justify-center gap-2 py-8 text-sm text-neutral-400">
+        <p role="status" className="flex items-center justify-center gap-2 py-8 text-sm text-fg-muted">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading exceptions…
         </p>
       ) : exceptions.length === 0 ? (
-        <p className="mt-3 text-sm text-neutral-500">No week exceptions yet.</p>
+        <p className="mt-3 text-sm text-fg-muted">No week exceptions yet.</p>
       ) : (
-        <div className="mt-3 overflow-x-auto rounded-lg border border-neutral-200">
+        <div className="mt-3 overflow-x-auto rounded-lg border border-line">
           <table className="min-w-full text-sm">
-            <thead className="bg-neutral-50">
+            <thead className="bg-surface-subtle">
               <tr>
-                <SortTh label="Week" sortKey="week" sort={sort} onSort={onSort} className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600" />
-                <SortTh label="Constraint" sortKey="constraint" sort={sort} onSort={onSort} className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600" />
+                <SortTh label="Week" sortKey="week" sort={sort} onSort={onSort} className="border-b border-line px-3 py-2 text-left text-2xs font-semibold text-fg-secondary" />
+                <SortTh label="Constraint" sortKey="constraint" sort={sort} onSort={onSort} className="border-b border-line px-3 py-2 text-left text-2xs font-semibold text-fg-secondary" />
                 <SortTh label="Value" sortKey="value" sort={sort} onSort={onSort} align="right"
-                  className="border-b border-neutral-200 px-3 py-2 text-[11px] font-semibold text-neutral-600" />
-                <SortTh label="Reason" sortKey="reason" sort={sort} onSort={onSort} className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600" />
-                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600" />
-                {canWrite && <th className="border-b border-neutral-200 px-3 py-2 text-right text-[11px] font-semibold text-neutral-600">Actions</th>}
+                  className="border-b border-line px-3 py-2 text-2xs font-semibold text-fg-secondary" />
+                <SortTh label="Reason" sortKey="reason" sort={sort} onSort={onSort} className="border-b border-line px-3 py-2 text-left text-2xs font-semibold text-fg-secondary" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="border-b border-line px-3 py-2 text-left text-2xs font-semibold text-fg-secondary" />
+                {canWrite && <th className="border-b border-line px-3 py-2 text-right text-2xs font-semibold text-fg-secondary">Actions</th>}
               </tr>
             </thead>
             <tbody>
               {sortedExceptions.map((row) => (
-                <tr key={row.id} className="border-b border-neutral-100 last:border-0 odd:bg-white even:bg-neutral-50/50">
-                  <td className="px-3 py-2 text-xs text-neutral-800">{formatDate(row.week_start)}</td>
-                  <td className="px-3 py-2 text-neutral-600">{CONSTRAINT_TYPE_LABEL[row.constraint_type]}</td>
-                  <td className="px-3 py-2 text-right font-mono text-xs text-neutral-800">
+                <tr key={row.id} className="border-b border-line-subtle last:border-0 odd:bg-surface even:bg-surface-subtle/50">
+                  <td className="px-3 py-2 text-xs text-fg">{formatDate(row.week_start)}</td>
+                  <td className="px-3 py-2 text-fg-secondary">{CONSTRAINT_TYPE_LABEL[row.constraint_type]}</td>
+                  <td className="px-3 py-2 text-right font-mono text-xs text-fg">
                     {formatQty(Number(row.limit_value))}{row.uom ? ` ${row.uom}` : ''}
                   </td>
-                  <td className="max-w-xs truncate px-3 py-2 text-xs text-neutral-600" title={row.reason ?? undefined}>{row.reason ?? '—'}</td>
+                  <td className="max-w-xs truncate px-3 py-2 text-xs text-fg-secondary" title={row.reason ?? undefined}>{row.reason ?? '—'}</td>
                   <td className="px-3 py-2">
                     <span
                       className={
                         row.is_active
-                          ? 'inline-flex items-center rounded-full bg-success-50 px-2 py-0.5 text-xs font-medium text-success-700 ring-1 ring-inset ring-emerald-200'
-                          : 'inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500 ring-1 ring-inset ring-neutral-200'
+                          ? 'inline-flex items-center rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success-fg ring-1 ring-inset ring-success-line'
+                          : 'inline-flex items-center rounded-full bg-surface-sunken px-2 py-0.5 text-xs font-medium text-fg-muted ring-1 ring-inset ring-line'
                       }
                     >
                       {row.is_active ? 'Active' : 'Inactive'}
@@ -324,7 +324,7 @@ export function WeekExceptionsSection({
                           type="button"
                           onClick={() => handleDeactivate(row)}
                           disabled={deactivatingId === row.id}
-                          className="flex h-11 items-center gap-1 rounded-md px-3 text-xs font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 disabled:opacity-60"
+                          className="flex h-11 items-center gap-1 rounded-md px-3 text-xs font-medium text-fg-muted hover:bg-surface-sunken hover:text-fg disabled:opacity-60"
                         >
                           {deactivatingId === row.id && <Loader2 className="h-3 w-3 animate-spin" />}
                           Deactivate
@@ -341,14 +341,14 @@ export function WeekExceptionsSection({
 
       {formOpen && createPortal(
         <div className="fixed inset-0 z-[90] flex justify-end bg-black/40">
-          <div role="dialog" aria-modal="true" aria-label="New week exception" className="flex h-full w-full max-w-md flex-col bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
-              <h2 className="text-base font-semibold text-neutral-900">New Week Exception</h2>
+          <div role="dialog" aria-modal="true" aria-label="New week exception" className="flex h-full w-full max-w-md flex-col bg-surface shadow-xl">
+            <div className="flex items-center justify-between border-b border-line px-5 py-4">
+              <h2 className="text-base font-semibold text-fg">New Week Exception</h2>
               <button
                 type="button"
                 onClick={() => setFormOpen(false)}
                 aria-label="Close"
-                className="flex min-h-[44px] min-w-[44px] items-center justify-center text-neutral-400 hover:text-neutral-600"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center text-fg-muted hover:text-fg-secondary"
               >
                 <XIcon className="h-5 w-5" />
               </button>
@@ -380,7 +380,7 @@ export function WeekExceptionsSection({
                     value={form.constraint_type}
                     onChange={(e) => set('constraint_type', e.target.value as CapacityConstraintType)}
                     disabled={submitting}
-                    className="flex h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {(Object.keys(CONSTRAINT_TYPE_LABEL) as CapacityConstraintType[]).map((k) => (
                       <option key={k} value={k}>{CONSTRAINT_TYPE_LABEL[k]}</option>
@@ -412,12 +412,12 @@ export function WeekExceptionsSection({
                     onChange={(e) => { set('reason', e.target.value); clearError('reason') }}
                     onBlur={() => setErrors((er) => ({ ...er, reason: validateReason(form.reason) }))}
                     disabled={submitting}
-                    className="flex w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
                   />
                 </FormField>
 
                 {existingMatch && (
-                  <p role="status" className="flex items-start gap-1.5 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-800">
+                  <p role="status" className="flex items-start gap-1.5 rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-fg">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span>
                       An exception already exists for this week and constraint
@@ -428,13 +428,13 @@ export function WeekExceptionsSection({
                 )}
 
                 {submitError && (
-                  <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+                  <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
                     <AlertTriangle className="h-4 w-4 shrink-0" /> {submitError}
                   </p>
                 )}
               </div>
 
-              <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-4">
+              <div className="flex justify-end gap-2 border-t border-line px-5 py-4">
                 <Button type="button" variant="secondary" size="sm" className="min-h-[44px]" onClick={() => setFormOpen(false)} disabled={submitting}>Cancel</Button>
                 <Button type="submit" size="sm" className="min-h-[44px]" disabled={submitting}>
                   {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}

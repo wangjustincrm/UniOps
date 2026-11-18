@@ -26,7 +26,7 @@ export default function CfoDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-neutral-900">CFO Dashboard</h1>
+      <h1 className="text-2xl font-bold text-fg">CFO Dashboard</h1>
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -45,41 +45,41 @@ export default function CfoDashboard() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Budget group breakdown */}
         <div className="lg:col-span-8">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-neutral-900">Budget by Group</h2>
+              <h2 className="text-base font-semibold text-fg">Budget by Group</h2>
               <Link to="/budget" className="text-xs text-primary-600 hover:underline">Full Dashboard →</Link>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-neutral-100 text-left">
-                    <SortTh label="Group" sortKey="l1_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                    <SortTh label="Budget" sortKey="annual_budget" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-neutral-500" />
-                    <SortTh label="Committed" sortKey="committed" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-neutral-500" />
-                    <SortTh label="Spent" sortKey="actual_spent" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-neutral-500" />
-                    <SortTh label="Available" sortKey="available" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-neutral-500" />
-                    <SortTh label="Utilisation" sortKey="utilisation_pct" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500 w-24" />
+                  <tr className="border-b border-line-subtle text-left">
+                    <SortTh label="Group" sortKey="l1_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                    <SortTh label="Budget" sortKey="annual_budget" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
+                    <SortTh label="Committed" sortKey="committed" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
+                    <SortTh label="Spent" sortKey="actual_spent" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
+                    <SortTh label="Available" sortKey="available" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
+                    <SortTh label="Utilisation" sortKey="utilisation_pct" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted w-24" />
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-50">
+                <tbody className="divide-y divide-line-subtle">
                   {groupRows.map((row) => {
                     const pct = row.utilisation_pct
-                    const barColor = pct >= redThresholdPct ? 'bg-danger-600' : pct >= yellowThresholdPct ? 'bg-warning-500' : 'bg-success-600'
-                    const pctColor = pct >= redThresholdPct ? 'text-danger-600' : pct >= yellowThresholdPct ? 'text-warning-600' : 'text-success-600'
+                    const barColor = pct >= redThresholdPct ? 'bg-danger-solid' : pct >= yellowThresholdPct ? 'bg-warning-solid' : 'bg-success-solid'
+                    const pctColor = pct >= redThresholdPct ? 'text-danger-fg' : pct >= yellowThresholdPct ? 'text-warning-fg' : 'text-success-fg'
                     const available = Number(row.available)
                     return (
-                      <tr key={row.l1_code} className="hover:bg-neutral-50">
-                        <td className="py-2.5 pr-3 font-medium text-neutral-800">{row.l1_name}</td>
-                        <td className="py-2.5 pr-3 text-right font-mono text-neutral-700">{formatAmount(Number(row.annual_budget), 'CAD')}</td>
-                        <td className="py-2.5 pr-3 text-right font-mono text-neutral-700">{formatAmount(Number(row.committed), 'CAD')}</td>
-                        <td className="py-2.5 pr-3 text-right font-mono text-neutral-700">{formatAmount(Number(row.actual_spent), 'CAD')}</td>
-                        <td className={cn('py-2.5 pr-3 text-right font-mono', available < 0 ? 'text-danger-600' : 'text-neutral-700')}>
+                      <tr key={row.l1_code} className="hover:bg-surface-subtle">
+                        <td className="py-2.5 pr-3 font-medium text-fg">{row.l1_name}</td>
+                        <td className="py-2.5 pr-3 text-right font-mono text-fg-secondary">{formatAmount(Number(row.annual_budget), 'CAD')}</td>
+                        <td className="py-2.5 pr-3 text-right font-mono text-fg-secondary">{formatAmount(Number(row.committed), 'CAD')}</td>
+                        <td className="py-2.5 pr-3 text-right font-mono text-fg-secondary">{formatAmount(Number(row.actual_spent), 'CAD')}</td>
+                        <td className={cn('py-2.5 pr-3 text-right font-mono', available < 0 ? 'text-danger-fg' : 'text-fg-secondary')}>
                           {formatAmount(available, 'CAD')}
                         </td>
                         <td className="py-2.5">
                           <div className="flex items-center gap-2">
-                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-200">
+                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-strong">
                               <div className={cn('h-full rounded-full transition-all', barColor)} style={{ width: `${Math.min(pct, 100)}%` }} />
                             </div>
                             <span className={cn('w-8 text-right text-xs font-semibold', pctColor)}>{pct}%</span>
@@ -97,26 +97,26 @@ export default function CfoDashboard() {
         {/* PA summary + links */}
         <div className="lg:col-span-4 flex flex-col gap-4">
           {/* PA summary card */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
-            <h2 className="mb-4 text-base font-semibold text-neutral-900">Payment Applications</h2>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+            <h2 className="mb-4 text-base font-semibold text-fg">Payment Applications</h2>
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-neutral-500">Total PAs</span>
-                <span className="font-semibold text-neutral-900">{paOverview?.total_count ?? '—'}</span>
+                <span className="text-fg-muted">Total PAs</span>
+                <span className="font-semibold text-fg">{paOverview?.total_count ?? '—'}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-neutral-500">Pending</span>
-                <span className="font-semibold text-warning-600">{paOverview?.pending_count ?? '—'}</span>
+                <span className="text-fg-muted">Pending</span>
+                <span className="font-semibold text-warning-fg">{paOverview?.pending_count ?? '—'}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-neutral-500">Pending Value</span>
-                <span className="font-mono font-semibold text-neutral-900">
+                <span className="text-fg-muted">Pending Value</span>
+                <span className="font-mono font-semibold text-fg">
                   {paOverview ? formatAmount(Number(paOverview.pending_value), 'CAD') : '—'}
                 </span>
               </div>
-              <div className="mt-1 border-t border-neutral-100 pt-2 flex items-center justify-between text-sm">
-                <span className="text-neutral-500">Processed Value</span>
-                <span className="font-mono font-semibold text-success-700">
+              <div className="mt-1 border-t border-line-subtle pt-2 flex items-center justify-between text-sm">
+                <span className="text-fg-muted">Processed Value</span>
+                <span className="font-mono font-semibold text-success-fg">
                   {paOverview ? formatAmount(Number(paOverview.processed_value), 'CAD') : '—'}
                 </span>
               </div>
@@ -125,9 +125,9 @@ export default function CfoDashboard() {
           </div>
 
           {/* Budget dashboard link */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
-            <h2 className="mb-3 text-base font-semibold text-neutral-900">Budget Management</h2>
-            <p className="text-sm text-neutral-500">View detailed budget breakdown, configure thresholds, and manage accounts.</p>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+            <h2 className="mb-3 text-base font-semibold text-fg">Budget Management</h2>
+            <p className="text-sm text-fg-muted">View detailed budget breakdown, configure thresholds, and manage accounts.</p>
             <Link to="/budget" className="mt-4 flex items-center justify-between rounded-lg bg-primary-600 px-4 py-3 text-sm font-semibold text-white hover:bg-primary-700 transition-colors">
               <span>Full Budget Dashboard</span><span>→</span>
             </Link>

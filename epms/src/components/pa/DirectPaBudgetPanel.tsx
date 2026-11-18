@@ -32,9 +32,9 @@ export function DirectPaBudgetPanel({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Budget (FY{currentFiscalYear()})</h3>
+      <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Budget (FY{currentFiscalYear()})</h3>
       {isLoading ? (
-        <p className="text-xs text-neutral-400">Loading budget…</p>
+        <p className="text-xs text-fg-muted">Loading budget…</p>
       ) : balance ? (
         <BudgetBalanceWidget
           data={{
@@ -48,9 +48,9 @@ export function DirectPaBudgetPanel({
           thisLabel="After this payment"
         />
       ) : (
-        <p className="text-xs text-neutral-400">No budget figures for this cost center and account.</p>
+        <p className="text-xs text-fg-muted">No budget figures for this cost center and account.</p>
       )}
-      <p className="text-[11px] text-neutral-400">
+      <p className="text-2xs text-fg-muted">
         For reference only — it does not block the PA or add an approval step.
         {showAfter && currency !== 'CAD' && ` The PA is in ${currency}; budgets are in CAD, so "after this payment" is not shown.`}
       </p>

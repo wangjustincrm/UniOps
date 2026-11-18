@@ -31,17 +31,17 @@ export function ResolveExceptionPanel({ inv, onClose }: { inv: ApiInvoice; onClo
   }
 
   return (
-    <div className="mt-2 rounded-xl border border-warning-200 bg-warning-50 p-4 flex flex-col gap-3">
+    <div className="mt-2 rounded-xl border border-warning-line bg-warning-soft p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold text-warning-700">Resolve Exception</p>
-        <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600">
+        <p className="text-xs font-semibold text-warning-fg">Resolve Exception</p>
+        <button onClick={onClose} className="text-fg-muted hover:text-fg-secondary">
           <X className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="rounded-lg border border-warning-200 bg-white p-3 text-xs">
-        <p className="font-medium text-neutral-700 mb-1">Variance Details</p>
-        <p className="text-neutral-500">{inv.exception_reason}</p>
+      <div className="rounded-lg border border-warning-line bg-surface p-3 text-xs">
+        <p className="font-medium text-fg-secondary mb-1">Variance Details</p>
+        <p className="text-fg-muted">{inv.exception_reason}</p>
       </div>
 
       <div className="flex gap-3">
@@ -53,7 +53,7 @@ export function ResolveExceptionPanel({ inv, onClose }: { inv: ApiInvoice; onClo
             'flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-xs transition-colors',
             resolution === opt.value
               ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium'
-              : 'border-neutral-200 text-neutral-500 hover:border-neutral-300'
+              : 'border-line text-fg-muted hover:border-line-strong'
           )}>
             <input type="radio" name="resolution" value={opt.value} checked={resolution === opt.value}
               onChange={() => setResolution(opt.value)} className="h-3 w-3" />
@@ -63,8 +63,8 @@ export function ResolveExceptionPanel({ inv, onClose }: { inv: ApiInvoice; onClo
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-neutral-700">
-          {resolution === 'accepted' ? 'Justification' : 'Instructions'} <span className="text-danger-600">*</span>
+        <label className="text-xs font-medium text-fg-secondary">
+          {resolution === 'accepted' ? 'Justification' : 'Instructions'} <span className="text-danger-fg">*</span>
         </label>
         <textarea rows={2} maxLength={4000} value={note} onChange={(e) => setNote(e.target.value)}
           placeholder={resolution === 'accepted'
@@ -72,20 +72,20 @@ export function ResolveExceptionPanel({ inv, onClose }: { inv: ApiInvoice; onClo
             : 'Instructions for the vendor to issue a credit note...'}
           className={cn(
             'px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-primary-600 resize-none',
-            submitted && !note.trim() ? 'border-danger-400' : 'border-neutral-300 bg-white'
+            submitted && !note.trim() ? 'border-danger-400' : 'border-line-strong bg-surface'
           )} />
-        {submitted && !note.trim() && <p className="text-xs text-danger-600">Required</p>}
+        {submitted && !note.trim() && <p className="text-xs text-danger-fg">Required</p>}
       </div>
 
       {resolution === 'credit_note_requested' && (
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-fg-muted">
           The invoice stays in Exception and the task stays open as "Awaiting credit note" until
           the credit arrives and you accept or edit the invoice.
         </p>
       )}
 
       {resolveExceptionMutation.isError && (
-        <p className="text-xs text-danger-600 text-right">
+        <p className="text-xs text-danger-fg text-right">
           {resolveExceptionMutation.error instanceof Error
             ? resolveExceptionMutation.error.message
             : 'Failed to resolve exception'}

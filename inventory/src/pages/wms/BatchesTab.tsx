@@ -42,29 +42,29 @@ const thR = 'px-3 py-2'
  *  action today, so only those two carry colour — if everything is coloured,
  *  nothing is. */
 const BUCKET_STYLE: Record<AgingBucketKey, string> = {
-  expired: 'bg-danger-50 text-danger-700 border-danger-200',
-  under_30: 'bg-warning-50 text-warning-800 border-warning-200',
-  '30_to_60': 'bg-neutral-50 text-neutral-600 border-neutral-200',
-  '60_to_90': 'bg-neutral-50 text-neutral-600 border-neutral-200',
-  '90_to_180': 'bg-neutral-50 text-neutral-600 border-neutral-200',
-  over_180: 'bg-neutral-50 text-neutral-500 border-neutral-200',
+  expired: 'bg-danger-soft text-danger-fg border-danger-line',
+  under_30: 'bg-warning-soft text-warning-fg border-warning-line',
+  '30_to_60': 'bg-surface-subtle text-fg-secondary border-line',
+  '60_to_90': 'bg-surface-subtle text-fg-secondary border-line',
+  '90_to_180': 'bg-surface-subtle text-fg-secondary border-line',
+  over_180: 'bg-surface-subtle text-fg-muted border-line',
 }
 
 const STATUS_STYLE: Record<string, string> = {
-  available: 'bg-success-50 text-success-700 border-success-200',
-  hold: 'bg-warning-50 text-warning-800 border-warning-200',
-  expired: 'bg-danger-50 text-danger-700 border-danger-200',
-  mixed: 'bg-neutral-100 text-neutral-700 border-neutral-300',
+  available: 'bg-success-soft text-success-fg border-success-line',
+  hold: 'bg-warning-soft text-warning-fg border-warning-line',
+  expired: 'bg-danger-soft text-danger-fg border-danger-line',
+  mixed: 'bg-surface-sunken text-fg-secondary border-line-strong',
 }
 
 /** The WAREHOUSE's own quality status (Flux QLT_STS), shown ALONGSIDE the
  *  derived one rather than instead of it: 278 lots are "Release" in the
  *  warehouse and expired by date, and one column cannot say which is which. */
 const QUALITY_STYLE: Record<string, string> = {
-  Release: 'bg-success-50 text-success-700 border-success-200',
-  Block: 'bg-danger-50 text-danger-700 border-danger-200',
-  'Under Inspection': 'bg-warning-50 text-warning-800 border-warning-200',
-  Mixed: 'bg-neutral-100 text-neutral-700 border-neutral-300',
+  Release: 'bg-success-soft text-success-fg border-success-line',
+  Block: 'bg-danger-soft text-danger-fg border-danger-line',
+  'Under Inspection': 'bg-warning-soft text-warning-fg border-warning-line',
+  Mixed: 'bg-surface-sunken text-fg-secondary border-line-strong',
 }
 
 function errMsg(err: unknown, fallback: string): string {
@@ -90,11 +90,11 @@ function BatchLocations({
   })
 
   if (query.isLoading) {
-    return <p className="px-3 py-2 text-xs text-neutral-400">Loading locations…</p>
+    return <p className="px-3 py-2 text-xs text-fg-muted">Loading locations…</p>
   }
   if (query.isError) {
     return (
-      <p role="alert" className="flex items-start gap-1.5 px-3 py-2 text-xs text-danger-700">
+      <p role="alert" className="flex items-start gap-1.5 px-3 py-2 text-xs text-danger-fg">
         <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         {errMsg(query.error, 'Could not load where this batch is stored.')}
       </p>
@@ -105,7 +105,7 @@ function BatchLocations({
     // Distinct from an error, and distinct from zero stock: the batch exists,
     // the warehouse just has not told us where it is.
     return (
-      <p className="px-3 py-2 text-xs text-neutral-400">
+      <p className="px-3 py-2 text-xs text-fg-muted">
         No location recorded for this batch.
       </p>
     )
@@ -113,7 +113,7 @@ function BatchLocations({
 
   return (
     <table className="min-w-full text-xs">
-      <thead className="text-[11px] uppercase tracking-wide text-neutral-400">
+      <thead className="text-2xs uppercase tracking-wide text-fg-muted">
         <tr>
           <th className="px-3 py-1.5 text-left">Location</th>
           <th className="px-3 py-1.5 text-left">Zone</th>
@@ -131,23 +131,23 @@ function BatchLocations({
       <tbody>
         {rows.map((row) => (
           <tr key={`${row.location_id}|${row.trace_id ?? ''}|${row.lot_no}`}
-            className="border-t border-neutral-100">
+            className="border-t border-line-subtle">
             <td className="px-3 py-1.5">
               <span className="inline-flex items-center gap-1 font-mono">
-                <MapPin aria-hidden className="h-3 w-3 text-neutral-400" />
+                <MapPin aria-hidden className="h-3 w-3 text-fg-muted" />
                 {row.location_id}
               </span>
             </td>
-            <td className="px-3 py-1.5 text-neutral-500">{row.zone_id ?? '—'}</td>
-            <td className="px-3 py-1.5 font-mono text-neutral-500">{row.trace_id ?? '—'}</td>
+            <td className="px-3 py-1.5 text-fg-muted">{row.zone_id ?? '—'}</td>
+            <td className="px-3 py-1.5 font-mono text-fg-muted">{row.trace_id ?? '—'}</td>
             <td className="px-3 py-1.5 text-right font-mono font-medium">
               {qty(row.qty)}
-              {uom && <span className="ml-1 font-sans text-neutral-400">{uom}</span>}
+              {uom && <span className="ml-1 font-sans text-fg-muted">{uom}</span>}
             </td>
-            <td className="px-3 py-1.5 text-neutral-600">{formatDateOnly(row.production_date)}</td>
-            <td className="px-3 py-1.5 text-neutral-600">{formatDateOnly(row.inbound_date)}</td>
-            <td className="px-3 py-1.5 text-neutral-600">{formatDateOnly(row.expiry_date)}</td>
-            <td className="px-3 py-1.5 text-neutral-600">{row.quality_status_label ?? '—'}</td>
+            <td className="px-3 py-1.5 text-fg-secondary">{formatDateOnly(row.production_date)}</td>
+            <td className="px-3 py-1.5 text-fg-secondary">{formatDateOnly(row.inbound_date)}</td>
+            <td className="px-3 py-1.5 text-fg-secondary">{formatDateOnly(row.expiry_date)}</td>
+            <td className="px-3 py-1.5 text-fg-secondary">{row.quality_status_label ?? '—'}</td>
           </tr>
         ))}
       </tbody>
@@ -226,8 +226,8 @@ export function BatchesTab({
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex h-10 flex-1 items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 sm:max-w-md">
-          <Search aria-hidden className="h-4 w-4 shrink-0 text-neutral-400" />
+        <div className="flex h-10 flex-1 items-center gap-2 rounded-lg border border-line-strong bg-surface px-3 sm:max-w-md">
+          <Search aria-hidden className="h-4 w-4 shrink-0 text-fg-muted" />
           <input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
@@ -237,19 +237,19 @@ export function BatchesTab({
           />
           {searchInput && (
             <button type="button" onClick={() => setSearchInput('')} aria-label="Clear search"
-              className="shrink-0 text-neutral-400 hover:text-neutral-700">
+              className="shrink-0 text-fg-muted hover:text-fg-secondary">
               <X className="h-4 w-4" />
             </button>
           )}
         </div>
 
-        <label className="flex items-center gap-1.5 text-xs text-neutral-600">
+        <label className="flex items-center gap-1.5 text-xs text-fg-secondary">
           Status
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value)}
             aria-label="Filter by stock status"
-            className="h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
           >
             <option value="">Any</option>
             <option value="available">Available</option>
@@ -258,18 +258,18 @@ export function BatchesTab({
           </select>
         </label>
 
-        <span className="text-xs text-neutral-500">
+        <span className="text-xs text-fg-muted">
           {/* Both numbers, because both are true: somebody who knows the
               warehouse holds 543 lots would otherwise think rows went missing. */}
           {total.toLocaleString('en-US')} batch(es)
-          <span className="text-neutral-400"> · {totalLots.toLocaleString('en-US')} lot(s)</span>
+          <span className="text-fg-muted"> · {totalLots.toLocaleString('en-US')} lot(s)</span>
         </span>
       </div>
 
       {batchQuery.isError && (
         // An empty table and a failed request must never look the same — the
         // single most repeated bug in this project.
-        <p role="alert" className="flex items-start gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+        <p role="alert" className="flex items-start gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
           <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           {errMsg(batchQuery.error, 'Could not load inventory.')}
         </p>
@@ -296,10 +296,10 @@ export function BatchesTab({
           </thead>
           <tbody>
             {batchQuery.isLoading && (
-              <tr><td colSpan={10} className="px-3 py-8 text-center text-neutral-400">Loading stock…</td></tr>
+              <tr><td colSpan={10} className="px-3 py-8 text-center text-fg-muted">Loading stock…</td></tr>
             )}
             {!batchQuery.isLoading && items.length === 0 && !batchQuery.isError && (
-              <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-neutral-400">
+              <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-fg-muted">
                 {search
                   ? `Nothing matches "${search}".`
                   : 'No stock for these filters.'}
@@ -310,13 +310,13 @@ export function BatchesTab({
               const isOpen = expanded === key
               return [
               <tr key={key} className={cn(
-                'border-t border-neutral-100',
+                'border-t border-line-subtle',
                 lot.aging_bucket === 'expired' && 'bg-danger-50/40',
               )}>
                 <td className="px-3 py-2">
                   <span className="font-mono text-xs">{lot.material_code}</span>
                   {lot.material_name && (
-                    <span className="ml-1.5 text-xs text-neutral-500">{lot.material_name}</span>
+                    <span className="ml-1.5 text-xs text-fg-muted">{lot.material_name}</span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-xs">
@@ -330,53 +330,53 @@ export function BatchesTab({
                     {lot.supplier_batch ?? (
                       // Not blank: some lots genuinely carry no supplier batch,
                       // and an empty cell reads as a rendering fault.
-                      <span className="font-sans text-neutral-400">no supplier batch</span>
+                      <span className="font-sans text-fg-muted">no supplier batch</span>
                     )}
                     {isOpen ? <ChevronUp aria-hidden className="h-3 w-3 shrink-0" />
                             : <ChevronDown aria-hidden className="h-3 w-3 shrink-0" />}
                   </button>
                 </td>
-                <td className="px-3 py-2 font-mono text-xs text-neutral-600">
-                  {lot.qc_batches || <span className="font-sans text-neutral-400">—</span>}
+                <td className="px-3 py-2 font-mono text-xs text-fg-secondary">
+                  {lot.qc_batches || <span className="font-sans text-fg-muted">—</span>}
                 </td>
                 <td className="px-3 py-2 text-right font-mono">
                   {qty(lot.qty)}
                   {lot.base_uom && (
-                    <span className="ml-1 font-sans text-xs text-neutral-400">{lot.base_uom}</span>
+                    <span className="ml-1 font-sans text-xs text-fg-muted">{lot.base_uom}</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-xs text-neutral-600">
+                <td className="px-3 py-2 text-xs text-fg-secondary">
                   {formatDateOnly(lot.production_date)}
                   {lot.production_spans_dates && (
                     <span
-                      className="ml-1 cursor-help text-neutral-400"
+                      className="ml-1 cursor-help text-fg-muted"
                       title="This batch's lots have different production dates — the earliest is shown"
                     >+</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-xs text-neutral-600">
+                <td className="px-3 py-2 text-xs text-fg-secondary">
                   {formatDateOnly(lot.expiry_date)}
                   {lot.expiry_spans_dates && (
                     // The batch's lots do not share one date, so the date shown
                     // describes only part of the quantity. Saying so beats
                     // presenting the earliest as if it were the whole batch.
                     <span
-                      className="ml-1 cursor-help text-neutral-400"
+                      className="ml-1 cursor-help text-fg-muted"
                       title="This batch's lots have different expiry dates — the earliest is shown"
                     >+</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right font-mono text-xs text-neutral-500">{lot.lots}</td>
+                <td className="px-3 py-2 text-right font-mono text-xs text-fg-muted">{lot.lots}</td>
                 <td className="px-3 py-2">
                   {lot.aging_bucket === null ? (
                     // Not a band, and not rendered as one. Packaging has no
                     // expiry because it does not expire.
-                    <span className="text-xs text-neutral-400" title="This material has no shelf life on file">
+                    <span className="text-xs text-fg-muted" title="This material has no shelf life on file">
                       no expiry
                     </span>
                   ) : (
                     <span className={cn(
-                      'rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                      'rounded-full border px-2 py-0.5 text-2xs font-medium',
                       BUCKET_STYLE[lot.aging_bucket],
                     )}>
                       {lot.days_to_expiry !== null && lot.days_to_expiry < 0
@@ -389,9 +389,9 @@ export function BatchesTab({
                   {lot.quality_status_label && (
                     <span
                       className={cn(
-                        'rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                        'rounded-full border px-2 py-0.5 text-2xs font-medium',
                         QUALITY_STYLE[lot.quality_status_label]
-                          ?? 'bg-neutral-50 text-neutral-600 border-neutral-200',
+                          ?? 'bg-surface-subtle text-fg-secondary border-line',
                       )}
                       title={`Warehouse quality status — Flux QLT_STS ${lot.quality_status}`}
                     >
@@ -402,8 +402,8 @@ export function BatchesTab({
                 <td className="px-3 py-2">
                   <span
                     className={cn(
-                      'rounded-full border px-2 py-0.5 text-[11px] font-medium',
-                      STATUS_STYLE[lot.mapped_status] ?? 'bg-neutral-50 text-neutral-600 border-neutral-200',
+                      'rounded-full border px-2 py-0.5 text-2xs font-medium',
+                      STATUS_STYLE[lot.mapped_status] ?? 'bg-surface-subtle text-fg-secondary border-line',
                     )}
                     title="Warehouse status with shelf life applied — what planning uses"
                   >
@@ -412,7 +412,7 @@ export function BatchesTab({
                 </td>
               </tr>,
               isOpen && (
-                <tr key={`${key}-locations`} className="border-t border-neutral-100 bg-neutral-50/60">
+                <tr key={`${key}-locations`} className="border-t border-line-subtle bg-surface-subtle/60">
                   <td colSpan={10} className="p-0">
                     <BatchLocations
                       materialCode={lot.material_code}
@@ -429,20 +429,20 @@ export function BatchesTab({
       </ScrollTable>
 
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] text-neutral-500">
+        <span className="text-2xs text-fg-muted">
           {from}–{to} of {total.toLocaleString('en-US')}
           {batchQuery.data && <> · expiry checked against {formatDateOnly(batchQuery.data.as_of)}</>}
         </span>
         <div className="flex items-center gap-1">
           <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1 || batchQuery.isFetching} aria-label="Previous page"
-            className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40">
+            className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40">
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="text-[11px] text-neutral-500">Page {page} of {pageCount}</span>
+          <span className="text-2xs text-fg-muted">Page {page} of {pageCount}</span>
           <button type="button" onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
             disabled={page >= pageCount || batchQuery.isFetching} aria-label="Next page"
-            className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40">
+            className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40">
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>

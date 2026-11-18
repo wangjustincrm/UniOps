@@ -17,11 +17,11 @@ function CountGrid({ title, data }: { title: string; data: Record<string, number
   const entries = Object.entries(data || {}).filter(([, v]) => v)
   if (!entries.length) return null
   return (
-    <div className="rounded-lg border border-neutral-200 p-3">
-      <div className="text-xs font-semibold text-neutral-500 uppercase mb-1.5">{title}</div>
+    <div className="rounded-lg border border-line p-3">
+      <div className="text-xs font-semibold text-fg-muted uppercase mb-1.5">{title}</div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
         {entries.map(([k, v]) => (
-          <span key={k} className="tabular-nums"><b>{v}</b> <span className="text-neutral-500">{k}</span></span>
+          <span key={k} className="tabular-nums"><b>{v}</b> <span className="text-fg-muted">{k}</span></span>
         ))}
       </div>
     </div>
@@ -38,12 +38,12 @@ function ReportView({ r }: { r: PmsReport }) {
   ]
   return (
     <div className="flex flex-col gap-2 mt-2">
-      <div className="text-xs text-neutral-500">{r.dry_run ? 'DRY-RUN — nothing was written' : 'COMMITTED'}{r.watermark_advanced_to ? ` · watermark → ${fmt(r.watermark_advanced_to)}` : ''}</div>
+      <div className="text-xs text-fg-muted">{r.dry_run ? 'DRY-RUN — nothing was written' : 'COMMITTED'}{r.watermark_advanced_to ? ` · watermark → ${fmt(r.watermark_advanced_to)}` : ''}</div>
       <CountGrid title="Inserted" data={r.inserted} />
       <CountGrid title="Updated (incremental)" data={r.updated} />
       <CountGrid title="Skipped — locally edited in EPMS" data={r.skipped_conflict} />
       <CountGrid title="Skipped — already present" data={r.skipped_existing} />
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-neutral-600">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-fg-secondary">
         {r.created_vendors > 0 && <span><b>{r.created_vendors}</b> vendors auto-created</span>}
         {r.applier_fallback > 0 && <span><b>{r.applier_fallback}</b> docs → system user</span>}
         {r.pa_orphan_no_po > 0 && <span><b>{r.pa_orphan_no_po}</b> PAs skipped (no PO)</span>}
@@ -51,16 +51,16 @@ function ReportView({ r }: { r: PmsReport }) {
         {r.invoices_no_vendor > 0 && <span><b>{r.invoices_no_vendor}</b> invoices w/o vendor</span>}
       </div>
       {r.attachments && (r.attachments.uploaded || r.attachments.skipped_existing || r.attachments.failed) ? (
-        <div className="text-sm text-neutral-600">
+        <div className="text-sm text-fg-secondary">
           <b>Invoice attachments</b> — {r.attachments.uploaded} uploaded, {r.attachments.skipped_existing} existing
           {r.attachments.failed ? `, ${r.attachments.failed} failed` : ''}
           {r.attachments.no_invoice ? `, ${r.attachments.no_invoice} no-invoice` : ''}
         </div>
       ) : null}
       {r.doc_attachments && (
-        <div className="rounded-lg border border-neutral-200 p-3">
-          <div className="text-xs font-semibold text-neutral-500 uppercase mb-1.5">Document attachments</div>
-          <div className="flex flex-col gap-0.5 text-sm text-neutral-600">
+        <div className="rounded-lg border border-line p-3">
+          <div className="text-xs font-semibold text-fg-muted uppercase mb-1.5">Document attachments</div>
+          <div className="flex flex-col gap-0.5 text-sm text-fg-secondary">
             {(['pr', 'po', 'pa'] as const).map((k) => {
               const a = r.doc_attachments![k]
               if (!a) return null
@@ -75,7 +75,7 @@ function ReportView({ r }: { r: PmsReport }) {
         </div>
       )}
       {warnings.filter(([, v]) => v).map(([label, v]) => (
-        <div key={label} className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">
+        <div key={label} className="text-xs text-warning-fg bg-warning-soft rounded px-2 py-1">
           <b>{label}</b> — {v}
         </div>
       ))}
@@ -85,9 +85,9 @@ function ReportView({ r }: { r: PmsReport }) {
 
 function StatusBadge({ s }: { s: PmsRun['status'] }) {
   const map = {
-    running: ['bg-blue-50 text-blue-700', Loader2, 'Running'],
-    success: ['bg-green-50 text-green-700', CheckCircle2, 'Success'],
-    error: ['bg-red-50 text-red-700', AlertTriangle, 'Error'],
+    running: ['bg-info-soft text-info-fg', Loader2, 'Running'],
+    success: ['bg-success-soft text-success-fg', CheckCircle2, 'Success'],
+    error: ['bg-danger-soft text-danger-fg', AlertTriangle, 'Error'],
   } as const
   const [cls, Icon, label] = map[s]
   return (
@@ -155,34 +155,34 @@ export function PmsImportPanel() {
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h2 className="text-lg font-semibold text-neutral-900 flex items-center gap-2">
+        <h2 className="text-lg font-semibold text-fg flex items-center gap-2">
           <Database className="h-5 w-5 text-primary-600" /> PMS Data Import
         </h2>
-        <p className="mt-1 text-sm text-neutral-500">
+        <p className="mt-1 text-sm text-fg-muted">
           Import legacy Purchase Requests, Orders, Payments &amp; Invoices from the SharePoint PMS.
-          {config && <> Source: <span className="text-neutral-700">{config.site}</span></>}
+          {config && <> Source: <span className="text-fg-secondary">{config.site}</span></>}
         </p>
       </div>
 
       {noSp && (
-        <div className="flex items-center gap-2 text-sm text-amber-800 bg-amber-50 rounded-lg px-3 py-2">
+        <div className="flex items-center gap-2 text-sm text-warning-fg bg-warning-soft rounded-lg px-3 py-2">
           <AlertTriangle className="h-4 w-4" /> SharePoint credentials are not configured (SP_USER / SP_PASSWORD). Import is disabled.
         </div>
       )}
       {error && (
-        <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">
+        <div className="flex items-center gap-2 text-sm text-danger-fg bg-danger-soft rounded-lg px-3 py-2">
           <AlertTriangle className="h-4 w-4" /> {error}
         </div>
       )}
 
       {/* Controls */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-4 flex flex-col gap-3">
+      <div className="rounded-xl border border-line bg-surface p-4 flex flex-col gap-3">
         <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-neutral-700 select-none">
+          <label className="flex items-center gap-2 text-sm text-fg-secondary select-none">
             <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} disabled={running} />
             Dry-run (preview only, write nothing)
           </label>
-          <span className="text-xs text-neutral-400">Last incremental watermark: {fmt(config?.last_sync)}</span>
+          <span className="text-xs text-fg-muted">Last incremental watermark: {fmt(config?.last_sync)}</span>
         </div>
         <div className="flex flex-wrap gap-3">
           <Button onClick={() => start('full')} disabled={running || busy || !!noSp}>
@@ -195,10 +195,10 @@ export function PmsImportPanel() {
             <Paperclip className="h-4 w-4 mr-1.5" /> Import Attachments
           </Button>
           {!config?.last_sync && (
-            <span className="self-center text-xs text-neutral-400">Run a committed full import first to enable incremental.</span>
+            <span className="self-center text-xs text-fg-muted">Run a committed full import first to enable incremental.</span>
           )}
         </div>
-        <p className="text-xs text-neutral-400">
+        <p className="text-xs text-fg-muted">
           Full = import everything (new docs only). Incremental = sync docs whose SharePoint
           <i> Modified</i> is newer than the last sync; existing docs get header-level updates,
           locally-edited docs are skipped.
@@ -207,17 +207,17 @@ export function PmsImportPanel() {
 
       {/* Current run */}
       {current && (
-        <div className="rounded-xl border border-neutral-200 bg-white p-4">
+        <div className="rounded-xl border border-line bg-surface p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm">
               <StatusBadge s={current.status} />
               <span className="font-medium">{phaseLabel(current.phase)}</span>
-              {current.dry_run && <span className="text-xs text-neutral-400">(dry-run)</span>}
-              <span className="text-neutral-500">— {current.step}</span>
+              {current.dry_run && <span className="text-xs text-fg-muted">(dry-run)</span>}
+              <span className="text-fg-muted">— {current.step}</span>
             </div>
-            <span className="text-xs text-neutral-400">{fmt(current.started_at)}</span>
+            <span className="text-xs text-fg-muted">{fmt(current.started_at)}</span>
           </div>
-          {current.error && <div className="mt-2 text-sm text-red-700">{current.error}</div>}
+          {current.error && <div className="mt-2 text-sm text-danger-fg">{current.error}</div>}
           {current.report && <ReportView r={current.report} />}
         </div>
       )}
@@ -225,13 +225,13 @@ export function PmsImportPanel() {
       {/* History */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold text-neutral-700">Run history</h3>
+          <h3 className="text-sm font-semibold text-fg-secondary">Run history</h3>
           <button onClick={() => refresh()} className="text-xs text-primary-600 hover:underline flex items-center gap-1">
             <RefreshCw className="h-3 w-3" /> Refresh
           </button>
         </div>
-        <div className="rounded-xl border border-neutral-200 bg-white divide-y divide-neutral-100">
-          {runs.length === 0 && <div className="p-4 text-sm text-neutral-400">No runs yet.</div>}
+        <div className="rounded-xl border border-line bg-surface divide-y divide-line-subtle">
+          {runs.length === 0 && <div className="p-4 text-sm text-fg-muted">No runs yet.</div>}
           {runs.map((run) => (
             <div key={run.id}>
               <button
@@ -245,22 +245,22 @@ export function PmsImportPanel() {
                     } catch { /* fall back to the summary row */ }
                   }
                 }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-neutral-50 text-sm">
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-surface-subtle text-sm">
                 <StatusBadge s={run.status} />
                 <span className="font-medium w-28">{phaseLabel(run.phase)}</span>
-                {run.dry_run && <span className="text-xs text-neutral-400">dry-run</span>}
-                <span className="text-neutral-500 flex-1">{fmt(run.started_at)}</span>
-                <span className="text-xs text-neutral-400">{run.triggered_by}</span>
-                <ChevronDown className={cn('h-4 w-4 text-neutral-400 transition-transform', expanded === run.id && 'rotate-180')} />
+                {run.dry_run && <span className="text-xs text-fg-muted">dry-run</span>}
+                <span className="text-fg-muted flex-1">{fmt(run.started_at)}</span>
+                <span className="text-xs text-fg-muted">{run.triggered_by}</span>
+                <ChevronDown className={cn('h-4 w-4 text-fg-muted transition-transform', expanded === run.id && 'rotate-180')} />
               </button>
               {expanded === run.id && (() => {
                 const full = details[run.id] ?? run
                 return (
                   <div className="px-4 pb-3">
-                    {full.error && <div className="text-sm text-red-700 mb-1">{full.error}</div>}
+                    {full.error && <div className="text-sm text-danger-fg mb-1">{full.error}</div>}
                     {full.report
                       ? <ReportView r={full.report} />
-                      : <div className="text-xs text-neutral-400">{details[run.id] ? 'No report.' : 'Loading…'}</div>}
+                      : <div className="text-xs text-fg-muted">{details[run.id] ? 'No report.' : 'Loading…'}</div>}
                   </div>
                 )
               })()}

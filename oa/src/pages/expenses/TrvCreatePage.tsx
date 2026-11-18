@@ -133,7 +133,7 @@ function emptyLine(n: number, category: string, taxCode: string | null): TrvLine
 function OverLimitBadge({ amount, limit }: { amount: number; limit: number }) {
   if (!limit || amount <= limit) return null
   return (
-    <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-warning-100 text-warning-700">
+    <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs font-semibold bg-warning-soft text-warning-fg">
       <AlertTriangle className="h-2.5 w-2.5" />
       Over limit (${limit.toFixed(2)})
     </span>
@@ -171,11 +171,11 @@ function CategorySection({
   const limit = rawLimit != null ? Number(rawLimit) : null
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+    <div className="rounded-xl border border-line bg-surface overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
-        className="flex w-full items-center justify-between px-4 py-3 bg-neutral-50 border-b border-neutral-100 text-sm font-semibold text-neutral-700 hover:bg-neutral-100 transition-colors"
+        className="flex w-full items-center justify-between px-4 py-3 bg-surface-subtle border-b border-line-subtle text-sm font-semibold text-fg-secondary hover:bg-surface-sunken transition-colors"
       >
         <span className="flex items-center gap-2">
           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -187,7 +187,7 @@ function CategorySection({
           )}
         </span>
         {limit && (
-          <span className="text-xs font-normal text-neutral-400">
+          <span className="text-xs font-normal text-fg-muted">
             Limit ${limit.toFixed(2)} {category === 'Incidental' ? 'per line' : 'per meal'}
           </span>
         )}
@@ -216,13 +216,13 @@ function CategorySection({
               <div key={li.line_number}
                 className={cn(
                   'rounded-lg border p-3 flex flex-col gap-2',
-                  isOver ? 'border-warning-300 bg-warning-50/40' : 'border-neutral-200',
+                  isOver ? 'border-warning-line bg-warning-50/40' : 'border-line',
                 )}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-neutral-700">Line {k + 1}</span>
+                  <span className="text-xs font-semibold text-fg-secondary">Line {k + 1}</span>
                   {/* Single day vs. date range (long trips: N days × a daily rate) */}
-                  <div className="inline-flex rounded border border-neutral-200 text-[11px] font-medium overflow-hidden">
+                  <div className="inline-flex rounded border border-line text-2xs font-medium overflow-hidden">
                     {(['day', 'range'] as const).map(m => (
                       <button key={m} type="button"
                         onClick={() => {
@@ -245,7 +245,7 @@ function CategorySection({
                           }
                         }}
                         className={cn('px-2 py-1 transition-colors',
-                          li.mode === m ? 'bg-primary-600 text-white' : 'bg-white text-neutral-500 hover:bg-neutral-50')}>
+                          li.mode === m ? 'bg-primary-600 text-white' : 'bg-surface text-fg-muted hover:bg-surface-subtle')}>
                         {m === 'day' ? 'Single day' : 'Date range'}
                       </button>
                     ))}
@@ -253,7 +253,7 @@ function CategorySection({
                   {isOver && <OverLimitBadge amount={perDay} limit={limit!} />}
                   <button type="button" onClick={() => onRemove(li.line_number)}
                     aria-label={`Remove ${label} line ${k + 1}`}
-                    className="ml-auto text-neutral-300 hover:text-danger-500 transition-colors">
+                    className="ml-auto text-fg-faint hover:text-danger-fg transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -261,16 +261,16 @@ function CategorySection({
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   {!isRange && (
                   <div>
-                    <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Date</label>
+                    <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">Date</label>
                     <input type="date" value={li.expense_date}
                       onChange={e => onUpdate(li.line_number, { expense_date: e.target.value })}
-                      className="mt-0.5 w-full rounded border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                      className="mt-0.5 w-full rounded border border-line px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
                     />
                   </div>
                   )}
                   <div className={isRange ? 'sm:col-span-2 lg:col-span-3' : 'sm:col-span-2'}>
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Description</label>
+                      <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">Description</label>
                       <ReceiptScanButton
                         // Same rule as the general expense page: a scan becomes the
                         // row's receipt and a re-scan replaces an earlier scan, but a
@@ -315,12 +315,12 @@ function CategorySection({
                     <input value={li.description}
                       onChange={e => onUpdate(li.line_number, { description: e.target.value })}
                       placeholder="e.g. Taxi to airport"
-                      className="mt-0.5 w-full rounded border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                      className="mt-0.5 w-full rounded border border-line px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
                     />
                   </div>
                   {!isRange && (
                   <div>
-                    <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Amount (net)</label>
+                    <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">Amount (net)</label>
                     <input type="number" min="0" step="0.01" value={li.net_amount}
                       onChange={e => {
                         const net = e.target.value
@@ -330,7 +330,7 @@ function CategorySection({
                       }}
                       className={cn(
                         'mt-0.5 w-full rounded border px-2 py-1.5 text-sm text-right focus:outline-none focus:border-primary-400',
-                        isOver ? 'border-warning-300 bg-warning-50' : 'border-neutral-200',
+                        isOver ? 'border-warning-line bg-warning-soft' : 'border-line',
                       )}
                     />
                   </div>
@@ -340,57 +340,57 @@ function CategorySection({
                 {isRange && (
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                     <div>
-                      <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">From</label>
+                      <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">From</label>
                       <input type="date" value={li.period_from} min={tripFrom || undefined} max={li.period_to || tripTo || undefined}
                         onChange={e => setRange({ period_from: e.target.value,
                           period_days: String(Math.max(daysInRange(e.target.value, li.period_to), 0)) })}
-                        className="mt-0.5 w-full rounded border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                        className="mt-0.5 w-full rounded border border-line px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">To</label>
+                      <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">To</label>
                       <input type="date" value={li.period_to} min={li.period_from || tripFrom || undefined} max={tripTo || undefined}
                         onChange={e => setRange({ period_to: e.target.value,
                           period_days: String(Math.max(daysInRange(li.period_from, e.target.value), 0)) })}
-                        className="mt-0.5 w-full rounded border border-neutral-200 px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                        className="mt-0.5 w-full rounded border border-line px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">
-                        Days claimed {span > 0 && <span className="normal-case text-neutral-400">(max {span})</span>}
+                      <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">
+                        Days claimed {span > 0 && <span className="normal-case text-fg-muted">(max {span})</span>}
                       </label>
                       <input type="number" min="1" max={span || undefined} step="1" value={li.period_days}
                         onChange={e => setRange({ period_days: e.target.value })}
                         className={cn(
                           'mt-0.5 w-full rounded border px-2 py-1.5 text-sm text-right focus:outline-none focus:border-primary-400',
-                          Number(li.period_days) > span ? 'border-danger-300 bg-danger-50' : 'border-neutral-200',
+                          Number(li.period_days) > span ? 'border-danger-line bg-danger-soft' : 'border-line',
                         )}
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">
-                        Daily rate (net) {limit && <span className="normal-case text-neutral-400">(max {limit.toFixed(2)})</span>}
+                      <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">
+                        Daily rate (net) {limit && <span className="normal-case text-fg-muted">(max {limit.toFixed(2)})</span>}
                       </label>
                       <input type="number" min="0" max={limit ?? undefined} step="0.01" value={li.daily_rate}
                         onChange={e => setRange({ daily_rate: e.target.value })}
                         className={cn(
                           'mt-0.5 w-full rounded border px-2 py-1.5 text-sm text-right focus:outline-none focus:border-primary-400',
-                          isOver ? 'border-danger-300 bg-danger-50' : 'border-neutral-200',
+                          isOver ? 'border-danger-line bg-danger-soft' : 'border-line',
                         )}
                       />
                     </div>
-                    <div className="sm:col-span-2 lg:col-span-4 text-xs text-neutral-500">
+                    <div className="sm:col-span-2 lg:col-span-4 text-xs text-fg-muted">
                       {li.period_days || 0} days × {formatAmount(parseFloat(li.daily_rate) || 0)} ={' '}
-                      <span className="font-mono text-neutral-700">{formatAmount(parseFloat(li.net_amount) || 0)}</span> net
+                      <span className="font-mono text-fg-secondary">{formatAmount(parseFloat(li.net_amount) || 0)}</span> net
                       {taxRate > 0 && <> + tax <span className="font-mono">{formatAmount(parseFloat(li.tax_amount) || 0)}</span></>}
-                      {' '}= <span className="font-mono font-semibold text-neutral-800">{formatAmount(parseFloat(li.total_amount) || 0)}</span>
+                      {' '}= <span className="font-mono font-semibold text-fg">{formatAmount(parseFloat(li.total_amount) || 0)}</span>
                     </div>
                   </div>
                 )}
 
                 {/* Budget account */}
                 <div>
-                  <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Budget Account</label>
+                  <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">Budget Account</label>
                   <div className="mt-0.5">
                     <AccountPicker
                       value={li.budget_account_id}
@@ -410,7 +410,7 @@ function CategorySection({
                 {!abroad && (
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="sm:col-span-2">
-                      <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Tax</label>
+                      <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">Tax</label>
                       <select value={li.tax_code ?? ''}
                         onChange={e => {
                           const code = e.target.value || null
@@ -418,7 +418,7 @@ function CategorySection({
                             tax_code: code, ...amountsFromNet(parseFloat(li.net_amount) || 0, rateOf(code)),
                           })
                         }}
-                        className="mt-0.5 w-full rounded border border-neutral-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                        className="mt-0.5 w-full rounded border border-line bg-surface px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
                       >
                         <option value="">No tax</option>
                         {taxCodes.map(tc => (
@@ -426,9 +426,9 @@ function CategorySection({
                         ))}
                       </select>
                     </div>
-                    <div className="sm:col-span-2 lg:self-end lg:pb-1.5 text-right text-xs text-neutral-500">
+                    <div className="sm:col-span-2 lg:self-end lg:pb-1.5 text-right text-xs text-fg-muted">
                       Tax <span className="font-mono">{formatAmount(parseFloat(li.tax_amount) || 0)}</span>
-                      {' · '}Total <span className="font-mono font-semibold text-neutral-800">{formatAmount(parseFloat(li.total_amount) || 0)}</span>
+                      {' · '}Total <span className="font-mono font-semibold text-fg">{formatAmount(parseFloat(li.total_amount) || 0)}</span>
                     </div>
                   </div>
                 )}
@@ -436,20 +436,20 @@ function CategorySection({
                 {/* Receipt / invoice attachment for this row */}
                 <div className={cn(isRange && 'grid grid-cols-1 gap-2 sm:grid-cols-2')}>
                 <div>
-                  <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">
-                    Receipt / Invoice{isRange && <span className="normal-case text-neutral-400"> (optional)</span>}
+                  <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">
+                    Receipt / Invoice{isRange && <span className="normal-case text-fg-muted"> (optional)</span>}
                   </label>
                   {li._file ? (
-                    <div className="mt-0.5 flex items-center gap-2 rounded border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-sm">
-                      <Paperclip className="h-3.5 w-3.5 text-neutral-400 shrink-0" />
-                      <span className="flex-1 truncate text-neutral-700">{li._file.name}</span>
+                    <div className="mt-0.5 flex items-center gap-2 rounded border border-line bg-surface-subtle px-2 py-1.5 text-sm">
+                      <Paperclip className="h-3.5 w-3.5 text-fg-muted shrink-0" />
+                      <span className="flex-1 truncate text-fg-secondary">{li._file.name}</span>
                       <button type="button" onClick={() => onUpdate(li.line_number, { _file: null })}
-                        className="text-neutral-300 hover:text-danger-500 transition-colors" title="Remove attachment">
+                        className="text-fg-faint hover:text-danger-fg transition-colors" title="Remove attachment">
                         <X className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   ) : (
-                    <label className="mt-0.5 flex cursor-pointer items-center gap-1.5 self-start rounded border border-dashed border-neutral-300 px-2 py-1.5 text-xs font-medium text-neutral-500 hover:border-primary-400 hover:text-primary-700 transition-colors w-fit">
+                    <label className="mt-0.5 flex cursor-pointer items-center gap-1.5 self-start rounded border border-dashed border-line-strong px-2 py-1.5 text-xs font-medium text-fg-muted hover:border-primary-400 hover:text-primary-700 transition-colors w-fit">
                       <Upload className="h-3.5 w-3.5" />
                       Attach receipt
                       <input type="file" accept="image/*,.pdf" className="hidden"
@@ -463,16 +463,16 @@ function CategorySection({
                 </div>
                 {isRange && (li._file || li.invoice_amount) && (
                   <div>
-                    <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Invoice amount *</label>
+                    <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">Invoice amount *</label>
                     <input type="number" min="0" step="0.01" value={li.invoice_amount}
                       onChange={e => onUpdate(li.line_number, { invoice_amount: e.target.value })}
                       className={cn(
                         'mt-0.5 w-full rounded border px-2 py-1.5 text-sm text-right focus:outline-none focus:border-primary-400',
                         li.invoice_amount && (parseFloat(li.total_amount) || 0) > parseFloat(li.invoice_amount)
-                          ? 'border-danger-300 bg-danger-50' : 'border-neutral-200',
+                          ? 'border-danger-line bg-danger-soft' : 'border-line',
                       )}
                     />
-                    <p className="mt-0.5 text-[10px] text-neutral-400">The line total may not exceed the invoice.</p>
+                    <p className="mt-0.5 text-2xs text-fg-muted">The line total may not exceed the invoice.</p>
                   </div>
                 )}
                 </div>
@@ -781,7 +781,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
   }
 
   if (loadingClaim) {
-    return <div className="p-8 text-sm text-neutral-500">Loading claim…</div>
+    return <div className="p-8 text-sm text-fg-muted">Loading claim…</div>
   }
   if (loadError) {
     return <ErrorBanner message={loadError.message} />
@@ -790,20 +790,20 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-6 max-w-3xl">
       <div>
-        <BackLink to="/expenses" className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 mb-4">
+        <BackLink to="/expenses" className="inline-flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg-secondary mb-4">
           <ArrowLeft className="h-4 w-4" />Back to Expenses
         </BackLink>
-        <h1 className="text-2xl font-bold text-neutral-900">
+        <h1 className="text-2xl font-bold text-fg">
           {editing ? `Edit ${editing.claim_number}` : 'Travel Expense Claim'}
         </h1>
-        <p className="mt-0.5 text-sm text-neutral-500">TRV — reimbursement for business travel</p>
+        <p className="mt-0.5 text-sm text-fg-muted">TRV — reimbursement for business travel</p>
       </div>
 
       {/* Over-limit warning banner */}
       {hasOverLimit && (
-        <div className="rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 flex items-start gap-3">
-          <AlertTriangle className="h-5 w-5 text-warning-500 shrink-0 mt-0.5" />
-          <div className="text-sm text-warning-800">
+        <div className="rounded-lg border border-warning-line bg-warning-soft px-4 py-3 flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-warning-fg shrink-0 mt-0.5" />
+          <div className="text-sm text-warning-fg">
             <strong>Meal limit exceeded.</strong>{' '}
             Highlighted rows exceed the policy per-meal allowance and will require Finance Manager approval.
           </div>
@@ -811,8 +811,8 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
       )}
 
       {/* Travel Application selector */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-5">
-        <label className="mb-1 block text-xs font-medium text-neutral-600">Travel Application *</label>
+      <div className="rounded-xl border border-line bg-surface p-5">
+        <label className="mb-1 block text-xs font-medium text-fg-secondary">Travel Application *</label>
         <select required value={travelApplicationId}
           onChange={e => {
             const id = e.target.value; setTravelApplicationId(id)
@@ -828,7 +828,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
               if (app.purpose) setPurpose(app.purpose)
             }
           }}
-          className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
+          className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm">
           <option value="">— Select an approved travel application —</option>
           {eligibleApps.map(a => (
             <option key={a.id} value={a.id}>
@@ -837,65 +837,65 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
           ))}
         </select>
         {eligibleApps.length === 0 && (
-          <p className="mt-1 text-xs text-warning-700">
+          <p className="mt-1 text-xs text-warning-fg">
             No approved travel applications available. Submit and get a Travel Application approved first.
           </p>
         )}
         {!editClaimId && selectedApp && (
           <div className="mt-4">
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Claim for *</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Claim for *</label>
             <select required value={claimantId} onChange={e => setClaimantId(e.target.value)}
               disabled={selectedApp.claimants.length === 1}
-              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm disabled:bg-neutral-50">
+              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm disabled:bg-surface-subtle">
               <option value="">— Select a traveler —</option>
               {selectedApp.claimants.map(c => (
                 <option key={c.id} value={c.id}>{c.name}{c.is_self ? ' (me)' : ''}</option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-neutral-500">The reimbursement is paid to this traveler.</p>
+            <p className="mt-1 text-xs text-fg-muted">The reimbursement is paid to this traveler.</p>
           </div>
         )}
       </div>
 
       {/* Trip header */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-5 flex flex-col gap-4">
-        <h2 className="text-sm font-semibold text-neutral-700">Trip Details</h2>
+      <div className="rounded-xl border border-line bg-surface p-5 flex flex-col gap-4">
+        <h2 className="text-sm font-semibold text-fg-secondary">Trip Details</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">From Date *</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">From Date *</label>
             <input type="date" required value={fromDate} onChange={e => setFromDate(e.target.value)}
-              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400" />
+              className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400" />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">To Date *</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">To Date *</label>
             <input type="date" required value={toDate} onChange={e => setToDate(e.target.value)}
               min={fromDate}
-              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400" />
+              className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400" />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Destination *</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Destination *</label>
             <input required value={destination} onChange={e => setDestination(e.target.value)}
               placeholder="e.g. Toronto, ON"
-              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400" />
+              className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400" />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Country *</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Country *</label>
             <select value={country} onChange={e => changeCountry(e.target.value)}
-              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
+              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
               {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
             </select>
-            {abroad && <p className="mt-1 text-xs text-neutral-500">Outside Canada — no sales tax is added to the lines.</p>}
+            {abroad && <p className="mt-1 text-xs text-fg-muted">Outside Canada — no sales tax is added to the lines.</p>}
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Currency</label>
-            <div className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-700">CAD</div>
-            <p className="mt-1 text-xs text-neutral-500">Travel claims are in CAD only. Convert foreign-currency receipts to CAD before entering them.</p>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Currency</label>
+            <div className="w-full rounded-lg border border-line bg-surface-subtle px-3 py-2 text-sm text-fg-secondary">CAD</div>
+            <p className="mt-1 text-xs text-fg-muted">Travel claims are in CAD only. Convert foreign-currency receipts to CAD before entering them.</p>
           </div>
           <div className="sm:col-span-2">
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Business Purpose *</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Business Purpose *</label>
             <input required value={purpose} onChange={e => setPurpose(e.target.value)}
               placeholder="e.g. Client meeting, conference attendance…"
-              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400" />
+              className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400" />
           </div>
         </div>
       </div>
@@ -922,29 +922,29 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
 
       {/* Notes */}
       <div>
-        <label className="mb-1 block text-xs font-medium text-neutral-600">Additional Notes</label>
+        <label className="mb-1 block text-xs font-medium text-fg-secondary">Additional Notes</label>
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
-          className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400 resize-none" />
+          className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400 resize-none" />
       </div>
 
       {/* Summary */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-4 space-y-1.5 text-sm">
-        <div className="flex justify-between text-neutral-500">
+      <div className="rounded-xl border border-line bg-surface p-4 space-y-1.5 text-sm">
+        <div className="flex justify-between text-fg-muted">
           <span>Subtotal (net)</span>
           <span className="font-mono">{formatAmount(totalNet, currency)}</span>
         </div>
-        <div className="flex justify-between text-neutral-500">
+        <div className="flex justify-between text-fg-muted">
           <span>{abroad ? 'Tax (none outside Canada)' : 'Tax'}</span>
           <span className="font-mono">{formatAmount(totalTax, currency)}</span>
         </div>
-        <div className="flex justify-between font-semibold border-t border-neutral-100 pt-2">
+        <div className="flex justify-between font-semibold border-t border-line-subtle pt-2">
           <span>Total Claim</span>
           <span className="font-mono text-primary-700">{formatAmount(totalGross, currency)}</span>
         </div>
       </div>
 
       {lineIssues.length > 0 && (
-        <div role="alert" data-line-issues className="flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+        <div role="alert" data-line-issues className="flex items-start gap-2 rounded-lg border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <p className="font-medium">Complete these lines before saving:</p>

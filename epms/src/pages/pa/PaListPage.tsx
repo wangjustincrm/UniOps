@@ -19,14 +19,14 @@ import type { PaStatus, ApiPa } from '@/services/pa'
 // ─── Status config ────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<PaStatus, { label: string; variant: 'neutral' | 'warning' | 'info' | 'success' | 'danger'; dot: string }> = {
-  draft:     { label: 'Draft',      variant: 'neutral', dot: 'bg-neutral-400'  },
-  submitted: { label: 'Submitted',  variant: 'warning', dot: 'bg-warning-500'  },
-  in_review: { label: 'In Review',  variant: 'info',    dot: 'bg-info-500'     },
-  approved:  { label: 'Approved',   variant: 'success', dot: 'bg-success-600'  },
-  processed: { label: 'Processed',  variant: 'neutral', dot: 'bg-neutral-600'  },
+  draft:     { label: 'Draft',      variant: 'neutral', dot: 'bg-fg-faint'  },
+  submitted: { label: 'Submitted',  variant: 'warning', dot: 'bg-warning-solid'  },
+  in_review: { label: 'In Review',  variant: 'info',    dot: 'bg-info-solid'     },
+  approved:  { label: 'Approved',   variant: 'success', dot: 'bg-success-solid'  },
+  processed: { label: 'Processed',  variant: 'neutral', dot: 'bg-fg-secondary'  },
   returned:  { label: 'Returned',   variant: 'warning', dot: 'bg-warning-400'  },
-  rejected:  { label: 'Rejected',   variant: 'danger',  dot: 'bg-danger-600'   },
-  cancelled: { label: 'Cancelled',  variant: 'danger',  dot: 'bg-danger-600'   },
+  rejected:  { label: 'Rejected',   variant: 'danger',  dot: 'bg-danger-solid'   },
+  cancelled: { label: 'Cancelled',  variant: 'danger',  dot: 'bg-danger-solid'   },
 }
 
 const STATUS_FILTER_OPTIONS = [
@@ -43,7 +43,7 @@ const STATUS_FILTER_OPTIONS = [
 
 function PaStatusBadge({ status }: { status: PaStatus }) {
   // Tolerate unexpected/legacy status values so one bad row can't crash the list.
-  const c = STATUS_CFG[status] ?? { label: String(status ?? '—'), variant: 'neutral' as const, dot: 'bg-neutral-400' }
+  const c = STATUS_CFG[status] ?? { label: String(status ?? '—'), variant: 'neutral' as const, dot: 'bg-fg-faint' }
   return (
     <Badge variant={c.variant}>
       <span className={cn('size-1.5 rounded-full', c.dot)} />
@@ -53,15 +53,15 @@ function PaStatusBadge({ status }: { status: PaStatus }) {
 }
 
 const TYPE_BADGE_CFG: Record<ApiPa['pa_type'], { label: string; cls: string }> = {
-  prepayment: { label: 'Prepayment', cls: 'bg-info-50 border-info-200 text-info-700 font-semibold' },
-  settlement: { label: 'Settlement', cls: 'bg-success-50 border-success-200 text-success-700 font-semibold' },
-  balance:    { label: 'Balance',    cls: 'bg-warning-50 border-warning-200 text-warning-700 font-semibold' },
-  regular:    { label: 'Regular',    cls: 'bg-neutral-100 border-neutral-200 text-neutral-600 font-medium' },
+  prepayment: { label: 'Prepayment', cls: 'bg-info-soft border-info-line text-info-fg font-semibold' },
+  settlement: { label: 'Settlement', cls: 'bg-success-soft border-success-line text-success-fg font-semibold' },
+  balance:    { label: 'Balance',    cls: 'bg-warning-soft border-warning-line text-warning-fg font-semibold' },
+  regular:    { label: 'Regular',    cls: 'bg-surface-sunken border-line text-fg-secondary font-medium' },
 }
 
 function TypeBadge({ type }: { type: ApiPa['pa_type'] }) {
   const c = TYPE_BADGE_CFG[type] ?? TYPE_BADGE_CFG.regular
-  return <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide', c.cls)}>{c.label}</span>
+  return <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-2xs uppercase tracking-wide', c.cls)}>{c.label}</span>
 }
 
 // GET /pa sort keys (epms-api crud/pa.py SORTABLE). Status sorts status →
@@ -126,8 +126,8 @@ export default function PaListPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Payment Applications</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">Manage payment requests and prepayment settlements</p>
+          <h1 className="text-2xl font-bold text-fg">Payment Applications</h1>
+          <p className="text-sm text-fg-muted mt-0.5">Manage payment requests and prepayment settlements</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Both open the one static /pa/new tab, so each re-points it —
@@ -156,10 +156,10 @@ export default function PaListPage() {
       </div>
 
       {/* Filters */}
-      <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex flex-wrap items-center gap-3 border-b border-neutral-200 px-5 py-3">
+      <div className="rounded-xl border border-line bg-surface shadow-sm overflow-hidden">
+        <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
           <div className="relative flex-1 min-w-48">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
             <Input
               placeholder="Search PA #, vendor, PO…"
               value={search}
@@ -170,7 +170,7 @@ export default function PaListPage() {
           <select
             value={statusFilter}
             onChange={(e) => handleFilterChange(e.target.value)}
-            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
           >
             {STATUS_FILTER_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -179,41 +179,41 @@ export default function PaListPage() {
           <select
             value={deptFilter}
             onChange={(e) => { setDeptFilter(e.target.value); setPage(1) }}
-            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
           >
             <option value="all">All Departments</option>
             {departments.map((d) => (
               <option key={d.id} value={d.id}>{d.name}</option>
             ))}
           </select>
-          <span className="text-sm text-neutral-400">
+          <span className="text-sm text-fg-muted">
             {isPending ? 'Loading…' : `${total} result${total !== 1 ? 's' : ''}`}
           </span>
         </div>
 
         {isPending || (isFetching && pas.length === 0) ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <Loader2 className="h-8 w-8 text-neutral-300 mb-3 animate-spin" />
-            <p className="text-sm text-neutral-400">Loading payment applications…</p>
+            <Loader2 className="h-8 w-8 text-fg-faint mb-3 animate-spin" />
+            <p className="text-sm text-fg-muted">Loading payment applications…</p>
           </div>
         ) : pas.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <CreditCard className="h-10 w-10 text-neutral-200 mb-3" />
-            <p className="text-sm font-medium text-neutral-500">No payment applications found</p>
-            <p className="text-xs text-neutral-400 mt-1">
+            <CreditCard className="h-10 w-10 text-fg-faint mb-3" />
+            <p className="text-sm font-medium text-fg-muted">No payment applications found</p>
+            <p className="text-xs text-fg-muted mt-1">
               {search ? 'Try a different search term' : 'Create a new PA to get started'}
             </p>
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-100 bg-neutral-50">
+              <tr className="border-b border-line-subtle bg-surface-subtle">
                 {COLUMNS.map(({ label, key }) => (
                   <SortTh key={key} label={label} sortKey={key} sort={sort} onSort={onSort}
                     align={key === 'payment_amount' ? 'right' : 'left'}
-                    className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap" />
+                    className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap" />
                 ))}
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap text-left" />
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap text-left" />
               </tr>
             </thead>
             <tbody>
@@ -221,45 +221,45 @@ export default function PaListPage() {
                 <tr
                   key={pa.id}
                   onClick={() => navigate(`/pa/${pa.id}`)}
-                  className="border-b border-neutral-100 bg-white hover:bg-primary-50/60 cursor-pointer transition-colors"
+                  className="border-b border-line-subtle bg-surface hover:bg-primary-50/60 cursor-pointer transition-colors"
                 >
                   <td className="px-4 py-3">
                     <span className="font-mono text-xs font-semibold text-primary-700">{pa.pa_number}</span>
                     {pa.pa_type === 'prepayment' && pa.settlement_status === 'pending' && pa.status !== 'cancelled' && (
-                      <div className="text-[10px] text-warning-600 font-medium mt-0.5">⚠ Settlement pending</div>
+                      <div className="text-2xs text-warning-fg font-medium mt-0.5">⚠ Settlement pending</div>
                     )}
                   </td>
-                  <td className="px-4 py-3 font-medium text-neutral-900">{pa.vendor_name}</td>
+                  <td className="px-4 py-3 font-medium text-fg">{pa.vendor_name}</td>
                   <td className="px-4 py-3"><TypeBadge type={pa.pa_type} /></td>
                   <td className="px-4 py-3">
                     {/* A payment may settle several POs — list them all rather
                         than the header's primary one, which on its own reads as
                         though the other orders were not being paid. */}
                     {pa.source === 'freight' && (
-                      <span className="inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700">Freight</span>
+                      <span className="inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-primary-700">Freight</span>
                     )}
                     {pa.source === 'direct' && (
                       <>
-                        <span className="inline-flex items-center rounded-full border border-warning-200 bg-warning-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning-700">Direct</span>
+                        <span className="inline-flex items-center rounded-full border border-warning-line bg-warning-soft px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-warning-fg">Direct</span>
                         {pa.cost_center_code && (
-                          <div className="font-mono text-[10px] text-neutral-500 mt-0.5">{pa.cost_center_code} · {pa.budget_account_code}</div>
+                          <div className="font-mono text-2xs text-fg-muted mt-0.5">{pa.cost_center_code} · {pa.budget_account_code}</div>
                         )}
                       </>
                     )}
                     {(pa.po_numbers?.length ? pa.po_numbers : (pa.po_number ? [pa.po_number] : [])).map((n) => (
-                      <div key={n} className="font-mono text-xs text-neutral-600">{n}</div>
+                      <div key={n} className="font-mono text-xs text-fg-secondary">{n}</div>
                     ))}
                     {pa.invoice_ids.length > 0 && (
-                      <div className="text-[10px] text-neutral-400 mt-0.5">{pa.invoice_ids.length} invoice{pa.invoice_ids.length !== 1 ? 's' : ''}</div>
+                      <div className="text-2xs text-fg-muted mt-0.5">{pa.invoice_ids.length} invoice{pa.invoice_ids.length !== 1 ? 's' : ''}</div>
                     )}
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs font-semibold text-neutral-900">
+                  <td className="px-4 py-3 font-mono text-xs font-semibold text-fg">
                     {formatAmount(pa.payment_amount, pa.currency)}
                     {pa.pa_type === 'prepayment' && pa.prepayment_pct && (
-                      <div className="text-[10px] text-neutral-400 font-normal">{pa.prepayment_pct}% prepayment</div>
+                      <div className="text-2xs text-fg-muted font-normal">{pa.prepayment_pct}% prepayment</div>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-xs text-neutral-500">{formatDate(pa.created_at)}</td>
+                  <td className="px-4 py-3 text-xs text-fg-muted">{formatDate(pa.created_at)}</td>
                   <td className="px-4 py-3">
                     <PaStatusBadge status={pa.status} />
                     <CurrentStepHint current_step={pa.current_step} />

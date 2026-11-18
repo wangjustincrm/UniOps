@@ -16,9 +16,9 @@ import { type GrLineCondition, isOverReceiptError } from '@/services/gr'
 // ─── Condition options ────────────────────────────────────────────────────────
 
 const CONDITIONS: { value: GrLineCondition; label: string; color: string }[] = [
-  { value: 'good',        label: 'Good',        color: 'text-success-600' },
-  { value: 'discrepancy', label: 'Discrepancy', color: 'text-warning-600' },
-  { value: 'damaged',     label: 'Damaged',     color: 'text-danger-600'  },
+  { value: 'good',        label: 'Good',        color: 'text-success-fg' },
+  { value: 'discrepancy', label: 'Discrepancy', color: 'text-warning-fg' },
+  { value: 'damaged',     label: 'Damaged',     color: 'text-danger-fg'  },
 ]
 
 // ─── Per-line collection state ────────────────────────────────────────────────
@@ -63,7 +63,7 @@ export default function CollectionConfirmPage() {
 
   // ── Guard ──────────────────────────────────────────────────────────────────
 
-  if (isLoading) return <div className="p-8 text-center text-neutral-400">Loading…</div>
+  if (isLoading) return <div className="p-8 text-center text-fg-muted">Loading…</div>
 
   if (!gr) {
     return (
@@ -75,7 +75,7 @@ export default function CollectionConfirmPage() {
   if (gr.gr_type !== 'physical') {
     return (
       <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-lg font-semibold text-neutral-500">Collection confirm is for physical GRs only</p>
+        <p className="text-lg font-semibold text-fg-muted">Collection confirm is for physical GRs only</p>
         <BackLink to={`/gr/${gr.id}`} className="mt-4 text-sm text-primary-600 hover:underline">← Back to GR</BackLink>
       </div>
     )
@@ -84,7 +84,7 @@ export default function CollectionConfirmPage() {
   if (gr.status !== 'collection_pending') {
     return (
       <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-sm text-neutral-500 mb-2">This GR is not pending collection (status: {gr.status})</p>
+        <p className="text-sm text-fg-muted mb-2">This GR is not pending collection (status: {gr.status})</p>
         <BackLink to={`/gr/${gr.id}`} className="text-sm text-primary-600 hover:underline">← Back to GR</BackLink>
       </div>
     )
@@ -143,30 +143,30 @@ export default function CollectionConfirmPage() {
     <div className="flex flex-col gap-6 max-w-3xl">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Link to={`/gr/${gr.id}`} className="text-neutral-400 hover:text-neutral-600 transition-colors">
+        <Link to={`/gr/${gr.id}`} className="text-fg-muted hover:text-fg-secondary transition-colors">
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>
           <div className="flex items-center gap-2">
-            <Truck className="h-5 w-5 text-warning-500" />
-            <h1 className="text-2xl font-bold text-neutral-900">Collect Goods</h1>
+            <Truck className="h-5 w-5 text-warning-fg" />
+            <h1 className="text-2xl font-bold text-fg">Collect Goods</h1>
           </div>
-          <p className="mt-1 text-sm text-neutral-500">
+          <p className="mt-1 text-sm text-fg-muted">
             {gr.number} · {gr.po_number} · {gr.vendor_name}
           </p>
         </div>
       </div>
 
       {/* Task banner */}
-      <div className="rounded-xl border border-warning-200 bg-warning-50 p-5">
+      <div className="rounded-xl border border-warning-line bg-warning-soft p-5">
         <div className="flex gap-3">
-          <Package className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
+          <Package className="h-5 w-5 text-warning-fg flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-warning-700">Collection Required</p>
-            <p className="text-sm text-warning-600 mt-1">
+            <p className="text-sm font-semibold text-warning-fg">Collection Required</p>
+            <p className="text-sm text-warning-fg mt-1">
               Please go to <strong>{gr.storage_location || 'Warehouse'}</strong> to collect your goods, then record the collection below.
             </p>
-            <div className="mt-2 grid grid-cols-2 gap-x-8 gap-y-1 text-xs text-warning-600">
+            <div className="mt-2 grid grid-cols-2 gap-x-8 gap-y-1 text-xs text-warning-fg">
               <span>Received by: <strong>{gr.received_by}</strong></span>
               <span>Received on: <strong>{formatDate(gr.received_at)}</strong></span>
               <span>Acknowledged by: <strong>{gr.acknowledged_by ?? '—'}</strong></span>
@@ -177,12 +177,12 @@ export default function CollectionConfirmPage() {
       </div>
 
       {/* Collection Date */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-sm font-semibold text-neutral-900 mb-4">Collection Details</h2>
+      <div className="rounded-xl border border-line bg-surface p-5">
+        <h2 className="text-sm font-semibold text-fg mb-4">Collection Details</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-neutral-700">
-              Collection Date <span className="text-danger-600">*</span>
+            <label className="text-sm font-medium text-fg-secondary">
+              Collection Date <span className="text-danger-fg">*</span>
             </label>
             <input
               type="date"
@@ -190,36 +190,36 @@ export default function CollectionConfirmPage() {
               onChange={(e) => setCollectionDate(e.target.value)}
               className={cn(
                 'h-10 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                submitted && !collectionDate ? 'border-danger-400' : 'border-neutral-300'
+                submitted && !collectionDate ? 'border-danger-400' : 'border-line-strong'
               )}
             />
             {submitted && !collectionDate && (
-              <p className="text-xs text-danger-600">Required</p>
+              <p className="text-xs text-danger-fg">Required</p>
             )}
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-neutral-700">General Notes</label>
+            <label className="text-sm font-medium text-fg-secondary">General Notes</label>
             <input
               type="text"
               placeholder="Any notes about the collection..."
               value={generalNotes}
               onChange={(e) => setGeneralNotes(e.target.value)}
-              className="h-10 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+              className="h-10 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
             />
           </div>
         </div>
       </div>
 
       {/* Items to collect */}
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-        <div className="px-5 py-4 border-b border-neutral-200 bg-neutral-50">
-          <h2 className="text-sm font-semibold text-neutral-900">Items to Collect</h2>
-          <p className="text-xs text-neutral-400 mt-0.5">
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+        <div className="px-5 py-4 border-b border-line bg-surface-subtle">
+          <h2 className="text-sm font-semibold text-fg">Items to Collect</h2>
+          <p className="text-xs text-fg-muted mt-0.5">
             Record the condition of each item as you collect it
           </p>
         </div>
 
-        <div className="divide-y divide-neutral-100">
+        <div className="divide-y divide-line-subtle">
           {gr.line_items.map((item, idx) => {
             const line = lines[idx]
             if (!line) return null
@@ -227,25 +227,25 @@ export default function CollectionConfirmPage() {
             const noteErr = noteErrors[idx]
 
             return (
-              <div key={item.id} className={cn('px-5 py-4', idx % 2 === 1 && 'bg-neutral-50/40')}>
+              <div key={item.id} className={cn('px-5 py-4', idx % 2 === 1 && 'bg-surface-subtle/40')}>
                 {/* Item header */}
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex gap-3">
-                    <span className="flex-shrink-0 flex h-6 w-6 items-center justify-center rounded-full bg-neutral-100 text-xs font-medium text-neutral-500">
+                    <span className="flex-shrink-0 flex h-6 w-6 items-center justify-center rounded-full bg-surface-sunken text-xs font-medium text-fg-muted">
                       {idx + 1}
                     </span>
                     <div>
-                      <p className="text-sm font-medium text-neutral-900">{item.description}</p>
+                      <p className="text-sm font-medium text-fg">{item.description}</p>
                       {item.material_id && (
-                        <p className="text-xs text-neutral-400 font-mono mt-0.5">{item.material_id}</p>
+                        <p className="text-xs text-fg-muted font-mono mt-0.5">{item.material_id}</p>
                       )}
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-sm font-mono font-semibold text-neutral-900">
+                    <p className="text-sm font-mono font-semibold text-fg">
                       {formatQty(item.qty_received)} {item.unit}
                     </p>
-                    <p className="text-xs text-neutral-400 mt-0.5">
+                    <p className="text-xs text-fg-muted mt-0.5">
                       {formatAmount(item.line_total, gr.currency)}
                     </p>
                   </div>
@@ -260,11 +260,11 @@ export default function CollectionConfirmPage() {
                         'flex items-center gap-1.5 cursor-pointer rounded-lg border px-3 py-1.5 transition-colors',
                         line.condition === opt.value
                           ? opt.value === 'good'
-                            ? 'border-success-400 bg-success-50'
+                            ? 'border-success-400 bg-success-soft'
                             : opt.value === 'discrepancy'
-                            ? 'border-warning-400 bg-warning-50'
-                            : 'border-danger-400 bg-danger-50'
-                          : 'border-neutral-200 hover:border-neutral-300'
+                            ? 'border-warning-400 bg-warning-soft'
+                            : 'border-danger-400 bg-danger-soft'
+                          : 'border-line hover:border-line-strong'
                       )}
                     >
                       <input
@@ -275,7 +275,7 @@ export default function CollectionConfirmPage() {
                         onChange={() => updateLine(idx, { condition: opt.value })}
                         className="h-3.5 w-3.5 accent-current"
                       />
-                      <span className={cn('text-xs font-medium', line.condition === opt.value ? opt.color : 'text-neutral-500')}>
+                      <span className={cn('text-xs font-medium', line.condition === opt.value ? opt.color : 'text-fg-muted')}>
                         {opt.label}
                       </span>
                     </label>
@@ -285,9 +285,9 @@ export default function CollectionConfirmPage() {
                 {/* Issue notes */}
                 {hasIssue && (
                   <div className="mt-3">
-                    <label className="text-xs font-medium text-neutral-700">
+                    <label className="text-xs font-medium text-fg-secondary">
                       {line.condition === 'damaged' ? 'Damage' : 'Discrepancy'} Details{' '}
-                      <span className="text-danger-600">*</span>
+                      <span className="text-danger-fg">*</span>
                     </label>
                     <textarea
                       rows={2}
@@ -296,10 +296,10 @@ export default function CollectionConfirmPage() {
                       onChange={(e) => updateLine(idx, { collectionNotes: e.target.value })}
                       className={cn(
                         'mt-1 w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
-                        noteErr ? 'border-danger-400' : 'border-neutral-300'
+                        noteErr ? 'border-danger-400' : 'border-line-strong'
                       )}
                     />
-                    {noteErr && <p className="text-xs text-danger-600 mt-0.5">Notes are required</p>}
+                    {noteErr && <p className="text-xs text-danger-fg mt-0.5">Notes are required</p>}
                   </div>
                 )}
               </div>
@@ -310,24 +310,24 @@ export default function CollectionConfirmPage() {
 
       {/* Status summary */}
       {allGood ? (
-        <div className="rounded-lg border border-success-200 bg-success-50 p-4 flex gap-3">
-          <CheckCircle2 className="h-5 w-5 text-success-600 flex-shrink-0" />
+        <div className="rounded-lg border border-success-line bg-success-soft p-4 flex gap-3">
+          <CheckCircle2 className="h-5 w-5 text-success-fg flex-shrink-0" />
           <div>
-            <p className="text-sm font-semibold text-success-700">All items verified as Good condition</p>
-            <p className="text-sm text-success-600 mt-0.5">
+            <p className="text-sm font-semibold text-success-fg">All items verified as Good condition</p>
+            <p className="text-sm text-success-fg mt-0.5">
               Confirming collection will mark this GR as <strong>Collected</strong> and record the goods as
               received on the PO. {paFollows}
             </p>
           </div>
         </div>
       ) : (
-        <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
-          <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
+        <div className="rounded-lg border border-warning-line bg-warning-soft p-4 flex gap-3">
+          <AlertTriangle className="h-5 w-5 text-warning-fg flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-warning-700">
+            <p className="text-sm font-semibold text-warning-fg">
               {lines.filter((l) => l.condition !== 'good').length} item(s) with issues
             </p>
-            <p className="text-sm text-warning-600 mt-0.5">
+            <p className="text-sm text-warning-fg mt-0.5">
               The conditions and line notes marked here are added to the GR's Collection Notes. Nobody is
               notified and invoices for this PO are not blocked, so tell Procurement if they need to take it
               up with the vendor.
@@ -337,16 +337,16 @@ export default function CollectionConfirmPage() {
       )}
 
       {grAction.isError && (
-        <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
-          <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
+        <div className="rounded-lg border border-warning-line bg-warning-soft p-4 flex gap-3">
+          <AlertTriangle className="h-5 w-5 text-warning-fg flex-shrink-0 mt-0.5" />
           <div className="flex-1 flex flex-col gap-2">
-            <p className="text-sm text-warning-700">
+            <p className="text-sm text-warning-fg">
               {grAction.error instanceof Error ? grAction.error.message : 'The collection could not be saved'}
             </p>
             {needsOverReason && (
               <>
-                <label className="text-xs font-medium text-warning-700">
-                  Over-receipt reason <span className="text-danger-600">*</span>
+                <label className="text-xs font-medium text-warning-fg">
+                  Over-receipt reason <span className="text-danger-fg">*</span>
                 </label>
                 <textarea
                   rows={2}
@@ -354,8 +354,8 @@ export default function CollectionConfirmPage() {
                   onChange={(e) => setOverReceiptReason(e.target.value)}
                   placeholder="Why more than the PO line has open is being received"
                   className={cn(
-                    'w-full px-3 py-1.5 rounded border text-sm bg-white focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
-                    submitted && !overReceiptReason.trim() ? 'border-danger-400' : 'border-warning-300'
+                    'w-full px-3 py-1.5 rounded border text-sm bg-surface focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
+                    submitted && !overReceiptReason.trim() ? 'border-danger-400' : 'border-warning-line'
                   )}
                 />
               </>

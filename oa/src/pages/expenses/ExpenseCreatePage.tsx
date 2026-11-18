@@ -298,7 +298,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
           type="date"
           value={line.expense_date}
           onChange={(e) => updateLine(idx, { expense_date: e.target.value })}
-          className={cn('w-full rounded border px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-300' : 'border-neutral-200')}
+          className={cn('w-full rounded border px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-line' : 'border-line')}
         />
       ),
       description: (
@@ -309,7 +309,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
             onChange={(e) => updateLine(idx, { description: e.target.value })}
             placeholder="What was purchased"
             aria-invalid={missing.includes('description') || undefined}
-            className={cn('w-full rounded border px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-300' : 'border-neutral-200', missing.includes('description') && INVALID_FIELD)}
+            className={cn('w-full rounded border px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-line' : 'border-line', missing.includes('description') && INVALID_FIELD)}
           />
           <ReceiptScanButton
             className="self-start"
@@ -318,7 +318,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
           />
           {line._file && (
             <div
-              className="flex items-center gap-1 text-[10px] text-neutral-500"
+              className="flex items-center gap-1 text-2xs text-fg-muted"
               title="Will be attached to the claim when you save"
             >
               <Paperclip className="h-3 w-3 shrink-0" />
@@ -327,7 +327,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
                 type="button"
                 aria-label="Don't attach this receipt"
                 onClick={() => updateLine(idx, { _file: null })}
-                className="text-neutral-300 hover:text-danger-500"
+                className="text-fg-faint hover:text-danger-fg"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -352,7 +352,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
           onChange={(e) => handleNetChange(idx, e.target.value)}
           placeholder="0.00"
           aria-invalid={missing.includes('net_amount') || undefined}
-          className={cn('w-full rounded border px-2 py-1.5 text-xs text-right font-mono focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-300' : 'border-neutral-200', missing.includes('net_amount') && INVALID_FIELD)}
+          className={cn('w-full rounded border px-2 py-1.5 text-xs text-right font-mono focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-line' : 'border-line', missing.includes('net_amount') && INVALID_FIELD)}
         />
       ),
       tax: (
@@ -363,7 +363,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
           value={line.tax_amount}
           onChange={(e) => handleTaxChange(idx, e.target.value)}
           placeholder="0.00"
-          className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs text-right font-mono focus:outline-none focus:border-primary-400"
+          className="w-full rounded border border-line px-2 py-1.5 text-xs text-right font-mono focus:outline-none focus:border-primary-400"
         />
       ),
       taxCode: (
@@ -371,7 +371,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
           value={line.tax_code ?? ''}
           onChange={(e) => handleTaxCodeChange(idx, e.target.value || null)}
           title="Tax code — drives the line's tax rate (Finance Tax Settings)"
-          className="w-full rounded border border-neutral-200 px-1.5 py-1.5 text-xs focus:outline-none focus:border-primary-400"
+          className="w-full rounded border border-line px-1.5 py-1.5 text-xs focus:outline-none focus:border-primary-400"
         >
           <option value="">— none —</option>
           {taxCodes.map((tc) => (
@@ -382,7 +382,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
         </select>
       ),
       total: (
-        <div className="rounded bg-neutral-50 px-2 py-1.5 text-xs text-right font-mono text-neutral-700">
+        <div className="rounded bg-surface-subtle px-2 py-1.5 text-xs text-right font-mono text-fg-secondary">
           {line.total_amount ? parseFloat(line.total_amount).toFixed(2) : '—'}
         </div>
       ),
@@ -391,7 +391,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
           type="button"
           aria-label={`Remove line ${idx + 1}`}
           onClick={() => setLines((prev) => prev.filter((_, i) => i !== idx).map((l, i) => ({ ...l, line_number: i + 1 })))}
-          className="rounded p-1 text-neutral-300 hover:text-danger-400 transition-colors"
+          className="rounded p-1 text-fg-faint hover:text-danger-400 transition-colors"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
@@ -400,7 +400,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
   }
 
   if (loadingClaim) {
-    return <div className="p-8 text-sm text-neutral-500">Loading claim…</div>
+    return <div className="p-8 text-sm text-fg-muted">Loading claim…</div>
   }
   if (loadError) {
     return <ErrorBanner message={loadError.message} />
@@ -411,10 +411,10 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
       {/* Page header — wraps on a phone instead of squeezing the buttons (ISS-0224) */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">
+          <h1 className="text-2xl font-bold text-fg">
             {editing ? `Edit ${editing.claim_number}` : 'New General Expense Claim'}
           </h1>
-          <p className="mt-0.5 text-sm text-neutral-500">Receipt-based employee reimbursement</p>
+          <p className="mt-0.5 text-sm text-fg-muted">Receipt-based employee reimbursement</p>
         </div>
         <div className="flex shrink-0 gap-2">
           <Button type="button" variant="secondary" size="sm" className="whitespace-nowrap"
@@ -428,38 +428,38 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
       </div>
 
       {/* Form header */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-5">
-        <h2 className="mb-4 text-sm font-semibold text-neutral-700">Claim Details</h2>
+      <div className="rounded-xl border border-line bg-surface p-5">
+        <h2 className="mb-4 text-sm font-semibold text-fg-secondary">Claim Details</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Submission Date</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Submission Date</label>
             <input
               type="date"
               value={submissionDate}
               onChange={(e) => setSubmissionDate(e.target.value)}
               required
-              className="w-full rounded border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
+              className="w-full rounded border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Currency</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Currency</label>
             <select
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
-              className="w-full rounded border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
+              className="w-full rounded border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
             >
               <option>CAD</option>
               <option>USD</option>
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Notes / Purpose</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Notes / Purpose</label>
             <input
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Optional"
-              className="w-full rounded border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
+              className="w-full rounded border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
             />
           </div>
         </div>
@@ -467,7 +467,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
 
       {/* Over-budget warning */}
       {overBudgetLines.length > 0 && (
-        <div className="flex items-start gap-3 rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-800">
+        <div className="flex items-start gap-3 rounded-lg border border-warning-line bg-warning-soft px-4 py-3 text-sm text-warning-fg">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
             {overBudgetLines.length} line item{overBudgetLines.length > 1 ? 's' : ''} exceed the available budget.
@@ -479,25 +479,25 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
       {/* Line items — a table from lg up; below that each line is a card with
           its fields stacked full width (ISS-0255). Both are built from the
           same renderLine() controls, so state and handlers are shared. */}
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-neutral-100 px-5 py-3">
-          <h2 className="text-sm font-semibold text-neutral-700">Line Items</h2>
-          <span className="text-xs text-neutral-400">Default rate: {(hstRate * 100).toFixed(0)}% · per-line tax code overrides</span>
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-line-subtle px-5 py-3">
+          <h2 className="text-sm font-semibold text-fg-secondary">Line Items</h2>
+          <span className="text-xs text-fg-muted">Default rate: {(hstRate * 100).toFixed(0)}% · per-line tax code overrides</span>
         </div>
 
         {wide && (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 border-b border-neutral-100">
+            <thead className="bg-surface-subtle border-b border-line-subtle">
               <tr>
-                <th className="px-3 py-2 text-left text-xs font-medium text-neutral-500 w-8">#</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-neutral-500 w-32">Date</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-neutral-500">Description</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-neutral-500 w-64">Budget Account</th>
-                <th className="px-3 py-2 text-right text-xs font-medium text-neutral-500 w-28">Net (C)</th>
-                <th className="px-3 py-2 text-right text-xs font-medium text-neutral-500 w-28">Tax (B)</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-neutral-500 w-32">Tax Code</th>
-                <th className="px-3 py-2 text-right text-xs font-medium text-neutral-500 w-28">Total (A)</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-fg-muted w-8">#</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-fg-muted w-32">Date</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-fg-muted">Description</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-fg-muted w-64">Budget Account</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-fg-muted w-28">Net (C)</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-fg-muted w-28">Tax (B)</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-fg-muted w-32">Tax Code</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-fg-muted w-28">Total (A)</th>
                 <th className="w-8" />
               </tr>
             </thead>
@@ -508,11 +508,11 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
                   <tr
                     key={idx}
                     className={cn(
-                      'border-b border-neutral-100',
+                      'border-b border-line-subtle',
                       f.isOverBudget && 'bg-warning-50/50',
                     )}
                   >
-                    <td className="px-3 py-2 text-xs text-neutral-400 font-mono">{idx + 1}</td>
+                    <td className="px-3 py-2 text-xs text-fg-muted font-mono">{idx + 1}</td>
                     <td className="px-3 py-2">{f.date}</td>
                     <td className="px-3 py-2">{f.description}</td>
                     <td className="px-3 py-2">{f.account}</td>
@@ -528,10 +528,10 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
 
             {/* Sub-total row */}
             <tfoot>
-              <tr className="border-t-2 border-neutral-200 bg-neutral-50">
-                <td colSpan={4} className="px-3 py-2 text-xs font-semibold text-neutral-700">Sub-total</td>
+              <tr className="border-t-2 border-line bg-surface-subtle">
+                <td colSpan={4} className="px-3 py-2 text-xs font-semibold text-fg-secondary">Sub-total</td>
                 <td className="px-3 py-2 text-right text-xs font-mono font-semibold text-primary-700">{grandNet.toFixed(2)}</td>
-                <td className="px-3 py-2 text-right text-xs font-mono text-neutral-500">{grandTax.toFixed(2)}</td>
+                <td className="px-3 py-2 text-right text-xs font-mono text-fg-muted">{grandTax.toFixed(2)}</td>
                 <td />
                 <td className="px-3 py-2 text-right text-xs font-mono font-semibold">{grandTotal.toFixed(2)}</td>
                 <td />
@@ -551,11 +551,11 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
                 key={idx}
                 className={cn(
                   'rounded-lg border p-3',
-                  f.isOverBudget ? 'border-warning-300 bg-warning-50/40' : 'border-neutral-200',
+                  f.isOverBudget ? 'border-warning-line bg-warning-50/40' : 'border-line',
                 )}
               >
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-neutral-700">Line {idx + 1}</span>
+                  <span className="text-xs font-semibold text-fg-secondary">Line {idx + 1}</span>
                   {f.remove}
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -570,16 +570,16 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
               </div>
             )
           })}
-          <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs">
-            <div className="flex justify-between text-neutral-500">
+          <div className="rounded-lg border border-line bg-surface-subtle px-3 py-2 text-xs">
+            <div className="flex justify-between text-fg-muted">
               <span>Sub-total net (C)</span>
               <span className="font-mono font-semibold text-primary-700">{grandNet.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between text-neutral-500">
+            <div className="flex justify-between text-fg-muted">
               <span>Tax (B)</span>
               <span className="font-mono">{grandTax.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between font-semibold text-neutral-700">
+            <div className="flex justify-between font-semibold text-fg-secondary">
               <span>Total (A)</span>
               <span className="font-mono">{grandTotal.toFixed(2)}</span>
             </div>
@@ -589,7 +589,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
 
         {/* Add row button */}
         {lines.length < 20 && (
-          <div className="border-t border-neutral-100 p-3">
+          <div className="border-t border-line-subtle p-3">
             <button
               type="button"
               onClick={() => setLines((prev) => [...prev, emptyLine(prev.length + 1)])}
@@ -604,7 +604,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
 
       {/* Missing line fields — one message per line, live until fixed */}
       {lineIssues.length > 0 && (
-        <div role="alert" data-line-issues className="flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+        <div role="alert" data-line-issues className="flex items-start gap-2 rounded-lg border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <p className="font-medium">Complete these lines before saving:</p>
@@ -618,7 +618,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
 
       {/* Error */}
       {createMutation.isError && (
-        <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+        <div className="rounded-lg border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
           {(createMutation.error as Error).message}
         </div>
       )}

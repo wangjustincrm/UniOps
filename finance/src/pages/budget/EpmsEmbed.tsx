@@ -60,7 +60,7 @@ export default function EpmsEmbed({ epmsPath, title, subtitle, activeKey }: Epms
         <a
           href={openInEpmsHref}
           target="_blank" rel="noopener noreferrer"
-          className="hidden md:inline-flex items-center gap-1.5 rounded-md border border-neutral-200 bg-white px-2.5 py-1.5 text-xs text-neutral-600 hover:bg-neutral-50"
+          className="hidden md:inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs text-fg-secondary hover:bg-surface-subtle"
           title="Open this page in a new tab (with EPMS chrome)"
         >
           <ExternalLink className="h-3.5 w-3.5" />
@@ -80,7 +80,7 @@ export default function EpmsEmbed({ epmsPath, title, subtitle, activeKey }: Epms
         title={title}
         src={src}
         allow="local-network-access; local-network; loopback-network"
-        className="block w-full h-full border-0 bg-white"
+        className="block w-full h-full border-0 bg-surface"
       />
     </PortalChromeLayout>
   )

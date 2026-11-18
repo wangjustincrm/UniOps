@@ -125,8 +125,8 @@ export default function PurchaseSuggestionsPage() {
 
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-semibold text-neutral-900">Purchase Suggestions</h1>
-          <p className="text-xs text-neutral-500">
+          <h1 className="text-lg font-semibold text-fg">Purchase Suggestions</h1>
+          <p className="text-xs text-fg-muted">
             What to buy for the production plan currently in force, and when to order it.
             {run && <> Calculated {formatDateTime(run.created_at)} · {run.run_no}</>}
           </p>
@@ -136,7 +136,7 @@ export default function PurchaseSuggestionsPage() {
             <select
               value={activeId ?? ''}
               onChange={(e) => setRunId(e.target.value)}
-              className="h-11 rounded-lg border border-neutral-300 px-3 text-sm"
+              className="h-11 rounded-lg border border-line-strong px-3 text-sm"
             >
               {runs.map((r) => (
                 <option key={r.id} value={r.id}>
@@ -166,26 +166,26 @@ export default function PurchaseSuggestionsPage() {
 
       {stats && (
         <div className="flex flex-wrap gap-2 text-xs">
-          <span className="rounded-md border border-neutral-200 bg-white px-2 py-1">
+          <span className="rounded-md border border-line bg-surface px-2 py-1">
             {stats.components} component(s) · {stats.lines} line(s)
           </span>
           {stats.products_without_bom > 0 && (
-            <span className="rounded-md border border-warning-200 bg-warning-50 px-2 py-1 text-warning-800">
+            <span className="rounded-md border border-warning-line bg-warning-soft px-2 py-1 text-warning-fg">
               {stats.products_without_bom} product(s) have no BOM — nothing was exploded for them
             </span>
           )}
           {stats.supplier_missing > 0 && (
-            <span className="rounded-md border border-danger-200 bg-danger-50 px-2 py-1 text-danger-700">
+            <span className="rounded-md border border-danger-line bg-danger-soft px-2 py-1 text-danger-fg">
               {stats.supplier_missing} line(s) have no supplier
             </span>
           )}
           {stats.lead_time_missing > 0 && (
-            <span className="rounded-md border border-danger-200 bg-danger-50 px-2 py-1 text-danger-700">
+            <span className="rounded-md border border-danger-line bg-danger-soft px-2 py-1 text-danger-fg">
               {stats.lead_time_missing} line(s) have no lead time — their order date is a guess
             </span>
           )}
           {stats.order_date_passed > 0 && (
-            <span className="rounded-md border border-danger-200 bg-danger-50 px-2 py-1 text-danger-700">
+            <span className="rounded-md border border-danger-line bg-danger-soft px-2 py-1 text-danger-fg">
               {stats.order_date_passed} line(s) should already have been ordered
             </span>
           )}
@@ -193,17 +193,17 @@ export default function PurchaseSuggestionsPage() {
       )}
 
       {run && (
-        <label className="flex items-center gap-2 text-xs text-neutral-600">
+        <label className="flex items-center gap-2 text-xs text-fg-secondary">
           <input type="checkbox" checked={hideDone}
             onChange={(e) => setHideDone(e.target.checked)}
-            className="h-4 w-4 rounded border-neutral-300" />
+            className="h-4 w-4 rounded border-line-strong" />
           Show only lines still to deal with
         </label>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+      <div className="overflow-x-auto rounded-lg border border-line bg-surface">
         <table className="min-w-full text-sm">
-          <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
+          <thead className="bg-surface-subtle text-xs uppercase tracking-wide text-fg-muted">
             <tr>
               <SortTh label="Order by" sortKey="order_date" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
               <SortTh label="Material" sortKey="material" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
@@ -218,20 +218,20 @@ export default function PurchaseSuggestionsPage() {
           </thead>
           <tbody>
             {runQuery.isLoading && (
-              <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">Loading…</td></tr>
+              <tr><td colSpan={9} className="px-3 py-6 text-center text-fg-muted">Loading…</td></tr>
             )}
             {!runQuery.isLoading && !run && (
-              <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">
+              <tr><td colSpan={9} className="px-3 py-6 text-center text-fg-muted">
                 No calculation yet — press Calculate to work out what to buy for the plan in force.
               </td></tr>
             )}
             {run && lines.length === 0 && (
-              <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">
+              <tr><td colSpan={9} className="px-3 py-6 text-center text-fg-muted">
                 {hideDone ? 'Everything here has been dealt with.' : 'This calculation produced no suggestions.'}
               </td></tr>
             )}
             {sortedLines.map((line) => (
-              <tr key={line.id} className={cn('border-t border-neutral-100',
+              <tr key={line.id} className={cn('border-t border-line-subtle',
                 line.order_date_passed && 'bg-danger-50/40')}>
                 <td className="px-3 py-2 font-mono text-xs"
                   title={line.order_date_passed
@@ -244,7 +244,7 @@ export default function PurchaseSuggestionsPage() {
                       // Not aria-hidden: for a screen reader this icon is the
                       // only thing saying the row is late.
                       <CalendarClock aria-label="Overdue" role="img"
-                        className="h-3 w-3 shrink-0 text-danger-600" />
+                        className="h-3 w-3 shrink-0 text-danger-fg" />
                     )}
                     {formatDate(line.order_date)}
                   </span>
@@ -253,23 +253,23 @@ export default function PurchaseSuggestionsPage() {
                 <td className="px-3 py-2 text-xs">
                   {line.partner_code ?? (
                     <span title="No supplier on record for this material — set one in Supply Parameters"
-                      className="text-danger-600">none</span>
+                      className="text-danger-fg">none</span>
                   )}
                   {line.lead_time_missing && (
                     <span title="No lead time on record — the order date assumes the goods arrive instantly"
-                      className="ml-1 text-danger-600">?</span>
+                      className="ml-1 text-danger-fg">?</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right font-mono text-xs text-neutral-500">{formatDate(line.need_week)}</td>
-                <td className="px-3 py-2 text-right font-mono text-neutral-600">{fmt(line.gross_qty)}</td>
-                <td className="px-3 py-2 text-right font-mono text-neutral-600">{fmt(line.available_qty)}</td>
+                <td className="px-3 py-2 text-right font-mono text-xs text-fg-muted">{formatDate(line.need_week)}</td>
+                <td className="px-3 py-2 text-right font-mono text-fg-secondary">{fmt(line.gross_qty)}</td>
+                <td className="px-3 py-2 text-right font-mono text-fg-secondary">{fmt(line.available_qty)}</td>
                 <td className="px-3 py-2 text-right font-mono">{fmt(line.net_qty)}</td>
                 <td className="px-3 py-2 text-right font-mono font-bold">
                   <span title={Number(line.raised_to_moq) > 0
                     ? `Includes ${fmt(line.raised_to_moq)} added to reach the minimum order quantity`
                     : undefined}>
                     {fmt(line.suggested_qty)}
-                    {Number(line.raised_to_moq) > 0 && <span className="ml-1 text-warning-600">▲</span>}
+                    {Number(line.raised_to_moq) > 0 && <span className="ml-1 text-warning-fg">▲</span>}
                   </span>
                 </td>
                 <td className="px-3 py-2 text-center">
@@ -280,7 +280,7 @@ export default function PurchaseSuggestionsPage() {
                       onChange={(e) => setStatus.mutate({
                         line, status: e.target.value as PurchaseLineStatus,
                       })}
-                      className="rounded border border-neutral-300 px-1 py-0.5 text-xs"
+                      className="rounded border border-line-strong px-1 py-0.5 text-xs"
                     >
                       <option value="pending">Pending</option>
                       <option value="ordered">Ordered</option>
@@ -301,24 +301,24 @@ export default function PurchaseSuggestionsPage() {
         // already suspects the mark means something, and a red icon on a
         // purchase list is exactly the kind of thing people learn to ignore
         // rather than hover over.
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
           <span className="flex items-center gap-1">
-            <CalendarClock aria-hidden className="h-3 w-3 text-danger-600" />
+            <CalendarClock aria-hidden className="h-3 w-3 text-danger-fg" />
             Order date has passed — ordering now arrives late
           </span>
           <span className="flex items-center gap-1">
-            <span className="text-warning-600">▲</span>
+            <span className="text-warning-fg">▲</span>
             Quantity raised to reach the supplier&apos;s minimum order
           </span>
           <span className="flex items-center gap-1">
-            <span className="text-danger-600">none / ?</span>
+            <span className="text-danger-fg">none / ?</span>
             No supplier / no lead time on file — set them in Supply Parameters
           </span>
         </div>
       )}
 
       {run && Number(run.raw_material_loss_rate) === 0 && Number(run.packaging_loss_rate) === 0 && (
-        <p className="flex items-start gap-1.5 text-xs text-neutral-500">
+        <p className="flex items-start gap-1.5 text-xs text-fg-muted">
           <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           Both loss rates were 0 for this calculation, so quantities equal the BOM exactly.
           In-transit stock is not counted yet either — these are requirements, not a net

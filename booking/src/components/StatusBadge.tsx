@@ -16,11 +16,11 @@ const STATUS_LABEL: Record<BookingStatus, string> = {
 }
 
 const STATUS_STYLE: Record<BookingStatus, string> = {
-  pending:    'bg-amber-50 text-amber-700 ring-amber-200',
+  pending:    'bg-warning-soft text-warning-fg ring-warning-line',
   confirmed:  'bg-primary-50 text-primary-700 ring-primary-200',
-  cancelled:  'bg-neutral-100 text-neutral-400 ring-neutral-200',
-  completed:  'bg-success-50 text-success-600 ring-emerald-200',
-  no_show:    'bg-danger-50 text-danger-600 ring-red-200',
+  cancelled:  'bg-surface-sunken text-fg-muted ring-line',
+  completed:  'bg-success-soft text-success-fg ring-success-line',
+  no_show:    'bg-danger-soft text-danger-fg ring-danger-line',
 }
 
 export function StatusBadge({ status }: { status: BookingStatus }) {

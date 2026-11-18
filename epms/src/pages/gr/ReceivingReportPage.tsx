@@ -60,7 +60,7 @@ type SortKey =
   | 'department' | 'requested_by' | 'date_ordered' | 'arrival_date' | 'left_warehouse_date'
   | 'warehouse_receiver' | 'person_accepting' | 'lead_time_days' | 'gr_number'
 
-const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-800 focus:outline-none focus:ring-2 focus:ring-primary-600'
+const inputCls = 'h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 export default function ReceivingReportPage() {
   const [preset, setPreset] = useState<Preset>('this_month')
@@ -139,8 +139,8 @@ export default function ReceivingReportPage() {
       {/* Page header */}
       <div className="flex flex-wrap items-start justify-between gap-3 shrink-0">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Receiving Report</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <h1 className="text-2xl font-bold text-fg">Receiving Report</h1>
+          <p className="mt-1 text-sm text-fg-muted">
             Every physical line received, with the days each order took to arrive.
             Service confirmations and ERP-imported orders are excluded.
           </p>
@@ -152,7 +152,7 @@ export default function ReceivingReportPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 shrink-0">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 shrink-0">
         <div className="flex flex-wrap items-center gap-1.5">
           {PRESETS.map((p) => (
             <button
@@ -162,7 +162,7 @@ export default function ReceivingReportPage() {
                 'px-3 py-1 rounded-full text-xs font-medium transition-colors',
                 preset === p.value
                   ? 'bg-primary-600 text-white'
-                  : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200',
+                  : 'bg-surface-sunken text-fg-secondary hover:bg-surface-strong',
               )}
             >
               {p.label}
@@ -175,7 +175,7 @@ export default function ReceivingReportPage() {
           )}
 
           {/* Window totals, inline — the table below owns the vertical space. */}
-          <div className="ml-auto flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-neutral-500">
+          <div className="ml-auto flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-fg-muted">
             <Stat label="Lines" value={summary ? summary.lines.toLocaleString() : '—'} />
             <Stat label="Receipts" value={summary ? summary.receipts.toLocaleString() : '—'} />
             <Stat label="POs" value={summary ? summary.orders.toLocaleString() : '—'} />
@@ -188,17 +188,17 @@ export default function ReceivingReportPage() {
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-500">Arrival From</label>
+            <label className="text-xs font-medium text-fg-muted">Arrival From</label>
             <input type="date" className={inputCls} value={range.from}
               onChange={(e) => setBound('from', e.target.value)} />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-500">Arrival To</label>
+            <label className="text-xs font-medium text-fg-muted">Arrival To</label>
             <input type="date" className={inputCls} value={range.to}
               onChange={(e) => setBound('to', e.target.value)} />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-500">Department</label>
+            <label className="text-xs font-medium text-fg-muted">Department</label>
             <select className={inputCls} value={departmentId}
               onChange={(e) => setDepartmentId(e.target.value)}>
               <option value="">All Departments</option>
@@ -208,7 +208,7 @@ export default function ReceivingReportPage() {
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-500">Vendor</label>
+            <label className="text-xs font-medium text-fg-muted">Vendor</label>
             <select className={inputCls} value={vendorId}
               onChange={(e) => setVendorId(e.target.value)}>
               <option value="">All Vendors</option>
@@ -218,9 +218,9 @@ export default function ReceivingReportPage() {
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-500">Search</label>
+            <label className="text-xs font-medium text-fg-muted">Search</label>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-fg-muted" />
               <input
                 type="text"
                 placeholder="Item, material ID, PO#, supplier…"
@@ -234,24 +234,24 @@ export default function ReceivingReportPage() {
       </div>
 
       {exportError && (
-        <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-2 text-sm text-danger-700 shrink-0">
+        <div className="rounded-lg border border-danger-line bg-danger-soft px-4 py-2 text-sm text-danger-fg shrink-0">
           {exportError}
         </div>
       )}
 
       {/* Table — scrolls in both directions inside this box; header row and
           pager stay put. */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface">
         {isLoading || isError || rows.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center py-20 text-center">
-            <PackageSearch className="h-10 w-10 text-neutral-300 mb-3" />
-            <p className="text-sm font-medium text-neutral-500">
+            <PackageSearch className="h-10 w-10 text-fg-faint mb-3" />
+            <p className="text-sm font-medium text-fg-muted">
               {isLoading ? 'Loading…'
                 : isError ? (error instanceof Error ? error.message : 'Could not load the report')
                 : 'No goods received in this window'}
             </p>
             {!isLoading && !isError && (
-              <p className="text-xs text-neutral-400 mt-1">Try a wider date range or clear the filters</p>
+              <p className="text-xs text-fg-muted mt-1">Try a wider date range or clear the filters</p>
             )}
           </div>
         ) : (
@@ -293,7 +293,7 @@ export default function ReceivingReportPage() {
           </div>
         )}
 
-        <div className="shrink-0 border-t border-neutral-200">
+        <div className="shrink-0 border-t border-line">
           <Pagination
             page={page}
             pageSize={pageSize}
@@ -305,7 +305,7 @@ export default function ReceivingReportPage() {
       </div>
 
       {data?.truncated && (
-        <p className="shrink-0 text-xs text-warning-700">
+        <p className="shrink-0 text-xs text-warning-fg">
           This window holds {total.toLocaleString()} lines — the export stops at 20,000.
           Narrow the date range to get all of them.
         </p>
@@ -319,7 +319,7 @@ export default function ReceivingReportPage() {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <span className="whitespace-nowrap">
-      {label} <span className="ml-1 font-semibold text-neutral-900">{value}</span>
+      {label} <span className="ml-1 font-semibold text-fg">{value}</span>
     </span>
   )
 }
@@ -339,8 +339,8 @@ function Th({ label, sortKey, sort, onSort, align = 'left' }: {
     <SortTh
       label={label} sortKey={sortKey} sort={sort} onSort={onSort} align={align}
       className={cn(
-        'sticky top-0 z-10 bg-neutral-50 px-3 py-3 text-xs font-semibold uppercase tracking-wide',
-        'text-neutral-500 whitespace-nowrap shadow-[inset_0_-1px_0_var(--color-neutral-200)]',
+        'sticky top-0 z-10 bg-surface-subtle px-3 py-3 text-xs font-semibold uppercase tracking-wide',
+        'text-fg-muted whitespace-nowrap shadow-[inset_0_-1px_0_var(--color-neutral-200)]',
         align === 'right' ? 'text-right' : 'text-left',
       )}
     />
@@ -349,29 +349,29 @@ function Th({ label, sortKey, sort, onSort, align = 'left' }: {
 
 function ReportRow({ row }: { row: ReceivingReportRow }) {
   return (
-    <tr className="border-b border-neutral-100 bg-white hover:bg-primary-50/60 transition-colors">
-      <td className="px-3 py-2.5 font-mono text-xs text-neutral-700">{row.material_id || '—'}</td>
-      <td className="px-3 py-2.5 text-neutral-800 max-w-md truncate" title={row.description}>
+    <tr className="border-b border-line-subtle bg-surface hover:bg-primary-50/60 transition-colors">
+      <td className="px-3 py-2.5 font-mono text-xs text-fg-secondary">{row.material_id || '—'}</td>
+      <td className="px-3 py-2.5 text-fg max-w-md truncate" title={row.description}>
         {row.description}
       </td>
-      <td className="px-3 py-2.5 text-neutral-700">{row.supplier}</td>
+      <td className="px-3 py-2.5 text-fg-secondary">{row.supplier}</td>
       <td className="px-3 py-2.5">
         <Link to={`/po/${row.po_id}`} className="text-primary-600 hover:underline font-mono text-xs">
           {row.po_number}
         </Link>
       </td>
-      <td className="px-3 py-2.5 text-neutral-600">{row.unit}</td>
-      <td className="px-3 py-2.5 text-right font-mono text-xs text-neutral-800">
+      <td className="px-3 py-2.5 text-fg-secondary">{row.unit}</td>
+      <td className="px-3 py-2.5 text-right font-mono text-xs text-fg">
         {Number(row.quantity).toLocaleString(undefined, { maximumFractionDigits: 4 })}
       </td>
-      <td className="px-3 py-2.5 text-neutral-700">{row.department || '—'}</td>
-      <td className="px-3 py-2.5 text-neutral-700">{row.requested_by || '—'}</td>
-      <td className="px-3 py-2.5 text-neutral-600">{formatDate(row.date_ordered)}</td>
-      <td className="px-3 py-2.5 text-neutral-600">{formatDate(row.arrival_date)}</td>
-      <td className="px-3 py-2.5 text-neutral-600">{formatDate(row.left_warehouse_date)}</td>
-      <td className="px-3 py-2.5 text-neutral-700">{row.warehouse_receiver || '—'}</td>
-      <td className="px-3 py-2.5 text-neutral-700">{row.person_accepting || '—'}</td>
-      <td className="px-3 py-2.5 text-right font-mono text-xs text-neutral-800">
+      <td className="px-3 py-2.5 text-fg-secondary">{row.department || '—'}</td>
+      <td className="px-3 py-2.5 text-fg-secondary">{row.requested_by || '—'}</td>
+      <td className="px-3 py-2.5 text-fg-secondary">{formatDate(row.date_ordered)}</td>
+      <td className="px-3 py-2.5 text-fg-secondary">{formatDate(row.arrival_date)}</td>
+      <td className="px-3 py-2.5 text-fg-secondary">{formatDate(row.left_warehouse_date)}</td>
+      <td className="px-3 py-2.5 text-fg-secondary">{row.warehouse_receiver || '—'}</td>
+      <td className="px-3 py-2.5 text-fg-secondary">{row.person_accepting || '—'}</td>
+      <td className="px-3 py-2.5 text-right font-mono text-xs text-fg">
         {row.lead_time_days === null ? '—' : `${row.lead_time_days}d`}
       </td>
       <td className="px-3 py-2.5">

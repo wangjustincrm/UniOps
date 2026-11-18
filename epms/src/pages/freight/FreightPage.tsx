@@ -31,7 +31,7 @@ export default function FreightPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-neutral-300" />
+        <Loader2 className="h-6 w-6 animate-spin text-fg-faint" />
       </div>
     )
   }
@@ -39,9 +39,9 @@ export default function FreightPage() {
   if (isError || tabs.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <Truck className="h-10 w-10 text-neutral-200 mb-3" />
-        <p className="text-sm font-medium text-neutral-500">You do not have access to Freight</p>
-        <p className="text-xs text-neutral-400 mt-1">Ask an administrator for the Freight register or manage permission.</p>
+        <Truck className="h-10 w-10 text-fg-faint mb-3" />
+        <p className="text-sm font-medium text-fg-muted">You do not have access to Freight</p>
+        <p className="text-xs text-fg-muted mt-1">Ask an administrator for the Freight register or manage permission.</p>
       </div>
     )
   }
@@ -49,14 +49,14 @@ export default function FreightPage() {
   return (
     <div className="flex flex-col gap-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Freight</h1>
-        <p className="text-sm text-neutral-500 mt-0.5">
+        <h1 className="text-2xl font-bold text-fg">Freight</h1>
+        <p className="text-sm text-fg-muted mt-0.5">
           Register courier shipments and maintain carriers — courier invoices are uploaded and matched on the Invoices page, and paid from the PA page
         </p>
       </div>
 
       {tabs.length > 1 && (
-        <div className="flex gap-1 border-b border-neutral-200">
+        <div className="flex gap-1 border-b border-line">
           {tabs.map((t) => (
             <button
               key={t}
@@ -65,7 +65,7 @@ export default function FreightPage() {
                 'px-4 py-2 text-sm font-medium transition-colors',
                 active === t
                   ? 'border-b-2 border-primary-600 text-primary-700'
-                  : 'text-neutral-500 hover:text-neutral-700',
+                  : 'text-fg-muted hover:text-fg-secondary',
               )}
             >
               {TAB_LABEL[t]}

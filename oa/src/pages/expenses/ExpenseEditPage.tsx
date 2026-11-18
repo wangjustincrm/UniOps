@@ -30,7 +30,7 @@ export default function ExpenseEditPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-fg-muted" />
       </div>
     )
   }
@@ -42,7 +42,7 @@ export default function ExpenseEditPage() {
   // claim and meet a 409 at the end of it.
   if (!EDITABLE_STATUSES.includes(claim.status)) {
     return (
-      <div className="p-8 text-sm text-neutral-500">
+      <div className="p-8 text-sm text-fg-muted">
         {claim.claim_number} is {claim.status.replace('_', ' ')} and can no longer be edited.
         Only draft and returned documents can be changed.
       </div>

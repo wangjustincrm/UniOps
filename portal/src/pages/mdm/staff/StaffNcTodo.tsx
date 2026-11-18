@@ -79,15 +79,15 @@ export default function StaffNcTodo() {
   return (
     <StaffShell permission="employee.view">
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="flex rounded-lg border border-neutral-200 bg-white p-0.5">
+        <div className="flex rounded-lg border border-line bg-surface p-0.5">
           {(['todos', 'report'] as const).map((v) => (
             <button key={v} onClick={() => setView(v)}
-              className={cn('rounded-md px-3 py-1.5 text-sm font-medium', view === v ? 'bg-[#085E5E] text-white' : 'text-neutral-600')}>
+              className={cn('rounded-md px-3 py-1.5 text-sm font-medium', view === v ? 'bg-primary-700 text-white' : 'text-fg-secondary')}>
               {v === 'todos' ? 'To-dos' : 'Reconciliation'}
             </button>
           ))}
         </div>
-        <span className="text-xs text-neutral-500">
+        <span className="text-xs text-fg-muted">
           {report?.ran_at ? `NC last read ${formatDate(report.ran_at)}` : 'NC has not been read yet'}
         </span>
         <div className="ml-auto flex gap-2">
@@ -104,14 +104,14 @@ export default function StaffNcTodo() {
         </div>
       </div>
 
-      {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-3 text-sm text-danger-fg">{error}</p>}
 
       {view === 'todos' ? (
         <>
           {!!report?.not_in_nc.length && (
-            <p className="mb-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-600">
+            <p className="mb-3 rounded-lg border border-line bg-surface-subtle px-3 py-2 text-sm text-fg-secondary">
               {report.not_in_nc.length} employees are not in NC. For information only: add them in NC if they need to be there.{' '}
-              <button className="font-medium text-[#085E5E] hover:underline" onClick={() => setView('report')}>View list</button>
+              <button className="font-medium text-primary-700 hover:underline" onClick={() => setView('report')}>View list</button>
             </p>
           )}
           <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -134,7 +134,7 @@ export default function StaffNcTodo() {
               </div>
             )}
           </div>
-          <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+          <div className="overflow-hidden rounded-xl border border-line bg-surface">
             <div className="max-h-[calc(100vh-340px)] overflow-auto">
               <table className="w-full">
                 <thead><tr>
@@ -149,22 +149,22 @@ export default function StaffNcTodo() {
                 </tr></thead>
                 <tbody>
                   {data?.items.map((t) => (
-                    <tr key={t.id} className={cn('border-t border-neutral-100', t.overdue && 'bg-amber-50')}>
+                    <tr key={t.id} className={cn('border-t border-line-subtle', t.overdue && 'bg-warning-soft')}>
                       {closeable && <td className="px-4">
                         {t.status === 'open' && <input type="checkbox" aria-label={`Select ${t.display_name}`} checked={picked.has(t.id)} onChange={() => toggle(t.id)} />}
                       </td>}
                       <td className={`${TD} font-mono text-xs`}>{t.employee_number}</td>
-                      <td className={TD}><Link className="text-[#085E5E] hover:underline" to={`/mdm/staff/${t.employee_id}`}>{t.display_name}</Link></td>
+                      <td className={TD}><Link className="text-primary-700 hover:underline" to={`/mdm/staff/${t.employee_id}`}>{t.display_name}</Link></td>
                       <td className={`${TD} whitespace-nowrap`}>{TODO_LABEL[t.type] ?? t.type}</td>
                       <td className={TD}>{targetText(t)}</td>
-                      <td className={`${TD} whitespace-nowrap`}>{formatDate(t.created_at)}{t.overdue && <span className="ml-1 text-xs font-medium text-amber-700">overdue</span>}</td>
+                      <td className={`${TD} whitespace-nowrap`}>{formatDate(t.created_at)}{t.overdue && <span className="ml-1 text-xs font-medium text-warning-fg">overdue</span>}</td>
                       <td className={TD}>{t.status === 'open' ? 'Open' : `Closed (${t.closed_how})`}</td>
                       <td className={TD} title={t.close_reason ?? undefined}>{t.closed_at ? formatDate(t.closed_at) : '—'}{t.close_reason ? ` · ${t.close_reason}` : ''}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              {!data?.items.length && <p className="py-8 text-center text-sm text-neutral-400">No to-dos.</p>}
+              {!data?.items.length && <p className="py-8 text-center text-sm text-fg-muted">No to-dos.</p>}
             </div>
             <Pagination page={page} pageSize={pageSize} total={data?.total ?? 0}
               onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
@@ -173,7 +173,7 @@ export default function StaffNcTodo() {
       ) : (
         <div className="space-y-4">
           {report?.summary && (
-            <p className="text-sm text-neutral-600">
+            <p className="text-sm text-fg-secondary">
               {report.summary.employees} employees, {report.summary.nc_persons} active NC persons: {report.summary.in_step} in step,{' '}
               {report.differences.length} different, {report.not_in_nc.length} not in NC, {report.not_in_uniops.length} in NC only.
             </p>
@@ -181,14 +181,14 @@ export default function StaffNcTodo() {
           <Section title={`Differences (${report?.differences.length ?? 0})`}
             head={['No.', 'Name', 'Status', 'Difference', 'UniOps department', 'NC code', 'NC department']}
             rows={(report?.differences ?? []).map((d) => [
-              d.employee_number, <Link key="n" className="text-[#085E5E] hover:underline" to={`/mdm/staff/${d.employee_id}`}>{d.display_name}</Link>,
+              d.employee_number, <Link key="n" className="text-primary-700 hover:underline" to={`/mdm/staff/${d.employee_id}`}>{d.display_name}</Link>,
               STATUS_LABEL[d.status], NC_STATE_LABEL[d.nc_state], d.department ? `${d.department_code} ${d.department}` : '—',
               d.nc_person_code ?? '—', d.nc_department_code ? `${d.nc_department_code} ${d.nc_department_name ?? ''}` : '—',
             ])} />
           <Section title={`Not in NC (${report?.not_in_nc.length ?? 0}) — add in NC if needed`}
             head={['No.', 'Name', 'Job title', 'UniOps department']}
             rows={(report?.not_in_nc ?? []).map((e) => [
-              e.employee_number, <Link key="n" className="text-[#085E5E] hover:underline" to={`/mdm/staff/${e.employee_id}`}>{e.display_name}</Link>,
+              e.employee_number, <Link key="n" className="text-primary-700 hover:underline" to={`/mdm/staff/${e.employee_id}`}>{e.display_name}</Link>,
               e.job_title ?? '—', e.department ? `${e.department_code} ${e.department}` : '—',
             ])} />
           <Section title={`In NC, not in UniOps (${report?.not_in_uniops.length ?? 0})`}
@@ -205,16 +205,16 @@ export default function StaffNcTodo() {
 
 function Section({ title, head, rows }: { title: string; head: string[]; rows: React.ReactNode[][] }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
-      <h2 className="px-4 pt-4 text-sm font-semibold text-neutral-900">{title}</h2>
+    <section className="overflow-hidden rounded-xl border border-line bg-surface">
+      <h2 className="px-4 pt-4 text-sm font-semibold text-fg">{title}</h2>
       <div className="mt-2 max-h-96 overflow-auto">
         <table className="w-full">
           <thead><tr>{head.map((h) => <th key={h} className={TH}>{h}</th>)}</tr></thead>
           <tbody>
-            {rows.map((r, i) => <tr key={i} className="border-t border-neutral-100">{r.map((c, j) => <td key={j} className={TD}>{c}</td>)}</tr>)}
+            {rows.map((r, i) => <tr key={i} className="border-t border-line-subtle">{r.map((c, j) => <td key={j} className={TD}>{c}</td>)}</tr>)}
           </tbody>
         </table>
-        {!rows.length && <p className="py-6 text-center text-sm text-neutral-400">Nothing here.</p>}
+        {!rows.length && <p className="py-6 text-center text-sm text-fg-muted">Nothing here.</p>}
       </div>
     </section>
   )

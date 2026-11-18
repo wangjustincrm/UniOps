@@ -42,8 +42,8 @@ export default function NotificationContactsPage() {
     <div className="max-w-2xl">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-base font-semibold text-neutral-900">Notification contacts</h2>
-          <p className="mt-0.5 text-xs text-neutral-500">
+          <h2 className="text-base font-semibold text-fg">Notification contacts</h2>
+          <p className="mt-0.5 text-xs text-fg-muted">
             When a visit's access area triggers training / PPE requirements
             (PRD VMS-PR-007), VMS auto-sends an email to these addresses
             after the visit is confirmed.
@@ -62,17 +62,17 @@ export default function NotificationContactsPage() {
       </div>
 
       {save.error && (
-        <p className="mt-2 rounded-md bg-danger-50 px-3 py-2 text-xs text-danger-600">
+        <p className="mt-2 rounded-md bg-danger-soft px-3 py-2 text-xs text-danger-fg">
           {save.error.message}
         </p>
       )}
       {save.isSuccess && !dirty && (
-        <p className="mt-2 rounded-md bg-success-50 px-3 py-2 text-xs text-success-600">
+        <p className="mt-2 rounded-md bg-success-soft px-3 py-2 text-xs text-success-fg">
           Saved.
         </p>
       )}
 
-      <div className="mt-5 space-y-4 rounded-lg border border-neutral-200 bg-white p-4">
+      <div className="mt-5 space-y-4 rounded-lg border border-line bg-surface p-4">
         <Field
           label="Training Contact email"
           help="HR-designated. Receives a notification when a visit's access area requires food-safety training."
@@ -91,7 +91,7 @@ export default function NotificationContactsPage() {
         />
       </div>
 
-      <p className="mt-4 text-xs text-neutral-500">
+      <p className="mt-4 text-xs text-fg-muted">
         Leave a field blank to disable that channel. Emails are sent through the
         same SMTP configuration as EPMS / OA (configured in the Portal Admin Panel).
       </p>
@@ -108,16 +108,16 @@ function Field({
 }) {
   return (
     <label className="block text-sm">
-      <span className="block font-medium text-neutral-700">{label}</span>
+      <span className="block font-medium text-fg-secondary">{label}</span>
       <input
         type="email"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={loading}
         placeholder={placeholder}
-        className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 disabled:opacity-50"
+        className="mt-1 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 disabled:opacity-50"
       />
-      <span className="mt-1 block text-xs text-neutral-500">{help}</span>
+      <span className="mt-1 block text-xs text-fg-muted">{help}</span>
     </label>
   )
 }

@@ -72,7 +72,7 @@ export function AppLayout() {
 
   if (!isAuthenticated) {
     return (
-      <div className="flex h-screen items-center justify-center text-sm text-neutral-500">
+      <div className="flex h-screen items-center justify-center text-sm text-fg-muted">
         Redirecting to the UniOps Portal to sign in…
       </div>
     )
@@ -105,7 +105,7 @@ export function AppLayout() {
         {/* Mobile overlay backdrop */}
         {mobileOpen && (
           <div
-            className="fixed inset-0 z-20 bg-neutral-900/50 backdrop-blur-sm md:hidden animate-[fadeIn_0.15s_ease-out]"
+            className="fixed inset-0 z-20 bg-inverse/50 backdrop-blur-sm md:hidden animate-[fadeIn_0.15s_ease-out]"
             onClick={() => setMobileOpen(false)}
             aria-hidden="true"
           />

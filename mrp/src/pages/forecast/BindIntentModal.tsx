@@ -59,20 +59,20 @@ export function BindIntentModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">
-      <div role="dialog" aria-modal="true" aria-label={`Bind ${intent.name} to a material code`} className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-200">
+      <div role="dialog" aria-modal="true" aria-label={`Bind ${intent.name} to a material code`} className="w-full max-w-md rounded-xl border border-line bg-surface shadow-xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
           <div>
-            <h2 className="flex items-center gap-2 text-base font-semibold text-neutral-900">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
               <Link2 className="h-4 w-4 text-primary-600" /> Bind to Material Code
             </h2>
-            <p className="font-mono text-xs text-neutral-500">{intent.code} · {intent.name}</p>
+            <p className="font-mono text-xs text-fg-muted">{intent.code} · {intent.name}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             disabled={busy}
             aria-label="Close"
-            className="-m-2.5 flex min-h-[44px] min-w-[44px] items-center justify-center text-neutral-400 hover:text-neutral-600 disabled:cursor-not-allowed disabled:opacity-50"
+            className="-m-2.5 flex min-h-[44px] min-w-[44px] items-center justify-center text-fg-muted hover:text-fg-secondary disabled:cursor-not-allowed disabled:opacity-50"
           >
             <XIcon className="h-5 w-5" />
           </button>
@@ -99,13 +99,13 @@ export function BindIntentModal({
             )}
 
             {error && (
-              <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+              <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
                 <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
               </p>
             )}
           </div>
 
-          <div className="flex justify-end gap-2 px-5 py-4 border-t border-neutral-200">
+          <div className="flex justify-end gap-2 px-5 py-4 border-t border-line">
             <Button type="button" variant="secondary" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
             <Button type="submit" size="sm" disabled={busy || !material}>
               {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}

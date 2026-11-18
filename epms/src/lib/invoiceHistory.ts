@@ -44,50 +44,50 @@ export function historyLine(e: InvoiceHistoryEntry): HistoryLine {
         color: 'bg-primary-600',
       }
     case 'decline_match':
-      return { action: 'Declined the match assignment', note, color: 'bg-warning-500' }
+      return { action: 'Declined the match assignment', note, color: 'bg-warning-solid' }
     case 'match':
       return {
         action: `Matched to ${matchTargetLabel(a)}${suffix}`,
-        color: status === 'exception' ? 'bg-danger-600' : 'bg-success-600',
+        color: status === 'exception' ? 'bg-danger-solid' : 'bg-success-solid',
       }
     case 'review_approve':
       return {
         action: `Match to ${matchTargetLabel(b)} confirmed by AP${suffix}`,
         note,
-        color: status === 'exception' ? 'bg-danger-600' : 'bg-success-600',
+        color: status === 'exception' ? 'bg-danger-solid' : 'bg-success-solid',
       }
     case 'review_reject':
       return {
         action: `Match to ${matchTargetLabel(b)} rejected by AP — sent back to re-match`,
         note,
-        color: 'bg-danger-600',
+        color: 'bg-danger-solid',
       }
     case 'resolve_exception':
       return {
         action: a.resolution === 'accepted' ? 'Exception accepted with justification' : 'Credit note requested',
         note,
-        color: 'bg-warning-500',
+        color: 'bg-warning-solid',
       }
     case 'rematch_on_edit':
       return {
         action: `Edit re-ran the match — now ${status === 'matched' ? `matched to ${matchTargetLabel(a)}` : (status ?? 'changed')}`,
-        color: status === 'exception' ? 'bg-danger-600' : 'bg-neutral-400',
+        color: status === 'exception' ? 'bg-danger-solid' : 'bg-fg-faint',
       }
     case 'unmatch': {
       const reason = str(a.reason) ?? undefined
       if (a.scope === 'gr') {
-        return { action: `Goods receipt ${str(b.gr_number) ?? ''} unlinked`.replace(/\s+/g, ' '), note: reason, color: 'bg-neutral-500' }
+        return { action: `Goods receipt ${str(b.gr_number) ?? ''} unlinked`.replace(/\s+/g, ' '), note: reason, color: 'bg-fg-faint' }
       }
       if (a.scope === 'agreement') {
-        return { action: `Unmatched from Agreement ${str(b.agreement_number) ?? ''} — back to Unmatched`.replace(/\s+/g, ' '), note: reason, color: 'bg-neutral-500' }
+        return { action: `Unmatched from Agreement ${str(b.agreement_number) ?? ''} — back to Unmatched`.replace(/\s+/g, ' '), note: reason, color: 'bg-fg-faint' }
       }
       if (a.scope === 'direct') {
-        return { action: 'Taken off the Direct PA route — back to Unmatched', note: reason, color: 'bg-neutral-500' }
+        return { action: 'Taken off the Direct PA route — back to Unmatched', note: reason, color: 'bg-fg-faint' }
       }
-      return { action: `Unmatched from ${str(b.po_number) ?? 'its PO'} — back to Unmatched`, note: reason, color: 'bg-neutral-500' }
+      return { action: `Unmatched from ${str(b.po_number) ?? 'its PO'} — back to Unmatched`, note: reason, color: 'bg-fg-faint' }
     }
     default:
-      return { action: e.action, color: 'bg-neutral-400' }
+      return { action: e.action, color: 'bg-fg-faint' }
   }
 }
 

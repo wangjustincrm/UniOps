@@ -12,41 +12,41 @@ export function DerivedPaLinesTable({ lines, currency, fromInvoiceLines = false 
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
+      <p className="text-xs font-medium text-fg-secondary flex items-center gap-1.5">
         <CircleDot className="h-3.5 w-3.5" /> Line Items
-        <span className="text-neutral-400 font-normal">
+        <span className="text-fg-muted font-normal">
           {fromInvoiceLines ? "(from the selected invoices' lines)" : "(from the selected invoices' line matching)"}
         </span>
       </p>
-      <div className="rounded-lg border border-neutral-200 overflow-hidden">
+      <div className="rounded-lg border border-line overflow-hidden">
         <table className="w-full text-xs">
           <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50">
-              <th className="px-3 py-2 text-left font-semibold text-neutral-500 uppercase tracking-wide">Description</th>
-              <th className="px-3 py-2 text-right font-semibold text-neutral-500 uppercase tracking-wide w-20">Qty</th>
-              <th className="px-3 py-2 text-right font-semibold text-neutral-500 uppercase tracking-wide w-24">Unit Price</th>
-              <th className="px-3 py-2 text-right font-semibold text-neutral-500 uppercase tracking-wide w-28">Line Total</th>
+            <tr className="border-b border-line bg-surface-subtle">
+              <th className="px-3 py-2 text-left font-semibold text-fg-muted uppercase tracking-wide">Description</th>
+              <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-20">Qty</th>
+              <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-24">Unit Price</th>
+              <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-28">Line Total</th>
             </tr>
           </thead>
           <tbody>
             {lines.map((l, i) => (
-              <tr key={i} className="border-b border-neutral-100 last:border-0">
+              <tr key={i} className="border-b border-line-subtle last:border-0">
                 <td className="px-3 py-2.5">
-                  <div className="text-neutral-800 font-medium">{l.description}</div>
-                  <div className="text-[10px] text-neutral-400 mt-0.5">
+                  <div className="text-fg font-medium">{l.description}</div>
+                  <div className="text-2xs text-fg-muted mt-0.5">
                     {l.po_line_id || fromInvoiceLines ? l.notes : `Non-PO fee · ${l.notes}`}
                   </div>
                 </td>
-                <td className="px-3 py-2.5 text-right font-mono text-neutral-500">{formatQty(l.qty)} {l.unit}</td>
-                <td className="px-3 py-2.5 text-right font-mono text-neutral-500">{l.unit_price}</td>
-                <td className="px-3 py-2.5 text-right font-mono font-semibold text-neutral-900">
+                <td className="px-3 py-2.5 text-right font-mono text-fg-muted">{formatQty(l.qty)} {l.unit}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-fg-muted">{l.unit_price}</td>
+                <td className="px-3 py-2.5 text-right font-mono font-semibold text-fg">
                   {formatAmount(l.line_total, currency)}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <div className="flex items-center justify-between px-4 py-2 border-t border-neutral-200 bg-primary-50">
+        <div className="flex items-center justify-between px-4 py-2 border-t border-line bg-primary-50">
           <span className="text-xs text-primary-700 font-medium">{lines.length} line{lines.length !== 1 ? 's' : ''}</span>
           <span className="text-xs font-mono font-semibold text-primary-700">
             {formatAmount(derivedLinesTotal(lines), currency)}

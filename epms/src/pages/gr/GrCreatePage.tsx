@@ -31,9 +31,9 @@ const TYPE_LABELS: Record<number, string> = {
 }
 
 const CONDITION_OPTIONS: { value: GrLineCondition; label: string; color: string }[] = [
-  { value: 'good',        label: 'Good',        color: 'text-success-600' },
-  { value: 'discrepancy', label: 'Discrepancy', color: 'text-warning-600' },
-  { value: 'damaged',     label: 'Damaged',     color: 'text-danger-600'  },
+  { value: 'good',        label: 'Good',        color: 'text-success-fg' },
+  { value: 'discrepancy', label: 'Discrepancy', color: 'text-warning-fg' },
+  { value: 'damaged',     label: 'Damaged',     color: 'text-danger-fg'  },
 ]
 
 // type 4 = Service, type 6 = Project — non-physical GR flow; everything else is physical
@@ -309,14 +309,14 @@ export default function GrCreatePage() {
     <div className="flex flex-col gap-6 max-w-4xl">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Link to="/gr" className="text-neutral-400 hover:text-neutral-600 transition-colors">
+        <Link to="/gr" className="text-fg-muted hover:text-fg-secondary transition-colors">
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">
+          <h1 className="text-2xl font-bold text-fg">
             {selectedPo?.type === 4 ? 'Service Confirmation' : selectedPo?.type === 6 ? 'Project Completion' : 'New Goods Receipt'}
           </h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <p className="mt-1 text-sm text-fg-muted">
             {selectedPo?.type === 4
               ? 'Confirm service completion against an approved Purchase Order'
               : selectedPo?.type === 6
@@ -328,27 +328,27 @@ export default function GrCreatePage() {
 
       {/* Error summary */}
       {submitted && errors.length > 0 && (
-        <div className="rounded-lg border border-danger-200 bg-danger-50 p-4">
-          <p className="text-sm font-semibold text-danger-700 mb-1">Please fix the following issues:</p>
-          <ul className="list-disc list-inside text-sm text-danger-600 space-y-0.5">
+        <div className="rounded-lg border border-danger-line bg-danger-soft p-4">
+          <p className="text-sm font-semibold text-danger-fg mb-1">Please fix the following issues:</p>
+          <ul className="list-disc list-inside text-sm text-danger-fg space-y-0.5">
             {errors.map((e) => <li key={e}>{e}</li>)}
           </ul>
         </div>
       )}
 
       {createGr.isError && (
-        <div className="rounded-lg border border-danger-200 bg-danger-50 p-4 text-sm text-danger-700">
+        <div className="rounded-lg border border-danger-line bg-danger-soft p-4 text-sm text-danger-fg">
           {createGr.error instanceof Error ? createGr.error.message : 'The goods receipt could not be saved'}
         </div>
       )}
 
       {/* PO Selection */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-6 flex flex-col gap-4">
-        <h2 className="text-base font-semibold text-neutral-900">Purchase Order</h2>
+      <div className="rounded-xl border border-line bg-surface p-6 flex flex-col gap-4">
+        <h2 className="text-base font-semibold text-fg">Purchase Order</h2>
 
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium text-neutral-700">
-            Select PO <span className="text-danger-600">*</span>
+          <label className="text-sm font-medium text-fg-secondary">
+            Select PO <span className="text-danger-fg">*</span>
           </label>
           <div className="relative">
             <input
@@ -363,26 +363,26 @@ export default function GrCreatePage() {
               }}
               className={cn(
                 'w-full h-10 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                submitted && !selectedPo ? 'border-danger-500' : 'border-neutral-300'
+                submitted && !selectedPo ? 'border-danger-solid' : 'border-line-strong'
               )}
             />
             {selectedPo && (
               <button
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
                 onClick={() => { setSelectedPoId(''); setPoSearch(''); setShowPoDropdown(true) }}
               >
                 ×
               </button>
             )}
             {showPoDropdown && !selectedPo && (
-              <div className="absolute z-10 mt-1 w-full rounded-lg border border-neutral-200 bg-white shadow-lg max-h-64 overflow-y-auto">
+              <div className="absolute z-10 mt-1 w-full rounded-lg border border-line bg-surface shadow-lg max-h-64 overflow-y-auto">
                 {filteredPos.length === 0 ? (
-                  <div className="px-4 py-3 text-sm text-neutral-400">No eligible POs found (must be issued, partially received, or approved service PO)</div>
+                  <div className="px-4 py-3 text-sm text-fg-muted">No eligible POs found (must be issued, partially received, or approved service PO)</div>
                 ) : (
                   filteredPos.map((p) => (
                     <button
                       key={p.id}
-                      className="w-full text-left px-4 py-3 hover:bg-primary-50 border-b border-neutral-100 last:border-0"
+                      className="w-full text-left px-4 py-3 hover:bg-primary-50 border-b border-line-subtle last:border-0"
                       onClick={() => {
                         setSelectedPoId(p.id)
                         setShowPoDropdown(false)
@@ -390,11 +390,11 @@ export default function GrCreatePage() {
                       }}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-medium text-sm text-neutral-900 font-mono">{p.number}</span>
-                        <span className="text-xs text-neutral-500">{TYPE_LABELS[p.type]}</span>
+                        <span className="font-medium text-sm text-fg font-mono">{p.number}</span>
+                        <span className="text-xs text-fg-muted">{TYPE_LABELS[p.type]}</span>
                       </div>
-                      <div className="text-xs text-neutral-500 mt-0.5">{p.vendor_name} · {p.title}</div>
-                      <div className="text-xs text-neutral-400 mt-0.5">
+                      <div className="text-xs text-fg-muted mt-0.5">{p.vendor_name} · {p.title}</div>
+                      <div className="text-xs text-fg-muted mt-0.5">
                         Expected {formatDate(p.expected_delivery)} · {formatAmount(p.total, p.currency)}
                       </div>
                     </button>
@@ -404,22 +404,22 @@ export default function GrCreatePage() {
             )}
           </div>
           {submitted && !selectedPo && (
-            <p className="text-xs text-danger-600">Please select a Purchase Order</p>
+            <p className="text-xs text-danger-fg">Please select a Purchase Order</p>
           )}
         </div>
 
         {linkedPoNotReceivable && (
-          <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
-            <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
+          <div className="rounded-lg border border-warning-line bg-warning-soft p-4 flex gap-3">
+            <AlertTriangle className="h-5 w-5 text-warning-fg flex-shrink-0 mt-0.5" />
             <div className="text-sm">
-              <p className="font-semibold text-warning-700">
+              <p className="font-semibold text-warning-fg">
                 {linkedPoNotReceivable.number} cannot take a goods receipt right now
               </p>
-              <p className="text-warning-600 mt-0.5">
+              <p className="text-warning-fg mt-0.5">
                 It is in status <span className="font-medium">{linkedPoNotReceivable.status.replace(/_/g, ' ')}</span>.
                 A receipt needs an issued or partially received PO — or an approved one for service and project POs.
                 {' '}
-                <Link to={`/po/${linkedPoNotReceivable.id}`} className="underline hover:text-warning-700">
+                <Link to={`/po/${linkedPoNotReceivable.id}`} className="underline hover:text-warning-fg">
                   Open the PO
                 </Link>{' '}
                 to check whether it has already been received, or pick another PO above.
@@ -430,7 +430,7 @@ export default function GrCreatePage() {
 
         {/* PO summary card */}
         {selectedPo && (
-          <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+          <div className="rounded-lg border border-line bg-surface-subtle p-4 grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
             <MetaRow label="Vendor" value={selectedPo.vendor_name} />
             <MetaRow label="Expected Delivery" value={formatDate(selectedPo.expected_delivery)} />
             <MetaRow label="Procurement Type" value={`Type ${selectedPo.type} — ${TYPE_LABELS[selectedPo.type]}`} />
@@ -443,8 +443,8 @@ export default function GrCreatePage() {
       {selectedPo && (
         <>
           {/* Receipt Details */}
-          <div className="rounded-xl border border-neutral-200 bg-white p-6 flex flex-col gap-4">
-            <h2 className="text-base font-semibold text-neutral-900">Receipt Details</h2>
+          <div className="rounded-xl border border-line bg-surface p-6 flex flex-col gap-4">
+            <h2 className="text-base font-semibold text-fg">Receipt Details</h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <FormField
                 label="Title"
@@ -456,7 +456,7 @@ export default function GrCreatePage() {
                   maxLength={255}
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="w-full h-10 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 />
               </FormField>
               <FormField
@@ -471,7 +471,7 @@ export default function GrCreatePage() {
                   placeholder={user?.name ?? ''}
                   value={receivedBy}
                   onChange={(e) => setReceivedBy(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="w-full h-10 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 />
               </FormField>
               <FormField
@@ -483,7 +483,7 @@ export default function GrCreatePage() {
                   type="date"
                   value={receivedAt}
                   onChange={(e) => setReceivedAt(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="w-full h-10 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 />
               </FormField>
               <FormField
@@ -498,7 +498,7 @@ export default function GrCreatePage() {
                   value={storageLocation}
                   onChange={(e) => setStorageLocation(e.target.value)}
                   disabled={!isPhysicalGr(selectedPo.type)}
-                  className="w-full h-10 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400"
+                  className="w-full h-10 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
                 />
               </FormField>
             </div>
@@ -508,32 +508,32 @@ export default function GrCreatePage() {
                 placeholder="e.g. Items delivered to receiving dock B."
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
+                className="w-full px-3 py-2 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
               />
             </FormField>
           </div>
 
           {/* Pack List Attachments */}
-          <div className="rounded-xl border border-neutral-200 bg-white p-6 flex flex-col gap-4">
+          <div className="rounded-xl border border-line bg-surface p-6 flex flex-col gap-4">
             <div>
-              <h2 className="text-base font-semibold text-neutral-900">Pack List / Supporting Documents</h2>
-              <p className="mt-0.5 text-sm text-neutral-500">Optional — attach scanned packing lists, delivery notes, or photos</p>
+              <h2 className="text-base font-semibold text-fg">Pack List / Supporting Documents</h2>
+              <p className="mt-0.5 text-sm text-fg-muted">Optional — attach scanned packing lists, delivery notes, or photos</p>
             </div>
 
             {/* Drop zone */}
             <div
               className={cn(
                 'relative rounded-lg border-2 border-dashed transition-colors flex flex-col items-center justify-center gap-2 py-8 cursor-pointer',
-                dragOver ? 'border-primary-400 bg-primary-50' : 'border-neutral-300 hover:border-neutral-400'
+                dragOver ? 'border-primary-400 bg-primary-50' : 'border-line-strong hover:border-line-strong'
               )}
               onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
               onDragLeave={() => setDragOver(false)}
               onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files) }}
               onClick={() => fileInputRef.current?.click()}
             >
-              <Upload className="h-7 w-7 text-neutral-400" />
-              <p className="text-sm font-medium text-neutral-600">Drop files here or click to browse</p>
-              <p className="text-xs text-neutral-400">{ATTACHMENT_RULE.hint}</p>
+              <Upload className="h-7 w-7 text-fg-muted" />
+              <p className="text-sm font-medium text-fg-secondary">Drop files here or click to browse</p>
+              <p className="text-xs text-fg-muted">{ATTACHMENT_RULE.hint}</p>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -543,20 +543,20 @@ export default function GrCreatePage() {
                 onChange={(e) => { addFiles(e.target.files); e.target.value = '' }}
               />
             </div>
-            {packListError && <p role="alert" className="text-xs text-danger-600">{packListError}</p>}
+            {packListError && <p role="alert" className="text-xs text-danger-fg">{packListError}</p>}
 
             {/* File list */}
             {packListFiles.length > 0 && (
               <ul className="flex flex-col gap-2">
                 {packListFiles.map((file, idx) => (
-                  <li key={idx} className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2">
-                    <Paperclip className="h-4 w-4 text-neutral-400 shrink-0" />
-                    <span className="flex-1 text-sm text-neutral-700 truncate">{file.name}</span>
-                    <span className="text-xs text-neutral-400 shrink-0">{(file.size / 1024).toFixed(0)} KB</span>
+                  <li key={idx} className="flex items-center gap-3 rounded-lg border border-line bg-surface-subtle px-3 py-2">
+                    <Paperclip className="h-4 w-4 text-fg-muted shrink-0" />
+                    <span className="flex-1 text-sm text-fg-secondary truncate">{file.name}</span>
+                    <span className="text-xs text-fg-muted shrink-0">{(file.size / 1024).toFixed(0)} KB</span>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); removeFile(idx) }}
-                      className="text-neutral-400 hover:text-danger-600 transition-colors"
+                      className="text-fg-muted hover:text-danger-fg transition-colors"
                       aria-label="Remove file"
                     >
                       <X className="h-4 w-4" />
@@ -568,22 +568,22 @@ export default function GrCreatePage() {
           </div>
 
           {/* Line Items */}
-          <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-            <div className="px-6 py-4 border-b border-neutral-200 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-neutral-900">Items Received</h2>
-              <span className="text-xs text-neutral-400">{lineItems.length} line{lineItems.length !== 1 ? 's' : ''}</span>
+          <div className="rounded-xl border border-line bg-surface overflow-hidden">
+            <div className="px-6 py-4 border-b border-line flex items-center justify-between">
+              <h2 className="text-base font-semibold text-fg">Items Received</h2>
+              <span className="text-xs text-fg-muted">{lineItems.length} line{lineItems.length !== 1 ? 's' : ''}</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-neutral-200 bg-neutral-50">
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 w-8">#</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Description</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500 w-24">Ordered</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500 w-28">Received Qty</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 w-16">Unit</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500 w-32">Line Total</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 w-48">Condition</th>
+                  <tr className="border-b border-line bg-surface-subtle">
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted w-8">#</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Description</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted w-24">Ordered</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted w-28">Received Qty</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted w-16">Unit</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted w-32">Line Total</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted w-48">Condition</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -601,13 +601,13 @@ export default function GrCreatePage() {
               </table>
             </div>
             {/* Totals */}
-            <div className="px-6 py-4 border-t border-neutral-200 flex justify-end">
+            <div className="px-6 py-4 border-t border-line flex justify-end">
               <div className="min-w-56 space-y-1.5">
-                <div className="flex justify-between text-sm text-neutral-500">
+                <div className="flex justify-between text-sm text-fg-muted">
                   <span>Total Received Value</span>
-                  <span className="font-mono font-semibold text-neutral-900">{formatAmount(totalValue, selectedPo.currency)}</span>
+                  <span className="font-mono font-semibold text-fg">{formatAmount(totalValue, selectedPo.currency)}</span>
                 </div>
-                <div className="flex justify-between text-xs text-neutral-400">
+                <div className="flex justify-between text-xs text-fg-muted">
                   <span>Original PO Total</span>
                   <span className="font-mono">{formatAmount(selectedPo.total, selectedPo.currency)}</span>
                 </div>
@@ -617,18 +617,18 @@ export default function GrCreatePage() {
 
           {/* Over-receipt: allowed with a reason */}
           {needsOverReason && (
-            <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
-              <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
+            <div className="rounded-lg border border-warning-line bg-warning-soft p-4 flex gap-3">
+              <AlertTriangle className="h-5 w-5 text-warning-fg flex-shrink-0 mt-0.5" />
               <div className="flex-1 flex flex-col gap-2">
                 <div>
-                  <p className="text-sm font-semibold text-warning-700">Receiving more than the PO line has open</p>
-                  <p className="text-sm text-warning-600 mt-0.5">
+                  <p className="text-sm font-semibold text-warning-fg">Receiving more than the PO line has open</p>
+                  <p className="text-sm text-warning-fg mt-0.5">
                     {overLines.map((l) => `${l.description}: ${l.qty_received} received, ${l.open} open`).join('; ')}.
                     {' '}Over-receipt is allowed, but the reason is required and is kept on the GR.
                   </p>
                 </div>
-                <label className="text-xs font-medium text-warning-700">
-                  Over-receipt reason <span className="text-danger-600">*</span>
+                <label className="text-xs font-medium text-warning-fg">
+                  Over-receipt reason <span className="text-danger-fg">*</span>
                 </label>
                 <textarea
                   rows={2}
@@ -636,8 +636,8 @@ export default function GrCreatePage() {
                   value={overReceiptReason}
                   onChange={(e) => setOverReceiptReason(e.target.value)}
                   className={cn(
-                    'w-full px-3 py-1.5 rounded border text-sm bg-white focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
-                    submitted && !overReceiptReason.trim() ? 'border-danger-400' : 'border-warning-300'
+                    'w-full px-3 py-1.5 rounded border text-sm bg-surface focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
+                    submitted && !overReceiptReason.trim() ? 'border-danger-400' : 'border-warning-line'
                   )}
                 />
               </div>
@@ -646,11 +646,11 @@ export default function GrCreatePage() {
 
           {/* Issues warning */}
           {hasIssues && (
-            <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
-              <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
+            <div className="rounded-lg border border-warning-line bg-warning-soft p-4 flex gap-3">
+              <AlertTriangle className="h-5 w-5 text-warning-fg flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-semibold text-warning-700">One or more lines have issues</p>
-                <p className="text-sm text-warning-600 mt-0.5">
+                <p className="text-sm font-semibold text-warning-fg">One or more lines have issues</p>
+                <p className="text-sm text-warning-fg mt-0.5">
                   Submitting will raise an urgent Report Goods Damage task for the Procurement Officers
                   to arrange a return, credit or replacement with the vendor. The GR still goes through
                   acknowledgement and collection as usual, and invoices for this PO are not blocked.
@@ -660,9 +660,9 @@ export default function GrCreatePage() {
           )}
 
           {!hasIssues && lineItems.length > 0 && (
-            <div className="rounded-lg border border-success-200 bg-success-50 p-4 flex gap-3">
-              <CheckCircle2 className="h-5 w-5 text-success-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-success-700">
+            <div className="rounded-lg border border-success-line bg-success-soft p-4 flex gap-3">
+              <CheckCircle2 className="h-5 w-5 text-success-fg flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-success-fg">
                 All items in good condition. After submission, the requester will be notified to acknowledge receipt.
               </p>
             </div>
@@ -702,16 +702,16 @@ function LineRow({
 
   return (
     <>
-      <tr className={cn('border-b border-neutral-100', idx % 2 === 1 && 'bg-neutral-50/50')}>
-        <td className="px-4 py-3 text-center text-neutral-400 text-xs">{idx + 1}</td>
+      <tr className={cn('border-b border-line-subtle', idx % 2 === 1 && 'bg-surface-subtle/50')}>
+        <td className="px-4 py-3 text-center text-fg-muted text-xs">{idx + 1}</td>
         <td className="px-4 py-3">
-          <div className="text-neutral-800">{line.description}</div>
-          {line.material_id && <div className="text-xs text-neutral-400 font-mono mt-0.5">{line.material_id}</div>}
+          <div className="text-fg">{line.description}</div>
+          {line.material_id && <div className="text-xs text-fg-muted font-mono mt-0.5">{line.material_id}</div>}
         </td>
-        <td className="px-4 py-3 text-right text-neutral-500 font-mono text-xs">
+        <td className="px-4 py-3 text-right text-fg-muted font-mono text-xs">
           {formatQty(line.qty_ordered)} {line.unit}
           {line.open !== null && (
-            <div className="mt-0.5 text-[10px] text-neutral-400 whitespace-nowrap">
+            <div className="mt-0.5 text-2xs text-fg-muted whitespace-nowrap">
               Received {line.already_received} · Pending {line.pending} · Open {line.open}
             </div>
           )}
@@ -730,15 +730,15 @@ function LineRow({
               placeholder="0"
               className={cn(
                 'w-20 h-8 text-right px-2 rounded border text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary-600',
-                qtyError ? 'border-danger-400 bg-danger-50' : over ? 'border-warning-400 bg-warning-50' : 'border-neutral-300'
+                qtyError ? 'border-danger-400 bg-danger-soft' : over ? 'border-warning-400 bg-warning-soft' : 'border-line-strong'
               )}
             />
-            {qtyError && <span className="text-[10px] text-danger-600">Required</span>}
-            {over && <span className="text-[10px] text-warning-600">Over open qty</span>}
+            {qtyError && <span className="text-2xs text-danger-fg">Required</span>}
+            {over && <span className="text-2xs text-warning-fg">Over open qty</span>}
           </div>
         </td>
-        <td className="px-4 py-3 text-neutral-500 text-xs">{line.unit}</td>
-        <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-800">
+        <td className="px-4 py-3 text-fg-muted text-xs">{line.unit}</td>
+        <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-fg">
           {formatAmount(line.line_total, currency)}
         </td>
         <td className="px-4 py-3">
@@ -761,12 +761,12 @@ function LineRow({
       </tr>
       {/* Discrepancy details row */}
       {hasIssue && (
-        <tr className={cn('border-b border-neutral-100', idx % 2 === 1 && 'bg-neutral-50/50')}>
+        <tr className={cn('border-b border-line-subtle', idx % 2 === 1 && 'bg-surface-subtle/50')}>
           <td />
           <td colSpan={6} className="px-4 pb-3">
-            <div className="rounded-lg border border-warning-200 bg-warning-50 p-3 flex flex-col gap-2">
-              <label className="text-xs font-medium text-warning-700">
-                {line.condition === 'damaged' ? 'Damage' : 'Discrepancy'} Notes <span className="text-danger-600">*</span>
+            <div className="rounded-lg border border-warning-line bg-warning-soft p-3 flex flex-col gap-2">
+              <label className="text-xs font-medium text-warning-fg">
+                {line.condition === 'damaged' ? 'Damage' : 'Discrepancy'} Notes <span className="text-danger-fg">*</span>
               </label>
               <textarea
                 rows={2}
@@ -774,11 +774,11 @@ function LineRow({
                 value={line.discrepancy_notes ?? ''}
                 onChange={(e) => onChange({ discrepancy_notes: e.target.value })}
                 className={cn(
-                  'w-full px-3 py-1.5 rounded border text-sm bg-white focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
-                  noteError ? 'border-danger-400' : 'border-warning-300'
+                  'w-full px-3 py-1.5 rounded border text-sm bg-surface focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
+                  noteError ? 'border-danger-400' : 'border-warning-line'
                 )}
               />
-              {noteError && <p className="text-xs text-danger-600">Notes are required for discrepancy/damage</p>}
+              {noteError && <p className="text-xs text-danger-fg">Notes are required for discrepancy/damage</p>}
             </div>
           </td>
         </tr>
@@ -804,13 +804,13 @@ function FormField({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-sm font-medium text-neutral-700">
+      <label className="text-sm font-medium text-fg-secondary">
         {label}
-        {required && <span className="text-danger-600 ml-1">*</span>}
+        {required && <span className="text-danger-fg ml-1">*</span>}
       </label>
       {children}
-      {hint && !error && <p className="text-xs text-neutral-400">{hint}</p>}
-      {error && <p className="text-xs text-danger-600">{error}</p>}
+      {hint && !error && <p className="text-xs text-fg-muted">{hint}</p>}
+      {error && <p className="text-xs text-danger-fg">{error}</p>}
     </div>
   )
 }
@@ -818,8 +818,8 @@ function FormField({
 function MetaRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex gap-2 text-sm">
-      <span className="text-neutral-500 min-w-36 flex-shrink-0">{label}</span>
-      <span className={cn('text-neutral-800 font-medium', mono && 'font-mono')}>{value}</span>
+      <span className="text-fg-muted min-w-36 flex-shrink-0">{label}</span>
+      <span className={cn('text-fg font-medium', mono && 'font-mono')}>{value}</span>
     </div>
   )
 }

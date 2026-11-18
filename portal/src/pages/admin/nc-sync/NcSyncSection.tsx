@@ -18,8 +18,8 @@ import { NcPurchaseSyncSection } from '../NcPurchaseSyncSection'
 import { ScheduleCard, type ScheduleEndpoint } from './ScheduleCard'
 
 const FULL_CONFIRM = 'FULL RELOAD'
-const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
+const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
 
 type Tab = 'purchase' | 'jv' | 'mdm'
 
@@ -65,8 +65,8 @@ interface NcSyncStatus {
 
 function JvRunSummary({ run, label }: { run: NcSyncRun; label: string }) {
   return (
-    <div className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
-      <span className="font-medium text-neutral-700">{label}:</span>{' '}
+    <div className="rounded-lg bg-surface-subtle px-3 py-2 text-xs text-fg-secondary">
+      <span className="font-medium text-fg-secondary">{label}:</span>{' '}
       {run.mode} · {run.status}
       {run.started_at && ` · ${formatDateTime(run.started_at)}`}
       {run.status !== 'running' && (
@@ -76,7 +76,7 @@ function JvRunSummary({ run, label }: { run: NcSyncRun; label: string }) {
         </>
       )}
       {run.watermark_to && <> · watermark {run.watermark_to}</>}
-      {run.error && <div className="mt-1 text-red-600">{run.error}</div>}
+      {run.error && <div className="mt-1 text-danger-fg">{run.error}</div>}
     </div>
   )
 }
@@ -116,10 +116,10 @@ function JvManualSync() {
   const canStart = !!status?.configured && !!status?.can_sync && !running && !starting &&
     (mode === 'incremental' || confirm === FULL_CONFIRM)
 
-  if (!status) return <div className="py-6 text-center text-sm text-neutral-400">Loading…</div>
+  if (!status) return <div className="py-6 text-center text-sm text-fg-muted">Loading…</div>
   if (!status.configured) {
     return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+      <div className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-fg">
         NC voucher sync is not configured. Contact an administrator to set up the NC65 connection.
       </div>
     )
@@ -129,7 +129,7 @@ function JvManualSync() {
     <div className="space-y-3">
       {status.last_run && !running && <JvRunSummary run={status.last_run} label="Last sync" />}
       {running ? (
-        <div className="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-3 text-sm text-neutral-700">
+        <div className="flex items-center gap-2 rounded-lg border border-line px-3 py-3 text-sm text-fg-secondary">
           <Loader2 className="h-4 w-4 animate-spin" />
           Sync in progress ({running.mode})…
         </div>
@@ -141,7 +141,7 @@ function JvManualSync() {
                      onChange={() => setMode('incremental')} className="mt-0.5" />
               <span>
                 <span className="font-medium">Incremental</span>
-                <span className="block text-xs text-neutral-500">
+                <span className="block text-xs text-fg-muted">
                   Import only vouchers that are new or changed in NC since the last watermark.
                 </span>
               </span>
@@ -151,13 +151,13 @@ function JvManualSync() {
                      onChange={() => setMode('full')} className="mt-0.5" />
               <span>
                 <span className="font-medium">Full reload</span>
-                <span className="block text-xs text-neutral-500">Re-import every NC voucher.</span>
+                <span className="block text-xs text-fg-muted">Re-import every NC voucher.</span>
               </span>
             </label>
           </div>
           {mode === 'full' && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-              <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-red-700">
+            <div className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2">
+              <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-danger-fg">
                 <AlertTriangle className="h-3.5 w-3.5" />
                 Destructive: re-imports every NC voucher. Type {FULL_CONFIRM} to enable.
               </div>
@@ -165,8 +165,8 @@ function JvManualSync() {
                      placeholder={FULL_CONFIRM} className={cn(inputCls, 'w-full font-mono')} />
             </div>
           )}
-          {err && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
-          <div className="flex justify-end border-t border-neutral-100 pt-3">
+          {err && <div className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{err}</div>}
+          <div className="flex justify-end border-t border-line-subtle pt-3">
             <button onClick={start} disabled={!canStart} className={primaryBtn}>
               {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <DatabaseZap className="h-4 w-4" />}
               Start Sync
@@ -183,20 +183,20 @@ export function NcSyncSection() {
 
   return (
     <div>
-      <div className="mb-6 border-b border-neutral-100 pb-4">
-        <h2 className="text-lg font-semibold text-neutral-900">NC Sync</h2>
-        <p className="mt-0.5 text-sm text-neutral-500">
+      <div className="mb-6 border-b border-line-subtle pb-4">
+        <h2 className="text-lg font-semibold text-fg">NC Sync</h2>
+        <p className="mt-0.5 text-sm text-fg-muted">
           Import purchase orders, journal vouchers and master data from NC65 — on a schedule or on demand.
         </p>
       </div>
 
-      <div className="mb-4 flex gap-1 border-b border-neutral-200">
+      <div className="mb-4 flex gap-1 border-b border-line">
         {TABS.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={cn('-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors',
               tab === t.key
-                ? 'border-[#085E5E] text-[#085E5E]'
-                : 'border-transparent text-neutral-500 hover:text-neutral-700')}>
+                ? 'border-primary-700 text-primary-700'
+                : 'border-transparent text-fg-muted hover:text-fg-secondary')}>
             {t.label}
           </button>
         ))}
@@ -219,7 +219,7 @@ export function NcSyncSection() {
       {tab === 'mdm' && (
         <div className="max-w-lg space-y-4">
           <ScheduleCard endpoint={ENDPOINTS.mdm} title="Automatic master-data sync" />
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-fg-muted">
             A scheduled run imports materials, suppliers and persons in that order.
             Browse and manually sync the mirrored records under ERP MDM.
           </p>

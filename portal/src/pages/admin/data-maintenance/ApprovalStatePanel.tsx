@@ -76,13 +76,13 @@ export function ApprovalStatePanel({ system, entity, recordId, currentStep }: Pr
   const roleOptions = steps.map((s) => s.role)
 
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-3">
+    <div className="rounded-lg border border-warning-line bg-warning-soft/40 p-3">
       <p className="mb-2 text-sm font-medium">Approval State (manual override)</p>
       <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-xs text-neutral-600">Current step
+        <label className="flex flex-col gap-1 text-xs text-fg-secondary">Current step
           {steps.length > 0 ? (
             <select value={step} onChange={(e) => setStep(e.target.value)}
-              className="h-8 rounded border border-neutral-300 px-2 text-sm">
+              className="h-8 rounded border border-line-strong px-2 text-sm">
               <option value="">— leave unchanged —</option>
               {steps.map((s, i) => (
                 <option key={s.id} value={String(i)}>{i} — {s.label || s.role}</option>
@@ -90,37 +90,37 @@ export function ApprovalStatePanel({ system, entity, recordId, currentStep }: Pr
             </select>
           ) : (
             <input value={step} onChange={(e) => setStep(e.target.value)}
-              className="h-8 w-20 rounded border border-neutral-300 px-2 text-sm" />
+              className="h-8 w-20 rounded border border-line-strong px-2 text-sm" />
           )}
         </label>
-        <label className="flex flex-col gap-1 text-xs text-neutral-600">Assign task to role
+        <label className="flex flex-col gap-1 text-xs text-fg-secondary">Assign task to role
           <select value={role} onChange={(e) => setRole(e.target.value)}
-            className="h-8 rounded border border-neutral-300 px-2 text-sm">
+            className="h-8 rounded border border-line-strong px-2 text-sm">
             <option value="">— engine decides —</option>
             {roleOptions.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
         </label>
         <button type="button" onClick={apply} disabled={busy}
-          className="h-8 rounded bg-amber-600 px-3 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50">
+          className="h-8 rounded bg-warning-solid px-3 text-sm font-semibold text-white hover:bg-warning-700 disabled:opacity-50">
           {busy ? 'Applying…' : 'Apply'}
         </button>
       </div>
 
       {openTasks !== null && (
-        <p className="mt-2 text-xs text-neutral-600">
+        <p className="mt-2 text-xs text-fg-secondary">
           Open approval tasks: <span className="font-medium">{openTasks}</span>
           {openTasks === 0 && ' — nobody can approve this document right now.'}
         </p>
       )}
       {chainError && (
-        <p className="mt-1 text-xs text-amber-700">
+        <p className="mt-1 text-xs text-warning-fg">
           Workflow chain unavailable ({chainError}) — the step box falls back to free text.
         </p>
       )}
       {msg && (
-        <p className={`mt-2 text-xs ${warn ? 'font-medium text-amber-800' : 'text-neutral-700'}`}>{msg}</p>
+        <p className={`mt-2 text-xs ${warn ? 'font-medium text-warning-fg' : 'text-fg-secondary'}`}>{msg}</p>
       )}
-      <p className="mt-1 text-[11px] text-neutral-400">
+      <p className="mt-1 text-2xs text-fg-muted">
         Changing the step closes the stale approve task and asks the approval engine to issue
         the one for the new step. Completed tasks and approval history are untouched.
       </p>

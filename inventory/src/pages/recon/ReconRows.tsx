@@ -37,8 +37,8 @@ function CauseBadge({ c, showAmt }: { c: ReconCause; showAmt: boolean }) {
     + (showAmt && c.amount != null ? `, amount ${formatMoney(c.amount)}` : '')
   return (
     <span title={title} className={cn(
-      'inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium',
-      c.code === 'batch_label' ? 'bg-purple-50 text-purple-700' : 'bg-neutral-100 text-neutral-600',
+      'inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-2xs font-medium',
+      c.code === 'batch_label' ? 'bg-cat4-soft text-cat4-fg' : 'bg-surface-sunken text-fg-secondary',
     )}>
       {shortLabel(c.code, c.label)}
     </span>
@@ -56,25 +56,25 @@ function DiffCell({ diff, unexplained, tol, money = false }: {
   const fmt = money ? formatMoney : formatQty
   const bad = absExceeds(unexplained, tol)
   return (
-    <td className={cn(numCls, diff != null && isZero(diff) && 'text-neutral-300', bad && 'text-danger-600 font-medium')}>
+    <td className={cn(numCls, diff != null && isZero(diff) && 'text-fg-faint', bad && 'text-danger-fg font-medium')}>
       {fmt(diff)}
-      {bad && <div className="text-[10px] font-normal">unexplained {fmt(unexplained)}</div>}
+      {bad && <div className="text-2xs font-normal">unexplained {fmt(unexplained)}</div>}
     </td>
   )
 }
 
 function Num({ v, money = false, uom }: { v: string | null; money?: boolean; uom?: string | null }) {
   return (
-    <td className={cn(numCls, isNegative(v) && 'text-danger-600', v != null && isZero(v) && 'text-neutral-400')}>
+    <td className={cn(numCls, isNegative(v) && 'text-danger-fg', v != null && isZero(v) && 'text-fg-muted')}>
       {money ? formatMoney(v) : formatQty(v)}{uom !== undefined && v != null && <Uom uom={uom} />}
     </td>
   )
 }
 
 export function MatchBadge({ match }: { match: ReconBatchGroup['match'] }) {
-  if (match === 'both') return <Badge variant="success" className="text-[10px]">Both</Badge>
-  if (match === 'wms_only') return <Badge variant="warning" className="text-[10px]">WMS only</Badge>
-  return <Badge variant="warning" className="text-[10px]">NC only</Badge>
+  if (match === 'both') return <Badge variant="success" className="text-2xs">Both</Badge>
+  if (match === 'wms_only') return <Badge variant="warning" className="text-2xs">WMS only</Badge>
+  return <Badge variant="warning" className="text-2xs">NC only</Badge>
 }
 
 /** The batch number to trace a batch group by: its first NC batch, else the
@@ -108,9 +108,9 @@ function Expansion({ r, showAmt, tolQty, date, onShowBatches }: {
   return (
     <div className="flex flex-col gap-4">
       <section className="flex flex-col gap-1.5">
-        <h3 className="text-xs font-semibold text-neutral-700">Causes</h3>
-        {r.categories.length === 0 ? <p className="text-xs text-neutral-400">None — no cause rule applied to this material.</p> : (
-          <div className="overflow-x-auto rounded-md border border-neutral-200 bg-white">
+        <h3 className="text-xs font-semibold text-fg-secondary">Causes</h3>
+        {r.categories.length === 0 ? <p className="text-xs text-fg-muted">None — no cause rule applied to this material.</p> : (
+          <div className="overflow-x-auto rounded-md border border-line bg-surface">
             <table className="min-w-full text-xs">
               <thead className={thCls}>
                 <tr>
@@ -122,7 +122,7 @@ function Expansion({ r, showAmt, tolQty, date, onShowBatches }: {
               </thead>
               <tbody>
                 {r.categories.map((c, i) => (
-                  <tr key={`${c.code}-${i}`} className="border-t border-neutral-100">
+                  <tr key={`${c.code}-${i}`} className="border-t border-line-subtle">
                     <td className="px-3 py-1.5">{c.label}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap">{SIDE_LABELS[c.side]}</td>
                     <td className={subNumCls}>{formatQty(c.qty)}</td>
@@ -137,9 +137,9 @@ function Expansion({ r, showAmt, tolQty, date, onShowBatches }: {
 
       {showAmt && r.gl_by_source && (
         <section className="flex flex-col gap-1.5">
-          <h3 className="text-xs font-semibold text-neutral-700">GL entries this year not from costing, by source</h3>
-          {sources.length === 0 ? <p className="text-xs text-neutral-400">None</p> : (
-            <div className="w-fit overflow-x-auto rounded-md border border-neutral-200 bg-white">
+          <h3 className="text-xs font-semibold text-fg-secondary">GL entries this year not from costing, by source</h3>
+          {sources.length === 0 ? <p className="text-xs text-fg-muted">None</p> : (
+            <div className="w-fit overflow-x-auto rounded-md border border-line bg-surface">
               <table className="text-xs">
                 <thead className={thCls}>
                   <tr>
@@ -149,7 +149,7 @@ function Expansion({ r, showAmt, tolQty, date, onShowBatches }: {
                 </thead>
                 <tbody>
                   {sources.map(([src, v]) => (
-                    <tr key={src} className="border-t border-neutral-100">
+                    <tr key={src} className="border-t border-line-subtle">
                       <td className="px-3 py-1.5 font-mono">{src}</td>
                       <td className={subNumCls}>{formatMoney(v)}</td>
                     </tr>
@@ -162,9 +162,9 @@ function Expansion({ r, showAmt, tolQty, date, onShowBatches }: {
       )}
 
       <section className="flex flex-col gap-1.5">
-        <h3 className="text-xs font-semibold text-neutral-700">Batches</h3>
+        <h3 className="text-xs font-semibold text-fg-secondary">Batches</h3>
         {!r.batch_expandable ? (
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-fg-muted">
             NC stopped tracking this material by batch{r.no_batch_since ? ` on ${formatDate(r.no_batch_since)}` : ''} — material level only.
           </p>
         ) : r.batches === undefined ? (
@@ -173,9 +173,9 @@ function Expansion({ r, showAmt, tolQty, date, onShowBatches }: {
             Show batches
           </button>
         ) : r.batches.length === 0 ? (
-          <p className="text-xs text-neutral-400">No batch has a balance on this date.</p>
+          <p className="text-xs text-fg-muted">No batch has a balance on this date.</p>
         ) : (
-          <div className="max-h-96 overflow-auto rounded-md border border-neutral-200 bg-white">
+          <div className="max-h-96 overflow-auto rounded-md border border-line bg-surface">
             <table className="min-w-full text-xs">
               <thead className={cn(thCls, 'sticky top-0')}>
                 <tr>
@@ -194,7 +194,7 @@ function Expansion({ r, showAmt, tolQty, date, onShowBatches }: {
               </thead>
               <tbody>
                 {r.batches.map((b, i) => (
-                  <tr key={`${b.label}-${i}`} className="border-t border-neutral-100">
+                  <tr key={`${b.label}-${i}`} className="border-t border-line-subtle">
                     <td className="px-3 py-1.5 font-mono">{b.label}</td>
                     <td className="px-3 py-1.5 font-mono">{b.nc_batches.join(', ') || '—'}</td>
                     <td className="px-3 py-1.5 font-mono">{b.wms_lots.join(', ') || '—'}</td>
@@ -205,7 +205,7 @@ function Expansion({ r, showAmt, tolQty, date, onShowBatches }: {
                     <td className={subNumCls}>{formatQty(b.ic_other)}</td>
                     <td className={subNumCls}>{formatQty(b.ia)}</td>
                     <td className={cn(subNumCls,
-                      absExceeds(b.diff_ic_wms, tolQty) ? 'font-medium text-danger-600' : 'text-neutral-400')}>
+                      absExceeds(b.diff_ic_wms, tolQty) ? 'font-medium text-danger-fg' : 'text-fg-muted')}>
                       {formatQty(b.diff_ic_wms)}
                     </td>
                     <td className="px-3 py-1.5">
@@ -237,9 +237,9 @@ export function ReconRowView({ r, showAmt, tol, date, open, onToggle, onShowBatc
   const elsewhere = sumTitle(r)
   return (
     <>
-      <tr className={cn('cursor-pointer border-t border-neutral-100 hover:bg-neutral-50', open && 'bg-neutral-50')}
+      <tr className={cn('cursor-pointer border-t border-line-subtle hover:bg-surface-subtle', open && 'bg-surface-subtle')}
         onClick={onToggle}>
-        <td className="w-8 px-2 py-2 text-neutral-400">
+        <td className="w-8 px-2 py-2 text-fg-muted">
           <button type="button" aria-expanded={open} aria-label={open ? 'Hide details' : 'Show details'}
             onClick={(e) => { e.stopPropagation(); onToggle() }}>
             {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -249,14 +249,14 @@ export function ReconRowView({ r, showAmt, tol, date, open, onToggle, onShowBatc
           <div className="flex flex-col gap-1">
             <span>
               <MaterialCell code={r.material_code} name={r.material_name} />
-              {r.uom && <span className="ml-1.5 text-[11px] text-neutral-400">{r.uom}</span>}
+              {r.uom && <span className="ml-1.5 text-2xs text-fg-muted">{r.uom}</span>}
             </span>
             <span className="flex flex-wrap gap-1">
-              {!r.in_nc && <Badge variant="warning" className="text-[10px]">Not in NC</Badge>}
-              {r.no_batch_since && <Badge variant="neutral" className="text-[10px]">NC stopped {formatDate(r.no_batch_since)}</Badge>}
+              {!r.in_nc && <Badge variant="warning" className="text-2xs">Not in NC</Badge>}
+              {r.no_batch_since && <Badge variant="neutral" className="text-2xs">NC stopped {formatDate(r.no_batch_since)}</Badge>}
               {r.unit_check === 'mismatch' && (
                 <span title="Information only — quantities are still compared as recorded"
-                  className="inline-flex rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
+                  className="inline-flex rounded-full bg-surface-sunken px-2 py-0.5 text-2xs font-medium text-fg-muted">
                   units differ: NC {r.uom ?? '—'} / WMS {r.wms_uom ?? '—'}
                 </span>
               )}
@@ -265,10 +265,10 @@ export function ReconRowView({ r, showAmt, tol, date, open, onToggle, onShowBatc
         </td>
         <Num v={r.wms} />
         <Num v={r.ic_wms} />
-        <td className={cn(numCls, isZero(elsewhere.sum) && 'text-neutral-400')} title={elsewhere.title}>
+        <td className={cn(numCls, isZero(elsewhere.sum) && 'text-fg-muted')} title={elsewhere.title}>
           {formatQty(elsewhere.sum)}
         </td>
-        <td className={cn(numCls, isNegative(r.ic_total) && 'text-danger-600')}
+        <td className={cn(numCls, isNegative(r.ic_total) && 'text-danger-fg')}
           title={isZero(r.ic_transient) ? undefined : `Includes ${formatQty(r.ic_transient)} in transient / other / unclassified warehouses`}>
           {formatQty(r.ic_total)}
         </td>
@@ -294,7 +294,7 @@ export function ReconRowView({ r, showAmt, tol, date, open, onToggle, onShowBatc
         </td>
       </tr>
       {open && (
-        <tr className="border-t border-neutral-100 bg-neutral-50/60">
+        <tr className="border-t border-line-subtle bg-surface-subtle/60">
           <td colSpan={cols} className="px-4 py-3">
             <Expansion r={r} showAmt={showAmt} tolQty={tol.qty} date={date} onShowBatches={onShowBatches} />
           </td>
@@ -320,10 +320,10 @@ export function GlExtraTable({ title, hint, rows, showAmt }: {
 }) {
   return (
     <section className="flex flex-col gap-1.5">
-      <h2 className="text-sm font-semibold text-neutral-800">{title}</h2>
-      <p className="text-[11px] text-neutral-400">{hint}</p>
-      {rows.length === 0 ? <p className="text-xs text-neutral-400">None</p> : (
-        <div className="w-fit max-w-full overflow-x-auto rounded-md border border-neutral-200 bg-white">
+      <h2 className="text-sm font-semibold text-fg">{title}</h2>
+      <p className="text-2xs text-fg-muted">{hint}</p>
+      {rows.length === 0 ? <p className="text-xs text-fg-muted">None</p> : (
+        <div className="w-fit max-w-full overflow-x-auto rounded-md border border-line bg-surface">
           <table className="text-xs">
             <thead className={thCls}>
               <tr>
@@ -335,7 +335,7 @@ export function GlExtraTable({ title, hint, rows, showAmt }: {
             </thead>
             <tbody>
               {rows.map((g) => (
-                <tr key={g.account_code} className="border-t border-neutral-100">
+                <tr key={g.account_code} className="border-t border-line-subtle">
                   <td className="px-3 py-1.5 font-mono">{g.account_code}</td>
                   <td className="px-3 py-1.5">{g.account_name ?? '—'}</td>
                   <td className={subNumCls}>{formatQty(g.qty)}</td>

@@ -36,12 +36,12 @@ function SectionCard({ title, icon, children }: {
   children: React.ReactNode
 }) {
   return (
-    <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-neutral-100">
+    <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-line-subtle">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
           {icon}
         </div>
-        <h2 className="text-sm font-semibold text-neutral-900">{title}</h2>
+        <h2 className="text-sm font-semibold text-fg">{title}</h2>
       </div>
       <div className="px-6 py-5">{children}</div>
     </div>
@@ -81,14 +81,14 @@ function PersonalInfoSection({ profile }: { profile: ApiUser }) {
     teamsAccount !== (profile.teams_account ?? '') ||
     notifChannel !== (profile.notification_channel ?? 'email_only')
 
-  const inputCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+  const inputCls = 'h-10 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {/* Full name */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Display Name</label>
+          <label className="text-xs font-medium text-fg-secondary">Display Name</label>
           <input
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
@@ -99,30 +99,30 @@ function PersonalInfoSection({ profile }: { profile: ApiUser }) {
 
         {/* Email (read-only) */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Email Address</label>
-          <div className="h-10 flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm text-neutral-500">
-            <Mail className="h-3.5 w-3.5 text-neutral-400 shrink-0" />
+          <label className="text-xs font-medium text-fg-secondary">Email Address</label>
+          <div className="h-10 flex items-center gap-2 rounded-lg border border-line bg-surface-subtle px-3 text-sm text-fg-muted">
+            <Mail className="h-3.5 w-3.5 text-fg-muted shrink-0" />
             {profile.email}
           </div>
-          <p className="text-xs text-neutral-400">Email cannot be changed. Contact your admin.</p>
+          <p className="text-xs text-fg-muted">Email cannot be changed. Contact your admin.</p>
         </div>
 
         {/* Role (read-only) */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Role</label>
-          <div className="h-10 flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm text-neutral-500">
-            <Building2 className="h-3.5 w-3.5 text-neutral-400 shrink-0" />
+          <label className="text-xs font-medium text-fg-secondary">Role</label>
+          <div className="h-10 flex items-center gap-2 rounded-lg border border-line bg-surface-subtle px-3 text-sm text-fg-muted">
+            <Building2 className="h-3.5 w-3.5 text-fg-muted shrink-0" />
             {ROLE_LABELS[profile.role] ?? profile.role}
           </div>
         </div>
 
         {/* Teams account */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">
-            Microsoft Teams Account <span className="font-normal text-neutral-400">(optional)</span>
+          <label className="text-xs font-medium text-fg-secondary">
+            Microsoft Teams Account <span className="font-normal text-fg-muted">(optional)</span>
           </label>
           <div className="relative">
-            <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-400" />
+            <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-fg-muted" />
             <input
               value={teamsAccount}
               onChange={(e) => setTeamsAccount(e.target.value)}
@@ -131,13 +131,13 @@ function PersonalInfoSection({ profile }: { profile: ApiUser }) {
               type="email"
             />
           </div>
-          <p className="text-xs text-neutral-400">Used for Teams approval notifications when configured.</p>
+          <p className="text-xs text-fg-muted">Used for Teams approval notifications when configured.</p>
         </div>
 
         {/* Notification channel */}
         <div className="flex flex-col gap-1.5 sm:col-span-2">
-          <label className="text-xs font-medium text-neutral-700 flex items-center gap-1.5">
-            <Bell className="h-3.5 w-3.5 text-neutral-400" />
+          <label className="text-xs font-medium text-fg-secondary flex items-center gap-1.5">
+            <Bell className="h-3.5 w-3.5 text-fg-muted" />
             Notification Channel
           </label>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -150,28 +150,28 @@ function PersonalInfoSection({ profile }: { profile: ApiUser }) {
                   'rounded-lg border px-3 py-2.5 text-xs font-medium text-left transition-colors',
                   notifChannel === value
                     ? 'border-primary-600 bg-primary-50 text-primary-700'
-                    : 'border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50',
+                    : 'border-line bg-surface text-fg-secondary hover:bg-surface-subtle',
                 )}
               >
                 {label}
               </button>
             ))}
           </div>
-          <p className="text-xs text-neutral-400">
+          <p className="text-xs text-fg-muted">
             How you receive approval reminders and status updates. "None" hides outbound notifications — tasks still appear in your inbox.
           </p>
         </div>
       </div>
 
       {mutation.error && (
-        <p className="text-xs text-danger-600 bg-danger-50 rounded-lg px-3 py-2">
+        <p className="text-xs text-danger-fg bg-danger-soft rounded-lg px-3 py-2">
           {mutation.error instanceof Error ? mutation.error.message : 'Save failed'}
         </p>
       )}
 
       <div className="flex items-center justify-end gap-3">
         {saved && (
-          <span className="flex items-center gap-1 text-xs text-success-600">
+          <span className="flex items-center gap-1 text-xs text-success-fg">
             <CheckCircle2 className="h-3.5 w-3.5" /> Saved
           </span>
         )}
@@ -255,43 +255,43 @@ function SignatureSection({ profile }: { profile: ApiUser }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-neutral-500">
+      <p className="text-sm text-fg-muted">
         Used to sign documents in UniOps — a PO sign-off stamps this image onto
         the order. It is copied onto each document as you sign it, so changing it
         here never alters anything you have already signed.
       </p>
 
       {profile.signature_image ? (
-        <div className="flex items-center gap-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+        <div className="flex items-center gap-4 rounded-xl border border-line bg-surface-subtle p-4">
           <img
             src={profile.signature_image}
             alt="Your saved signature"
             className="h-14 max-w-[240px] object-contain"
           />
           <div className="flex-1">
-            <p className="text-xs font-medium text-neutral-700">Current signature</p>
-            <p className="text-xs text-neutral-400">Draw or upload a new one below to replace it.</p>
+            <p className="text-xs font-medium text-fg-secondary">Current signature</p>
+            <p className="text-xs text-fg-muted">Draw or upload a new one below to replace it.</p>
           </div>
           <button
             type="button"
             onClick={() => mutation.mutate('')}
             disabled={mutation.isPending}
-            className="flex items-center gap-1.5 text-xs font-medium text-neutral-500 hover:text-danger-600 disabled:opacity-40"
+            className="flex items-center gap-1.5 text-xs font-medium text-fg-muted hover:text-danger-fg disabled:opacity-40"
           >
             <Trash2 className="h-3.5 w-3.5" /> Remove
           </button>
         </div>
       ) : (
-        <div className="flex items-start gap-2 rounded-xl border border-warning-200 bg-warning-50 px-4 py-3">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-600" />
-          <p className="text-xs text-warning-700">
+        <div className="flex items-start gap-2 rounded-xl border border-warning-line bg-warning-soft px-4 py-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-fg" />
+          <p className="text-xs text-warning-fg">
             You have no signature yet. Anything waiting for your signature cannot
             be signed until you add one.
           </p>
         </div>
       )}
 
-      <div className="flex gap-1 self-start rounded-lg bg-neutral-100 p-1">
+      <div className="flex gap-1 self-start rounded-lg bg-surface-sunken p-1">
         {([['draw', 'Draw', PenLine], ['upload', 'Upload', Upload]] as const).map(
           ([value, label, Icon]) => (
             <button
@@ -300,7 +300,7 @@ function SignatureSection({ profile }: { profile: ApiUser }) {
               onClick={() => { setMode(value); setError('') }}
               className={cn(
                 'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                mode === value ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-700',
+                mode === value ? 'bg-surface text-fg shadow-sm' : 'text-fg-muted hover:text-fg-secondary',
               )}
             >
               <Icon className="h-3.5 w-3.5" /> {label}
@@ -318,28 +318,28 @@ function SignatureSection({ profile }: { profile: ApiUser }) {
             type="file"
             accept="image/png,image/jpeg"
             onChange={(e) => onPickFile(e.target.files?.[0])}
-            className="block w-full text-xs text-neutral-500 file:mr-3 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-2 file:text-xs file:font-medium file:text-primary-700 hover:file:bg-primary-100"
+            className="block w-full text-xs text-fg-muted file:mr-3 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-2 file:text-xs file:font-medium file:text-primary-700 hover:file:bg-primary-100"
           />
           {uploaded && (
-            <div className="flex items-center gap-4 rounded-lg border border-dashed border-neutral-300 bg-white p-3">
+            <div className="flex items-center gap-4 rounded-lg border border-dashed border-line-strong bg-surface p-3">
               <img src={uploaded} alt="Signature to be saved" className="h-14 max-w-[240px] object-contain" />
               <button
                 type="button"
                 onClick={() => { setUploaded(null); if (fileRef.current) fileRef.current.value = '' }}
-                className="text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                className="text-xs font-medium text-fg-muted hover:text-fg-secondary"
               >
                 Choose another
               </button>
             </div>
           )}
-          <p className="text-xs text-neutral-400">
+          <p className="text-xs text-fg-muted">
             PNG or JPEG under 200 KB. A PNG with a transparent background prints best.
           </p>
         </div>
       )}
 
       {error && (
-        <p className="flex items-center gap-1.5 text-xs text-danger-600">
+        <p className="flex items-center gap-1.5 text-xs text-danger-fg">
           <AlertTriangle className="h-3.5 w-3.5" /> {error}
         </p>
       )}
@@ -350,7 +350,7 @@ function SignatureSection({ profile }: { profile: ApiUser }) {
           Save Signature
         </Button>
         {saved && (
-          <span className="flex items-center gap-1.5 text-sm text-success-600">
+          <span className="flex items-center gap-1.5 text-sm text-success-fg">
             <CheckCircle2 className="h-4 w-4" /> Saved
           </span>
         )}
@@ -395,13 +395,13 @@ function ChangePasswordSection() {
   }
 
   const inputCls = (err?: string) => cn(
-    'h-10 w-full rounded-lg border bg-white px-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-    err ? 'border-danger-500' : 'border-neutral-300'
+    'h-10 w-full rounded-lg border bg-surface px-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
+    err ? 'border-danger-solid' : 'border-line-strong'
   )
 
   const ToggleBtn = ({ show, onToggle }: { show: boolean; onToggle: () => void }) => (
     <button type="button" onClick={onToggle}
-      className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600">
+      className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
       {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
     </button>
   )
@@ -409,7 +409,7 @@ function ChangePasswordSection() {
   return (
     <div className="flex flex-col gap-4">
       {success && (
-        <div className="flex items-center gap-2 rounded-lg bg-success-50 border border-success-200 px-4 py-3 text-sm text-success-700">
+        <div className="flex items-center gap-2 rounded-lg bg-success-soft border border-success-line px-4 py-3 text-sm text-success-fg">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           Password changed successfully.
         </div>
@@ -418,38 +418,38 @@ function ChangePasswordSection() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {/* Current */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Current Password *</label>
+          <label className="text-xs font-medium text-fg-secondary">Current Password *</label>
           <div className="relative">
             <input type={showCurrent ? 'text' : 'password'} value={currentPwd}
               onChange={(e) => { setCurrentPwd(e.target.value); setErrors((p) => ({ ...p, currentPwd: '' })) }}
               className={inputCls(errors.currentPwd)} placeholder="Current password" />
             <ToggleBtn show={showCurrent} onToggle={() => setShowCurrent((v) => !v)} />
           </div>
-          {errors.currentPwd && <p className="text-xs text-danger-600">{errors.currentPwd}</p>}
+          {errors.currentPwd && <p className="text-xs text-danger-fg">{errors.currentPwd}</p>}
         </div>
 
         {/* New */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">New Password *</label>
+          <label className="text-xs font-medium text-fg-secondary">New Password *</label>
           <div className="relative">
             <input type={showNew ? 'text' : 'password'} value={newPwd}
               onChange={(e) => { setNewPwd(e.target.value); setErrors((p) => ({ ...p, newPwd: '' })) }}
               className={inputCls(errors.newPwd)} placeholder="Min. 8 characters" />
             <ToggleBtn show={showNew} onToggle={() => setShowNew((v) => !v)} />
           </div>
-          {errors.newPwd && <p className="text-xs text-danger-600">{errors.newPwd}</p>}
+          {errors.newPwd && <p className="text-xs text-danger-fg">{errors.newPwd}</p>}
         </div>
 
         {/* Confirm */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Confirm New Password *</label>
+          <label className="text-xs font-medium text-fg-secondary">Confirm New Password *</label>
           <div className="relative">
             <input type={showConfirm ? 'text' : 'password'} value={confirmPwd}
               onChange={(e) => { setConfirmPwd(e.target.value); setErrors((p) => ({ ...p, confirmPwd: '' })) }}
               className={inputCls(errors.confirmPwd)} placeholder="Re-enter password" />
             <ToggleBtn show={showConfirm} onToggle={() => setShowConfirm((v) => !v)} />
           </div>
-          {errors.confirmPwd && <p className="text-xs text-danger-600">{errors.confirmPwd}</p>}
+          {errors.confirmPwd && <p className="text-xs text-danger-fg">{errors.confirmPwd}</p>}
         </div>
       </div>
 
@@ -484,16 +484,16 @@ function MfaSection({ mfaEnabled }: { mfaEnabled: boolean }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-5 py-4">
+      <div className="flex items-center justify-between rounded-lg border border-line bg-surface-subtle px-5 py-4">
         <div className="flex items-center gap-3">
           {isEnabled
-            ? <ShieldCheck className="h-5 w-5 text-success-600" />
-            : <ShieldOff className="h-5 w-5 text-neutral-400" />}
+            ? <ShieldCheck className="h-5 w-5 text-success-fg" />
+            : <ShieldOff className="h-5 w-5 text-fg-muted" />}
           <div>
-            <p className="text-sm font-medium text-neutral-900">
+            <p className="text-sm font-medium text-fg">
               Email MFA — {isEnabled ? 'Enabled' : 'Disabled'}
             </p>
-            <p className="text-xs text-neutral-500 mt-0.5">
+            <p className="text-xs text-fg-muted mt-0.5">
               {isEnabled
                 ? 'A verification code is sent to your email on each sign-in.'
                 : 'No MFA challenge at sign-in. Enable for extra security.'}
@@ -505,24 +505,24 @@ function MfaSection({ mfaEnabled }: { mfaEnabled: boolean }) {
           disabled={mutation.isPending}
           className={cn(
             'relative h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none disabled:opacity-50',
-            isEnabled ? 'bg-primary-600' : 'bg-neutral-300'
+            isEnabled ? 'bg-primary-600' : 'bg-surface-strong'
           )}
           aria-label={isEnabled ? 'Disable MFA' : 'Enable MFA'}
         >
           <span className={cn(
-            'absolute top-1 left-1 h-4 w-4 rounded-full bg-white shadow transition-transform',
+            'absolute top-1 left-1 h-4 w-4 rounded-full bg-surface shadow transition-transform',
             isEnabled ? 'translate-x-5' : 'translate-x-0'
           )} />
         </button>
       </div>
 
       {msg && (
-        <p className="text-xs text-neutral-600 bg-neutral-50 rounded-lg border border-neutral-200 px-3 py-2">{msg}</p>
+        <p className="text-xs text-fg-secondary bg-surface-subtle rounded-lg border border-line px-3 py-2">{msg}</p>
       )}
 
-      <div className="rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 flex items-start gap-2.5">
-        <AlertTriangle className="h-4 w-4 text-warning-600 shrink-0 mt-0.5" />
-        <p className="text-xs text-warning-700">
+      <div className="rounded-lg border border-warning-line bg-warning-soft px-4 py-3 flex items-start gap-2.5">
+        <AlertTriangle className="h-4 w-4 text-warning-fg shrink-0 mt-0.5" />
+        <p className="text-xs text-warning-fg">
           MFA may be enforced company-wide by your System Admin regardless of this setting.
           Contact your admin if you cannot disable MFA.
         </p>
@@ -547,7 +547,7 @@ export default function ProfilePage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-fg-muted" />
       </div>
     )
   }
@@ -555,7 +555,7 @@ export default function ProfilePage() {
   if (!profile) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <p className="text-sm text-neutral-400">Could not load profile. Please refresh.</p>
+        <p className="text-sm text-fg-muted">Could not load profile. Please refresh.</p>
       </div>
     )
   }
@@ -563,8 +563,8 @@ export default function ProfilePage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Page header */}
-      <div className="rounded-lg border border-neutral-200 bg-white px-6 py-4">
-        <button onClick={() => navigate(-1)} className="mb-3 flex items-center gap-1.5 text-sm text-neutral-500 hover:text-primary-600">
+      <div className="rounded-lg border border-line bg-surface px-6 py-4">
+        <button onClick={() => navigate(-1)} className="mb-3 flex items-center gap-1.5 text-sm text-fg-muted hover:text-primary-600">
           <ArrowLeft className="h-4 w-4" />
           Back
         </button>
@@ -574,8 +574,8 @@ export default function ProfilePage() {
             {initials}
           </div>
           <div>
-            <h1 className="text-xl font-bold text-neutral-900">{profile.full_name}</h1>
-            <p className="text-sm text-neutral-500">{ROLE_LABELS[profile.role] ?? profile.role} · {profile.email}</p>
+            <h1 className="text-xl font-bold text-fg">{profile.full_name}</h1>
+            <p className="text-sm text-fg-muted">{ROLE_LABELS[profile.role] ?? profile.role} · {profile.email}</p>
           </div>
         </div>
       </div>

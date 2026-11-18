@@ -35,9 +35,9 @@ export function VisitAttachments({ visitId, readOnly }: Props) {
   }
 
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-4">
+    <div className="rounded-lg border border-line bg-surface p-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-fg-muted">
           <Paperclip className="h-4 w-4" />
           Attachments
         </div>
@@ -54,7 +54,7 @@ export function VisitAttachments({ visitId, readOnly }: Props) {
               type="button"
               onClick={onPick}
               disabled={upload.isPending}
-              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-2.5 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-2.5 py-1 text-xs text-fg-secondary hover:bg-surface-subtle disabled:opacity-50"
             >
               {upload.isPending
                 ? <Loader2 className="h-3 w-3 animate-spin" />
@@ -66,22 +66,22 @@ export function VisitAttachments({ visitId, readOnly }: Props) {
       </div>
 
       {error && (
-        <p className="mt-2 flex items-center gap-1 text-xs text-danger-600">
+        <p className="mt-2 flex items-center gap-1 text-xs text-danger-fg">
           <AlertCircle className="h-3 w-3" />
           {error}
         </p>
       )}
 
       {isLoading && (
-        <p className="mt-2 text-xs text-neutral-400">Loading…</p>
+        <p className="mt-2 text-xs text-fg-muted">Loading…</p>
       )}
 
       {!isLoading && (data?.length ?? 0) === 0 && (
-        <p className="mt-2 text-xs text-neutral-400">No attachments yet.</p>
+        <p className="mt-2 text-xs text-fg-muted">No attachments yet.</p>
       )}
 
       {!!data?.length && (
-        <ul className="mt-2 divide-y divide-neutral-100">
+        <ul className="mt-2 divide-y divide-line-subtle">
           {data.map((att) => (
             <AttachmentRow key={att.id} att={att} />
           ))}
@@ -95,7 +95,7 @@ function AttachmentRow({ att }: { att: VisitAttachment }) {
   return (
     <li className="flex items-center justify-between gap-3 py-2 text-sm">
       <div className="flex min-w-0 items-center gap-2">
-        <FileText className="h-4 w-4 shrink-0 text-neutral-400" />
+        <FileText className="h-4 w-4 shrink-0 text-fg-muted" />
         <div className="min-w-0">
           <button
             type="button"
@@ -104,7 +104,7 @@ function AttachmentRow({ att }: { att: VisitAttachment }) {
           >
             {att.original_filename}
           </button>
-          <p className="text-[11px] text-neutral-400">
+          <p className="text-2xs text-fg-muted">
             {formatBytes(att.file_size)} ·{' '}
             {att.created_at ? formatDateTime(att.created_at) : 'unknown date'}
           </p>

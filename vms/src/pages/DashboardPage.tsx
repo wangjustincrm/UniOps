@@ -42,8 +42,8 @@ export default function DashboardPage() {
     <div>
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Dashboard</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <h1 className="text-2xl font-bold text-fg">Dashboard</h1>
+          <p className="mt-1 text-sm text-fg-muted">
             {new Date().toLocaleDateString('en-CA', { weekday: 'long', timeZone: displayTimeZone() })}, {formatDate(new Date())}
           </p>
         </div>
@@ -81,7 +81,7 @@ export default function DashboardPage() {
           label="On-site now"
           value={overview.data?.on_site_count}
           loading={overview.isLoading}
-          accent="bg-emerald-50 text-success-600"
+          accent="bg-success-soft text-success-fg"
           link="/active"
         />
         <Card
@@ -97,7 +97,7 @@ export default function DashboardPage() {
           label="Past 7 days"
           value={overview.data?.week_count}
           loading={overview.isLoading}
-          accent="bg-neutral-100 text-neutral-700"
+          accent="bg-surface-sunken text-fg-secondary"
           link="/all"
         />
         <Card
@@ -105,7 +105,7 @@ export default function DashboardPage() {
           label="Overdue"
           value={overview.data?.overdue_count}
           loading={overview.isLoading}
-          accent="bg-amber-50 text-amber-700"
+          accent="bg-warning-soft text-warning-fg"
           highlight={!!overview.data?.overdue_count}
         />
       </div>
@@ -113,7 +113,7 @@ export default function DashboardPage() {
       {/* Compliance metrics (PRD §6.5.5) */}
       <div className="mt-6">
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-neutral-900">
+          <h2 className="text-base font-semibold text-fg">
             Compliance — this month
           </h2>
           <Link
@@ -143,14 +143,14 @@ export default function DashboardPage() {
             suffix={compliance.data?.gmp_pass_rate == null ? undefined : '%'}
             fallback="n/a"
             loading={compliance.isLoading}
-            accent="bg-emerald-50 text-success-600"
+            accent="bg-success-soft text-success-fg"
           />
           <Card
             icon={<FileWarning className="h-5 w-5" />}
             label="Unreturned badges"
             value={compliance.data?.unreturned_badges}
             loading={compliance.isLoading}
-            accent="bg-amber-50 text-amber-700"
+            accent="bg-warning-soft text-warning-fg"
             highlight={!!compliance.data?.unreturned_badges}
           />
           <Card
@@ -158,7 +158,7 @@ export default function DashboardPage() {
             label="After-hours today"
             value={compliance.data?.after_hours_visits_today}
             loading={compliance.isLoading}
-            accent="bg-neutral-100 text-neutral-700"
+            accent="bg-surface-sunken text-fg-secondary"
           />
         </div>
       </div>
@@ -166,16 +166,16 @@ export default function DashboardPage() {
       {/* Today's table */}
       <div className="mt-8">
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-neutral-900">Today’s appointments</h2>
+          <h2 className="text-base font-semibold text-fg">Today’s appointments</h2>
           <Link to="/all" className="inline-flex items-center gap-1 text-xs text-primary-700 hover:underline">
             All visits
             <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-          <table className="min-w-full divide-y divide-neutral-200">
-            <thead className="bg-neutral-50 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500">
+        <div className="overflow-hidden rounded-lg border border-line bg-surface">
+          <table className="min-w-full divide-y divide-line">
+            <thead className="bg-surface-subtle text-left text-xs font-semibold uppercase tracking-wider text-fg-muted">
               <tr>
                 <SortTh label="Visit" sortKey="visitor" sort={sort} onSort={onSort} className="px-4 py-2.5" />
                 <SortTh label="Planned arrival" sortKey="planned_arrival" sort={sort} onSort={onSort} className="px-4 py-2.5 hidden md:table-cell" />
@@ -183,13 +183,13 @@ export default function DashboardPage() {
                 <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-2.5" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-100 bg-white text-sm">
+            <tbody className="divide-y divide-line-subtle bg-surface text-sm">
               {todayVisits.isLoading && (
-                <tr><td colSpan={4} className="px-4 py-6 text-center text-neutral-400">Loading…</td></tr>
+                <tr><td colSpan={4} className="px-4 py-6 text-center text-fg-muted">Loading…</td></tr>
               )}
               {!todayVisits.isLoading && (todayVisits.data?.items.length ?? 0) === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-12 text-center text-neutral-400">
+                  <td colSpan={4} className="px-4 py-12 text-center text-fg-muted">
                     No visits scheduled for today.
                   </td>
                 </tr>
@@ -203,10 +203,10 @@ export default function DashboardPage() {
                         : `Visit #${v.id.slice(0, 8)}`}
                     </Link>
                     {v.visitor?.company_name && (
-                      <p className="text-xs text-neutral-500">{v.visitor.company_name}</p>
+                      <p className="text-xs text-fg-muted">{v.visitor.company_name}</p>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 hidden md:table-cell text-neutral-600">
+                  <td className="px-4 py-2.5 hidden md:table-cell text-fg-secondary">
                     {formatDateTime(v.planned_arrival)}
                   </td>
                   <td className="px-4 py-2.5">
@@ -222,7 +222,7 @@ export default function DashboardPage() {
           {/* Summary widget, not a list: it shows the first 50 of today's
               visits; the full paged list lives on Today's Visits. */}
           {(todayVisits.data?.total ?? 0) > (todayVisits.data?.items.length ?? 0) && (
-            <div className="border-t border-neutral-100 px-4 py-2.5 text-xs text-neutral-500">
+            <div className="border-t border-line-subtle px-4 py-2.5 text-xs text-fg-muted">
               Showing {todayVisits.data?.items.length} of {todayVisits.data?.total} visits today ·{' '}
               <Link to="/" className="text-primary-700 hover:underline">View all</Link>
             </div>
@@ -250,22 +250,22 @@ function Card({
 }) {
   const inner = (
     <div className={
-      'rounded-lg border bg-white p-4 transition-shadow ' +
+      'rounded-lg border bg-surface p-4 transition-shadow ' +
       (link ? 'cursor-pointer hover:shadow-md ' : '') +
       (highlight
-        ? 'border-amber-300 ring-1 ring-amber-200'
-        : 'border-neutral-200')
+        ? 'border-warning-line ring-1 ring-warning-line'
+        : 'border-line')
     }>
       <div className="flex items-center justify-between">
         <span className={'inline-flex h-8 w-8 items-center justify-center rounded-md ' + accent}>
           {icon}
         </span>
-        {link && <ArrowRight className="h-4 w-4 text-neutral-300" />}
+        {link && <ArrowRight className="h-4 w-4 text-fg-faint" />}
       </div>
-      <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+      <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-fg-muted">
         {label}
       </p>
-      <p className="mt-1 text-3xl font-bold text-neutral-900 tabular-nums">
+      <p className="mt-1 text-3xl font-bold text-fg tabular-nums">
         {loading
           ? '–'
           : value === undefined

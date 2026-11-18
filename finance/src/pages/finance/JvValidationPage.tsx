@@ -26,8 +26,8 @@ import { cn, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { JvDetailModal } from './JvDetailModal'
 
-const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const linkBtn = 'text-xs font-medium text-[#085E5E] hover:underline'
+const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const linkBtn = 'text-xs font-medium text-primary-700 hover:underline'
 
 interface RuleSummary {
   rule: string; label: string
@@ -168,22 +168,22 @@ export default function JvValidationPage() {
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <input type="month" value={from} onChange={(e) => { setFrom(e.target.value); setOffset(0) }}
                  className={cn(inputCls, 'w-40')} />
-          <span className="text-sm text-neutral-400">to</span>
+          <span className="text-sm text-fg-muted">to</span>
           <input type="month" value={to} onChange={(e) => { setTo(e.target.value); setOffset(0) }}
                  className={cn(inputCls, 'w-40')} />
           <button onClick={exportCsv}
-                  className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50">
+                  className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-line-strong px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle">
             <Download className="h-4 w-4" /> Export CSV
           </button>
         </div>
 
-        <p className="mb-3 text-xs text-neutral-500">
+        <p className="mb-3 text-xs text-fg-muted">
           Payroll, depreciation and shut-down loss are not validated here — they are
           kept out of the per-cost-center dashboard on purpose.
         </p>
 
         {droppedLines > 0 && (
-          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="mb-4 rounded-lg border border-warning-line bg-warning-soft px-4 py-3 text-sm text-warning-fg">
             <strong>{droppedLines.toLocaleString()} posted lines ({money(String(droppedDebit))} CAD debit)</strong>{' '}
             are missing from the Budget Dashboard for this range. Cost centers will not add
             up to the company total until these are placed.
@@ -191,12 +191,12 @@ export default function JvValidationPage() {
         )}
 
         {loadingSummary && !summary ? (
-          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
+          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
         ) : (
-          <div className="mb-5 overflow-hidden rounded-lg border border-neutral-200">
+          <div className="mb-5 overflow-hidden rounded-lg border border-line">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
+                <tr className="border-b border-line-subtle bg-surface-subtle text-xs text-fg-muted">
                   <th className="px-3 py-2 text-left font-medium">Finding</th>
                   <th className="px-3 py-2 text-right font-medium">Lines</th>
                   <th className="px-3 py-2 text-right font-medium">Vouchers</th>
@@ -205,7 +205,7 @@ export default function JvValidationPage() {
                 </tr>
               </thead>
               <tbody>
-                <tr className={cn('border-t border-neutral-100', rule === null && 'bg-primary-50/60')}>
+                <tr className={cn('border-t border-line-subtle', rule === null && 'bg-primary-50/60')}>
                   <td className="px-3 py-2">
                     <button className={linkBtn} onClick={() => pick(null)}>All findings</button>
                   </td>
@@ -216,10 +216,10 @@ export default function JvValidationPage() {
                 </tr>
                 {(summary?.rules ?? []).map((r) => (
                   <tr key={r.rule}
-                      className={cn('border-t border-neutral-100', rule === r.rule && 'bg-primary-50/60',
-                                    r.lines === 0 && 'text-neutral-400')}>
+                      className={cn('border-t border-line-subtle', rule === r.rule && 'bg-primary-50/60',
+                                    r.lines === 0 && 'text-fg-muted')}>
                     <td className="px-3 py-2">
-                      <button className={cn(linkBtn, r.lines === 0 && 'text-neutral-400 hover:no-underline')}
+                      <button className={cn(linkBtn, r.lines === 0 && 'text-fg-muted hover:no-underline')}
                               disabled={r.lines === 0} onClick={() => pick(r.rule)}
                               title={RULE_HELP[r.rule]}>
                         {r.label}
@@ -230,15 +230,15 @@ export default function JvValidationPage() {
                     <td className="px-3 py-2 text-right font-mono">{money(r.debit)}</td>
                     <td className="px-3 py-2">
                       <span className={cn('rounded px-2 py-0.5 text-xs font-medium',
-                        r.drops_from_dashboard ? 'bg-red-50 text-red-700'
-                          : 'bg-amber-50 text-amber-800')}>
+                        r.drops_from_dashboard ? 'bg-danger-soft text-danger-fg'
+                          : 'bg-warning-soft text-warning-fg')}>
                         {r.drops_from_dashboard ? 'Dropped from dashboard' : 'Check placement'}
                       </span>
                       {/* A mapping gap is fixed by adding a row; a missing
                           placement rule is not fixable at all until a person
                           decides where the spend belongs. Different queue. */}
                       {r.needs_decision && r.lines > 0 && (
-                        <span className="ml-1.5 rounded bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700">
+                        <span className="ml-1.5 rounded bg-cat4-soft px-2 py-0.5 text-xs font-medium text-cat4-fg">
                           Needs a decision
                         </span>
                       )}
@@ -251,16 +251,16 @@ export default function JvValidationPage() {
         )}
 
         {rule && (
-          <p className="mb-3 rounded-lg bg-neutral-50 px-3 py-2 text-xs leading-relaxed text-neutral-600">
+          <p className="mb-3 rounded-lg bg-surface-subtle px-3 py-2 text-xs leading-relaxed text-fg-secondary">
             {RULE_HELP[rule]}
           </p>
         )}
 
-        <div className="overflow-hidden rounded-lg border border-neutral-200">
+        <div className="overflow-hidden rounded-lg border border-line">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
+                <tr className="border-b border-line-subtle bg-surface-subtle text-xs text-fg-muted">
                   <SortTh label="Voucher" sortKey="jv_number" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
                   <SortTh label="Account" sortKey="account_code" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
                   <SortTh label="Debit" sortKey="debit" sort={sort} onSort={onSort} align="right" className="px-3 py-2 font-medium" />
@@ -274,37 +274,37 @@ export default function JvValidationPage() {
               <tbody>
                 {loadingLines && !lines && (
                   <tr><td colSpan={8} className="px-3 py-6 text-center">
-                    <Loader2 className="mx-auto h-4 w-4 animate-spin text-neutral-400" /></td></tr>
+                    <Loader2 className="mx-auto h-4 w-4 animate-spin text-fg-muted" /></td></tr>
                 )}
                 {lines && lines.rows.length === 0 && (
-                  <tr><td colSpan={8} className="px-3 py-6 text-center text-xs text-neutral-400">
+                  <tr><td colSpan={8} className="px-3 py-6 text-center text-xs text-fg-muted">
                     Nothing flagged in this range. Every posted line reaches a budget cell.
                   </td></tr>
                 )}
                 {(lines?.rows ?? []).map((r, i) => (
                   <tr key={`${r.jv_id}-${r.line_no}-${r.rule}`}
-                      className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
+                      className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
                     <td className="px-3 py-2">
                       <span className="font-mono text-xs">{r.jv_number}</span>
-                      <span className="ml-1 text-xs text-neutral-400">#{r.line_no}</span>
-                      <div className="text-xs text-neutral-500">{r.fiscal_period}</div>
+                      <span className="ml-1 text-xs text-fg-muted">#{r.line_no}</span>
+                      <div className="text-xs text-fg-muted">{r.fiscal_period}</div>
                     </td>
                     <td className="px-3 py-2">
                       <span className="font-mono text-xs">{r.account_code}</span>
-                      <div className="text-xs text-neutral-500">{r.category}</div>
+                      <div className="text-xs text-fg-muted">{r.category}</div>
                     </td>
                     <td className="px-3 py-2 text-right font-mono">{money(r.debit)}</td>
                     <td className="px-3 py-2">
                       {r.cost_center_code
                         ? <span className="font-mono text-xs">{r.cost_center_code}</span>
-                        : <span className="text-xs text-red-600">(none)</span>}
+                        : <span className="text-xs text-danger-fg">(none)</span>}
                       {r.expected_cost_center_code && r.expected_cost_center_code !== r.cost_center_code && (
-                        <div className="text-xs text-neutral-500">
+                        <div className="text-xs text-fg-muted">
                           would be <span className="font-mono">{r.expected_cost_center_code}</span>
                         </div>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-xs text-neutral-600">
+                    <td className="px-3 py-2 text-xs text-fg-secondary">
                       <span className="font-mono">{r.nc_cost_center_code ?? '—'}</span>
                       {' · '}
                       <span className="font-mono">{r.department_code ?? '—'}</span>
@@ -313,10 +313,10 @@ export default function JvValidationPage() {
                       {r.budget_account_code
                         ? <span className="font-mono">{r.budget_account_code}</span>
                         : r.income_expense_text
-                          ? <span className="font-mono text-red-600">{r.income_expense_text}</span>
-                          : <span className="text-red-600">(none)</span>}
+                          ? <span className="font-mono text-danger-fg">{r.income_expense_text}</span>
+                          : <span className="text-danger-fg">(none)</span>}
                     </td>
-                    <td className="px-3 py-2 text-xs text-neutral-600">{r.label}</td>
+                    <td className="px-3 py-2 text-xs text-fg-secondary">{r.label}</td>
                     <td className="px-3 py-2 text-right">
                       <button className={linkBtn} onClick={() => setJvId(r.jv_id)}>Voucher</button>
                     </td>
@@ -326,7 +326,7 @@ export default function JvValidationPage() {
             </table>
           </div>
           {lines && lines.total > PAGE && (
-            <div className="flex items-center justify-between border-t border-neutral-100 px-3 py-2 text-xs text-neutral-500">
+            <div className="flex items-center justify-between border-t border-line-subtle px-3 py-2 text-xs text-fg-muted">
               <span>{offset + 1}–{Math.min(offset + PAGE, lines.total)} of {lines.total.toLocaleString()}</span>
               <span className="flex gap-2">
                 <button className={linkBtn} disabled={offset === 0}

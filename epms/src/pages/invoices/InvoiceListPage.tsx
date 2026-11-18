@@ -54,12 +54,12 @@ const MATCHABLE_PO_STATUSES = ['issued', 'approved', 'partially_received', 'full
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<InvoiceStatus, { label: string; variant: 'neutral' | 'warning' | 'info' | 'success' | 'danger'; dot: string }> = {
-  unmatched:    { label: 'Unmatched',       variant: 'warning', dot: 'bg-warning-500'  },
-  matched:      { label: 'Matched',         variant: 'success', dot: 'bg-success-600'  },
-  exception:    { label: 'Exception',       variant: 'danger',  dot: 'bg-danger-600'   },
+  unmatched:    { label: 'Unmatched',       variant: 'warning', dot: 'bg-warning-solid'  },
+  matched:      { label: 'Matched',         variant: 'success', dot: 'bg-success-solid'  },
+  exception:    { label: 'Exception',       variant: 'danger',  dot: 'bg-danger-solid'   },
   match_review: { label: 'Pending Review',  variant: 'info',    dot: 'bg-primary-500'  },
-  approved:     { label: 'Approved',        variant: 'success', dot: 'bg-success-600'  },
-  paid:         { label: 'Paid',            variant: 'neutral', dot: 'bg-neutral-400'  },
+  approved:     { label: 'Approved',        variant: 'success', dot: 'bg-success-solid'  },
+  paid:         { label: 'Paid',            variant: 'neutral', dot: 'bg-fg-faint'  },
 }
 
 function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
@@ -78,18 +78,18 @@ function SlaBadge({ uploadedAt }: { uploadedAt: string }) {
   const { days, status } = computeSla(uploadedAt)
   if (status === 'overdue')
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-danger-50 px-2 py-0.5 text-xs font-medium text-danger-700">
+      <span className="inline-flex items-center gap-1 rounded-full bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger-fg">
         <AlertTriangle className="h-3 w-3" /> {days}d overdue
       </span>
     )
   if (status === 'warning')
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-warning-50 px-2 py-0.5 text-xs font-medium text-warning-700">
+      <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning-fg">
         <Clock className="h-3 w-3" /> Due today
       </span>
     )
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-success-50 px-2 py-0.5 text-xs font-medium text-success-700">
+    <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success-fg">
       <CheckCircle2 className="h-3 w-3" /> On time
     </span>
   )
@@ -726,7 +726,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
     }
   }
 
-  const fieldErr = (val: string) => submitted && !val.trim() ? 'border-danger-400' : 'border-neutral-300'
+  const fieldErr = (val: string) => submitted && !val.trim() ? 'border-danger-400' : 'border-line-strong'
 
   // ── Courier invoice: the vendor is a carrier's ─────────────────────────────
   // Rule (2026-10-20): a carrier's invoice is always a courier invoice. Its
@@ -788,21 +788,21 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
     return (
       <>
         {createPortal(
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
-            <div className="w-full max-w-3xl max-h-[92vh] rounded-2xl bg-white shadow-2xl flex flex-col">
-              <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4 shrink-0">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
+            <div className="w-full max-w-3xl max-h-[92vh] rounded-2xl bg-surface shadow-2xl flex flex-col">
+              <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4 shrink-0">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-success-50">
-                    <CheckCircle2 className="h-5 w-5 text-success-600" />
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-success-soft">
+                    <CheckCircle2 className="h-5 w-5 text-success-fg" />
                   </div>
                   <div>
-                    <h2 className="text-sm font-semibold text-neutral-900">Allocate to Purchase Order</h2>
-                    <p className="text-xs text-neutral-400">
+                    <h2 className="text-sm font-semibold text-fg">Allocate to Purchase Order</h2>
+                    <p className="text-xs text-fg-muted">
                       Invoice {createdInv.vendor_invoice_number} uploaded — confirm line allocations to complete the match
                     </p>
                   </div>
                 </div>
-                <button onClick={finishUnmatched} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100">
+                <button onClick={finishUnmatched} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken">
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -816,7 +816,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                   onSubmit={handleAllocSubmit}
                 />
                 {matchInvoiceMutation.isError && (
-                  <div className="flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+                  <div className="flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
                     <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                     {matchInvoiceMutation.error instanceof Error ? matchInvoiceMutation.error.message : 'Match failed'}
                   </div>
@@ -847,24 +847,24 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
       <div className={cn(
-        'w-full rounded-2xl bg-white shadow-2xl flex flex-col',
+        'w-full rounded-2xl bg-surface shadow-2xl flex flex-col',
         file ? 'max-w-[90rem] h-[92vh]' : 'max-w-xl max-h-[92vh]'
       )}>
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4 shrink-0">
+        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4 shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-50">
               <Upload className="h-5 w-5 text-primary-600" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-neutral-900">
+              <h2 className="text-sm font-semibold text-fg">
                 {queueTotal > 1 ? `Upload Invoice ${queueIndex + 1} of ${queueTotal}` : 'Upload Invoice'}
-                {courierCarrier && <span className="ml-2 rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-primary-700">Courier invoice</span>}
-                {forDirectPa && !courierCarrier && <span className="ml-2 rounded-full bg-warning-50 px-2 py-0.5 text-[11px] font-medium text-warning-700">Direct PA</span>}
+                {courierCarrier && <span className="ml-2 rounded-full bg-primary-50 px-2 py-0.5 text-2xs font-medium text-primary-700">Courier invoice</span>}
+                {forDirectPa && !courierCarrier && <span className="ml-2 rounded-full bg-warning-soft px-2 py-0.5 text-2xs font-medium text-warning-fg">Direct PA</span>}
               </h2>
-              <p className="text-xs text-neutral-400">
+              <p className="text-xs text-fg-muted">
                 {queueTotal > 1
                   ? `${file?.name ?? ''} · ${createdIds.length} of ${queueTotal} created so far`
                   : courierCarrier ? 'Each line is matched to a registered tracking number and cost center after saving'
@@ -873,7 +873,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -887,14 +887,14 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
             onClick={() => fileRef.current?.click()}
             className={cn(
               'flex flex-col items-center gap-2 rounded-xl border-2 border-dashed py-6 cursor-pointer transition-colors shrink-0',
-              dragging ? 'border-primary-400 bg-primary-50' : 'border-neutral-200 hover:border-primary-300 hover:bg-neutral-50'
+              dragging ? 'border-primary-400 bg-primary-50' : 'border-line hover:border-primary-300 hover:bg-surface-subtle'
             )}
           >
             {file ? (
-              <div className="flex items-center gap-2 text-sm text-neutral-700">
+              <div className="flex items-center gap-2 text-sm text-fg-secondary">
                 <FileText className="h-5 w-5 text-primary-600" />
                 <span className="font-medium">{file.name}</span>
-                <span className="text-neutral-400">{file.size}</span>
+                <span className="text-fg-muted">{file.size}</span>
                 {parsing && (
                   <span className="inline-flex items-center gap-1 text-xs text-primary-600">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -903,32 +903,32 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                 )}
                 <button
                   onClick={(e) => { e.stopPropagation(); setFile(null); setAiFields(new Set()); setVendorHint(null); setParseError(null) }}
-                  className="text-neutral-300 hover:text-danger-500"
+                  className="text-fg-faint hover:text-danger-fg"
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
             ) : (
               <>
-                <Upload className={cn('h-8 w-8', dragging ? 'text-primary-500' : 'text-neutral-300')} />
-                <p className="text-sm text-neutral-500">
+                <Upload className={cn('h-8 w-8', dragging ? 'text-primary-500' : 'text-fg-faint')} />
+                <p className="text-sm text-fg-muted">
                   <span className="font-medium text-primary-600">Click to upload</span> or drag & drop
                 </p>
-                <p className="text-xs text-neutral-400">{INVOICE_FILE_RULE.hint}</p>
+                <p className="text-xs text-fg-muted">{INVOICE_FILE_RULE.hint}</p>
               </>
             )}
             <input ref={fileRef} type="file" accept={INVOICE_FILE_RULE.accept} className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void handleFile(f) }} />
           </div>
           {fileError && (
-            <p role="alert" className="flex shrink-0 items-center gap-1.5 text-xs text-danger-600">
+            <p role="alert" className="flex shrink-0 items-center gap-1.5 text-xs text-danger-fg">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />{fileError}
             </p>
           )}
 
           {/* AI parse error */}
           {parseError && (
-            <div className="flex shrink-0 items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-700">
+            <div className="flex shrink-0 items-start gap-2 rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-fg">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>
                 {parseErrKind === 'service'
@@ -977,8 +977,8 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
           <>
           {/* Document type */}
           {showCreditNoteBanner ? (
-            <div className="mb-4 rounded-lg border border-warning-300 bg-warning-50 p-3">
-              <p className="text-sm font-medium text-warning-800">
+            <div className="mb-4 rounded-lg border border-warning-line bg-warning-soft p-3">
+              <p className="text-sm font-medium text-warning-fg">
                 This looks like a Credit Note — the document total is negative.
               </p>
               <div className="mt-2 flex gap-4 text-sm">
@@ -1000,7 +1000,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
               </div>
             </div>
           ) : (
-            <p className="mb-4 text-xs text-neutral-500">
+            <p className="mb-4 text-xs text-fg-muted">
               Document type: {docType === 'credit_note' ? 'Credit Note' : 'Invoice'}
               {' · '}
               <button type="button" className="text-primary-600 underline"
@@ -1015,12 +1015,12 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
             <div className="grid grid-cols-2 gap-3">
               {/* Vendor search */}
               <div className="flex flex-col gap-1 relative">
-                <label className="text-xs font-medium text-neutral-700 flex items-center">
-                  Vendor <span className="text-danger-600 ml-0.5">*</span>
+                <label className="text-xs font-medium text-fg-secondary flex items-center">
+                  Vendor <span className="text-danger-fg ml-0.5">*</span>
                   {aiFields.has('vendorName') && <AiBadge />}
                 </label>
                 <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-400" />
+                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-muted" />
                   <input
                     type="text"
                     placeholder="Search vendor by name or code…"
@@ -1029,14 +1029,14 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                     onChange={(e) => { setVendorQuery(e.target.value); setSelectedVendor(null); setVendorOpen(true) }}
                     className={cn(
                       'h-9 w-full rounded-lg border pl-8 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      isDuplicate ? 'border-danger-400' : submitted && !selectedVendor ? 'border-danger-400' : 'border-neutral-300'
+                      isDuplicate ? 'border-danger-400' : submitted && !selectedVendor ? 'border-danger-400' : 'border-line-strong'
                     )}
                   />
                   {selectedVendor && (
                     <button
                       type="button"
                       onClick={() => { setSelectedVendor(null); setVendorQuery(''); setVendorHint(null) }}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -1045,11 +1045,11 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                 {vendorHint && !selectedVendor && (
                   <p className="text-xs text-primary-500 mt-0.5">{vendorHint}</p>
                 )}
-                {submitted && !selectedVendor && <p className="text-xs text-danger-600">Select a vendor</p>}
+                {submitted && !selectedVendor && <p className="text-xs text-danger-fg">Select a vendor</p>}
                 {vendorOpen && !selectedVendor && (
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setVendorOpen(false)} />
-                    <div className="absolute top-full left-0 z-20 mt-1 w-full rounded-lg border border-neutral-200 bg-white py-1 shadow-lg max-h-44 overflow-y-auto">
+                    <div className="absolute top-full left-0 z-20 mt-1 w-full rounded-lg border border-line bg-surface py-1 shadow-lg max-h-44 overflow-y-auto">
                       {vendorOptions.map((v) => (
                         <button
                           key={v.id}
@@ -1057,20 +1057,20 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                           onClick={() => { setSelectedVendor({ id: v.id, name: v.name, code: v.code }); setVendorOpen(false); setVendorQuery(''); setVendorHint(null); setAiFields((prev) => { const n = new Set(prev); n.delete('vendorName'); return n }) }}
                           className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-primary-50 text-left"
                         >
-                          <span className="font-mono text-xs rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-600">{v.code}</span>
+                          <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
                           {v.name}
                         </button>
                       ))}
                       {vendorOptions.length === 0 && (
-                        <p className="px-3 py-2 text-xs text-neutral-400">No vendors found</p>
+                        <p className="px-3 py-2 text-xs text-fg-muted">No vendors found</p>
                       )}
                     </div>
                   </>
                 )}
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-neutral-700 flex items-center">
-                  {docType === 'credit_note' ? 'Credit Note #' : 'Vendor Invoice #'} <span className="text-danger-600 ml-0.5">*</span>
+                <label className="text-xs font-medium text-fg-secondary flex items-center">
+                  {docType === 'credit_note' ? 'Credit Note #' : 'Vendor Invoice #'} <span className="text-danger-fg ml-0.5">*</span>
                   {aiFields.has('vendorInvoiceNumber') && <AiBadge />}
                 </label>
                 <input value={vendorInvoiceNumber}
@@ -1084,7 +1084,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
               </div>
             </div>
             {isDuplicate && (
-              <div className="flex items-center gap-2 rounded-lg border border-danger-300 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+              <div className="flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                 <span>{dup.detail}</span>
               </div>
@@ -1093,9 +1093,9 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
 
           {/* PO Number */}
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-700 flex items-center">
+            <label className="text-xs font-medium text-fg-secondary flex items-center">
               PO Number
-              <span className="ml-1 text-xs font-normal text-neutral-400">(optional — enter to auto-match)</span>
+              <span className="ml-1 text-xs font-normal text-fg-muted">(optional — enter to auto-match)</span>
               {aiFields.has('poNumber') && <AiBadge />}
             </label>
             <input
@@ -1105,16 +1105,16 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                 setAiFields((prev) => { const n = new Set(prev); n.delete('poNumber'); return n })
               }}
               placeholder="e.g. PO-ABC-2603-01"
-              className="h-9 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+              className="h-9 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
             />
             {docType === 'credit_note' && (
-              <p className="mt-1 text-xs text-neutral-500">
+              <p className="mt-1 text-xs text-fg-muted">
                 Optional — reference only. Credit notes are not 3-way matched.
               </p>
             )}
             {docType === 'invoice' && poNumber.trim() && (
               matchedPo ? (
-                <div className="flex items-center gap-2 rounded-lg border border-success-300 bg-success-50 px-3 py-2 text-xs text-success-700">
+                <div className="flex items-center gap-2 rounded-lg border border-success-line bg-success-soft px-3 py-2 text-xs text-success-fg">
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                   <span>
                     <span className="font-semibold">{matchedPo.number}</span>
@@ -1124,7 +1124,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                   </span>
                 </div>
               ) : (
-                <p className="text-xs text-warning-600 flex items-center gap-1">
+                <p className="text-xs text-warning-fg flex items-center gap-1">
                   <AlertTriangle className="h-3 w-3" />
                   PO not found or not in an issued/approved state — invoice will be queued as unmatched
                 </p>
@@ -1135,8 +1135,8 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
           {/* Dates */}
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-700 flex items-center">
-                Invoice Date <span className="text-danger-600 ml-0.5">*</span>
+              <label className="text-xs font-medium text-fg-secondary flex items-center">
+                Invoice Date <span className="text-danger-fg ml-0.5">*</span>
                 {aiFields.has('invoiceDate') && <AiBadge />}
               </label>
               <input type="date" value={invoiceDate}
@@ -1144,11 +1144,11 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                   setInvoiceDate(e.target.value)
                   setAiFields((prev) => { const n = new Set(prev); n.delete('invoiceDate'); return n })
                 }}
-                className="h-9 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+                className="h-9 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
             </div>
             {docType === 'invoice' && (
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-neutral-700 flex items-center">
+                <label className="text-xs font-medium text-fg-secondary flex items-center">
                   Due Date
                   {aiFields.has('dueDate') && <AiBadge />}
                 </label>
@@ -1158,7 +1158,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                     setNetTermsHint(null)
                     setAiFields((prev) => { const n = new Set(prev); n.delete('dueDate'); return n })
                   }}
-                  className="h-9 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+                  className="h-9 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
                 {netTermsHint && (
                   <p className="text-xs text-primary-500 mt-0.5">{netTermsHint}</p>
                 )}
@@ -1169,8 +1169,8 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
           {/* Amounts */}
           <div className="grid grid-cols-3 gap-3">
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-700 flex items-center">
-                {docType === 'credit_note' ? 'Credit Amount (pre-tax)' : 'Amount (pre-tax)'} <span className="text-danger-600 ml-0.5">*</span>
+              <label className="text-xs font-medium text-fg-secondary flex items-center">
+                {docType === 'credit_note' ? 'Credit Amount (pre-tax)' : 'Amount (pre-tax)'} <span className="text-danger-fg ml-0.5">*</span>
                 {aiFields.has('amount') && <AiBadge />}
               </label>
               <input type="number" min={0} step={0.01} value={amount}
@@ -1183,10 +1183,10 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                 }}
                 placeholder="0.00"
                 className={cn('h-9 px-3 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                  submitted && amtNum <= 0 ? 'border-danger-400' : 'border-neutral-300')} />
+                  submitted && amtNum <= 0 ? 'border-danger-400' : 'border-line-strong')} />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-700 flex items-center">
+              <label className="text-xs font-medium text-fg-secondary flex items-center">
                 {docType === 'credit_note' ? 'Credit Tax' : 'Tax Amount'}
                 {aiFields.has('taxAmount') && <AiBadge />}
               </label>
@@ -1197,10 +1197,10 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                   setAiFields((prev) => { const n = new Set(prev); n.delete('taxAmount'); return n })
                 }}
                 placeholder="0.00"
-                className="h-9 px-3 rounded-lg border border-neutral-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600" />
+                className="h-9 px-3 rounded-lg border border-line-strong text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600" />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-700 flex items-center">
+              <label className="text-xs font-medium text-fg-secondary flex items-center">
                 Currency
                 {aiFields.has('currency') && <AiBadge />}
               </label>
@@ -1209,7 +1209,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                   setCurrency(e.target.value)
                   setAiFields((prev) => { const n = new Set(prev); n.delete('currency'); return n })
                 }}
-                className="h-9 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
+                className="h-9 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
                 {['CAD','USD','EUR','RMB'].map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
@@ -1220,25 +1220,25 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
           {(total > 0 || docTotal !== null || totalRepairs.length > 0 || totalNotes.length > 0) && (
             <div className={cn(
               'rounded-lg border px-4 py-2.5 text-sm',
-              totalMismatch ? 'border-danger-300 bg-danger-50' : 'border-neutral-200 bg-neutral-50',
+              totalMismatch ? 'border-danger-line bg-danger-soft' : 'border-line bg-surface-subtle',
             )}>
               <div className="flex justify-between">
-                <span className="text-neutral-500">Total Amount</span>
-                <span className="font-mono font-semibold text-neutral-900">{formatAmount(total, currency)}</span>
+                <span className="text-fg-muted">Total Amount</span>
+                <span className="font-mono font-semibold text-fg">{formatAmount(total, currency)}</span>
               </div>
 
               {docTotal !== null && (
                 <div className="mt-1 flex justify-between text-xs">
-                  <span className="text-neutral-500">Total printed on the document</span>
-                  <span className={cn('font-mono', totalMismatch ? 'font-semibold text-danger-700' : 'text-neutral-500')}>
+                  <span className="text-fg-muted">Total printed on the document</span>
+                  <span className={cn('font-mono', totalMismatch ? 'font-semibold text-danger-fg' : 'text-fg-muted')}>
                     {formatAmount(docTotal, currency)}
                   </span>
                 </div>
               )}
 
               {totalMismatch && (
-                <div className="mt-2 border-t border-danger-200 pt-2">
-                  <p className="flex items-start gap-1.5 text-xs text-danger-700">
+                <div className="mt-2 border-t border-danger-line pt-2">
+                  <p className="flex items-start gap-1.5 text-xs text-danger-fg">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span>
                       Off by <span className="font-mono font-semibold">{formatAmount(Math.abs(totalDiff ?? 0), currency)}</span>
@@ -1254,7 +1254,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                     >
                       Set Amount so the total matches
                     </button>
-                    <label className="flex items-center gap-1.5 text-xs text-neutral-600">
+                    <label className="flex items-center gap-1.5 text-xs text-fg-secondary">
                       <input type="checkbox" checked={totalOverride}
                              onChange={(e) => setTotalOverride(e.target.checked)} />
                       The amounts above are correct — upload anyway
@@ -1264,19 +1264,19 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
               )}
 
               {!totalMismatch && totalRepairs.length > 0 && (
-                <div className="mt-2 border-t border-neutral-200 pt-2">
-                  <p className="text-xs font-medium text-neutral-600">
+                <div className="mt-2 border-t border-line pt-2">
+                  <p className="text-xs font-medium text-fg-secondary">
                     Adjusted so the total matches the document:
                   </p>
-                  <ul className="mt-1 list-disc pl-4 text-xs text-neutral-500">
+                  <ul className="mt-1 list-disc pl-4 text-xs text-fg-muted">
                     {totalRepairs.map((r, i) => <li key={i}>{r}</li>)}
                   </ul>
                 </div>
               )}
 
               {totalNotes.length > 0 && (
-                <div className="mt-2 border-t border-warning-200 pt-2">
-                  <ul className="list-disc pl-4 text-xs text-warning-700">
+                <div className="mt-2 border-t border-warning-line pt-2">
+                  <ul className="list-disc pl-4 text-xs text-warning-fg">
                     {totalNotes.map((n, i) => <li key={i}>{n}</li>)}
                   </ul>
                 </div>
@@ -1287,9 +1287,9 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
           {/* Line Items */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-neutral-700 flex items-center">
+              <label className="text-xs font-medium text-fg-secondary flex items-center">
                 Line Items
-                <span className="ml-1 text-xs font-normal text-neutral-400">(optional)</span>
+                <span className="ml-1 text-xs font-normal text-fg-muted">(optional)</span>
                 {aiFields.has('lineItems') && <AiBadge />}
               </label>
               <button
@@ -1302,26 +1302,26 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
               </button>
             </div>
             {lineItems.length > 0 ? (
-              <div className="rounded-lg border border-neutral-200 overflow-hidden">
+              <div className="rounded-lg border border-line overflow-hidden">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="bg-neutral-50 border-b border-neutral-200">
-                      <th className="px-2 py-2 text-left font-semibold text-neutral-500">Description</th>
-                      <th className="px-2 py-2 text-right font-semibold text-neutral-500 w-14">Qty</th>
-                      <th className="px-2 py-2 text-left font-semibold text-neutral-500 w-16">Unit</th>
-                      <th className="px-2 py-2 text-right font-semibold text-neutral-500 w-20">Unit Price</th>
-                      <th className="px-2 py-2 text-right font-semibold text-neutral-500 w-20">Total</th>
+                    <tr className="bg-surface-subtle border-b border-line">
+                      <th className="px-2 py-2 text-left font-semibold text-fg-muted">Description</th>
+                      <th className="px-2 py-2 text-right font-semibold text-fg-muted w-14">Qty</th>
+                      <th className="px-2 py-2 text-left font-semibold text-fg-muted w-16">Unit</th>
+                      <th className="px-2 py-2 text-right font-semibold text-fg-muted w-20">Unit Price</th>
+                      <th className="px-2 py-2 text-right font-semibold text-fg-muted w-20">Total</th>
                       <th className="w-8" />
                     </tr>
                   </thead>
                   <tbody>
                     {lineItems.map((item, idx) => (
-                      <tr key={idx} className="border-b border-neutral-100 last:border-0">
+                      <tr key={idx} className="border-b border-line-subtle last:border-0">
                         <td className="px-2 py-1.5">
                           <input
                             value={item.description}
                             onChange={(e) => setLineItems((prev) => prev.map((it, i) => i === idx ? { ...it, description: e.target.value } : it))}
-                            className="w-full h-7 px-2 rounded border border-neutral-200 text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
+                            className="w-full h-7 px-2 rounded border border-line text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
                             placeholder="Description"
                           />
                         </td>
@@ -1329,14 +1329,14 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                           <input
                             type="number" min={0} step={0.001} value={item.quantity}
                             onChange={(e) => setLineItems((prev) => prev.map((it, i) => i === idx ? withLineTotal({ ...it, quantity: parseFloat(e.target.value) || 0 }) : it))}
-                            className="w-full h-7 px-2 rounded border border-neutral-200 text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-500"
+                            className="w-full h-7 px-2 rounded border border-line text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-500"
                           />
                         </td>
                         <td className="px-2 py-1.5">
                           <input
                             value={item.unit ?? ''}
                             onChange={(e) => setLineItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit: e.target.value || null } : it))}
-                            className="w-full h-7 px-2 rounded border border-neutral-200 text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
+                            className="w-full h-7 px-2 rounded border border-line text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
                             placeholder="unit"
                           />
                         </td>
@@ -1344,21 +1344,21 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                           <input
                             type="number" min={0} step={0.01} value={item.unit_price}
                             onChange={(e) => setLineItems((prev) => prev.map((it, i) => i === idx ? withLineTotal({ ...it, unit_price: parseFloat(e.target.value) || 0 }) : it))}
-                            className="w-full h-7 px-2 rounded border border-neutral-200 text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-500"
+                            className="w-full h-7 px-2 rounded border border-line text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-500"
                           />
                         </td>
                         <td className="px-2 py-1.5">
                           <input
                             type="number" min={0} step={0.01} value={item.line_total}
                             onChange={(e) => setLineItems((prev) => prev.map((it, i) => i === idx ? { ...it, line_total: parseFloat(e.target.value) || 0 } : it))}
-                            className="w-full h-7 px-2 rounded border border-neutral-200 text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-500"
+                            className="w-full h-7 px-2 rounded border border-line text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-500"
                           />
                         </td>
                         <td className="px-2 py-1.5 text-center">
                           <button
                             type="button"
                             onClick={() => setLineItems((prev) => prev.filter((_, i) => i !== idx))}
-                            className="text-neutral-300 hover:text-danger-500"
+                            className="text-fg-faint hover:text-danger-fg"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -1369,7 +1369,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                 </table>
               </div>
             ) : (
-              <div className="rounded-lg border border-dashed border-neutral-200 px-4 py-3 text-xs text-neutral-400 text-center">
+              <div className="rounded-lg border border-dashed border-line px-4 py-3 text-xs text-fg-muted text-center">
                 No line items · AI will extract them from the invoice, or add manually
               </div>
             )}
@@ -1377,10 +1377,10 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
 
           {/* Notes */}
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-700">Notes (optional)</label>
+            <label className="text-xs font-medium text-fg-secondary">Notes (optional)</label>
             <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
               placeholder="Any additional notes..."
-              className="px-3 py-2 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none" />
+              className="px-3 py-2 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none" />
           </div>
           </>
           )}
@@ -1392,16 +1392,16 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
         </div>
 
         {/* Footer */}
-        <div className={cn('border-t border-neutral-100 px-6 py-4 flex-col gap-2 shrink-0',
+        <div className={cn('border-t border-line-subtle px-6 py-4 flex-col gap-2 shrink-0',
                            pendingSplit || courierCarrier ? 'hidden' : 'flex')}>
           {queueRemaining > 0 && (
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-fg-muted">
               {queueRemaining} more {queueRemaining === 1 ? 'invoice' : 'invoices'} from this file after
               this one. Each is created as you confirm it — closing now keeps what is already created.
             </p>
           )}
           {submitError && (
-            <div className="flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+            <div className="flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
               {submitError}
             </div>
@@ -1434,7 +1434,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
 // Header-cell classes shared by the four list tabs. Every tab is paged by the
 // API, so sorting is server-side (epms-api crud/invoice.py INVOICE_SORTABLE)
 // and a sort change goes back to page 1.
-const TH = 'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap'
+const TH = 'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap'
 type InvoiceSortKey =
   | 'internal_ref' | 'vendor_name' | 'vendor_invoice_number' | 'total_amount'
   | 'invoice_date' | 'due_date' | 'uploaded_at' | 'sla' | 'status'
@@ -1468,26 +1468,26 @@ function UnmatchedTab() {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <CheckCircle2 className="h-10 w-10 text-success-300 mb-3" />
-        <p className="text-sm font-medium text-neutral-500">No unmatched invoices</p>
-        <p className="text-xs text-neutral-400 mt-1">All invoices have been matched to a PO</p>
+        <p className="text-sm font-medium text-fg-muted">No unmatched invoices</p>
+        <p className="text-xs text-fg-muted mt-1">All invoices have been matched to a PO</p>
       </div>
     )
   }
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="rounded-lg border border-warning-200 bg-warning-50 px-4 py-2.5 flex items-center gap-2">
-        <Clock className="h-4 w-4 text-warning-500 flex-shrink-0" />
-        <p className="text-xs text-warning-700">
+      <div className="rounded-lg border border-warning-line bg-warning-soft px-4 py-2.5 flex items-center gap-2">
+        <Clock className="h-4 w-4 text-warning-fg flex-shrink-0" />
+        <p className="text-xs text-warning-fg">
           <span className="font-semibold">SLA: 2 business days</span> to match each invoice to a PO.
           Overdue items are escalated to the Finance Manager.
         </p>
       </div>
 
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50">
+            <tr className="border-b border-line bg-surface-subtle">
               <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className={`${TH} text-left`} />
               <SortTh label="Invoice #" sortKey="internal_ref" sort={sort} onSort={onSort} className={`${TH} text-left`} />
               <SortTh label="Amount" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className={TH} />
@@ -1500,8 +1500,8 @@ function UnmatchedTab() {
           <tbody>
             {unmatched.map((inv, idx) => (
               <Fragment key={inv.id}>
-                <tr className="border-b border-neutral-100 bg-white hover:bg-primary-50/60 transition-colors">
-                  <td className="px-4 py-3 font-medium text-neutral-900">
+                <tr className="border-b border-line-subtle bg-surface hover:bg-primary-50/60 transition-colors">
+                  <td className="px-4 py-3 font-medium text-fg">
                     {inv.vendor_name}
                     {inv.match_route === 'freight' && <FreightRouteBadge className="ml-2" />}
                   </td>
@@ -1509,13 +1509,13 @@ function UnmatchedTab() {
                     <Link to={`/invoices/${inv.id}`} className="font-mono text-xs text-primary-600 hover:underline">
                       {inv.internal_ref}
                     </Link>
-                    <div className="text-xs text-neutral-400 mt-0.5">{inv.vendor_invoice_number}</div>
+                    <div className="text-xs text-fg-muted mt-0.5">{inv.vendor_invoice_number}</div>
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs font-semibold text-neutral-900">
+                  <td className="px-4 py-3 font-mono text-xs font-semibold text-fg">
                     {formatAmount(inv.total_amount, inv.currency)}
                   </td>
-                  <td className="px-4 py-3 text-neutral-600 text-xs">{formatDate(inv.invoice_date)}</td>
-                  <td className="px-4 py-3 text-neutral-500 text-xs">{formatDate(inv.uploaded_at)}</td>
+                  <td className="px-4 py-3 text-fg-secondary text-xs">{formatDate(inv.invoice_date)}</td>
+                  <td className="px-4 py-3 text-fg-muted text-xs">{formatDate(inv.uploaded_at)}</td>
                   <td className="px-4 py-3"><SlaBadge uploadedAt={inv.uploaded_at} /></td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
@@ -1525,7 +1525,7 @@ function UnmatchedTab() {
                         // still assign the matching to someone, like any invoice.
                         <>
                           {inv.match_assignee_name && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 border border-primary-200 px-2 py-0.5 text-[11px] font-medium text-primary-700">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 border border-primary-200 px-2 py-0.5 text-2xs font-medium text-primary-700">
                               <UserPlus className="h-3 w-3" />
                               {inv.match_assignee_name}
                             </span>
@@ -1537,7 +1537,7 @@ function UnmatchedTab() {
                           {isAp && (
                             <button
                               onClick={() => { setExpandedId(null); setDeletingId(null); setAssigningInv(inv) }}
-                              className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50 transition-colors"
+                              className="inline-flex items-center gap-1 rounded-lg border border-line-strong bg-surface px-2.5 py-1 text-xs font-medium text-fg-secondary hover:bg-surface-subtle transition-colors"
                               title="Assign to someone"
                             >
                               <UserPlus className="h-3.5 w-3.5" />
@@ -1547,17 +1547,17 @@ function UnmatchedTab() {
                         </>
                       ) : deletingId === inv.id ? (
                         <>
-                          <span className="text-xs text-danger-600 font-medium">Delete?</span>
+                          <span className="text-xs text-danger-fg font-medium">Delete?</span>
                           <button
                             onClick={() => deleteInvoice.mutate(inv.id, { onSuccess: () => setDeletingId(null) })}
                             disabled={deleteInvoice.isPending}
-                            className="inline-flex items-center rounded-lg border border-danger-300 bg-danger-50 px-2.5 py-1 text-xs font-medium text-danger-700 hover:bg-danger-100 transition-colors disabled:opacity-50"
+                            className="inline-flex items-center rounded-lg border border-danger-line bg-danger-soft px-2.5 py-1 text-xs font-medium text-danger-fg hover:bg-danger-soft transition-colors disabled:opacity-50"
                           >
                             {deleteInvoice.isPending ? 'Deleting…' : 'Confirm'}
                           </button>
                           <button
                             onClick={() => setDeletingId(null)}
-                            className="text-xs text-neutral-500 hover:text-neutral-700"
+                            className="text-xs text-fg-muted hover:text-fg-secondary"
                           >
                             Cancel
                           </button>
@@ -1565,7 +1565,7 @@ function UnmatchedTab() {
                       ) : (
                         <>
                           {inv.match_assignee_name && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 border border-primary-200 px-2 py-0.5 text-[11px] font-medium text-primary-700">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 border border-primary-200 px-2 py-0.5 text-2xs font-medium text-primary-700">
                               <UserPlus className="h-3 w-3" />
                               {inv.match_assignee_name}
                             </span>
@@ -1582,7 +1582,7 @@ function UnmatchedTab() {
                           {isAp && (
                             <button
                               onClick={() => { setExpandedId(null); setDeletingId(null); setAssigningInv(inv) }}
-                              className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50 transition-colors"
+                              className="inline-flex items-center gap-1 rounded-lg border border-line-strong bg-surface px-2.5 py-1 text-xs font-medium text-fg-secondary hover:bg-surface-subtle transition-colors"
                               title="Assign to someone"
                             >
                               <UserPlus className="h-3.5 w-3.5" />
@@ -1592,7 +1592,7 @@ function UnmatchedTab() {
                           {canDelete && (
                             <button
                               onClick={() => { setExpandedId(null); setDeletingId(inv.id) }}
-                              className="rounded-lg p-1 text-neutral-300 hover:text-danger-500 hover:bg-danger-50 transition-colors"
+                              className="rounded-lg p-1 text-fg-faint hover:text-danger-fg hover:bg-danger-soft transition-colors"
                               title="Delete invoice"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -1604,7 +1604,7 @@ function UnmatchedTab() {
                   </td>
                 </tr>
                 {expandedId === inv.id && (
-                  <tr className="border-b border-neutral-100">
+                  <tr className="border-b border-line-subtle">
                     <td colSpan={7} className="px-4 pb-3">
                       <MatchPanel inv={inv} onClose={() => setExpandedId(null)} />
                     </td>
@@ -1644,26 +1644,26 @@ function ExceptionsTab() {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <CheckCircle2 className="h-10 w-10 text-success-300 mb-3" />
-        <p className="text-sm font-medium text-neutral-500">No exceptions</p>
-        <p className="text-xs text-neutral-400 mt-1">All matched invoices are within tolerance</p>
+        <p className="text-sm font-medium text-fg-muted">No exceptions</p>
+        <p className="text-xs text-fg-muted mt-1">All matched invoices are within tolerance</p>
       </div>
     )
   }
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-2.5 flex items-center gap-2">
-        <AlertTriangle className="h-4 w-4 text-danger-600 flex-shrink-0" />
-        <p className="text-xs text-danger-700">
+      <div className="rounded-lg border border-danger-line bg-danger-soft px-4 py-2.5 flex items-center gap-2">
+        <AlertTriangle className="h-4 w-4 text-danger-fg flex-shrink-0" />
+        <p className="text-xs text-danger-fg">
           <span className="font-semibold">{exceptions.length} invoice(s)</span> have a variance exceeding {matchTolerancePct}% vs the linked PO.
           Each exception must be resolved before a Payment Application can be created.
         </p>
       </div>
 
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50">
+            <tr className="border-b border-line bg-surface-subtle">
               <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className={`${TH} text-left`} />
               <SortTh label="Invoice #" sortKey="internal_ref" sort={sort} onSort={onSort} className={`${TH} text-left`} />
               <SortTh label="Invoice Amount" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className={TH} />
@@ -1677,24 +1677,24 @@ function ExceptionsTab() {
           <tbody>
             {exceptions.map((inv, idx) => (
               <>
-                <tr key={inv.id} className="border-b border-neutral-100 bg-white hover:bg-danger-50/30 transition-colors">
-                  <td className="px-4 py-3 font-medium text-neutral-900">{inv.vendor_name}</td>
+                <tr key={inv.id} className="border-b border-line-subtle bg-surface hover:bg-danger-50/30 transition-colors">
+                  <td className="px-4 py-3 font-medium text-fg">{inv.vendor_name}</td>
                   <td className="px-4 py-3">
                     <Link to={`/invoices/${inv.id}`} className="font-mono text-xs text-primary-600 hover:underline">
                       {inv.internal_ref}
                     </Link>
-                    <div className="text-xs text-neutral-400 mt-0.5">{inv.vendor_invoice_number}</div>
+                    <div className="text-xs text-fg-muted mt-0.5">{inv.vendor_invoice_number}</div>
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs font-semibold text-neutral-900">
+                  <td className="px-4 py-3 font-mono text-xs font-semibold text-fg">
                     {formatAmount(inv.total_amount, inv.currency)}
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-neutral-600">
+                  <td className="px-4 py-3 font-mono text-xs text-fg-secondary">
                     {inv.po_total != null ? formatAmount(inv.po_total, inv.currency) : '—'}
                   </td>
-                  <td className={cn('px-4 py-3 font-mono text-xs font-semibold', Number(inv.variance ?? 0) > 0 ? 'text-danger-600' : 'text-success-600')}>
+                  <td className={cn('px-4 py-3 font-mono text-xs font-semibold', Number(inv.variance ?? 0) > 0 ? 'text-danger-fg' : 'text-success-fg')}>
                     {inv.variance != null ? `${Number(inv.variance) > 0 ? '+' : ''}${formatAmount(Number(inv.variance), inv.currency)}` : '—'}
                   </td>
-                  <td className={cn('px-4 py-3 text-xs font-semibold', Math.abs(Number(inv.variance_pct) ?? 0) > matchTolerancePct ? 'text-danger-600' : 'text-success-600')}>
+                  <td className={cn('px-4 py-3 text-xs font-semibold', Math.abs(Number(inv.variance_pct) ?? 0) > matchTolerancePct ? 'text-danger-fg' : 'text-success-fg')}>
                     {inv.variance_pct != null ? `${Number(inv.variance_pct) > 0 ? '+' : ''}${Number(inv.variance_pct).toFixed(1)}%` : '—'}
                   </td>
                   <td className="px-4 py-3">
@@ -1702,13 +1702,13 @@ function ExceptionsTab() {
                       ? <Link to={`/po/${inv.po_id}`} className="font-mono text-xs text-primary-600 hover:underline inline-flex items-center gap-1">
                           {inv.po_number} <ExternalLink className="h-3 w-3" />
                         </Link>
-                      : <span className="text-neutral-400">—</span>
+                      : <span className="text-fg-muted">—</span>
                     }
                   </td>
                   <td className="px-4 py-3">
                     <button
                       onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-warning-300 bg-warning-50 px-2.5 py-1 text-xs font-medium text-warning-700 hover:bg-warning-100 transition-colors"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-warning-line bg-warning-soft px-2.5 py-1 text-xs font-medium text-warning-fg hover:bg-warning-soft transition-colors"
                     >
                       Resolve
                       {expandedId === inv.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -1716,7 +1716,7 @@ function ExceptionsTab() {
                   </td>
                 </tr>
                 {expandedId === inv.id && (
-                  <tr key={`${inv.id}-expand`} className="border-b border-neutral-100">
+                  <tr key={`${inv.id}-expand`} className="border-b border-line-subtle">
                     <td colSpan={8} className="px-4 pb-3">
                       <ResolveExceptionPanel inv={inv} onClose={() => setExpandedId(null)} />
                     </td>
@@ -1736,10 +1736,10 @@ function ExceptionsTab() {
 // lib/dueDate.ts so the helper stays free of presentation and testable on its
 // own; dueInfo() decides WHICH tone, this decides what the tone looks like.
 const DUE_CELL: Record<DueTone, { date: string; badge: string }> = {
-  overdue: { date: 'text-danger-700 font-semibold', badge: 'bg-danger-50 text-danger-700' },
-  soon:    { date: 'text-warning-800 font-semibold', badge: 'bg-warning-50 text-warning-800' },
-  normal:  { date: 'text-neutral-600', badge: '' },
-  settled: { date: 'text-neutral-400', badge: '' },
+  overdue: { date: 'text-danger-fg font-semibold', badge: 'bg-danger-soft text-danger-fg' },
+  soon:    { date: 'text-warning-fg font-semibold', badge: 'bg-warning-soft text-warning-fg' },
+  normal:  { date: 'text-fg-secondary', badge: '' },
+  settled: { date: 'text-fg-muted', badge: '' },
 }
 
 function DueDateCell({ invoice, onOpen }: { invoice: ApiInvoice; onOpen: () => void }) {
@@ -1750,11 +1750,11 @@ function DueDateCell({ invoice, onOpen }: { invoice: ApiInvoice; onOpen: () => v
       type="button"
       onClick={onOpen}
       title="Show this invoice's status"
-      className="-mx-1.5 flex flex-col items-start rounded px-1.5 py-1 text-left transition-colors hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-primary-600"
+      className="-mx-1.5 flex flex-col items-start rounded px-1.5 py-1 text-left transition-colors hover:bg-surface-sunken focus:outline-none focus:ring-2 focus:ring-primary-600"
     >
       <span className={cn('text-xs', style.date)}>{formatDate(invoice.due_date)}</span>
       {info.label && (
-        <span className={cn('mt-0.5 rounded px-1 py-0.5 text-[11px] font-semibold', style.badge)}>
+        <span className={cn('mt-0.5 rounded px-1 py-0.5 text-2xs font-semibold', style.badge)}>
           {info.label}
         </span>
       )}
@@ -1798,14 +1798,14 @@ function AllInvoicesTab() {
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-fg-muted" />
           <input type="text" placeholder="Search by ref, vendor, PO#..." value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-            className="w-full h-9 pl-9 pr-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+            className="w-full h-9 pl-9 pr-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
         </div>
         <select value={route} aria-label="Route"
           onChange={(e) => { setRoute(e.target.value as typeof route); setPage(1) }}
-          className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
+          className="h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
           <option value="">All routes</option>
           <option value="po">PO</option>
           <option value="agreement">Agreement</option>
@@ -1816,7 +1816,7 @@ function AllInvoicesTab() {
           {(['all', 'unmatched', 'matched', 'match_review', 'exception', 'approved', 'paid'] as const).map((s) => (
             <button key={s} onClick={() => { setStatusFilter(s); setPage(1) }}
               className={cn('px-3 py-1 rounded-full text-xs font-medium transition-colors capitalize',
-                statusFilter === s ? 'bg-primary-600 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200')}>
+                statusFilter === s ? 'bg-primary-600 text-white' : 'bg-surface-sunken text-fg-secondary hover:bg-surface-strong')}>
               {s === 'all' ? 'All' : s === 'match_review' ? 'Pending Review' : s}
             </button>
           ))}
@@ -1824,22 +1824,22 @@ function AllInvoicesTab() {
               date, and it already excludes paid invoices server-side. */}
           <button onClick={() => { setOverdueOnly((v) => !v); setPage(1) }}
             className={cn('px-3 py-1 rounded-full text-xs font-medium transition-colors',
-              overdueOnly ? 'bg-danger-600 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200')}>
+              overdueOnly ? 'bg-danger-solid text-white' : 'bg-surface-sunken text-fg-secondary hover:bg-surface-strong')}>
             Overdue
           </button>
         </div>
       </div>
 
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16">
-            <FileText className="h-8 w-8 text-neutral-300 mb-2" />
-            <p className="text-sm text-neutral-400">No invoices found</p>
+            <FileText className="h-8 w-8 text-fg-faint mb-2" />
+            <p className="text-sm text-fg-muted">No invoices found</p>
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-50">
+              <tr className="border-b border-line bg-surface-subtle">
                 <SortTh label="Ref" sortKey="internal_ref" sort={sort} onSort={onSort} className={`${TH} text-left`} />
                 <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className={`${TH} text-left`} />
                 <SortTh label="Invoice #" sortKey="vendor_invoice_number" sort={sort} onSort={onSort} className={`${TH} text-left`} />
@@ -1854,53 +1854,53 @@ function AllInvoicesTab() {
             </thead>
             <tbody>
               {filtered.map((inv) => (
-                <tr key={inv.id} className="border-b border-neutral-100 bg-white hover:bg-primary-50/60 transition-colors">
+                <tr key={inv.id} className="border-b border-line-subtle bg-surface hover:bg-primary-50/60 transition-colors">
                   <td className="px-4 py-3">
                     <Link to={`/invoices/${inv.id}`} className="font-mono text-xs text-primary-600 hover:underline">
                       {inv.internal_ref}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-neutral-700">
+                  <td className="px-4 py-3 text-fg-secondary">
                     {inv.vendor_name}
                     {inv.match_route === 'freight' && <FreightRouteBadge className="ml-2" />}
                     {inv.match_route === 'direct' && <DirectRouteBadge className="ml-2" />}
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-neutral-500">{inv.vendor_invoice_number}</td>
-                  <td className="px-4 py-3 font-mono text-xs font-semibold text-neutral-900">
+                  <td className="px-4 py-3 font-mono text-xs text-fg-muted">{inv.vendor_invoice_number}</td>
+                  <td className="px-4 py-3 font-mono text-xs font-semibold text-fg">
                     {formatAmount(inv.total_amount, inv.currency)}
                   </td>
-                  <td className="px-4 py-3 text-neutral-600 text-xs">{formatDate(inv.invoice_date)}</td>
+                  <td className="px-4 py-3 text-fg-secondary text-xs">{formatDate(inv.invoice_date)}</td>
                   <td className="px-4 py-3">
                     <DueDateCell invoice={inv} onOpen={() => setChainInvoiceId(inv.id)} />
                   </td>
-                  <td className="px-4 py-3 text-neutral-500 text-xs">{formatDate(inv.uploaded_at)}</td>
+                  <td className="px-4 py-3 text-fg-muted text-xs">{formatDate(inv.uploaded_at)}</td>
                   <td className="px-4 py-3"><InvoiceStatusBadge status={inv.status} /></td>
                   <td className="px-4 py-3">
                     {inv.po_number
                       ? <Link to={`/po/${inv.po_id}`} className="font-mono text-xs text-primary-600 hover:underline">{inv.po_number}</Link>
-                      : <span className="text-neutral-300">—</span>
+                      : <span className="text-fg-faint">—</span>
                     }
                   </td>
                   <td className="px-4 py-3 text-right">
                     {canDelete && inv.match_route !== 'freight' && (inv.status === 'unmatched' || inv.status === 'exception') && (
                       deletingId === inv.id ? (
                         <div className="flex items-center justify-end gap-2">
-                          <span className="text-xs text-danger-600 font-medium">Delete?</span>
+                          <span className="text-xs text-danger-fg font-medium">Delete?</span>
                           <button
                             onClick={() => deleteInvoice.mutate(inv.id, { onSuccess: () => setDeletingId(null) })}
                             disabled={deleteInvoice.isPending}
-                            className="text-xs font-medium text-danger-600 hover:text-danger-800 disabled:opacity-50"
+                            className="text-xs font-medium text-danger-fg hover:text-danger-fg disabled:opacity-50"
                           >
                             {deleteInvoice.isPending ? 'Deleting…' : 'Confirm'}
                           </button>
-                          <button onClick={() => setDeletingId(null)} className="text-xs text-neutral-400 hover:text-neutral-600">
+                          <button onClick={() => setDeletingId(null)} className="text-xs text-fg-muted hover:text-fg-secondary">
                             Cancel
                           </button>
                         </div>
                       ) : (
                         <button
                           onClick={() => setDeletingId(inv.id)}
-                          className="rounded p-1 text-neutral-300 hover:text-danger-500 hover:bg-danger-50 transition-colors"
+                          className="rounded p-1 text-fg-faint hover:text-danger-fg hover:bg-danger-soft transition-colors"
                           title="Delete invoice"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -1939,7 +1939,7 @@ interface OaInvoiceItem {
 type OaInvoiceSortKey =
   | 'invoice_number' | 'vendor_name' | 'total_amount' | 'status'
   | 'pa_number' | 'attachment_count' | 'created_at'
-const OA_TH = 'px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500'
+const OA_TH = 'px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted'
 
 function OaInvoicesTab() {
   const { token } = useAuthStore()
@@ -1963,28 +1963,28 @@ function OaInvoicesTab() {
   })
 
   const OA_STATUS_COLORS: Record<string, string> = {
-    uploaded: 'bg-neutral-100 text-neutral-600',
-    reviewed: 'bg-blue-50 text-blue-700',
-    used:     'bg-green-50 text-green-700',
+    uploaded: 'bg-surface-sunken text-fg-secondary',
+    reviewed: 'bg-info-soft text-info-fg',
+    used:     'bg-success-soft text-success-fg',
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 max-w-xs">
-        <Search className="h-4 w-4 text-neutral-400 shrink-0" />
+      <div className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 max-w-xs">
+        <Search className="h-4 w-4 text-fg-muted shrink-0" />
         <input className="flex-1 text-sm focus:outline-none" placeholder="Search vendor or invoice #…"
           value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
-        {search && <button onClick={() => { setSearch(''); setPage(1) }} className="text-neutral-300 hover:text-neutral-500"><X className="h-3.5 w-3.5" /></button>}
+        {search && <button onClick={() => { setSearch(''); setPage(1) }} className="text-fg-faint hover:text-fg-muted"><X className="h-3.5 w-3.5" /></button>}
       </div>
 
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
         {isLoading ? (
-          <div className="py-10 text-center text-sm text-neutral-400">Loading OA invoices…</div>
+          <div className="py-10 text-center text-sm text-fg-muted">Loading OA invoices…</div>
         ) : !data?.items.length ? (
-          <div className="py-10 text-center text-sm text-neutral-400">No OA invoices found.</div>
+          <div className="py-10 text-center text-sm text-fg-muted">No OA invoices found.</div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="border-b border-neutral-100 bg-neutral-50">
+            <thead className="border-b border-line-subtle bg-surface-subtle">
               <tr>
                 <SortTh label="Invoice #" sortKey="invoice_number" sort={sort} onSort={onSort} className={OA_TH} />
                 <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className={OA_TH} />
@@ -1997,23 +1997,23 @@ function OaInvoicesTab() {
             </thead>
             <tbody>
               {data.items.map((inv, i) => (
-                <tr key={inv.id} className={cn('border-b border-neutral-100', i === data.items.length - 1 && 'border-b-0')}>
+                <tr key={inv.id} className={cn('border-b border-line-subtle', i === data.items.length - 1 && 'border-b-0')}>
                   <td className="px-4 py-3 font-mono text-xs text-primary-600">{inv.invoice_number ?? '—'}</td>
-                  <td className="px-4 py-3 text-neutral-800 max-w-[180px] truncate">{inv.vendor_name ?? '—'}</td>
+                  <td className="px-4 py-3 text-fg max-w-[180px] truncate">{inv.vendor_name ?? '—'}</td>
                   <td className="px-4 py-3 font-mono">{formatAmount(inv.total_amount, inv.currency)}</td>
                   <td className="px-4 py-3">
-                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', OA_STATUS_COLORS[inv.status] ?? 'bg-neutral-100 text-neutral-600')}>
+                    <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium', OA_STATUS_COLORS[inv.status] ?? 'bg-surface-sunken text-fg-secondary')}>
                       {inv.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-neutral-500">{inv.pa_number ?? '—'}</td>
-                  <td className="px-4 py-3 text-xs text-neutral-500 text-center">
+                  <td className="px-4 py-3 font-mono text-xs text-fg-muted">{inv.pa_number ?? '—'}</td>
+                  <td className="px-4 py-3 text-xs text-fg-muted text-center">
                     {inv.attachment_count > 0
                       ? <span className="inline-flex items-center gap-1 text-primary-600 font-medium"><FileText className="h-3.5 w-3.5" />{inv.attachment_count}</span>
                       : '—'
                     }
                   </td>
-                  <td className="px-4 py-3 text-neutral-500">{formatDate(inv.created_at)}</td>
+                  <td className="px-4 py-3 text-fg-muted">{formatDate(inv.created_at)}</td>
                 </tr>
               ))}
             </tbody>
@@ -2075,8 +2075,8 @@ export default function InvoiceListPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Invoice Management</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <h1 className="text-2xl font-bold text-fg">Invoice Management</h1>
+          <p className="mt-1 text-sm text-fg-muted">
             {unmatchedCount > 0
               ? `${unmatchedCount} invoice${unmatchedCount > 1 ? 's' : ''} awaiting PO match`
               : 'All invoices are matched'}
@@ -2094,21 +2094,21 @@ export default function InvoiceListPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         {[
-          { label: 'Total Invoices',  value: counts.all,                                            color: 'text-neutral-900' },
-          { label: 'Unmatched',       value: unmatchedCount,                                        color: unmatchedCount > 0 ? 'text-warning-600' : 'text-neutral-900' },
-          { label: 'Exceptions',      value: exceptionCount,                                        color: exceptionCount > 0 ? 'text-danger-600'  : 'text-neutral-900' },
-          { label: 'Matched / Ready', value: counts.matched,                                        color: 'text-success-600' },
+          { label: 'Total Invoices',  value: counts.all,                                            color: 'text-fg' },
+          { label: 'Unmatched',       value: unmatchedCount,                                        color: unmatchedCount > 0 ? 'text-warning-fg' : 'text-fg' },
+          { label: 'Exceptions',      value: exceptionCount,                                        color: exceptionCount > 0 ? 'text-danger-fg'  : 'text-fg' },
+          { label: 'Matched / Ready', value: counts.matched,                                        color: 'text-success-fg' },
           { label: 'Paid',            value: counts.paid,                                           color: 'text-primary-600' },
         ].map((s) => (
-          <div key={s.label} className="rounded-xl border border-neutral-200 bg-white p-4">
-            <p className="text-xs text-neutral-400">{s.label}</p>
+          <div key={s.label} className="rounded-xl border border-line bg-surface p-4">
+            <p className="text-xs text-fg-muted">{s.label}</p>
             <p className={cn('text-2xl font-bold mt-1', s.color)}>{s.value}</p>
           </div>
         ))}
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-neutral-200">
+      <div className="flex gap-1 border-b border-line">
         {tabs.map((t) => (
           <button
             key={t.key}
@@ -2117,13 +2117,13 @@ export default function InvoiceListPage() {
               'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
               activeTab === t.key
                 ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-neutral-500 hover:text-neutral-700'
+                : 'border-transparent text-fg-muted hover:text-fg-secondary'
             )}
           >
             {t.label}
             {t.count !== undefined && t.count > 0 && (
               <span className={cn('inline-flex items-center justify-center rounded-full min-w-[18px] h-[18px] px-1 text-xs font-bold',
-                t.danger ? 'bg-danger-100 text-danger-700' : 'bg-neutral-100 text-neutral-600')}>
+                t.danger ? 'bg-danger-soft text-danger-fg' : 'bg-surface-sunken text-fg-secondary')}>
                 {t.count}
               </span>
             )}

@@ -79,8 +79,8 @@ export function BudgetActualBreakdown({ fiscalYear, window: win, windowLabel, sc
     <section
       role="dialog" aria-label={`Composition of ${scope.label}`}
       className={cn(
-        'absolute inset-x-0 bottom-0 z-40 flex flex-col rounded-t-xl border-t border-neutral-200',
-        'bg-white shadow-[0_-8px_32px_-12px_rgb(0_0_0/0.25)]',
+        'absolute inset-x-0 bottom-0 z-40 flex flex-col rounded-t-xl border-t border-line',
+        'bg-surface shadow-[0_-8px_32px_-12px_rgb(0_0_0/0.25)]',
         'motion-safe:animate-[slideUp_220ms_cubic-bezier(0.16,1,0.3,1)]',
         tall ? 'h-[85%]' : 'h-[58%]',
       )}
@@ -92,25 +92,25 @@ export function BudgetActualBreakdown({ fiscalYear, window: win, windowLabel, sc
       <button onClick={() => setTall((v) => !v)}
               aria-label={tall ? 'Shrink panel' : 'Expand panel'}
               className="group mx-auto mt-2 mb-1 flex h-4 w-16 cursor-pointer items-center justify-center">
-        <span className="h-1 w-10 rounded-full bg-neutral-300 transition-colors group-hover:bg-neutral-400" />
+        <span className="h-1 w-10 rounded-full bg-surface-strong transition-colors group-hover:bg-fg-faint" />
       </button>
 
       <header className="flex flex-wrap items-center gap-2 px-4 pb-2.5">
-        <h2 className="text-sm font-semibold text-neutral-900">Composition</h2>
+        <h2 className="text-sm font-semibold text-fg">Composition</h2>
         <span className="rounded-md bg-primary-50 px-2 py-0.5 text-xs font-semibold text-primary-800 ring-1 ring-primary-100">
           {scope.label}
         </span>
-        <span className="text-xs text-neutral-500">
+        <span className="text-xs text-fg-muted">
           {windowLabel} {fiscalYear} · by budget account
         </span>
-        <span className="ml-auto flex items-center gap-1 text-xs text-neutral-400">
+        <span className="ml-auto flex items-center gap-1 text-xs text-fg-muted">
           {isFetching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           <button onClick={() => setTall((v) => !v)} aria-label={tall ? 'Shrink' : 'Expand'}
-                  className="ml-1 cursor-pointer rounded-md p-1.5 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+                  className="ml-1 cursor-pointer rounded-md p-1.5 text-fg-muted transition-colors hover:bg-surface-sunken hover:text-fg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
             {tall ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </button>
           <button onClick={onClose} aria-label="Close composition"
-                  className="cursor-pointer rounded-md p-1.5 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+                  className="cursor-pointer rounded-md p-1.5 text-fg-muted transition-colors hover:bg-surface-sunken hover:text-fg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
             <X className="h-4 w-4" />
           </button>
         </span>
@@ -123,21 +123,21 @@ export function BudgetActualBreakdown({ fiscalYear, window: win, windowLabel, sc
               that was clicked), so it has to stay on screen while the reader
               scrolls the rows that make it up. */}
           <thead className="sticky top-0 z-10">
-            <tr className="border-b border-neutral-200 bg-neutral-50/95 text-xs font-medium text-neutral-600 backdrop-blur">
+            <tr className="border-b border-line bg-surface-subtle/95 text-xs font-medium text-fg-secondary backdrop-blur">
               <th className="px-3 py-2 text-left font-medium">Budget account</th>
               <th className="px-3 py-2 text-right font-medium">Plan {windowLabel}</th>
               <th className="px-3 py-2 text-right font-medium">Actual {windowLabel}</th>
               <th className="px-3 py-2 text-right font-medium">Variance</th>
               <th className="px-3 py-2 text-right font-medium">%</th>
-              <th className="border-l border-neutral-200 px-3 py-2 text-right font-medium">Full-year plan</th>
+              <th className="border-l border-line px-3 py-2 text-right font-medium">Full-year plan</th>
               <th className="px-3 py-2 text-right font-medium">Actual YTD</th>
               <th className="px-3 py-2 text-right font-medium">Consumed</th>
             </tr>
             {data && (
-              <tr className="border-b-2 border-neutral-300 bg-white/95 text-sm font-semibold text-neutral-900 backdrop-blur">
+              <tr className="border-b-2 border-line-strong bg-white/95 text-sm font-semibold text-fg backdrop-blur">
                 <th className="px-3 py-2 text-left">
                   Total — {scope.label}
-                  <span className="ml-2 text-xs font-normal text-neutral-400">
+                  <span className="ml-2 text-xs font-normal text-fg-muted">
                     {rows.length} accounts
                   </span>
                 </th>
@@ -155,10 +155,10 @@ export function BudgetActualBreakdown({ fiscalYear, window: win, windowLabel, sc
           <tbody>
             {!data && (
               <tr><td colSpan={8} className="px-3 py-8 text-center">
-                <Loader2 className="mx-auto h-4 w-4 animate-spin text-neutral-400" /></td></tr>
+                <Loader2 className="mx-auto h-4 w-4 animate-spin text-fg-muted" /></td></tr>
             )}
             {data && rows.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-xs text-neutral-400">
+              <tr><td colSpan={8} className="px-3 py-8 text-center text-xs text-fg-muted">
                 Nothing budgeted or posted here in this window.
               </td></tr>
             )}
@@ -167,22 +167,22 @@ export function BudgetActualBreakdown({ fiscalYear, window: win, windowLabel, sc
               const isOpen = open.has(a.budget_account_id)
               return (
                 <Fragment key={a.budget_account_id}>
-                  <tr className="border-t border-neutral-100 transition-colors hover:bg-neutral-50">
+                  <tr className="border-t border-line-subtle transition-colors hover:bg-surface-subtle">
                     <td className="px-3 py-2">
                       <span className="flex items-center gap-1">
                         {/* One cost centre under an account is the same row
                             twice — no expander for it. */}
                         {expandable ? (
                           <button onClick={() => toggle(a.budget_account_id)} aria-label="Expand cost centres"
-                                  className="cursor-pointer rounded p-0.5 hover:bg-neutral-200/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
-                            <ChevronRight className={cn('h-3.5 w-3.5 text-neutral-400 motion-safe:transition-transform',
+                                  className="cursor-pointer rounded p-0.5 hover:bg-surface-strong/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+                            <ChevronRight className={cn('h-3.5 w-3.5 text-fg-muted motion-safe:transition-transform',
                               isOpen && 'rotate-90')} />
                           </button>
                         ) : <span className="w-3.5" />}
-                        <span className="font-mono text-xs text-neutral-500">{a.code}</span>
-                        <span className="text-neutral-800">{a.name}</span>
+                        <span className="font-mono text-xs text-fg-muted">{a.code}</span>
+                        <span className="text-fg">{a.name}</span>
                         {expandable && (
-                          <span className="text-xs text-neutral-400">({a.children.length})</span>
+                          <span className="text-xs text-fg-muted">({a.children.length})</span>
                         )}
                       </span>
                     </td>
@@ -190,7 +190,7 @@ export function BudgetActualBreakdown({ fiscalYear, window: win, windowLabel, sc
                   </tr>
                   {isOpen && a.children.map((c) => (
                     <tr key={c.cost_center_id}
-                        className="border-t border-neutral-100 bg-neutral-50/40 text-neutral-600">
+                        className="border-t border-line-subtle bg-surface-subtle/40 text-fg-secondary">
                       <td className="border-l-2 border-primary-200 py-1.5 pl-9 pr-3">
                         <span className="font-mono text-xs">{c.cost_center_code}</span>
                         <span className="ml-1.5 text-xs">{c.cost_center_name}</span>
@@ -214,8 +214,8 @@ function TotalCell({ v, muted, bad, sep, raw }: {
 }) {
   return (
     <th className={cn('px-3 py-2 text-right font-mono tabular-nums font-semibold',
-      sep && 'border-l border-neutral-200',
-      bad ? 'text-danger-600' : muted ? 'text-neutral-500' : 'text-neutral-900')}>
+      sep && 'border-l border-line',
+      bad ? 'text-danger-fg' : muted ? 'text-fg-muted' : 'text-fg')}>
       {raw ? v : money(v)}
     </th>
   )
@@ -227,13 +227,13 @@ function Cells({ m, small }: { m: Metrics; small?: boolean }) {
   const over = Number(m.variance_period) < 0
   return (
     <>
-      <td className={cn(cls, 'text-neutral-500')}>{money(m.plan_period)}</td>
+      <td className={cn(cls, 'text-fg-muted')}>{money(m.plan_period)}</td>
       <td className={cls}>{money(m.actual_period)}</td>
-      <td className={cn(cls, over && 'font-semibold text-danger-600')}>{money(m.variance_period)}</td>
-      <td className={cn(cls, 'text-neutral-500')}>{pct(m.variance_period_pct)}</td>
-      <td className={cn(cls, 'border-l border-neutral-200 text-neutral-500')}>{money(m.plan_full_year)}</td>
+      <td className={cn(cls, over && 'font-semibold text-danger-fg')}>{money(m.variance_period)}</td>
+      <td className={cn(cls, 'text-fg-muted')}>{pct(m.variance_period_pct)}</td>
+      <td className={cn(cls, 'border-l border-line text-fg-muted')}>{money(m.plan_full_year)}</td>
       <td className={cls}>{money(m.actual_ytd)}</td>
-      <td className={cn(cls, 'text-neutral-500')}>{pct(m.consumed_pct)}</td>
+      <td className={cn(cls, 'text-fg-muted')}>{pct(m.consumed_pct)}</td>
     </>
   )
 }

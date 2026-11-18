@@ -32,7 +32,7 @@ interface Status {
   fetch_currencies: string[]
 }
 
-const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const PAGE_SIZE = 100
 
 /** Today at the plant (company time zone), YYYY-MM-DD. */
@@ -133,29 +133,29 @@ export default function ExchangeRatesPage() {
                         subtitle="Bank of Canada daily rates — a document takes its own date's rate; a weekend or holiday takes the previous business day">
       <div className="mx-auto max-w-6xl space-y-4">
         <div className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-neutral-200 bg-white p-3 text-sm">
-            <div className="text-xs font-medium uppercase text-neutral-500">Last fetch</div>
+          <div className="rounded-lg border border-line bg-surface p-3 text-sm">
+            <div className="text-xs font-medium uppercase text-fg-muted">Last fetch</div>
             {last ? (
               <div className="mt-1">
                 <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium',
-                  last.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700')}>
+                  last.ok ? 'bg-success-soft text-success-fg' : 'bg-danger-soft text-danger-fg')}>
                   {last.ok ? 'OK' : 'Problem'}</span>
-                <span className="ml-2 text-neutral-600">{fmtTs(last.started_at)} · {last.trigger}</span>
-                {last.message && <div className="mt-1 text-xs text-red-600">{last.message}</div>}
+                <span className="ml-2 text-fg-secondary">{fmtTs(last.started_at)} · {last.trigger}</span>
+                {last.message && <div className="mt-1 text-xs text-danger-fg">{last.message}</div>}
               </div>
-            ) : <div className="mt-1 text-neutral-400">Never</div>}
+            ) : <div className="mt-1 text-fg-muted">Never</div>}
           </div>
-          <div className="rounded-lg border border-neutral-200 bg-white p-3 text-sm">
-            <div className="text-xs font-medium uppercase text-neutral-500">Latest rate per currency</div>
+          <div className="rounded-lg border border-line bg-surface p-3 text-sm">
+            <div className="text-xs font-medium uppercase text-fg-muted">Latest rate per currency</div>
             <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
               {(status?.currencies ?? []).map((c) => (
-                <span key={c.currency} className="text-neutral-700"><b>{c.currency}</b> {formatDate(c.latest_date)}</span>
+                <span key={c.currency} className="text-fg-secondary"><b>{c.currency}</b> {formatDate(c.latest_date)}</span>
               ))}
-              {(status?.currencies ?? []).length === 0 && <span className="text-neutral-400">No rates yet</span>}
+              {(status?.currencies ?? []).length === 0 && <span className="text-fg-muted">No rates yet</span>}
             </div>
           </div>
-          <div className="rounded-lg border border-neutral-200 bg-white p-3 text-sm">
-            <div className="text-xs font-medium uppercase text-neutral-500">Rate for a document dated</div>
+          <div className="rounded-lg border border-line bg-surface p-3 text-sm">
+            <div className="text-xs font-medium uppercase text-fg-muted">Rate for a document dated</div>
             <div className="mt-1 flex items-center gap-2">
               <select value={probe.currency} onChange={(e) => setProbe({ ...probe, currency: e.target.value })}
                       className={cn(inputCls, 'h-8 w-24')}>
@@ -164,10 +164,10 @@ export default function ExchangeRatesPage() {
               <input type="date" value={probe.on} onChange={(e) => setProbe({ ...probe, on: e.target.value })}
                      className={cn(inputCls, 'h-8 w-40')} />
             </div>
-            <div className="mt-1 font-mono text-neutral-800">
+            <div className="mt-1 font-mono text-fg">
               {probing ? '…' : probeHit?.rate
-                ? <>{probeHit.rate} <span className="text-xs text-neutral-500">({formatDate(probeHit.effective_date)}, {probeHit.source})</span></>
-                : <span className="text-red-600">No rate — Push to NC would refuse</span>}
+                ? <>{probeHit.rate} <span className="text-xs text-fg-muted">({formatDate(probeHit.effective_date)}, {probeHit.source})</span></>
+                : <span className="text-danger-fg">No rate — Push to NC would refuse</span>}
             </div>
           </div>
         </div>
@@ -178,20 +178,20 @@ export default function ExchangeRatesPage() {
             {currencies.map((c) => <option key={c}>{c}</option>)}
           </select>
           <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0) }} className={cn(inputCls, 'w-40')} />
-          <span className="text-neutral-400">→</span>
+          <span className="text-fg-muted">→</span>
           <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0) }} className={cn(inputCls, 'w-40')} />
           <div className="ml-auto flex items-center gap-2">
-            <span className="text-sm text-neutral-600">Fetch from</span>
+            <span className="text-sm text-fg-secondary">Fetch from</span>
             <input type="date" value={fetchFrom} onChange={(e) => setFetchFrom(e.target.value)} className={cn(inputCls, 'w-40')} />
             <button onClick={runFetch} disabled={fetching || !fetchFrom}
                     title="Bring in Bank of Canada rates from this date to today"
-                    className="flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
+                    className="flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50">
               {fetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               Fetch from Bank of Canada
             </button>
             {canManage && (
               <button onClick={() => setEdit({ from_currency: currency || 'USD', effective_date: todayLocal(), rate: '', note: '' })}
-                      className="flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A]">
+                      className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800">
                 <Pencil className="h-4 w-4" /> Set a rate
               </button>
             )}
@@ -200,40 +200,40 @@ export default function ExchangeRatesPage() {
 
         {banner && (
           <div className={cn('rounded-md px-3 py-2 text-sm',
-            banner.kind === 'err' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>{banner.text}</div>
+            banner.kind === 'err' ? 'bg-danger-soft text-danger-fg' : 'bg-success-soft text-success-fg')}>{banner.text}</div>
         )}
 
         {edit && (
-          <div className="rounded-lg border border-neutral-200 bg-white p-4">
+          <div className="rounded-lg border border-line bg-surface p-4">
             <div className="mb-3 flex items-center justify-between">
-              <div className="text-sm font-medium text-neutral-800">Set a rate by hand (kept as manual; the daily fetch will not overwrite it)</div>
-              <button onClick={() => setEdit(null)} className="text-neutral-400 hover:text-neutral-600"><X className="h-4 w-4" /></button>
+              <div className="text-sm font-medium text-fg">Set a rate by hand (kept as manual; the daily fetch will not overwrite it)</div>
+              <button onClick={() => setEdit(null)} className="text-fg-muted hover:text-fg-secondary"><X className="h-4 w-4" /></button>
             </div>
             <div className="flex flex-wrap items-end gap-3">
-              <label className="text-xs text-neutral-500">Currency
+              <label className="text-xs text-fg-muted">Currency
                 <input value={edit.from_currency} onChange={(e) => setEdit({ ...edit, from_currency: e.target.value.toUpperCase() })}
                        className={cn(inputCls, 'mt-1 block w-24')} /></label>
-              <label className="text-xs text-neutral-500">Date
+              <label className="text-xs text-fg-muted">Date
                 <input type="date" value={edit.effective_date} onChange={(e) => setEdit({ ...edit, effective_date: e.target.value })}
                        className={cn(inputCls, 'mt-1 block w-40')} /></label>
-              <label className="text-xs text-neutral-500">CAD per 1 unit
+              <label className="text-xs text-fg-muted">CAD per 1 unit
                 <input value={edit.rate} onChange={(e) => setEdit({ ...edit, rate: e.target.value })} inputMode="decimal"
                        className={cn(inputCls, 'mt-1 block w-32 font-mono')} /></label>
-              <label className="flex-1 text-xs text-neutral-500">Note (required)
+              <label className="flex-1 text-xs text-fg-muted">Note (required)
                 <input value={edit.note} onChange={(e) => setEdit({ ...edit, note: e.target.value })}
                        placeholder="Why this rate" className={cn(inputCls, 'mt-1 block w-full')} /></label>
               <button onClick={saveOverride}
                       disabled={saving || !edit.rate || !(Number(edit.rate) > 0) || !edit.note.trim() || !edit.effective_date}
-                      className="rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50">
+                      className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
               </button>
             </div>
           </div>
         )}
 
-        <div className="overflow-hidden rounded-lg border border-neutral-200">
+        <div className="overflow-hidden rounded-lg border border-line">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+            <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
               <tr>
                 <th className="px-3 py-2 w-32">Date</th>
                 <th className="px-3 py-2 w-28">Currency</th>
@@ -245,30 +245,30 @@ export default function ExchangeRatesPage() {
             </thead>
             <tbody>
               {isFetching && (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
+                <tr><td colSpan={6} className="px-3 py-6 text-center text-fg-muted"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
               )}
               {!isFetching && rows.length === 0 && (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">No rates. Use “Fetch from Bank of Canada”.</td></tr>
+                <tr><td colSpan={6} className="px-3 py-6 text-center text-fg-muted">No rates. Use “Fetch from Bank of Canada”.</td></tr>
               )}
               {!isFetching && rows.map((r, i) => (
-                <tr key={r.id} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
+                <tr key={r.id} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
                   <td className="px-3 py-2 font-mono text-xs">{formatDate(r.effective_date)}</td>
                   <td className="px-3 py-2">{r.from_currency} → {r.to_currency}</td>
                   <td className="px-3 py-2 text-right font-mono">{Number(r.rate).toFixed(4)}</td>
                   <td className="px-3 py-2">
                     <span className={cn('whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium',
-                      r.source === 'manual' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700')}>
+                      r.source === 'manual' ? 'bg-warning-soft text-warning-fg' : 'bg-info-soft text-info-fg')}>
                       {r.source === 'manual' ? 'Manual' : 'Bank of Canada'}</span>
                   </td>
-                  <td className="px-3 py-2 text-xs text-neutral-600">{r.note ?? ''}</td>
+                  <td className="px-3 py-2 text-xs text-fg-secondary">{r.note ?? ''}</td>
                   <td className="px-3 py-2 text-right">
                     {canManage && (
                       <span className="flex justify-end gap-2">
                         <button title="Set this day by hand" onClick={() => setEdit({ from_currency: r.from_currency, effective_date: r.effective_date, rate: r.rate, note: r.note ?? '' })}
-                                className="text-neutral-400 hover:text-neutral-700"><Pencil className="h-3.5 w-3.5" /></button>
+                                className="text-fg-muted hover:text-fg-secondary"><Pencil className="h-3.5 w-3.5" /></button>
                         {r.source === 'manual' && (
                           <button title="Remove the manual rate" onClick={() => removeOverride(r)}
-                                  className="text-neutral-400 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                                  className="text-fg-muted hover:text-danger-fg"><Trash2 className="h-3.5 w-3.5" /></button>
                         )}
                       </span>
                     )}
@@ -278,14 +278,14 @@ export default function ExchangeRatesPage() {
             </tbody>
           </table>
         </div>
-        <div className="flex items-center justify-between text-sm text-neutral-500">
+        <div className="flex items-center justify-between text-sm text-fg-muted">
           <span>{total.toLocaleString()} rate{total === 1 ? '' : 's'}</span>
           <div className="flex items-center gap-2">
             <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0}
-                    className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">Prev</button>
+                    className="rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50">Prev</button>
             <span>Page {page + 1} / {pageCount}</span>
             <button onClick={() => setPage(Math.min(pageCount - 1, page + 1))} disabled={page >= pageCount - 1}
-                    className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">Next</button>
+                    className="rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50">Next</button>
           </div>
         </div>
       </div>

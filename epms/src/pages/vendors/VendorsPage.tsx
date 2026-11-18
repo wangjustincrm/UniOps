@@ -25,7 +25,7 @@ import { SortTh, useSort, sortParams } from '@uniops/shell'
 type VendorSortKey =
   | 'code' | 'erp_id' | 'name' | 'category' | 'contact'
   | 'payment_terms' | 'currency' | 'status'
-const VENDOR_TH = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap'
+const VENDOR_TH = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap'
 
 // Select value for "Custom (Net N days)"; the day count lives in customDays.
 const CUSTOM_TERMS = '__custom'
@@ -128,16 +128,16 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
 
   const inputCls = (err?: string) =>
     cn(
-      'h-10 w-full rounded-lg border bg-neutral-100 px-3 text-sm focus:outline-none focus:bg-white focus:border-primary-600 focus:shadow-[0_0_0_3px_rgba(10,124,124,0.10)] transition-colors',
-      err ? 'border-danger-600 bg-danger-50' : 'border-neutral-200'
+      'h-10 w-full rounded-lg border bg-surface-sunken px-3 text-sm focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-[0_0_0_3px_rgba(10,124,124,0.10)] transition-colors',
+      err ? 'border-danger-solid bg-danger-soft' : 'border-line'
     )
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4 animate-[overlay-in_0.15s_ease-out]">
-      <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-primary-200 bg-white shadow-xl p-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4 animate-[overlay-in_0.15s_ease-out]">
+      <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-primary-200 bg-surface shadow-xl p-5">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
-        <button onClick={onCancel} className="text-neutral-400 hover:text-neutral-600">
+        <h3 className="text-sm font-semibold text-fg">{title}</h3>
+        <button onClick={onCancel} className="text-fg-muted hover:text-fg-secondary">
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -145,8 +145,8 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {/* POID */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">
-            POID <span className="text-danger-600">*</span>
+          <label className="text-xs font-medium text-fg-secondary">
+            POID <span className="text-danger-fg">*</span>
           </label>
           <input
             className={inputCls(errors.code)}
@@ -155,12 +155,12 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
             placeholder="ABC"
             maxLength={50}
           />
-          {errors.code && <p className="text-xs text-danger-600">{errors.code}</p>}
+          {errors.code && <p className="text-xs text-danger-fg">{errors.code}</p>}
         </div>
 
         {/* ERP ID */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">ERP ID</label>
+          <label className="text-xs font-medium text-fg-secondary">ERP ID</label>
           <input
             className={inputCls()}
             value={form.erpId}
@@ -172,8 +172,8 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
 
         {/* Name */}
         <div className="flex flex-col gap-1.5 sm:col-span-1 lg:col-span-2">
-          <label className="text-xs font-medium text-neutral-700">
-            Vendor Name <span className="text-danger-600">*</span>
+          <label className="text-xs font-medium text-fg-secondary">
+            Vendor Name <span className="text-danger-fg">*</span>
           </label>
           <input
             className={inputCls(errors.name)}
@@ -181,13 +181,13 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
             onChange={(e) => set('name', e.target.value)}
             placeholder="Acme Supplies Inc."
           />
-          {errors.name && <p className="text-xs text-danger-600">{errors.name}</p>}
+          {errors.name && <p className="text-xs text-danger-fg">{errors.name}</p>}
         </div>
 
         {/* Category */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">
-            Category <span className="text-danger-600">*</span>
+          <label className="text-xs font-medium text-fg-secondary">
+            Category <span className="text-danger-fg">*</span>
           </label>
           <select
             className={inputCls(errors.category)}
@@ -199,12 +199,12 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
-          {errors.category && <p className="text-xs text-danger-600">{errors.category}</p>}
+          {errors.category && <p className="text-xs text-danger-fg">{errors.category}</p>}
         </div>
 
         {/* Contact Name */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Contact Name</label>
+          <label className="text-xs font-medium text-fg-secondary">Contact Name</label>
           <input
             className={inputCls()}
             value={form.contactName}
@@ -215,7 +215,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
 
         {/* Contact Email */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Contact Email</label>
+          <label className="text-xs font-medium text-fg-secondary">Contact Email</label>
           <input
             type="text"
             className={inputCls(errors.contactEmail)}
@@ -223,12 +223,12 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
             onChange={(e) => set('contactEmail', e.target.value)}
             placeholder="jane@vendor.com, ap@vendor.com"
           />
-          {errors.contactEmail && <p className="text-xs text-danger-600">{errors.contactEmail}</p>}
+          {errors.contactEmail && <p className="text-xs text-danger-fg">{errors.contactEmail}</p>}
         </div>
 
         {/* Remittance Email */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Remittance Email</label>
+          <label className="text-xs font-medium text-fg-secondary">Remittance Email</label>
           <input
             type="text"
             className={inputCls(errors.remittanceEmail)}
@@ -236,17 +236,17 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
             onChange={(e) => set('remittanceEmail', e.target.value)}
             placeholder="ap@vendor.com, remit@vendor.com"
           />
-          <p className="text-xs text-neutral-400">
+          <p className="text-xs text-fg-muted">
             Where remittance advice is sent. Separate several addresses with a comma.
             Defaults to the contact email if left blank — if both are blank, remittance
             advice cannot be sent for this vendor.
           </p>
-          {errors.remittanceEmail && <p className="text-xs text-danger-600">{errors.remittanceEmail}</p>}
+          {errors.remittanceEmail && <p className="text-xs text-danger-fg">{errors.remittanceEmail}</p>}
         </div>
 
         {/* Phone */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Phone</label>
+          <label className="text-xs font-medium text-fg-secondary">Phone</label>
           <input
             className={inputCls()}
             value={form.phone}
@@ -257,7 +257,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
 
         {/* Address */}
         <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-3">
-          <label className="text-xs font-medium text-neutral-700">Address</label>
+          <label className="text-xs font-medium text-fg-secondary">Address</label>
           <input
             className={inputCls()}
             value={form.address}
@@ -268,7 +268,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
 
         {/* Payment Terms */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Payment Terms</label>
+          <label className="text-xs font-medium text-fg-secondary">Payment Terms</label>
           <div className="flex gap-2">
             <select
               className={inputCls()}
@@ -297,24 +297,24 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
                   placeholder="21"
                   autoFocus
                 />
-                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400">
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-fg-muted">
                   days
                 </span>
               </div>
             )}
           </div>
           {errors.customDays ? (
-            <p className="text-xs text-danger-600">{errors.customDays}</p>
+            <p className="text-xs text-danger-fg">{errors.customDays}</p>
           ) : form.paymentTerms === CUSTOM_TERMS && (
-            <p className="text-xs text-neutral-400">Due this many days after the invoice date.</p>
+            <p className="text-xs text-fg-muted">Due this many days after the invoice date.</p>
           )}
         </div>
 
         {/* Max Prepayment % — only relevant when payment_terms = prepayment */}
         {form.paymentTerms === 'prepayment' && (
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">
-              Max Prepayment % <span className="text-neutral-400 font-normal">(1–100, overrides system cap)</span>
+            <label className="text-xs font-medium text-fg-secondary">
+              Max Prepayment % <span className="text-fg-muted font-normal">(1–100, overrides system cap)</span>
             </label>
             <input
               type="number"
@@ -331,7 +331,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
 
         {/* Currency */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Currency</label>
+          <label className="text-xs font-medium text-fg-secondary">Currency</label>
           <select
             className={inputCls()}
             value={form.currency}
@@ -345,7 +345,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
 
         {/* Status */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Status</label>
+          <label className="text-xs font-medium text-fg-secondary">Status</label>
           <div className="flex items-center gap-4 h-10">
             {([true, false] as boolean[]).map((val) => (
               <label key={String(val)} className="flex items-center gap-2 cursor-pointer">
@@ -355,7 +355,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
                   onChange={() => set('active', val)}
                   className="accent-primary-600"
                 />
-                <span className="text-sm text-neutral-700">{val ? 'Active' : 'Inactive'}</span>
+                <span className="text-sm text-fg-secondary">{val ? 'Active' : 'Inactive'}</span>
               </label>
             ))}
           </div>
@@ -363,7 +363,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
 
         {/* Notes */}
         <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-3">
-          <label className="text-xs font-medium text-neutral-700">Notes</label>
+          <label className="text-xs font-medium text-fg-secondary">Notes</label>
           <input
             className={inputCls()}
             value={form.notes}
@@ -374,13 +374,13 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
       </div>
 
       {saveError && (
-        <div className="mt-4 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+        <div className="mt-4 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           {saveError}
         </div>
       )}
 
       {duplicateWarning && (
-        <div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+        <div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-fg">
           <span>{duplicateWarning} Check it is not the same vendor before saving.</span>
           <Button variant="secondary" size="sm" onClick={onSaveAnyway} disabled={saving}>
             Save anyway
@@ -623,8 +623,8 @@ export default function VendorsPage() {
       {/* Page header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Vendors</h1>
-          <p className="mt-0.5 text-sm text-neutral-500">
+          <h1 className="text-2xl font-bold text-fg">Vendors</h1>
+          <p className="mt-0.5 text-sm text-fg-muted">
             Manage your supplier and vendor directory
           </p>
         </div>
@@ -665,42 +665,42 @@ export default function VendorsPage() {
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-4 py-3">
-          <p className="text-xs text-neutral-500 font-medium uppercase tracking-wide">Total</p>
-          <p className="mt-1 text-2xl font-bold text-neutral-900">{totalVendors}</p>
+        <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-4 py-3">
+          <p className="text-xs text-fg-muted font-medium uppercase tracking-wide">Total</p>
+          <p className="mt-1 text-2xl font-bold text-fg">{totalVendors}</p>
         </div>
-        <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-4 py-3">
-          <p className="text-xs text-neutral-500 font-medium uppercase tracking-wide">Showing</p>
+        <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-4 py-3">
+          <p className="text-xs text-fg-muted font-medium uppercase tracking-wide">Showing</p>
           <p className="mt-1 text-2xl font-bold text-primary-700">{total}</p>
         </div>
-        <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-4 py-3">
-          <p className="text-xs text-neutral-500 font-medium uppercase tracking-wide">Page</p>
-          <p className="mt-1 text-2xl font-bold text-neutral-700">{page} / {totalPages}</p>
+        <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-4 py-3">
+          <p className="text-xs text-fg-muted font-medium uppercase tracking-wide">Page</p>
+          <p className="mt-1 text-2xl font-bold text-fg-secondary">{page} / {totalPages}</p>
         </div>
       </div>
 
       {/* Import result / error */}
       {importResult && (
-        <div className="rounded-lg border border-success-200 bg-success-50 px-4 py-3 text-sm flex items-start justify-between gap-3">
+        <div className="rounded-lg border border-success-line bg-success-soft px-4 py-3 text-sm flex items-start justify-between gap-3">
           <div>
-            <p className="font-medium text-success-700">
+            <p className="font-medium text-success-fg">
               Import complete — {importResult.created} created, {importResult.updated} updated
             </p>
             {importResult.errors.length > 0 && (
-              <ul className="mt-1 space-y-0.5 text-xs text-warning-700">
+              <ul className="mt-1 space-y-0.5 text-xs text-warning-fg">
                 {importResult.errors.map((e, i) => <li key={i}>⚠ {e}</li>)}
               </ul>
             )}
           </div>
-          <button onClick={() => setImportResult(null)} className="text-neutral-400 hover:text-neutral-600 shrink-0">
+          <button onClick={() => setImportResult(null)} className="text-fg-muted hover:text-fg-secondary shrink-0">
             <X className="h-4 w-4" />
           </button>
         </div>
       )}
       {importError && (
-        <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm flex items-start justify-between gap-3">
-          <p className="text-danger-700">{importError}</p>
-          <button onClick={() => setImportError(null)} className="text-neutral-400 hover:text-neutral-600 shrink-0">
+        <div className="rounded-lg border border-danger-line bg-danger-soft px-4 py-3 text-sm flex items-start justify-between gap-3">
+          <p className="text-danger-fg">{importError}</p>
+          <button onClick={() => setImportError(null)} className="text-fg-muted hover:text-fg-secondary shrink-0">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -709,7 +709,7 @@ export default function VendorsPage() {
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-52">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
           <Input
             placeholder="Search name, POID, ERP ID, contact…"
             value={search}
@@ -718,11 +718,11 @@ export default function VendorsPage() {
           />
         </div>
         <div className="flex items-center gap-2">
-          <Filter className="h-4 w-4 text-neutral-400" />
+          <Filter className="h-4 w-4 text-fg-muted" />
           <select
             value={catFilter}
             onChange={(e) => setCatFilterAndReset(e.target.value)}
-            className="h-10 rounded-lg border border-neutral-200 bg-neutral-100 px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="h-10 rounded-lg border border-line bg-surface-sunken px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
           >
             <option value="all">All Categories</option>
             {vendorCategories.map((c) => (
@@ -731,7 +731,7 @@ export default function VendorsPage() {
           </select>
         </div>
         {/* Active/All/Inactive tabs */}
-        <div className="flex rounded-lg border border-neutral-200 overflow-hidden">
+        <div className="flex rounded-lg border border-line overflow-hidden">
           {TABS.map((tab) => (
             <button
               key={tab.key}
@@ -740,7 +740,7 @@ export default function VendorsPage() {
                 'px-3.5 py-2 text-xs font-medium transition-colors',
                 activeTab === tab.key
                   ? 'bg-primary-600 text-white'
-                  : 'bg-white text-neutral-600 hover:bg-neutral-50'
+                  : 'bg-surface text-fg-secondary hover:bg-surface-subtle'
               )}
             >
               {tab.label}
@@ -772,11 +772,11 @@ export default function VendorsPage() {
       )}
 
       {/* Table */}
-      <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
+      <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-50">
+              <tr className="border-b border-line bg-surface-subtle">
                 <SortTh label="POID" sortKey="code" sort={sort} onSort={onSort} className={VENDOR_TH} />
                 <SortTh label="ERP ID" sortKey="erp_id" sort={sort} onSort={onSort} className={VENDOR_TH} />
                 <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className={VENDOR_TH} />
@@ -792,9 +792,9 @@ export default function VendorsPage() {
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={canWrite ? 9 : 8} className="py-16 text-center">
-                    <Building2 className="h-8 w-8 text-neutral-300 mx-auto mb-3" />
-                    <p className="text-sm font-medium text-neutral-500">No vendors found</p>
-                    <p className="text-xs text-neutral-400 mt-1">
+                    <Building2 className="h-8 w-8 text-fg-faint mx-auto mb-3" />
+                    <p className="text-sm font-medium text-fg-muted">No vendors found</p>
+                    <p className="text-xs text-fg-muted mt-1">
                       {search || catFilter !== 'all' || activeTab !== 'all'
                         ? 'Try adjusting your filters'
                         : 'Add your first vendor to get started'}
@@ -806,8 +806,8 @@ export default function VendorsPage() {
                 <tr
                   key={vendor.id}
                   className={cn(
-                    'border-b border-neutral-100 hover:bg-primary-50/40 transition-colors',
-                    i % 2 === 1 ? 'bg-neutral-50/60' : 'bg-white',
+                    'border-b border-line-subtle hover:bg-primary-50/40 transition-colors',
+                    i % 2 === 1 ? 'bg-surface-subtle/60' : 'bg-surface',
                     !vendor.is_active && 'opacity-60'
                   )}
                 >
@@ -819,47 +819,47 @@ export default function VendorsPage() {
                   </td>
 
                   {/* ERP ID */}
-                  <td className="px-4 py-3 font-mono text-xs text-neutral-500">
-                    {vendor.erp_id || <span className="text-neutral-300">—</span>}
+                  <td className="px-4 py-3 font-mono text-xs text-fg-muted">
+                    {vendor.erp_id || <span className="text-fg-faint">—</span>}
                   </td>
 
                   {/* Name */}
-                  <td className="px-4 py-3 text-neutral-900 font-medium max-w-52">
+                  <td className="px-4 py-3 text-fg font-medium max-w-52">
                     <p className="truncate">{vendor.name}</p>
                     {vendor.notes && (
-                      <p className="text-xs text-neutral-400 truncate">{vendor.notes}</p>
+                      <p className="text-xs text-fg-muted truncate">{vendor.notes}</p>
                     )}
                   </td>
 
                   {/* Category */}
-                  <td className="px-4 py-3 text-neutral-500 whitespace-nowrap">
+                  <td className="px-4 py-3 text-fg-muted whitespace-nowrap">
                     {vendor.category}
                   </td>
 
                   {/* Contact */}
                   <td className="px-4 py-3">
                     {vendor.contact_name && (
-                      <p className="text-neutral-700 font-medium text-xs">{vendor.contact_name}</p>
+                      <p className="text-fg-secondary font-medium text-xs">{vendor.contact_name}</p>
                     )}
                     {vendor.contact_email && (
-                      <p className="text-xs text-neutral-400 truncate max-w-44">
+                      <p className="text-xs text-fg-muted truncate max-w-44">
                         {vendor.contact_email}
                       </p>
                     )}
                     {vendor.remittance_email && (
-                      <p className="text-xs text-neutral-400 truncate max-w-44" title="Remittance email">
+                      <p className="text-xs text-fg-muted truncate max-w-44" title="Remittance email">
                         ↳ {vendor.remittance_email}
                       </p>
                     )}
                   </td>
 
                   {/* Payment Terms */}
-                  <td className="px-4 py-3 text-neutral-600 whitespace-nowrap">
+                  <td className="px-4 py-3 text-fg-secondary whitespace-nowrap">
                     {formatPaymentTerms(vendor.payment_terms)}
                   </td>
 
                   {/* Currency */}
-                  <td className="px-4 py-3 font-mono text-xs text-neutral-500">
+                  <td className="px-4 py-3 font-mono text-xs text-fg-muted">
                     {vendor.currency}
                   </td>
 
@@ -869,8 +869,8 @@ export default function VendorsPage() {
                       className={cn(
                         'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
                         vendor.is_active
-                          ? 'bg-success-50 text-success-700'
-                          : 'bg-neutral-100 text-neutral-500'
+                          ? 'bg-success-soft text-success-fg'
+                          : 'bg-surface-sunken text-fg-muted'
                       )}
                     >
                       {vendor.is_active ? '● Active' : '○ Inactive'}
@@ -886,7 +886,7 @@ export default function VendorsPage() {
                             retires a vendor. */}
                         <button
                           onClick={() => openEdit(vendor)}
-                          className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-primary-50 hover:text-primary-600"
+                          className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-primary-50 hover:text-primary-600"
                           title="Edit vendor"
                         >
                           <Pencil className="h-3.5 w-3.5" />
@@ -899,10 +899,10 @@ export default function VendorsPage() {
                             })
                           }}
                           className={cn(
-                            'flex h-7 w-7 items-center justify-center rounded text-neutral-400',
+                            'flex h-7 w-7 items-center justify-center rounded text-fg-muted',
                             vendor.is_active
-                              ? 'hover:bg-warning-50 hover:text-warning-600'
-                              : 'hover:bg-success-50 hover:text-success-600'
+                              ? 'hover:bg-warning-soft hover:text-warning-fg'
+                              : 'hover:bg-success-soft hover:text-success-fg'
                           )}
                           title={vendor.is_active ? 'Deactivate vendor' : 'Activate vendor'}
                         >
@@ -921,19 +921,19 @@ export default function VendorsPage() {
           </table>
         </div>
         {/* Pagination footer */}
-        <div className="border-t border-neutral-200 bg-neutral-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm text-neutral-500">
+        <div className="border-t border-line bg-surface-subtle px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm text-fg-muted">
             <span>Rows per page:</span>
             <select
               value={pageSize}
               onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}
-              className="h-8 rounded-md border border-neutral-200 bg-white px-2 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+              className="h-8 rounded-md border border-line bg-surface px-2 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
             >
               {PAGE_SIZE_OPTIONS.map((n) => (
                 <option key={n} value={n}>{n}</option>
               ))}
             </select>
-            <span className="text-neutral-400">
+            <span className="text-fg-muted">
               {total === 0 ? '0' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)}`} of {total}
             </span>
           </div>
@@ -941,12 +941,12 @@ export default function VendorsPage() {
             <button
               onClick={() => setPage(1)}
               disabled={page === 1}
-              className="h-8 w-8 rounded-md border border-neutral-200 bg-white text-sm text-neutral-600 hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="h-8 w-8 rounded-md border border-line bg-surface text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-40 disabled:cursor-not-allowed"
             >«</button>
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="h-8 w-8 rounded-md border border-neutral-200 bg-white text-sm text-neutral-600 hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="h-8 w-8 rounded-md border border-line bg-surface text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-40 disabled:cursor-not-allowed"
             >‹</button>
             {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
               const start = Math.max(1, Math.min(page - 2, totalPages - 4))
@@ -959,7 +959,7 @@ export default function VendorsPage() {
                     'h-8 w-8 rounded-md border text-sm transition-colors',
                     p === page
                       ? 'border-primary-600 bg-primary-600 text-white'
-                      : 'border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50'
+                      : 'border-line bg-surface text-fg-secondary hover:bg-surface-subtle'
                   )}
                 >{p}</button>
               )
@@ -967,12 +967,12 @@ export default function VendorsPage() {
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
-              className="h-8 w-8 rounded-md border border-neutral-200 bg-white text-sm text-neutral-600 hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="h-8 w-8 rounded-md border border-line bg-surface text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-40 disabled:cursor-not-allowed"
             >›</button>
             <button
               onClick={() => setPage(totalPages)}
               disabled={page === totalPages}
-              className="h-8 w-8 rounded-md border border-neutral-200 bg-white text-sm text-neutral-600 hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="h-8 w-8 rounded-md border border-line bg-surface text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-40 disabled:cursor-not-allowed"
             >»</button>
           </div>
         </div>

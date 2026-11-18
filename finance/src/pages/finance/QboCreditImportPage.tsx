@@ -24,9 +24,9 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { cn, formatDateTime } from '@/lib/utils'
 
 const STORAGE_KEY = 'qbo-credit-import-decisions'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
-const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
+const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
+const inputCls = 'h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 /** chosen vendor id per QBO vendor, plus rows the operator marked skip. */
 interface Decisions {
@@ -153,7 +153,7 @@ export default function QboCreditImportPage() {
       subtitle="Bring the vendor credit balances QuickBooks still holds into UniOps."
     >
       <div className="space-y-5">
-        <section className="space-y-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-600">
+        <section className="space-y-2 rounded-lg border border-line bg-surface-subtle p-4 text-sm text-fg-secondary">
           <p>
             Only credits QuickBooks still shows an <strong>unapplied balance</strong> on
             are listed. Credits QuickBooks already applied in full are history, not
@@ -169,7 +169,7 @@ export default function QboCreditImportPage() {
             reload this page — it will match automatically on the next run.
           </p>
           {data?.cutover.finished_at && (
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-fg-muted">
               Reading the QuickBooks full reload finished{' '}
               {formatDateTime(data.cutover.finished_at)}. Run a fresh full
               reload first if these balances look stale.
@@ -178,18 +178,18 @@ export default function QboCreditImportPage() {
         </section>
 
         {drift.length > 0 && (
-          <section className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-4">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-amber-900">
+          <section className="space-y-2 rounded-lg border border-warning-line bg-warning-soft p-4">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-warning-fg">
               <AlertTriangle className="h-4 w-4" /> Changed inside QuickBooks after import
             </h2>
-            <p className="text-xs text-amber-800">
+            <p className="text-xs text-warning-fg">
               These credits were imported already, and QuickBooks has since reported a
               different balance. Neither side has been altered — decide which is right
               and correct it by hand. After cutover, vendor credits should be applied
               only in UniOps; two ledgers decrementing independently will double-spend.
             </p>
             <table className="w-full text-sm">
-              <thead className="text-left text-xs text-amber-900">
+              <thead className="text-left text-xs text-warning-fg">
                 <tr>
                   <SortTh label="Credit" sortKey="credit" sort={driftSort.sort} onSort={driftSort.onSort} className="py-1 pr-3 font-medium" />
                   <SortTh label="Vendor" sortKey="vendor" sort={driftSort.sort} onSort={driftSort.onSort} className="py-1 pr-3 font-medium" />
@@ -200,7 +200,7 @@ export default function QboCreditImportPage() {
               </thead>
               <tbody>
                 {driftSort.rows.map((d) => (
-                  <tr key={d.source_ref} className="border-t border-amber-200">
+                  <tr key={d.source_ref} className="border-t border-warning-line">
                     <td className="py-1 pr-3 font-mono text-xs">{d.credit_number}</td>
                     <td className="py-1 pr-3">{d.vendor_name}</td>
                     <td className="py-1 pr-3 text-right tabular-nums">{money(d.imported_total)}</td>
@@ -213,36 +213,36 @@ export default function QboCreditImportPage() {
           </section>
         )}
 
-        <section className="overflow-auto rounded-lg border border-neutral-200 bg-white">
+        <section className="overflow-auto rounded-lg border border-line bg-surface">
           <table className="w-full text-sm">
-            <thead className="text-left text-xs text-neutral-500">
+            <thead className="text-left text-xs text-fg-muted">
               <tr>
-                <SortTh label="QuickBooks vendor" sortKey="vendor" sort={candSort.sort} onSort={candSort.onSort} className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium" />
-                <SortTh label="Credits" sortKey="credits" sort={candSort.sort} onSort={candSort.onSort} align="right" className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium" />
-                <SortTh label="Open balance" sortKey="balance" sort={candSort.sort} onSort={candSort.onSort} align="right" className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium" />
-                <SortTh label="Currency" sortKey="currency" sort={candSort.sort} onSort={candSort.onSort} className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium" />
-                <th className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium">EPMS vendor</th>
-                <SortTh label="Status" sortKey="status" sort={candSort.sort} onSort={candSort.onSort} className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium" />
+                <SortTh label="QuickBooks vendor" sortKey="vendor" sort={candSort.sort} onSort={candSort.onSort} className="border-b border-line bg-surface-subtle px-3 py-2 font-medium" />
+                <SortTh label="Credits" sortKey="credits" sort={candSort.sort} onSort={candSort.onSort} align="right" className="border-b border-line bg-surface-subtle px-3 py-2 font-medium" />
+                <SortTh label="Open balance" sortKey="balance" sort={candSort.sort} onSort={candSort.onSort} align="right" className="border-b border-line bg-surface-subtle px-3 py-2 font-medium" />
+                <SortTh label="Currency" sortKey="currency" sort={candSort.sort} onSort={candSort.onSort} className="border-b border-line bg-surface-subtle px-3 py-2 font-medium" />
+                <th className="border-b border-line bg-surface-subtle px-3 py-2 font-medium">EPMS vendor</th>
+                <SortTh label="Status" sortKey="status" sort={candSort.sort} onSort={candSort.onSort} className="border-b border-line bg-surface-subtle px-3 py-2 font-medium" />
               </tr>
             </thead>
             <tbody>
               {isLoading && (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">
+                <tr><td colSpan={6} className="px-3 py-6 text-center text-fg-muted">
                   <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
               )}
               {!isLoading && candidates.length === 0 && (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">
+                <tr><td colSpan={6} className="px-3 py-6 text-center text-fg-muted">
                   No QuickBooks vendor credits with an open balance.</td></tr>
               )}
               {candSort.rows.map((c) => {
                 const skipped = decisions.skipped.includes(c.qbo_vendor_id)
                 const chosen = decisions.chosen[c.qbo_vendor_id] ?? null
                 return (
-                  <tr key={c.qbo_vendor_id} className={cn('border-t border-neutral-100', skipped && 'opacity-50')}>
+                  <tr key={c.qbo_vendor_id} className={cn('border-t border-line-subtle', skipped && 'opacity-50')}>
                     <td className="px-3 py-2">{c.qbo_display_name ?? '—'}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{c.credit_count}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{money(c.credit_total)}</td>
-                    <td className="px-3 py-2 text-xs text-neutral-600">{c.currencies.join(', ')}</td>
+                    <td className="px-3 py-2 text-xs text-fg-secondary">{c.currencies.join(', ')}</td>
                     <td className="px-3 py-2">
                       <VendorPicker
                         suggestedId={c.suggested_vendor_id}
@@ -255,13 +255,13 @@ export default function QboCreditImportPage() {
                     <td className="px-3 py-2 text-xs">
                       <div className="flex flex-col gap-1">
                         {c.already_imported > 0 && (
-                          <span className="text-neutral-500">
+                          <span className="text-fg-muted">
                             {c.already_imported} already imported
                           </span>
                         )}
                         <button
                           type="button"
-                          className="self-start text-neutral-500 underline hover:text-neutral-700"
+                          className="self-start text-fg-muted underline hover:text-fg-secondary"
                           onClick={() => toggleSkip(c.qbo_vendor_id)}
                         >
                           {skipped ? 'Include' : 'Skip'}
@@ -298,14 +298,14 @@ export default function QboCreditImportPage() {
             Import
           </button>
           {mappedCount === 0 && (
-            <span className="text-sm text-neutral-500">
+            <span className="text-sm text-fg-muted">
               Confirm at least one EPMS vendor to continue.
             </span>
           )}
         </section>
 
         {error && (
-          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+          <p className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">{error}</p>
         )}
 
         {preview && <RunSummary run={preview} />}
@@ -317,11 +317,11 @@ export default function QboCreditImportPage() {
 
 function RunSummary({ run }: { run: ImportRunResponse }) {
   return (
-    <section className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
-      <h2 className="text-sm font-semibold text-neutral-800">
+    <section className="space-y-3 rounded-lg border border-line bg-surface p-4">
+      <h2 className="text-sm font-semibold text-fg">
         {run.dry_run ? 'Preview — nothing has been written' : 'Import complete'}
       </h2>
-      <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-neutral-700">
+      <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-fg-secondary">
         <span><strong>{run.imported}</strong> {run.dry_run ? 'would be imported' : 'imported'}</span>
         <span>total <strong className="tabular-nums">{money(run.total_amount)}</strong></span>
         <span>{run.skipped_unmapped} skipped (no EPMS vendor)</span>
@@ -330,7 +330,7 @@ function RunSummary({ run }: { run: ImportRunResponse }) {
       </div>
 
       {run.duplicates.length > 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+        <div className="rounded-lg border border-warning-line bg-warning-soft p-3 text-xs text-warning-fg">
           <p className="mb-1 font-medium">
             Already recorded from a manual upload — skipped so the vendor&apos;s credit is
             not doubled:
@@ -346,23 +346,23 @@ function RunSummary({ run }: { run: ImportRunResponse }) {
       )}
 
       {run.rows.length > 0 && (
-        <div className="max-h-72 overflow-auto rounded-lg border border-neutral-200">
+        <div className="max-h-72 overflow-auto rounded-lg border border-line">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 text-left text-xs text-neutral-500">
+            <thead className="sticky top-0 text-left text-xs text-fg-muted">
               <tr>
-                <th className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium">Credit note</th>
-                <th className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium">Vendor</th>
-                <th className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 text-right font-medium">Amount</th>
-                <th className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium">Currency</th>
+                <th className="border-b border-line bg-surface-subtle px-3 py-2 font-medium">Credit note</th>
+                <th className="border-b border-line bg-surface-subtle px-3 py-2 font-medium">Vendor</th>
+                <th className="border-b border-line bg-surface-subtle px-3 py-2 text-right font-medium">Amount</th>
+                <th className="border-b border-line bg-surface-subtle px-3 py-2 font-medium">Currency</th>
               </tr>
             </thead>
             <tbody>
               {run.rows.map((r) => (
-                <tr key={r.qbo_id} className="border-t border-neutral-100">
+                <tr key={r.qbo_id} className="border-t border-line-subtle">
                   <td className="px-3 py-1.5 font-mono text-xs">{r.vendor_credit_number}</td>
                   <td className="px-3 py-1.5">{r.vendor_name}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{money(r.amount)}</td>
-                  <td className="px-3 py-1.5 text-xs text-neutral-600">{r.currency}</td>
+                  <td className="px-3 py-1.5 text-xs text-fg-secondary">{r.currency}</td>
                 </tr>
               ))}
             </tbody>
@@ -400,15 +400,15 @@ function VendorPicker({
   const chosenName = options.find((o) => o.id === chosenId)?.name
     ?? (chosenId && chosenId === suggestedId ? suggestedName : null)
 
-  if (disabled) return <span className="text-xs text-neutral-400">Skipped</span>
+  if (disabled) return <span className="text-xs text-fg-muted">Skipped</span>
 
   if (chosenId) {
     return (
       <div className="flex items-center gap-2">
-        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-800">
+        <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-xs text-success-fg">
           <Check className="h-3 w-3" /> {chosenName ?? 'Selected'}
         </span>
-        <button type="button" className="text-xs text-neutral-500 underline hover:text-neutral-700"
+        <button type="button" className="text-xs text-fg-muted underline hover:text-fg-secondary"
           onClick={() => { onChoose(null); setOpen(false) }}>
           Change
         </button>
@@ -420,14 +420,14 @@ function VendorPicker({
     <div className="space-y-1">
       {suggestedId && !open && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-neutral-600">
+          <span className="text-xs text-fg-secondary">
             Suggested: <span className="font-medium">{suggestedName}</span>
           </span>
-          <button type="button" className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs text-emerald-800 hover:bg-emerald-100"
+          <button type="button" className="rounded border border-success-line bg-success-soft px-2 py-0.5 text-xs text-success-fg hover:bg-success-soft"
             onClick={() => onChoose(suggestedId)}>
             Confirm
           </button>
-          <button type="button" className="text-xs text-neutral-500 underline hover:text-neutral-700"
+          <button type="button" className="text-xs text-fg-muted underline hover:text-fg-secondary"
             onClick={() => setOpen(true)}>
             Pick another
           </button>
@@ -436,10 +436,10 @@ function VendorPicker({
 
       {!suggestedId && !open && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-neutral-500">
+          <span className="text-xs text-fg-muted">
             No EPMS vendor matched — create it in Vendor Master, or pick one.
           </span>
-          <button type="button" className="text-xs text-neutral-600 underline hover:text-neutral-800"
+          <button type="button" className="text-xs text-fg-secondary underline hover:text-fg"
             onClick={() => setOpen(true)}>
             Pick
           </button>
@@ -449,7 +449,7 @@ function VendorPicker({
       {open && (
         <div className="space-y-1">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-neutral-400" />
+            <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-fg-muted" />
             <input
               autoFocus
               value={search}
@@ -458,23 +458,23 @@ function VendorPicker({
               className={cn(inputCls, 'pl-8')}
             />
           </div>
-          <div className="max-h-40 overflow-auto rounded-lg border border-neutral-200">
+          <div className="max-h-40 overflow-auto rounded-lg border border-line">
             {options.length === 0 && (
-              <p className="px-2 py-2 text-xs text-neutral-400">No matches.</p>
+              <p className="px-2 py-2 text-xs text-fg-muted">No matches.</p>
             )}
             {options.map((o) => (
               <button
                 key={o.id}
                 type="button"
-                className="block w-full px-2 py-1.5 text-left text-xs hover:bg-neutral-50"
+                className="block w-full px-2 py-1.5 text-left text-xs hover:bg-surface-subtle"
                 onClick={() => { onChoose(o.id); setOpen(false) }}
               >
                 <span className="font-medium">{o.name}</span>
-                <span className="ml-2 text-neutral-400">{o.code}</span>
+                <span className="ml-2 text-fg-muted">{o.code}</span>
               </button>
             ))}
           </div>
-          <button type="button" className="text-xs text-neutral-500 underline hover:text-neutral-700"
+          <button type="button" className="text-xs text-fg-muted underline hover:text-fg-secondary"
             onClick={() => setOpen(false)}>
             Cancel
           </button>

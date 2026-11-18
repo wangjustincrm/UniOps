@@ -4,8 +4,8 @@ import type { ApprovalStep } from '@/types'
 
 const CHANNEL_BADGES: Record<string, string> = {
   Web: 'bg-primary-50 text-primary-600',
-  Email: 'bg-neutral-100 text-neutral-600',
-  Teams: 'bg-violet-50 text-violet-600',
+  Email: 'bg-surface-sunken text-fg-secondary',
+  Teams: 'bg-cat4-soft text-cat4-fg',
 }
 
 /**
@@ -41,17 +41,17 @@ export function ApprovalTimeline({ steps, onSendReminder, reminder }: ApprovalTi
               <div
                 className={cn(
                   'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm',
-                  step.status === 'completed' && 'bg-success-600 text-white',
+                  step.status === 'completed' && 'bg-success-solid text-white',
                   step.status === 'current' && 'bg-primary-600 text-white ring-4 ring-primary-100',
-                  step.status === 'pending' && 'border-2 border-neutral-300 bg-white text-neutral-400',
-                  step.status === 'skipped' && 'border-2 border-dashed border-neutral-300 bg-white text-neutral-300',
-                  step.status === 'returned' && 'bg-warning-500 text-white',
-                  step.status === 'rejected' && 'bg-danger-600 text-white'
+                  step.status === 'pending' && 'border-2 border-line-strong bg-surface text-fg-muted',
+                  step.status === 'skipped' && 'border-2 border-dashed border-line-strong bg-surface text-fg-faint',
+                  step.status === 'returned' && 'bg-warning-solid text-white',
+                  step.status === 'rejected' && 'bg-danger-solid text-white'
                 )}
               >
                 {step.status === 'completed' && <Check className="h-3.5 w-3.5" strokeWidth={2.5} />}
                 {step.status === 'current' && <Clock className="h-3.5 w-3.5" />}
-                {step.status === 'pending' && <span className="h-2 w-2 rounded-full bg-neutral-300" />}
+                {step.status === 'pending' && <span className="h-2 w-2 rounded-full bg-surface-strong" />}
                 {step.status === 'skipped' && <SkipForward className="h-3.5 w-3.5" />}
                 {step.status === 'returned' && <RotateCcw className="h-3.5 w-3.5" />}
                 {step.status === 'rejected' && <X className="h-3.5 w-3.5" strokeWidth={2.5} />}
@@ -60,7 +60,7 @@ export function ApprovalTimeline({ steps, onSendReminder, reminder }: ApprovalTi
                 <div
                   className={cn(
                     'w-0.5 flex-1 min-h-4 mt-1',
-                    step.status === 'completed' ? 'bg-success-300' : 'bg-neutral-200'
+                    step.status === 'completed' ? 'bg-success-300' : 'bg-surface-strong'
                   )}
                 />
               )}
@@ -73,26 +73,26 @@ export function ApprovalTimeline({ steps, onSendReminder, reminder }: ApprovalTi
                   <p
                     className={cn(
                       'text-sm font-medium',
-                      step.status === 'completed' && 'text-neutral-900',
+                      step.status === 'completed' && 'text-fg',
                       step.status === 'current' && 'text-primary-700',
-                      step.status === 'pending' && 'text-neutral-400',
-                      step.status === 'skipped' && 'text-neutral-400 line-through',
-                      step.status === 'returned' && 'text-warning-700',
-                      step.status === 'rejected' && 'text-danger-700'
+                      step.status === 'pending' && 'text-fg-muted',
+                      step.status === 'skipped' && 'text-fg-muted line-through',
+                      step.status === 'returned' && 'text-warning-fg',
+                      step.status === 'rejected' && 'text-danger-fg'
                     )}
                   >
                     {step.actorName ? `${step.role} — ${step.actorName}` : step.role}
                   </p>
 
                   {['completed', 'returned', 'rejected'].includes(step.status) && step.completedAt && (
-                    <p className="text-xs text-neutral-400 mt-0.5">{formatDateTime(step.completedAt)}</p>
+                    <p className="text-xs text-fg-muted mt-0.5">{formatDateTime(step.completedAt)}</p>
                   )}
 
                   {step.status === 'current' && (
                     <div className="mt-0.5">
                       <p className="text-xs text-primary-600">Awaiting action</p>
                       {step.daysWaiting != null && (
-                        <p className="text-xs text-neutral-400">
+                        <p className="text-xs text-fg-muted">
                           Waiting {step.daysWaiting} day{step.daysWaiting !== 1 ? 's' : ''}
                         </p>
                       )}
@@ -100,23 +100,23 @@ export function ApprovalTimeline({ steps, onSendReminder, reminder }: ApprovalTi
                   )}
 
                   {step.status === 'pending' && (
-                    <p className="text-xs text-neutral-400 mt-0.5">{step.role}</p>
+                    <p className="text-xs text-fg-muted mt-0.5">{step.role}</p>
                   )}
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0">
                   {step.channel && (
-                    <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-medium', CHANNEL_BADGES[step.channel])}>
+                    <span className={cn('rounded-full px-1.5 py-0.5 text-2xs font-medium', CHANNEL_BADGES[step.channel])}>
                       {step.channel}
                     </span>
                   )}
                   {step.action && (
                     <span
                       className={cn(
-                        'rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-                        step.action === 'Approved' && 'bg-success-50 text-success-700',
-                        step.action === 'Returned' && 'bg-warning-50 text-warning-700',
-                        step.action === 'Rejected' && 'bg-danger-50 text-danger-700'
+                        'rounded-full px-1.5 py-0.5 text-2xs font-medium',
+                        step.action === 'Approved' && 'bg-success-soft text-success-fg',
+                        step.action === 'Returned' && 'bg-warning-soft text-warning-fg',
+                        step.action === 'Rejected' && 'bg-danger-soft text-danger-fg'
                       )}
                     >
                       {step.action}
@@ -126,12 +126,12 @@ export function ApprovalTimeline({ steps, onSendReminder, reminder }: ApprovalTi
               </div>
 
               {step.comment && (
-                <p className="mt-1 text-xs text-neutral-500 italic">"{step.comment}"</p>
+                <p className="mt-1 text-xs text-fg-muted italic">"{step.comment}"</p>
               )}
 
               {/* Unquoted: the system explaining a skip or a return, not a person. */}
               {step.note && (
-                <p className="mt-1 text-xs text-neutral-500">{step.note}</p>
+                <p className="mt-1 text-xs text-fg-muted">{step.note}</p>
               )}
 
               {step.status === 'current' && onSendReminder && (
@@ -139,7 +139,7 @@ export function ApprovalTimeline({ steps, onSendReminder, reminder }: ApprovalTi
                   <button
                     onClick={() => onSendReminder(step.id)}
                     disabled={reminderStatus === 'pending'}
-                    className="text-xs text-primary-600 hover:underline disabled:cursor-not-allowed disabled:text-neutral-400 disabled:no-underline"
+                    className="text-xs text-primary-600 hover:underline disabled:cursor-not-allowed disabled:text-fg-muted disabled:no-underline"
                   >
                     {reminderStatus === 'pending' ? 'Sending reminder…' : 'Send reminder'}
                   </button>
@@ -147,7 +147,7 @@ export function ApprovalTimeline({ steps, onSendReminder, reminder }: ApprovalTi
                     <p
                       className={cn(
                         'mt-1 text-xs',
-                        reminderStatus === 'success' ? 'text-success-700' : 'text-warning-700'
+                        reminderStatus === 'success' ? 'text-success-fg' : 'text-warning-fg'
                       )}
                     >
                       {reminder.message}

@@ -144,10 +144,10 @@ export default function BudgetPlanEditPage() {
     return { months, q1, q2, q3, q4, year }
   }, [planGrid])
 
-  if (isLoading) return <div className="p-6 text-sm text-neutral-400">Loading plan…</div>
+  if (isLoading) return <div className="p-6 text-sm text-fg-muted">Loading plan…</div>
   if (!planGrid) {
     return (
-      <div className="p-6 text-sm text-neutral-400">
+      <div className="p-6 text-sm text-fg-muted">
         Plan not found. <BackLink to="/budget/plans" className="text-primary-600">← Back to list</BackLink>
       </div>
     )
@@ -241,35 +241,35 @@ export default function BudgetPlanEditPage() {
       </div>
 
       {/* Plan header card */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-5">
+      <div className="rounded-xl border border-line bg-surface p-5">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-bold text-neutral-900">Budget Plan FY {plan.fiscal_year}</h1>
+              <h1 className="text-xl font-bold text-fg">Budget Plan FY {plan.fiscal_year}</h1>
               <StatusBadge status={plan.status as DocumentStatus} />
-              <span className="inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-[11px] font-mono text-neutral-700">
+              <span className="inline-flex items-center gap-1 rounded-md border border-line bg-surface-subtle px-2 py-0.5 text-2xs font-mono text-fg-secondary">
                 <GitBranch className="h-3 w-3" />
                 v{plan.version}
               </span>
               {plan.is_current ? (
-                <span className="rounded-full bg-primary-50 text-primary-700 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                <span className="rounded-full bg-primary-50 text-primary-700 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide">
                   Current
                 </span>
               ) : plan.status === 'approved' ? (
-                <span className="rounded-full bg-neutral-100 text-neutral-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                <span className="rounded-full bg-surface-sunken text-fg-muted px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide">
                   Superseded
                 </span>
               ) : null}
             </div>
-            <p className="text-sm text-neutral-600 mt-1">Cost Center: <span className="font-medium">{ccLabel}</span></p>
-            {plan.notes && <p className="text-xs text-neutral-500 mt-1">Notes: {plan.notes}</p>}
+            <p className="text-sm text-fg-secondary mt-1">Cost Center: <span className="font-medium">{ccLabel}</span></p>
+            {plan.notes && <p className="text-xs text-fg-muted mt-1">Notes: {plan.notes}</p>}
             {plan.revision_notes && (
-              <p className="text-xs text-neutral-500 mt-1">
+              <p className="text-xs text-fg-muted mt-1">
                 <span className="font-semibold">Revision:</span> {plan.revision_notes}
               </p>
             )}
-            <p className="text-xs text-neutral-400 mt-1">
-              Grand Total: <span className="font-mono font-semibold text-neutral-700">{formatAmount(grand_total, 'CAD')}</span>
+            <p className="text-xs text-fg-muted mt-1">
+              Grand Total: <span className="font-mono font-semibold text-fg-secondary">{formatAmount(grand_total, 'CAD')}</span>
               {' '}· {flatRows.filter(r => r.kind === 'account').length} accounts
             </p>
           </div>
@@ -350,9 +350,9 @@ export default function BudgetPlanEditPage() {
       {/* Draft-revision-in-progress banner (visible when viewing the approved
           parent of an active draft revision). */}
       {plan.status === 'approved' && plan.is_current && openRevision && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-3">
-          <GitBranch className="h-4 w-4 text-amber-600 shrink-0" />
-          <p className="flex-1 text-sm text-amber-800">
+        <div className="rounded-xl border border-warning-line bg-warning-soft px-4 py-3 flex items-center gap-3">
+          <GitBranch className="h-4 w-4 text-warning-fg shrink-0" />
+          <p className="flex-1 text-sm text-warning-fg">
             A draft revision <span className="font-mono font-semibold">v{openRevision.version}</span>
             {' '}is already in progress for this plan.
           </p>
@@ -410,7 +410,7 @@ export default function BudgetPlanEditPage() {
       {/* Virtualized grid — single scroll container.
           Sticky header (top:0) and sticky totals footer (bottom:0) share the
           same horizontal scroll, so only one scrollbar pair is visible. */}
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
         <div
           ref={parentRef}
           className="overflow-auto"
@@ -420,17 +420,17 @@ export default function BudgetPlanEditPage() {
 
             {/* Sticky header */}
             <div
-              className="sticky top-0 z-20 grid items-center text-xs font-semibold text-neutral-500 uppercase tracking-wide border-b border-neutral-200 bg-neutral-50"
+              className="sticky top-0 z-20 grid items-center text-xs font-semibold text-fg-muted uppercase tracking-wide border-b border-line bg-surface-subtle"
               style={{ gridTemplateColumns: GRID_COLS, height: HEADER_HEIGHT }}
             >
-              <div className="px-3 text-left sticky left-0 bg-neutral-50 z-10">Account</div>
+              <div className="px-3 text-left sticky left-0 bg-surface-subtle z-10">Account</div>
               {MONTHS.map((m) => (
                 <div key={m} className="px-2 text-right">{m}</div>
               ))}
-              <div className="px-2 text-right bg-neutral-100">Q1</div>
-              <div className="px-2 text-right bg-neutral-100">Q2</div>
-              <div className="px-2 text-right bg-neutral-100">Q3</div>
-              <div className="px-2 text-right bg-neutral-100">Q4</div>
+              <div className="px-2 text-right bg-surface-sunken">Q1</div>
+              <div className="px-2 text-right bg-surface-sunken">Q2</div>
+              <div className="px-2 text-right bg-surface-sunken">Q3</div>
+              <div className="px-2 text-right bg-surface-sunken">Q4</div>
               <div className="px-2 text-right bg-primary-50 text-primary-700">Year</div>
             </div>
 
@@ -499,10 +499,10 @@ export default function BudgetPlanEditPage() {
 function L1HeaderRow({ l1_name }: { l1_code: string; l1_name: string }) {
   return (
     <div
-      className="grid items-center bg-neutral-100 border-b border-neutral-200"
+      className="grid items-center bg-surface-sunken border-b border-line"
       style={{ gridTemplateColumns: GRID_COLS, minWidth: 'fit-content', height: L1_ROW_HEIGHT }}
     >
-      <div className="sticky left-0 bg-neutral-100 px-3 z-10 text-sm font-semibold text-neutral-800">
+      <div className="sticky left-0 bg-surface-sunken px-3 z-10 text-sm font-semibold text-fg">
         {l1_name}
       </div>
     </div>
@@ -518,10 +518,10 @@ function TotalsRow({
 }) {
   return (
     <div
-      className="sticky bottom-0 z-20 grid items-center border-t-2 border-neutral-300 bg-neutral-100 font-semibold text-neutral-800"
+      className="sticky bottom-0 z-20 grid items-center border-t-2 border-line-strong bg-surface-sunken font-semibold text-fg"
       style={{ gridTemplateColumns: GRID_COLS, height: ROW_HEIGHT }}
     >
-      <div className="sticky left-0 bg-neutral-100 px-3 z-10 text-sm uppercase tracking-wide text-neutral-600">
+      <div className="sticky left-0 bg-surface-sunken px-3 z-10 text-sm uppercase tracking-wide text-fg-secondary">
         Total
       </div>
       {Array.from({ length: 12 }, (_, idx) => {
@@ -532,10 +532,10 @@ function TotalsRow({
           </div>
         )
       })}
-      <div className="px-2 text-right font-mono text-xs bg-neutral-200">{formatAmount(totals.q1, 'CAD')}</div>
-      <div className="px-2 text-right font-mono text-xs bg-neutral-200">{formatAmount(totals.q2, 'CAD')}</div>
-      <div className="px-2 text-right font-mono text-xs bg-neutral-200">{formatAmount(totals.q3, 'CAD')}</div>
-      <div className="px-2 text-right font-mono text-xs bg-neutral-200">{formatAmount(totals.q4, 'CAD')}</div>
+      <div className="px-2 text-right font-mono text-xs bg-surface-strong">{formatAmount(totals.q1, 'CAD')}</div>
+      <div className="px-2 text-right font-mono text-xs bg-surface-strong">{formatAmount(totals.q2, 'CAD')}</div>
+      <div className="px-2 text-right font-mono text-xs bg-surface-strong">{formatAmount(totals.q3, 'CAD')}</div>
+      <div className="px-2 text-right font-mono text-xs bg-surface-strong">{formatAmount(totals.q4, 'CAD')}</div>
       <div className="px-2 text-right font-mono text-xs bg-primary-100 text-primary-800">
         {formatAmount(totals.year, 'CAD')}
       </div>
@@ -555,25 +555,25 @@ interface AccountRowProps {
 function AccountRow({ planId, row, editable, onOpenBreakdown }: AccountRowProps) {
   return (
     <div
-      className="grid items-center border-b border-neutral-100 hover:bg-primary-50/30 transition-colors"
+      className="grid items-center border-b border-line-subtle hover:bg-primary-50/30 transition-colors"
       style={{ gridTemplateColumns: GRID_COLS, minWidth: 'fit-content', height: ROW_HEIGHT }}
     >
-      <div className="sticky left-0 bg-white px-3 z-10 border-r border-neutral-100 h-full flex items-center gap-2">
+      <div className="sticky left-0 bg-surface px-3 z-10 border-r border-line-subtle h-full flex items-center gap-2">
         {row.decomposition_enabled && (
           <Layers className="h-3.5 w-3.5 text-primary-600 shrink-0" />
         )}
-        <span className="font-mono text-[10px] text-neutral-500 shrink-0">{row.account_code}</span>
-        <span className="text-xs text-neutral-700 truncate">{row.account_name}</span>
+        <span className="font-mono text-2xs text-fg-muted shrink-0">{row.account_code}</span>
+        <span className="text-xs text-fg-secondary truncate">{row.account_name}</span>
       </div>
       {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
         <div key={m} className="text-right h-full flex items-center justify-end">
           {row.decomposition_enabled ? (
             <button
               onClick={() => onOpenBreakdown(m)}
-              className="w-full text-right font-mono text-xs text-neutral-700 hover:bg-primary-50 rounded px-1.5 py-1 flex items-center justify-end gap-1"
+              className="w-full text-right font-mono text-xs text-fg-secondary hover:bg-primary-50 rounded px-1.5 py-1 flex items-center justify-end gap-1"
               title="Edit factor breakdowns"
             >
-              <Lock className="h-3 w-3 text-neutral-300 shrink-0" />
+              <Lock className="h-3 w-3 text-fg-faint shrink-0" />
               {formatAmount(row.months[m] ?? 0, 'CAD')}
             </button>
           ) : (
@@ -615,7 +615,7 @@ const AccountRowMemo = memo(AccountRow, (prev, next) => {
 
 function QtdCell({ value }: { value: number }) {
   return (
-    <div className="px-2 text-right font-mono text-xs text-neutral-600 bg-neutral-50 h-full flex items-center justify-end">
+    <div className="px-2 text-right font-mono text-xs text-fg-secondary bg-surface-subtle h-full flex items-center justify-end">
       {formatAmount(value, 'CAD')}
     </div>
   )
@@ -644,7 +644,7 @@ function CellInput({
 
   if (!editable) {
     return (
-      <span className={cn('block text-right font-mono text-xs px-1.5 py-1 w-full', value === 0 ? 'text-neutral-300' : 'text-neutral-700')}>
+      <span className={cn('block text-right font-mono text-xs px-1.5 py-1 w-full', value === 0 ? 'text-fg-faint' : 'text-fg-secondary')}>
         {formatAmount(value, 'CAD')}
       </span>
     )
@@ -657,7 +657,7 @@ function CellInput({
       onChange={(e) => setLocal(e.target.value)}
       onBlur={handleBlur}
       placeholder="0"
-      className="w-full text-right font-mono text-xs px-1.5 py-1 rounded border border-transparent hover:border-neutral-200 focus:border-primary-600 focus:outline-none focus:bg-white"
+      className="w-full text-right font-mono text-xs px-1.5 py-1 rounded border border-transparent hover:border-line focus:border-primary-600 focus:outline-none focus:bg-surface"
     />
   )
 }
@@ -679,32 +679,32 @@ function ReviseModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-neutral-200">
+      <div className="bg-surface rounded-xl shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-line">
           <h3 className="text-sm font-semibold">Revise Approved Plan</h3>
-          <button onClick={onClose} className="p-1 rounded hover:bg-neutral-100"><X className="h-4 w-4" /></button>
+          <button onClick={onClose} className="p-1 rounded hover:bg-surface-sunken"><X className="h-4 w-4" /></button>
         </div>
         <div className="flex flex-col gap-4 p-5">
-          <p className="text-sm text-neutral-600">
+          <p className="text-sm text-fg-secondary">
             This will create a new draft <span className="font-mono font-semibold">v{version + 1}</span> for
             FY {fiscalYear}, copying all monthly amounts and factor breakdowns from the current approved version.
             The current version stays active for balance and actual queries until the revision is approved.
           </p>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Reason for revision</label>
+            <label className="text-xs font-medium text-fg-secondary">Reason for revision</label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="e.g. Mid-year reallocation per CFO directive"
               rows={3}
-              className="rounded-md border border-neutral-300 px-3 py-2 text-sm"
+              className="rounded-md border border-line-strong px-3 py-2 text-sm"
             />
-            <p className="text-[11px] text-neutral-400">
+            <p className="text-2xs text-fg-muted">
               Stored as <code>revision_notes</code> on the new draft. Visible on the version history.
             </p>
           </div>
-          {error && <p role="alert" className="text-sm text-danger-600">{error}</p>}
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
+          {error && <p role="alert" className="text-sm text-danger-fg">{error}</p>}
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-line-subtle">
             <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
             <Button onClick={() => onSubmit(notes.trim())} disabled={pending}>
               <GitBranch className="h-4 w-4" />
@@ -732,21 +732,21 @@ function VersionHistoryDrawer({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
       <aside
-        className="w-full max-w-md h-full bg-white shadow-xl overflow-y-auto"
+        className="w-full max-w-md h-full bg-surface shadow-xl overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="sticky top-0 z-10 flex items-center justify-between bg-white border-b border-neutral-200 px-5 py-3">
+        <header className="sticky top-0 z-10 flex items-center justify-between bg-surface border-b border-line px-5 py-3">
           <div className="flex items-center gap-2">
-            <History className="h-4 w-4 text-neutral-500" />
+            <History className="h-4 w-4 text-fg-muted" />
             <h3 className="text-sm font-semibold">Version History — FY {fiscalYear}</h3>
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-neutral-100"><X className="h-4 w-4" /></button>
+          <button onClick={onClose} className="p-1 rounded hover:bg-surface-sunken"><X className="h-4 w-4" /></button>
         </header>
         <div className="flex flex-col gap-2 p-4">
           {isLoading ? (
-            <p className="text-sm text-neutral-400">Loading…</p>
+            <p className="text-sm text-fg-muted">Loading…</p>
           ) : versions.length === 0 ? (
-            <p className="text-sm text-neutral-400">No versions found.</p>
+            <p className="text-sm text-fg-muted">No versions found.</p>
           ) : (
             versions.map((v) => {
               const isViewing = v.id === currentPlanId
@@ -759,7 +759,7 @@ function VersionHistoryDrawer({
                     'rounded-lg border px-4 py-3 transition-colors flex items-start justify-between gap-3',
                     isViewing
                       ? 'border-primary-300 bg-primary-50'
-                      : 'border-neutral-200 hover:border-primary-200 hover:bg-neutral-50',
+                      : 'border-line hover:border-primary-200 hover:bg-surface-subtle',
                   )}
                 >
                   <div className="flex-1 min-w-0">
@@ -767,20 +767,20 @@ function VersionHistoryDrawer({
                       <span className="font-mono text-sm font-semibold">v{v.version}</span>
                       <StatusBadge status={v.status as DocumentStatus} />
                       {v.is_current && (
-                        <span className="rounded-full bg-primary-100 text-primary-700 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                        <span className="rounded-full bg-primary-100 text-primary-700 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide">
                           Current
                         </span>
                       )}
                       {isViewing && (
-                        <span className="rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                        <span className="rounded-full bg-warning-soft text-warning-fg px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide">
                           Viewing
                         </span>
                       )}
                     </div>
                     {v.revision_notes && (
-                      <p className="text-xs text-neutral-600 mt-1">{v.revision_notes}</p>
+                      <p className="text-xs text-fg-secondary mt-1">{v.revision_notes}</p>
                     )}
-                    <p className="text-[11px] text-neutral-400 mt-1">
+                    <p className="text-2xs text-fg-muted mt-1">
                       {v.approved_at
                         ? `Approved ${formatDate(v.approved_at)}`
                         : v.submitted_at
@@ -809,10 +809,10 @@ function ImportResultBanner({
     <div className={cn(
       'rounded-xl border px-4 py-3.5 flex items-start gap-3',
       ok
-        ? 'border-success-200 bg-success-50 text-success-800'
+        ? 'border-success-line bg-success-soft text-success-fg'
         : hasWarnings
-          ? 'border-amber-200 bg-amber-50 text-amber-800'
-          : 'border-neutral-200 bg-neutral-50 text-neutral-700',
+          ? 'border-warning-line bg-warning-soft text-warning-fg'
+          : 'border-line bg-surface-subtle text-fg-secondary',
     )}>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium">

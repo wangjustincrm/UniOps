@@ -101,10 +101,10 @@ function FullTaskCard({ task }: FullTaskCardProps) {
       className={cn(
         'rounded-xl border p-4 transition-shadow',
         isDone
-          ? 'border-neutral-200 bg-neutral-50'
+          ? 'border-line bg-surface-subtle'
           : isUrgent
-          ? 'border-danger-200 bg-danger-50 hover:shadow-[0_2px_8px_rgba(185,28,28,0.08)]'
-          : 'border-neutral-200 bg-white hover:shadow-[0_2px_8px_rgba(10,124,124,0.08)]'
+          ? 'border-danger-line bg-danger-soft hover:shadow-[0_2px_8px_rgba(185,28,28,0.08)]'
+          : 'border-line bg-surface hover:shadow-[0_2px_8px_rgba(10,124,124,0.08)]'
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -113,16 +113,16 @@ function FullTaskCard({ task }: FullTaskCardProps) {
           {/* Type label + urgent icon + done badge */}
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             {isUrgent && !isDone && (
-              <AlertCircle className="h-4 w-4 shrink-0 text-danger-600" />
+              <AlertCircle className="h-4 w-4 shrink-0 text-danger-fg" />
             )}
             <p
               className={cn(
                 'text-sm font-semibold',
                 isDone
-                  ? 'line-through text-neutral-400'
+                  ? 'line-through text-fg-muted'
                   : isUrgent
-                  ? 'text-danger-700'
-                  : 'text-neutral-900'
+                  ? 'text-danger-fg'
+                  : 'text-fg'
               )}
             >
               {obJustification !== null
@@ -130,7 +130,7 @@ function FullTaskCard({ task }: FullTaskCardProps) {
                 : taskCardLabel(task)}
             </p>
             {isDone && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-success-100 px-2 py-0.5 text-[11px] font-medium text-success-700">
+              <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-2xs font-medium text-success-fg">
                 <Check className="h-3 w-3" />
                 Done
               </span>
@@ -141,7 +141,7 @@ function FullTaskCard({ task }: FullTaskCardProps) {
           <p
             className={cn(
               'text-sm',
-              isDone ? 'line-through text-neutral-400' : 'text-neutral-600'
+              isDone ? 'line-through text-fg-muted' : 'text-fg-secondary'
             )}
           >
             {task.document_number}
@@ -150,7 +150,7 @@ function FullTaskCard({ task }: FullTaskCardProps) {
           </p>
 
           {step && (
-            <p className={cn('text-xs', isDone ? 'text-neutral-400' : 'text-neutral-500')}>{step}</p>
+            <p className={cn('text-xs', isDone ? 'text-fg-muted' : 'text-fg-muted')}>{step}</p>
           )}
 
           {/* Reason — the two ERP-bridge task families only. Their whole point
@@ -164,7 +164,7 @@ function FullTaskCard({ task }: FullTaskCardProps) {
             <p
               className={cn(
                 'mt-2 whitespace-pre-line text-xs leading-relaxed',
-                isDone ? 'text-neutral-400' : 'text-neutral-500'
+                isDone ? 'text-fg-muted' : 'text-fg-muted'
               )}
             >
               {task.description}
@@ -175,7 +175,7 @@ function FullTaskCard({ task }: FullTaskCardProps) {
             <p
               className={cn(
                 'mt-2 whitespace-pre-line text-xs leading-relaxed',
-                isDone ? 'text-neutral-400' : 'text-neutral-500'
+                isDone ? 'text-fg-muted' : 'text-fg-muted'
               )}
             >
               <span className="font-medium">Justification:</span>{' '}
@@ -185,7 +185,7 @@ function FullTaskCard({ task }: FullTaskCardProps) {
 
           {/* Due date */}
           {!isDone && task.due_date && (
-            <div className="mt-1.5 flex items-center gap-1 text-xs text-neutral-400">
+            <div className="mt-1.5 flex items-center gap-1 text-xs text-fg-muted">
               <Clock className="h-3.5 w-3.5" />
               Due {formatDate(task.due_date)}
             </div>
@@ -195,7 +195,7 @@ function FullTaskCard({ task }: FullTaskCardProps) {
               approval engine closes approval tasks without a closer, so an
               unknown closer is left out rather than called automatic (ISS-0131). */}
           {isDone && task.completed_at && (
-            <p className="mt-1 text-xs text-neutral-400">
+            <p className="mt-1 text-xs text-fg-muted">
               Closed {formatDateTime(task.completed_at)}
               {task.completed_by_name ? ` by ${task.completed_by_name}` : ''}
             </p>
@@ -230,9 +230,9 @@ function EmptyState({ tab }: { tab: TabValue }) {
   const msg = EMPTY_MESSAGES[tab]
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <Inbox className="h-10 w-10 text-neutral-300 mb-3" />
-      <p className="text-base font-medium text-neutral-500">{msg.heading}</p>
-      <p className="mt-1 text-sm text-neutral-400">{msg.sub}</p>
+      <Inbox className="h-10 w-10 text-fg-faint mb-3" />
+      <p className="text-base font-medium text-fg-muted">{msg.heading}</p>
+      <p className="mt-1 text-sm text-fg-muted">{msg.sub}</p>
     </div>
   )
 }
@@ -319,8 +319,8 @@ export default function TaskInboxPage() {
       {/* ── Header ── */}
       <div className="mb-6 flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Task Inbox</h1>
-          <p className="mt-1 text-sm text-neutral-500">Your pending actions</p>
+          <h1 className="text-2xl font-bold text-fg">Task Inbox</h1>
+          <p className="mt-1 text-sm text-fg-muted">Your pending actions</p>
         </div>
         <Button
           variant="ghost"
@@ -328,7 +328,7 @@ export default function TaskInboxPage() {
           onClick={refresh}
           disabled={refreshing}
           aria-label="Refresh task list"
-          className="shrink-0 gap-1.5 text-neutral-500"
+          className="shrink-0 gap-1.5 text-fg-muted"
         >
           <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
           Refresh
@@ -338,39 +338,39 @@ export default function TaskInboxPage() {
       {/* ── Stats bar ── */}
       <div className="mb-6 grid grid-cols-3 gap-4">
         {/* Urgent */}
-        <div className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3">
+        <div className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3">
           <div className="flex items-center gap-1.5 mb-1">
-            <AlertCircle className="h-4 w-4 text-danger-600" />
-            <p className="text-xs font-semibold uppercase tracking-wide text-danger-600">Urgent</p>
+            <AlertCircle className="h-4 w-4 text-danger-fg" />
+            <p className="text-xs font-semibold uppercase tracking-wide text-danger-fg">Urgent</p>
           </div>
-          <p className="text-2xl font-bold text-danger-700">{urgentCount}</p>
-          <p className="text-xs text-danger-500 mt-0.5">
+          <p className="text-2xl font-bold text-danger-fg">{urgentCount}</p>
+          <p className="text-xs text-danger-fg mt-0.5">
             {urgentCount === 1 ? 'task' : 'tasks'} needing attention
           </p>
         </div>
 
         {/* Normal */}
-        <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
+        <div className="rounded-xl border border-line bg-surface px-4 py-3">
           <div className="flex items-center gap-1.5 mb-1">
-            <Clock className="h-4 w-4 text-neutral-400" />
-            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Normal</p>
+            <Clock className="h-4 w-4 text-fg-muted" />
+            <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Normal</p>
           </div>
-          <p className="text-2xl font-bold text-neutral-700">{normalCount}</p>
-          <p className="text-xs text-neutral-400 mt-0.5">
+          <p className="text-2xl font-bold text-fg-secondary">{normalCount}</p>
+          <p className="text-xs text-fg-muted mt-0.5">
             {normalCount === 1 ? 'task' : 'tasks'} in queue
           </p>
         </div>
 
         {/* Completed today */}
-        <div className="rounded-xl border border-success-200 bg-success-50 px-4 py-3">
+        <div className="rounded-xl border border-success-line bg-success-soft px-4 py-3">
           <div className="flex items-center gap-1.5 mb-1">
-            <Check className="h-4 w-4 text-success-600" />
-            <p className="text-xs font-semibold uppercase tracking-wide text-success-600">
+            <Check className="h-4 w-4 text-success-fg" />
+            <p className="text-xs font-semibold uppercase tracking-wide text-success-fg">
               Completed
             </p>
           </div>
-          <p className="text-2xl font-bold text-success-700">{completedTodayCount}</p>
-          <p className="text-xs text-success-600 mt-0.5">
+          <p className="text-2xl font-bold text-success-fg">{completedTodayCount}</p>
+          <p className="text-xs text-success-fg mt-0.5">
             {completedTodayCount === 1 ? 'task' : 'tasks'} done today
           </p>
         </div>
@@ -379,7 +379,7 @@ export default function TaskInboxPage() {
       {/* ── Filter controls ── */}
       <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
         {/* Tab strip */}
-        <div className="flex items-center gap-1 rounded-lg bg-neutral-100 p-1">
+        <div className="flex items-center gap-1 rounded-lg bg-surface-sunken p-1">
           {TABS.map((tab) => (
             <button
               key={tab.value}
@@ -387,13 +387,13 @@ export default function TaskInboxPage() {
               className={cn(
                 'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
                 activeTab === tab.value
-                  ? 'bg-white text-neutral-900 shadow-sm'
-                  : 'text-neutral-500 hover:text-neutral-700'
+                  ? 'bg-surface text-fg shadow-sm'
+                  : 'text-fg-muted hover:text-fg-secondary'
               )}
             >
               {tab.label}
               {tab.value === 'urgent' && urgentCount > 0 && (
-                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-600 px-1 text-[10px] font-bold text-white">
+                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-solid px-1 text-2xs font-bold text-white">
                   {urgentCount}
                 </span>
               )}
@@ -405,7 +405,7 @@ export default function TaskInboxPage() {
       {/* ── Search + type filter (client-side) ── */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-48">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
           <Input
             placeholder="Search document #, vendor or title…"
             value={search}
@@ -418,7 +418,7 @@ export default function TaskInboxPage() {
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
           aria-label="Filter by task type"
-          className="h-10 max-w-full rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+          className="h-10 max-w-full rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
         >
           <option value="">All task types</option>
           {typeFilter && !typeOptions.some((o) => o.value === typeFilter) && (
@@ -434,7 +434,7 @@ export default function TaskInboxPage() {
       {tabFiltered.length === 0 ? (
         <EmptyState tab={activeTab} />
       ) : visible.length === 0 ? (
-        <p className="py-12 text-center text-sm text-neutral-500">No tasks match this search.</p>
+        <p className="py-12 text-center text-sm text-fg-muted">No tasks match this search.</p>
       ) : (
         <div className="flex flex-col gap-6">
           {groups.map((group) => {
@@ -449,10 +449,10 @@ export default function TaskInboxPage() {
                 className="mb-2 flex items-center gap-2 text-left"
               >
                 {isCollapsed
-                  ? <ChevronRight className="h-4 w-4 text-neutral-400" />
-                  : <ChevronDown className="h-4 w-4 text-neutral-400" />}
-                <h3 className="text-sm font-semibold text-neutral-700">{group.label}</h3>
-                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-neutral-100 px-1.5 text-[11px] font-semibold text-neutral-500">
+                  ? <ChevronRight className="h-4 w-4 text-fg-muted" />
+                  : <ChevronDown className="h-4 w-4 text-fg-muted" />}
+                <h3 className="text-sm font-semibold text-fg-secondary">{group.label}</h3>
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-surface-sunken px-1.5 text-2xs font-semibold text-fg-muted">
                   {group.items.length}
                 </span>
               </button>

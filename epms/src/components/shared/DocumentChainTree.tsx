@@ -147,22 +147,22 @@ function AncestorCard({
   return (
     <div className="mb-1">
       <Link to={href}>
-        <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 hover:border-primary-300 hover:bg-primary-50/50 transition-colors group">
+        <div className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 hover:border-primary-300 hover:bg-primary-50/50 transition-colors group">
           <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-primary-200 bg-primary-50 text-primary-600">
             {icon}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-1.5">
-              <span className="font-mono text-[11px] font-semibold text-neutral-700 truncate">{number}</span>
+              <span className="font-mono text-2xs font-semibold text-fg-secondary truncate">{number}</span>
               {status && <StatusBadge status={status} />}
             </div>
-            <p className="text-[10px] text-neutral-400 mt-0.5 truncate">{meta}</p>
+            <p className="text-2xs text-fg-muted mt-0.5 truncate">{meta}</p>
           </div>
-          <ArrowRight className="h-3.5 w-3.5 shrink-0 text-neutral-300 group-hover:text-primary-400" />
+          <ArrowRight className="h-3.5 w-3.5 shrink-0 text-fg-faint group-hover:text-primary-400" />
         </div>
       </Link>
       <div className="flex justify-center py-0.5">
-        <div className="w-px h-3 bg-neutral-200" />
+        <div className="w-px h-3 bg-surface-strong" />
       </div>
     </div>
   )
@@ -185,10 +185,10 @@ function AnchorCard({
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-1.5">
-          <span className="font-mono text-[11px] font-semibold text-primary-700 truncate">{number}</span>
+          <span className="font-mono text-2xs font-semibold text-primary-700 truncate">{number}</span>
           {status && <StatusBadge status={status} />}
         </div>
-        <p className="text-[10px] text-neutral-500 mt-0.5 truncate">{meta}</p>
+        <p className="text-2xs text-fg-muted mt-0.5 truncate">{meta}</p>
       </div>
     </div>
   )
@@ -220,35 +220,35 @@ function TreeRow({
       isCurrent
         ? 'border-primary-300 bg-primary-50 ring-1 ring-primary-200'
         : href
-        ? 'border-neutral-200 bg-white hover:border-primary-300 hover:bg-primary-50/50 cursor-pointer'
-        : 'border-neutral-100 bg-neutral-50 opacity-60',
+        ? 'border-line bg-surface hover:border-primary-300 hover:bg-primary-50/50 cursor-pointer'
+        : 'border-line-subtle bg-surface-subtle opacity-60',
     )}>
       <div className={cn(
         'flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors',
         isCurrent
           ? 'border-primary-200 bg-primary-50 text-primary-600'
           : href
-          ? 'border-neutral-200 bg-white text-neutral-400 group-hover:border-primary-200 group-hover:text-primary-600'
-          : 'border-neutral-200 bg-neutral-100 text-neutral-300',
+          ? 'border-line bg-surface text-fg-muted group-hover:border-primary-200 group-hover:text-primary-600'
+          : 'border-line bg-surface-sunken text-fg-faint',
       )}>
         {icon}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 justify-between">
           <span className={cn(
-            'font-mono text-[11px] font-semibold truncate',
-            isCurrent ? 'text-primary-700' : number ? 'text-neutral-700' : 'text-neutral-400',
+            'font-mono text-2xs font-semibold truncate',
+            isCurrent ? 'text-primary-700' : number ? 'text-fg-secondary' : 'text-fg-muted',
           )}>
-            {number ?? <span className="italic font-sans font-normal text-neutral-400">{label}</span>}
+            {number ?? <span className="italic font-sans font-normal text-fg-muted">{label}</span>}
           </span>
           <div className="flex items-center gap-1 shrink-0">
             {extraBadge}
             {statusDoc && <StatusBadge status={statusDoc} label={statusLabel} />}
           </div>
         </div>
-        {meta && <p className="text-[10px] text-neutral-400 mt-0.5 truncate">{meta}</p>}
+        {meta && <p className="text-2xs text-fg-muted mt-0.5 truncate">{meta}</p>}
       </div>
-      {href && !isCurrent && <ChevronRight className="h-3 w-3 shrink-0 text-neutral-300 group-hover:text-primary-400" />}
+      {href && !isCurrent && <ChevronRight className="h-3 w-3 shrink-0 text-fg-faint group-hover:text-primary-400" />}
     </div>
   )
 
@@ -256,15 +256,15 @@ function TreeRow({
     <div className="flex gap-2 items-stretch">
       {ancestorLines.map((cont, i) => (
         <div key={i} className="flex justify-center w-4 shrink-0">
-          {cont && <div className="w-px bg-neutral-200 flex-1" />}
+          {cont && <div className="w-px bg-surface-strong flex-1" />}
         </div>
       ))}
       <div className="flex flex-col items-center w-4 shrink-0">
-        <div className="w-px bg-neutral-200 flex-1" />
+        <div className="w-px bg-surface-strong flex-1" />
         {isLast && <div className="w-px flex-1" />}
       </div>
       <div className="flex items-center flex-1 py-0.5">
-        <div className="w-3 h-px bg-neutral-200 shrink-0" />
+        <div className="w-3 h-px bg-surface-strong shrink-0" />
         <div className="flex-1">
           {href && !isCurrent
             ? hrefExternal
@@ -535,16 +535,16 @@ function ChainForPo({ currentType, id, poIdOverride }: DocumentChainTreeProps & 
   )
 
   return (
-    <div className={poIdOverride ? 'mt-3 border-t border-dashed border-neutral-100 pt-3' : 'mt-5 border-t border-neutral-100 pt-4'}>
+    <div className={poIdOverride ? 'mt-3 border-t border-dashed border-line-subtle pt-3' : 'mt-5 border-t border-line-subtle pt-4'}>
       {!poIdOverride && <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
           Document Chain
         </h3>
         {isPa && currentPa && (
           <button
             type="button"
             onClick={() => setShowAttachments(true)}
-            className="inline-flex items-center gap-1 rounded-md border border-neutral-200 px-2 py-1 text-[11px] font-medium text-neutral-600 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700 transition-colors"
+            className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-2xs font-medium text-fg-secondary hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700 transition-colors"
           >
             <Paperclip className="h-3 w-3" /> Attachments
           </button>
@@ -587,7 +587,7 @@ function ChainForPo({ currentType, id, poIdOverride }: DocumentChainTreeProps & 
       ) : anchorKind === 'po' && po ? (
         <AnchorCard
           icon={<Package className="h-3 w-3" />}
-          iconColor="border-success-300 bg-success-50 text-success-700"
+          iconColor="border-success-line bg-success-soft text-success-fg"
           number={po.number}
           meta={po.vendor_name}
           status={po.status as DocumentStatus}
@@ -595,7 +595,7 @@ function ChainForPo({ currentType, id, poIdOverride }: DocumentChainTreeProps & 
       ) : anchorKind === 'agr' && agreement ? (
         <AnchorCard
           icon={<FileSignature className="h-3 w-3" />}
-          iconColor="border-warning-300 bg-warning-50 text-warning-700"
+          iconColor="border-warning-line bg-warning-soft text-warning-fg"
           number={agreement.number}
           meta={agreement.vendor_name}
           status={agreement.status as DocumentStatus}
@@ -704,7 +704,7 @@ function ChainForPo({ currentType, id, poIdOverride }: DocumentChainTreeProps & 
         // never "none exist".
         if (invoiceLayerHidden) {
           rows.push(
-            <div key="agr-invoices-perm-note" className="mb-2 pl-1 flex items-center gap-1.5 text-[11px] text-neutral-400 italic">
+            <div key="agr-invoices-perm-note" className="mb-2 pl-1 flex items-center gap-1.5 text-2xs text-fg-muted italic">
               <AlertTriangle className="h-3 w-3 shrink-0" />
               Invoices on this agreement aren't visible with your permissions — this chain, and any receipt evidence hanging off those invoices, is incomplete.
             </div>,
@@ -723,7 +723,7 @@ function ChainForPo({ currentType, id, poIdOverride }: DocumentChainTreeProps & 
             // know" is the defect class this branch keeps re-introducing.
             // Say only what is actually established: the layer did not load,
             // so what's shown may be incomplete.
-            <div key="agr-receipts-load-note" className="mb-2 pl-1 flex items-center gap-1.5 text-[11px] text-neutral-400 italic">
+            <div key="agr-receipts-load-note" className="mb-2 pl-1 flex items-center gap-1.5 text-2xs text-fg-muted italic">
               <AlertTriangle className="h-3 w-3 shrink-0" />
               This agreement's receipt evidence couldn't be loaded (you may not have access to it) — the chain below may be incomplete.
             </div>,
@@ -795,12 +795,12 @@ function ChainForPo({ currentType, id, poIdOverride }: DocumentChainTreeProps & 
 
       {!paEntryStillLoading && totalChildren === 0 && anchorKind === 'po' && (
         <div className="mt-2 pl-6">
-          <p className="text-[11px] text-neutral-400 italic">No linked GRs, invoices, or payments yet</p>
+          <p className="text-2xs text-fg-muted italic">No linked GRs, invoices, or payments yet</p>
         </div>
       )}
       {!paEntryStillLoading && totalChildren === 0 && anchorIsPr && !po && !currentPr?.po_id && (
         <div className="mt-2 pl-6">
-          <p className="text-[11px] text-neutral-400 italic">No linked PO, GRs, invoices, or payments yet</p>
+          <p className="text-2xs text-fg-muted italic">No linked PO, GRs, invoices, or payments yet</p>
         </div>
       )}
       {/* Fix round 2 (I1): this sentence is an ASSERTION about the data, so it
@@ -808,7 +808,7 @@ function ChainForPo({ currentType, id, poIdOverride }: DocumentChainTreeProps & 
           data — the note rendered above says what's actually true for them. */}
       {!paEntryStillLoading && isAgrAxis && !invoiceLayerHidden && agrInvoices.length === 0 && (
         <div className="mt-2 pl-6">
-          <p className="text-[11px] text-neutral-400 italic">No invoices matched to this agreement yet</p>
+          <p className="text-2xs text-fg-muted italic">No invoices matched to this agreement yet</p>
         </div>
       )}
     </div>

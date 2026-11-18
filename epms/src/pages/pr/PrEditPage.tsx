@@ -357,13 +357,13 @@ export default function PrEditPage() {
   }
 
   if (isLoading) {
-    return <div className="flex items-center justify-center py-24 text-sm text-neutral-400">Loading…</div>
+    return <div className="flex items-center justify-center py-24 text-sm text-fg-muted">Loading…</div>
   }
 
   if (!pr || !['draft', 'returned'].includes(pr.status)) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <p className="text-sm text-neutral-400">This PR cannot be edited.</p>
+        <p className="text-sm text-fg-muted">This PR cannot be edited.</p>
         <BackLink to={`/pr/${id}`} className="mt-4">
           <Button variant="secondary">Back to PR</Button>
         </BackLink>
@@ -381,8 +381,8 @@ export default function PrEditPage() {
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Edit PR</h1>
-          <p className="text-sm text-neutral-500">{pr.number} — Type {pr.type}: {TYPE_LABELS[pr.type]}</p>
+          <h1 className="text-2xl font-bold text-fg">Edit PR</h1>
+          <p className="text-sm text-fg-muted">{pr.number} — Type {pr.type}: {TYPE_LABELS[pr.type]}</p>
         </div>
       </div>
 
@@ -391,8 +391,8 @@ export default function PrEditPage() {
             and follows every change before saving (OBG-001; ISS-0142). */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <div className="lg:col-span-9 flex flex-col gap-6">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
-            <h2 className="text-base font-semibold text-neutral-900">Requisition Details</h2>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+            <h2 className="text-base font-semibold text-fg">Requisition Details</h2>
 
             {/* Title */}
             <FormField label="PR Title / Description" required htmlFor="title">
@@ -406,22 +406,22 @@ export default function PrEditPage() {
 
             {/* Vendor */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-neutral-700">Preferred Vendor</label>
+              <label className="text-sm font-medium text-fg-secondary">Preferred Vendor</label>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
                 <input
                   type="text"
                   placeholder="Search vendor by name…"
                   value={selectedVendor ? selectedVendor.name : vendorQuery}
                   onFocus={() => { setVendorOpen(true); if (selectedVendor) setVendorQuery('') }}
                   onChange={(e) => { setVendorQuery(e.target.value); setSelectedVendor(null); setVendorOpen(true) }}
-                  className="h-10 w-full rounded-md border border-neutral-300 bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="h-10 w-full rounded-md border border-line-strong bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 />
                 {selectedVendor && (
                   <button
                     type="button"
                     onClick={() => { setSelectedVendor(null); setVendorQuery('') }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -429,7 +429,7 @@ export default function PrEditPage() {
                 {vendorOpen && !selectedVendor && (
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setVendorOpen(false)} />
-                    <div className="absolute z-20 mt-1 w-full rounded-lg border border-neutral-200 bg-white py-1 shadow-lg max-h-56 overflow-y-auto">
+                    <div className="absolute z-20 mt-1 w-full rounded-lg border border-line bg-surface py-1 shadow-lg max-h-56 overflow-y-auto">
                       {vendors.map((v) => (
                         <button
                           key={v.id}
@@ -437,11 +437,11 @@ export default function PrEditPage() {
                           className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-primary-50 text-left"
                           onClick={() => { setSelectedVendor(v); setVendorOpen(false); setVendorQuery('') }}
                         >
-                          <span className="font-mono text-xs rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-600">{v.code}</span>
+                          <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
                           {v.name}
                         </button>
                       ))}
-                      {vendors.length === 0 && <p className="px-3 py-2 text-sm text-neutral-400">No vendors found</p>}
+                      {vendors.length === 0 && <p className="px-3 py-2 text-sm text-fg-muted">No vendors found</p>}
                     </div>
                   </>
                 )}
@@ -450,8 +450,8 @@ export default function PrEditPage() {
 
             {/* Department — drives cost center / budget filtering and approval routing */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-neutral-700">
-                Department <span className="text-danger-600">*</span>
+              <label className="text-sm font-medium text-fg-secondary">
+                Department <span className="text-danger-fg">*</span>
               </label>
               <select
                 value={selectedDepartmentId ?? ''}
@@ -463,7 +463,7 @@ export default function PrEditPage() {
                   setSelectedL1(''); setSelectedL1Obj(null); setSelectedL2('')
                   setFactorCombo({}); setFactorComboError(null)
                 }}
-                className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               >
                 <option value="">Select Department…</option>
                 {departments.map((d) => (
@@ -471,13 +471,13 @@ export default function PrEditPage() {
                 ))}
               </select>
               {departmentError && (
-                <p className="text-xs text-danger-600">{departmentError}</p>
+                <p className="text-xs text-danger-fg">{departmentError}</p>
               )}
             </div>
 
             {/* Cost Center + Budget */}
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium text-neutral-700">Budget Account</label>
+              <label className="text-sm font-medium text-fg-secondary">Budget Account</label>
               <select
                 value={selectedCostCenter}
                 onChange={(e) => {
@@ -487,7 +487,7 @@ export default function PrEditPage() {
                   setSelectedL1(''); setSelectedL1Obj(null); setSelectedL2('')
                   setFactorCombo({}); setFactorComboError(null)
                 }}
-                className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               >
                 <option value="">Select Cost Center…</option>
                 {costCenters.map((cc) => (
@@ -504,7 +504,7 @@ export default function PrEditPage() {
                   setFactorCombo({}); setFactorComboError(null)
                 }}
                 disabled={ccL1Groups.length === 0}
-                className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400"
+                className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
               >
                 <option value="">Select L1 Category…</option>
                 {ccL1Groups.map((l1) => (
@@ -515,7 +515,7 @@ export default function PrEditPage() {
                 value={selectedL2}
                 onChange={(e) => { setSelectedL2(e.target.value); setFactorCombo({}); setFactorComboError(null); setBudgetError(null) }}
                 disabled={ccL2Accounts.length === 0}
-                className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400"
+                className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
               >
                 <option value="">Select L2 Sub-account…</option>
                 {ccL2Accounts.map((l2) => (
@@ -523,7 +523,7 @@ export default function PrEditPage() {
                 ))}
               </select>
               {budgetError && (
-                <p className="text-xs text-danger-600">{budgetError}</p>
+                <p className="text-xs text-danger-fg">{budgetError}</p>
               )}
             </div>
 
@@ -534,7 +534,7 @@ export default function PrEditPage() {
                   <p className="text-xs font-semibold text-primary-800">
                     Decomposition Factors — required
                   </p>
-                  <p className="text-[11px] text-primary-700/80">
+                  <p className="text-2xs text-primary-700/80">
                     Pick a value for each factor so this PR's budget impact maps to the right breakdown line.
                   </p>
                 </div>
@@ -544,9 +544,9 @@ export default function PrEditPage() {
                     const current = factorCombo[f.factor_code] ?? ''
                     return (
                       <div key={f.id} className="flex flex-col gap-1">
-                        <label className="text-[11px] font-medium text-neutral-700">
+                        <label className="text-2xs font-medium text-fg-secondary">
                           {f.factor_name}
-                          <span className="ml-1 font-mono text-neutral-400">({f.factor_code})</span>
+                          <span className="ml-1 font-mono text-fg-muted">({f.factor_code})</span>
                         </label>
                         <select
                           value={current}
@@ -560,7 +560,7 @@ export default function PrEditPage() {
                             })
                             setFactorComboError(null)
                           }}
-                          className="h-9 rounded-md border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                          className="h-9 rounded-md border border-line-strong bg-surface px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                         >
                           <option value="">Select…</option>
                           {activeValues.map((v) => (
@@ -574,7 +574,7 @@ export default function PrEditPage() {
                   })}
                 </div>
                 {factorComboError && (
-                  <p className="mt-2 text-xs text-danger-600">{factorComboError}</p>
+                  <p className="mt-2 text-xs text-danger-fg">{factorComboError}</p>
                 )}
               </div>
             )}
@@ -591,9 +591,9 @@ export default function PrEditPage() {
 
             {/* Hard-block notice — replaces justification when Budget Config = hard_block */}
             {isHardBlock && (
-              <div className="rounded-md border border-danger-300 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+              <div className="rounded-md border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
                 <p className="font-medium">Submission blocked — over budget</p>
-                <p className="mt-1 text-danger-600">
+                <p className="mt-1 text-danger-fg">
                   Budget Config is set to <strong>Hard block</strong>. This PR cannot be submitted while it exceeds the available budget for account {selectedL2}. Reduce the budget code's commitment or split the PR into smaller items.
                 </p>
               </div>
@@ -607,7 +607,7 @@ export default function PrEditPage() {
                   value={justification}
                   onChange={(e) => { setJustification(e.target.value); if (justificationError) setJustificationError(null) }}
                   placeholder="Explain why this expenditure is necessary despite exceeding budget…"
-                  className="min-h-20 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="min-h-20 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 />
               </FormField>
             )}
@@ -618,7 +618,7 @@ export default function PrEditPage() {
                 id="currency"
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value as Currency)}
-                className="h-10 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                className="h-10 w-full rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               >
                 {enabledCurrencyOptions(config, currency).map((c) => (
                   <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
@@ -645,7 +645,7 @@ export default function PrEditPage() {
                   value={requiredBy}
                   onChange={(e) => setRequiredBy(e.target.value)}
                 />
-                <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
               </div>
             </FormField>
 
@@ -662,7 +662,7 @@ export default function PrEditPage() {
                     value={serviceCompletionDate}
                     onChange={(e) => setServiceCompletionDate(e.target.value)}
                   />
-                  <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                  <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
                 </div>
               </FormField>
               </div>
@@ -681,7 +681,7 @@ export default function PrEditPage() {
                     value={fixedAssetId}
                     onChange={(e) => setFixedAssetId(e.target.value)}
                     placeholder="e.g. FA-2026-0001"
-                    className="h-9 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="h-9 w-full rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                   />
                 </FormField>
               </div>
@@ -692,11 +692,11 @@ export default function PrEditPage() {
                 completion date passes, instead of the requester. */}
             {(procurementType === 4 || procurementType === 6) && (
               <div ref={ownerAnchorRef} className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-neutral-700" htmlFor="serviceOwner">
-                  Service/Project Owner <span className="text-danger-600">*</span>
+                <label className="text-sm font-medium text-fg-secondary" htmlFor="serviceOwner">
+                  Service/Project Owner <span className="text-danger-fg">*</span>
                 </label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
                   <input
                     id="serviceOwner"
                     type="text"
@@ -704,7 +704,7 @@ export default function PrEditPage() {
                     value={ownerOpen ? ownerQuery : (selectedOwner?.full_name ?? '')}
                     onFocus={() => { setOwnerOpen(true); setOwnerQuery('') }}
                     onChange={(e) => { setOwnerQuery(e.target.value); setOwnerOpen(true) }}
-                    className="h-10 w-full rounded-md border border-neutral-300 bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="h-10 w-full rounded-md border border-line-strong bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                   />
                 </div>
                 {ownerOpen && ownerRect && (
@@ -717,15 +717,15 @@ export default function PrEditPage() {
                         onClick={() => { setSelectedOwner(u); setOwnerOpen(false); setOwnerQuery('') }}
                       >
                         <span>{u.full_name}</span>
-                        {u.department_name && <span className="text-xs text-neutral-400">{u.department_name}</span>}
+                        {u.department_name && <span className="text-xs text-fg-muted">{u.department_name}</span>}
                       </button>
                     ))}
                     {owners.length === 0 && (
-                      <p className="px-3 py-2 text-sm text-neutral-400">No people found</p>
+                      <p className="px-3 py-2 text-sm text-fg-muted">No people found</p>
                     )}
                   </DropdownPortal>
                 )}
-                <p className="text-xs text-neutral-400">
+                <p className="text-xs text-fg-muted">
                   Receives the task and email to confirm the service was delivered.
                 </p>
               </div>
@@ -741,7 +741,7 @@ export default function PrEditPage() {
                     value={projectCode}
                     onChange={(e) => setProjectCode(e.target.value)}
                     placeholder="e.g. PROJ-2026-001"
-                    className="h-9 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="h-9 w-full rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                   />
                 </FormField>
               </div>
@@ -754,7 +754,7 @@ export default function PrEditPage() {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Any additional context for the approver…"
-                className="min-h-20 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                className="min-h-20 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               />
             </FormField>
 
@@ -765,16 +765,16 @@ export default function PrEditPage() {
                 id="prepayment-edit"
                 checked={isPrepaid}
                 onChange={(e) => setIsPrepaid(e.target.checked)}
-                className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
+                className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600"
               />
-              <label htmlFor="prepayment-edit" className="text-sm text-neutral-700 cursor-pointer">
+              <label htmlFor="prepayment-edit" className="text-sm text-fg-secondary cursor-pointer">
                 Prepayment Required
               </label>
             </div>
           </div>
 
           {/* Line Items */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
             <PrLineItems
               procurementType={procurementType ?? 2}
               items={lineItems}
@@ -782,15 +782,15 @@ export default function PrEditPage() {
               errors={lineErrors}
             />
             {Object.keys(lineErrors).length > 0 && (
-              <p className="mt-2 text-xs text-danger-600">Please fix the errors in the line items above.</p>
+              <p className="mt-2 text-xs text-danger-fg">Please fix the errors in the line items above.</p>
             )}
           </div>
 
           {/* Attachments */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-3">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-3">
             <div>
-              <h2 className="text-base font-semibold text-neutral-900">Attachments</h2>
-              <p className="text-xs text-neutral-400 mt-1">Uploads and removals are saved immediately.</p>
+              <h2 className="text-base font-semibold text-fg">Attachments</h2>
+              <p className="text-xs text-fg-muted mt-1">Uploads and removals are saved immediately.</p>
             </div>
             <AttachmentsEditor
               inputId="pr-edit-file-upload"
@@ -804,12 +804,12 @@ export default function PrEditPage() {
           </div>
 
           {/* Action bar */}
-          <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-6 py-4">
+          <div className="flex items-center justify-between rounded-lg border border-line bg-surface px-6 py-4">
             <Link to={`/pr/${id}`}>
               <Button variant="secondary">Cancel</Button>
             </Link>
             {submitError && (
-              <p role="alert" className="flex-1 mx-4 text-sm text-danger-600">{submitError}</p>
+              <p role="alert" className="flex-1 mx-4 text-sm text-danger-fg">{submitError}</p>
             )}
             <div className="flex items-center gap-3">
               <Button type="button" variant="secondary" disabled={isSubmitting || !title.trim()} onClick={handleSaveDraft}>

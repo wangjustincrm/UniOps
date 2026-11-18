@@ -51,7 +51,7 @@ function Rows({ entries, labels, tone }: {
     <ul className="space-y-1">
       {entries.map(([key, n]) => (
         <li key={key} className="flex justify-between gap-3">
-          <span className="text-neutral-700">{labels?.[key] ?? humanize(key)}</span>
+          <span className="text-fg-secondary">{labels?.[key] ?? humanize(key)}</span>
           <span className={`shrink-0 font-semibold ${tone}`}>{n}</span>
         </li>
       ))}
@@ -67,23 +67,23 @@ export function CascadeBreakdown({ parts, removedLabel }: {
     <div className="space-y-3">
       {parts.blocked.length > 0 && (
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase text-red-700">Blocked</p>
-          <Rows entries={parts.blocked} labels={BLOCKED_LABELS} tone="text-red-700" />
-          <p className="mt-1 text-xs text-neutral-500">
+          <p className="mb-1 text-xs font-semibold uppercase text-danger-fg">Blocked</p>
+          <Rows entries={parts.blocked} labels={BLOCKED_LABELS} tone="text-danger-fg" />
+          <p className="mt-1 text-xs text-fg-muted">
             Resolve this first — deleting would pull the evidence out from under it.
           </p>
         </div>
       )}
       {parts.removed.length > 0 && (
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase text-neutral-500">{removedLabel}</p>
-          <Rows entries={parts.removed} tone="text-red-700" />
+          <p className="mb-1 text-xs font-semibold uppercase text-fg-muted">{removedLabel}</p>
+          <Rows entries={parts.removed} tone="text-danger-fg" />
         </div>
       )}
       {parts.kept.length > 0 && (
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase text-neutral-500">Changed, not deleted</p>
-          <Rows entries={parts.kept} labels={KEPT_LABELS} tone="text-neutral-700" />
+          <p className="mb-1 text-xs font-semibold uppercase text-fg-muted">Changed, not deleted</p>
+          <Rows entries={parts.kept} labels={KEPT_LABELS} tone="text-fg-secondary" />
         </div>
       )}
     </div>

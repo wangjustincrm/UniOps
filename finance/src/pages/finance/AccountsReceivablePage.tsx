@@ -27,9 +27,9 @@ const PAGE_SIZE = 50
 type ArSortKey = 'invoice_number' | 'customer_name' | 'invoice_date' | 'due_date'
   | 'total_amount' | 'outstanding' | 'status'
 
-const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
+const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
+const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 interface Invoice {
   id: string; invoice_number: string; customer_id: string; customer_name: string
@@ -52,11 +52,11 @@ function fmtMoney(v: string, ccy?: string): string {
 }
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, string> = {
-    draft: 'bg-neutral-100 text-neutral-600', posted: 'bg-blue-50 text-blue-700',
-    partially_paid: 'bg-amber-50 text-amber-700', paid: 'bg-green-50 text-green-700',
-    void: 'bg-neutral-100 text-neutral-400',
+    draft: 'bg-surface-sunken text-fg-secondary', posted: 'bg-info-soft text-info-fg',
+    partially_paid: 'bg-warning-soft text-warning-fg', paid: 'bg-success-soft text-success-fg',
+    void: 'bg-surface-sunken text-fg-muted',
   }
-  return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-neutral-100 text-neutral-600')}>{status.replace('_', ' ')}</span>
+  return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-surface-sunken text-fg-secondary')}>{status.replace('_', ' ')}</span>
 }
 
 export default function AccountsReceivablePage() {
@@ -132,8 +132,8 @@ export default function AccountsReceivablePage() {
           {([['invoices', 'Invoices'], ['aging', 'Aging']] as const).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)}
                     className={cn('rounded-lg px-4 py-2 text-sm font-medium',
-                      tab === t ? 'bg-[#085E5E] text-white'
-                                : 'border border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50')}>
+                      tab === t ? 'bg-primary-700 text-white'
+                                : 'border border-line-strong bg-surface text-fg-secondary hover:bg-surface-subtle')}>
               {label}
             </button>
           ))}
@@ -141,7 +141,7 @@ export default function AccountsReceivablePage() {
 
         {banner && (
           <div className={cn('mb-3 rounded-md px-3 py-2 text-sm',
-            banner.kind === 'err' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>
+            banner.kind === 'err' ? 'bg-danger-soft text-danger-fg' : 'bg-success-soft text-success-fg')}>
             {banner.text}
           </div>
         )}
@@ -161,9 +161,9 @@ export default function AccountsReceivablePage() {
               )}
             </div>
 
-            <div className="overflow-hidden rounded-lg border border-neutral-200">
+            <div className="overflow-hidden rounded-lg border border-line">
               <table className="w-full text-sm">
-                <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+                <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
                   <tr>
                     <SortTh label="Invoice" sortKey="invoice_number" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
                     <SortTh label="Customer" sortKey="customer_name" sort={sort} onSort={onSort} className="px-3 py-2" />
@@ -177,21 +177,21 @@ export default function AccountsReceivablePage() {
                 </thead>
                 <tbody>
                   {isFetching && (
-                    <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">
+                    <tr><td colSpan={8} className="px-3 py-6 text-center text-fg-muted">
                       <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
                   )}
                   {!isFetching && invoices.length === 0 && (
-                    <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">No invoices.</td></tr>
+                    <tr><td colSpan={8} className="px-3 py-6 text-center text-fg-muted">No invoices.</td></tr>
                   )}
                   {invoices.map((inv, i) => {
                     const outstanding = Number(inv.total_amount) - Number(inv.paid_amount)
                     const open = inv.status === 'posted' || inv.status === 'partially_paid'
                     return (
-                      <tr key={inv.id} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
+                      <tr key={inv.id} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
                         <td className="px-3 py-2 font-mono text-xs">{inv.invoice_number}</td>
                         <td className="px-3 py-2">{inv.customer_name}</td>
-                        <td className="px-3 py-2 text-xs text-neutral-600">{formatDate(inv.invoice_date)}</td>
-                        <td className="px-3 py-2 text-xs text-neutral-600">{formatDate(inv.due_date)}</td>
+                        <td className="px-3 py-2 text-xs text-fg-secondary">{formatDate(inv.invoice_date)}</td>
+                        <td className="px-3 py-2 text-xs text-fg-secondary">{formatDate(inv.due_date)}</td>
                         <td className="px-3 py-2 text-right font-mono">{fmtMoney(inv.total_amount, inv.currency)}</td>
                         <td className="px-3 py-2 text-right font-mono">{open ? fmtMoney(String(outstanding)) : '—'}</td>
                         <td className="px-3 py-2"><StatusPill status={inv.status} /></td>
@@ -201,16 +201,16 @@ export default function AccountsReceivablePage() {
                               {inv.status === 'draft' && (
                                 <>
                                   <button onClick={() => post.mutate(inv.id)} title="Post (recognize revenue)"
-                                          className="rounded p-1 text-neutral-400 hover:text-[#085E5E]">
+                                          className="rounded p-1 text-fg-muted hover:text-primary-700">
                                     <Send className="h-4 w-4" /></button>
                                   <button onClick={() => voidInv.mutate(inv.id)} title="Void"
-                                          className="rounded p-1 text-neutral-400 hover:text-red-600">
+                                          className="rounded p-1 text-fg-muted hover:text-danger-fg">
                                     <Trash2 className="h-4 w-4" /></button>
                                 </>
                               )}
                               {open && (
                                 <button onClick={() => setReceiptFor(inv)} title="Record receipt"
-                                        className="rounded p-1 text-neutral-400 hover:text-[#085E5E]">
+                                        className="rounded p-1 text-fg-muted hover:text-primary-700">
                                   <HandCoins className="h-4 w-4" /></button>
                               )}
                             </div>
@@ -225,9 +225,9 @@ export default function AccountsReceivablePage() {
             <ListPager page={page} pageSize={PAGE_SIZE} total={invTotal} noun="invoices" onPage={setPage} />
           </>
         ) : (
-          <div className="overflow-hidden rounded-lg border border-neutral-200">
+          <div className="overflow-hidden rounded-lg border border-line">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+              <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
                 <tr>
                   <SortTh label="Customer" sortKey="customer" sort={agingSort.sort} onSort={agingSort.onSort} className="px-3 py-2" />
                   <SortTh label="Ccy" sortKey="currency" sort={agingSort.sort} onSort={agingSort.onSort} className="px-3 py-2 w-16" />
@@ -241,17 +241,17 @@ export default function AccountsReceivablePage() {
               </thead>
               <tbody>
                 {aging.length === 0 && (
-                  <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">No open receivables.</td></tr>
+                  <tr><td colSpan={8} className="px-3 py-6 text-center text-fg-muted">No open receivables.</td></tr>
                 )}
                 {agingSort.rows.map((r, i) => (
-                  <tr key={`${r.customer_id}-${r.currency}`} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
+                  <tr key={`${r.customer_id}-${r.currency}`} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
                     <td className="px-3 py-2">{r.customer_name}</td>
-                    <td className="px-3 py-2 text-xs text-neutral-500">{r.currency}</td>
+                    <td className="px-3 py-2 text-xs text-fg-muted">{r.currency}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.current)}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.d1_30)}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.d31_60)}</td>
                     <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.d61_90)}</td>
-                    <td className={cn('px-3 py-2 text-right font-mono', Number(r.d90_plus) > 0 && 'text-red-600')}>{fmtMoney(r.d90_plus)}</td>
+                    <td className={cn('px-3 py-2 text-right font-mono', Number(r.d90_plus) > 0 && 'text-danger-fg')}>{fmtMoney(r.d90_plus)}</td>
                     <td className="px-3 py-2 text-right font-mono font-semibold">{fmtMoney(r.total, r.currency)}</td>
                   </tr>
                 ))}
@@ -345,75 +345,75 @@ function InvoiceModal({ onClose, onSaved, onError }: {
     <Modal title="New AR invoice" onClose={onClose} wide>
       <div className="grid grid-cols-2 gap-3">
         <label className="col-span-2 flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">Customer</span>
+          <span className="text-fg-secondary">Customer</span>
           <select value={customerId} onChange={(e) => onPickCustomer(e.target.value)} className={inputCls}>
             <option value="">Select a customer…</option>
             {customers?.items.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.currency}</option>)}
           </select>
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">Invoice date</span>
+          <span className="text-fg-secondary">Invoice date</span>
           <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className={inputCls} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">Due date</span>
+          <span className="text-fg-secondary">Due date</span>
           <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputCls} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">Currency</span>
+          <span className="text-fg-secondary">Currency</span>
           <select value={currency} onChange={(e) => setCurrency(e.target.value)} className={inputCls}>
             {['CAD', 'USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}
           </select>
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">Pre-tax amount</span>
+          <span className="text-fg-secondary">Pre-tax amount</span>
           <input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
                  placeholder="0.00" className={cn(inputCls, 'text-right font-mono')} />
         </label>
         <label className="col-span-2 flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">Description</span>
+          <span className="text-fg-secondary">Description</span>
           <input value={description} onChange={(e) => setDescription(e.target.value)} className={inputCls} />
         </label>
       </div>
 
       <div className="mt-4">
         <div className="mb-2 flex items-center justify-between">
-          <span className="text-sm font-medium text-neutral-700">Output tax lines</span>
+          <span className="text-sm font-medium text-fg-secondary">Output tax lines</span>
           <button onClick={addTaxLine} className={secondaryBtn}><Plus className="h-4 w-4" /> Add</button>
         </div>
         {taxLines.length === 0 ? (
-          <p className="text-xs text-neutral-400">No tax (zero-rated / exempt). Add a line for GST/HST.</p>
+          <p className="text-xs text-fg-muted">No tax (zero-rated / exempt). Add a line for GST/HST.</p>
         ) : (
           <div className="space-y-2">
             {taxLines.map((t, i) => (
               <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2">
                 <label className="flex flex-col gap-1 text-xs">
-                  <span className="text-neutral-500">Tax code</span>
+                  <span className="text-fg-muted">Tax code</span>
                   <select value={t.tax_code} onChange={(e) => onCodeChange(i, e.target.value)} className={inputCls}>
                     <option value="">—</option>
                     {taxCodes.map((tc) => <option key={`${tc.code}-${tc.rate}`} value={tc.code}>{tc.code} ({(Number(tc.rate) * 100).toFixed(0)}%)</option>)}
                   </select>
                 </label>
                 <label className="flex flex-col gap-1 text-xs">
-                  <span className="text-neutral-500">Taxable base</span>
+                  <span className="text-fg-muted">Taxable base</span>
                   <input type="number" step="0.01" value={t.taxable_base}
                          onChange={(e) => onBaseChange(i, e.target.value)} className={cn(inputCls, 'text-right font-mono')} />
                 </label>
                 <label className="flex flex-col gap-1 text-xs">
-                  <span className="text-neutral-500">Tax amount</span>
+                  <span className="text-fg-muted">Tax amount</span>
                   <input type="number" step="0.01" value={t.tax_amount}
                          onChange={(e) => setLine(i, { tax_amount: e.target.value })} className={cn(inputCls, 'text-right font-mono')} />
                 </label>
                 <button onClick={() => setTaxLines((p) => p.filter((_, idx) => idx !== i))}
-                        className="mb-1 rounded p-1.5 text-neutral-400 hover:text-red-600"><X className="h-4 w-4" /></button>
+                        className="mb-1 rounded p-1.5 text-fg-muted hover:text-danger-fg"><X className="h-4 w-4" /></button>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      <div className="mt-4 flex items-center justify-end gap-6 border-t border-neutral-100 pt-3 text-sm">
-        <span className="text-neutral-500">Tax: <span className="font-mono">{fmtMoney(String(taxTotal))}</span></span>
+      <div className="mt-4 flex items-center justify-end gap-6 border-t border-line-subtle pt-3 text-sm">
+        <span className="text-fg-muted">Tax: <span className="font-mono">{fmtMoney(String(taxTotal))}</span></span>
         <span className="font-semibold">Total: <span className="font-mono">{fmtMoney(String(total), currency)}</span></span>
       </div>
       <div className="mt-4 flex justify-end gap-2">
@@ -460,36 +460,36 @@ function ReceiptModal({ invoice, onClose, onSaved, onError }: {
 
   return (
     <Modal title={`Record receipt — ${invoice.invoice_number}`} onClose={onClose}>
-      <div className="mb-3 rounded-md bg-neutral-50 px-3 py-2 text-sm">
+      <div className="mb-3 rounded-md bg-surface-subtle px-3 py-2 text-sm">
         {invoice.customer_name} · outstanding <span className="font-mono">{fmtMoney(outstanding, invoice.currency)}</span>
       </div>
       <div className="grid gap-3">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">Amount received</span>
+          <span className="text-fg-secondary">Amount received</span>
           <input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
                  className={cn(inputCls, 'text-right font-mono')} />
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600">Receipt date</span>
+            <span className="text-fg-secondary">Receipt date</span>
             <input type="date" value={receiptDate} onChange={(e) => setReceiptDate(e.target.value)} className={inputCls} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600">Method</span>
+            <span className="text-fg-secondary">Method</span>
             <select value={method} onChange={(e) => setMethod(e.target.value)} className={inputCls}>
               {['bank_transfer', 'cheque', 'cash', 'card', 'other'].map((m) => <option key={m} value={m}>{m.replace('_', ' ')}</option>)}
             </select>
           </label>
         </div>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">Bank account (optional)</span>
+          <span className="text-fg-secondary">Bank account (optional)</span>
           <select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} className={inputCls}>
             <option value="">—</option>
             {sameCcy.map((a) => <option key={a.id} value={a.id}>{a.name} · {a.currency}</option>)}
           </select>
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">Reference (optional)</span>
+          <span className="text-fg-secondary">Reference (optional)</span>
           <input value={reference} onChange={(e) => setReference(e.target.value)} className={inputCls} />
         </label>
       </div>
@@ -509,11 +509,11 @@ function Modal({ title, children, onClose, wide }: {
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className={cn('w-full rounded-xl bg-white p-5 shadow-xl', wide ? 'max-w-2xl' : 'max-w-md')}
+      <div className={cn('w-full rounded-xl bg-surface p-5 shadow-xl', wide ? 'max-w-2xl' : 'max-w-md')}
            onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-neutral-800">{title}</h2>
-          <button onClick={onClose} className="rounded p-1 text-neutral-400 hover:text-neutral-700">
+          <h2 className="text-base font-semibold text-fg">{title}</h2>
+          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
             <X className="h-5 w-5" />
           </button>
         </div>

@@ -35,20 +35,20 @@ export function PendingApprovals({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-neutral-900">
+        <h2 className="text-base font-semibold text-fg">
           Pending Approvals
-          <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning-500 px-1 text-[10px] font-bold text-white">
+          <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning-solid px-1 text-2xs font-bold text-white">
             {items.length}
           </span>
         </h2>
-        <div className="flex items-center gap-2 text-xs text-neutral-500">
+        <div className="flex items-center gap-2 text-xs text-fg-muted">
           Sort: Oldest first
         </div>
       </div>
 
       {items.length === 0 && (
-        <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] py-10 text-center">
-          <p className="text-sm text-neutral-400">No pending approvals</p>
+        <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] py-10 text-center">
+          <p className="text-sm text-fg-muted">No pending approvals</p>
         </div>
       )}
 
@@ -56,36 +56,36 @@ export function PendingApprovals({
         {items.map((item) => (
           <div
             key={item.id}
-            className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-4"
+            className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-4"
           >
             <div className="flex items-start justify-between gap-3 mb-2">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <Link
                     to={item.href}
-                    className="text-sm font-semibold text-neutral-900 hover:text-primary-600"
+                    className="text-sm font-semibold text-fg hover:text-primary-600"
                   >
                     {item.number}
                   </Link>
                   <StatusBadge status={item.status} />
                   {item.extraBadge && (
-                    <span className="rounded-full bg-success-50 px-2 py-0.5 text-xs text-success-700 font-medium">
+                    <span className="rounded-full bg-success-soft px-2 py-0.5 text-xs text-success-fg font-medium">
                       {item.extraBadge}
                     </span>
                   )}
                 </div>
-                <p className="mt-0.5 text-sm text-neutral-700">{item.title}</p>
+                <p className="mt-0.5 text-sm text-fg-secondary">{item.title}</p>
                 {(item.requester || item.department) && (
-                  <p className="mt-0.5 text-xs text-neutral-500">
+                  <p className="mt-0.5 text-xs text-fg-muted">
                     {[item.requester, item.department].filter(Boolean).join(' · ')}
                   </p>
                 )}
               </div>
               <div className="shrink-0 text-right">
-                <p className="amount text-sm font-semibold text-neutral-900">
+                <p className="amount text-sm font-semibold text-fg">
                   {formatCAD(item.amount)}
                 </p>
-                <p className="text-xs text-neutral-400">
+                <p className="text-xs text-fg-muted">
                   {item.submittedDaysAgo === 0
                     ? 'Today'
                     : `${item.submittedDaysAgo} day${item.submittedDaysAgo > 1 ? 's' : ''} ago`}
@@ -93,7 +93,7 @@ export function PendingApprovals({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 pt-2 border-t border-neutral-100">
+            <div className="flex items-center gap-2 pt-2 border-t border-line-subtle">
               <Button
                 variant="success-outline"
                 size="sm"

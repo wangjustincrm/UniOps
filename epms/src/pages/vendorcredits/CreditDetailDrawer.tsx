@@ -74,26 +74,26 @@ export function CreditDetailDrawer({
 
   const row = (label: string, value: ReactNode) => (
     <div className="flex justify-between gap-4 py-1.5 text-sm">
-      <span className="text-neutral-500">{label}</span>
-      <span className="text-right text-neutral-900">{value}</span>
+      <span className="text-fg-muted">{label}</span>
+      <span className="text-right text-fg">{value}</span>
     </div>
   )
 
   return createPortal(
-    <div className="fixed inset-0 z-40 flex justify-end bg-neutral-900/30" onClick={onClose}>
-      <aside className="flex h-full w-full max-w-md flex-col bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between border-b border-neutral-100 px-5 py-4">
+    <div className="fixed inset-0 z-40 flex justify-end bg-inverse/30" onClick={onClose}>
+      <aside className="flex h-full w-full max-w-md flex-col bg-surface shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between border-b border-line-subtle px-5 py-4">
           <div>
-            <h2 className="font-mono text-sm font-semibold text-neutral-900">{credit.credit_number}</h2>
-            <p className="mt-0.5 text-xs text-neutral-500">{SOURCE_LABEL[credit.source]}</p>
+            <h2 className="font-mono text-sm font-semibold text-fg">{credit.credit_number}</h2>
+            <p className="mt-0.5 text-xs text-fg-muted">{SOURCE_LABEL[credit.source]}</p>
           </div>
-          <button onClick={onClose} aria-label="Close" className="text-neutral-400 hover:text-neutral-600">
+          <button onClick={onClose} aria-label="Close" className="text-fg-muted hover:text-fg-secondary">
             <X className="h-5 w-5" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          <div className="divide-y divide-neutral-100">
+          <div className="divide-y divide-line-subtle">
             {row('Vendor', credit.vendor_name)}
             {row('Vendor reference #', <span className="font-mono">{credit.vendor_credit_number}</span>)}
             {row('Credit date', formatDate(credit.credit_date))}
@@ -110,45 +110,45 @@ export function CreditDetailDrawer({
 
           {credit.notes && (
             <div className="mt-4">
-              <h3 className="text-xs font-semibold uppercase text-neutral-500">
+              <h3 className="text-xs font-semibold uppercase text-fg-muted">
                 {credit.source === 'manual' ? 'Basis' : 'Notes'}
               </h3>
-              <p className="mt-1 whitespace-pre-wrap text-sm text-neutral-800">{credit.notes}</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-fg">{credit.notes}</p>
             </div>
           )}
           {credit.review_note && (
             <div className="mt-4">
-              <h3 className="text-xs font-semibold uppercase text-neutral-500">Review note</h3>
-              <p className="mt-1 whitespace-pre-wrap text-sm text-neutral-800">{credit.review_note}</p>
+              <h3 className="text-xs font-semibold uppercase text-fg-muted">Review note</h3>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-fg">{credit.review_note}</p>
             </div>
           )}
 
           {credit.status !== 'pending_review' && (
             <div className="mt-5">
-              <h3 className="text-xs font-semibold uppercase text-neutral-500">Usage</h3>
+              <h3 className="text-xs font-semibold uppercase text-fg-muted">Usage</h3>
               {usage.isLoading ? (
-                <p className="mt-2 text-xs text-neutral-400">Loading…</p>
+                <p className="mt-2 text-xs text-fg-muted">Loading…</p>
               ) : usage.isError ? (
-                <p className="mt-2 text-xs text-neutral-500">
+                <p className="mt-2 text-xs text-fg-muted">
                   {(usage.error as Error & { status?: number }).status === 403
                     ? 'Usage history is visible to finance roles only.'
                     : (usage.error as Error).message}
                 </p>
               ) : !usage.data || usage.data.items.length === 0 ? (
-                <p className="mt-2 text-xs text-neutral-400">Not applied to any payment yet.</p>
+                <p className="mt-2 text-xs text-fg-muted">Not applied to any payment yet.</p>
               ) : (
                 <>
                   <ul className="mt-2 flex flex-col gap-1.5">
                     {usage.data.items.map((a) => (
-                      <li key={a.id} className="rounded bg-neutral-50 px-2.5 py-2 text-xs">
+                      <li key={a.id} className="rounded bg-surface-subtle px-2.5 py-2 text-xs">
                         <div className="flex items-center justify-between gap-3">
                           <Link to={`/pa/${a.doc_id}`} onClick={onClose}
                                 className="font-mono font-medium text-primary-700 hover:underline">
                             {a.doc_number ?? 'Payment application'}
                           </Link>
-                          <span className="font-mono font-semibold text-neutral-900">−{money(a.applied_amount)}</span>
+                          <span className="font-mono font-semibold text-fg">−{money(a.applied_amount)}</span>
                         </div>
-                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-neutral-500">
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-fg-muted">
                           <span>{formatDate(a.payment_date ?? a.applied_at)}</span>
                           {a.batch_number && <span className="font-mono">{a.batch_number}</span>}
                           {a.cash_paid != null && (
@@ -158,17 +158,17 @@ export function CreditDetailDrawer({
                           )}
                           {a.applied_by_name && <span>by {a.applied_by_name}</span>}
                           {a.payment_status && a.payment_status !== 'completed' && (
-                            <span className="text-warning-700">{a.payment_status}</span>
+                            <span className="text-warning-fg">{a.payment_status}</span>
                           )}
                         </div>
                       </li>
                     ))}
                   </ul>
-                  <div className="mt-2 flex justify-between border-t border-neutral-100 pt-2 text-xs">
-                    <span className="text-neutral-500">
+                  <div className="mt-2 flex justify-between border-t border-line-subtle pt-2 text-xs">
+                    <span className="text-fg-muted">
                       {usage.data.total} payment{usage.data.total === 1 ? '' : 's'}
                     </span>
-                    <span className="font-mono font-semibold text-neutral-900">{money(usage.data.total_applied)}</span>
+                    <span className="font-mono font-semibold text-fg">{money(usage.data.total_applied)}</span>
                   </div>
                 </>
               )}
@@ -177,7 +177,7 @@ export function CreditDetailDrawer({
 
           <div className="mt-5">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase text-neutral-500">Evidence</h3>
+              <h3 className="text-xs font-semibold uppercase text-fg-muted">Evidence</h3>
               {credit.status !== 'void' && (
                 <label className="flex cursor-pointer items-center gap-1 text-xs font-medium text-primary-700 hover:text-primary-800">
                   <Paperclip className="h-3.5 w-3.5" />
@@ -192,25 +192,25 @@ export function CreditDetailDrawer({
               )}
             </div>
             {atts.isLoading ? (
-              <p className="mt-2 text-xs text-neutral-400">Loading…</p>
+              <p className="mt-2 text-xs text-fg-muted">Loading…</p>
             ) : atts.isError ? (
-              <p className="mt-2 text-xs text-danger-600">{(atts.error as Error).message}</p>
+              <p className="mt-2 text-xs text-danger-fg">{(atts.error as Error).message}</p>
             ) : files.length === 0 ? (
-              <p className="mt-2 text-xs text-neutral-400">No files attached.</p>
+              <p className="mt-2 text-xs text-fg-muted">No files attached.</p>
             ) : (
               <ul className="mt-2 flex flex-col gap-1">
                 {files.map((a) => (
-                  <li key={a.id} className="flex items-center justify-between rounded bg-neutral-50 px-2 py-1.5 text-xs">
+                  <li key={a.id} className="flex items-center justify-between rounded bg-surface-subtle px-2 py-1.5 text-xs">
                     <span className="truncate" title={a.file_name}>{a.file_name}</span>
                     <span className="flex shrink-0 gap-2">
                       {opensInBrowser(a.content_type) && (
                         <button onClick={() => void openFile(a, false)} aria-label={`Open ${a.file_name}`}
-                                className="text-neutral-500 hover:text-primary-700">
+                                className="text-fg-muted hover:text-primary-700">
                           <ExternalLink className="h-3.5 w-3.5" />
                         </button>
                       )}
                       <button onClick={() => void openFile(a, true)} aria-label={`Download ${a.file_name}`}
-                              className="text-neutral-500 hover:text-primary-700">
+                              className="text-fg-muted hover:text-primary-700">
                         <Download className="h-3.5 w-3.5" />
                       </button>
                     </span>
@@ -218,21 +218,21 @@ export function CreditDetailDrawer({
                 ))}
               </ul>
             )}
-            {fileError && <p className="mt-2 text-xs text-danger-600">{fileError}</p>}
+            {fileError && <p className="mt-2 text-xs text-danger-fg">{fileError}</p>}
           </div>
         </div>
 
         {canManage && (credit.status === 'pending_review'
           || (credit.status === 'available' && Number(credit.applied_amount) === 0)) && (
-          <div className="border-t border-neutral-100 px-5 py-3">
+          <div className="border-t border-line-subtle px-5 py-3">
             {needsEvidence && (
-              <p className="mb-2 flex items-center gap-1.5 text-xs text-warning-700">
+              <p className="mb-2 flex items-center gap-1.5 text-xs text-warning-fg">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                 A manual credit needs the vendor's email attached before it can be approved.
               </p>
             )}
             {approveError && (
-              <p className="mb-2 flex items-center gap-1.5 text-xs text-danger-700">
+              <p className="mb-2 flex items-center gap-1.5 text-xs text-danger-fg">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                 {approveError}
               </p>
@@ -241,18 +241,18 @@ export function CreditDetailDrawer({
               {credit.status === 'pending_review' ? (
                 <>
                   <button onClick={onReject} disabled={reviewPending}
-                          className="rounded border border-danger-300 px-3 py-1.5 text-sm font-medium text-danger-700 disabled:opacity-50">
+                          className="rounded border border-danger-line px-3 py-1.5 text-sm font-medium text-danger-fg disabled:opacity-50">
                     Reject
                   </button>
                   <button onClick={onApprove}
                           disabled={reviewPending || needsEvidence || (credit.source === 'manual' && !atts.isSuccess)}
-                          className="rounded bg-success-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+                          className="rounded bg-success-solid px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
                     Approve
                   </button>
                 </>
               ) : (
                 <button onClick={onVoid} disabled={reviewPending}
-                        className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 disabled:opacity-50">
+                        className="rounded border border-line-strong px-3 py-1.5 text-sm font-medium text-fg-secondary disabled:opacity-50">
                   Void
                 </button>
               )}

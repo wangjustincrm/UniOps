@@ -42,13 +42,13 @@ function InvoiceChip({ inv }: { inv: PoFeeInvoice }) {
     <Link
       to={`/invoices/${inv.invoice_id}`}
       title={`${inv.vendor_name} · ${inv.vendor_invoice_number}${inv.line_description ? ` · ${inv.line_description}` : ''}${inv.note ? ` · ${inv.note}` : ''}`}
-      className="inline-flex items-center gap-1 rounded border border-neutral-200 bg-white px-1.5 py-0.5 font-mono text-xs text-primary-700 hover:border-primary-300 hover:bg-primary-50"
+      className="inline-flex items-center gap-1 rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-xs text-primary-700 hover:border-primary-300 hover:bg-primary-50"
     >
       {inv.internal_ref}
-      <span className="font-sans text-neutral-500">
+      <span className="font-sans text-fg-muted">
         {formatAmount(Number(inv.line_total ?? inv.total_amount), inv.currency)}
       </span>
-      <ExternalLink className="h-3 w-3 text-neutral-300" />
+      <ExternalLink className="h-3 w-3 text-fg-faint" />
     </Link>
   )
 }
@@ -57,14 +57,14 @@ function FeeCell({ needed, invoices }: { needed: boolean; invoices: PoFeeInvoice
   if (invoices.length > 0) {
     return (
       <div className="flex flex-wrap items-center gap-1.5">
-        <Check className="h-4 w-4 shrink-0 text-success-600" aria-label="Received" />
+        <Check className="h-4 w-4 shrink-0 text-success-fg" aria-label="Received" />
         {invoices.map((i) => <InvoiceChip key={i.link_id} inv={i} />)}
       </div>
     )
   }
-  if (!needed) return <Minus className="h-4 w-4 text-neutral-300" aria-label="Not required" />
+  if (!needed) return <Minus className="h-4 w-4 text-fg-faint" aria-label="Not required" />
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-medium text-danger-600">
+    <span className="inline-flex items-center gap-1 text-xs font-medium text-danger-fg">
       <X className="h-4 w-4" aria-hidden />
       Missing
     </span>
@@ -75,7 +75,7 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
   const { data, isLoading } = usePoFeeStatus(poId)
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center rounded-xl bg-white p-6 text-neutral-400 shadow-[0_1px_3px_rgba(10,124,124,0.08)]">
+      <div className="flex items-center justify-center rounded-xl bg-surface p-6 text-fg-muted shadow-[0_1px_3px_rgba(10,124,124,0.08)]">
         <Loader2 className="h-5 w-5 animate-spin" />
       </div>
     )
@@ -95,9 +95,9 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
   const incoterms = [data.incoterms_code, data.incoterms_place].filter(Boolean).join(' ')
 
   return (
-    <div className="flex flex-col gap-4 rounded-xl bg-white p-6 shadow-[0_1px_3px_rgba(10,124,124,0.08)]">
+    <div className="flex flex-col gap-4 rounded-xl bg-surface p-6 shadow-[0_1px_3px_rgba(10,124,124,0.08)]">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">
+        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-fg-muted">
           <Truck className="h-4 w-4" />
           Freight &amp; Customs
         </h2>
@@ -105,19 +105,19 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
       </div>
 
       {!data.is_nc ? (
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-fg-muted">
           Fees linked to this order are listed below; they are not checked for completeness.
         </p>
       ) : term ? (
-        <p className="text-sm text-neutral-600">
-          Incoterms <span className="font-medium text-neutral-900">{incoterms}</span>
+        <p className="text-sm text-fg-secondary">
+          Incoterms <span className="font-medium text-fg">{incoterms}</span>
           {' — '}
           {needsFreight || needsCustoms
             ? `expects ${[needsFreight && 'a freight', needsCustoms && 'a customs'].filter(Boolean).join(' and ')} invoice for every arrival.`
             : 'no freight or customs invoice is expected.'}
         </p>
       ) : !data.incoterms_required ? (
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-fg-muted">
           No Incoterms on this order (optional on milk orders), so linked fees are listed but not checked
           for completeness.{' '}
           {canEditDetails && (
@@ -127,7 +127,7 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
           )}
         </p>
       ) : (
-        <p className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-700">
+        <p className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-fg">
           Incoterms is not set, so whether freight and customs invoices are expected cannot be judged.{' '}
           {canEditDetails && (
             <BackLink to={`/po/${poId}/edit-imported`} className="font-medium text-primary-700 underline">
@@ -138,11 +138,11 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
       )}
 
       {data.arrivals.length === 0 ? (
-        data.is_nc && <p className="text-sm text-neutral-500">No arrivals yet.</p>
+        data.is_nc && <p className="text-sm text-fg-muted">No arrivals yet.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-neutral-200">
+        <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
+            <thead className="bg-surface-subtle text-xs uppercase tracking-wide text-fg-muted">
               <tr>
                 <th className="px-3 py-2 text-left font-semibold">Arrival</th>
                 <th className="px-3 py-2 text-left font-semibold">Date</th>
@@ -150,15 +150,15 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
                 <th className="px-3 py-2 text-left font-semibold">{FEE_TYPE_LABEL.customs}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-100">
+            <tbody className="divide-y divide-line-subtle">
               {data.arrivals.map((a) => (
                 <tr key={a.gr_id}>
                   <td className="px-3 py-2">
-                    <Link to={`/gr/${a.gr_id}`} className="font-mono text-xs font-semibold text-neutral-700 hover:text-primary-700">
+                    <Link to={`/gr/${a.gr_id}`} className="font-mono text-xs font-semibold text-fg-secondary hover:text-primary-700">
                       {a.gr_number}
                     </Link>
                   </td>
-                  <td className="px-3 py-2 text-neutral-600">{formatDate(a.received_at)}</td>
+                  <td className="px-3 py-2 text-fg-secondary">{formatDate(a.received_at)}</td>
                   <td className="px-3 py-2"><FeeCell needed={!!term && needsFreight} invoices={a.freight} /></td>
                   <td className="px-3 py-2"><FeeCell needed={!!term && needsCustoms} invoices={a.customs} /></td>
                 </tr>
@@ -169,20 +169,20 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
       )}
 
       {others.length > 0 && (
-        <div className={cn('flex flex-wrap items-center gap-1.5 text-sm text-neutral-600')}>
+        <div className={cn('flex flex-wrap items-center gap-1.5 text-sm text-fg-secondary')}>
           <span>Other fees:</span>
           {others.map((i) => (
             <span key={i.link_id} className="inline-flex items-center gap-1">
               <InvoiceChip inv={i} />
-              {i.note && <span className="text-xs text-neutral-600">{i.note}</span>}
+              {i.note && <span className="text-xs text-fg-secondary">{i.note}</span>}
             </span>
           ))}
         </div>
       )}
 
       {data.unassigned.length > 0 && (
-        <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
-          <p className="text-neutral-600">
+        <div className="rounded-lg border border-line bg-surface-subtle px-3 py-2 text-sm">
+          <p className="text-fg-secondary">
             {data.is_nc
               ? 'Linked to an arrival that has since been deleted — open the invoice to choose another:'
               : data.arrivals.length === 0
@@ -191,7 +191,7 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
           </p>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {data.unassigned.map((i) => (
-              <span key={i.link_id} className="inline-flex items-center gap-1 text-xs text-neutral-500">
+              <span key={i.link_id} className="inline-flex items-center gap-1 text-xs text-fg-muted">
                 {FEE_TYPE_LABEL[i.fee_type]} <InvoiceChip inv={i} />
               </span>
             ))}
@@ -199,7 +199,7 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
         </div>
       )}
 
-      <p className="text-xs text-neutral-400">
+      <p className="text-xs text-fg-muted">
         Freight and customs invoices are linked from the invoice&apos;s own page (Link to PO).
       </p>
     </div>

@@ -20,7 +20,7 @@ export default function App() {
       <BrowserRouter>
         <a
           href="#main-content"
-          className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-white focus:px-4 focus:py-2 focus:text-primary-600"
+          className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-surface focus:px-4 focus:py-2 focus:text-primary-600"
         >
           Skip to main content
         </a>

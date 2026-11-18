@@ -51,9 +51,8 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
   // color — a visual shortcut only, it never assigns anything.
   const amountColorMap = useMemo(() => {
     const HINT_COLORS = [
-      'border-l-emerald-400', 'border-l-sky-400', 'border-l-amber-400',
-      'border-l-fuchsia-400', 'border-l-indigo-400', 'border-l-rose-400',
-      'border-l-teal-400', 'border-l-orange-400',
+      'border-l-cat1', 'border-l-cat2', 'border-l-cat3', 'border-l-cat4',
+      'border-l-cat5', 'border-l-cat6', 'border-l-cat7', 'border-l-cat8',
     ]
     const key = (n: number) => n.toFixed(2)
     const invAmounts = new Set(lines.map((l) => key(Number(l.line_total))))
@@ -121,45 +120,45 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="inline-flex self-start rounded-lg border border-neutral-200 bg-neutral-50 p-0.5 text-xs">
+      <div className="inline-flex self-start rounded-lg border border-line bg-surface-subtle p-0.5 text-xs">
         <button onClick={() => setMode('line')}
-          className={`rounded-md px-3 py-1 ${mode === 'line' ? 'bg-white shadow-sm font-medium' : 'text-neutral-500'}`}>By line</button>
+          className={`rounded-md px-3 py-1 ${mode === 'line' ? 'bg-surface shadow-sm font-medium' : 'text-fg-muted'}`}>By line</button>
         <button onClick={() => setMode('total')}
-          className={`rounded-md px-3 py-1 ${mode === 'total' ? 'bg-white shadow-sm font-medium' : 'text-neutral-500'}`}>By total amount</button>
+          className={`rounded-md px-3 py-1 ${mode === 'total' ? 'bg-surface shadow-sm font-medium' : 'text-fg-muted'}`}>By total amount</button>
       </div>
       {mode === 'total' ? (
         <InvoiceTotalMatchPanel invoice={invoice} pos={pos} onSubmit={onSubmit} submitting={submitting} />
       ) : (
         <>
-      <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-2.5">
+      <div className="flex items-center justify-between rounded-lg border border-line bg-surface-subtle px-4 py-2.5">
         <div className="flex flex-col">
-          <span className="text-xs text-neutral-500">Unallocated balance (pre-tax)</span>
+          <span className="text-xs text-fg-muted">Unallocated balance (pre-tax)</span>
           {tax > 0 && (
-            <span className="text-[11px] text-neutral-400">
+            <span className="text-2xs text-fg-muted">
               Tax {formatAmount(tax, currency)} is handled at the invoice header, not allocated
             </span>
           )}
         </div>
-        <span className={`font-mono text-sm font-semibold ${balanced ? 'text-success-600' : 'text-danger-600'}`}>
+        <span className={`font-mono text-sm font-semibold ${balanced ? 'text-success-fg' : 'text-danger-fg'}`}>
           {formatAmount(unallocated, currency)}
         </span>
       </div>
       {excludedTotal > 0 && (
-        <span className="-mt-2 text-[11px] text-neutral-400">
+        <span className="-mt-2 text-2xs text-fg-muted">
           {formatAmount(excludedTotal, currency)} in non-PO fees excluded from matching
         </span>
       )}
 
       {!hasAllocations && (
-        <div className="flex flex-col gap-1 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5">
-          <label className="text-xs font-medium text-amber-800">Link this invoice to a PO</label>
-          <span className="text-[11px] text-amber-700">
+        <div className="flex flex-col gap-1 rounded-lg border border-warning-line bg-warning-soft px-4 py-2.5">
+          <label className="text-xs font-medium text-warning-fg">Link this invoice to a PO</label>
+          <span className="text-2xs text-warning-fg">
             This invoice has no PO line allocations. Link it to a purchase order (same vendor) for traceability — the charges are paid via the invoice header.
           </span>
           <select
             value={referencePoId}
             onChange={(e) => setReferencePoId(e.target.value)}
-            className="mt-1 h-8 rounded-lg border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="mt-1 h-8 rounded-lg border border-line-strong bg-surface px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
           >
             <option value="">Select a purchase order…</option>
             {pos.map((po) => (
@@ -169,25 +168,25 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
         </div>
       )}
 
-      <p className="text-xs text-neutral-600">Drag each invoice line onto the PO line it belongs to.</p>
+      <p className="text-xs text-fg-secondary">Drag each invoice line onto the PO line it belongs to.</p>
       <div className="grid grid-cols-2 gap-4">
         {/* Invoice lines (drag source) */}
-        <div className="rounded-xl border border-neutral-200 bg-white p-4">
-          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-400">Invoice lines · Pretax total {formatAmount(total, currency)}</h4>
+        <div className="rounded-xl border border-line bg-surface p-4">
+          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-fg-muted">Invoice lines · Pretax total {formatAmount(total, currency)}</h4>
           <div className="flex max-h-[55vh] flex-col gap-2 overflow-y-auto pr-1">
             {lines.map((l) => {
               const a = l.id ? assign[l.id] : undefined
               if (isNonPo(l.id)) {
                 return (
                   <div key={l.id}
-                    className="rounded-lg border border-neutral-200 bg-neutral-100 px-3 py-2 text-sm opacity-80">
+                    className="rounded-lg border border-line bg-surface-sunken px-3 py-2 text-sm opacity-80">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-neutral-500 line-through">{l.description}</span>
+                      <span className="truncate text-fg-muted line-through">{l.description}</span>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600">
+                        <span className="rounded bg-surface-strong px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-fg-secondary">
                           Non-PO fee
                         </span>
-                        <span className="font-mono text-xs text-neutral-500">{formatAmount(Number(l.line_total), currency)}</span>
+                        <span className="font-mono text-xs text-fg-muted">{formatAmount(Number(l.line_total), currency)}</span>
                       </div>
                     </div>
                     <div className="mt-1.5 flex items-center gap-2">
@@ -196,10 +195,10 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
                         value={(l.id && nonPo[l.id]) || ''}
                         onChange={(e) => l.id && setNote(l.id, e.target.value)}
                         placeholder="note (optional), e.g. shipping"
-                        className="h-6 flex-1 rounded border border-neutral-300 bg-white px-2 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        className="h-6 flex-1 rounded border border-line-strong bg-surface px-2 text-2xs focus:outline-none focus:ring-1 focus:ring-primary-500"
                       />
                       <button onClick={() => l.id && unmarkNonPo(l.id)}
-                        className="text-[11px] text-primary-600 hover:underline">
+                        className="text-2xs text-primary-600 hover:underline">
                         Unmark
                       </button>
                     </div>
@@ -211,18 +210,18 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
                   draggable
                   onDragStart={() => setDragLineId(l.id ?? null)}
                   onContextMenu={(e) => { e.preventDefault(); if (l.id) setMenu({ x: e.clientX, y: e.clientY, lineId: l.id }) }}
-                  className={`cursor-grab rounded-lg border px-3 py-2 text-sm ${a ? 'border-primary-200 bg-primary-50' : 'border-neutral-200'} ${hintColor(Number(l.line_total)) ? `border-l-4 ${hintColor(Number(l.line_total))}` : ''}`}>
+                  className={`cursor-grab rounded-lg border px-3 py-2 text-sm ${a ? 'border-primary-200 bg-primary-50' : 'border-line'} ${hintColor(Number(l.line_total)) ? `border-l-4 ${hintColor(Number(l.line_total))}` : ''}`}>
                   <div className="flex justify-between">
                     <span className="truncate">{l.description}</span>
                     <span className="font-mono text-xs">{formatAmount(Number(l.line_total), currency)}</span>
                   </div>
                   {a && (
                     <button onClick={() => l.id && clearLine(l.id)}
-                      className="mt-1 text-[11px] text-primary-600 hover:underline">
+                      className="mt-1 text-2xs text-primary-600 hover:underline">
                       Assigned - unassign
                     </button>
                   )}
-                  <span className="mt-1 block text-[10px] text-neutral-300">right-click to mark as other fee</span>
+                  <span className="mt-1 block text-2xs text-fg-faint">right-click to mark as other fee</span>
                 </div>
               )
             })}
@@ -230,16 +229,16 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
         </div>
 
         {/* PO lines (drop target) */}
-        <div className="rounded-xl border border-neutral-200 bg-white p-4">
-          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+        <div className="rounded-xl border border-line bg-surface p-4">
+          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-fg-muted">
             PO lines (drop here)
-            <span className="ml-2 normal-case font-normal text-neutral-300">same accent color = same amount on both sides (hint only)</span>
+            <span className="ml-2 normal-case font-normal text-fg-faint">same accent color = same amount on both sides (hint only)</span>
           </h4>
           <div className="flex max-h-[55vh] flex-col gap-3 overflow-y-auto pr-1">
             {pos.map((po) => (
               <div key={po.id}>
-                <p className="mb-1 font-mono text-xs text-neutral-500">{po.number}</p>
-                <p className="mb-1 text-[11px] text-neutral-400">
+                <p className="mb-1 font-mono text-xs text-fg-muted">{po.number}</p>
+                <p className="mb-1 text-2xs text-fg-muted">
                   Subtotal {formatAmount(Number(po.subtotal), po.currency)} · Remaining {formatAmount(Number(po.subtotal) - Number(po.already_allocated_total ?? 0), po.currency)}
                 </p>
                 {po.line_items.map((pl) => {
@@ -252,12 +251,12 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
                     <div key={pl.id}
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={() => drop(po.id, pl.id)}
-                      className={`mb-1 rounded-lg border border-dashed border-neutral-300 px-3 py-2 text-sm hover:border-primary-400 ${hintColor(Number(pl.line_total) - priorAllocated) ? `border-l-4 ${hintColor(Number(pl.line_total) - priorAllocated)}` : ''}`}>
+                      className={`mb-1 rounded-lg border border-dashed border-line-strong px-3 py-2 text-sm hover:border-primary-400 ${hintColor(Number(pl.line_total) - priorAllocated) ? `border-l-4 ${hintColor(Number(pl.line_total) - priorAllocated)}` : ''}`}>
                       <div className="flex justify-between">
                         <span className="truncate">{pl.description}</span>
                         <span className="font-mono text-xs">{formatAmount(Number(pl.line_total), po.currency)}</span>
                       </div>
-                      <p className="text-[11px] text-neutral-400">
+                      <p className="text-2xs text-fg-muted">
                         Allocated {formatAmount(priorAllocated + allocatedHere, po.currency)}
                         {priorAllocated > 0 && ` (${formatAmount(priorAllocated, po.currency)} by other invoices)`}
                         {' - '}Remaining {formatAmount(remaining, po.currency)}
@@ -273,9 +272,9 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
 
       <div className="flex flex-col items-end gap-1">
         {needsReferencePo && !referencePoId && (
-          <span className="text-[11px] text-danger-600">Link a PO to confirm a fee-only invoice</span>
+          <span className="text-2xs text-danger-fg">Link a PO to confirm a fee-only invoice</span>
         )}
-        {blockedReason && <span className="text-[11px] text-neutral-500">{blockedReason}</span>}
+        {blockedReason && <span className="text-2xs text-fg-muted">{blockedReason}</span>}
         {/* title on the wrapper: a disabled button fires no hover events */}
         <span title={blockedReason ?? undefined}>
           <Button onClick={submit} disabled={!canSubmit || submitting}>
@@ -288,11 +287,11 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
         <div className="fixed inset-0 z-50"
           onClick={() => setMenu(null)}
           onContextMenu={(e) => { e.preventDefault(); setMenu(null) }}>
-          <div className="absolute min-w-[210px] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg"
+          <div className="absolute min-w-[210px] rounded-lg border border-line bg-surface py-1 shadow-lg"
             style={{ top: menu.y, left: menu.x }}
             onClick={(e) => e.stopPropagation()}>
             <button
-              className="block w-full px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50"
+              className="block w-full px-3 py-2 text-left text-sm text-fg-secondary hover:bg-surface-subtle"
               onClick={() => markNonPo(menu.lineId)}>
               Mark as other fee (shipping etc.)
             </button>

@@ -62,17 +62,17 @@ export function InvoiceTotalMatchPanel({ invoice, pos, onSubmit, submitting }: P
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-2.5">
-        <span className="text-xs text-neutral-500">Unallocated balance (pre-tax)</span>
-        <span className={`font-mono text-sm font-semibold ${balanced ? 'text-success-600' : 'text-danger-600'}`}>
+      <div className="flex items-center justify-between rounded-lg border border-line bg-surface-subtle px-4 py-2.5">
+        <span className="text-xs text-fg-muted">Unallocated balance (pre-tax)</span>
+        <span className={`font-mono text-sm font-semibold ${balanced ? 'text-success-fg' : 'text-danger-fg'}`}>
           {formatAmount(unallocated, currency)}
         </span>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         {/* Whole-invoice drag source */}
-        <div className="rounded-xl border border-neutral-200 bg-white p-4">
-          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-400">Invoice</h4>
+        <div className="rounded-xl border border-line bg-surface p-4">
+          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-fg-muted">Invoice</h4>
           <div
             draggable
             onDragStart={() => setDragging(true)}
@@ -82,13 +82,13 @@ export function InvoiceTotalMatchPanel({ invoice, pos, onSubmit, submitting }: P
               <span className="truncate">{invoice.vendor_invoice_number}</span>
               <span className="font-mono text-xs">{formatAmount(total, currency)}</span>
             </div>
-            <span className="mt-1 block text-[10px] text-neutral-400">Pretax total · drag onto a PO to match by total amount</span>
+            <span className="mt-1 block text-2xs text-fg-muted">Pretax total · drag onto a PO to match by total amount</span>
           </div>
         </div>
 
         {/* PO header drop targets */}
-        <div className="rounded-xl border border-neutral-200 bg-white p-4">
-          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-400">Purchase orders (drop here)</h4>
+        <div className="rounded-xl border border-line bg-surface p-4">
+          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-fg-muted">Purchase orders (drop here)</h4>
           <div className="flex max-h-[55vh] flex-col gap-2 overflow-y-auto pr-1">
             {pos.map((po) => {
               const here = assign[po.id]
@@ -96,21 +96,21 @@ export function InvoiceTotalMatchPanel({ invoice, pos, onSubmit, submitting }: P
                 <div key={po.id}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={() => dropOnPo(po)}
-                  className={`rounded-lg border px-3 py-2 text-sm ${here != null ? 'border-primary-300 bg-primary-50' : `border-dashed border-neutral-300 ${dragging ? 'hover:border-primary-400' : ''}`}`}>
+                  className={`rounded-lg border px-3 py-2 text-sm ${here != null ? 'border-primary-300 bg-primary-50' : `border-dashed border-line-strong ${dragging ? 'hover:border-primary-400' : ''}`}`}>
                   <div className="flex justify-between">
-                    <span className="truncate font-mono text-xs text-neutral-600">{po.number}</span>
+                    <span className="truncate font-mono text-xs text-fg-secondary">{po.number}</span>
                     <span className="font-mono text-xs">{formatAmount(Number(po.subtotal), po.currency)}</span>
                   </div>
-                  <p className="text-[11px] text-neutral-400">
+                  <p className="text-2xs text-fg-muted">
                     Subtotal {formatAmount(Number(po.subtotal), po.currency)} · Remaining {formatAmount(poRemaining(po), po.currency)}
                   </p>
                   {here != null && (
                     <div className="mt-1.5 flex items-center gap-2">
-                      <span className="text-[11px] text-neutral-500">Allocate</span>
+                      <span className="text-2xs text-fg-muted">Allocate</span>
                       <input type="number" step="0.01" value={here}
                         onChange={(e) => editAmount(po.id, e.target.value)}
-                        className="h-6 w-28 rounded border border-neutral-300 bg-white px-2 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary-500" />
-                      <button onClick={() => unassign(po.id)} className="text-[11px] text-primary-600 hover:underline">unassign</button>
+                        className="h-6 w-28 rounded border border-line-strong bg-surface px-2 text-2xs focus:outline-none focus:ring-1 focus:ring-primary-500" />
+                      <button onClick={() => unassign(po.id)} className="text-2xs text-primary-600 hover:underline">unassign</button>
                     </div>
                   )}
                 </div>

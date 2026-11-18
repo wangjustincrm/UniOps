@@ -71,14 +71,14 @@ function SectionCard({
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-5">
+    <section className="rounded-xl border border-line bg-surface p-5">
       <div className="mb-4 flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
           <Icon className="h-4.5 w-4.5" />
         </div>
         <div>
-          <h2 className="text-sm font-semibold text-neutral-900">{title}</h2>
-          <p className="mt-0.5 text-xs text-neutral-500 leading-relaxed">{description}</p>
+          <h2 className="text-sm font-semibold text-fg">{title}</h2>
+          <p className="mt-0.5 text-xs text-fg-muted leading-relaxed">{description}</p>
         </div>
       </div>
       <div className="pl-12">{children}</div>
@@ -90,7 +90,7 @@ function Toast({ ok, msg }: { ok: boolean; msg: string }) {
   return (
     <div className={cn(
       'flex items-center gap-2 rounded-lg px-3 py-2 text-sm',
-      ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700',
+      ok ? 'bg-success-soft text-success-fg' : 'bg-danger-soft text-danger-fg',
     )}>
       {ok ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
       {msg}
@@ -103,7 +103,7 @@ function SaveButton({ loading, label = 'Save Changes' }: { loading: boolean; lab
     <button
       type="submit"
       disabled={loading}
-      className="flex items-center gap-2 rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-60 transition-colors"
+      className="flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60 transition-colors"
     >
       {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
       {loading ? 'Saving…' : label}
@@ -144,7 +144,7 @@ function FiscalYearsEditor({
     <div className="flex flex-col gap-3 max-w-xl">
       {/* Chips */}
       {sorted.length === 0 ? (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+        <p className="text-xs text-warning-fg bg-warning-soft border border-warning-line rounded-md px-3 py-2">
           No fiscal years configured. Users won't be able to create budget plans until at least one year is added.
         </p>
       ) : (
@@ -152,13 +152,13 @@ function FiscalYearsEditor({
           {sorted.map((y) => (
             <span
               key={y}
-              className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 pl-3 pr-1 py-1 text-xs font-medium text-neutral-700"
+              className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-subtle pl-3 pr-1 py-1 text-xs font-medium text-fg-secondary"
             >
               FY {y}
               <button
                 type="button"
                 onClick={() => onRemove(y)}
-                className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-200 hover:text-red-600"
+                className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-fg-muted hover:bg-surface-strong hover:text-danger-fg"
                 aria-label={`Remove FY ${y}`}
                 title={`Remove FY ${y}`}
               >
@@ -179,20 +179,20 @@ function FiscalYearsEditor({
             value={input}
             onChange={(e) => { setInput(e.target.value); setError(null) }}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit() } }}
-            className="h-9 w-32 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="h-9 w-32 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
           />
-          {error && <p className="text-[11px] text-red-600">{error}</p>}
+          {error && <p className="text-2xs text-danger-fg">{error}</p>}
         </div>
         <button
           type="button"
           onClick={submit}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 h-9 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 h-9 text-xs font-medium text-fg-secondary hover:bg-surface-subtle"
         >
           <Plus className="h-3.5 w-3.5" />
           Add Year
         </button>
       </div>
-      <p className="text-[11px] text-neutral-400">
+      <p className="text-2xs text-fg-muted">
         Removing a year only hides it from the dropdown — existing budget plans for that year remain accessible from Budget Plans.
       </p>
     </div>
@@ -271,7 +271,7 @@ function CompanyConfigSection() {
   }
 
   if (isLoading) {
-    return <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
+    return <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
   }
 
   return (
@@ -300,22 +300,22 @@ function CompanyConfigSection() {
           {[
             {
               k: 'yellow_threshold_pct' as const, label: 'Warning threshold',
-              badge: 'bg-amber-100 text-amber-700', badgeLabel: 'Yellow',
+              badge: 'bg-warning-soft text-warning-fg', badgeLabel: 'Yellow',
               desc: 'Budget row highlighted amber. When budget alert emails are on: a daily digest to the Dept. Manager (Finance Manager if the department has none).',
             },
             {
               k: 'red_threshold_pct' as const, label: 'Over-budget threshold',
-              badge: 'bg-red-100 text-red-700', badgeLabel: 'Red',
+              badge: 'bg-danger-soft text-danger-fg', badgeLabel: 'Red',
               desc: 'Budget row highlighted red. When budget alerts are on: within the hour (NC actuals sync hourly), an email + Teams alert (for those who chose Teams) to the Dept. Manager, Finance Manager and GM/OPM.',
             },
           ].map(({ k, label, badge, badgeLabel, desc }) => (
-            <div key={k} className="flex items-start justify-between gap-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3.5">
+            <div key={k} className="flex items-start justify-between gap-4 rounded-xl border border-line bg-surface-subtle px-4 py-3.5">
               <div className="flex-1 min-w-0">
                 <div className="mb-0.5 flex items-center gap-2">
-                  <p className="text-sm font-medium text-neutral-900">{label}</p>
+                  <p className="text-sm font-medium text-fg">{label}</p>
                   <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', badge)}>{badgeLabel}</span>
                 </div>
-                <p className="text-xs text-neutral-500">{desc}</p>
+                <p className="text-xs text-fg-muted">{desc}</p>
               </div>
               <div className="shrink-0 flex items-center gap-2">
                 <input
@@ -324,9 +324,9 @@ function CompanyConfigSection() {
                   onChange={(e) =>
                     set(k, Math.min(200, Math.max(1, Number(e.target.value))))
                   }
-                  className="h-9 w-20 rounded-lg border border-neutral-300 bg-white px-2 text-center text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="h-9 w-20 rounded-lg border border-line-strong bg-surface px-2 text-center text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary-600"
                 />
-                <span className="text-sm text-neutral-500">%</span>
+                <span className="text-sm text-fg-muted">%</span>
               </div>
             </div>
           ))}
@@ -340,7 +340,7 @@ function CompanyConfigSection() {
         description="Determines what happens when a Purchase Request would push a budget account past its annual limit."
       >
         <div className="flex flex-col gap-3 max-w-2xl">
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-fg-muted">
             A PR keeps the mode it was submitted under. A change applies to new submissions; PRs already in
             approval only ever get lighter — an over-budget step the new mode no longer requires is skipped
             (e.g. switching to "Allow" passes a PR waiting on the Finance Manager to its next approver). A
@@ -370,7 +370,7 @@ function CompanyConfigSection() {
                 'flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3.5 transition-colors',
                 form.over_budget_mode === v
                   ? 'border-primary-300 bg-primary-50'
-                  : 'border-neutral-200 bg-white hover:bg-neutral-50',
+                  : 'border-line bg-surface hover:bg-surface-subtle',
               )}
             >
               <input
@@ -380,8 +380,8 @@ function CompanyConfigSection() {
                 className="mt-0.5 accent-primary-600 shrink-0"
               />
               <div>
-                <p className="text-sm font-medium text-neutral-900">{label}</p>
-                <p className="mt-0.5 text-xs text-neutral-500">{desc}</p>
+                <p className="text-sm font-medium text-fg">{label}</p>
+                <p className="mt-0.5 text-xs text-fg-muted">{desc}</p>
               </div>
             </label>
           ))}
@@ -406,17 +406,17 @@ function DecompositionSettingsSection() {
       title="Factor Decomposition"
       description="Configuration of decomposition factors for Budget Accounts (the matrix axes used when filling monthly breakdowns)."
     >
-      <div className="flex flex-col gap-3 max-w-2xl text-sm text-neutral-700">
+      <div className="flex flex-col gap-3 max-w-2xl text-sm text-fg-secondary">
         <p>
           Each Budget Account may have up to <strong>3 decomposition factors</strong>. Factor order in the
           catalog determines the matrix layout:
         </p>
-        <ul className="ml-5 list-disc text-[13px] text-neutral-600 space-y-0.5">
+        <ul className="ml-5 list-disc text-[13px] text-fg-secondary space-y-0.5">
           <li><strong>Primary factor</strong> → matrix <em>rows</em></li>
           <li><strong>2nd factor</strong> → matrix <em>columns</em></li>
           <li><strong>3rd factor</strong> → <em>sub-columns</em> within each column</li>
         </ul>
-        <p className="text-[11px] text-neutral-500 leading-snug">
+        <p className="text-2xs text-fg-muted leading-snug">
           The 3-factor cap is a hard limit enforced by budget-api at factor creation. Configure factors
           on the Account Catalog page.
         </p>
@@ -542,11 +542,11 @@ function OpeningBalanceSection() {
         {/* Scope selectors */}
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-neutral-600">Cost Center</span>
+            <span className="text-xs font-medium text-fg-secondary">Cost Center</span>
             <select
               value={ccId}
               onChange={(e) => { setCcId(e.target.value); setResult(null); setError(null) }}
-              className="h-9 w-64 rounded-lg border border-neutral-300 bg-white px-3 text-sm"
+              className="h-9 w-64 rounded-lg border border-line-strong bg-surface px-3 text-sm"
             >
               <option value="">Select a cost center…</option>
               {activeCcs.map((cc) => (
@@ -555,11 +555,11 @@ function OpeningBalanceSection() {
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-neutral-600">Fiscal Year</span>
+            <span className="text-xs font-medium text-fg-secondary">Fiscal Year</span>
             <select
               value={year}
               onChange={(e) => { setYear(Number(e.target.value)); setResult(null) }}
-              className="h-9 w-32 rounded-lg border border-neutral-300 bg-white px-3 text-sm"
+              className="h-9 w-32 rounded-lg border border-line-strong bg-surface px-3 text-sm"
             >
               {years.map((y) => <option key={y} value={y}>FY {y}</option>)}
             </select>
@@ -571,7 +571,7 @@ function OpeningBalanceSection() {
           <button
             type="button"
             onClick={downloadTemplate}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 h-9 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 h-9 text-xs font-medium text-fg-secondary hover:bg-surface-subtle"
           >
             <Download className="h-3.5 w-3.5" />
             Download Template
@@ -580,7 +580,7 @@ function OpeningBalanceSection() {
             type="button"
             disabled={!ccId || busy}
             onClick={() => fileRef.current?.click()}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 h-9 text-xs font-medium text-white hover:bg-[#064A4A] disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 h-9 text-xs font-medium text-white hover:bg-primary-800 disabled:opacity-50"
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
             {busy ? 'Importing…' : 'Import CSV'}
@@ -592,7 +592,7 @@ function OpeningBalanceSection() {
             className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f) }}
           />
-          <span className="text-[11px] text-neutral-400">
+          <span className="text-2xs text-fg-muted">
             Columns: Account Code + Jan…Dec. Scoped to the selected cost center + year.
           </span>
         </div>
@@ -610,15 +610,15 @@ function OpeningBalanceSection() {
 
         {/* Current opening preview */}
         {ccId && openingItems.length > 0 && (
-          <div className="rounded-lg border border-neutral-200 overflow-hidden">
-            <div className="flex items-center justify-between bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+          <div className="rounded-lg border border-line overflow-hidden">
+            <div className="flex items-center justify-between bg-surface-subtle px-3 py-2 text-xs text-fg-secondary">
               <span>{openingItems.length} opening row{openingItems.length !== 1 ? 's' : ''} for this scope</span>
               <span className="font-mono font-medium">Total: {openingTotal.toLocaleString('en-CA', { style: 'currency', currency: 'CAD' })}</span>
             </div>
             <div className="max-h-56 overflow-y-auto">
               <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-white">
-                  <tr className="border-b border-neutral-100 text-neutral-500">
+                <thead className="sticky top-0 bg-surface">
+                  <tr className="border-b border-line-subtle text-fg-muted">
                     <th className="px-3 py-1.5 text-left font-medium">Account</th>
                     <th className="px-3 py-1.5 text-left font-medium">Month</th>
                     <th className="px-3 py-1.5 text-right font-medium">Amount</th>
@@ -626,13 +626,13 @@ function OpeningBalanceSection() {
                 </thead>
                 <tbody>
                   {openingItems.map((r) => (
-                    <tr key={`${r.account_id}-${r.month}`} className="border-b border-neutral-50">
+                    <tr key={`${r.account_id}-${r.month}`} className="border-b border-line-subtle">
                       <td className="px-3 py-1.5">
-                        <span className="font-mono text-neutral-500 mr-1">{r.account_code}</span>
-                        <span className="text-neutral-700">{r.account_name}</span>
+                        <span className="font-mono text-fg-muted mr-1">{r.account_code}</span>
+                        <span className="text-fg-secondary">{r.account_name}</span>
                       </td>
-                      <td className="px-3 py-1.5 text-neutral-600">{OPENING_MONTHS[r.month - 1] ?? r.month}</td>
-                      <td className="px-3 py-1.5 text-right font-mono text-neutral-700">
+                      <td className="px-3 py-1.5 text-fg-secondary">{OPENING_MONTHS[r.month - 1] ?? r.month}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-fg-secondary">
                         {Number(r.amount).toLocaleString('en-CA', { style: 'currency', currency: 'CAD' })}
                       </td>
                     </tr>
@@ -683,11 +683,11 @@ export default function BudgetConfigPage() {
               <DecompositionSettingsSection />
 
               {/* Pointer to Catalog CRUD */}
-              <section className="rounded-xl border border-dashed border-neutral-300 bg-white p-5">
+              <section className="rounded-xl border border-dashed border-line-strong bg-surface p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <h2 className="text-sm font-semibold text-neutral-900">Account Catalog (L1 / L2)</h2>
-                    <p className="mt-1 text-xs text-neutral-500 leading-relaxed">
+                    <h2 className="text-sm font-semibold text-fg">Account Catalog (L1 / L2)</h2>
+                    <p className="mt-1 text-xs text-fg-muted leading-relaxed">
                       Adding, editing, importing or exporting L1 categories and Accounts (including factor configuration)
                       is now done in the Account Catalog page. The catalog is shared across all cost centers.
                     </p>
@@ -796,14 +796,14 @@ function CostCentersSection() {
   })
 
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-5">
+    <section className="rounded-xl border border-line bg-surface p-5">
       <div className="mb-4 flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
           <Layers className="h-4 w-4" />
         </div>
         <div className="flex-1">
-          <h2 className="text-sm font-semibold text-neutral-900">Cost Centers</h2>
-          <p className="mt-0.5 text-xs text-neutral-500 leading-relaxed">
+          <h2 className="text-sm font-semibold text-fg">Cost Centers</h2>
+          <p className="mt-0.5 text-xs text-fg-muted leading-relaxed">
             Cost Centers are sub-units within a Department. Each Cost Center has its own budget table.
             Budget accounts imported via CSV are linked to a Cost Center using its code.
             Managed by System Admin, Finance Manager, and AP Clerk.
@@ -816,18 +816,18 @@ function CostCentersSection() {
       <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-1 flex-wrap">
           <div className="relative min-w-48">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
             <input
               placeholder="Search cost centers…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-10 w-full rounded-lg border border-neutral-300 bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]"
+              className="h-10 w-full rounded-lg border border-line-strong bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700"
             />
           </div>
           <select
             value={filterDeptId}
             onChange={(e) => setFilterDeptId(e.target.value)}
-            className="h-10 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]"
+            className="h-10 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700"
           >
             <option value="">All Departments</option>
             {departments.filter((d) => d.is_active).map((d) => (
@@ -838,7 +838,7 @@ function CostCentersSection() {
         <button
           onClick={() => { setError(''); setMode('add') }}
           disabled={mode !== 'none'}
-          className="flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50"
         >
           <Plus className="h-4 w-4" />Add Cost Center
         </button>
@@ -870,37 +870,37 @@ function CostCentersSection() {
         />
       )}
 
-      <div className="rounded-lg border border-neutral-200 overflow-hidden">
+      <div className="rounded-lg border border-line overflow-hidden">
         {isLoading ? (
-          <div className="py-10 text-center text-sm text-neutral-400">Loading cost centers…</div>
+          <div className="py-10 text-center text-sm text-fg-muted">Loading cost centers…</div>
         ) : !filtered.length ? (
-          <div className="py-10 text-center text-sm text-neutral-400">No cost centers found.</div>
+          <div className="py-10 text-center text-sm text-fg-muted">No cost centers found.</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-50">
-                <SortTh label="Cost Center" sortKey="name" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
-                <SortTh label="Code" sortKey="code" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
-                <SortTh label="Department" sortKey="department" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
-                <SortTh label="Status" sortKey="status" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500 w-24" />
-                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500 w-24" />
+              <tr className="border-b border-line bg-surface-subtle">
+                <SortTh label="Cost Center" sortKey="name" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
+                <SortTh label="Code" sortKey="code" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
+                <SortTh label="Department" sortKey="department" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted" />
+                <SortTh label="Status" sortKey="status" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted w-24" />
+                <th className="px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-wide text-fg-muted w-24" />
               </tr>
             </thead>
             <tbody>
               {ccSort.rows.map((cc, i) => {
                 const dept = deptMap[cc.department_id]
                 return (
-                  <tr key={cc.id} className={cn('border-b border-neutral-100 last:border-b-0', i % 2 === 1 ? 'bg-neutral-50' : 'bg-white')}>
-                    <td className="px-4 py-2.5 font-medium text-neutral-800">
+                  <tr key={cc.id} className={cn('border-b border-line-subtle last:border-b-0', i % 2 === 1 ? 'bg-surface-subtle' : 'bg-surface')}>
+                    <td className="px-4 py-2.5 font-medium text-fg">
                       <div className="flex items-center gap-2.5">
                         <Building2 className="h-4 w-4 text-primary-600 shrink-0" />
                         {cc.name}
                       </div>
                     </td>
-                    <td className="px-4 py-2.5"><span className="inline-flex items-center rounded-md bg-neutral-100 px-2 py-0.5 font-mono text-[11px] font-semibold text-neutral-700">{cc.code}</span></td>
-                    <td className="px-4 py-2.5 text-xs text-neutral-600">{dept ? dept.name : cc.department_name || <span className="text-neutral-300">—</span>}</td>
+                    <td className="px-4 py-2.5"><span className="inline-flex items-center rounded-md bg-surface-sunken px-2 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">{cc.code}</span></td>
+                    <td className="px-4 py-2.5 text-xs text-fg-secondary">{dept ? dept.name : cc.department_name || <span className="text-fg-faint">—</span>}</td>
                     <td className="px-4 py-2.5">
-                      <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium', cc.is_active ? 'bg-green-50 text-green-700' : 'bg-neutral-100 text-neutral-500')}>
+                      <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium', cc.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                         {cc.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </td>
@@ -908,13 +908,13 @@ function CostCentersSection() {
                       <div className="flex items-center justify-end gap-1">
                         {deleteConfirm === cc.id ? (
                           <>
-                            <button onClick={() => { deleteMut.mutate(cc.id); setDeleteConfirm(null) }} className="flex h-7 w-7 items-center justify-center rounded text-red-600 hover:bg-red-50"><Check className="h-3.5 w-3.5" /></button>
-                            <button onClick={() => setDeleteConfirm(null)} className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100"><X className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => { deleteMut.mutate(cc.id); setDeleteConfirm(null) }} className="flex h-7 w-7 items-center justify-center rounded text-danger-fg hover:bg-danger-soft"><Check className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => setDeleteConfirm(null)} className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-surface-sunken"><X className="h-3.5 w-3.5" /></button>
                           </>
                         ) : (
                           <>
-                            <button onClick={() => { setError(''); setMode({ edit: cc.id }); setDeleteConfirm(null) }} className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-primary-50 hover:text-primary-600"><Pencil className="h-3.5 w-3.5" /></button>
-                            <button onClick={() => { setDeleteConfirm(cc.id); setMode('none') }} className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-red-50 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => { setError(''); setMode({ edit: cc.id }); setDeleteConfirm(null) }} className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-primary-50 hover:text-primary-600"><Pencil className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => { setDeleteConfirm(cc.id); setMode('none') }} className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-danger-soft hover:text-danger-fg"><Trash2 className="h-3.5 w-3.5" /></button>
                           </>
                         )}
                       </div>
@@ -925,7 +925,7 @@ function CostCentersSection() {
             </tbody>
           </table>
         )}
-        <div className="border-t border-neutral-200 bg-neutral-50 px-4 py-2 text-[11px] text-neutral-500">
+        <div className="border-t border-line bg-surface-subtle px-4 py-2 text-2xs text-fg-muted">
           {filtered.length} of {ccs.length} cost center{ccs.length !== 1 ? 's' : ''}
         </div>
       </div>
@@ -958,34 +958,34 @@ function CcForm({
   }
   const fldCls = (err?: string) =>
     cn(
-      'h-10 w-full rounded-md border bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]',
-      err ? 'border-red-500' : 'border-neutral-300',
+      'h-10 w-full rounded-md border bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700',
+      err ? 'border-danger-solid' : 'border-line-strong',
     )
 
   return (
     <div className="mb-4 rounded-lg border border-primary-200 bg-primary-50 p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
-        <button onClick={onCancel} className="text-neutral-400 hover:text-neutral-600"><X className="h-4 w-4" /></button>
+        <h3 className="text-sm font-semibold text-fg">{title}</h3>
+        <button onClick={onCancel} className="text-fg-muted hover:text-fg-secondary"><X className="h-4 w-4" /></button>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Code <span className="text-red-600">*</span></label>
+          <label className="text-xs font-medium text-fg-secondary">Code <span className="text-danger-fg">*</span></label>
           <input value={form.code} onChange={(e) => set('code', e.target.value)} placeholder="e.g. CC-MKT-03" className={fldCls(errors.code)} />
-          {errors.code && <p className="text-xs text-red-600">{errors.code}</p>}
+          {errors.code && <p className="text-xs text-danger-fg">{errors.code}</p>}
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Name <span className="text-red-600">*</span></label>
+          <label className="text-xs font-medium text-fg-secondary">Name <span className="text-danger-fg">*</span></label>
           <input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Brand & Campaigns" className={fldCls(errors.name)} />
-          {errors.name && <p className="text-xs text-red-600">{errors.name}</p>}
+          {errors.name && <p className="text-xs text-danger-fg">{errors.name}</p>}
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Department <span className="text-red-600">*</span></label>
+          <label className="text-xs font-medium text-fg-secondary">Department <span className="text-danger-fg">*</span></label>
           <select value={form.department_id} onChange={(e) => set('department_id', e.target.value)} className={fldCls(errors.department_id)}>
             <option value="">Select department…</option>
             {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
-          {errors.department_id && <p className="text-xs text-red-600">{errors.department_id}</p>}
+          {errors.department_id && <p className="text-xs text-danger-fg">{errors.department_id}</p>}
         </div>
         <div className="mt-5 flex items-center gap-2">
           <input
@@ -993,16 +993,16 @@ function CcForm({
             id="cc-active"
             checked={form.is_active}
             onChange={(e) => set('is_active', e.target.checked)}
-            className="h-4 w-4 rounded border-neutral-300"
+            className="h-4 w-4 rounded border-line-strong"
           />
-          <label htmlFor="cc-active" className="text-sm text-neutral-700">Active</label>
+          <label htmlFor="cc-active" className="text-sm text-fg-secondary">Active</label>
         </div>
       </div>
       <div className="mt-3 flex justify-end gap-2">
-        <button onClick={onCancel} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">Cancel</button>
+        <button onClick={onCancel} className="rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-fg-secondary hover:bg-surface-subtle">Cancel</button>
         <button
           onClick={() => { if (validate()) onSave({ ...form, code: form.code.trim().toUpperCase() }) }}
-          className="flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#064A4A]"
+          className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-800"
         >
           <Check className="h-3.5 w-3.5" />Save
         </button>

@@ -92,7 +92,7 @@ export default function StaffList() {
     <StaffShell permission="employee.view">
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-neutral-400" />
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-fg-muted" />
           <input className={`${INPUT} w-64 pl-9`} placeholder="Search number, name or email"
             value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
         </div>
@@ -107,11 +107,11 @@ export default function StaffList() {
           <option value="">All departments</option>
           {depts?.items.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
-        <label className="flex items-center gap-1.5 text-sm text-neutral-600">
+        <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
           <input type="checkbox" checked={differs} onChange={(e) => { setDiffers(e.target.checked); setPage(1) }} />
           User differs
         </label>
-        <label className="flex items-center gap-1.5 text-sm text-neutral-600">
+        <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
           <input type="checkbox" checked={needsDepartment} onChange={(e) => { setNeedsDepartment(e.target.checked); setPage(1) }} />
           Needs department
         </label>
@@ -132,22 +132,22 @@ export default function StaffList() {
         </div>
       </div>
 
-      {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-3 text-sm text-danger-fg">{error}</p>}
 
       {bulk && (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="mb-4 rounded-lg border border-warning-line bg-warning-soft px-4 py-3 text-sm text-warning-fg">
           <div className="flex items-center justify-between font-medium">
             <span>{bulk.created.length} user(s) created, {bulk.errors.length} failed. Temporary passwords are shown only once.</span>
             <button onClick={() => setBulk(null)} aria-label="Dismiss"><X className="h-4 w-4" /></button>
           </div>
           <ul className="mt-2 space-y-0.5 font-mono text-xs">
             {bulk.created.map((c) => <li key={c.email}>{c.email} — {c.temp_password}</li>)}
-            {bulk.errors.map((e) => <li key={e.erp_person_code} className="text-red-700">{e.erp_person_code}: {e.reason}</li>)}
+            {bulk.errors.map((e) => <li key={e.erp_person_code} className="text-danger-fg">{e.erp_person_code}: {e.reason}</li>)}
           </ul>
         </div>
       )}
 
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
         <div className="max-h-[calc(100vh-300px)] overflow-auto">
           <table className="w-full text-sm">
             <thead>
@@ -167,7 +167,7 @@ export default function StaffList() {
             </thead>
             <tbody>
               {data?.items.map((r) => (
-                <tr key={r.id} className="border-t border-neutral-100 hover:bg-neutral-50">
+                <tr key={r.id} className="border-t border-line-subtle hover:bg-surface-subtle">
                   {admin && (
                     <td className="px-4">
                       {canCreate(r) && <input type="checkbox" aria-label={`Select ${r.display_name}`}
@@ -175,32 +175,32 @@ export default function StaffList() {
                     </td>
                   )}
                   <td className={`${TD} font-mono text-xs`}>{r.employee_number}</td>
-                  <td className={TD}><Link className="text-[#085E5E] hover:underline" to={`/mdm/staff/${r.id}`}>{r.display_name}</Link></td>
+                  <td className={TD}><Link className="text-primary-700 hover:underline" to={`/mdm/staff/${r.id}`}>{r.display_name}</Link></td>
                   <td className={TD}>{r.work_email ?? '—'}</td>
                   <td className={TD}>{r.job_title ?? '—'}</td>
                   <td className={TD}>{r.adp_department ?? '—'}</td>
                   <td className={TD}>
-                    {r.department_name ?? (r.needs_department ? <span className="text-amber-700">Needs department</span> : '—')}
+                    {r.department_name ?? (r.needs_department ? <span className="text-warning-fg">Needs department</span> : '—')}
                   </td>
                   <td className={TD}><StatusPill status={r.status} /></td>
                   <td className={TD}>{SOURCE_LABEL[r.source]}</td>
                   <td className={TD}>
                     {r.user ? (r.user.is_active ? 'Yes' : 'Inactive')
                       : canCreate(r) ? (
-                        <button className="text-xs font-medium text-[#085E5E] hover:underline"
+                        <button className="text-xs font-medium text-primary-700 hover:underline"
                           onClick={() => navigate(`/mdm/users?from_employee=${r.id}`)}>Create user</button>
                       ) : '—'}
                   </td>
                   <td className={TD} title={NC_STATE_LABEL[r.nc_state]}>
                     <NcPill state={r.nc_state} />
-                    {r.open_todos > 0 && <span className="ml-1 text-xs text-amber-700">{r.open_todos} to-do</span>}
+                    {r.open_todos > 0 && <span className="ml-1 text-xs text-warning-fg">{r.open_todos} to-do</span>}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
           {!isLoading && !data?.items.length && (
-            <div className="py-10 text-center text-sm text-neutral-400">
+            <div className="py-10 text-center text-sm text-fg-muted">
               No employees found. Employees appear here after the first ADP import.
             </div>
           )}
@@ -240,9 +240,9 @@ function AddEmployee({ departments, onClose, onSaved }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <form onSubmit={save} className="w-full max-w-md space-y-3 rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="font-semibold text-neutral-900">Add Non-ADP Employee</h3>
-        <p className="text-xs text-neutral-500">For people paid outside ADP, such as head-office staff. Everyone else comes from the ADP import.</p>
+      <form onSubmit={save} className="w-full max-w-md space-y-3 rounded-xl bg-surface p-5 shadow-xl">
+        <h3 className="font-semibold text-fg">Add Non-ADP Employee</h3>
+        <p className="text-xs text-fg-muted">For people paid outside ADP, such as head-office staff. Everyone else comes from the ADP import.</p>
         <input className={`${INPUT} w-full`} placeholder="Employee number (six digits)" pattern="\d{6}" required
           value={form.employee_number} onChange={set('employee_number')} />
         <input className={`${INPUT} w-full`} placeholder="Name" required value={form.display_name} onChange={set('display_name')} />
@@ -252,7 +252,7 @@ function AddEmployee({ departments, onClose, onSaved }: {
           <option value="">Department</option>
           {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-danger-fg">{error}</p>}
         <div className="flex justify-end gap-2">
           <button type="button" className={SECONDARY_BTN} onClick={onClose}>Cancel</button>
           <button type="submit" className={PRIMARY_BTN} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>

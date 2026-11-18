@@ -35,47 +35,47 @@ export default function HealthDeclarationsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-neutral-900">Health declarations</h1>
-      <p className="mt-1 text-sm text-neutral-500">
+      <h1 className="text-2xl font-bold text-fg">Health declarations</h1>
+      <p className="mt-1 text-sm text-fg-muted">
         Signed GMP / Laboratory visitor health declarations.
       </p>
 
       {/* Filters */}
       <div className="mt-4 flex flex-wrap items-end gap-3">
-        <label className="text-xs text-neutral-600">
+        <label className="text-xs text-fg-secondary">
           From
           <input
             type="date" value={from}
             onChange={(e) => { setFrom(e.target.value); setPage(1) }}
-            className="mt-1 block rounded-md border border-neutral-300 px-2 py-1 text-sm"
+            className="mt-1 block rounded-md border border-line-strong px-2 py-1 text-sm"
           />
         </label>
-        <label className="text-xs text-neutral-600">
+        <label className="text-xs text-fg-secondary">
           To
           <input
             type="date" value={to}
             onChange={(e) => { setTo(e.target.value); setPage(1) }}
-            className="mt-1 block rounded-md border border-neutral-300 px-2 py-1 text-sm"
+            className="mt-1 block rounded-md border border-line-strong px-2 py-1 text-sm"
           />
         </label>
-        <label className="min-w-[220px] flex-1 text-xs text-neutral-600">
+        <label className="min-w-[220px] flex-1 text-xs text-fg-secondary">
           Search
           <div className="relative mt-1">
-            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-400" />
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-muted" />
             <input
               value={q}
               onChange={(e) => { setQ(e.target.value); setPage(1) }}
               placeholder="Visitor name or company"
-              className="block w-full rounded-md border border-neutral-300 py-1 pl-7 pr-2 text-sm"
+              className="block w-full rounded-md border border-line-strong py-1 pl-7 pr-2 text-sm"
             />
           </div>
         </label>
       </div>
 
       {/* Table */}
-      <div className="mt-4 overflow-x-auto rounded-md border border-neutral-200 bg-white">
+      <div className="mt-4 overflow-x-auto rounded-md border border-line bg-surface">
         <table className="w-full text-sm">
-          <thead className="border-b border-neutral-100 bg-neutral-50 text-left text-xs uppercase tracking-wider text-neutral-500">
+          <thead className="border-b border-line-subtle bg-surface-subtle text-left text-xs uppercase tracking-wider text-fg-muted">
             <tr>
               <SortTh label="Date" sortKey="visit_date" sort={sort} onSort={onSort} className="px-3 py-2" />
               <SortTh label="Visitor" sortKey="visitor_name" sort={sort} onSort={onSort} className="px-3 py-2" />
@@ -87,24 +87,24 @@ export default function HealthDeclarationsPage() {
               <th className="px-3 py-2" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-neutral-100">
+          <tbody className="divide-y divide-line-subtle">
             {isLoading && (
-              <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">Loading…</td></tr>
+              <tr><td colSpan={8} className="px-3 py-6 text-center text-fg-muted">Loading…</td></tr>
             )}
             {!isLoading && items.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">No declarations found.</td></tr>
+              <tr><td colSpan={8} className="px-3 py-6 text-center text-fg-muted">No declarations found.</td></tr>
             )}
             {items.map((it) => (
-              <tr key={it.id} className="hover:bg-neutral-50">
+              <tr key={it.id} className="hover:bg-surface-subtle">
                 <td className="px-3 py-2">{formatDate(it.visit_date)}</td>
-                <td className="px-3 py-2 font-medium text-neutral-800">{it.visitor_name}</td>
-                <td className="px-3 py-2 text-neutral-600">{it.company}</td>
-                <td className="px-3 py-2 text-neutral-600">{it.host_name}</td>
-                <td className="px-3 py-2 text-neutral-600">{zoneName(areaRules, it.access_area)}</td>
+                <td className="px-3 py-2 font-medium text-fg">{it.visitor_name}</td>
+                <td className="px-3 py-2 text-fg-secondary">{it.company}</td>
+                <td className="px-3 py-2 text-fg-secondary">{it.host_name}</td>
+                <td className="px-3 py-2 text-fg-secondary">{zoneName(areaRules, it.access_area)}</td>
                 <td className="px-3 py-2">
                   <span className={
                     'inline-flex items-center gap-1 text-xs font-medium ' +
-                    (it.result === 'passed' ? 'text-success-600' : 'text-danger-600')
+                    (it.result === 'passed' ? 'text-success-fg' : 'text-danger-fg')
                   }>
                     {it.result === 'passed'
                       ? <ShieldCheck className="h-3.5 w-3.5" />
@@ -112,11 +112,11 @@ export default function HealthDeclarationsPage() {
                     {it.result}
                   </span>
                 </td>
-                <td className="px-3 py-2 text-neutral-500">{formatDateTime(it.updated_at)}</td>
+                <td className="px-3 py-2 text-fg-muted">{formatDateTime(it.updated_at)}</td>
                 <td className="px-3 py-2 text-right">
                   <button
                     onClick={() => setView(it)}
-                    className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50"
+                    className="inline-flex items-center gap-1 rounded-md border border-line-strong bg-surface px-2 py-1 text-xs text-fg-secondary hover:bg-surface-subtle"
                   >
                     <Eye className="h-3.5 w-3.5" /> View
                   </button>
@@ -127,17 +127,17 @@ export default function HealthDeclarationsPage() {
         </table>
       </div>
 
-      {error && <p className="mt-2 text-xs text-danger-600">{error.message}</p>}
+      {error && <p className="mt-2 text-xs text-danger-fg">{error.message}</p>}
 
       {/* Pagination */}
       {total > PAGE_SIZE && (
-        <div className="mt-3 flex items-center justify-between text-xs text-neutral-500">
+        <div className="mt-3 flex items-center justify-between text-xs text-fg-muted">
           <span>{total} total</span>
           <div className="flex items-center gap-2">
             <button
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
-              className="rounded border border-neutral-300 px-2 py-1 disabled:opacity-40"
+              className="rounded border border-line-strong px-2 py-1 disabled:opacity-40"
             >
               Prev
             </button>
@@ -145,7 +145,7 @@ export default function HealthDeclarationsPage() {
             <button
               disabled={page >= totalPages}
               onClick={() => setPage((p) => p + 1)}
-              className="rounded border border-neutral-300 px-2 py-1 disabled:opacity-40"
+              className="rounded border border-line-strong px-2 py-1 disabled:opacity-40"
             >
               Next
             </button>

@@ -22,7 +22,7 @@ const CLASS_LABELS: Record<WarehouseClass, string> = {
 const CLASS_ORDER: WarehouseClass[] = ['wms', 'external', 'production', 'transient', 'other']
 
 const selectCls =
-  'h-9 w-full min-w-[16rem] rounded-lg border border-neutral-200 bg-neutral-100 px-2 text-sm text-neutral-900 focus:outline-none focus:bg-white focus:border-primary-600'
+  'h-9 w-full min-w-[16rem] rounded-lg border border-line bg-surface-sunken px-2 text-sm text-fg focus:outline-none focus:bg-surface focus:border-primary-600'
 
 function Row({ row, canAdmin, toasts }: {
   row: WarehouseClassRow
@@ -47,7 +47,7 @@ function Row({ row, canAdmin, toasts }: {
   const unclassified = row.warehouse_class === 'unclassified'
 
   return (
-    <tr className={cn('border-b border-neutral-100 align-top last:border-0', unclassified && 'bg-warning-50/60')}>
+    <tr className={cn('border-b border-line-subtle align-top last:border-0', unclassified && 'bg-warning-50/60')}>
       <td className="px-3 py-2 font-mono text-xs">
         {row.code}
         {!row.in_nc && <Badge variant="neutral" className="ml-2">Not in NC</Badge>}
@@ -79,9 +79,9 @@ function Row({ row, canAdmin, toasts }: {
             onChange={(e) => setNote(e.target.value)}
           />
         ) : (
-          <span className="text-neutral-600">{row.note || '—'}</span>
+          <span className="text-fg-secondary">{row.note || '—'}</span>
         )}
-        {error && <p role="alert" className="mt-1 text-xs text-danger-600">{error}</p>}
+        {error && <p role="alert" className="mt-1 text-xs text-danger-fg">{error}</p>}
       </td>
       {canAdmin && (
         <td className="px-3 py-2 text-right">
@@ -122,33 +122,33 @@ export function WarehouseClassesCard({ canAdmin, toasts }: {
         <CardTitle>NC warehouse classes</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {q.isLoading && <p className="text-sm text-neutral-500">Loading…</p>}
-        {q.isError && <p className="text-sm text-danger-600">Could not load warehouse classes: {(q.error as Error).message}</p>}
+        {q.isLoading && <p className="text-sm text-fg-muted">Loading…</p>}
+        {q.isError && <p className="text-sm text-danger-fg">Could not load warehouse classes: {(q.error as Error).message}</p>}
         {data && data.unclassified_count > 0 && (
-          <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-700">
+          <div className="flex items-start gap-2 rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-fg">
             <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
             {data.unclassified_count} NC warehouse{data.unclassified_count === 1 ? ' is' : 's are'} unclassified
             — {data.unclassified_count === 1 ? 'it is' : 'they are'} excluded from the WMS comparison until classified.
           </div>
         )}
         {data && (
-          <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-xs text-neutral-500 sm:grid-cols-2">
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-xs text-fg-muted sm:grid-cols-2">
             {CLASS_ORDER.map((c) => (
               <div key={c} className="flex gap-2">
-                <dt className="w-20 shrink-0 font-mono text-neutral-700">{c}</dt>
+                <dt className="w-20 shrink-0 font-mono text-fg-secondary">{c}</dt>
                 <dd>{CLASS_LABELS[c]}</dd>
               </div>
             ))}
           </dl>
         )}
         {data && data.items.length === 0 && (
-          <p className="text-sm text-neutral-500">No NC warehouses yet — run a sync first.</p>
+          <p className="text-sm text-fg-muted">No NC warehouses yet — run a sync first.</p>
         )}
         {data && data.items.length > 0 && (
-          <div className="overflow-x-auto rounded-lg border border-neutral-200">
+          <div className="overflow-x-auto rounded-lg border border-line">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50">
-                <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-500">
+              <thead className="bg-surface-subtle">
+                <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-fg-muted">
                   <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className={th} />
                   <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className={th} />
                   <SortTh label="On-hand qty" sortKey="qty" sort={sort} onSort={onSort} align="right" className={th} />

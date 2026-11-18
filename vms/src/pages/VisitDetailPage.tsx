@@ -70,17 +70,17 @@ export default function VisitDetailPage() {
   const [viewDecl, setViewDecl] = useState<{ name: string; decl: HealthDeclaration } | null>(null)
 
   if (isLoading) {
-    return <p className="text-sm text-neutral-400">Loading…</p>
+    return <p className="text-sm text-fg-muted">Loading…</p>
   }
 
   if (error || !visit) {
     return (
-      <div className="rounded-md border border-red-200 bg-danger-50 p-4 text-sm text-danger-600">
+      <div className="rounded-md border border-danger-line bg-danger-soft p-4 text-sm text-danger-fg">
         <p className="flex items-center gap-2 font-medium">
           <AlertCircle className="h-4 w-4" />
           {error?.message ?? 'Visit not found'}
         </p>
-        <BackLink to="/" className="mt-2 inline-flex items-center gap-1 text-xs text-danger-600 hover:underline">
+        <BackLink to="/" className="mt-2 inline-flex items-center gap-1 text-xs text-danger-fg hover:underline">
           <ArrowLeft className="h-3 w-3" />
           Back to today's visits
         </BackLink>
@@ -150,23 +150,23 @@ export default function VisitDetailPage() {
 
   return (
     <div className="max-w-3xl">
-      <BackLink to="/" className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-700">
+      <BackLink to="/" className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-fg-secondary">
         <ArrowLeft className="h-3 w-3" />
         Back
       </BackLink>
 
       <div className="mt-2 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">
+          <h1 className="text-2xl font-bold text-fg">
             {visitor ? `${visitor.first_name} ${visitor.last_name}` : `Visit #${visit.id.slice(0, 8)}`}
             {visit.additional_visitors.length > 0 && (
-              <span className="ml-2 text-sm font-medium text-neutral-500">
+              <span className="ml-2 text-sm font-medium text-fg-muted">
                 + {visit.additional_visitors.length} {visit.additional_visitors.length === 1 ? 'companion' : 'companions'}
               </span>
             )}
           </h1>
           {visitor && (
-            <p className="mt-0.5 text-sm text-neutral-500">{visitor.company_name}</p>
+            <p className="mt-0.5 text-sm text-fg-muted">{visitor.company_name}</p>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -216,7 +216,7 @@ export default function VisitDetailPage() {
                 : 'Shoe covers'
             return (
               <div key={item.visitor_id} className="py-2">
-                <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                <p className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
                   {label}
                 </p>
                 <Row label="Clothing size" value={clothing} />
@@ -227,7 +227,7 @@ export default function VisitDetailPage() {
           {visit.ppe_requested.notes && (
             <Row label="Notes" value={visit.ppe_requested.notes} />
           )}
-          <p className="pt-2 text-xs text-neutral-500">
+          <p className="pt-2 text-xs text-fg-muted">
             {visit.ppe_notified_at
               ? `Janitor notified ${formatDateTime(visit.ppe_notified_at)}.`
               : 'Janitor will be emailed once the visit is approved.'}
@@ -237,18 +237,18 @@ export default function VisitDetailPage() {
 
       {visit.additional_visitors.length > 0 && (
         <Card title="Companions" icon={<Users className="h-4 w-4" />} className="mt-4">
-          <ul className="divide-y divide-neutral-100 text-sm">
+          <ul className="divide-y divide-line-subtle text-sm">
             {visit.additional_visitors.map((v) => (
               <li key={v.id} className="flex flex-wrap justify-between gap-2 py-2">
                 <div className="min-w-0">
-                  <p className="font-medium text-neutral-900">{v.first_name} {v.last_name}</p>
-                  <p className="text-xs text-neutral-500">{v.company_name}</p>
+                  <p className="font-medium text-fg">{v.first_name} {v.last_name}</p>
+                  <p className="text-xs text-fg-muted">{v.company_name}</p>
                 </div>
                 <span className={
                   'rounded px-2 py-0.5 text-xs ' +
                   (v.id_verified
-                    ? 'bg-success-50 text-success-600'
-                    : 'bg-amber-50 text-amber-700')
+                    ? 'bg-success-soft text-success-fg'
+                    : 'bg-warning-soft text-warning-fg')
                 }>
                   {v.id_verified ? 'ID verified' : 'ID not verified'}
                 </span>
@@ -260,7 +260,7 @@ export default function VisitDetailPage() {
 
       {visit.notes && (
         <Card title="Notes" className="mt-4">
-          <p className="whitespace-pre-line text-sm text-neutral-700">{visit.notes}</p>
+          <p className="whitespace-pre-line text-sm text-fg-secondary">{visit.notes}</p>
         </Card>
       )}
 
@@ -275,13 +275,13 @@ export default function VisitDetailPage() {
           <ul className="space-y-1 text-sm">
             {prints.map((p, idx) => (
               <li key={p.id} className="flex flex-wrap justify-between gap-2 py-1.5">
-                <span className="text-neutral-700">
+                <span className="text-fg-secondary">
                   {idx === 0 ? 'Original' : `Reprint #${idx}`}
                   {p.reprint_reason && (
-                    <span className="ml-2 text-xs text-neutral-500">({p.reprint_reason})</span>
+                    <span className="ml-2 text-xs text-fg-muted">({p.reprint_reason})</span>
                   )}
                 </span>
-                <span className="text-xs text-neutral-500">{formatDateTime(p.printed_at)}</span>
+                <span className="text-xs text-fg-muted">{formatDateTime(p.printed_at)}</span>
               </li>
             ))}
           </ul>
@@ -300,10 +300,10 @@ export default function VisitDetailPage() {
       {isGmpZone && !isPendingApproval && (
         <div className="mt-6 space-y-2">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+            <p className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
               Health declarations
             </p>
-            <span className="text-xs text-neutral-500">
+            <span className="text-xs text-fg-muted">
               {gateVisitors.filter((v) => declByVisitor[v.id]?.result === 'passed').length} of{' '}
               {gateVisitors.length} cleared
             </span>
@@ -313,20 +313,20 @@ export default function VisitDetailPage() {
             const status = decl?.result
             const name = `${v.first_name} ${v.last_name}`
             const tone = status === 'passed'
-              ? 'border-emerald-200 bg-success-50'
+              ? 'border-success-line bg-success-soft'
               : status === 'failed'
-              ? 'border-red-200 bg-danger-50'
-              : 'border-amber-200 bg-amber-50'
+              ? 'border-danger-line bg-danger-soft'
+              : 'border-warning-line bg-warning-soft'
             return (
               <div key={v.id} className={`flex items-center justify-between gap-2 rounded-md border px-3 py-2 ${tone}`}>
                 <div className="min-w-0">
-                  <p className="flex items-center gap-1.5 text-sm font-medium text-neutral-800">
+                  <p className="flex items-center gap-1.5 text-sm font-medium text-fg">
                     {status === 'passed'
-                      ? <ShieldCheck className="h-4 w-4 text-success-600" />
-                      : <ShieldAlert className={`h-4 w-4 ${status === 'failed' ? 'text-danger-600' : 'text-amber-600'}`} />}
+                      ? <ShieldCheck className="h-4 w-4 text-success-fg" />
+                      : <ShieldAlert className={`h-4 w-4 ${status === 'failed' ? 'text-danger-fg' : 'text-warning-fg'}`} />}
                     {name}
                   </p>
-                  <p className="mt-0.5 text-xs text-neutral-500">
+                  <p className="mt-0.5 text-xs text-fg-muted">
                     {status === 'passed'
                       ? `Cleared${decl ? ` · ${formatDateTime(decl.updated_at)}` : ''}`
                       : status === 'failed'
@@ -338,7 +338,7 @@ export default function VisitDetailPage() {
                   {decl && (
                     <button
                       onClick={() => setViewDecl({ name, decl })}
-                      className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                      className="inline-flex items-center gap-1 rounded-md border border-line-strong bg-surface px-2.5 py-1 text-xs font-medium text-fg-secondary hover:bg-surface-subtle"
                     >
                       <Eye className="h-3.5 w-3.5" /> View
                     </button>
@@ -349,8 +349,8 @@ export default function VisitDetailPage() {
                       className={
                         'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium ' +
                         (status === undefined
-                          ? 'bg-amber-600 text-white hover:bg-amber-700'
-                          : 'border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50')
+                          ? 'bg-warning-solid text-white hover:bg-warning-700'
+                          : 'border border-line-strong bg-surface text-fg-secondary hover:bg-surface-subtle')
                       }
                     >
                       {status === undefined ? <ShieldCheck className="h-3.5 w-3.5" /> : <RotateCw className="h-3 w-3" />}
@@ -369,10 +369,10 @@ export default function VisitDetailPage() {
       {!isClosed && !isPendingApproval && gateVisitors.length > 0 && (
         <div className="mt-6 space-y-2">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+            <p className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
               ID verification
             </p>
-            <span className="text-xs text-neutral-500">
+            <span className="text-xs text-fg-muted">
               {gateVisitors.filter((v) => v.id_verified).length} of {gateVisitors.length} verified
             </span>
           </div>
@@ -380,12 +380,12 @@ export default function VisitDetailPage() {
             const name = `${v.first_name} ${v.last_name}`
             const pending = verifyId.isPending && verifyId.variables === v.id
             return v.id_verified ? (
-              <p key={v.id} className="flex items-center gap-1.5 rounded-md border border-emerald-200 bg-success-50 px-3 py-2 text-xs text-success-600">
+              <p key={v.id} className="flex items-center gap-1.5 rounded-md border border-success-line bg-success-soft px-3 py-2 text-xs text-success-fg">
                 <ShieldCheck className="h-4 w-4" />
                 {name} — ID verified.
               </p>
             ) : (
-              <label key={v.id} className="flex cursor-pointer items-start gap-2.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+              <label key={v.id} className="flex cursor-pointer items-start gap-2.5 rounded-md border border-warning-line bg-warning-soft px-3 py-2.5 text-sm text-warning-fg">
                 <input
                   type="checkbox"
                   checked={false}
@@ -409,7 +409,7 @@ export default function VisitDetailPage() {
 
       {/* Not yet with the approvers: the first hand-off failed. */}
       {awaitingSubmit && (
-        <div className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+        <div className="mt-6 rounded-lg border border-warning-line bg-warning-soft p-4 text-sm text-warning-fg">
           <p className="font-semibold">Not sent for approval yet</p>
           <p className="mt-0.5 text-xs">
             The approval service did not accept this visit when it was created. It is saved, but nobody
@@ -425,19 +425,19 @@ export default function VisitDetailPage() {
               Submit for approval
             </button>
           )}
-          {submit.error && <p className="mt-2 text-xs text-danger-600">{submit.error.message}</p>}
+          {submit.error && <p className="mt-2 text-xs text-danger-fg">{submit.error.message}</p>}
         </div>
       )}
 
       {/* Returned for edit: show why, let the Host fix it and resubmit. */}
       {returnedForEdit && (
-        <div className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+        <div className="mt-6 rounded-lg border border-warning-line bg-warning-soft p-4 text-sm text-warning-fg">
           <p className="flex items-center gap-1.5 font-semibold">
             <Undo2 className="h-4 w-4" />
             Returned for edit{visit.approval_note?.actor_name ? ` by ${visit.approval_note.actor_name}` : ''}
           </p>
           {visit.approval_note?.comment && (
-            <p className="mt-1 whitespace-pre-line rounded border border-amber-200 bg-white px-3 py-2 text-sm text-neutral-800">
+            <p className="mt-1 whitespace-pre-line rounded border border-warning-line bg-surface px-3 py-2 text-sm text-fg">
               {visit.approval_note.comment}
             </p>
           )}
@@ -445,7 +445,7 @@ export default function VisitDetailPage() {
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 onClick={() => setShowEdit(true)}
-                className="inline-flex items-center gap-1.5 rounded-md border border-amber-400 bg-white px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100"
+                className="inline-flex items-center gap-1.5 rounded-md border border-warning-400 bg-surface px-3 py-1.5 text-sm font-medium text-warning-fg hover:bg-warning-soft"
               >
                 <Pencil className="h-4 w-4" /> Edit visit
               </button>
@@ -461,18 +461,18 @@ export default function VisitDetailPage() {
           ) : (
             <p className="mt-1 text-xs">Waiting for the person who booked it, or the Host, to edit and resubmit.</p>
           )}
-          {submit.error && <p className="mt-2 text-xs text-danger-600">{submit.error.message}</p>}
+          {submit.error && <p className="mt-2 text-xs text-danger-fg">{submit.error.message}</p>}
         </div>
       )}
 
       {/* Rejected: the visit shows as Cancelled; say who rejected it and why. */}
       {visit.status === 'cancelled' && visit.approval_status === 'rejected' && visit.approval_note && (
-        <div className="mt-6 rounded-lg border border-red-200 bg-danger-50 p-4 text-sm text-danger-600">
+        <div className="mt-6 rounded-lg border border-danger-line bg-danger-soft p-4 text-sm text-danger-fg">
           <p className="font-semibold">
             Rejected{visit.approval_note.actor_name ? ` by ${visit.approval_note.actor_name}` : ''}
           </p>
           {visit.approval_note.comment && (
-            <p className="mt-1 whitespace-pre-line text-neutral-800">{visit.approval_note.comment}</p>
+            <p className="mt-1 whitespace-pre-line text-fg">{visit.approval_note.comment}</p>
           )}
         </div>
       )}
@@ -484,7 +484,7 @@ export default function VisitDetailPage() {
             <ShieldCheck className="h-4 w-4" />
             This visit needs your approval ({myTaskForThisVisit.assigned_role.replace(/_/g, ' ')})
           </p>
-          <p className="mt-0.5 text-xs text-neutral-600">
+          <p className="mt-0.5 text-xs text-fg-secondary">
             Review the visitor + host + access area, then approve, return for
             edit, or reject.
           </p>
@@ -492,7 +492,7 @@ export default function VisitDetailPage() {
             <button
               onClick={() => { setApprovalKind('approve'); setApprovalComment('') }}
               disabled={action.isPending}
-              className="inline-flex items-center gap-1.5 rounded-md bg-success-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-success-700 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-md bg-success-solid px-3 py-1.5 text-sm font-medium text-white hover:bg-success-700 disabled:opacity-50"
             >
               <ThumbsUp className="h-4 w-4" />
               Approve
@@ -500,7 +500,7 @@ export default function VisitDetailPage() {
             <button
               onClick={() => { setApprovalKind('return'); setApprovalComment('') }}
               disabled={action.isPending}
-              className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-md border border-warning-line bg-surface px-3 py-1.5 text-sm font-medium text-warning-fg hover:bg-warning-soft disabled:opacity-50"
             >
               <Undo2 className="h-4 w-4" />
               Return for edit
@@ -508,14 +508,14 @@ export default function VisitDetailPage() {
             <button
               onClick={() => { setApprovalKind('reject'); setApprovalComment('') }}
               disabled={action.isPending}
-              className="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-danger-600 hover:bg-danger-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-md border border-danger-line bg-surface px-3 py-1.5 text-sm font-medium text-danger-fg hover:bg-danger-soft disabled:opacity-50"
             >
               <ThumbsDown className="h-4 w-4" />
               Reject
             </button>
           </div>
           {action.error && (
-            <p className="mt-2 text-xs text-danger-600">{action.error.message}</p>
+            <p className="mt-2 text-xs text-danger-fg">{action.error.message}</p>
           )}
         </div>
       )}
@@ -523,7 +523,7 @@ export default function VisitDetailPage() {
       {/* Actions */}
       <div className="mt-6 flex flex-wrap items-center gap-3">
         {isPendingApproval && !myTaskForThisVisit && !awaitingSubmit && !returnedForEdit && (
-          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+          <p className="rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-fg">
             Awaiting approval — badge cannot print yet.
           </p>
         )}
@@ -551,7 +551,7 @@ export default function VisitDetailPage() {
             </button>
             <button
               onClick={() => setShowReprintModal(true)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+              className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-4 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
             >
               <RotateCw className="h-4 w-4" />
               Reprint badge
@@ -562,7 +562,7 @@ export default function VisitDetailPage() {
         {canEdit && !returnedForEdit && (
           <button
             onClick={() => setShowEdit(true)}
-            className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-4 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
           >
             <Pencil className="h-4 w-4" />
             Edit visit
@@ -573,7 +573,7 @@ export default function VisitDetailPage() {
           <button
             onClick={onCancel}
             disabled={cancel.isPending}
-            className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-4 py-2 text-sm text-danger-600 hover:bg-danger-50 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-danger-line bg-surface px-4 py-2 text-sm text-danger-fg hover:bg-danger-soft disabled:opacity-50"
           >
             {cancel.isPending
               ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -584,9 +584,9 @@ export default function VisitDetailPage() {
       </div>
 
       {!canPrint && !isPendingApproval && !isClosed && isFirstPrint && printBlockers.length > 0 && (
-        <p className="mt-2 text-xs text-neutral-500">Before printing: {printBlockers.join('; ')}.</p>
+        <p className="mt-2 text-xs text-fg-muted">Before printing: {printBlockers.join('; ')}.</p>
       )}
-      {cancel.error && <p className="mt-2 text-xs text-danger-600">{cancel.error.message}</p>}
+      {cancel.error && <p className="mt-2 text-xs text-danger-fg">{cancel.error.message}</p>}
 
       {showEdit && <EditVisitModal visit={visit} onClose={() => setShowEdit(false)} />}
 
@@ -629,9 +629,9 @@ export default function VisitDetailPage() {
       {/* Reprint modal */}
       {showReprintModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
-            <h3 className="text-base font-semibold text-neutral-900">Reprint badge</h3>
-            <p className="mt-1 text-xs text-neutral-500">
+          <div className="w-full max-w-md rounded-lg bg-surface p-5 shadow-xl">
+            <h3 className="text-base font-semibold text-fg">Reprint badge</h3>
+            <p className="mt-1 text-xs text-fg-muted">
               Reprints are logged. Tell us why a new badge is needed.
             </p>
             <textarea
@@ -639,13 +639,13 @@ export default function VisitDetailPage() {
               onChange={(e) => setReprintReason(e.target.value)}
               rows={3}
               placeholder="Damaged badge / lost / info change / …"
-              className="mt-3 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+              className="mt-3 w-full rounded-md border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
               autoFocus
             />
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => { setShowReprintModal(false); setReprintReason('') }}
-                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+                className="rounded-md border border-line-strong px-3 py-1.5 text-sm"
               >
                 Cancel
               </button>
@@ -664,13 +664,13 @@ export default function VisitDetailPage() {
       {/* Approval modal — comment is required for reject/return, optional for approve. */}
       {approvalKind && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
-            <h3 className="text-base font-semibold text-neutral-900">
+          <div className="w-full max-w-md rounded-lg bg-surface p-5 shadow-xl">
+            <h3 className="text-base font-semibold text-fg">
               {approvalKind === 'approve' && 'Approve visit'}
               {approvalKind === 'return'  && 'Return for edit'}
               {approvalKind === 'reject'  && 'Reject visit'}
             </h3>
-            <p className="mt-1 text-xs text-neutral-500">
+            <p className="mt-1 text-xs text-fg-muted">
               {approvalKind === 'approve'
                 ? 'Optional comment — visible in the visit history.'
                 : 'Tell the requester why so they can fix it.'}
@@ -684,14 +684,14 @@ export default function VisitDetailPage() {
                   ? 'Optional note…'
                   : 'Reason (required)…'
               }
-              className="mt-3 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+              className="mt-3 w-full rounded-md border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
               autoFocus
             />
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => { setApprovalKind(null); setApprovalComment(''); action.reset() }}
                 disabled={action.isPending}
-                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+                className="rounded-md border border-line-strong px-3 py-1.5 text-sm"
               >
                 Cancel
               </button>
@@ -707,10 +707,10 @@ export default function VisitDetailPage() {
                 className={
                   'rounded-md px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 ' +
                   (approvalKind === 'approve'
-                    ? 'bg-success-600 hover:bg-success-700'
+                    ? 'bg-success-solid hover:bg-success-700'
                     : approvalKind === 'reject'
-                      ? 'bg-danger-600 hover:bg-danger-700'
-                      : 'bg-amber-600 hover:bg-amber-700')
+                      ? 'bg-danger-solid hover:bg-danger-700'
+                      : 'bg-warning-solid hover:bg-warning-700')
                 }
               >
                 {action.isPending && <Loader2 className="h-3 w-3 animate-spin inline mr-1" />}
@@ -730,14 +730,14 @@ function Card({
   title, icon, children, className,
 }: { title?: string; icon?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <div className={'rounded-lg border border-neutral-200 bg-white p-4 ' + (className ?? '')}>
+    <div className={'rounded-lg border border-line bg-surface p-4 ' + (className ?? '')}>
       {title && (
-        <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+        <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-fg-muted">
           {icon}
           {title}
         </div>
       )}
-      <div className="divide-y divide-neutral-100">{children}</div>
+      <div className="divide-y divide-line-subtle">{children}</div>
     </div>
   )
 }
@@ -745,8 +745,8 @@ function Card({
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex justify-between gap-3 py-1.5 text-sm">
-      <span className="text-neutral-500">{label}</span>
-      <span className="font-medium text-neutral-800">{value}</span>
+      <span className="text-fg-muted">{label}</span>
+      <span className="font-medium text-fg">{value}</span>
     </div>
   )
 }
@@ -762,7 +762,7 @@ function ComplianceGate({ primary, extras }: { primary: Visitor; extras: Visitor
 
   if (allClear) {
     return (
-      <p className="mt-6 flex items-center gap-1.5 rounded-md border border-emerald-200 bg-success-50 px-3 py-2 text-xs text-success-600">
+      <p className="mt-6 flex items-center gap-1.5 rounded-md border border-success-line bg-success-soft px-3 py-2 text-xs text-success-fg">
         <ShieldCheck className="h-4 w-4" />
         Training + PPE up to date for all visitors on this appointment.
       </p>
@@ -770,7 +770,7 @@ function ComplianceGate({ primary, extras }: { primary: Visitor; extras: Visitor
   }
 
   return (
-    <div className="mt-6 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+    <div className="mt-6 rounded-md border border-warning-line bg-warning-soft p-3 text-sm text-warning-fg">
       <p className="flex items-center gap-1.5 font-medium">
         <HardHat className="h-4 w-4" />
         Training / PPE confirmation required
@@ -786,7 +786,7 @@ function ComplianceGate({ primary, extras }: { primary: Visitor; extras: Visitor
           const pFresh = isComplianceFresh(v.ppe_issued_at)
           if (tFresh && pFresh) {
             return (
-              <li key={v.id} className="text-emerald-700">
+              <li key={v.id} className="text-success-fg">
                 ✓ {v.first_name} {v.last_name} — training + PPE on file
               </li>
             )
@@ -800,7 +800,7 @@ function ComplianceGate({ primary, extras }: { primary: Visitor; extras: Visitor
                 {v.first_name} {v.last_name}
               </Link>
               {' '}
-              <span className="text-amber-700">
+              <span className="text-warning-fg">
                 — pending: {[!tFresh && 'training', !pFresh && 'PPE'].filter(Boolean).join(' + ')}
               </span>
             </li>

@@ -29,7 +29,7 @@ function DynamicField({
 }: {
   field: CfmField; value: string; onChange: (v: string) => void
 }) {
-  const base = 'w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400'
+  const base = 'w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400'
 
   if (field.field_type === 'textarea') {
     return (
@@ -43,7 +43,7 @@ function DynamicField({
     return (
       <select value={value} onChange={e => onChange(e.target.value)}
         required={field.required}
-        className={`${base} bg-white`}>
+        className={`${base} bg-surface`}>
         <option value="">— Select —</option>
         {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
       </select>
@@ -145,14 +145,14 @@ export default function CfmCreatePage({ editClaimId }: EditableFormProps = {}) {
 
   if (isLoading || loadingClaim) return (
     <div className="flex items-center justify-center py-16">
-      <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
+      <Loader2 className="h-6 w-6 animate-spin text-fg-muted" />
     </div>
   )
 
   if (loadError) return <ErrorBanner message={loadError.message} />
 
   if (!form) return (
-    <div className="py-16 text-center text-sm text-danger-500">
+    <div className="py-16 text-center text-sm text-danger-fg">
       Custom form "{formCode}" not found or is inactive.
     </div>
   )
@@ -160,22 +160,22 @@ export default function CfmCreatePage({ editClaimId }: EditableFormProps = {}) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-6 max-w-lg">
       <div>
-        <BackLink to="/expenses" className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 mb-4">
+        <BackLink to="/expenses" className="inline-flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg-secondary mb-4">
           <ArrowLeft className="h-4 w-4" />Back to Expenses
         </BackLink>
-        <h1 className="text-2xl font-bold text-neutral-900">
+        <h1 className="text-2xl font-bold text-fg">
           {editing ? `Edit ${editing.claim_number}` : form.name}
         </h1>
-        <p className="mt-0.5 text-sm text-neutral-500 font-mono">CFM_{form.code}</p>
+        <p className="mt-0.5 text-sm text-fg-muted font-mono">CFM_{form.code}</p>
         {form.description && (
-          <p className="mt-2 whitespace-pre-line text-sm text-neutral-600">{form.description}</p>
+          <p className="mt-2 whitespace-pre-line text-sm text-fg-secondary">{form.description}</p>
         )}
       </div>
 
-      <div className="rounded-xl border border-neutral-200 bg-white p-5 flex flex-col gap-4">
+      <div className="rounded-xl border border-line bg-surface p-5 flex flex-col gap-4">
         {(form.fields ?? []).map(field => (
           <div key={field.name}>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">
               {field.label}
               {field.required && <span className="ml-1 text-danger-400">*</span>}
             </label>
@@ -188,13 +188,13 @@ export default function CfmCreatePage({ editClaimId }: EditableFormProps = {}) {
         ))}
 
         {form.fields.length === 0 && (
-          <p className="text-sm text-neutral-400">This form has no custom fields. Add fields in Admin → Custom Forms.</p>
+          <p className="text-sm text-fg-muted">This form has no custom fields. Add fields in Admin → Custom Forms.</p>
         )}
 
         <div>
-          <label className="mb-1 block text-xs font-medium text-neutral-600">Additional Notes</label>
+          <label className="mb-1 block text-xs font-medium text-fg-secondary">Additional Notes</label>
           <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
-            className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400 resize-none" />
+            className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400 resize-none" />
         </div>
       </div>
 

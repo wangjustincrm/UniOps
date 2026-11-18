@@ -118,9 +118,9 @@ export function PlanningCalendarSection({ canWrite }: { canWrite: boolean }) {
   }
 
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-4">
-      <h2 className="text-sm font-semibold text-neutral-900">Planning Calendar</h2>
-      <p className="mt-1 text-xs text-neutral-500">
+    <section className="rounded-lg border border-line bg-surface p-4">
+      <h2 className="text-sm font-semibold text-fg">Planning Calendar</h2>
+      <p className="mt-1 text-xs text-fg-muted">
         Which week definition new MPS runs use. Changing it only affects plans generated
         <strong> after</strong> this change — released plans, and any run already open, keep the
         mode they were generated under.
@@ -130,7 +130,7 @@ export function PlanningCalendarSection({ canWrite }: { canWrite: boolean }) {
         {WEEK_CALENDAR_MODES.map((mode) => (
           <label
             key={mode}
-            className="flex min-h-[44px] cursor-pointer items-start gap-2 rounded-md border border-neutral-200 px-3 py-2 text-sm has-[:checked]:border-primary-300 has-[:checked]:bg-primary-50"
+            className="flex min-h-[44px] cursor-pointer items-start gap-2 rounded-md border border-line px-3 py-2 text-sm has-[:checked]:border-primary-300 has-[:checked]:bg-primary-50"
           >
             <input
               type="radio"
@@ -139,11 +139,11 @@ export function PlanningCalendarSection({ canWrite }: { canWrite: boolean }) {
               checked={displayedMode === mode}
               onChange={() => { setSelected(mode); setSavedNote(null) }}
               disabled={!canWrite || paramsQuery.isLoading || mutation.isPending}
-              className="mt-0.5 h-4 w-4 border-neutral-300 text-primary-600 focus:ring-primary-500"
+              className="mt-0.5 h-4 w-4 border-line-strong text-primary-600 focus:ring-primary-500"
             />
             <span>
-              <span className="block font-medium text-neutral-800">{MODE_LABEL[mode]}</span>
-              <span className="block text-xs text-neutral-500">{WEEK_CALENDAR_MODE_DESCRIPTION[mode]}</span>
+              <span className="block font-medium text-fg">{MODE_LABEL[mode]}</span>
+              <span className="block text-xs text-fg-muted">{WEEK_CALENDAR_MODE_DESCRIPTION[mode]}</span>
             </span>
           </label>
         ))}
@@ -159,19 +159,19 @@ export function PlanningCalendarSection({ canWrite }: { canWrite: boolean }) {
             {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             Save
           </Button>
-          {savedNote && <p role="status" className="text-xs text-success-700">{savedNote}</p>}
+          {savedNote && <p role="status" className="text-xs text-success-fg">{savedNote}</p>}
         </div>
       )}
 
       {submitError && (
-        <p role="alert" className="mt-2 flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+        <p role="alert" className="mt-2 flex items-center gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
           <AlertTriangle className="h-4 w-4 shrink-0" /> {submitError}
         </p>
       )}
 
-      <div className="mt-5 border-t border-neutral-200 pt-4">
-        <h3 className="text-sm font-semibold text-neutral-900">Week starts on</h3>
-        <p className="mt-1 text-xs text-neutral-500">
+      <div className="mt-5 border-t border-line pt-4">
+        <h3 className="text-sm font-semibold text-fg">Week starts on</h3>
+        <p className="mt-1 text-xs text-fg-muted">
           Which weekday a production week begins on. Only affects the ISO week modes —
           Month Fixed always starts on the 1st. Maintenance weeks already booked move onto
           the new grid automatically; plans already generated keep their own grid.
@@ -187,7 +187,7 @@ export function PlanningCalendarSection({ canWrite }: { canWrite: boolean }) {
               setDowNote(null)
             }}
             disabled={!canWrite || paramsQuery.isLoading || dowMutation.isPending}
-            className="min-h-[44px] rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-neutral-50"
+            className="min-h-[44px] rounded-md border border-line-strong px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-surface-subtle"
           >
             {WEEK_START_DOWS.map((dow) => (
               <option key={dow} value={dow}>{WEEK_START_DOW_LABEL[dow]}</option>
@@ -204,11 +204,11 @@ export function PlanningCalendarSection({ canWrite }: { canWrite: boolean }) {
               Save
             </Button>
           )}
-          {dowNote && <p role="status" className="text-xs text-success-700">{dowNote}</p>}
+          {dowNote && <p role="status" className="text-xs text-success-fg">{dowNote}</p>}
         </div>
 
         {dowError && (
-          <p role="alert" className="mt-2 flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+          <p role="alert" className="mt-2 flex items-center gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
             <AlertTriangle className="h-4 w-4 shrink-0" /> {dowError}
           </p>
         )}

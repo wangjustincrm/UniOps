@@ -47,7 +47,7 @@ export default function AdminPanel() {
 
   if (role && role !== 'system_admin') {
     return (
-      <div className="max-w-md rounded-lg border border-red-200 bg-danger-50 p-5 text-sm text-danger-600">
+      <div className="max-w-md rounded-lg border border-danger-line bg-danger-soft p-5 text-sm text-danger-fg">
         <div className="flex items-center gap-2 font-semibold">
           <AlertCircle className="h-4 w-4" />
           Forbidden
@@ -61,13 +61,13 @@ export default function AdminPanel() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-neutral-900">VMS Admin</h1>
-      <p className="mt-1 text-sm text-neutral-500">
+      <h1 className="text-2xl font-bold text-fg">VMS Admin</h1>
+      <p className="mt-1 text-sm text-fg-muted">
         Zones, notification, email, questionnaire, and badge template configuration.
       </p>
 
       {/* Tabs */}
-      <div className="mt-6 border-b border-neutral-200">
+      <div className="mt-6 border-b border-line">
         <nav className="-mb-px flex flex-wrap gap-1">
           {TABS.map(({ key, label, icon: Icon }) => (
             <button
@@ -77,7 +77,7 @@ export default function AdminPanel() {
                 'inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors',
                 tab === key
                   ? 'border-primary-600 text-primary-700'
-                  : 'border-transparent text-neutral-500 hover:border-neutral-200 hover:text-neutral-700',
+                  : 'border-transparent text-fg-muted hover:border-line hover:text-fg-secondary',
               )}
             >
               <Icon className="h-4 w-4" />

@@ -21,8 +21,8 @@ function taskHref(docType: string, docId: string): string {
 }
 
 function taskIcon(docType: string) {
-  if (docType === 'vms_train') return <ShieldCheck className="h-4 w-4 text-amber-700" />
-  if (docType === 'vms_ppe')   return <HardHat     className="h-4 w-4 text-amber-700" />
+  if (docType === 'vms_train') return <ShieldCheck className="h-4 w-4 text-warning-fg" />
+  if (docType === 'vms_ppe')   return <HardHat     className="h-4 w-4 text-warning-fg" />
   return <UserCheck className="h-4 w-4 text-primary-700" />
 }
 
@@ -51,8 +51,8 @@ export default function TaskInboxPage() {
     <div>
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Task Inbox</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <h1 className="text-2xl font-bold text-fg">Task Inbox</h1>
+          <p className="mt-1 text-sm text-fg-muted">
             Visit approvals + training / PPE confirmations waiting on you.
             Same list as the Portal task inbox.
           </p>
@@ -61,14 +61,14 @@ export default function TaskInboxPage() {
 
       <div className="mt-6">
         {isLoading && (
-          <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-            <p className="px-4 py-6 text-center text-sm text-neutral-400">Loading…</p>
+          <div className="overflow-hidden rounded-lg border border-line bg-surface">
+            <p className="px-4 py-6 text-center text-sm text-fg-muted">Loading…</p>
           </div>
         )}
 
         {!isLoading && tasks.length === 0 && (
-          <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-            <div className="flex flex-col items-center px-4 py-16 text-center text-sm text-neutral-400">
+          <div className="overflow-hidden rounded-lg border border-line bg-surface">
+            <div className="flex flex-col items-center px-4 py-16 text-center text-sm text-fg-muted">
               <Inbox className="h-8 w-8" />
               <p className="mt-2">All caught up — no pending visit approvals.</p>
             </div>
@@ -80,12 +80,12 @@ export default function TaskInboxPage() {
             {groups.map((group) => (
               <section key={group.key}>
                 <div className="mb-2 flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-neutral-700">{group.label}</h3>
-                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-neutral-100 px-1.5 text-[11px] font-semibold text-neutral-500">
+                  <h3 className="text-sm font-semibold text-fg-secondary">{group.label}</h3>
+                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-surface-sunken px-1.5 text-2xs font-semibold text-fg-muted">
                     {group.items.length}
                   </span>
                 </div>
-                <ul className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-200 bg-white">
+                <ul className="divide-y divide-line-subtle overflow-hidden rounded-lg border border-line bg-surface">
                   {group.items.map((t) => (
                     <li key={t.id}>
                       <Link
@@ -95,24 +95,24 @@ export default function TaskInboxPage() {
                         <div className="flex min-w-0 items-start gap-3">
                           <span className="mt-0.5 shrink-0">{taskIcon(t.document_type)}</span>
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-neutral-900">
+                            <p className="truncate text-sm font-medium text-fg">
                               {t.title || `Visit ${t.document_number}`}
                             </p>
-                            <p className="mt-0.5 flex items-center gap-3 text-xs text-neutral-500">
+                            <p className="mt-0.5 flex items-center gap-3 text-xs text-fg-muted">
                               <span>{t.assigned_role.replace(/_/g, ' ')}</span>
                               <span className="inline-flex items-center gap-1">
                                 <Clock className="h-3 w-3" />
                                 {timeAgo(t.created_at)}
                               </span>
                               {t.priority === 'urgent' && (
-                                <span className="rounded-full bg-danger-50 px-1.5 py-0.5 text-[10px] font-semibold text-danger-600">
+                                <span className="rounded-full bg-danger-soft px-1.5 py-0.5 text-2xs font-semibold text-danger-fg">
                                   URGENT
                                 </span>
                               )}
                             </p>
                           </div>
                         </div>
-                        <ArrowRight className="h-4 w-4 shrink-0 text-neutral-300" />
+                        <ArrowRight className="h-4 w-4 shrink-0 text-fg-faint" />
                       </Link>
                     </li>
                   ))}

@@ -43,7 +43,7 @@ function asNumber(s: string): number | string {
 }
 
 const selectCls =
-  'h-10 w-full rounded-lg border border-neutral-200 bg-neutral-100 px-3 text-sm text-neutral-900 focus:outline-none focus:bg-white focus:border-primary-600 disabled:cursor-not-allowed disabled:text-neutral-500'
+  'h-10 w-full rounded-lg border border-line bg-surface-sunken px-3 text-sm text-fg focus:outline-none focus:bg-surface focus:border-primary-600 disabled:cursor-not-allowed disabled:text-fg-muted'
 
 export function ParametersCard({ canAdmin, toasts }: {
   canAdmin: boolean
@@ -96,8 +96,8 @@ export function ParametersCard({ canAdmin, toasts }: {
         <CardTitle>Parameters</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {q.isLoading && <p className="text-sm text-neutral-500">Loading…</p>}
-        {q.isError && <p className="text-sm text-danger-600">Could not load parameters: {(q.error as Error).message}</p>}
+        {q.isLoading && <p className="text-sm text-fg-muted">Loading…</p>}
+        {q.isError && <p className="text-sm text-danger-fg">Could not load parameters: {(q.error as Error).message}</p>}
         {draft && (
           <form
             className="space-y-4"
@@ -110,7 +110,7 @@ export function ParametersCard({ canAdmin, toasts }: {
                   id="p-interval" inputMode="numeric" value={draft.interval} disabled={!canAdmin}
                   onChange={(e) => setDraft({ ...draft, interval: e.target.value })}
                 />
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-fg-muted">
                   0 = automatic sync off.{defaults && ` Default ${defaults[PARAM_SYNC_INTERVAL]}.`}
                 </p>
               </div>
@@ -122,7 +122,7 @@ export function ParametersCard({ canAdmin, toasts }: {
                 >
                   {zones.map((z) => <option key={z} value={z}>{TIME_ZONE_LABELS[z] ?? z}</option>)}
                 </select>
-                <p className="text-xs text-neutral-500">The clock NC writes business times in.</p>
+                <p className="text-xs text-fg-muted">The clock NC writes business times in.</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="p-qty">Quantity tolerance</Label>
@@ -130,7 +130,7 @@ export function ParametersCard({ canAdmin, toasts }: {
                   id="p-qty" inputMode="decimal" value={draft.qtyTol} disabled={!canAdmin}
                   onChange={(e) => setDraft({ ...draft, qtyTol: e.target.value })}
                 />
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-fg-muted">
                   Differences at or below this are treated as equal.{defaults && ` Default ${defaults[PARAM_QTY_TOLERANCE]}.`}
                 </p>
               </div>
@@ -140,13 +140,13 @@ export function ParametersCard({ canAdmin, toasts }: {
                   id="p-amt" inputMode="decimal" value={draft.amountTol} disabled={!canAdmin}
                   onChange={(e) => setDraft({ ...draft, amountTol: e.target.value })}
                 />
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-fg-muted">
                   Same, for amounts.{defaults && ` Default ${defaults[PARAM_AMOUNT_TOLERANCE]}.`}
                 </p>
               </div>
             </div>
             {error && (
-              <p role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+              <p role="alert" className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
                 {error}
               </p>
             )}

@@ -27,34 +27,34 @@ function TaskCard({ task }: TaskCardProps) {
     <div
       className={cn(
         'rounded-lg border p-3 transition-shadow hover:shadow-[0_1px_3px_rgba(10,124,124,0.08)]',
-        isUrgent ? 'border-danger-200 bg-danger-50' : 'border-neutral-200 bg-white'
+        isUrgent ? 'border-danger-line bg-danger-soft' : 'border-line bg-surface'
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-0.5">
-            {isUrgent && <AlertCircle className="h-3.5 w-3.5 shrink-0 text-danger-600" />}
-            <p className={cn('text-sm font-medium truncate', isUrgent ? 'text-danger-700' : 'text-neutral-900')}>
+            {isUrgent && <AlertCircle className="h-3.5 w-3.5 shrink-0 text-danger-fg" />}
+            <p className={cn('text-sm font-medium truncate', isUrgent ? 'text-danger-fg' : 'text-fg')}>
               {taskCardLabel(task)}
             </p>
           </div>
-          <p className="text-xs text-neutral-500 truncate">
+          <p className="text-xs text-fg-muted truncate">
             {task.documentNumber}
             {task.vendor ? ` · ${task.vendor}` : ''}
             {task.amount ? ` · ${formatCAD(task.amount)}` : ''}
           </p>
           {/* Credit-note instructions / AP's rejection note (ISS-0230, ISS-0259) */}
           {isRetitledTask(task) && task.description && (
-            <p className="mt-1 text-xs text-neutral-500 line-clamp-2">{task.description}</p>
+            <p className="mt-1 text-xs text-fg-muted line-clamp-2">{task.description}</p>
           )}
           {task.dueDate && (
-            <div className="mt-1 flex items-center gap-1 text-xs text-neutral-400">
+            <div className="mt-1 flex items-center gap-1 text-xs text-fg-muted">
               <Clock className="h-3 w-3" />
               Due {formatDate(task.dueDate)}
             </div>
           )}
           {task.daysWaiting != null && (
-            <div className="mt-1 flex items-center gap-1 text-xs text-neutral-400">
+            <div className="mt-1 flex items-center gap-1 text-xs text-fg-muted">
               <Clock className="h-3 w-3" />
               Waiting {task.daysWaiting}d
             </div>
@@ -88,23 +88,23 @@ export function TaskInbox({ tasks, maxItems = 10, onViewAll }: TaskInboxProps) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-neutral-900">
+        <h2 className="text-base font-semibold text-fg">
           To-Do List{' '}
-          <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1 text-[10px] font-bold text-white">
+          <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1 text-2xs font-bold text-white">
             {total}
           </span>
         </h2>
       </div>
 
       {total === 0 && (
-        <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] py-10 text-center">
-          <p className="text-sm text-neutral-400">No pending tasks</p>
+        <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] py-10 text-center">
+          <p className="text-sm text-fg-muted">No pending tasks</p>
         </div>
       )}
 
       {urgent.length > 0 && (
         <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-danger-600 flex items-center gap-1">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-danger-fg flex items-center gap-1">
             <AlertCircle className="h-3.5 w-3.5" />
             Urgent ({urgent.length})
           </p>
@@ -118,7 +118,7 @@ export function TaskInbox({ tasks, maxItems = 10, onViewAll }: TaskInboxProps) {
 
       {normal.length > 0 && (
         <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
             Normal ({normal.length})
           </p>
           <div className="flex flex-col gap-2">

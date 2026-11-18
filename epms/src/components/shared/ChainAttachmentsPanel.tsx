@@ -102,20 +102,20 @@ export function ChainAttachmentsPanel({
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/30" onClick={isBusy ? undefined : onClose} />
-      <div className="relative flex h-full w-full max-w-md flex-col bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
-          <h2 className="text-sm font-semibold text-neutral-700">
+      <div className="relative flex h-full w-full max-w-md flex-col bg-surface shadow-xl">
+        <div className="flex items-center justify-between border-b border-line px-4 py-3">
+          <h2 className="text-sm font-semibold text-fg-secondary">
             Chain Attachments{total > 0 && ` (${total})`}
           </h2>
           <button onClick={onClose} disabled={isBusy}
-            className="rounded p-1 text-neutral-400 hover:bg-neutral-100 disabled:opacity-40">
+            className="rounded p-1 text-fg-muted hover:bg-surface-sunken disabled:opacity-40">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="flex items-center gap-2 border-b border-neutral-100 bg-neutral-50 px-4 py-2">
+        <div className="flex items-center gap-2 border-b border-line-subtle bg-surface-subtle px-4 py-2">
           <button onClick={handleDownloadAll} disabled={total === 0 || isBusy}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-40">
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-40">
             <Download className="h-3.5 w-3.5" /> Download all (ZIP)
           </button>
           <button onClick={handlePrintAll} disabled={total === 0 || isBusy}
@@ -123,7 +123,7 @@ export function ChainAttachmentsPanel({
             <Printer className="h-3.5 w-3.5" /> Print all
           </button>
           {busy && (
-            <span className="ml-auto inline-flex items-center gap-1 text-xs text-neutral-500">
+            <span className="ml-auto inline-flex items-center gap-1 text-xs text-fg-muted">
               <Loader2 className="h-3 w-3 animate-spin" />{busy}
             </span>
           )}
@@ -137,44 +137,44 @@ export function ChainAttachmentsPanel({
 
         <div className="flex-1 overflow-auto px-4 py-3">
           {isLoading ? (
-            <p className="flex items-center gap-2 text-xs text-neutral-400">
+            <p className="flex items-center gap-2 text-xs text-fg-muted">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading attachments…
             </p>
           ) : total === 0 ? (
             error ? (
-              <p className="text-xs text-danger-600">Some attachments could not be loaded.</p>
+              <p className="text-xs text-danger-fg">Some attachments could not be loaded.</p>
             ) : (
-              <p className="text-xs text-neutral-400 italic">No attachments found in this document chain.</p>
+              <p className="text-xs text-fg-muted italic">No attachments found in this document chain.</p>
             )
           ) : (
             <div className="space-y-4">
               {error && (
-                <p className="rounded-lg border border-danger-200 bg-danger-50 px-2.5 py-2 text-[11px] text-danger-600">
+                <p className="rounded-lg border border-danger-line bg-danger-soft px-2.5 py-2 text-2xs text-danger-fg">
                   Some attachments could not be loaded — showing what's available.
                 </p>
               )}
               {groups.filter((g) => g.attachments.length > 0).map((g) => (
                 <div key={`${g.docType}-${g.docId}`}>
-                  <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-                    <span className="text-neutral-400">{DOC_ICON[g.docType]}</span>
+                  <div className="mb-1.5 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-fg-muted">
+                    <span className="text-fg-muted">{DOC_ICON[g.docType]}</span>
                     {g.docNumber}
-                    <span className="font-normal text-neutral-400">· {g.attachments.length} file{g.attachments.length > 1 ? 's' : ''}</span>
+                    <span className="font-normal text-fg-muted">· {g.attachments.length} file{g.attachments.length > 1 ? 's' : ''}</span>
                   </div>
                   <ul className="space-y-1">
                     {g.attachments.map((a) => (
                       <li key={a.id}
-                        className="flex items-center gap-2 rounded-lg border border-neutral-200 px-2.5 py-2 text-xs">
-                        <FileText className="h-4 w-4 shrink-0 text-neutral-400" />
+                        className="flex items-center gap-2 rounded-lg border border-line px-2.5 py-2 text-xs">
+                        <FileText className="h-4 w-4 shrink-0 text-fg-muted" />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium text-neutral-700">{a.filename}</p>
-                          <p className="text-[10px] text-neutral-400">{formatBytes(a.sizeBytes)}</p>
+                          <p className="truncate font-medium text-fg-secondary">{a.filename}</p>
+                          <p className="text-2xs text-fg-muted">{formatBytes(a.sizeBytes)}</p>
                         </div>
-                        {rowBusy === a.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-neutral-400" />}
+                        {rowBusy === a.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-fg-muted" />}
                         <button
                           title={a.printable ? 'Print' : 'Preview/print not supported — download instead'}
                           onClick={() => handleSinglePrint(g, a)}
                           disabled={!a.printable || isBusy}
-                          className="rounded p-1 text-neutral-500 hover:bg-neutral-100 disabled:opacity-30">
+                          className="rounded p-1 text-fg-muted hover:bg-surface-sunken disabled:opacity-30">
                           <Printer className="h-3.5 w-3.5" />
                         </button>
                         <button title="Download" onClick={() => handleSingleDownload(a)}

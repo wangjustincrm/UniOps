@@ -177,24 +177,24 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
     )
   }
 
-  const inputCls = 'w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+  const inputCls = 'w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-2xl rounded-2xl bg-surface shadow-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4 shrink-0">
+        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4 shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-50">
               <ShoppingCart className="h-5 w-5 text-primary-600" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-neutral-900">Place Order</h2>
-              <p className="text-xs text-neutral-500">{po.number} · {po.vendor_name}</p>
+              <h2 className="text-sm font-semibold text-fg">Place Order</h2>
+              <p className="text-xs text-fg-muted">{po.number} · {po.vendor_name}</p>
             </div>
           </div>
           {step !== 'done' && (
-            <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100">
+            <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken">
               <X className="h-4 w-4" />
             </button>
           )}
@@ -206,26 +206,26 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
           {/* Step: Choose method */}
           {step === 'choose' && (
             <div className="flex flex-col gap-4">
-              <p className="text-sm text-neutral-600">How would you like to place this order?</p>
+              <p className="text-sm text-fg-secondary">How would you like to place this order?</p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {/* Option A — Email Supplier */}
                 <button
                   onClick={initEmail}
-                  className="flex flex-col items-start gap-3 rounded-xl border-2 border-neutral-200 bg-white p-5 text-left transition-colors hover:border-primary-400 hover:bg-primary-50 group"
+                  className="flex flex-col items-start gap-3 rounded-xl border-2 border-line bg-surface p-5 text-left transition-colors hover:border-primary-400 hover:bg-primary-50 group"
                 >
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-50 group-hover:bg-primary-100">
                     <Mail className="h-5 w-5 text-primary-600" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-neutral-900">Place Order via Email</p>
-                    <p className="mt-1 text-xs text-neutral-500">
+                    <p className="text-sm font-semibold text-fg">Place Order via Email</p>
+                    <p className="mt-1 text-xs text-fg-muted">
                       Send a PO email to the vendor using the configured template. PO PDF is included.
                     </p>
                     {vendorEmail && (
-                      <p className="mt-1.5 text-xs font-mono text-neutral-400 truncate">{vendorEmail}</p>
+                      <p className="mt-1.5 text-xs font-mono text-fg-muted truncate">{vendorEmail}</p>
                     )}
                     {!vendorEmail && (
-                      <p className="mt-1.5 text-xs text-warning-600">No vendor email on file — add one in Vendor Master first.</p>
+                      <p className="mt-1.5 text-xs text-warning-fg">No vendor email on file — add one in Vendor Master first.</p>
                     )}
                   </div>
                 </button>
@@ -233,14 +233,14 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
                 {/* Option B — Place Order Online */}
                 <button
                   onClick={() => setStep('online_confirm')}
-                  className="flex flex-col items-start gap-3 rounded-xl border-2 border-neutral-200 bg-white p-5 text-left transition-colors hover:border-primary-400 hover:bg-primary-50 group"
+                  className="flex flex-col items-start gap-3 rounded-xl border-2 border-line bg-surface p-5 text-left transition-colors hover:border-primary-400 hover:bg-primary-50 group"
                 >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success-50 group-hover:bg-success-100">
-                    <Globe className="h-5 w-5 text-success-600" />
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success-soft group-hover:bg-success-soft">
+                    <Globe className="h-5 w-5 text-success-fg" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-neutral-900">Place Order Online</p>
-                    <p className="mt-1 text-xs text-neutral-500">
+                    <p className="text-sm font-semibold text-fg">Place Order Online</p>
+                    <p className="mt-1 text-xs text-fg-muted">
                       You placed the order via the vendor's online portal. Confirm here to mark the PO as Issued.
                     </p>
                   </div>
@@ -252,9 +252,9 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
           {/* Step: Email Compose */}
           {step === 'email_compose' && (
             <div className="flex flex-col gap-4">
-              <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 flex flex-col gap-3">
+              <div className="rounded-lg border border-line bg-surface-subtle p-4 flex flex-col gap-3">
                 <div className="flex items-start gap-3 text-sm">
-                  <span className="text-neutral-500 w-16 shrink-0 pt-2">To:</span>
+                  <span className="text-fg-muted w-16 shrink-0 pt-2">To:</span>
                   <input
                     value={emailTo}
                     onChange={(e) => setEmailTo(e.target.value)}
@@ -263,8 +263,8 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
                     type="email"
                   />
                 </div>
-                <div className="flex items-start gap-3 text-sm border-t border-neutral-200 pt-3">
-                  <span className="text-neutral-500 w-16 shrink-0 pt-2">CC:</span>
+                <div className="flex items-start gap-3 text-sm border-t border-line pt-3">
+                  <span className="text-fg-muted w-16 shrink-0 pt-2">CC:</span>
                   <input
                     value={emailCc}
                     onChange={(e) => setEmailCc(e.target.value)}
@@ -273,8 +273,8 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
                     type="email"
                   />
                 </div>
-                <div className="flex items-start gap-3 text-sm border-t border-neutral-200 pt-3">
-                  <span className="text-neutral-500 w-16 shrink-0 pt-2">Subject:</span>
+                <div className="flex items-start gap-3 text-sm border-t border-line pt-3">
+                  <span className="text-fg-muted w-16 shrink-0 pt-2">Subject:</span>
                   <input
                     value={emailSubject}
                     onChange={(e) => setEmailSubject(e.target.value)}
@@ -283,25 +283,25 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
                   />
                 </div>
               </div>
-              <div className="rounded-lg border border-neutral-200 bg-white">
-                <div className="px-4 py-2.5 border-b border-neutral-100 flex items-center justify-between">
-                  <span className="text-xs font-medium text-neutral-500 uppercase tracking-wide">Email Body</span>
-                  <span className="text-xs text-neutral-400">Editable · plain text</span>
+              <div className="rounded-lg border border-line bg-surface">
+                <div className="px-4 py-2.5 border-b border-line-subtle flex items-center justify-between">
+                  <span className="text-xs font-medium text-fg-muted uppercase tracking-wide">Email Body</span>
+                  <span className="text-xs text-fg-muted">Editable · plain text</span>
                 </div>
                 <textarea
                   rows={10}
                   value={emailBody}
                   onChange={(e) => setEmailBody(e.target.value)}
-                  className="w-full resize-none px-4 py-4 text-sm text-neutral-700 font-mono leading-relaxed focus:outline-none"
+                  className="w-full resize-none px-4 py-4 text-sm text-fg-secondary font-mono leading-relaxed focus:outline-none"
                 />
               </div>
               {/* PDF attachment indicator */}
-              <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2">
+              <div className="flex items-center gap-2 rounded-lg border border-line bg-surface-subtle px-3 py-2">
                 <FileText className="h-4 w-4 shrink-0 text-primary-500" />
-                <span className="text-sm text-neutral-700 flex-1 font-mono">{po.number}.pdf</span>
-                <span className="text-xs text-neutral-400">Auto-attached · cannot remove</span>
+                <span className="text-sm text-fg-secondary flex-1 font-mono">{po.number}.pdf</span>
+                <span className="text-xs text-fg-muted">Auto-attached · cannot remove</span>
               </div>
-              <p className="text-xs text-neutral-400">
+              <p className="text-xs text-fg-muted">
                 Template customisable in Admin Panel → Email Templates. PO will be marked <strong>Issued</strong> on send.
               </p>
             </div>
@@ -310,14 +310,14 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
           {/* Step: Online confirm */}
           {step === 'online_confirm' && (
             <div className="flex flex-col gap-5">
-              <div className="flex items-start gap-3 rounded-lg bg-neutral-50 border border-neutral-200 px-4 py-4">
-                <Globe className="h-5 w-5 text-neutral-400 shrink-0 mt-0.5" />
-                <p className="text-sm text-neutral-700">
+              <div className="flex items-start gap-3 rounded-lg bg-surface-subtle border border-line px-4 py-4">
+                <Globe className="h-5 w-5 text-fg-muted shrink-0 mt-0.5" />
+                <p className="text-sm text-fg-secondary">
                   Confirm that you have placed this order with <strong>{po.vendor_name}</strong> via their online portal or procurement platform. The PO will be marked as <strong>Issued</strong>.
                 </p>
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium text-neutral-700">Portal Reference / Order ID <span className="font-normal text-neutral-400">(optional)</span></label>
+                <label className="text-xs font-medium text-fg-secondary">Portal Reference / Order ID <span className="font-normal text-fg-muted">(optional)</span></label>
                 <input
                   value={reference}
                   onChange={(e) => setReference(e.target.value)}
@@ -331,28 +331,28 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
           {/* Step: Done */}
           {step === 'done' && (
             <div className="flex flex-col items-center gap-4 py-8 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-success-50">
-                <CheckCircle2 className="h-7 w-7 text-success-600" />
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-success-soft">
+                <CheckCircle2 className="h-7 w-7 text-success-fg" />
               </div>
               <div>
-                <p className="text-base font-semibold text-neutral-900">
+                <p className="text-base font-semibold text-fg">
                   {doneMethod === 'email' ? 'Email Sent — Order Placed' : 'Order Confirmed'}
                 </p>
                 {doneMethod === 'email' && (
-                  <p className="mt-1 text-sm text-neutral-500">PO email sent to <span className="font-mono">{emailTo}</span>.</p>
+                  <p className="mt-1 text-sm text-fg-muted">PO email sent to <span className="font-mono">{emailTo}</span>.</p>
                 )}
-                <p className="mt-0.5 text-sm text-neutral-500">PO status updated to <strong>Issued</strong>.</p>
+                <p className="mt-0.5 text-sm text-fg-muted">PO status updated to <strong>Issued</strong>.</p>
               </div>
             </div>
           )}
 
           {error && (
-            <p className="mt-3 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-xs text-danger-700">{error}</p>
+            <p className="mt-3 rounded-lg bg-danger-soft border border-danger-line px-3 py-2 text-xs text-danger-fg">{error}</p>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 border-t border-neutral-100 px-6 py-4 shrink-0">
+        <div className="flex items-center justify-end gap-2 border-t border-line-subtle px-6 py-4 shrink-0">
           {step === 'choose' && (
             <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
           )}
@@ -375,7 +375,7 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
               <button
                 onClick={handleOnlineConfirm}
                 disabled={placeOrder.isPending}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-success-600 px-3 text-sm font-medium text-white hover:bg-success-700 disabled:opacity-50"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-success-solid px-3 text-sm font-medium text-white hover:bg-success-700 disabled:opacity-50"
               >
                 {placeOrder.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
                 Confirm Order Placed
@@ -420,65 +420,65 @@ function ApprovalModal({ action, poNumber, onConfirm, onClose, isPending, error 
     approve: {
       title: 'Approve Purchase Order',
       label: 'Approve',
-      icon: <CheckCircle2 className="h-5 w-5 text-success-600" />,
-      bgIcon: 'bg-success-50',
-      btn: 'bg-success-600 hover:bg-success-700 text-white',
+      icon: <CheckCircle2 className="h-5 w-5 text-success-fg" />,
+      bgIcon: 'bg-success-soft',
+      btn: 'bg-success-solid hover:bg-success-700 text-white',
       commentLabel: 'Comment (optional)',
       placeholder: 'Add an optional comment…',
     },
     reject: {
       title: 'Reject Purchase Order',
       label: 'Reject',
-      icon: <XCircle className="h-5 w-5 text-danger-600" />,
-      bgIcon: 'bg-danger-50',
-      btn: 'bg-danger-600 hover:bg-danger-700 text-white',
+      icon: <XCircle className="h-5 w-5 text-danger-fg" />,
+      bgIcon: 'bg-danger-soft',
+      btn: 'bg-danger-solid hover:bg-danger-700 text-white',
       commentLabel: 'Reason for rejection *',
       placeholder: 'Explain why this PO is being rejected…',
     },
     return: {
       title: 'Return for Revision',
       label: 'Return',
-      icon: <RotateCcw className="h-5 w-5 text-warning-600" />,
-      bgIcon: 'bg-warning-50',
-      btn: 'bg-warning-500 hover:bg-warning-600 text-white',
+      icon: <RotateCcw className="h-5 w-5 text-warning-fg" />,
+      bgIcon: 'bg-warning-soft',
+      btn: 'bg-warning-solid hover:bg-warning-solid text-white',
       commentLabel: 'Revision instructions *',
       placeholder: 'Describe what needs to be revised…',
     },
   }[action]
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl">
+        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
           <div className="flex items-center gap-3">
             <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', config.bgIcon)}>
               {config.icon}
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-neutral-900">{config.title}</h2>
-              <p className="text-xs text-neutral-500">{poNumber}</p>
+              <h2 className="text-sm font-semibold text-fg">{config.title}</h2>
+              <p className="text-xs text-fg-muted">{poNumber}</p>
             </div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary">
             <X className="h-4 w-4" />
           </button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">{config.commentLabel}</label>
+            <label className="text-xs font-medium text-fg-secondary">{config.commentLabel}</label>
             <div className="relative">
-              <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-neutral-400" />
+              <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-fg-muted" />
               <textarea
                 rows={3}
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 placeholder={config.placeholder}
                 autoFocus
-                className="w-full resize-none rounded-lg border border-neutral-300 bg-white pl-8 pr-3 pt-2 pb-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                className="w-full resize-none rounded-lg border border-line-strong bg-surface pl-8 pr-3 pt-2 pb-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               />
             </div>
           </div>
-          {error && <p role="alert" className="text-xs text-danger-600">{error}</p>}
+          {error && <p role="alert" className="text-xs text-danger-fg">{error}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
             <button
@@ -648,14 +648,14 @@ export default function PoDetailPage() {
     )
   }
 
-  if (isLoading) return <div className="p-8 text-center text-neutral-400">Loading…</div>
+  if (isLoading) return <div className="p-8 text-center text-fg-muted">Loading…</div>
 
   if (!po) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <div className="text-5xl mb-4">🔍</div>
-        <h2 className="text-xl font-semibold text-neutral-700">PO Not Found</h2>
-        <p className="mt-2 text-sm text-neutral-400">The purchase order you're looking for doesn't exist.</p>
+        <h2 className="text-xl font-semibold text-fg-secondary">PO Not Found</h2>
+        <p className="mt-2 text-sm text-fg-muted">The purchase order you're looking for doesn't exist.</p>
         <BackLink to="/po" className="mt-4">
           <Button variant="secondary">Back to PO List</Button>
         </BackLink>
@@ -691,7 +691,7 @@ export default function PoDetailPage() {
   return (
     <div className={cn('flex flex-col gap-6', canApprove && 'pb-16')}>
       {/* Page header */}
-      <div className="rounded-lg border border-neutral-200 bg-white px-6 py-4">
+      <div className="rounded-lg border border-line bg-surface px-6 py-4">
         <div className="flex items-center gap-3 mb-3">
           <BackLink to="/po">
             <Button variant="ghost" size="sm">
@@ -703,7 +703,7 @@ export default function PoDetailPage() {
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-bold text-neutral-900">{po.number}</h1>
+              <h1 className="text-xl font-bold text-fg">{po.number}</h1>
               <StatusBadge status={po.status as DocumentStatus} />
               {po.source === 'nc' && (
                 <span title="This PO was mirrored from NC ERP — read-only origin context">
@@ -711,16 +711,16 @@ export default function PoDetailPage() {
                 </span>
               )}
               {po.is_prepaid && (
-                <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+                <span className="inline-flex items-center rounded-full bg-warning-soft px-2.5 py-0.5 text-xs font-medium text-warning-fg">
                   Prepayment
                 </span>
               )}
             </div>
-            <p className="mt-1 text-neutral-600">{po.title} — {po.vendor_name}</p>
+            <p className="mt-1 text-fg-secondary">{po.title} — {po.vendor_name}</p>
             {po.pr_number && (
               <Link
                 to={`/pr/${po.pr_id}`}
-                className="mt-0.5 inline-flex items-center gap-1 text-xs text-neutral-400 hover:text-primary-600"
+                className="mt-0.5 inline-flex items-center gap-1 text-xs text-fg-muted hover:text-primary-600"
               >
                 From PR: {po.pr_number}
                 <ExternalLink className="h-3 w-3" />
@@ -745,7 +745,7 @@ export default function PoDetailPage() {
               <Button
                 variant="secondary"
                 size="sm"
-                className="border-danger-200 text-danger-600 hover:bg-danger-50"
+                className="border-danger-line text-danger-fg hover:bg-danger-soft"
                 onClick={() => confirmDlg.ask({
                   title: 'Withdraw PO',
                   subtitle: po.number,
@@ -760,7 +760,7 @@ export default function PoDetailPage() {
               </Button>
             )}
             {poWithdraw.isError && (
-              <span className="text-xs text-danger-600">
+              <span className="text-xs text-danger-fg">
                 {poWithdraw.error instanceof Error ? poWithdraw.error.message : 'Could not withdraw the PO'}
               </span>
             )}
@@ -776,7 +776,7 @@ export default function PoDetailPage() {
             {canCreateGr && (
               <button
                 onClick={() => navigate(`/gr/new?poId=${po.id}`)}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-success-600 px-3 text-sm font-medium text-white transition-colors hover:bg-success-700"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-success-solid px-3 text-sm font-medium text-white transition-colors hover:bg-success-700"
               >
                 <Warehouse className="h-3.5 w-3.5" />
                 {po.type === 4 ? 'Confirm Service' : po.type === 6 ? 'Confirm Completion' : 'Create GR'}
@@ -800,7 +800,7 @@ export default function PoDetailPage() {
         {/* Left: tabs */}
         <div className="lg:col-span-8 flex flex-col gap-4">
           {/* Tab bar */}
-          <div className="flex border-b border-neutral-200 overflow-x-auto">
+          <div className="flex border-b border-line overflow-x-auto">
             {TABS.map((tab) => (
               <button
                 key={tab}
@@ -809,7 +809,7 @@ export default function PoDetailPage() {
                   'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
                   activeTab === tab
                     ? 'border-primary-600 text-primary-700'
-                    : 'border-transparent text-neutral-500 hover:text-neutral-700',
+                    : 'border-transparent text-fg-muted hover:text-fg-secondary',
                 ].join(' ')}
               >
                 {tab === 'Attachments' ? 'Attachments' : tab}
@@ -836,9 +836,9 @@ export default function PoDetailPage() {
 
           {/* Details Tab */}
           {activeTab === 'Details' && (
-            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-6">
+            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-6">
               <section>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">Details</h2>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">Details</h2>
                 <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2 text-sm">
                   {([
                     ['Procurement Type', `Type ${po.type} — ${TYPE_LABELS[po.type]}`],
@@ -861,14 +861,14 @@ export default function PoDetailPage() {
                     ['PR Reference', po.pr_number || '—'],
                   ] as [string, string][]).map(([label, value]) => (
                     <div key={label} className="flex flex-col gap-0.5">
-                      <dt className="text-xs font-medium text-neutral-500">{label}</dt>
-                      <dd className="text-neutral-900">{value}</dd>
+                      <dt className="text-xs font-medium text-fg-muted">{label}</dt>
+                      <dd className="text-fg">{value}</dd>
                     </div>
                   ))}
                   {(po.incoterms_code || po.incoterms) && (
                     <div className="flex flex-col gap-0.5">
-                      <dt className="text-xs font-medium text-neutral-500">Incoterms</dt>
-                      <dd className="text-neutral-900">
+                      <dt className="text-xs font-medium text-fg-muted">Incoterms</dt>
+                      <dd className="text-fg">
                         {[po.incoterms_code, po.incoterms].filter(Boolean).join(' ')}
                       </dd>
                     </div>
@@ -884,27 +884,27 @@ export default function PoDetailPage() {
                       which mirrors this same split (pdf_po.py) and prints neither NC row. */}
                   {(po.buyer_notes || (po.source !== 'nc' ? po.notes : undefined)) && (
                     <div className="flex flex-col gap-0.5 sm:col-span-2">
-                      <dt className="text-xs font-medium text-neutral-500">Buyer Notes</dt>
-                      <dd className="whitespace-pre-wrap text-neutral-900">
+                      <dt className="text-xs font-medium text-fg-muted">Buyer Notes</dt>
+                      <dd className="whitespace-pre-wrap text-fg">
                         {po.buyer_notes || po.notes}
                       </dd>
                     </div>
                   )}
                   {po.source === 'nc' && po.notes && (
                     <div className="flex flex-col gap-0.5 sm:col-span-2">
-                      <dt className="text-xs font-medium text-neutral-500">NC Sync Notes</dt>
-                      <dd className="whitespace-pre-wrap text-neutral-900">{po.notes}</dd>
+                      <dt className="text-xs font-medium text-fg-muted">NC Sync Notes</dt>
+                      <dd className="whitespace-pre-wrap text-fg">{po.notes}</dd>
                     </div>
                   )}
                   <div className="flex flex-col gap-0.5">
-                    <dt className="text-xs font-medium text-neutral-500">Prepayment PO</dt>
+                    <dt className="text-xs font-medium text-fg-muted">Prepayment PO</dt>
                     <dd>
                       {po.is_prepaid ? (
-                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+                        <span className="inline-flex items-center rounded-full bg-warning-soft px-2.5 py-0.5 text-xs font-medium text-warning-fg">
                           Yes — Prepayment required
                         </span>
                       ) : (
-                        <span className="text-sm text-neutral-900">No</span>
+                        <span className="text-sm text-fg">No</span>
                       )}
                     </dd>
                   </div>
@@ -913,51 +913,51 @@ export default function PoDetailPage() {
 
               {/* Financial summary */}
               <section>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">Financial Summary</h2>
-                <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-5 py-4 flex flex-col gap-2 max-w-sm">
-                  <div className="flex justify-between text-sm text-neutral-700">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">Financial Summary</h2>
+                <div className="rounded-lg border border-line bg-surface-subtle px-5 py-4 flex flex-col gap-2 max-w-sm">
+                  <div className="flex justify-between text-sm text-fg-secondary">
                     <span>Subtotal</span>
                     <span className="amount">{formatAmount(po.subtotal, po.currency)}</span>
                   </div>
-                  <div className="flex justify-between text-sm text-neutral-700">
+                  <div className="flex justify-between text-sm text-fg-secondary">
                     <span>{TAX_LABELS[Number(po.tax_rate)] ?? `${Math.round(Number(po.tax_rate) * 100)}% Tax`}</span>
                     <span className="amount">{formatAmount(po.tax_amount, po.currency)}</span>
                   </div>
-                  <div className="border-t border-neutral-300 mt-1 pt-2 flex justify-between">
-                    <span className="text-sm font-bold text-neutral-900">Total ({po.currency})</span>
-                    <span className="amount text-base font-bold text-neutral-900">{formatAmount(po.total, po.currency)}</span>
+                  <div className="border-t border-line-strong mt-1 pt-2 flex justify-between">
+                    <span className="text-sm font-bold text-fg">Total ({po.currency})</span>
+                    <span className="amount text-base font-bold text-fg">{formatAmount(po.total, po.currency)}</span>
                   </div>
                 </div>
               </section>
 
               {/* Line Items */}
               <section>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">
-                  Line Items <span className="normal-case font-normal text-neutral-400">({po.line_items.length})</span>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">
+                  Line Items <span className="normal-case font-normal text-fg-muted">({po.line_items.length})</span>
                 </h2>
-                <div className="rounded-lg border border-neutral-200 overflow-hidden">
+                <div className="rounded-lg border border-line overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-neutral-200 bg-neutral-50">
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-10">#</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500">Description</th>
+                        <tr className="border-b border-line bg-surface-subtle">
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-10">#</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted">Description</th>
                           {hasMaterial && (
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-32">Material ID</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-32">Material ID</th>
                           )}
                           {/* Always shown for consistency with the Create PO page, which always exposes this input. */}
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-36">Supplier Item ID</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-20">Qty</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-20">Unit</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-36">Supplier Item ID</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-fg-muted w-20">Qty</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-20">Unit</th>
                           {showSample && (
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-24">Sample</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-24">Sample</th>
                           )}
                           {showDeliveryDate && (
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-28">Delivery Date</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-28">Delivery Date</th>
                           )}
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-32">Unit Price</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-32">Line Total</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-neutral-500 w-28">Received</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-fg-muted w-32">Unit Price</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-fg-muted w-32">Line Total</th>
+                          <th className="px-4 py-3 text-center text-xs font-semibold text-fg-muted w-28">Received</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -966,35 +966,35 @@ export default function PoDetailPage() {
                           return (
                             <tr
                               key={item.id}
-                              className={`border-b border-neutral-100 last:border-0 ${i % 2 === 1 ? 'bg-neutral-50/50' : 'bg-white'}`}
+                              className={`border-b border-line-subtle last:border-0 ${i % 2 === 1 ? 'bg-surface-subtle/50' : 'bg-surface'}`}
                             >
-                              <td className="px-4 py-2.5 text-xs text-neutral-400">{i + 1}</td>
-                              <td className="px-4 py-2.5 text-neutral-900">{item.description}</td>
+                              <td className="px-4 py-2.5 text-xs text-fg-muted">{i + 1}</td>
+                              <td className="px-4 py-2.5 text-fg">{item.description}</td>
                               {hasMaterial && (
-                                <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.material_id || '—'}</td>
+                                <td className="px-4 py-2.5 font-mono text-xs text-fg-secondary">{item.material_id || '—'}</td>
                               )}
-                              <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.supplier_item_id || '—'}</td>
-                              <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatQty(item.qty)}</td>
-                              <td className="px-4 py-2.5 text-neutral-500">{item.unit}</td>
+                              <td className="px-4 py-2.5 font-mono text-xs text-fg-secondary">{item.supplier_item_id || '—'}</td>
+                              <td className="px-4 py-2.5 text-right font-mono text-fg">{formatQty(item.qty)}</td>
+                              <td className="px-4 py-2.5 text-fg-muted">{item.unit}</td>
                               {showSample && (
-                                <td className="px-4 py-2.5 text-neutral-500">{item.sample || '—'}</td>
+                                <td className="px-4 py-2.5 text-fg-muted">{item.sample || '—'}</td>
                               )}
                               {showDeliveryDate && (
-                                <td className="px-4 py-2.5 text-neutral-500">
+                                <td className="px-4 py-2.5 text-fg-muted">
                                   {item.planned_arrival_date ? formatDate(item.planned_arrival_date) : '—'}
                                 </td>
                               )}
-                              <td className="px-4 py-2.5 amount text-right text-neutral-900">{formatUnitPrice(item.unit_price, po.currency)}</td>
-                              <td className="px-4 py-2.5 amount text-right font-semibold text-neutral-900">{formatAmount(item.line_total, po.currency)}</td>
+                              <td className="px-4 py-2.5 amount text-right text-fg">{formatUnitPrice(item.unit_price, po.currency)}</td>
+                              <td className="px-4 py-2.5 amount text-right font-semibold text-fg">{formatAmount(item.line_total, po.currency)}</td>
                               <td className="px-4 py-2.5">
                                 <div className="flex flex-col items-center gap-1">
-                                  <span className="text-xs text-neutral-600">{formatQty(item.received_qty)} / {formatQty(item.qty)}</span>
-                                  <div className="h-1.5 w-full rounded-full bg-neutral-200">
+                                  <span className="text-xs text-fg-secondary">{formatQty(item.received_qty)} / {formatQty(item.qty)}</span>
+                                  <div className="h-1.5 w-full rounded-full bg-surface-strong">
                                     <div
                                       style={{ width: `${pct}%` }}
                                       className={cn(
                                         'h-full rounded-full transition-all',
-                                        pct >= 100 ? 'bg-success-500' : pct > 0 ? 'bg-primary-500' : 'bg-neutral-300'
+                                        pct >= 100 ? 'bg-success-solid' : pct > 0 ? 'bg-primary-500' : 'bg-surface-strong'
                                       )}
                                     />
                                   </div>
@@ -1005,11 +1005,11 @@ export default function PoDetailPage() {
                         })}
                       </tbody>
                       <tfoot>
-                        <tr className="border-t-2 border-neutral-200 bg-neutral-50">
-                          <td colSpan={6 + (hasMaterial ? 1 : 0) + (showSample ? 1 : 0) + (showDeliveryDate ? 1 : 0)} className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                        <tr className="border-t-2 border-line bg-surface-subtle">
+                          <td colSpan={6 + (hasMaterial ? 1 : 0) + (showSample ? 1 : 0) + (showDeliveryDate ? 1 : 0)} className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">
                             Subtotal
                           </td>
-                          <td className="px-4 py-3 amount text-right text-base font-bold text-neutral-900">
+                          <td className="px-4 py-3 amount text-right text-base font-bold text-fg">
                             {formatAmount(po.subtotal, po.currency)}
                           </td>
                           <td />
@@ -1017,9 +1017,9 @@ export default function PoDetailPage() {
                       </tfoot>
                     </table>
                   </div>
-                  <div className="border-t border-neutral-200 px-4 py-3 flex justify-end gap-8 text-sm bg-neutral-50">
-                    <span className="text-neutral-500">{TAX_LABELS[Number(po.tax_rate)] ?? 'Tax'}: <span className="amount text-neutral-700">{formatAmount(po.tax_amount, po.currency)}</span></span>
-                    <span className="font-bold text-neutral-900">Total: <span className="amount">{formatAmount(po.total, po.currency)}</span></span>
+                  <div className="border-t border-line px-4 py-3 flex justify-end gap-8 text-sm bg-surface-subtle">
+                    <span className="text-fg-muted">{TAX_LABELS[Number(po.tax_rate)] ?? 'Tax'}: <span className="amount text-fg-secondary">{formatAmount(po.tax_amount, po.currency)}</span></span>
+                    <span className="font-bold text-fg">Total: <span className="amount">{formatAmount(po.total, po.currency)}</span></span>
                   </div>
                 </div>
               </section>
@@ -1028,10 +1028,10 @@ export default function PoDetailPage() {
 
           {/* Linked GRs Tab */}
           {activeTab === 'Linked GRs' && (
-            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">Linked Goods Receipts</h2>
+            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">Linked Goods Receipts</h2>
               {grsLoading ? (
-                <div className="flex items-center justify-center py-12 text-neutral-400">
+                <div className="flex items-center justify-center py-12 text-fg-muted">
                   <Loader2 className="h-5 w-5 animate-spin" />
                 </div>
               ) : linkedGrs.length > 0 ? (
@@ -1040,21 +1040,21 @@ export default function PoDetailPage() {
                     <li key={gr.id}>
                       <Link
                         to={`/gr/${gr.id}`}
-                        className="flex w-full items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-left text-sm transition-colors hover:border-primary-300 hover:bg-primary-50 group"
+                        className="flex w-full items-center gap-3 rounded-lg border border-line bg-surface-subtle px-3 py-2.5 text-left text-sm transition-colors hover:border-primary-300 hover:bg-primary-50 group"
                       >
                         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-100 group-hover:bg-primary-200 shrink-0">
                           <Warehouse className="h-4 w-4 text-primary-600" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm font-semibold text-neutral-700 truncate">{gr.number}</span>
+                            <span className="font-mono text-sm font-semibold text-fg-secondary truncate">{gr.number}</span>
                             <StatusBadge status={GR_STATUS_DOC[gr.status]} label={GR_STATUS_LABELS[gr.status]} />
                           </div>
-                          <p className="text-xs text-neutral-400 mt-0.5 truncate">
+                          <p className="text-xs text-fg-muted mt-0.5 truncate">
                             {gr.gr_type === 'physical' ? 'Physical' : 'Service'} · Received {formatDate(gr.received_at)}
                           </p>
                         </div>
-                        <ExternalLink className="h-4 w-4 shrink-0 text-neutral-300 group-hover:text-primary-400" />
+                        <ExternalLink className="h-4 w-4 shrink-0 text-fg-faint group-hover:text-primary-400" />
                       </Link>
                     </li>
                   ))}
@@ -1062,8 +1062,8 @@ export default function PoDetailPage() {
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <span className="text-3xl mb-3">🏭</span>
-                  <p className="text-sm text-neutral-400">No goods receipts linked to this PO yet.</p>
-                  <p className="text-xs text-neutral-300 mt-1">They will appear here once received.</p>
+                  <p className="text-sm text-fg-muted">No goods receipts linked to this PO yet.</p>
+                  <p className="text-xs text-fg-faint mt-1">They will appear here once received.</p>
                 </div>
               )}
             </div>
@@ -1071,9 +1071,9 @@ export default function PoDetailPage() {
 
           {/* Attachments Tab */}
           {activeTab === 'Attachments' && (
-            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Attachments</h2>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">Attachments</h2>
                 {['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_pending', 'nc_milk'].includes(po.status) && (
                   <button
                     type="button"
@@ -1098,7 +1098,7 @@ export default function PoDetailPage() {
               />
               {poAttachments.length === 0 && (
                 <div className="mt-3 flex flex-col items-center justify-center text-center">
-                  <p className="text-sm text-neutral-400">
+                  <p className="text-sm text-fg-muted">
                     {po.status === 'approved' ? 'PDF is being generated…' : 'No attachments yet'}
                   </p>
                   {po.status !== 'approved' && (
@@ -1113,27 +1113,27 @@ export default function PoDetailPage() {
 
           {/* History Tab */}
           {activeTab === 'History' && (
-            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">Audit History</h2>
+            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">Audit History</h2>
               {events && events.length > 0 ? (
                 <ul className="flex flex-col gap-3">
                   {events.map((e) => {
                     const line = historyLine(e, workflowSteps)
                     return (
                       <li key={e.id} className="flex gap-3 text-sm">
-                        <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDate(e.created_at)}</span>
+                        <span className="text-xs text-fg-muted whitespace-nowrap pt-0.5">{formatDate(e.created_at)}</span>
                         <div>
-                          <span className="font-medium text-neutral-800 capitalize">{line.action}</span>
-                          <span className="text-neutral-500 ml-1">{line.role}</span>
-                          {line.actorName && <span className="text-neutral-400 ml-1">— {line.actorName}</span>}
-                          {line.note && <p className="text-neutral-400 text-xs mt-0.5 italic">{line.note}</p>}
+                          <span className="font-medium text-fg capitalize">{line.action}</span>
+                          <span className="text-fg-muted ml-1">{line.role}</span>
+                          {line.actorName && <span className="text-fg-muted ml-1">— {line.actorName}</span>}
+                          {line.note && <p className="text-fg-muted text-xs mt-0.5 italic">{line.note}</p>}
                         </div>
                       </li>
                     )
                   })}
                 </ul>
               ) : (
-                <div className="text-sm text-neutral-400 text-center py-8">No history yet</div>
+                <div className="text-sm text-fg-muted text-center py-8">No history yet</div>
               )}
             </div>
           )}
@@ -1141,8 +1141,8 @@ export default function PoDetailPage() {
 
         {/* Right: approval timeline */}
         <div className="lg:col-span-4">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">Approval Timeline</h2>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">Approval Timeline</h2>
             <ApprovalTimeline
               steps={approvalSteps}
               // See PrDetailPage: a draft's step 0 also renders as "current".
@@ -1152,8 +1152,8 @@ export default function PoDetailPage() {
 
             {/* Place Order panel for procurement officer */}
             {canPlaceOrder && (
-              <div className="mt-5 border-t border-neutral-100 pt-4 flex flex-col gap-2">
-                <p className="text-xs font-medium text-neutral-500 mb-1">Ready to Place Order</p>
+              <div className="mt-5 border-t border-line-subtle pt-4 flex flex-col gap-2">
+                <p className="text-xs font-medium text-fg-muted mb-1">Ready to Place Order</p>
                 <button
                   onClick={() => setShowPlaceOrder(true)}
                   className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary-600 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700"
@@ -1172,9 +1172,9 @@ export default function PoDetailPage() {
 
       {/* Fixed bottom approver action bar */}
       {canApprove && (
-        <div className="fixed bottom-0 left-60 right-0 z-10 bg-white border-t border-neutral-200 px-6 py-3 flex items-center justify-between shadow-[0_-1px_8px_rgba(0,0,0,0.06)] max-md:left-0">
-          <p className="text-sm text-neutral-500">
-            Reviewing <span className="font-medium text-neutral-900">{po.number}</span>
+        <div className="fixed bottom-0 left-60 right-0 z-10 bg-surface border-t border-line px-6 py-3 flex items-center justify-between shadow-[0_-1px_8px_rgba(0,0,0,0.06)] max-md:left-0">
+          <p className="text-sm text-fg-muted">
+            Reviewing <span className="font-medium text-fg">{po.number}</span>
           </p>
           <div className="flex items-center gap-2">
             <div className="relative" ref={moreRef}>
@@ -1187,16 +1187,16 @@ export default function PoDetailPage() {
                 More <ChevronDown className="h-3.5 w-3.5" />
               </Button>
               {moreOpen && (
-                <div className="absolute right-0 bottom-full mb-1 w-44 rounded-lg border border-neutral-200 bg-white py-1 shadow-lg z-20">
+                <div className="absolute right-0 bottom-full mb-1 w-44 rounded-lg border border-line bg-surface py-1 shadow-lg z-20">
                   <button
                     onClick={() => { setPendingAction('return'); setMoreOpen(false) }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-warning-700 hover:bg-warning-50"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-warning-fg hover:bg-warning-soft"
                   >
                     <RotateCcw className="h-4 w-4" /> Return for Revision
                   </button>
                   <button
                     onClick={() => { setPendingAction('reject'); setMoreOpen(false) }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger-600 hover:bg-danger-50"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger-fg hover:bg-danger-soft"
                   >
                     <XCircle className="h-4 w-4" /> Reject
                   </button>
@@ -1205,7 +1205,7 @@ export default function PoDetailPage() {
             </div>
             <button
               onClick={() => setPendingAction('approve')}
-              className="inline-flex items-center gap-2 h-9 px-5 rounded-lg bg-success-600 text-white text-sm font-semibold hover:bg-success-700 transition-colors"
+              className="inline-flex items-center gap-2 h-9 px-5 rounded-lg bg-success-solid text-white text-sm font-semibold hover:bg-success-700 transition-colors"
             >
               <CheckCircle2 className="h-4 w-4" /> Approve
             </button>

@@ -6,17 +6,17 @@ import { formatAmount, formatDate } from '@/lib/utils'
 import { SortTh, useSortableRows } from '@uniops/shell'
 
 const PA_STATUS_STYLES: Record<string, string> = {
-  draft:      'bg-neutral-100 text-neutral-600',
-  submitted:  'bg-warning-100 text-warning-700',
-  in_review:  'bg-blue-100 text-blue-700',
-  approved:   'bg-success-100 text-success-700',
-  processed:  'bg-success-100 text-success-700',
-  cancelled:  'bg-neutral-100 text-neutral-500',
+  draft:      'bg-surface-sunken text-fg-secondary',
+  submitted:  'bg-warning-soft text-warning-fg',
+  in_review:  'bg-info-soft text-info-fg',
+  approved:   'bg-success-soft text-success-fg',
+  processed:  'bg-success-soft text-success-fg',
+  cancelled:  'bg-surface-sunken text-fg-muted',
 }
 
 function PaStatusBadge({ status }: { status: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${PA_STATUS_STYLES[status] ?? 'bg-neutral-100 text-neutral-600'}`}>
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${PA_STATUS_STYLES[status] ?? 'bg-surface-sunken text-fg-secondary'}`}>
       {status.replace('_', ' ')}
     </span>
   )
@@ -38,7 +38,7 @@ export default function FinanceManagerDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-neutral-900">Finance Manager Dashboard</h1>
+      <h1 className="text-2xl font-bold text-fg">Finance Manager Dashboard</h1>
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -67,12 +67,12 @@ export default function FinanceManagerDashboard() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* PAs pending approval */}
         <div className="lg:col-span-8">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-neutral-900">
+              <h2 className="text-base font-semibold text-fg">
                 Payment Applications Pending
                 {pasPendingCount > 0 && (
-                  <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning-500 px-1 text-[10px] font-bold text-white">
+                  <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning-solid px-1 text-2xs font-bold text-white">
                     {pasPendingCount}
                   </span>
                 )}
@@ -81,34 +81,34 @@ export default function FinanceManagerDashboard() {
             </div>
 
             {recentPas.length === 0 ? (
-              <p className="py-8 text-center text-sm text-neutral-400">No PAs pending approval.</p>
+              <p className="py-8 text-center text-sm text-fg-muted">No PAs pending approval.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-neutral-100 text-left">
-                      <SortTh label="PA #" sortKey="pa_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                      <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                      <SortTh label="Amount" sortKey="payment_amount" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-neutral-500" />
-                      <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                      <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                      <th className="pb-2 font-medium text-neutral-500"></th>
+                    <tr className="border-b border-line-subtle text-left">
+                      <SortTh label="PA #" sortKey="pa_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                      <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                      <SortTh label="Amount" sortKey="payment_amount" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
+                      <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                      <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                      <th className="pb-2 font-medium text-fg-muted"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-50">
+                  <tbody className="divide-y divide-line-subtle">
                     {recentPas.map((pa) => (
-                      <tr key={pa.id} className="hover:bg-neutral-50">
+                      <tr key={pa.id} className="hover:bg-surface-subtle">
                         <td className="py-2 pr-3">
                           <Link to={`/pa/${pa.id}`} className="font-mono text-xs text-primary-600 hover:underline">
                             {pa.pa_number}
                           </Link>
                         </td>
-                        <td className="py-2 pr-3 max-w-[150px] truncate text-neutral-700">{pa.vendor_name}</td>
-                        <td className="py-2 pr-3 text-right font-mono text-neutral-900">
+                        <td className="py-2 pr-3 max-w-[150px] truncate text-fg-secondary">{pa.vendor_name}</td>
+                        <td className="py-2 pr-3 text-right font-mono text-fg">
                           {formatAmount(Number(pa.payment_amount), pa.currency)}
                         </td>
                         <td className="py-2 pr-3"><PaStatusBadge status={pa.status} /></td>
-                        <td className="py-2 pr-3 text-neutral-500">{formatDate(pa.created_at)}</td>
+                        <td className="py-2 pr-3 text-fg-muted">{formatDate(pa.created_at)}</td>
                         <td className="py-2">
                           <Link to={`/pa/${pa.id}`} className="text-xs text-primary-600 hover:underline whitespace-nowrap">
                             Review →

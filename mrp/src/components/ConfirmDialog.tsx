@@ -21,20 +21,20 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   return createPortal(
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">
-      <div role="alertdialog" aria-label={title} className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-200">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-neutral-900">
-            {danger && <AlertTriangle className="h-4 w-4 text-warning-600" />}
+      <div role="alertdialog" aria-label={title} className="w-full max-w-md rounded-xl border border-line bg-surface shadow-xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
+          <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
+            {danger && <AlertTriangle className="h-4 w-4 text-warning-fg" />}
             {title}
           </h2>
-          <button type="button" onClick={onCancel} aria-label="Close" className="text-neutral-400 hover:text-neutral-600">
+          <button type="button" onClick={onCancel} aria-label="Close" className="text-fg-muted hover:text-fg-secondary">
             <XIcon className="h-5 w-5" />
           </button>
         </div>
-        <div className="px-5 py-4 text-sm text-neutral-700 space-y-2">
+        <div className="px-5 py-4 text-sm text-fg-secondary space-y-2">
           {children}
         </div>
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-neutral-200">
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-line">
           <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={busy}>
             Cancel
           </Button>

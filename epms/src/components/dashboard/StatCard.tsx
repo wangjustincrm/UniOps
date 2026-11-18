@@ -13,22 +13,22 @@ export function StatCard({ title, value, subtitle, alert, className }: StatCardP
   return (
     <div
       className={cn(
-        'rounded-lg border bg-white px-5 py-4',
-        alert ? 'border-danger-200 bg-danger-50' : 'border-neutral-200',
+        'rounded-lg border bg-surface px-5 py-4',
+        alert ? 'border-danger-line bg-danger-soft' : 'border-line',
         className
       )}
     >
-      <p className="text-xs font-medium uppercase tracking-wider text-neutral-500">{title}</p>
+      <p className="text-xs font-medium uppercase tracking-wider text-fg-muted">{title}</p>
       <p
         className={cn(
           'mt-1 text-2xl font-bold',
-          alert ? 'text-danger-600' : 'text-neutral-900'
+          alert ? 'text-danger-fg' : 'text-fg'
         )}
       >
         {value}
       </p>
       {subtitle && (
-        <p className="mt-0.5 text-xs text-neutral-400">{subtitle}</p>
+        <p className="mt-0.5 text-xs text-fg-muted">{subtitle}</p>
       )}
     </div>
   )

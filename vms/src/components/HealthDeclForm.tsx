@@ -63,21 +63,21 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-xl">
+      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-surface shadow-xl">
         {/* Header */}
-        <div className="flex items-start justify-between border-b border-neutral-100 px-5 py-4">
+        <div className="flex items-start justify-between border-b border-line-subtle px-5 py-4">
           <div>
-            <h3 className="text-base font-semibold text-neutral-900">
+            <h3 className="text-base font-semibold text-fg">
               Health declaration{visitorName ? ` — ${visitorName}` : ''}
             </h3>
-            <p className="mt-0.5 text-xs text-neutral-500">
+            <p className="mt-0.5 text-xs text-fg-muted">
               Required before printing a badge for GMP, Laboratory and Entire Plant visits.
               Ask the visitor each question; mark “Yes” / “No” based on their answer.
             </p>
           </div>
           <button
             onClick={onClose}
-            className="rounded-md p-1 text-neutral-400 hover:bg-neutral-50 hover:text-neutral-600"
+            className="rounded-md p-1 text-fg-muted hover:bg-surface-subtle hover:text-fg-secondary"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -86,7 +86,7 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
 
         {/* Result banner (only after a submit completes) */}
         {result === 'passed' && (
-          <div className="border-b border-emerald-200 bg-success-50 px-5 py-3 text-sm text-success-600">
+          <div className="border-b border-success-line bg-success-soft px-5 py-3 text-sm text-success-fg">
             <p className="flex items-center gap-1.5 font-medium">
               <CheckCircle2 className="h-4 w-4" />
               Declaration passed — visitor cleared for the scheduled access area.
@@ -94,7 +94,7 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
           </div>
         )}
         {result === 'failed' && (
-          <div className="border-b border-red-200 bg-danger-50 px-5 py-3 text-sm text-danger-600">
+          <div className="border-b border-danger-line bg-danger-soft px-5 py-3 text-sm text-danger-fg">
             <p className="flex items-center gap-1.5 font-medium">
               <AlertCircle className="h-4 w-4" />
               Declaration failed — visitor cannot enter GMP, Laboratory or Entire Plant areas today.
@@ -109,23 +109,23 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
         {/* Body */}
         <div className="overflow-y-auto px-5 py-4">
           {tplLoading && (
-            <p className="text-sm text-neutral-400">
+            <p className="text-sm text-fg-muted">
               <Loader2 className="inline h-4 w-4 animate-spin" /> Loading questionnaire…
             </p>
           )}
 
           {!tplLoading && questions.map((q) => (
-            <div key={q.id} className="border-b border-neutral-100 py-3 last:border-b-0">
-              <p className="text-sm text-neutral-800">{q.text}</p>
-              <div className="mt-2 inline-flex rounded-md border border-neutral-200 bg-neutral-50 p-0.5 text-sm">
+            <div key={q.id} className="border-b border-line-subtle py-3 last:border-b-0">
+              <p className="text-sm text-fg">{q.text}</p>
+              <div className="mt-2 inline-flex rounded-md border border-line bg-surface-subtle p-0.5 text-sm">
                 {(['yes', 'no'] as const).map(v => (
                   <label
                     key={v}
                     className={
                       'cursor-pointer rounded px-3 py-1 capitalize transition-colors ' +
                       (answers[q.id] === v
-                        ? 'bg-white shadow-sm text-neutral-900 font-medium'
-                        : 'text-neutral-500 hover:text-neutral-700')
+                        ? 'bg-surface shadow-sm text-fg font-medium'
+                        : 'text-fg-muted hover:text-fg-secondary')
                     }
                   >
                     <input
@@ -145,7 +145,7 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
 
           {/* Safety training confirmation */}
           {!tplLoading && (
-            <label className="mt-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+            <label className="mt-4 flex items-start gap-2 rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-sm">
               <input
                 type="checkbox"
                 checked={trainingOK}
@@ -153,8 +153,8 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
                 className="mt-0.5"
               />
               <span>
-                <span className="font-medium text-amber-800">Food-safety briefing confirmed</span>
-                <span className="block text-xs text-amber-700">
+                <span className="font-medium text-warning-fg">Food-safety briefing confirmed</span>
+                <span className="block text-xs text-warning-fg">
                   Visitor has been briefed on gowning, hand-wash, and contamination rules
                   for the food production area (PRD VMS-CI-012).
                 </span>
@@ -165,10 +165,10 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
           {/* Signature */}
           {!tplLoading && (
             <div className="mt-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+              <p className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
                 Visitor signature
               </p>
-              <div className="mt-1 rounded-md border border-dashed border-neutral-300 bg-neutral-50">
+              <div className="mt-1 rounded-md border border-dashed border-line-strong bg-surface-subtle">
                 <SignatureCanvas
                   ref={sigRef}
                   canvasProps={{
@@ -182,7 +182,7 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
               <button
                 type="button"
                 onClick={() => sigRef.current?.clear()}
-                className="mt-1.5 inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-700"
+                className="mt-1.5 inline-flex items-center gap-1 text-xs text-fg-muted hover:text-fg-secondary"
               >
                 <RotateCw className="h-3 w-3" />
                 Clear signature
@@ -192,14 +192,14 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
 
           {/* Error */}
           {submit.error && !result && (
-            <p className="mt-3 rounded-md bg-danger-50 px-3 py-2 text-xs text-danger-600">
+            <p className="mt-3 rounded-md bg-danger-soft px-3 py-2 text-xs text-danger-fg">
               {submit.error.message}
             </p>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-3">
+        <div className="flex justify-end gap-2 border-t border-line-subtle px-5 py-3">
           {result ? (
             <button
               onClick={onClose}
@@ -212,7 +212,7 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
               <button
                 onClick={onClose}
                 disabled={submit.isPending}
-                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+                className="rounded-md border border-line-strong px-3 py-1.5 text-sm"
               >
                 Cancel
               </button>

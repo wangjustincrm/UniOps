@@ -34,9 +34,9 @@ export function CarriersTab() {
 
   return (
     <div className="flex flex-col gap-4">
-    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-neutral-100 px-5 py-4">
-        <p className="text-sm text-neutral-500">
+    <div className="rounded-xl border border-line bg-surface shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-line-subtle px-5 py-4">
+        <p className="text-sm text-fg-muted">
           Only these vendors can be paid by a Freight PA. Charges without a tracking number
           (pickups, late fees) go to the carrier&apos;s default cost center.
         </p>
@@ -45,13 +45,13 @@ export function CarriersTab() {
         </Button>
       </div>
       {isLoading ? (
-        <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-neutral-300" /></div>
+        <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-fg-faint" /></div>
       ) : carriers.length === 0 ? (
-        <p className="py-12 text-center text-sm text-neutral-400">No carriers yet. Add UPS, FedEx, Purolator…</p>
+        <p className="py-12 text-center text-sm text-fg-muted">No carriers yet. Add UPS, FedEx, Purolator…</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50">
+            <thead className="bg-surface-subtle">
               <tr>
                 <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className={TH_CLS} />
                 <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className={TH_CLS} />
@@ -64,14 +64,14 @@ export function CarriersTab() {
             </thead>
             <tbody>
               {carriers.map((c) => (
-                <tr key={c.id} className="border-t border-neutral-100">
-                  <td className="px-3 py-2.5 font-medium text-neutral-900">{c.code}</td>
+                <tr key={c.id} className="border-t border-line-subtle">
+                  <td className="px-3 py-2.5 font-medium text-fg">{c.code}</td>
                   <td className="px-3 py-2.5">{c.name}</td>
-                  <td className="px-3 py-2.5 text-neutral-600">{c.vendor_name ?? '—'}</td>
-                  <td className="px-3 py-2.5 font-mono text-xs text-neutral-600">{c.tracking_pattern ?? '—'}</td>
-                  <td className="px-3 py-2.5 text-neutral-600">{ccLabel(c.default_cost_center_id)}</td>
+                  <td className="px-3 py-2.5 text-fg-secondary">{c.vendor_name ?? '—'}</td>
+                  <td className="px-3 py-2.5 font-mono text-xs text-fg-secondary">{c.tracking_pattern ?? '—'}</td>
+                  <td className="px-3 py-2.5 text-fg-secondary">{ccLabel(c.default_cost_center_id)}</td>
                   <td className="px-3 py-2.5">
-                    <span className={c.is_active ? 'text-success-700' : 'text-neutral-400'}>{c.is_active ? 'Active' : 'Inactive'}</span>
+                    <span className={c.is_active ? 'text-success-fg' : 'text-fg-muted'}>{c.is_active ? 'Active' : 'Inactive'}</span>
                   </td>
                   <td className="px-3 py-2.5 text-right">
                     <button onClick={() => setEditing(c)} className="inline-flex items-center gap-1 text-xs text-primary-600 hover:text-primary-800">
@@ -113,15 +113,15 @@ function ProjectFreightSetting({ costCenters, departments }: {
     save.mutate(id || null, { onError: (e) => setError(errorMessage(e, 'Could not save the setting')) })
   }
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white px-5 py-4 shadow-sm">
-      <h3 className="text-sm font-semibold text-neutral-800">Project freight</h3>
-      <p className="mt-0.5 text-xs text-neutral-500">
+    <div className="rounded-xl border border-line bg-surface px-5 py-4 shadow-sm">
+      <h3 className="text-sm font-semibold text-fg">Project freight</h3>
+      <p className="mt-0.5 text-xs text-fg-muted">
         A shipment registered as <em>Project related</em> has no cost center. When the carrier&apos;s invoice is
         matched, its line is pre-filled with this cost center and the person matching confirms or changes it.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        <label className="text-xs font-medium text-neutral-700">Default cost center</label>
-        {isPending ? <Loader2 className="h-4 w-4 animate-spin text-neutral-300" /> : (
+        <label className="text-xs font-medium text-fg-secondary">Default cost center</label>
+        {isPending ? <Loader2 className="h-4 w-4 animate-spin text-fg-faint" /> : (
           <CostCenterSelect
             value={settings?.project_cost_center_id ?? ''} onChange={change}
             costCenters={costCenters} departments={departments}
@@ -129,9 +129,9 @@ function ProjectFreightSetting({ costCenters, departments }: {
             className={`${SELECT_CLS} min-w-72`}
           />
         )}
-        {save.isPending && <span className="text-xs text-neutral-400">Saving…</span>}
+        {save.isPending && <span className="text-xs text-fg-muted">Saving…</span>}
       </div>
-      {error && <p className="mt-2 text-xs text-danger-600">{error}</p>}
+      {error && <p className="mt-2 text-xs text-danger-fg">{error}</p>}
     </div>
   )
 }
@@ -175,7 +175,7 @@ function CarrierDialog({ carrier, costCenters, departments, onClose }: {
       <div className="flex flex-col gap-4">
         {!isEdit && (
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Vendor *</label>
+            <label className="text-xs font-medium text-fg-secondary">Vendor *</label>
             <Input value={vendorSearch} placeholder="Search vendor name…"
               onChange={(e: ChangeEvent<HTMLInputElement>) => setVendorSearch(e.target.value)} />
             <select value={vendorId} onChange={(e) => setVendorId(e.target.value)} className={SELECT_CLS}>
@@ -186,34 +186,34 @@ function CarrierDialog({ carrier, costCenters, departments, onClose }: {
         )}
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Code *</label>
+            <label className="text-xs font-medium text-fg-secondary">Code *</label>
             <Input value={code} disabled={isEdit} placeholder="UPS"
               onChange={(e: ChangeEvent<HTMLInputElement>) => setCode(e.target.value)} />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-neutral-700">Name *</label>
+            <label className="text-xs font-medium text-fg-secondary">Name *</label>
             <Input value={name} placeholder="UPS"
               onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.target.value)} />
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Tracking number pattern</label>
+          <label className="text-xs font-medium text-fg-secondary">Tracking number pattern</label>
           <Input value={pattern} className="font-mono" placeholder="e.g. 1Z[0-9A-Z]{16} (optional)"
             onChange={(e: ChangeEvent<HTMLInputElement>) => setPattern(e.target.value)} />
-          <p className="text-xs text-neutral-400">A regular expression. Tracking numbers that do not match are refused when registered.</p>
+          <p className="text-xs text-fg-muted">A regular expression. Tracking numbers that do not match are refused when registered.</p>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-700">Default cost center</label>
+          <label className="text-xs font-medium text-fg-secondary">Default cost center</label>
           <CostCenterSelect value={defaultCc} onChange={setDefaultCc} costCenters={costCenters}
             departments={departments} placeholder="None — assign by hand" />
-          <p className="text-xs text-neutral-400">For pickups and fees that have no tracking number.</p>
+          <p className="text-xs text-fg-muted">For pickups and fees that have no tracking number.</p>
         </div>
         {isEdit && (
-          <label className="flex items-center gap-2 text-sm text-neutral-700">
+          <label className="flex items-center gap-2 text-sm text-fg-secondary">
             <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Active
           </label>
         )}
-        {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+        {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-fg">{error}</p>}
         <div className="flex justify-end gap-2">
           <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
           <Button size="sm" onClick={submit} disabled={save.isPending}>{save.isPending ? 'Saving…' : 'Save'}</Button>

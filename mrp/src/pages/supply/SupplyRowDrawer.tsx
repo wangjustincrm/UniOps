@@ -147,13 +147,13 @@ export function SupplyRowDrawer({
 
   return createPortal(
     <div className="fixed inset-0 z-[90] flex justify-end bg-black/30">
-      <div className="flex h-full w-full max-w-md flex-col bg-white shadow-xl">
-        <header className="flex items-center justify-between border-b border-neutral-200 px-5 py-3">
-          <h2 className="text-sm font-semibold text-neutral-900">
+      <div className="flex h-full w-full max-w-md flex-col bg-surface shadow-xl">
+        <header className="flex items-center justify-between border-b border-line px-5 py-3">
+          <h2 className="text-sm font-semibold text-fg">
             {isEdit ? 'Edit supply parameters' : 'Add supply parameters'}
           </h2>
           <button type="button" onClick={onClose} aria-label="Close"
-            className="text-neutral-400 hover:text-neutral-700">
+            className="text-fg-muted hover:text-fg-secondary">
             <XIcon className="h-4 w-4" />
           </button>
         </header>
@@ -196,7 +196,7 @@ export function SupplyRowDrawer({
             // Changing supplier is allowed, but the terms below were agreed
             // with the old one. Saving them unread would hand purchasing a
             // lead time nobody negotiated.
-            <p className="flex items-start gap-1.5 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-800">
+            <p className="flex items-start gap-1.5 rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-fg">
               <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>
                 Re-sourcing from <strong>{row?.partner_code}</strong>. The lead time and order
@@ -219,7 +219,7 @@ export function SupplyRowDrawer({
             <div className="flex items-center gap-2">
               <Input id="supply-moq" inputMode="decimal" value={form.moq}
                 onChange={(e) => set('moq', e.target.value)} disabled={saving} />
-              {uom && <span className="shrink-0 text-sm text-neutral-500">{uom}</span>}
+              {uom && <span className="shrink-0 text-sm text-fg-muted">{uom}</span>}
             </div>
           </FormField>
 
@@ -231,17 +231,17 @@ export function SupplyRowDrawer({
             <div className="flex items-center gap-2">
               <Input id="supply-multiple" inputMode="decimal" value={form.order_multiple}
                 onChange={(e) => set('order_multiple', e.target.value)} disabled={saving} />
-              {uom && <span className="shrink-0 text-sm text-neutral-500">{uom}</span>}
+              {uom && <span className="shrink-0 text-sm text-fg-muted">{uom}</span>}
             </div>
           </FormField>
 
-          <label className="flex items-start gap-2 text-sm text-neutral-700">
+          <label className="flex items-start gap-2 text-sm text-fg-secondary">
             <input type="checkbox" checked={form.is_primary}
               onChange={(e) => set('is_primary', e.target.checked)} disabled={saving}
-              className="mt-0.5 h-4 w-4 rounded border-neutral-300" />
+              className="mt-0.5 h-4 w-4 rounded border-line-strong" />
             <span>
               Primary supplier
-              <span className="block text-xs text-neutral-500">
+              <span className="block text-xs text-fg-muted">
                 Purchase suggestions use the primary supplier's lead time and order sizing.
                 Only one per material.
               </span>
@@ -254,13 +254,13 @@ export function SupplyRowDrawer({
           </FormField>
 
           {error && (
-            <p role="alert" className="flex items-start gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+            <p role="alert" className="flex items-start gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {error}
             </p>
           )}
         </div>
 
-        <footer className="flex items-center justify-end gap-2 border-t border-neutral-200 px-5 py-3">
+        <footer className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">
           <Button type="button" variant="secondary" size="sm" className="min-h-[44px]"
             onClick={onClose} disabled={saving}>
             Cancel

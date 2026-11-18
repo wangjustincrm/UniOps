@@ -15,7 +15,7 @@ import { financeDownload } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const PAGE_SIZE = 50
 // After a sync trigger, keep polling for this long even if `current_run` is
 // still null in the response we already have in cache — the QboSyncRun row is
@@ -24,9 +24,9 @@ const PAGE_SIZE = 50
 // turn refetchInterval off before the row ever appears).
 const POST_TRIGGER_POLL_MS = 20000
 
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
-const dangerBtn = 'flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50'
+const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
+const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
+const dangerBtn = 'flex items-center gap-1.5 rounded-lg bg-danger-solid px-3 py-2 text-sm font-medium text-white hover:bg-danger-700 disabled:opacity-50'
 
 export default function QboMirrorPage() {
   const qc = useQueryClient()
@@ -55,7 +55,7 @@ export default function QboMirrorPage() {
       subtitle="Read-only copy of the QuickBooks Online company, synced into UniOps."
     >
       <div className="space-y-6">
-        <section className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
+        <section className="space-y-3 rounded-lg border border-line bg-surface p-4">
           <div className="flex flex-wrap items-center gap-3">
             {/* Sync and full reload are System Admin only (ISS-0164) — the
                 server refuses anyone else and reports it as can_sync. */}
@@ -77,19 +77,19 @@ export default function QboMirrorPage() {
                 </button>
               </>
             ) : status && (
-              <span className="text-sm text-neutral-500">Syncing with QuickBooks is limited to System Admin.</span>
+              <span className="text-sm text-fg-muted">Syncing with QuickBooks is limited to System Admin.</span>
             )}
             {status?.can_sync && !status?.configured && (
-              <span className="text-sm text-red-600">QBO connection is not configured</span>
+              <span className="text-sm text-danger-fg">QBO connection is not configured</span>
             )}
           </div>
 
           {running && (
-            <div className="rounded-lg border border-neutral-200 px-3 py-3 text-sm">
-              <div className="flex items-center gap-2 font-medium text-neutral-700">
+            <div className="rounded-lg border border-line px-3 py-3 text-sm">
+              <div className="flex items-center gap-2 font-medium text-fg-secondary">
                 <Loader2 className="h-4 w-4 animate-spin" /> Running ({running.mode})…
               </div>
-              <ul className="mt-2 grid grid-cols-2 gap-x-6 gap-y-0.5 font-mono text-xs text-neutral-500 md:grid-cols-3">
+              <ul className="mt-2 grid grid-cols-2 gap-x-6 gap-y-0.5 font-mono text-xs text-fg-muted md:grid-cols-3">
                 {Object.entries(running.counters).map(([k, v]) => (
                   <li key={k}>
                     {k}: +{v.inserted} ~{v.updated}{v.deleted ? ` -${v.deleted}` : ''}
@@ -99,24 +99,24 @@ export default function QboMirrorPage() {
             </div>
           )}
           {!running && status?.last_run && (
-            <div className="text-sm text-neutral-600">
+            <div className="text-sm text-fg-secondary">
               Last sync: {status.last_run.mode} · {status.last_run.status}
               {status.last_run.finished_at ? ` · ${formatDateTime(status.last_run.finished_at)}` : ''}
-              {status.last_run.error ? <span className="text-red-600"> · {status.last_run.error}</span> : null}
+              {status.last_run.error ? <span className="text-danger-fg"> · {status.last_run.error}</span> : null}
             </div>
           )}
         </section>
 
         {confirming && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setConfirming(false)}>
-            <div className="w-full max-w-md space-y-3 rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-              <h2 className="flex items-center gap-2 text-base font-semibold text-neutral-800">
-                <AlertTriangle className="h-4 w-4 text-red-600" /> Full reload
+            <div className="w-full max-w-md space-y-3 rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
+                <AlertTriangle className="h-4 w-4 text-danger-fg" /> Full reload
               </h2>
-              <p className="text-sm text-neutral-600">
+              <p className="text-sm text-fg-secondary">
                 Re-pulls every entity from QuickBooks. This can take many minutes. Continue?
               </p>
-              <div className="flex justify-end gap-2 border-t border-neutral-100 pt-3">
+              <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
                 <button className={secondaryBtn} onClick={() => setConfirming(false)}>Cancel</button>
                 <button className={dangerBtn} onClick={() => trigger('full')}>Full reload</button>
               </div>
@@ -192,7 +192,7 @@ function QboTabs() {
 
   return (
     <section className="space-y-3">
-      <div className="flex flex-wrap gap-1 border-b border-neutral-200">
+      <div className="flex flex-wrap gap-1 border-b border-line">
         {ENTITY_TABS.map((t) => (
           <button
             key={t.slug}
@@ -200,8 +200,8 @@ function QboTabs() {
             className={cn(
               'px-3 py-1.5 text-sm',
               tab === t.slug
-                ? 'border-b-2 border-[#085E5E] font-medium text-[#085E5E]'
-                : 'text-neutral-500 hover:text-neutral-700',
+                ? 'border-b-2 border-primary-700 font-medium text-primary-700'
+                : 'text-fg-muted hover:text-fg-secondary',
             )}
           >
             {t.label}
@@ -218,7 +218,7 @@ function QboTabs() {
             placeholder="Search name / doc #"
             className={cn(inputCls, 'w-56')}
           />
-          <button type="submit" className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+          <button type="submit" className="rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle">
             Search
           </button>
         </form>
@@ -245,11 +245,11 @@ function QboTabs() {
       </div>
 
       {exportError && (
-        <p className="text-sm text-red-600">{exportError}</p>
+        <p className="text-sm text-danger-fg">{exportError}</p>
       )}
 
       {tab === 'vendor-credits' && (
-        <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+        <p className="rounded-lg border border-line bg-surface-subtle px-3 py-2 text-xs text-fg-secondary">
           This is the permanent record of QuickBooks vendor credits and is kept
           after QuickBooks is retired. <strong>balance</strong> is the unapplied
           remainder, so <strong>0.00</strong> means the credit was already fully
@@ -258,31 +258,31 @@ function QboTabs() {
         </p>
       )}
 
-      <div className="overflow-auto rounded-lg border border-neutral-200 max-h-[70vh]">
+      <div className="overflow-auto rounded-lg border border-line max-h-[70vh]">
         <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 text-left text-xs text-neutral-500">
+            <thead className="sticky top-0 z-10 text-left text-xs text-fg-muted">
               <tr>
                 {cols.map((c) => (
                   <SortTh key={c} label={c} sortKey={c} sort={sort} onSort={onSort}
                           align={isAmountCol(c) ? 'right' : 'left'}
-                          className="whitespace-nowrap border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium" />
+                          className="whitespace-nowrap border-b border-line bg-surface-subtle px-3 py-2 font-medium" />
                 ))}
               </tr>
             </thead>
             <tbody>
               {isFetching && (
-                <tr><td colSpan={cols.length || 1} className="px-3 py-6 text-center text-neutral-400">
+                <tr><td colSpan={cols.length || 1} className="px-3 py-6 text-center text-fg-muted">
                   <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
               )}
               {!isFetching && items.length === 0 && (
-                <tr><td colSpan={cols.length || 1} className="px-3 py-6 text-center text-neutral-400">No rows.</td></tr>
+                <tr><td colSpan={cols.length || 1} className="px-3 py-6 text-center text-fg-muted">No rows.</td></tr>
               )}
               {items.map((row, i) => (
                 <tr
                   key={String(row.qbo_id)}
                   onClick={() => setOpenId(String(row.qbo_id))}
                   title="Open detail"
-                  className={cn('cursor-pointer border-t border-neutral-100 hover:bg-neutral-100', i % 2 && 'bg-neutral-50/40')}
+                  className={cn('cursor-pointer border-t border-line-subtle hover:bg-surface-sunken', i % 2 && 'bg-surface-subtle/40')}
                 >
                   {cols.map((c) => (
                     <td key={c} className={cn('whitespace-nowrap px-3 py-2', isAmountCol(c) && 'text-right')}>
@@ -295,7 +295,7 @@ function QboTabs() {
         </table>
       </div>
 
-      <div className="mt-3 flex items-center justify-between text-sm text-neutral-500">
+      <div className="mt-3 flex items-center justify-between text-sm text-fg-muted">
         <span>{total.toLocaleString()} row{total === 1 ? '' : 's'}</span>
         <div className="flex items-center gap-2">
           <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} className={secondaryBtn}>
@@ -339,16 +339,16 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="max-h-[85vh] w-full max-w-3xl overflow-auto rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between border-b border-neutral-100 pb-3">
-          <h2 className="text-base font-semibold text-neutral-800">{entity} · {id}</h2>
-          <button onClick={onClose} className="rounded p-1 text-neutral-400 hover:text-neutral-700">
+      <div className="max-h-[85vh] w-full max-w-3xl overflow-auto rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between border-b border-line-subtle pb-3">
+          <h2 className="text-base font-semibold text-fg">{entity} · {id}</h2>
+          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {!data && (
-          <div className="py-8 text-center text-neutral-400"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></div>
+          <div className="py-8 text-center text-fg-muted"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></div>
         )}
 
         {data && (
@@ -357,8 +357,8 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
               <tbody>
                 {Object.entries(data.header).filter(([k]) => k !== 'raw').map(([k, v]) => (
                   <tr key={k}>
-                    <td className="pr-4 align-top text-neutral-500">{k}</td>
-                    <td className="text-neutral-800">{cell(k, v)}</td>
+                    <td className="pr-4 align-top text-fg-muted">{k}</td>
+                    <td className="text-fg">{cell(k, v)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -366,11 +366,11 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
 
             {data.lines.length > 0 && (
               <div className="mb-4">
-                <h3 className="mb-1 text-sm font-semibold text-neutral-700">Lines</h3>
-                <div className="overflow-hidden rounded-lg border border-neutral-200">
+                <h3 className="mb-1 text-sm font-semibold text-fg-secondary">Lines</h3>
+                <div className="overflow-hidden rounded-lg border border-line">
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
-                      <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+                      <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
                         <tr>
                           {Object.keys(data.lines[0]).filter((c) => c !== 'raw').map((c) => (
                             <th key={c} className="whitespace-nowrap px-3 py-2 font-medium">{c}</th>
@@ -379,7 +379,7 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
                       </thead>
                       <tbody>
                         {data.lines.map((ln, i) => (
-                          <tr key={i} className="border-t border-neutral-100">
+                          <tr key={i} className="border-t border-line-subtle">
                             {Object.keys(data.lines[0]).filter((c) => c !== 'raw').map((c) => (
                               <td key={c} className={cn('whitespace-nowrap px-3 py-2', isAmountCol(c) && 'text-right')}>
                                 {cell(c, ln[c])}
@@ -396,7 +396,7 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
 
             {data.attachments.length > 0 && (
               <div>
-                <h3 className="mb-1 text-sm font-semibold text-neutral-700">Attachments</h3>
+                <h3 className="mb-1 text-sm font-semibold text-fg-secondary">Attachments</h3>
                 <ul className="space-y-0.5 text-sm">
                   {data.attachments.map((a) => (
                     <li key={a.attachment_qbo_id}>
@@ -404,7 +404,7 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
                         type="button"
                         disabled={downloadingId === a.attachment_qbo_id}
                         onClick={() => downloadAttachment(a.attachment_qbo_id)}
-                        className="flex items-center gap-1.5 text-[#085E5E] underline hover:no-underline disabled:opacity-50"
+                        className="flex items-center gap-1.5 text-primary-700 underline hover:no-underline disabled:opacity-50"
                       >
                         {downloadingId === a.attachment_qbo_id && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                         {a.attachment_qbo_id}
@@ -412,7 +412,7 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
                     </li>
                   ))}
                 </ul>
-                {downloadErr && <p className="mt-1 text-xs text-red-600">{downloadErr}</p>}
+                {downloadErr && <p className="mt-1 text-xs text-danger-fg">{downloadErr}</p>}
               </div>
             )}
           </>
@@ -451,17 +451,17 @@ function VendorEmailBackfill() {
 
       {confirming && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => !busy && setConfirming(false)}>
-          <div className="w-full max-w-md space-y-3 rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="flex items-center gap-2 text-base font-semibold text-neutral-800">
-              <Mail className="h-4 w-4 text-[#085E5E]" /> Fill Remittance Emails
+          <div className="w-full max-w-md space-y-3 rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
+              <Mail className="h-4 w-4 text-primary-700" /> Fill Remittance Emails
             </h2>
-            <p className="text-sm text-neutral-600">
+            <p className="text-sm text-fg-secondary">
               Copies each QuickBooks vendor email into the matching EPMS vendor's
               Remittance Email — only where it is currently empty. Existing values
               are never overwritten.
             </p>
-            {error && <p className="text-sm text-red-600">{error}</p>}
-            <div className="flex justify-end gap-2 border-t border-neutral-100 pt-3">
+            {error && <p className="text-sm text-danger-fg">{error}</p>}
+            <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
               <button className={secondaryBtn} disabled={busy} onClick={() => setConfirming(false)}>Cancel</button>
               <button className={primaryBtn} disabled={busy} onClick={run}>
                 {busy && <Loader2 className="h-4 w-4 animate-spin" />} Fill emails
@@ -473,25 +473,25 @@ function VendorEmailBackfill() {
 
       {result && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setResult(null)}>
-          <div className="max-h-[85vh] w-full max-w-2xl space-y-4 overflow-auto rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-              <h2 className="text-base font-semibold text-neutral-800">Backfill result</h2>
-              <button onClick={() => setResult(null)} className="rounded p-1 text-neutral-400 hover:text-neutral-700">
+          <div className="max-h-[85vh] w-full max-w-2xl space-y-4 overflow-auto rounded-xl bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-line-subtle pb-3">
+              <h2 className="text-base font-semibold text-fg">Backfill result</h2>
+              <button onClick={() => setResult(null)} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <p className="text-sm text-neutral-600">
+            <p className="text-sm text-fg-secondary">
               {result.updated.length} filled · {result.skipped_has_value} already had a value ·{' '}
               {result.ambiguous.length} ambiguous · {result.unmatched_qbo.length} unmatched
             </p>
 
             {result.updated.length > 0 && (
               <div>
-                <h3 className="mb-1 text-sm font-semibold text-neutral-700">Filled</h3>
-                <div className="overflow-hidden rounded-lg border border-neutral-200">
+                <h3 className="mb-1 text-sm font-semibold text-fg-secondary">Filled</h3>
+                <div className="overflow-hidden rounded-lg border border-line">
                   <table className="w-full text-sm">
-                    <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+                    <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
                       <tr>
                         <th className="px-3 py-2 font-medium">Code</th>
                         <th className="px-3 py-2 font-medium">Vendor</th>
@@ -500,7 +500,7 @@ function VendorEmailBackfill() {
                     </thead>
                     <tbody>
                       {result.updated.map((u) => (
-                        <tr key={u.code} className="border-t border-neutral-100">
+                        <tr key={u.code} className="border-t border-line-subtle">
                           <td className="whitespace-nowrap px-3 py-1.5">{u.code}</td>
                           <td className="px-3 py-1.5">{u.name}</td>
                           <td className="px-3 py-1.5">{u.email}</td>
@@ -514,12 +514,12 @@ function VendorEmailBackfill() {
 
             {result.ambiguous.length > 0 && (
               <div>
-                <h3 className="mb-1 text-sm font-semibold text-neutral-700">
+                <h3 className="mb-1 text-sm font-semibold text-fg-secondary">
                   Ambiguous names (skipped — resolve manually)
                 </h3>
-                <ul className="max-h-40 space-y-0.5 overflow-auto text-sm text-neutral-600">
+                <ul className="max-h-40 space-y-0.5 overflow-auto text-sm text-fg-secondary">
                   {result.ambiguous.map((a, i) => (
-                    <li key={i}>{a.name} <span className="text-xs text-neutral-400">({a.side === 'qbo' ? 'duplicate in QuickBooks' : 'duplicate in EPMS'})</span></li>
+                    <li key={i}>{a.name} <span className="text-xs text-fg-muted">({a.side === 'qbo' ? 'duplicate in QuickBooks' : 'duplicate in EPMS'})</span></li>
                   ))}
                 </ul>
               </div>
@@ -527,10 +527,10 @@ function VendorEmailBackfill() {
 
             {result.unmatched_qbo.length > 0 && (
               <div>
-                <h3 className="mb-1 text-sm font-semibold text-neutral-700">
+                <h3 className="mb-1 text-sm font-semibold text-fg-secondary">
                   No matching EPMS vendor
                 </h3>
-                <ul className="max-h-40 space-y-0.5 overflow-auto text-sm text-neutral-600">
+                <ul className="max-h-40 space-y-0.5 overflow-auto text-sm text-fg-secondary">
                   {result.unmatched_qbo.map((n) => <li key={n}>{n}</li>)}
                 </ul>
               </div>

@@ -50,26 +50,26 @@ export function ConfirmDialog({
 
   const danger = tone === 'danger'
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-label={title}>
-        <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', danger ? 'bg-danger-50' : 'bg-warning-50')}>
-              <AlertTriangle className={cn('h-5 w-5', danger ? 'text-danger-600' : 'text-warning-600')} />
+            <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', danger ? 'bg-danger-soft' : 'bg-warning-soft')}>
+              <AlertTriangle className={cn('h-5 w-5', danger ? 'text-danger-fg' : 'text-warning-fg')} />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-neutral-900">{title}</h2>
-              {subtitle && <p className="text-xs text-neutral-500">{subtitle}</p>}
+              <h2 className="text-sm font-semibold text-fg">{title}</h2>
+              {subtitle && <p className="text-xs text-fg-muted">{subtitle}</p>}
             </div>
           </div>
-          <button onClick={close} disabled={busy} aria-label="Close" className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 disabled:opacity-40">
+          <button onClick={close} disabled={busy} aria-label="Close" className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary disabled:opacity-40">
             <X className="h-4 w-4" />
           </button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
-          <div className="text-sm text-neutral-700 whitespace-pre-line">{message}</div>
+          <div className="text-sm text-fg-secondary whitespace-pre-line">{message}</div>
           {error && (
-            <p role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700 whitespace-pre-line">{error}</p>
+            <p role="alert" className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg whitespace-pre-line">{error}</p>
           )}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={close} disabled={busy}>{cancelLabel}</Button>
@@ -79,7 +79,7 @@ export function ConfirmDialog({
               autoFocus
               className={cn(
                 'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
-                danger ? 'bg-danger-600 hover:bg-danger-700' : 'bg-primary-600 hover:bg-primary-700',
+                danger ? 'bg-danger-solid hover:bg-danger-700' : 'bg-primary-600 hover:bg-primary-700',
               )}
             >
               {busy ? 'Working…' : confirmLabel}
@@ -125,16 +125,16 @@ export function NoticeDialog({ title, message, tone = 'warning', onClose }: Noti
   useCloseOnEscape(true, onClose)
   const error = tone === 'error'
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl" role="alertdialog" aria-modal="true" aria-label={title}>
-        <div className="flex items-center gap-3 border-b border-neutral-100 px-6 py-4">
-          <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', error ? 'bg-danger-50' : 'bg-warning-50')}>
-            <AlertTriangle className={cn('h-5 w-5', error ? 'text-danger-600' : 'text-warning-600')} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl" role="alertdialog" aria-modal="true" aria-label={title}>
+        <div className="flex items-center gap-3 border-b border-line-subtle px-6 py-4">
+          <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', error ? 'bg-danger-soft' : 'bg-warning-soft')}>
+            <AlertTriangle className={cn('h-5 w-5', error ? 'text-danger-fg' : 'text-warning-fg')} />
           </div>
-          <h2 className="text-sm font-semibold text-neutral-900">{title}</h2>
+          <h2 className="text-sm font-semibold text-fg">{title}</h2>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
-          <div className="text-sm text-neutral-700 whitespace-pre-line">{message}</div>
+          <div className="text-sm text-fg-secondary whitespace-pre-line">{message}</div>
           <div className="flex justify-end">
             <Button size="sm" onClick={onClose} autoFocus>OK</Button>
           </div>
@@ -182,9 +182,9 @@ export function ActionMessage({ tone = 'error', children, onDismiss, className }
       role={tone === 'error' ? 'alert' : 'status'}
       className={cn(
         'flex items-start gap-2 rounded-lg border px-3 py-2 text-sm whitespace-pre-line',
-        tone === 'error' && 'border-danger-200 bg-danger-50 text-danger-700',
-        tone === 'warning' && 'border-warning-200 bg-warning-50 text-warning-700',
-        ok && 'border-success-200 bg-success-50 text-success-700',
+        tone === 'error' && 'border-danger-line bg-danger-soft text-danger-fg',
+        tone === 'warning' && 'border-warning-line bg-warning-soft text-warning-fg',
+        ok && 'border-success-line bg-success-soft text-success-fg',
         className,
       )}
     >

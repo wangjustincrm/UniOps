@@ -67,21 +67,21 @@ function DialogBox({ pending, onAnswer }: { pending: Pending; onAnswer: (ok: boo
   const danger = isConfirm && (pending.options.tone ?? 'danger') === 'danger'
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-xl bg-white shadow-xl" role={isConfirm ? 'dialog' : 'alertdialog'} aria-modal="true" aria-label={pending.options.title}>
-        <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
+      <div className="w-full max-w-md rounded-xl bg-surface shadow-xl" role={isConfirm ? 'dialog' : 'alertdialog'} aria-modal="true" aria-label={pending.options.title}>
+        <div className="flex items-center justify-between border-b border-line-subtle px-5 py-4">
           <div className="flex items-center gap-2">
-            <AlertTriangle className={cn('h-5 w-5', danger ? 'text-red-600' : 'text-amber-500')} />
-            <h3 className="text-sm font-semibold text-neutral-900">{pending.options.title}</h3>
+            <AlertTriangle className={cn('h-5 w-5', danger ? 'text-danger-fg' : 'text-warning-fg')} />
+            <h3 className="text-sm font-semibold text-fg">{pending.options.title}</h3>
           </div>
-          <button onClick={() => onAnswer(false)} aria-label="Close" className="rounded p-1 text-neutral-400 hover:bg-neutral-100">
+          <button onClick={() => onAnswer(false)} aria-label="Close" className="rounded p-1 text-fg-muted hover:bg-surface-sunken">
             <X className="h-4 w-4" />
           </button>
         </div>
         <div className="flex flex-col gap-4 p-5">
-          <div className="whitespace-pre-line text-sm text-neutral-700">{pending.options.message}</div>
+          <div className="whitespace-pre-line text-sm text-fg-secondary">{pending.options.message}</div>
           <div className="flex justify-end gap-2">
             {isConfirm && (
-              <button onClick={() => onAnswer(false)} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+              <button onClick={() => onAnswer(false)} className="rounded-lg border border-line px-4 py-2 text-sm text-fg-secondary hover:bg-surface-subtle">
                 Cancel
               </button>
             )}
@@ -90,7 +90,7 @@ function DialogBox({ pending, onAnswer }: { pending: Pending; onAnswer: (ok: boo
               autoFocus
               className={cn(
                 'rounded-lg px-4 py-2 text-sm font-medium text-white',
-                danger ? 'bg-red-600 hover:bg-red-700' : 'bg-[#085E5E] hover:bg-[#064A4A]',
+                danger ? 'bg-danger-solid hover:bg-danger-700' : 'bg-primary-700 hover:bg-primary-800',
               )}
             >
               {isConfirm ? pending.options.confirmLabel : 'OK'}

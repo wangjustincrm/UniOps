@@ -38,14 +38,14 @@ function today(): string {
 function Group({ title, count, tone, children }: { title: string; count: number; tone?: string; children?: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="border-t border-neutral-100">
+    <div className="border-t border-line-subtle">
       <button type="button" className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm disabled:cursor-default"
         disabled={!count} onClick={() => setOpen((o) => !o)}>
-        {open ? <ChevronDown className="h-4 w-4 text-neutral-400" /> : <ChevronRight className="h-4 w-4 text-neutral-400" />}
-        <span className="font-medium text-neutral-800">{title}</span>
-        <span className={`rounded-full px-2 py-0.5 text-xs ${count ? tone ?? 'bg-neutral-100 text-neutral-600' : 'bg-neutral-100 text-neutral-400'}`}>{count}</span>
+        {open ? <ChevronDown className="h-4 w-4 text-fg-muted" /> : <ChevronRight className="h-4 w-4 text-fg-muted" />}
+        <span className="font-medium text-fg">{title}</span>
+        <span className={`rounded-full px-2 py-0.5 text-xs ${count ? tone ?? 'bg-surface-sunken text-fg-secondary' : 'bg-surface-sunken text-fg-muted'}`}>{count}</span>
       </button>
-      {open && <div className="max-h-72 overflow-auto px-4 pb-3 text-sm text-neutral-700">{children}</div>}
+      {open && <div className="max-h-72 overflow-auto px-4 pb-3 text-sm text-fg-secondary">{children}</div>}
     </div>
   )
 }
@@ -55,15 +55,15 @@ function Groups({ view, onConvert }: { view: ImportView; onConvert?: (id: string
   const unmapped = (view.groups?.unmapped ?? []) as string[]
   const person = (i: Item) => `${i.employee_number} ${i.display_name ?? ''}`
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white">
-      <Group title="New" count={g('new').length} tone="bg-green-50 text-green-700">
+    <div className="rounded-xl border border-line bg-surface">
+      <Group title="New" count={g('new').length} tone="bg-success-soft text-success-fg">
         <ul>{g('new').map((i) => <li key={i.employee_number!}>{person(i)} · {i.adp_department ?? 'no department'}</li>)}</ul>
       </Group>
-      <Group title="Changed" count={g('changed').length} tone="bg-blue-50 text-blue-700">
+      <Group title="Changed" count={g('changed').length} tone="bg-info-soft text-info-fg">
         <ul className="space-y-1">
           {g('changed').map((i) => (
             <li key={i.employee_number!}>{person(i)}
-              {i.changes?.map((c) => <div key={c.field} className="pl-4 text-xs text-neutral-500">{c.field}: {c.old ?? '—'} → {c.new ?? '—'}</div>)}
+              {i.changes?.map((c) => <div key={c.field} className="pl-4 text-xs text-fg-muted">{c.field}: {c.old ?? '—'} → {c.new ?? '—'}</div>)}
             </li>
           ))}
         </ul>
@@ -71,25 +71,25 @@ function Groups({ view, onConvert }: { view: ImportView; onConvert?: (id: string
       <Group title="Unchanged" count={g('unchanged').length}>
         <ul>{g('unchanged').map((i) => <li key={i.employee_number!}>{person(i)}</li>)}</ul>
       </Group>
-      <Group title="Conflicts (not applied)" count={g('conflicts').length} tone="bg-amber-50 text-amber-700">
+      <Group title="Conflicts (not applied)" count={g('conflicts').length} tone="bg-warning-soft text-warning-fg">
         <ul className="space-y-1">
           {g('conflicts').map((i) => (
             <li key={i.row}>Row {i.row}: {person(i)} · {i.work_email} — {CONFLICT[i.kind ?? ''] ?? i.kind}{i.email_owner ? ` (${i.email_owner})` : ''}
               {i.kind === 'non_adp' && onConvert && i.employee_id && (
-                <button className="ml-2 text-xs font-medium text-[#085E5E] hover:underline" onClick={() => onConvert(i.employee_id!)}>Convert to ADP</button>
+                <button className="ml-2 text-xs font-medium text-primary-700 hover:underline" onClick={() => onConvert(i.employee_id!)}>Convert to ADP</button>
               )}
             </li>
           ))}
         </ul>
       </Group>
-      <Group title="Row errors (not applied)" count={g('errors').length} tone="bg-red-50 text-red-700">
+      <Group title="Row errors (not applied)" count={g('errors').length} tone="bg-danger-soft text-danger-fg">
         <ul>{g('errors').map((i) => <li key={i.row}>Row {i.row}: {i.position_id} {i.payroll_name} — {i.reasons?.join('; ')}</li>)}</ul>
       </Group>
-      <Group title="Unmapped ADP departments" count={unmapped.length} tone="bg-amber-50 text-amber-700">
+      <Group title="Unmapped ADP departments" count={unmapped.length} tone="bg-warning-soft text-warning-fg">
         <ul>{unmapped.map((d) => <li key={d}>{d || '(empty)'}</li>)}</ul>
-        <Link className="mt-1 inline-block text-xs font-medium text-[#085E5E] hover:underline" to="/mdm/staff/department-mapping">Open Department Mapping</Link>
+        <Link className="mt-1 inline-block text-xs font-medium text-primary-700 hover:underline" to="/mdm/staff/department-mapping">Open Department Mapping</Link>
       </Group>
-      <Group title="Missing from roster" count={g('missing').length} tone="bg-amber-50 text-amber-700">
+      <Group title="Missing from roster" count={g('missing').length} tone="bg-warning-soft text-warning-fg">
         <ul>{g('missing').map((i) => <li key={i.employee_id!}>{person(i)}</li>)}</ul>
       </Group>
     </div>
@@ -113,14 +113,14 @@ function MissingReview({ view, onChanged }: { view: ImportView; onChanged: () =>
   const draft = (id: string) => drafts[id] ?? { left_on: '', reason: '' }
   const set = (id: string, patch: object) => setDrafts((d) => ({ ...d, [id]: { ...draft(id), ...patch } }))
   return (
-    <section className="mt-4 rounded-xl border border-amber-200 bg-white p-4">
-      <h2 className="text-sm font-semibold text-neutral-900">Review employees missing from the roster ({rows.length})</h2>
-      <p className="mb-3 text-xs text-neutral-500">People who left are not in the ADP file, so each one needs a decision. Nobody is marked Left automatically.</p>
-      {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
+    <section className="mt-4 rounded-xl border border-warning-line bg-surface p-4">
+      <h2 className="text-sm font-semibold text-fg">Review employees missing from the roster ({rows.length})</h2>
+      <p className="mb-3 text-xs text-fg-muted">People who left are not in the ADP file, so each one needs a decision. Nobody is marked Left automatically.</p>
+      {error && <p className="mb-2 text-sm text-danger-fg">{error}</p>}
       <div className="space-y-2">
         {rows.map((m) => (
           <div key={m.employee_id} className="flex flex-wrap items-center gap-2 text-sm">
-            <Link className="w-56 text-[#085E5E] hover:underline" to={`/mdm/staff/${m.employee_id}`}>{m.employee_number} {m.display_name}</Link>
+            <Link className="w-56 text-primary-700 hover:underline" to={`/mdm/staff/${m.employee_id}`}>{m.employee_number} {m.display_name}</Link>
             <input type="date" className={INPUT} aria-label="Left on" value={draft(m.employee_id).left_on}
               onChange={(e) => set(m.employee_id, { left_on: e.target.value })} />
             <button className={SECONDARY_BTN} disabled={busy || !draft(m.employee_id).left_on}
@@ -175,13 +175,13 @@ export default function StaffImport() {
 
   return (
     <StaffShell permission="employee.import">
-      {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-3 text-sm text-danger-fg">{error}</p>}
 
       {current ? (
         <section>
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold text-neutral-900">Preview: {current.file_name}, roster of {formatDate(current.roster_date)}</h2>
-            <span className="text-xs text-neutral-500">Nothing is saved until you apply.</span>
+            <h2 className="text-sm font-semibold text-fg">Preview: {current.file_name}, roster of {formatDate(current.roster_date)}</h2>
+            <span className="text-xs text-fg-muted">Nothing is saved until you apply.</span>
             <div className="ml-auto flex gap-2">
               <button className={SECONDARY_BTN} disabled={busy} onClick={() => run(async () => { await mdmApi.post(`/staff/imports/${current.id}/discard`) })}>Discard</button>
               {current.expired
@@ -192,19 +192,19 @@ export default function StaffImport() {
                   })}>{busy ? 'Working…' : 'Apply'}</button>}
             </div>
           </div>
-          {current.expired && <p className="mb-2 text-sm text-amber-700">This preview is over 24 hours old. Regenerate it before applying.</p>}
-          {current.warnings?.map((w) => <p key={w} className="mb-2 text-sm text-amber-700">{w}</p>)}
+          {current.expired && <p className="mb-2 text-sm text-warning-fg">This preview is over 24 hours old. Regenerate it before applying.</p>}
+          {current.warnings?.map((w) => <p key={w} className="mb-2 text-sm text-warning-fg">{w}</p>)}
           <Groups view={current} onConvert={(id) => run(async () => {
             await mdmApi.post(`/staff/${id}/convert-to-adp`)
             await mdmApi.post(`/staff/imports/${current.id}/regenerate`)
           })} />
         </section>
       ) : (
-        <section className="flex flex-wrap items-end gap-3 rounded-xl border border-neutral-200 bg-white p-4">
-          <label className="text-sm text-neutral-700">ADP roster (.xlsx)
+        <section className="flex flex-wrap items-end gap-3 rounded-xl border border-line bg-surface p-4">
+          <label className="text-sm text-fg-secondary">ADP roster (.xlsx)
             <input type="file" accept=".xlsx" className={`${INPUT} mt-1 block`} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           </label>
-          <label className="text-sm text-neutral-700">Roster date
+          <label className="text-sm text-fg-secondary">Roster date
             <input type="date" className={`${INPUT} mt-1 block`} value={rosterDate} onChange={(e) => setRosterDate(e.target.value)} />
           </label>
           <button className={PRIMARY_BTN} disabled={!file || !rosterDate || busy} onClick={upload}>
@@ -216,16 +216,16 @@ export default function StaffImport() {
       {shown && shown.status === 'applied' && (
         <section className="mt-4">
           <div className="mb-2 flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-neutral-900">Result: roster of {formatDate(shown.roster_date)}</h2>
-            <Link to="/mdm/staff/nc-todo" className="text-sm font-medium text-[#085E5E] hover:underline">{shown.todos ?? 0} NC to-do(s) created</Link>
+            <h2 className="text-sm font-semibold text-fg">Result: roster of {formatDate(shown.roster_date)}</h2>
+            <Link to="/mdm/staff/nc-todo" className="text-sm font-medium text-primary-700 hover:underline">{shown.todos ?? 0} NC to-do(s) created</Link>
           </div>
           <Groups view={shown} />
           <MissingReview view={shown} onChanged={refresh} />
         </section>
       )}
 
-      <section className="mt-6 overflow-hidden rounded-xl border border-neutral-200 bg-white">
-        <h2 className="px-4 pt-4 text-sm font-semibold text-neutral-900">Import history</h2>
+      <section className="mt-6 overflow-hidden rounded-xl border border-line bg-surface">
+        <h2 className="px-4 pt-4 text-sm font-semibold text-fg">Import history</h2>
         <div className="mt-2 max-h-80 overflow-auto">
           <table className="w-full">
             <thead><tr>
@@ -235,7 +235,7 @@ export default function StaffImport() {
             </tr></thead>
             <tbody>
               {history?.items.map((h) => (
-                <tr key={h.id} className="border-t border-neutral-100">
+                <tr key={h.id} className="border-t border-line-subtle">
                   <td className={TD}>{formatDate(h.roster_date)}</td>
                   <td className={TD}>{formatDate(h.applied_at)}</td>
                   <td className={TD}>{h.file_name}</td>
@@ -245,15 +245,15 @@ export default function StaffImport() {
                   <td className={TD}>{h.counts.errors ?? 0}</td>
                   <td className={TD}>{h.unresolved_missing}</td>
                   <td className={`${TD} whitespace-nowrap text-right`}>
-                    <button className="mr-3 text-xs font-medium text-[#085E5E] hover:underline" onClick={() => { setResultId(null); setOpened(h.id) }}>View</button>
-                    <button className="inline-flex items-center gap-1 text-xs font-medium text-[#085E5E] hover:underline"
+                    <button className="mr-3 text-xs font-medium text-primary-700 hover:underline" onClick={() => { setResultId(null); setOpened(h.id) }}>View</button>
+                    <button className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 hover:underline"
                       onClick={() => mdmDownload(`/staff/imports/${h.id}/file`, h.file_name)}><Download className="h-3 w-3" />File</button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {!history?.items.length && <p className="py-6 text-center text-sm text-neutral-400">No imports yet.</p>}
+          {!history?.items.length && <p className="py-6 text-center text-sm text-fg-muted">No imports yet.</p>}
         </div>
       </section>
     </StaffShell>

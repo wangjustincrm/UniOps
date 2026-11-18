@@ -134,7 +134,7 @@ export function AttendeePicker({ value, onChange, excludeUserId }: Props) {
   const dropdown = open && dropPos ? createPortal(
     <div
       ref={overlayRef}
-      className="z-[9999] overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-lg"
+      className="z-[9999] overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
       style={{
         position: 'fixed',
         top:   dropPos.top,
@@ -145,13 +145,13 @@ export function AttendeePicker({ value, onChange, excludeUserId }: Props) {
       }}
     >
       {loading && (
-        <div className="flex items-center gap-2 px-3 py-2 text-xs text-neutral-500">
+        <div className="flex items-center gap-2 px-3 py-2 text-xs text-fg-muted">
           <Loader2 className="h-3 w-3 animate-spin" />
           Searching…
         </div>
       )}
       {!loading && results.length === 0 && debouncedQuery.length >= 2 && (
-        <p className="px-3 py-2 text-xs text-neutral-500">No matches.</p>
+        <p className="px-3 py-2 text-xs text-fg-muted">No matches.</p>
       )}
       {results.map((u) => (
         <button
@@ -159,10 +159,10 @@ export function AttendeePicker({ value, onChange, excludeUserId }: Props) {
           type="button"
           onMouseDown={(e) => e.preventDefault()} // prevent blur before click
           onClick={() => select(u)}
-          className="block w-full border-b border-neutral-100 px-3 py-2 text-left hover:bg-[#085E5E]/5 transition-colors last:border-0"
+          className="block w-full border-b border-line-subtle px-3 py-2 text-left hover:bg-primary-700/5 transition-colors last:border-0"
         >
-          <p className="text-sm font-medium text-neutral-900">{u.full_name}</p>
-          <p className="text-xs text-neutral-500">{u.email}</p>
+          <p className="text-sm font-medium text-fg">{u.full_name}</p>
+          <p className="text-xs text-fg-muted">{u.email}</p>
         </button>
       ))}
     </div>,
@@ -177,13 +177,13 @@ export function AttendeePicker({ value, onChange, excludeUserId }: Props) {
           {value.map((u) => (
             <span
               key={u.id}
-              className="inline-flex items-center gap-1 rounded-full bg-[#085E5E]/10 px-2.5 py-0.5 text-xs font-medium text-[#085E5E]"
+              className="inline-flex items-center gap-1 rounded-full bg-primary-700/10 px-2.5 py-0.5 text-xs font-medium text-primary-700"
             >
               {u.full_name}
               <button
                 type="button"
                 onClick={() => remove(u.id)}
-                className="ml-0.5 rounded-full text-[#085E5E]/60 hover:text-[#085E5E] transition-colors"
+                className="ml-0.5 rounded-full text-primary-700/60 hover:text-primary-700 transition-colors"
                 aria-label={`Remove ${u.full_name}`}
               >
                 <X className="h-3 w-3" />
@@ -195,7 +195,7 @@ export function AttendeePicker({ value, onChange, excludeUserId }: Props) {
 
       {/* Search input */}
       <div ref={triggerRef} className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400 pointer-events-none" />
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-fg-muted pointer-events-none" />
         <input
           ref={inputRef}
           type="text"
@@ -204,8 +204,8 @@ export function AttendeePicker({ value, onChange, excludeUserId }: Props) {
           onFocus={() => { if (debouncedQuery.length >= 2) { updatePos(); setOpen(true) } }}
           placeholder={value.length > 0 ? 'Add more attendees…' : 'Search by name or email…'}
           className={cn(
-            'w-full rounded-md border border-neutral-300 bg-white py-2 pl-8 pr-3 text-sm',
-            'outline-none focus:border-[#085E5E]/60 focus:ring-1 focus:ring-[#085E5E]/30',
+            'w-full rounded-md border border-line-strong bg-surface py-2 pl-8 pr-3 text-sm',
+            'outline-none focus:border-primary-700/60 focus:ring-1 focus:ring-primary-700/30',
           )}
         />
       </div>

@@ -81,8 +81,8 @@ export function VendorCreditsPage() {
     <div className="p-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-neutral-900">Vendor Credits</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <h1 className="text-xl font-semibold text-fg">Vendor Credits</h1>
+          <p className="mt-1 text-sm text-fg-muted">
             Credit notes received from vendors. Approved credits are netted off the next payment to that vendor.
           </p>
         </div>
@@ -94,32 +94,32 @@ export function VendorCreditsPage() {
         </button>
       </div>
 
-      <div className="mt-4 flex gap-1 border-b border-neutral-200">
+      <div className="mt-4 flex gap-1 border-b border-line">
         {TABS.map((t) => (
           <button key={t.key} onClick={() => { setTab(t.key); setPage(1) }}
                   className={`px-4 py-2 text-sm font-medium ${
                     tab === t.key
                       ? 'border-b-2 border-primary-600 text-primary-700'
-                      : 'text-neutral-500 hover:text-neutral-700'}`}>
+                      : 'text-fg-muted hover:text-fg-secondary'}`}>
             {t.label}
           </button>
         ))}
       </div>
 
       {approveError && !openCredit && (
-        <div className="mt-4 flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
           {approveError}
         </div>
       )}
 
       {isLoading ? (
-        <p className="mt-6 text-sm text-neutral-500">Loading…</p>
+        <p className="mt-6 text-sm text-fg-muted">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="mt-6 text-sm text-neutral-500">No credits in this state.</p>
+        <p className="mt-6 text-sm text-fg-muted">No credits in this state.</p>
       ) : (
         <table className="mt-4 w-full text-sm">
-          <thead className="text-left text-xs uppercase text-neutral-500">
+          <thead className="text-left text-xs uppercase text-fg-muted">
             <tr>
               <SortTh label="Credit #" sortKey="credit_number" sort={sort} onSort={onSort} className="px-4 py-2" />
               <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="px-4 py-2" />
@@ -135,16 +135,16 @@ export function VendorCreditsPage() {
           <tbody>
             {rows.map((c) => (
               <tr key={c.id} onClick={() => setOpenId(c.id)}
-                  className="cursor-pointer border-t border-neutral-100 hover:bg-neutral-50">
+                  className="cursor-pointer border-t border-line-subtle hover:bg-surface-subtle">
                 <td className="px-4 py-3 font-mono text-xs">
                   {c.credit_number}
                   {c.opening_balance && (
-                    <span className="ml-2 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-600">
+                    <span className="ml-2 rounded bg-surface-sunken px-1.5 py-0.5 text-2xs text-fg-secondary">
                       Opening balance
                     </span>
                   )}
                   {c.source === 'manual' && (
-                    <span className="ml-2 rounded bg-warning-50 px-1.5 py-0.5 text-[10px] text-warning-700"
+                    <span className="ml-2 rounded bg-warning-soft px-1.5 py-0.5 text-2xs text-warning-fg"
                           title="No credit note issued — recorded from the vendor's email">
                       Manual
                     </span>
@@ -158,7 +158,7 @@ export function VendorCreditsPage() {
                 {/* A voided credit can no longer be applied, so its Remaining
                     reads 0 (ISS-0189). Display only; the stored amount is kept. */}
                 <td className="px-4 py-3 text-right font-mono font-semibold">{fmt(c.status === 'void' ? '0' : c.remaining_amount, c.currency)}</td>
-                <td className="px-4 py-3 text-xs text-neutral-500">{c.po_number ?? '—'}</td>
+                <td className="px-4 py-3 text-xs text-fg-muted">{c.po_number ?? '—'}</td>
                 <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                   {/* A manual credit's evidence is the attached email, so it is
                       reviewed in the drawer where that file can be opened. */}
@@ -172,13 +172,13 @@ export function VendorCreditsPage() {
                   {canManage && c.status === 'pending_review' && c.source !== 'manual' && (
                     <>
                       <button
-                        className="mr-2 rounded bg-success-600 px-2.5 py-1 text-xs font-medium text-white"
+                        className="mr-2 rounded bg-success-solid px-2.5 py-1 text-xs font-medium text-white"
                         disabled={review.isPending}
                         onClick={() => review.mutate({ id: c.id, action: 'approve' })}>
                         Approve
                       </button>
                       <button
-                        className="rounded border border-danger-300 px-2.5 py-1 text-xs font-medium text-danger-700"
+                        className="rounded border border-danger-line px-2.5 py-1 text-xs font-medium text-danger-fg"
                         onClick={() => { review.reset(); setNoteFor({ credit: c, action: 'reject' }); setNote('') }}>
                         Reject
                       </button>
@@ -186,7 +186,7 @@ export function VendorCreditsPage() {
                   )}
                   {canManage && c.status === 'available' && Number(c.applied_amount) === 0 && (
                     <button
-                      className="rounded border border-neutral-300 px-2.5 py-1 text-xs font-medium text-neutral-700"
+                      className="rounded border border-line-strong px-2.5 py-1 text-xs font-medium text-fg-secondary"
                       onClick={() => { review.reset(); setNoteFor({ credit: c, action: 'void' }); setNote('') }}>
                       Void
                     </button>
@@ -228,27 +228,27 @@ export function VendorCreditsPage() {
 
       {noteFor && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md rounded-lg bg-white p-5">
+          <div className="w-full max-w-md rounded-lg bg-surface p-5">
             <h2 className="text-base font-semibold">
               {noteFor.action === 'reject' ? 'Reject' : 'Void'} {noteFor.credit.credit_number}
             </h2>
             <textarea
-              className="mt-3 w-full rounded border border-neutral-300 p-2 text-sm"
+              className="mt-3 w-full rounded border border-line-strong p-2 text-sm"
               rows={3} value={note} onChange={(e) => setNote(e.target.value)}
               placeholder="Reason (required)" />
             {review.isError && review.variables?.action === noteFor.action && (
-              <div className="mt-3 flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+              <div className="mt-3 flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                 {errorMessage(review.error, `${noteFor.action === 'reject' ? 'Reject' : 'Void'} failed`)}
               </div>
             )}
             <div className="mt-4 flex justify-end gap-2">
-              <button className="rounded border border-neutral-300 px-3 py-1.5 text-sm"
+              <button className="rounded border border-line-strong px-3 py-1.5 text-sm"
                       onClick={() => setNoteFor(null)}>
                 Cancel
               </button>
               <button
-                className="rounded bg-danger-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                className="rounded bg-danger-solid px-3 py-1.5 text-sm text-white disabled:opacity-50"
                 disabled={!note.trim() || review.isPending}
                 onClick={() => {
                   review.mutate(

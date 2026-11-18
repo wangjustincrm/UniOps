@@ -412,8 +412,8 @@ export function ProductionMatrix({
   // Readability fix (business owner: "边框颜色太淡了，很难轻松区分周" — the
   // Planned row's week-to-week separators were nearly invisible under its
   // green tint). The header already distinguishes a plain week separator
-  // (`border-neutral-200`) from a month boundary (`border-r-2
-  // border-r-neutral-300`, on the month `<th>`'s own right edge) — this set
+  // (`border-line`) from a month boundary (`border-r-2
+  // border-r-line-strong`, on the month `<th>`'s own right edge) — this set
   // carries that SAME distinction down into the body/footer, so a planner
   // scrolling horizontally can tell "next week" from "next month" at a
   // glance, not just in the header row. A column is a boundary when it is
@@ -474,15 +474,15 @@ export function ProductionMatrix({
 
   if (products.length === 0 || orderedMonths.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-300 py-12 text-center">
-        <p className="text-sm text-neutral-500">No plan lines yet — generate a run to see the matrix here.</p>
+      <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-line-strong py-12 text-center">
+        <p className="text-sm text-fg-muted">No plan lines yet — generate a run to see the matrix here.</p>
       </div>
     )
   }
 
   return (
     <div
-      className="overflow-auto rounded-lg border border-neutral-200"
+      className="overflow-auto rounded-lg border border-line"
       style={{ maxHeight: MAX_HEIGHT, maxWidth: '100%' }}
     >
       <table className="min-w-full border-collapse text-xs">
@@ -495,18 +495,18 @@ export function ProductionMatrix({
             get their own extra `sticky left-*` — a cell can be sticky on
             one axis via its own rule while inheriting the other axis from
             an ancestor's sticky box. */}
-        <thead className="sticky top-0 z-20 bg-neutral-50">
+        <thead className="sticky top-0 z-20 bg-surface-subtle">
           <tr>
             <th
               rowSpan={2}
-              className="sticky left-0 z-30 border-b border-r border-neutral-200 bg-neutral-50 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600"
+              className="sticky left-0 z-30 border-b border-r border-line bg-surface-subtle px-3 py-2 text-left text-2xs font-semibold text-fg-secondary"
               style={{ width: PRODUCT_COL_WIDTH, minWidth: PRODUCT_COL_WIDTH }}
             >
               Product
             </th>
             <th
               rowSpan={2}
-              className="sticky z-30 border-b border-r border-neutral-200 bg-neutral-50 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600"
+              className="sticky z-30 border-b border-r border-line bg-surface-subtle px-3 py-2 text-left text-2xs font-semibold text-fg-secondary"
               style={{ left: PRODUCT_COL_WIDTH, width: 90, minWidth: 90 }}
             >
               Metric
@@ -519,13 +519,13 @@ export function ProductionMatrix({
                   key={month}
                   colSpan={monthSpans.get(month) ?? 1}
                   className={cn(
-                    'border-b border-r-2 border-r-neutral-300 p-0 text-center text-[11px] font-semibold',
+                    'border-b border-r-2 border-r-line-strong p-0 text-center text-2xs font-semibold',
                     // A changed month is called out on the header itself, so
                     // "where did anything move" is answerable with every
                     // month still collapsed.
                     changed > 0
                       ? 'bg-primary-100 text-primary-900'
-                      : 'bg-neutral-50 text-neutral-600',
+                      : 'bg-surface-subtle text-fg-secondary',
                   )}
                 >
                   <button
@@ -538,7 +538,7 @@ export function ProductionMatrix({
                       : expanded ? 'Collapse this month' : 'Expand this month into weeks'}
                     className={cn(
                       'flex h-9 w-full items-center justify-center gap-1 px-2 focus:outline-none focus:ring-1 focus:ring-primary-500',
-                      changed > 0 ? 'hover:bg-primary-200' : 'hover:bg-neutral-100',
+                      changed > 0 ? 'hover:bg-primary-200' : 'hover:bg-surface-sunken',
                     )}
                   >
                     {expanded ? <ChevronDown aria-hidden className="h-3 w-3 shrink-0" /> : <ChevronRight aria-hidden className="h-3 w-3 shrink-0" />}
@@ -549,7 +549,7 @@ export function ProductionMatrix({
                       // decides which month to open on exactly that.
                       <span
                         aria-label={`${changed} changed cell(s)`}
-                        className="rounded-full bg-primary-600 px-1.5 text-[10px] font-bold leading-4 text-white"
+                        className="rounded-full bg-primary-600 px-1.5 text-2xs font-bold leading-4 text-white"
                       >
                         {changed}
                       </span>
@@ -566,8 +566,8 @@ export function ProductionMatrix({
                 <th
                   key={col.id}
                   className={cn(
-                    'h-7 border-b border-r border-neutral-200 p-0 text-center text-[10px] font-medium text-neutral-500',
-                    isMaintenance ? 'bg-neutral-200' : 'bg-neutral-50',
+                    'h-7 border-b border-r border-line p-0 text-center text-2xs font-medium text-fg-muted',
+                    isMaintenance ? 'bg-surface-strong' : 'bg-surface-subtle',
                   )}
                   style={{ minWidth: WEEK_COL_MIN_WIDTH }}
                 >
@@ -581,7 +581,7 @@ export function ProductionMatrix({
                       title={`${col.label ?? col.week_start}${isMaintenance ? ' — maintenance week (click to view/edit)' : ' — click to mark as a maintenance week'}`}
                       className="flex h-7 w-full min-w-[44px] items-center justify-center gap-1 px-1.5 hover:bg-primary-50 hover:text-primary-700 focus:outline-none focus:ring-1 focus:ring-primary-500"
                     >
-                      {isMaintenance && <Wrench aria-hidden className="h-3 w-3 shrink-0 text-neutral-500" />}
+                      {isMaintenance && <Wrench aria-hidden className="h-3 w-3 shrink-0 text-fg-muted" />}
                       {weekColumnShortLabel(col)}
                     </button>
                   ) : (
@@ -627,14 +627,14 @@ export function ProductionMatrix({
             the two z-tiers the header already established (z-20 for the
             sticky unit itself, z-30 for the bit that's ALSO pinned
             horizontally) rather than inventing a third. */}
-        <tfoot className="sticky bottom-0 z-20 bg-neutral-50">
+        <tfoot className="sticky bottom-0 z-20 bg-surface-subtle">
           <tr>
             <td
-              className="sticky left-0 z-30 border-t-2 border-r border-t-neutral-300 border-neutral-200 bg-neutral-50 px-3 py-1.5 text-left text-[11px] font-semibold text-neutral-600"
+              className="sticky left-0 z-30 border-t-2 border-r border-t-line-strong border-line bg-surface-subtle px-3 py-1.5 text-left text-2xs font-semibold text-fg-secondary"
               style={{ width: PRODUCT_COL_WIDTH, minWidth: PRODUCT_COL_WIDTH }}
             />
             <td
-              className="sticky z-30 border-t-2 border-r border-t-neutral-300 border-neutral-200 bg-neutral-50 px-3 py-1.5 text-left text-[11px] font-semibold text-neutral-600"
+              className="sticky z-30 border-t-2 border-r border-t-line-strong border-line bg-surface-subtle px-3 py-1.5 text-left text-2xs font-semibold text-fg-secondary"
               style={{ left: PRODUCT_COL_WIDTH, width: 90, minWidth: 90 }}
             >
               Total
@@ -646,11 +646,11 @@ export function ProductionMatrix({
                 <td
                   key={col.id}
                   className={cn(
-                    'h-8 border-t-2 border-t-neutral-300 bg-neutral-50 px-2 text-right font-mono text-xs font-semibold text-neutral-700',
-                    isMonthBoundary ? 'border-r-2 border-r-neutral-300' : 'border-r border-r-neutral-200',
+                    'h-8 border-t-2 border-t-line-strong bg-surface-subtle px-2 text-right font-mono text-xs font-semibold text-fg-secondary',
+                    isMonthBoundary ? 'border-r-2 border-r-line-strong' : 'border-r border-r-line',
                   )}
                 >
-                  {total === 0 ? <span className="text-neutral-300">—</span> : formatValue(total)}
+                  {total === 0 ? <span className="text-fg-faint">—</span> : formatValue(total)}
                 </td>
               )
             })}
@@ -686,8 +686,8 @@ function MetricValue({
   hasData: boolean
   formatValue: (kg: number) => string
 }) {
-  if (!hasData) return <span className="text-neutral-300">—</span>
-  if (value === 0) return <span className="text-neutral-300">{formatValue(0)}</span>
+  if (!hasData) return <span className="text-fg-faint">—</span>
+  if (value === 0) return <span className="text-fg-faint">{formatValue(0)}</span>
   return <>{formatValue(value)}</>
 }
 
@@ -730,7 +730,7 @@ function ProductRows({
   const productCell = (
     <td
       rowSpan={3}
-      className="sticky left-0 z-10 border-b border-r border-t-2 border-t-neutral-300 border-neutral-200 bg-white px-3 py-1.5 align-top text-left font-medium text-neutral-800"
+      className="sticky left-0 z-10 border-b border-r border-t-2 border-t-line-strong border-line bg-surface px-3 py-1.5 align-top text-left font-medium text-fg"
       style={{ width: PRODUCT_COL_WIDTH, minWidth: PRODUCT_COL_WIDTH }}
     >
       <span className="flex items-center gap-1.5">
@@ -746,7 +746,7 @@ function ProductRows({
         )}
       </span>
       {product.name !== product.code && (
-        <span className="block truncate text-[11px] font-normal text-neutral-400">{product.name}</span>
+        <span className="block truncate text-2xs font-normal text-fg-muted">{product.name}</span>
       )}
     </td>
   )
@@ -755,8 +755,8 @@ function ProductRows({
     return (
       <td
         className={cn(
-          'sticky z-10 border-b border-r border-neutral-200 bg-neutral-50 px-3 py-1.5 text-left text-[11px] font-medium text-neutral-500',
-          borderTop && 'border-t-2 border-t-neutral-300',
+          'sticky z-10 border-b border-r border-line bg-surface-subtle px-3 py-1.5 text-left text-2xs font-medium text-fg-muted',
+          borderTop && 'border-t-2 border-t-line-strong',
         )}
         style={{ left: PRODUCT_COL_WIDTH, width: 90, minWidth: 90 }}
       >
@@ -769,7 +769,7 @@ function ProductRows({
     <>
       {/* Demand — monthly, spans + centres over that month's week columns
           (or its single collapsed summary column). */}
-      <tr className="border-b border-neutral-100">
+      <tr className="border-b border-line-subtle">
         {productCell}
         {metricLabelCell('Demand', true)}
         {orderedMonths.map((month) => (
@@ -785,7 +785,7 @@ function ProductRows({
       </tr>
 
       {/* Available — monthly, same spanning rule as Demand. */}
-      <tr className="border-b border-neutral-100">
+      <tr className="border-b border-line-subtle">
         {metricLabelCell('Available', false)}
         {orderedMonths.map((month) => (
           <MonthMetricCell
@@ -857,12 +857,12 @@ function MonthMetricCell({
         // to one column or expanded to its weeks) — its right edge is
         // therefore always a month boundary, never an interior week
         // separator, so it always gets the header's stronger boundary
-        // treatment (border-r-2 border-r-neutral-300), never the plain
-        // border-neutral-100 a same-row interior line would use if one
+        // treatment (border-r-2 border-r-line-strong), never the plain
+        // border-line-subtle a same-row interior line would use if one
         // existed here.
-        'h-10 border-b border-b-neutral-100 border-r-2 border-r-neutral-300 bg-white px-2 text-center font-mono',
-        metric === 'Demand' ? 'text-neutral-700' : 'text-neutral-500',
-        borderTop && 'border-t-2 border-t-neutral-300',
+        'h-10 border-b border-b-line-subtle border-r-2 border-r-line-strong bg-surface px-2 text-center font-mono',
+        metric === 'Demand' ? 'text-fg-secondary' : 'text-fg-muted',
+        borderTop && 'border-t-2 border-t-line-strong',
       )}
     >
       <MetricValue value={value} hasData={hasData} formatValue={formatValue} />
@@ -944,13 +944,13 @@ function PlannedCell({
   // populated render below so the grid line is identical regardless of
   // which branch renders, and by the footer/MonthMetricCell so the whole
   // column lines up top to bottom.
-  const borderRClass = isMonthBoundary ? 'border-r-2 border-r-neutral-300' : 'border-r border-r-neutral-200'
+  const borderRClass = isMonthBoundary ? 'border-r-2 border-r-line-strong' : 'border-r border-r-line'
 
   if (!showCell) {
     return (
       <td
         title={isFrozen ? 'Frozen — materials for this month are already purchased' : undefined}
-        className={cn('h-10 border-b border-b-neutral-100 px-2 text-right font-mono text-neutral-300', borderRClass, isMaintenance || isFrozen ? 'bg-neutral-200' : 'bg-success-50')}
+        className={cn('h-10 border-b border-b-line-subtle px-2 text-right font-mono text-fg-faint', borderRClass, isMaintenance || isFrozen ? 'bg-surface-strong' : 'bg-success-soft')}
       >—</td>
     )
   }
@@ -960,8 +960,8 @@ function PlannedCell({
       <td
         title={`Was ${formatValue(diff.before)} in the compared version — nothing is planned here now`}
         className={cn(
-          'h-10 border-b border-b-neutral-100 px-2 text-right font-mono text-sm text-danger-500 line-through',
-          borderRClass, isMaintenance || isFrozen ? 'bg-neutral-200' : 'bg-success-50',
+          'h-10 border-b border-b-line-subtle px-2 text-right font-mono text-sm text-danger-fg line-through',
+          borderRClass, isMaintenance || isFrozen ? 'bg-surface-strong' : 'bg-success-soft',
         )}
       >
         {formatValue(diff.before)}
@@ -974,8 +974,8 @@ function PlannedCell({
       <td
         title={`Covered by an earlier minimum-lot batch${title ? ` (${title})` : ''}`}
         className={cn(
-          'h-10 border-b border-b-neutral-100 px-2 text-right font-mono text-xs italic text-neutral-400',
-          borderRClass, isMaintenance || isFrozen ? 'bg-neutral-200' : 'bg-success-50',
+          'h-10 border-b border-b-line-subtle px-2 text-right font-mono text-xs italic text-fg-muted',
+          borderRClass, isMaintenance || isFrozen ? 'bg-surface-strong' : 'bg-success-soft',
         )}
       >
         covered
@@ -985,16 +985,16 @@ function PlannedCell({
 
   const valueNode = (
     <span className="inline-flex items-center justify-end gap-1">
-      {cell.gap && <AlertTriangle aria-hidden className="h-3 w-3 shrink-0 text-danger-600" />}
-      {showShortfall && <Clock aria-hidden className="h-3 w-3 shrink-0 text-warning-600" />}
-      {showLate && <Clock aria-hidden className="h-3 w-3 shrink-0 text-warning-600" />}
+      {cell.gap && <AlertTriangle aria-hidden className="h-3 w-3 shrink-0 text-danger-fg" />}
+      {showShortfall && <Clock aria-hidden className="h-3 w-3 shrink-0 text-warning-fg" />}
+      {showLate && <Clock aria-hidden className="h-3 w-3 shrink-0 text-warning-fg" />}
       {formatValue(cell.planned)}
-      {cell.locked && <Lock aria-hidden className="h-3 w-3 shrink-0 text-neutral-400" />}
+      {cell.locked && <Lock aria-hidden className="h-3 w-3 shrink-0 text-fg-muted" />}
       {diff && (
         <span
           aria-hidden
-          className={cn('shrink-0 text-[10px] font-bold',
-            diff.delta > 0 ? 'text-success-600' : 'text-danger-600')}
+          className={cn('shrink-0 text-2xs font-bold',
+            diff.delta > 0 ? 'text-success-fg' : 'text-danger-fg')}
         >
           {diff.delta > 0 ? '▲' : '▼'}
         </span>
@@ -1028,15 +1028,15 @@ function PlannedCell({
   return (
     <td
       className={cn(
-        'h-10 border-b border-b-neutral-100 px-2 text-right font-mono text-sm font-bold',
+        'h-10 border-b border-b-line-subtle px-2 text-right font-mono text-sm font-bold',
         borderRClass,
         cell.gap
-          ? 'bg-danger-50 text-danger-700'
+          ? 'bg-danger-soft text-danger-fg'
           : showShortfall
-            ? 'bg-warning-50 text-warning-800'
+            ? 'bg-warning-soft text-warning-fg'
             : isMaintenance
-              ? 'bg-neutral-200 text-neutral-700'
-              : 'bg-success-50 text-neutral-800',
+              ? 'bg-surface-strong text-fg-secondary'
+              : 'bg-success-soft text-fg',
       )}
     >
       {readOnly ? (

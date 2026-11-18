@@ -76,7 +76,7 @@ export function SyncSection({ canSync, toasts }: { canSync: boolean; toasts: Ret
     <div className="flex flex-col items-end gap-1">
       <div className="flex items-center gap-2">
         {!stateQuery.isError && (
-          <span className={cn('text-xs', stale ? 'font-medium text-amber-700' : 'text-neutral-500')}>
+          <span className={cn('text-xs', stale ? 'font-medium text-warning-fg' : 'text-fg-muted')}>
             {lastSuccess
               ? `Last synced: ${formatDateTime(lastSuccess)} (${Math.round(hoursAgo(lastSuccess))}h ago)`
               : 'Never synced'}
@@ -98,22 +98,22 @@ export function SyncSection({ canSync, toasts }: { canSync: boolean; toasts: Ret
       </div>
 
       {canSync && ncLikelyNotConfigured && !syncing && (
-        <p className="text-xs text-amber-700">NC connection not configured.</p>
+        <p className="text-xs text-warning-fg">NC connection not configured.</p>
       )}
 
       {canSync && result && (
-        <div className="mt-1 w-full max-w-sm rounded-md border border-neutral-200 bg-white text-xs shadow-sm">
+        <div className="mt-1 w-full max-w-sm rounded-md border border-line bg-surface text-xs shadow-sm">
           <button
             type="button"
             onClick={() => setDetailOpen((v) => !v)}
-            className="flex w-full items-center justify-between px-3 py-1.5 font-medium text-neutral-700 hover:bg-neutral-50"
+            className="flex w-full items-center justify-between px-3 py-1.5 font-medium text-fg-secondary hover:bg-surface-subtle"
             aria-expanded={detailOpen}
           >
             Last sync result
             {detailOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           </button>
           {detailOpen && (
-            <div className="border-t border-neutral-100 px-3 py-2">
+            <div className="border-t border-line-subtle px-3 py-2">
               <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
                 <Stat label="BOMs" value={result.boms} />
                 <Stat label="Lines" value={result.lines} />
@@ -123,7 +123,7 @@ export function SyncSection({ canSync, toasts }: { canSync: boolean; toasts: Ret
                 <Stat label="Warnings" value={result.warnings} warn={result.warnings > 0} />
               </dl>
               {result.tombstone_skipped.length > 0 && (
-                <p className="mt-2 flex items-start gap-1 text-amber-700">
+                <p className="mt-2 flex items-start gap-1 text-warning-fg">
                   <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                   Tombstone skipped for: {result.tombstone_skipped.join(', ')} (resolved set came back empty this run —
                   existing rows were kept rather than risking a wipe).
@@ -140,8 +140,8 @@ export function SyncSection({ canSync, toasts }: { canSync: boolean; toasts: Ret
 function Stat({ label, value, warn }: { label: string; value: number; warn?: boolean }) {
   return (
     <>
-      <dt className="text-neutral-500">{label}</dt>
-      <dd className={cn('text-right font-semibold tabular-nums', warn ? 'text-amber-700' : 'text-neutral-900')}>{value}</dd>
+      <dt className="text-fg-muted">{label}</dt>
+      <dd className={cn('text-right font-semibold tabular-nums', warn ? 'text-warning-fg' : 'text-fg')}>{value}</dd>
     </>
   )
 }

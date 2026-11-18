@@ -594,12 +594,12 @@ export default function PrCreatePage() {
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold text-neutral-900">
+          <h1 className="text-2xl font-bold text-fg">
             {sourcePr ? `New Purchase Requisition — Copy of ${sourcePr.number}` : 'New Purchase Requisition'}
           </h1>
         </div>
         {sourcePr && (
-          <div className="rounded-lg border border-info-200 bg-info-50 px-4 py-2.5 text-sm text-info-700">
+          <div className="rounded-lg border border-info-line bg-info-soft px-4 py-2.5 text-sm text-info-fg">
             Copied from <span className="font-medium">{sourcePr.number}</span> — review all fields before submitting. Required By date has been cleared.
           </div>
         )}
@@ -611,21 +611,21 @@ export default function PrCreatePage() {
           <div className="lg:col-span-9 flex flex-col gap-6">
 
             {/* Procurement Type */}
-            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
-              <h2 className="text-base font-semibold text-neutral-900 mb-4">
-                Select Procurement Type <span className="text-danger-600">*</span>
+            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+              <h2 className="text-base font-semibold text-fg mb-4">
+                Select Procurement Type <span className="text-danger-fg">*</span>
               </h2>
               <ProcurementTypeSelector value={selectedType} onChange={setSelectedType} />
               {errors.procurementType && (
-                <p className="mt-2 text-xs text-danger-600">{errors.procurementType.message}</p>
+                <p className="mt-2 text-xs text-danger-fg">{errors.procurementType.message}</p>
               )}
             </div>
 
             {/* Basic info + Line Items */}
             {selectedType && (
               <>
-                <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
-                  <h2 className="text-base font-semibold text-neutral-900">Requisition Details</h2>
+                <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+                  <h2 className="text-base font-semibold text-fg">Requisition Details</h2>
 
                   {/* PR Title */}
                   <FormField label="PR Title / Description" required htmlFor="title" error={errors.title?.message}>
@@ -639,25 +639,25 @@ export default function PrCreatePage() {
 
                   {/* Vendor search */}
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-sm font-medium text-neutral-700">
-                      Preferred Vendor <span className="text-danger-600">*</span>
+                    <label className="text-sm font-medium text-fg-secondary">
+                      Preferred Vendor <span className="text-danger-fg">*</span>
                     </label>
                     <div className="relative">
                       <div className="relative">
-                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
                         <input
                           type="text"
                           placeholder="Search vendor by name or POID…"
                           value={selectedVendor ? selectedVendor.name : vendorQuery}
                           onFocus={() => { setVendorOpen(true); if (selectedVendor) setVendorQuery('') }}
                           onChange={(e) => { setVendorQuery(e.target.value); setSelectedVendor(null); setCopyVendorId(null); setVendorOpen(true) }}
-                          className={`h-10 w-full rounded-md border bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 ${vendorError && !selectedVendor ? 'border-danger-500' : 'border-neutral-300'}`}
+                          className={`h-10 w-full rounded-md border bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 ${vendorError && !selectedVendor ? 'border-danger-solid' : 'border-line-strong'}`}
                         />
                         {selectedVendor && (
                           <button
                             type="button"
                             onClick={() => { setSelectedVendor(null); setVendorQuery(''); setCopyVendorId(null) }}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
                           >
                             <X className="h-3.5 w-3.5" />
                           </button>
@@ -666,7 +666,7 @@ export default function PrCreatePage() {
                       {vendorOpen && !selectedVendor && (
                         <>
                           <div className="fixed inset-0 z-10" onClick={() => setVendorOpen(false)} />
-                          <div className="absolute z-20 mt-1 w-full rounded-lg border border-neutral-200 bg-white py-1 shadow-lg">
+                          <div className="absolute z-20 mt-1 w-full rounded-lg border border-line bg-surface py-1 shadow-lg">
                             {filteredVendors.map((v) => (
                               <button
                                 key={v.id}
@@ -674,12 +674,12 @@ export default function PrCreatePage() {
                                 className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-primary-50 text-left"
                                 onClick={() => { setSelectedVendor(v); setVendorOpen(false); setVendorQuery(''); setVendorError(null) }}
                               >
-                                <span className="font-mono text-xs rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-600">{v.code}</span>
+                                <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
                                 {v.name}
                               </button>
                             ))}
                             {filteredVendors.length === 0 && (
-                              <p className="px-3 py-2 text-sm text-neutral-400">No vendors found</p>
+                              <p className="px-3 py-2 text-sm text-fg-muted">No vendors found</p>
                             )}
                             {/* "+ Add new vendor" removed: it had no action at all (ISS-0242). */}
                           </div>
@@ -687,17 +687,17 @@ export default function PrCreatePage() {
                       )}
                     </div>
                     {selectedVendor && (
-                      <p className="text-xs text-success-600">✓ {selectedVendor.name} ({selectedVendor.code})</p>
+                      <p className="text-xs text-success-fg">✓ {selectedVendor.name} ({selectedVendor.code})</p>
                     )}
                     {vendorError && !selectedVendor && (
-                      <p className="text-xs text-danger-600">{vendorError}</p>
+                      <p className="text-xs text-danger-fg">{vendorError}</p>
                     )}
                   </div>
 
                   {/* Department — drives cost center / budget filtering and approval routing */}
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-sm font-medium text-neutral-700">
-                      Department <span className="text-danger-600">*</span>
+                    <label className="text-sm font-medium text-fg-secondary">
+                      Department <span className="text-danger-fg">*</span>
                     </label>
                     <select
                       value={selectedDepartmentId ?? ''}
@@ -710,7 +710,7 @@ export default function PrCreatePage() {
                         setSelectedL1(''); setSelectedL1Obj(null); setSelectedL2('')
                         setFactorCombo({}); setFactorComboError(null)
                       }}
-                      className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                      className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                     >
                       <option value="">Select Department…</option>
                       {departments.map((d) => (
@@ -718,18 +718,18 @@ export default function PrCreatePage() {
                       ))}
                     </select>
                     {departmentError && (
-                      <p className="text-xs text-danger-600">{departmentError}</p>
+                      <p className="text-xs text-danger-fg">{departmentError}</p>
                     )}
                     {copyDeptNote && !departmentError && (
-                      <p className="text-xs text-warning-600">{copyDeptNote}</p>
+                      <p className="text-xs text-warning-fg">{copyDeptNote}</p>
                     )}
                   </div>
 
                   {/* Budget — hidden for Type 1 */}
                   {requiresBudget && (
                     <div className="flex flex-col gap-2">
-                      <label className="text-sm font-medium text-neutral-700">
-                        Budget Account <span className="text-danger-600">*</span>
+                      <label className="text-sm font-medium text-fg-secondary">
+                        Budget Account <span className="text-danger-fg">*</span>
                       </label>
                       {/* Step 1: Cost Center */}
                       <select
@@ -740,7 +740,7 @@ export default function PrCreatePage() {
                           setSelectedCostCenterId(costCenters.find((cc) => cc.code === code)?.id)
                           setSelectedL1(''); setSelectedL1Obj(null); setSelectedL2('')
                         }}
-                        className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                        className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                       >
                         <option value="">Select Cost Center…</option>
                         {costCenters.map((cc) => (
@@ -757,7 +757,7 @@ export default function PrCreatePage() {
                           setSelectedL2('')
                         }}
                         disabled={!selectedCostCenter}
-                        className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400"
+                        className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
                       >
                         <option value="">Select L1 Category…</option>
                         {ccL1Groups.map((l1) => (
@@ -769,7 +769,7 @@ export default function PrCreatePage() {
                         value={selectedL2}
                         onChange={(e) => { setSelectedL2(e.target.value); setBudgetError(null) }}
                         disabled={!selectedL1}
-                        className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400"
+                        className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
                       >
                         <option value="">Select L2 Sub-account…</option>
                         {ccL2Accounts.map((l2) => (
@@ -777,7 +777,7 @@ export default function PrCreatePage() {
                         ))}
                       </select>
                       {budgetError && (
-                        <p className="text-xs text-danger-600">{budgetError}</p>
+                        <p className="text-xs text-danger-fg">{budgetError}</p>
                       )}
                     </div>
                   )}
@@ -789,7 +789,7 @@ export default function PrCreatePage() {
                         <p className="text-xs font-semibold text-primary-800">
                           Decomposition Factors — required
                         </p>
-                        <p className="text-[11px] text-primary-700/80">
+                        <p className="text-2xs text-primary-700/80">
                           Pick a value for each factor so this PR's budget impact maps to the right breakdown line.
                         </p>
                       </div>
@@ -799,9 +799,9 @@ export default function PrCreatePage() {
                           const current = factorCombo[f.factor_code] ?? ''
                           return (
                             <div key={f.id} className="flex flex-col gap-1">
-                              <label className="text-[11px] font-medium text-neutral-700">
+                              <label className="text-2xs font-medium text-fg-secondary">
                                 {f.factor_name}
-                                <span className="ml-1 font-mono text-neutral-400">({f.factor_code})</span>
+                                <span className="ml-1 font-mono text-fg-muted">({f.factor_code})</span>
                               </label>
                               <select
                                 value={current}
@@ -815,7 +815,7 @@ export default function PrCreatePage() {
                                   })
                                   setFactorComboError(null)
                                 }}
-                                className="h-9 rounded-md border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                                className="h-9 rounded-md border border-line-strong bg-surface px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                               >
                                 <option value="">Select…</option>
                                 {activeValues.map((v) => (
@@ -829,7 +829,7 @@ export default function PrCreatePage() {
                         })}
                       </div>
                       {factorComboError && (
-                        <p className="mt-2 text-xs text-danger-600">{factorComboError}</p>
+                        <p className="mt-2 text-xs text-danger-fg">{factorComboError}</p>
                       )}
                     </div>
                   )}
@@ -846,9 +846,9 @@ export default function PrCreatePage() {
 
                   {/* Hard-block notice — replaces justification when Budget Config = hard_block */}
                   {isHardBlock && (
-                    <div className="rounded-md border border-danger-300 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+                    <div className="rounded-md border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
                       <p className="font-medium">Submission blocked — over budget</p>
-                      <p className="mt-1 text-danger-600">
+                      <p className="mt-1 text-danger-fg">
                         Budget Config is set to <strong>Hard block</strong>. This PR cannot be submitted while it exceeds the available budget for account {selectedL2}. Reduce the budget code's commitment or split the PR into smaller items.
                       </p>
                     </div>
@@ -861,7 +861,7 @@ export default function PrCreatePage() {
                         id="justification"
                         {...register('justification')}
                         placeholder="Explain why this expenditure is necessary despite exceeding budget…"
-                        className="min-h-20 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                        className="min-h-20 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                       />
                     </FormField>
                   )}
@@ -882,7 +882,7 @@ export default function PrCreatePage() {
                     <FormField label="Service/Project Expected Completion Date" required htmlFor="serviceDate" error={errors.serviceCompletionDate?.message}>
                       <div className="relative">
                         <Input id="serviceDate" type="date" {...register('serviceCompletionDate')} />
-                        <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                        <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
                       </div>
                     </FormField>
                   )}
@@ -894,11 +894,11 @@ export default function PrCreatePage() {
                       requester (epms-api app/tasks/service_gr_due.py). */}
                   {requiresServiceDate && (
                     <div ref={ownerAnchorRef} className="flex flex-col gap-1.5">
-                      <label className="text-sm font-medium text-neutral-700" htmlFor="serviceOwner">
-                        Service/Project Owner <span className="text-danger-600">*</span>
+                      <label className="text-sm font-medium text-fg-secondary" htmlFor="serviceOwner">
+                        Service/Project Owner <span className="text-danger-fg">*</span>
                       </label>
                       <div className="relative">
-                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
                         <input
                           id="serviceOwner"
                           type="text"
@@ -906,7 +906,7 @@ export default function PrCreatePage() {
                           value={ownerOpen ? ownerQuery : (selectedOwner?.full_name ?? '')}
                           onFocus={() => { setOwnerOpen(true); setOwnerQuery('') }}
                           onChange={(e) => { setOwnerQuery(e.target.value); setOwnerOpen(true) }}
-                          className="h-10 w-full rounded-md border border-neutral-300 bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                          className="h-10 w-full rounded-md border border-line-strong bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                         />
                       </div>
                       {ownerOpen && ownerRect && (
@@ -919,15 +919,15 @@ export default function PrCreatePage() {
                               onClick={() => { setSelectedOwner(u); setOwnerOpen(false); setOwnerQuery('') }}
                             >
                               <span>{u.full_name}</span>
-                              {u.department_name && <span className="text-xs text-neutral-400">{u.department_name}</span>}
+                              {u.department_name && <span className="text-xs text-fg-muted">{u.department_name}</span>}
                             </button>
                           ))}
                           {owners.length === 0 && (
-                            <p className="px-3 py-2 text-sm text-neutral-400">No people found</p>
+                            <p className="px-3 py-2 text-sm text-fg-muted">No people found</p>
                           )}
                         </DropdownPortal>
                       )}
-                      <p className="text-xs text-neutral-400">
+                      <p className="text-xs text-fg-muted">
                         Receives the task and email to confirm the service was delivered.
                         Defaults to you; search to hand it to someone else.
                       </p>
@@ -938,10 +938,10 @@ export default function PrCreatePage() {
                     <input
                       id="prepayment"
                       type="checkbox"
-                      className="h-4 w-4 rounded border-neutral-300 text-primary-600"
+                      className="h-4 w-4 rounded border-line-strong text-primary-600"
                       {...register('prepaymentRequired')}
                     />
-                    <label htmlFor="prepayment" className="text-sm text-neutral-700">Prepayment Required</label>
+                    <label htmlFor="prepayment" className="text-sm text-fg-secondary">Prepayment Required</label>
                   </div>
 
                   {/* Currency */}
@@ -950,7 +950,7 @@ export default function PrCreatePage() {
                       id="currency"
                       value={currency}
                       onChange={(e) => setCurrency(e.target.value as Currency)}
-                      className="h-10 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                      className="h-10 w-full rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                     >
                       {enabledCurrencyOptions(config, currency).map((c) => (
                         <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
@@ -975,13 +975,13 @@ export default function PrCreatePage() {
                   <FormField label="Required By Date" required htmlFor="requiredBy" error={errors.requiredBy?.message}>
                     <div className="relative">
                       <Input id="requiredBy" type="date" error={!!errors.requiredBy} {...register('requiredBy')} />
-                      <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                      <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
                     </div>
                   </FormField>
                 </div>
 
                 {/* Line Items — separate card */}
-                <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+                <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
                   <PrLineItems
                     procurementType={selectedType}
                     items={lineItems}
@@ -989,36 +989,36 @@ export default function PrCreatePage() {
                     errors={lineErrors}
                   />
                   {Object.keys(lineErrors).length > 0 && (
-                    <p className="mt-2 text-xs text-danger-600">Please fix the errors in the line items above.</p>
+                    <p className="mt-2 text-xs text-danger-fg">Please fix the errors in the line items above.</p>
                   )}
                 </div>
 
                 {/* Supporting documents + notes */}
-                <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
-                  <h2 className="text-base font-semibold text-neutral-900">Supporting Documents &amp; Notes</h2>
+                <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+                  <h2 className="text-base font-semibold text-fg">Supporting Documents &amp; Notes</h2>
 
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium text-neutral-700">Attachments</label>
+                    <label className="text-sm font-medium text-fg-secondary">Attachments</label>
                     <label
                       htmlFor="file-upload"
-                      className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-neutral-300 p-6 text-center hover:border-primary-400 hover:bg-primary-50 transition-colors"
+                      className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-line-strong p-6 text-center hover:border-primary-400 hover:bg-primary-50 transition-colors"
                     >
-                      <Upload className="h-8 w-8 text-neutral-400" />
+                      <Upload className="h-8 w-8 text-fg-muted" />
                       <div>
-                        <p className="text-sm font-medium text-neutral-700">Drag &amp; drop or click to upload</p>
-                        <p className="text-xs text-neutral-400 mt-1">{ATTACHMENT_RULE.hint}</p>
+                        <p className="text-sm font-medium text-fg-secondary">Drag &amp; drop or click to upload</p>
+                        <p className="text-xs text-fg-muted mt-1">{ATTACHMENT_RULE.hint}</p>
                       </div>
                       <input id="file-upload" type="file" multiple accept={ATTACHMENT_RULE.accept} className="sr-only" onChange={handleFileInput} />
                     </label>
-                    {attachmentError && <p role="alert" className="text-xs text-danger-600">{attachmentError}</p>}
+                    {attachmentError && <p role="alert" className="text-xs text-danger-fg">{attachmentError}</p>}
                     {attachments.map((f, i) => (
-                      <div key={i} className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
-                        <span className="flex-1 truncate text-neutral-700">📎 {f.name}</span>
-                        <span className="text-neutral-400 text-xs">{formatBytes(f.size)}</span>
+                      <div key={i} className="flex items-center gap-2 rounded-md border border-line bg-surface-subtle px-3 py-2 text-sm">
+                        <span className="flex-1 truncate text-fg-secondary">📎 {f.name}</span>
+                        <span className="text-fg-muted text-xs">{formatBytes(f.size)}</span>
                         <button
                           type="button"
                           onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-                          className="text-neutral-400 hover:text-danger-600"
+                          className="text-fg-muted hover:text-danger-fg"
                           aria-label="Remove file"
                         >
                           <X className="h-3.5 w-3.5" />
@@ -1032,18 +1032,18 @@ export default function PrCreatePage() {
                       id="notes"
                       {...register('notes')}
                       placeholder="Any additional context for the approver…"
-                      className="min-h-20 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                      className="min-h-20 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                     />
                   </FormField>
                 </div>
 
                 {/* Action bar — inside 8-col column so it aligns with cards above */}
-                <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-6 py-4">
+                <div className="flex items-center justify-between rounded-lg border border-line bg-surface px-6 py-4">
                   <Link to="/pr">
                     <Button variant="secondary">Cancel</Button>
                   </Link>
                   {submitError && (
-                    <p role="alert" className="flex-1 mx-4 text-sm text-danger-600">{submitError}</p>
+                    <p role="alert" className="flex-1 mx-4 text-sm text-danger-fg">{submitError}</p>
                   )}
                   <div className="flex items-center gap-3">
                     <Button type="button" variant="secondary" disabled={isSubmitting} onClick={handleDraftSave}>Save as Draft</Button>
@@ -1057,7 +1057,7 @@ export default function PrCreatePage() {
 
             {/* Action bar fallback when no type selected yet */}
             {!selectedType && (
-              <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-6 py-4">
+              <div className="flex items-center justify-between rounded-lg border border-line bg-surface px-6 py-4">
                 <Link to="/pr">
                   <Button variant="secondary">Cancel</Button>
                 </Link>
@@ -1083,9 +1083,9 @@ export default function PrCreatePage() {
             )}
 
             {/* Tips card */}
-            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-4">
-              <h3 className="text-sm font-semibold text-neutral-700 mb-3">💡 Tips</h3>
-              <ul className="space-y-2 text-xs text-neutral-500">
+            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-4">
+              <h3 className="text-sm font-semibold text-fg-secondary mb-3">💡 Tips</h3>
+              <ul className="space-y-2 text-xs text-fg-muted">
                 <li>• Select the procurement type that best matches your purchase</li>
                 <li>• Type 1 (Raw Materials) does not require a budget code</li>
                 <li>• Add all items in the Line Items table — totals update automatically</li>

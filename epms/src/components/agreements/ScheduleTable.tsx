@@ -43,7 +43,7 @@ function resolveUserName(users: ApiUserBrief[] | undefined, id: string | null): 
 // one, so whoever clicks Confirm sees exactly what they are confirming.
 function PeriodInvoices({ row, currency }: { row: ApiScheduleRow; currency: string }) {
   const invoices = row.invoices ?? []
-  if (invoices.length === 0) return <span className="text-neutral-300">—</span>
+  if (invoices.length === 0) return <span className="text-fg-faint">—</span>
   // Pre-tax, like the expected / stage amount in the same row (ISS-0128).
   const total = invoices.reduce((sum, i) => sum + Number(i.amount), 0)
   return (
@@ -55,11 +55,11 @@ function PeriodInvoices({ row, currency }: { row: ApiScheduleRow; currency: stri
           className="inline-flex items-center gap-1.5 text-xs text-primary-700 hover:text-primary-900"
         >
           <span className="font-medium">{i.internal_ref ?? 'Invoice'}</span>
-          <span className="amount text-neutral-500" title="Pre-tax">{formatAmount(Number(i.amount), currency)}</span>
+          <span className="amount text-fg-muted" title="Pre-tax">{formatAmount(Number(i.amount), currency)}</span>
         </Link>
       ))}
       {invoices.length > 1 && (
-        <span className="text-[11px] text-neutral-500">
+        <span className="text-2xs text-fg-muted">
           {invoices.length} invoices · <span className="amount">{formatAmount(total, currency)}</span>
         </span>
       )}
@@ -87,42 +87,42 @@ export function ScheduleTable({
 
   if (rows.length === 0) {
     return (
-      <div className="py-8 text-center text-sm text-neutral-400">
+      <div className="py-8 text-center text-sm text-fg-muted">
         No {scheduleType === 'period' ? 'periods' : 'stages'} generated yet.
       </div>
     )
   }
 
   return (
-    <div className="rounded-lg border border-neutral-200 overflow-hidden">
+    <div className="rounded-lg border border-line overflow-hidden">
       {/* A refused Confirm, shown above the table (was a browser alert). */}
       {confirmPeriod.isError && (
-        <p role="alert" className="border-b border-danger-200 bg-danger-50 px-4 py-2 text-sm text-danger-700">
+        <p role="alert" className="border-b border-danger-line bg-danger-soft px-4 py-2 text-sm text-danger-fg">
           {errorMessage(confirmPeriod.error, 'Failed to confirm the period')}
         </p>
       )}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50">
-              <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">#</th>
+            <tr className="border-b border-line bg-surface-subtle">
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">#</th>
               {scheduleType === 'period' ? (
                 <>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Period</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Expected date</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-neutral-500">Expected amount</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Status</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Invoices</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Confirmed</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Period</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Expected date</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-fg-muted">Expected amount</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Status</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Invoices</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Confirmed</th>
                 </>
               ) : (
                 <>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Stage</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Timing</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-neutral-500">Expected amount</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-neutral-500">% of NTE</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Status</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Invoice</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Stage</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Timing</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-fg-muted">Expected amount</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-fg-muted">% of NTE</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Status</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-fg-muted">Invoice</th>
                 </>
               )}
             </tr>
@@ -137,11 +137,11 @@ export function ScheduleTable({
                   const canConfirm = row.status === 'received' && !row.accepted_at && holdsTask
                   const confirmedName = resolveUserName(users, row.accepted_by)
                   return (
-                    <tr key={row.id} className="border-b border-neutral-100 last:border-0 bg-white">
-                      <td className="px-4 py-2.5 text-neutral-500">{row.sequence}</td>
-                      <td className="px-4 py-2.5 text-neutral-900">{row.period_label ?? '—'}</td>
-                      <td className="px-4 py-2.5 text-xs text-neutral-500">{formatDate(row.expected_date)}</td>
-                      <td className="px-4 py-2.5 text-right amount font-medium text-neutral-900">
+                    <tr key={row.id} className="border-b border-line-subtle last:border-0 bg-surface">
+                      <td className="px-4 py-2.5 text-fg-muted">{row.sequence}</td>
+                      <td className="px-4 py-2.5 text-fg">{row.period_label ?? '—'}</td>
+                      <td className="px-4 py-2.5 text-xs text-fg-muted">{formatDate(row.expected_date)}</td>
+                      <td className="px-4 py-2.5 text-right amount font-medium text-fg">
                         {row.expected_amount !== null ? formatAmount(Number(row.expected_amount), currency) : '—'}
                       </td>
                       <td className="px-4 py-2.5"><StatusBadge status={row.status} /></td>
@@ -151,8 +151,8 @@ export function ScheduleTable({
                       <td className="px-4 py-2.5">
                         {row.accepted_at ? (
                           <div className="flex flex-col">
-                            {confirmedName && <span className="text-neutral-900">{confirmedName}</span>}
-                            <span className={confirmedName ? 'text-xs text-neutral-400' : 'text-neutral-700'}>
+                            {confirmedName && <span className="text-fg">{confirmedName}</span>}
+                            <span className={confirmedName ? 'text-xs text-fg-muted' : 'text-fg-secondary'}>
                               {formatDateTime(row.accepted_at)}
                             </span>
                           </div>
@@ -161,21 +161,21 @@ export function ScheduleTable({
                             {confirmPeriod.isPending && pendingRowId === row.id ? 'Working…' : 'Confirm'}
                           </Button>
                         ) : (
-                          <span className="text-neutral-300">—</span>
+                          <span className="text-fg-faint">—</span>
                         )}
                       </td>
                     </tr>
                   )
                 })
               : rows.map((row) => (
-                  <tr key={row.id} className="border-b border-neutral-100 last:border-0 bg-white">
-                    <td className="px-4 py-2.5 text-neutral-500">{row.sequence}</td>
-                    <td className="px-4 py-2.5 text-neutral-900">{row.milestone_name ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-xs text-neutral-500">{row.expected_timing ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-right amount font-medium text-neutral-900">
+                  <tr key={row.id} className="border-b border-line-subtle last:border-0 bg-surface">
+                    <td className="px-4 py-2.5 text-fg-muted">{row.sequence}</td>
+                    <td className="px-4 py-2.5 text-fg">{row.milestone_name ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-xs text-fg-muted">{row.expected_timing ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-right amount font-medium text-fg">
                       {row.expected_amount !== null ? formatAmount(Number(row.expected_amount), currency) : '—'}
                     </td>
-                    <td className="px-4 py-2.5 text-right text-neutral-600">
+                    <td className="px-4 py-2.5 text-right text-fg-secondary">
                       {row.amount_pct !== null ? `${Number(row.amount_pct).toFixed(2)}%` : '—'}
                     </td>
                     <td className="px-4 py-2.5"><StatusBadge status={row.status} /></td>
@@ -188,7 +188,7 @@ export function ScheduleTable({
                           View <ExternalLink className="h-3 w-3" />
                         </Link>
                       ) : (
-                        <span className="text-neutral-300">—</span>
+                        <span className="text-fg-faint">—</span>
                       )}
                     </td>
                   </tr>

@@ -25,9 +25,9 @@ export function PoSignoffSummary({ poId, source }: { poId: string; source: strin
   const notStarted = state.status === 'draft'
 
   return (
-    <section className="space-y-3 rounded-lg border border-neutral-200 p-4">
+    <section className="space-y-3 rounded-lg border border-line p-4">
       <div className="flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-base font-semibold text-neutral-900">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
           <PenLine className="h-4 w-4 text-primary-600" />
           Sign-off
         </h2>
@@ -36,7 +36,7 @@ export function PoSignoffSummary({ poId, source }: { poId: string; source: strin
         </span>
       </div>
 
-      <p className="text-sm text-neutral-500">
+      <p className="text-sm text-fg-muted">
         {notStarted
           ? 'No sign-off has been raised for this PO yet. Save your changes here first, then raise it from the PO detail page — that is also where the purchase justification is written.'
           : 'Raised, signed and discussed on the PO detail page. Shown here so you can see where it stands while filling in buyer detail.'}
@@ -46,9 +46,9 @@ export function PoSignoffSummary({ poId, source }: { poId: string; source: strin
         <ul className="flex flex-col gap-1.5">
           {state.steps.map((step, i) => (
             <li key={step.id} className="flex items-center gap-2 text-sm">
-              <span className="w-5 shrink-0 text-xs text-neutral-400">{i + 1}.</span>
-              <span className="font-medium text-neutral-800">{step.label}</span>
-              <span className="text-neutral-500">
+              <span className="w-5 shrink-0 text-xs text-fg-muted">{i + 1}.</span>
+              <span className="font-medium text-fg">{step.label}</span>
+              <span className="text-fg-muted">
                 {step.signed_at
                   ? `— signed by ${step.signed_by_name}, ${formatDateTime(step.signed_at)}`
                   : step.holder_count === 0 ? '— no active holder' : '— not signed'}
@@ -59,20 +59,20 @@ export function PoSignoffSummary({ poId, source }: { poId: string; source: strin
       )}
 
       {state.thread.length > 0 && (
-        <div className="flex flex-col gap-2 border-t border-neutral-100 pt-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+        <div className="flex flex-col gap-2 border-t border-line-subtle pt-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
             Justification &amp; notes
           </p>
           {state.thread.map((entry, i) => (
-            <div key={`${entry.at}-${i}`} className="rounded-lg bg-neutral-50 px-3 py-2">
-              <p className="flex items-center gap-1.5 text-xs text-neutral-500">
+            <div key={`${entry.at}-${i}`} className="rounded-lg bg-surface-subtle px-3 py-2">
+              <p className="flex items-center gap-1.5 text-xs text-fg-muted">
                 <Clock className="h-3 w-3 shrink-0" />
-                <span className="font-medium text-neutral-700">{entry.actor_name ?? 'Unknown'}</span>
+                <span className="font-medium text-fg-secondary">{entry.actor_name ?? 'Unknown'}</span>
                 · {THREAD_LABELS[entry.action] ?? entry.action}
                 · {formatDateTime(entry.at)}
               </p>
               {entry.comment && (
-                <p className="mt-1 whitespace-pre-wrap text-sm text-neutral-800">{entry.comment}</p>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-fg">{entry.comment}</p>
               )}
             </div>
           ))}

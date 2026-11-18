@@ -15,8 +15,8 @@ interface Props {
 }
 
 const inputCls =
-  'rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm outline-none ' +
-  'focus:border-[#085E5E]/60 focus:ring-1 focus:ring-[#085E5E]/30'
+  'rounded-md border border-line-strong bg-surface px-2 py-1.5 text-sm outline-none ' +
+  'focus:border-primary-700/60 focus:ring-1 focus:ring-primary-700/30'
 
 export function RecurrencePicker({ value, onChange }: Props) {
   // endMode is local state so clicking "By date" before entering a date doesn't snap back.
@@ -79,8 +79,8 @@ export function RecurrencePicker({ value, onChange }: Props) {
               className={cn(
                 'rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
                 isActive
-                  ? 'border-[#085E5E] bg-[#085E5E]/10 text-[#085E5E]'
-                  : 'border-neutral-300 bg-white text-neutral-600 hover:border-neutral-400',
+                  ? 'border-primary-700 bg-primary-700/10 text-primary-700'
+                  : 'border-line-strong bg-surface text-fg-secondary hover:border-line-strong',
               )}
             >
               {label}
@@ -90,10 +90,10 @@ export function RecurrencePicker({ value, onChange }: Props) {
       </div>
 
       {freq && (
-        <div className="rounded-md border border-neutral-200 bg-neutral-50 p-3 space-y-3">
+        <div className="rounded-md border border-line bg-surface-subtle p-3 space-y-3">
           {/* Interval */}
           <div className="flex items-center gap-2">
-            <span className="text-sm text-neutral-600">Every</span>
+            <span className="text-sm text-fg-secondary">Every</span>
             <input
               type="number"
               min={1}
@@ -101,14 +101,14 @@ export function RecurrencePicker({ value, onChange }: Props) {
               onChange={(e) => setInterval(Number(e.target.value))}
               className={cn(inputCls, 'w-16 text-center')}
             />
-            <span className="text-sm text-neutral-600">
+            <span className="text-sm text-fg-secondary">
               {freq === 'daily' ? (interval === 1 ? 'day' : 'days') : (interval === 1 ? 'week' : 'weeks')}
             </span>
           </div>
 
           {/* End mode */}
           <div className="space-y-2">
-            <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide">Ends</p>
+            <p className="text-xs font-medium text-fg-muted uppercase tracking-wide">Ends</p>
 
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -118,7 +118,7 @@ export function RecurrencePicker({ value, onChange }: Props) {
                 onChange={() => setEndMode('count')}
                 className="accent-[#085E5E]"
               />
-              <span className="text-sm text-neutral-700">After</span>
+              <span className="text-sm text-fg-secondary">After</span>
               <input
                 type="number"
                 min={2}
@@ -128,7 +128,7 @@ export function RecurrencePicker({ value, onChange }: Props) {
                 onChange={(e) => setCount(Number(e.target.value))}
                 className={cn(inputCls, 'w-16 text-center disabled:opacity-50')}
               />
-              <span className="text-sm text-neutral-700">occurrences</span>
+              <span className="text-sm text-fg-secondary">occurrences</span>
             </label>
 
             <label className="flex items-center gap-2 cursor-pointer">
@@ -139,7 +139,7 @@ export function RecurrencePicker({ value, onChange }: Props) {
                 onChange={() => setEndMode('until')}
                 className="accent-[#085E5E]"
               />
-              <span className="text-sm text-neutral-700">By date</span>
+              <span className="text-sm text-fg-secondary">By date</span>
               <input
                 type="date"
                 value={until}

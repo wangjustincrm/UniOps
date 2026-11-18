@@ -39,7 +39,7 @@ export default function PaEditPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-24">
-        <p className="text-neutral-400 text-sm">Loading…</p>
+        <p className="text-fg-muted text-sm">Loading…</p>
       </div>
     )
   }
@@ -456,7 +456,7 @@ function PoPaEditPage() {
   if (isLoading || !initialized) {
     return (
       <div className="flex items-center justify-center py-24">
-        <p className="text-neutral-400 text-sm">Loading…</p>
+        <p className="text-fg-muted text-sm">Loading…</p>
       </div>
     )
   }
@@ -464,7 +464,7 @@ function PoPaEditPage() {
   if (!pa || !['draft', 'returned'].includes(pa.status)) {
     return (
       <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-neutral-500">This PA cannot be edited.</p>
+        <p className="text-fg-muted">This PA cannot be edited.</p>
         <BackLink to={`/pa/${id}`} className="mt-4"><Button variant="secondary">Back</Button></BackLink>
       </div>
     )
@@ -474,12 +474,12 @@ function PoPaEditPage() {
     <div className="flex flex-col gap-6 p-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => replaceTab(`/pa/${id}`)} className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500">
+        <button onClick={() => replaceTab(`/pa/${id}`)} className="p-2 rounded-lg hover:bg-surface-sunken text-fg-muted">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Edit Payment Application</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">
+          <h1 className="text-2xl font-bold text-fg">Edit Payment Application</h1>
+          <p className="text-sm text-fg-muted mt-0.5">
             {pa.pa_number} · {pa.status === 'returned' ? 'Returned — revise and resubmit' : 'Draft'}
           </p>
         </div>
@@ -490,35 +490,35 @@ function PoPaEditPage() {
         <div className="col-span-2 flex flex-col gap-5">
 
           {/* ── PO / Agreement (locked) ────────────────────────────────────── */}
-          <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-3">
-            <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">1</span>
+          <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-3">
+            <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-bold">1</span>
               {isAgreementMode ? 'Purchase Agreement' : (isMultiPo ? 'Purchase Orders' : 'Purchase Order')}
             </h2>
             {isAgreementMode ? (
-              <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 flex items-center justify-between">
+              <div className="rounded-lg border border-line bg-surface-subtle px-4 py-3 flex items-center justify-between">
                 <div>
                   <p className="font-mono text-xs font-semibold text-primary-700">{pa.agreement_number}</p>
-                  <p className="text-xs text-neutral-500 mt-0.5">
+                  <p className="text-xs text-fg-muted mt-0.5">
                     {`${agreement?.vendor_name ?? pa.vendor_name}${agreement?.title ? ` · ${agreement.title}` : ''}`}
                   </p>
                 </div>
-                <span className="text-xs text-neutral-400 italic">Locked</span>
+                <span className="text-xs text-fg-muted italic">Locked</span>
               </div>
             ) : (
               <div className="flex flex-col gap-2">
                 {pos.map((p, i) => (
-                  <div key={p.id} className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 flex items-center justify-between gap-3">
+                  <div key={p.id} className="rounded-lg border border-line bg-surface-subtle px-4 py-3 flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-mono text-xs font-semibold text-primary-700">
                         {p.number}
                         {i === 0 && isMultiPo && (
-                          <span className="ml-2 inline-flex items-center rounded-full bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-700">
+                          <span className="ml-2 inline-flex items-center rounded-full bg-primary-100 px-1.5 py-0.5 text-2xs font-medium text-primary-700">
                             Primary
                           </span>
                         )}
                       </p>
-                      <p className="text-xs text-neutral-500 mt-0.5">{p.vendor_name} · {p.title}</p>
+                      <p className="text-xs text-fg-muted mt-0.5">{p.vendor_name} · {p.title}</p>
                     </div>
                     {/* The last PO cannot be removed — a PO-route payment with no
                         purchase order is not a document this app has a place for
@@ -527,7 +527,7 @@ function PoPaEditPage() {
                       <button
                         type="button"
                         onClick={() => removePo(p.id)}
-                        className="shrink-0 text-[11px] font-medium text-neutral-500 hover:text-danger-600 hover:underline"
+                        className="shrink-0 text-2xs font-medium text-fg-muted hover:text-danger-fg hover:underline"
                       >
                         Remove
                       </button>
@@ -535,25 +535,25 @@ function PoPaEditPage() {
                   </div>
                 ))}
                 {addingPo ? (
-                  <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3">
+                  <div className="flex flex-col gap-2 rounded-lg border border-line p-3">
                     <div className="flex items-center gap-2">
                       <input
                         value={poSearch}
                         onChange={(e) => setPoSearch(e.target.value)}
                         placeholder="Search PO # or vendor…"
-                        className="h-9 flex-1 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                        className="h-9 flex-1 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                       />
                       <button
                         type="button"
                         onClick={() => { setAddingPo(false); setPoSearch('') }}
-                        className="text-[11px] font-medium text-neutral-500 hover:underline"
+                        className="text-2xs font-medium text-fg-muted hover:underline"
                       >
                         Cancel
                       </button>
                     </div>
-                    <div className="rounded-lg border border-neutral-200 max-h-48 overflow-y-auto">
+                    <div className="rounded-lg border border-line max-h-48 overflow-y-auto">
                       {addablePos.length === 0 ? (
-                        <p className="px-3 py-4 text-xs text-neutral-400 text-center">No other POs found</p>
+                        <p className="px-3 py-4 text-xs text-fg-muted text-center">No other POs found</p>
                       ) : (
                         addablePos.map((candidate) => {
                           const blockedReason = poJoinBlockedReason(candidate)
@@ -568,22 +568,22 @@ function PoPaEditPage() {
                                 setPoSearch('')
                               }}
                               className={cn(
-                                'w-full px-4 py-2.5 text-left border-b border-neutral-100 last:border-0 transition-colors',
-                                blockedReason ? 'cursor-not-allowed bg-neutral-50 opacity-60' : 'hover:bg-primary-50',
+                                'w-full px-4 py-2.5 text-left border-b border-line-subtle last:border-0 transition-colors',
+                                blockedReason ? 'cursor-not-allowed bg-surface-subtle opacity-60' : 'hover:bg-primary-50',
                               )}
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <span className="flex items-center gap-2 min-w-0">
                                   <span className="font-mono text-xs font-semibold text-primary-700">{candidate.number}</span>
                                   {blockedReason && (
-                                    <span className="shrink-0 inline-flex items-center rounded-full bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600">
+                                    <span className="shrink-0 inline-flex items-center rounded-full bg-surface-strong px-1.5 py-0.5 text-2xs font-medium text-fg-secondary">
                                       {blockedReason}
                                     </span>
                                   )}
                                 </span>
-                                <span className="font-mono text-xs text-neutral-900">{formatAmount(candidate.total, candidate.currency)}</span>
+                                <span className="font-mono text-xs text-fg">{formatAmount(candidate.total, candidate.currency)}</span>
                               </div>
-                              <div className="text-xs text-neutral-400 mt-0.5">{candidate.vendor_name} · {candidate.title}</div>
+                              <div className="text-xs text-fg-muted mt-0.5">{candidate.vendor_name} · {candidate.title}</div>
                             </button>
                           )
                         })
@@ -594,7 +594,7 @@ function PoPaEditPage() {
                   <button
                     type="button"
                     onClick={() => setAddingPo(true)}
-                    className="self-start text-[11px] font-medium text-primary-600 hover:text-primary-700 hover:underline"
+                    className="self-start text-2xs font-medium text-primary-600 hover:text-primary-700 hover:underline"
                   >
                     + Add another PO to this payment
                   </button>
@@ -604,29 +604,29 @@ function PoPaEditPage() {
           </div>
 
           {/* ── Step 2 — Link Invoices / GRs + PA Type ─────────────────────── */}
-          <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-5">
-            <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">2</span>
+          <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-5">
+            <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-bold">2</span>
               {isAgreementMode ? 'Link Invoices' : 'Link Invoices & Goods Receipts'}
             </h2>
 
             {/* Invoices multi-select */}
             <div className="flex flex-col gap-2">
-              <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
+              <p className="text-xs font-medium text-fg-secondary flex items-center gap-1.5">
                 <FileText className="h-3.5 w-3.5" />
                 {isAgreementMode
                   ? 'Invoices matched to this agreement'
                   : (isMultiPo ? 'Invoices for these POs' : 'Invoices for this PO')}
-                <span className="text-neutral-400 font-normal">(select all that apply)</span>
+                <span className="text-fg-muted font-normal">(select all that apply)</span>
               </p>
               {invoiceChoices.length === 0 ? (
-                <p className="text-xs text-neutral-400 italic px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
+                <p className="text-xs text-fg-muted italic px-3 py-2 border border-line rounded-lg bg-surface-subtle">
                   {hiddenClaimedNote
                     ? `Nothing left to pay — ${hiddenClaimedNote}`
                     : (isAgreementMode ? 'No invoices matched to this agreement yet' : 'No invoices found for the selected PO(s) yet')}
                 </p>
               ) : (
-                <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-100">
+                <div className="rounded-lg border border-line divide-y divide-line-subtle">
                   {invoiceChoices.map((inv) => (
                     <label
                       key={inv.id}
@@ -639,23 +639,23 @@ function PoPaEditPage() {
                         type="checkbox"
                         checked={selectedInvoiceIds.has(inv.id)}
                         onChange={() => toggleInvoice(inv.id)}
-                        className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
+                        className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600"
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-mono text-xs font-semibold text-primary-700">{inv.internal_ref}</span>
-                          <span className="font-mono text-xs font-semibold text-neutral-900">{formatAmount(inv.total_amount, inv.currency)}</span>
+                          <span className="font-mono text-xs font-semibold text-fg">{formatAmount(inv.total_amount, inv.currency)}</span>
                         </div>
-                        <div className="text-xs text-neutral-500 mt-0.5">
+                        <div className="text-xs text-fg-muted mt-0.5">
                           #{inv.vendor_invoice_number} · {formatDate(inv.invoice_date)} · Due {formatDate(inv.due_date)} · <span className="capitalize">{inv.status}</span>
                         </div>
-                        <div className="flex items-center gap-3 mt-1 text-[11px] text-neutral-400">
-                          <span>Pre-tax <span className="font-mono text-neutral-600">{formatAmount(inv.amount, inv.currency)}</span></span>
-                          <span className="text-neutral-200">·</span>
-                          <span>Tax <span className="font-mono text-neutral-600">{formatAmount(inv.tax_amount, inv.currency)}</span></span>
+                        <div className="flex items-center gap-3 mt-1 text-2xs text-fg-muted">
+                          <span>Pre-tax <span className="font-mono text-fg-secondary">{formatAmount(inv.amount, inv.currency)}</span></span>
+                          <span className="text-fg-faint">·</span>
+                          <span>Tax <span className="font-mono text-fg-secondary">{formatAmount(inv.tax_amount, inv.currency)}</span></span>
                         </div>
                         {claimedByPaNumber.has(inv.id) && (
-                          <p className="mt-1 text-[11px] text-danger-600">
+                          <p className="mt-1 text-2xs text-danger-fg">
                             Also on {claimedByPaNumber.get(inv.id)} — untick it; one invoice cannot be paid twice.
                           </p>
                         )}
@@ -665,7 +665,7 @@ function PoPaEditPage() {
                 </div>
               )}
               {invoiceChoices.length > 0 && hiddenClaimedNote && (
-                <p className="text-[11px] text-neutral-400">{hiddenClaimedNote}</p>
+                <p className="text-2xs text-fg-muted">{hiddenClaimedNote}</p>
               )}
               {!isAgreementMode && (
                 <DueWindowNotice invoices={poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id))} />
@@ -675,16 +675,16 @@ function PoPaEditPage() {
             {/* GRs multi-select — PO route only; the agreement route never has one */}
             {!isAgreementMode && (
             <div className="flex flex-col gap-2">
-              <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
+              <p className="text-xs font-medium text-fg-secondary flex items-center gap-1.5">
                 <Package className="h-3.5 w-3.5" /> Goods / Service Receipts for this PO
-                <span className="text-neutral-400 font-normal">(select all that apply)</span>
+                <span className="text-fg-muted font-normal">(select all that apply)</span>
               </p>
               {poGrs.length === 0 ? (
-                <p className="text-xs text-neutral-400 italic px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
+                <p className="text-xs text-fg-muted italic px-3 py-2 border border-line rounded-lg bg-surface-subtle">
                   No goods receipts found for this PO yet
                 </p>
               ) : (
-                <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-100">
+                <div className="rounded-lg border border-line divide-y divide-line-subtle">
                   {poGrs.map((gr) => (
                     <label
                       key={gr.id}
@@ -697,14 +697,14 @@ function PoPaEditPage() {
                         type="checkbox"
                         checked={selectedGrIds.has(gr.id)}
                         onChange={() => toggleGr(gr.id)}
-                        className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
+                        className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600"
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-mono text-xs font-semibold text-primary-700">{gr.number}</span>
-                          <span className="text-xs capitalize text-neutral-600">{gr.status.replace(/_/g, ' ')}</span>
+                          <span className="text-xs capitalize text-fg-secondary">{gr.status.replace(/_/g, ' ')}</span>
                         </div>
-                        <div className="text-xs text-neutral-500 mt-0.5">
+                        <div className="text-xs text-fg-muted mt-0.5">
                           {gr.gr_type === 'physical' ? 'Physical' : 'Service'} · Received {formatDate(gr.received_at)}
                         </div>
                       </div>
@@ -726,19 +726,19 @@ function PoPaEditPage() {
             )}
             {!isAgreementMode && po && !derivedLines && (
               <div className="flex flex-col gap-2">
-                <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
+                <p className="text-xs font-medium text-fg-secondary flex items-center gap-1.5">
                   <CircleDot className="h-3.5 w-3.5" /> PO Line Items
-                  <span className="text-neutral-400 font-normal">(select items covered by this PA)</span>
+                  <span className="text-fg-muted font-normal">(select items covered by this PA)</span>
                 </p>
-                <div className="rounded-lg border border-neutral-200 overflow-hidden">
+                <div className="rounded-lg border border-line overflow-hidden">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="border-b border-neutral-200 bg-neutral-50">
+                      <tr className="border-b border-line bg-surface-subtle">
                         <th className="w-8 px-3 py-2"></th>
-                        <th className="px-3 py-2 text-left font-semibold text-neutral-500 uppercase tracking-wide">Description</th>
-                        <th className="px-3 py-2 text-right font-semibold text-neutral-500 uppercase tracking-wide w-20">Ordered</th>
-                        <th className="px-3 py-2 text-right font-semibold text-neutral-500 uppercase tracking-wide w-20">Received</th>
-                        <th className="px-3 py-2 text-right font-semibold text-neutral-500 uppercase tracking-wide w-28">Line Total</th>
+                        <th className="px-3 py-2 text-left font-semibold text-fg-muted uppercase tracking-wide">Description</th>
+                        <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-20">Ordered</th>
+                        <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-20">Received</th>
+                        <th className="px-3 py-2 text-right font-semibold text-fg-muted uppercase tracking-wide w-28">Line Total</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -747,10 +747,10 @@ function PoPaEditPage() {
                         // which order they belong to, otherwise removing a PO
                         // gives no clue which rows are about to disappear.
                         ...(isMultiPo ? [(
-                          <tr key={`hdr-${linePo.id}`} className="bg-neutral-100/70">
+                          <tr key={`hdr-${linePo.id}`} className="bg-surface-sunken/70">
                             <td colSpan={5} className="px-3 py-1.5">
-                              <span className="font-mono text-[11px] font-semibold text-primary-700">{linePo.number}</span>
-                              <span className="ml-2 text-[11px] text-neutral-500">{linePo.title}</span>
+                              <span className="font-mono text-2xs font-semibold text-primary-700">{linePo.number}</span>
+                              <span className="ml-2 text-2xs text-fg-muted">{linePo.title}</span>
                             </td>
                           </tr>
                         )] : []),
@@ -762,9 +762,9 @@ function PoPaEditPage() {
                           <tr
                             key={line.id}
                             className={cn(
-                              'border-b border-neutral-100 last:border-0 cursor-pointer hover:bg-primary-50 transition-colors',
+                              'border-b border-line-subtle last:border-0 cursor-pointer hover:bg-primary-50 transition-colors',
                               isSelected && 'bg-primary-50',
-                              idx % 2 === 1 && !isSelected && 'bg-neutral-50/50'
+                              idx % 2 === 1 && !isSelected && 'bg-surface-subtle/50'
                             )}
                             onClick={() => toggleLine(line.id)}
                           >
@@ -774,25 +774,25 @@ function PoPaEditPage() {
                                 checked={isSelected}
                                 onChange={() => toggleLine(line.id)}
                                 onClick={(e) => e.stopPropagation()}
-                                className="h-3.5 w-3.5 rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
+                                className="h-3.5 w-3.5 rounded border-line-strong text-primary-600 focus:ring-primary-600"
                               />
                             </td>
                             <td className="px-3 py-2.5">
-                              <div className="text-neutral-800 font-medium">{line.description}</div>
-                              {line.material_id && <div className="text-neutral-400 font-mono mt-0.5">{line.material_id}</div>}
+                              <div className="text-fg font-medium">{line.description}</div>
+                              {line.material_id && <div className="text-fg-muted font-mono mt-0.5">{line.material_id}</div>}
                               <div className={cn(
-                                'inline-flex items-center gap-1 mt-0.5 text-[10px] font-medium',
-                                isReceived ? 'text-success-600' : 'text-neutral-400'
+                                'inline-flex items-center gap-1 mt-0.5 text-2xs font-medium',
+                                isReceived ? 'text-success-fg' : 'text-fg-muted'
                               )}>
-                                <span className={cn('h-1.5 w-1.5 rounded-full', isReceived ? 'bg-success-500' : 'bg-neutral-300')} />
+                                <span className={cn('h-1.5 w-1.5 rounded-full', isReceived ? 'bg-success-solid' : 'bg-surface-strong')} />
                                 {isReceived ? `Received (${receivedQty} ${line.unit})` : 'Not yet received'}
                               </div>
                             </td>
-                            <td className="px-3 py-2.5 text-right font-mono text-neutral-500">{formatQty(line.qty)} {line.unit}</td>
-                            <td className="px-3 py-2.5 text-right font-mono font-medium text-neutral-700">
+                            <td className="px-3 py-2.5 text-right font-mono text-fg-muted">{formatQty(line.qty)} {line.unit}</td>
+                            <td className="px-3 py-2.5 text-right font-mono font-medium text-fg-secondary">
                               {receivedQty > 0 ? `${receivedQty} ${line.unit}` : '—'}
                             </td>
-                            <td className="px-3 py-2.5 text-right font-mono font-semibold text-neutral-900">
+                            <td className="px-3 py-2.5 text-right font-mono font-semibold text-fg">
                               {formatAmount(line.line_total, linePo.currency)}
                             </td>
                           </tr>
@@ -802,7 +802,7 @@ function PoPaEditPage() {
                     </tbody>
                   </table>
                   {selectedLineIds.size > 0 && (
-                    <div className="flex items-center justify-between px-4 py-2 border-t border-neutral-200 bg-primary-50">
+                    <div className="flex items-center justify-between px-4 py-2 border-t border-line bg-primary-50">
                       <span className="text-xs text-primary-700 font-medium">{selectedLineIds.size} line{selectedLineIds.size !== 1 ? 's' : ''} selected</span>
                       <span className="text-xs font-mono font-semibold text-primary-700">
                         {formatAmount(autoSubtotal, po.currency)}
@@ -819,31 +819,31 @@ function PoPaEditPage() {
                 against), so there is nothing here to show or choose. */}
             {!isAgreementMode && (
             <div className="flex flex-col gap-2">
-              <p className="text-xs font-medium text-neutral-600">Payment Type</p>
-              <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 flex items-center justify-between">
+              <p className="text-xs font-medium text-fg-secondary">Payment Type</p>
+              <div className="rounded-xl border border-line bg-surface-subtle p-3 flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-neutral-800">
+                  <p className="text-sm font-semibold text-fg">
                     {paType === 'prepayment' ? 'Prepayment' : 'Regular Payment'}
                   </p>
-                  <p className="text-xs text-neutral-500 mt-0.5">
+                  <p className="text-xs text-fg-muted mt-0.5">
                     {paType === 'prepayment'
                       ? 'Advance payment before full GR/invoice'
                       : 'Standard payment against invoice / GR'}
                   </p>
                 </div>
-                <span className="text-xs text-neutral-400 italic">Derived from PO</span>
+                <span className="text-xs text-fg-muted italic">Derived from PO</span>
               </div>
 
               {paType === 'prepayment' && (
-                <div className="flex flex-col gap-3 rounded-lg border border-info-200 bg-info-50 p-4 mt-1">
-                  <div className="flex items-start gap-2 text-xs text-info-700">
+                <div className="flex flex-col gap-3 rounded-lg border border-info-line bg-info-soft p-4 mt-1">
+                  <div className="flex items-start gap-2 text-xs text-info-fg">
                     <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                     Prepayment requires settlement after goods/services are received and the final invoice is matched.
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="flex flex-col gap-1">
-                      <label className="text-xs font-medium text-neutral-700">
-                        Prepayment % <span className="text-danger-600">*</span>
+                      <label className="text-xs font-medium text-fg-secondary">
+                        Prepayment % <span className="text-danger-fg">*</span>
                       </label>
                       <div className="relative">
                         <input
@@ -858,15 +858,15 @@ function PoPaEditPage() {
                           }}
                           className={cn(
                             'h-9 w-full pl-3 pr-8 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                            submitted && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100) ? 'border-danger-400' : 'border-neutral-300'
+                            submitted && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100) ? 'border-danger-400' : 'border-line-strong'
                           )}
                         />
-                        <span className="absolute right-3 top-2 text-sm text-neutral-400">%</span>
+                        <span className="absolute right-3 top-2 text-sm text-fg-muted">%</span>
                       </div>
                     </div>
                     <div className="flex flex-col gap-1">
-                      <label className="text-xs font-medium text-neutral-700">
-                        Expected Settlement Date <span className="text-danger-600">*</span>
+                      <label className="text-xs font-medium text-fg-secondary">
+                        Expected Settlement Date <span className="text-danger-fg">*</span>
                       </label>
                       <input
                         type="date"
@@ -875,11 +875,11 @@ function PoPaEditPage() {
                         onChange={(e) => setExpectedSettlement(e.target.value)}
                         className={cn(
                           'h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                          submitted && (!expectedSettlement || settlementDateInvalid) ? 'border-danger-400' : 'border-neutral-300'
+                          submitted && (!expectedSettlement || settlementDateInvalid) ? 'border-danger-400' : 'border-line-strong'
                         )}
                       />
                       {submitted && settlementDateInvalid && (
-                        <p className="text-xs text-danger-600">Expected Settlement Date is not a valid date</p>
+                        <p className="text-xs text-danger-fg">Expected Settlement Date is not a valid date</p>
                       )}
                     </div>
                   </div>
@@ -890,16 +890,16 @@ function PoPaEditPage() {
           </div>
 
           {/* ── Step 3 — Charge Breakdown & Details ────────────────────────── */}
-          <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-5">
-            <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">3</span>
+          <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-5">
+            <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-bold">3</span>
               Charge Breakdown & Details
             </h2>
 
             {/* Title */}
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-700">
-                PA Title <span className="text-danger-600">*</span>
+              <label className="text-xs font-medium text-fg-secondary">
+                PA Title <span className="text-danger-fg">*</span>
               </label>
               <input
                 type="text"
@@ -908,22 +908,22 @@ function PoPaEditPage() {
                 placeholder="e.g. Monthly Cleaning Services — April 2026"
                 className={cn(
                   'h-10 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                  submitted && !title.trim() ? 'border-danger-400' : 'border-neutral-300'
+                  submitted && !title.trim() ? 'border-danger-400' : 'border-line-strong'
                 )}
               />
               {submitted && !title.trim() && (
-                <p className="text-xs text-danger-600">PA Title is required</p>
+                <p className="text-xs text-danger-fg">PA Title is required</p>
               )}
             </div>
 
             {/* Charge breakdown */}
             <div className="flex flex-col gap-3">
-              <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Charge Breakdown ({paCurrency})</p>
+              <p className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">Charge Breakdown ({paCurrency})</p>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-neutral-700">
-                    Pre-tax Amount <span className="text-danger-600">*</span>
+                  <label className="text-xs font-medium text-fg-secondary">
+                    Pre-tax Amount <span className="text-danger-fg">*</span>
                   </label>
                   <input
                     type="number" min={0} step={0.01}
@@ -933,28 +933,28 @@ function PoPaEditPage() {
                     placeholder="0.00"
                     className={cn(
                       'h-10 px-3 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      isPrepayment && 'bg-neutral-50 text-neutral-600',
-                      submitted && subtotalNum <= 0 ? 'border-danger-400' : 'border-neutral-300'
+                      isPrepayment && 'bg-surface-subtle text-fg-secondary',
+                      submitted && subtotalNum <= 0 ? 'border-danger-400' : 'border-line-strong'
                     )}
                   />
                   {isPrepayment && po && (
-                    <p className="text-[11px] text-neutral-400">
+                    <p className="text-2xs text-fg-muted">
                       {prepayPctNum || 0}% × PO pre-tax {formatAmount(prepayBase, po.currency)} — change the % to change it
                     </p>
                   )}
                   {submitted && subtotalNum <= 0 && (
-                    <p className="text-xs text-danger-600">Pre-tax amount is required</p>
+                    <p className="text-xs text-danger-fg">Pre-tax amount is required</p>
                   )}
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-neutral-700">
-                    Tax Amount <span className="text-danger-600">*</span>
+                  <label className="text-xs font-medium text-fg-secondary">
+                    Tax Amount <span className="text-danger-fg">*</span>
                     {isPrepayment && !taxManuallyEdited && (
-                      <span className="ml-1.5 text-[10px] font-normal text-neutral-400">same share of the PO's tax</span>
+                      <span className="ml-1.5 text-2xs font-normal text-fg-muted">same share of the PO's tax</span>
                     )}
                     {!isPrepayment && !taxManuallyEdited && po?.currency === 'CAD' && subtotalNum > 0 && (
-                      <span className="ml-1.5 text-[10px] font-normal text-neutral-400">13% HST</span>
+                      <span className="ml-1.5 text-2xs font-normal text-fg-muted">13% HST</span>
                     )}
                   </label>
                   <input
@@ -964,54 +964,54 @@ function PoPaEditPage() {
                     placeholder="0.00"
                     className={cn(
                       'h-10 px-3 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      submitted && (taxNum < 0 || taxMissing) ? 'border-danger-400' : 'border-neutral-300'
+                      submitted && (taxNum < 0 || taxMissing) ? 'border-danger-400' : 'border-line-strong'
                     )}
                   />
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-neutral-700">
-                    Shipping / Freight <span className="text-neutral-400 font-normal ml-1">(optional)</span>
+                  <label className="text-xs font-medium text-fg-secondary">
+                    Shipping / Freight <span className="text-fg-muted font-normal ml-1">(optional)</span>
                   </label>
                   <input
                     type="number" min={0} step={0.01}
                     value={shippingAmount}
                     onChange={(e) => setShipping(e.target.value)}
                     placeholder="0.00"
-                    className="h-10 px-3 rounded-lg border border-neutral-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="h-10 px-3 rounded-lg border border-line-strong text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
                   />
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-neutral-700">
-                    Other Charges <span className="text-neutral-400 font-normal ml-1">(optional)</span>
+                  <label className="text-xs font-medium text-fg-secondary">
+                    Other Charges <span className="text-fg-muted font-normal ml-1">(optional)</span>
                   </label>
                   <input
                     type="number" min={0} step={0.01}
                     value={otherCharges}
                     onChange={(e) => setOther(e.target.value)}
                     placeholder="0.00"
-                    className="h-10 px-3 rounded-lg border border-neutral-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="h-10 px-3 rounded-lg border border-line-strong text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600"
                   />
                 </div>
               </div>
 
               {otherNum > 0 && (
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-neutral-700">Other Charges Description</label>
+                  <label className="text-xs font-medium text-fg-secondary">Other Charges Description</label>
                   <input
                     type="text"
                     value={otherChargesNote}
                     onChange={(e) => setOtherNote(e.target.value)}
                     placeholder="Describe the other charges…"
-                    className="h-9 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="h-9 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                   />
                 </div>
               )}
 
               <div className="flex items-center justify-between rounded-xl border-2 border-primary-200 bg-primary-50 px-5 py-3">
-                <span className="text-sm font-semibold text-neutral-700">Total Payment Amount</span>
-                <span className={cn('font-mono font-bold text-xl', paymentTotal > 0 ? 'text-primary-700' : 'text-neutral-300')}>
+                <span className="text-sm font-semibold text-fg-secondary">Total Payment Amount</span>
+                <span className={cn('font-mono font-bold text-xl', paymentTotal > 0 ? 'text-primary-700' : 'text-fg-faint')}>
                   {paymentTotal > 0 ? formatAmount(paymentTotal, paCurrency) : '—'}
                 </span>
               </div>
@@ -1019,24 +1019,24 @@ function PoPaEditPage() {
 
             {/* Notes */}
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-700">
-                Notes <span className="text-neutral-400 font-normal">(optional)</span>
+              <label className="text-xs font-medium text-fg-secondary">
+                Notes <span className="text-fg-muted font-normal">(optional)</span>
               </label>
               <textarea
                 rows={3}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Add any payment instructions or notes for the finance team…"
-                className="px-3 py-2 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
+                className="px-3 py-2 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
               />
             </div>
           </div>
 
           {/* Attachments */}
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
             <div>
-              <h2 className="text-base font-semibold text-neutral-900">Attachments</h2>
-              <p className="text-xs text-neutral-400 mt-1">Uploads and removals are saved immediately.</p>
+              <h2 className="text-base font-semibold text-fg">Attachments</h2>
+              <p className="text-xs text-fg-muted mt-1">Uploads and removals are saved immediately.</p>
             </div>
             <AttachmentsEditor
               inputId="pa-edit-file-upload"
@@ -1052,9 +1052,9 @@ function PoPaEditPage() {
           {/* Errors — the form's own checks, then the server's refusal of the
               last save (shown here, not as a browser pop-up — ISS-0188) */}
           {shownErrors.length > 0 && (
-            <div role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 flex flex-col gap-1">
+            <div role="alert" className="rounded-lg border border-danger-line bg-danger-soft px-4 py-3 flex flex-col gap-1">
               {shownErrors.map((e) => (
-                <p key={e} className="text-xs text-danger-700 flex items-center gap-1.5">
+                <p key={e} className="text-xs text-danger-fg flex items-center gap-1.5">
                   <AlertTriangle className="h-3 w-3 shrink-0" /> {e}
                 </p>
               ))}
@@ -1073,7 +1073,7 @@ function PoPaEditPage() {
             </Button>
           </div>
           {submitError && (
-            <p role="alert" className="text-right text-sm text-danger-600">
+            <p role="alert" className="text-right text-sm text-danger-fg">
               Saved as a draft but not submitted: {submitError}
             </p>
           )}
@@ -1081,72 +1081,72 @@ function PoPaEditPage() {
 
         {/* ── Sidebar — Summary ───────────────────────────────────────────────── */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sticky top-6">
-            <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-3">Payment Summary</p>
+          <div className="rounded-xl border border-line bg-surface p-4 shadow-sm sticky top-6">
+            <p className="text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-3">Payment Summary</p>
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-1.5 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-neutral-500">Vendor</span>
-                  <span className="text-neutral-800 font-medium text-right max-w-[60%]">{pa.vendor_name}</span>
+                  <span className="text-fg-muted">Vendor</span>
+                  <span className="text-fg font-medium text-right max-w-[60%]">{pa.vendor_name}</span>
                 </div>
                 {isMultiPo && (
                   <div className="flex justify-between">
-                    <span className="text-neutral-500">POs</span>
-                    <span className="font-mono text-[11px] text-neutral-800 text-right max-w-[60%]">
+                    <span className="text-fg-muted">POs</span>
+                    <span className="font-mono text-2xs text-fg text-right max-w-[60%]">
                       {pos.map((p) => p.number).join(', ')}
                     </span>
                   </div>
                 )}
                 {po && (
                   <div className="flex justify-between">
-                    <span className="text-neutral-500">PO Total</span>
+                    <span className="text-fg-muted">PO Total</span>
                     {/* Across every PO on the payment — see PaCreatePage. */}
-                    <span className="font-mono font-semibold text-neutral-900">
+                    <span className="font-mono font-semibold text-fg">
                       {formatAmount(pos.reduce((s, p) => s + Number(p.total), 0), po.currency)}
                     </span>
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span className="text-neutral-500">Invoices linked</span>
-                  <span className="text-neutral-700">{selectedInvoiceIds.size}</span>
+                  <span className="text-fg-muted">Invoices linked</span>
+                  <span className="text-fg-secondary">{selectedInvoiceIds.size}</span>
                 </div>
                 {!isAgreementMode && (
                   <>
                     <div className="flex justify-between">
-                      <span className="text-neutral-500">GRs linked</span>
-                      <span className="text-neutral-700">{selectedGrIds.size}</span>
+                      <span className="text-fg-muted">GRs linked</span>
+                      <span className="text-fg-secondary">{selectedGrIds.size}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-neutral-500">Type</span>
-                      <span className="text-neutral-700 capitalize">{paType}</span>
+                      <span className="text-fg-muted">Type</span>
+                      <span className="text-fg-secondary capitalize">{paType}</span>
                     </div>
                   </>
                 )}
               </div>
 
               {subtotalNum > 0 && (
-                <div className="border-t border-neutral-200 pt-3 flex flex-col gap-1.5 text-xs">
-                  <div className="flex justify-between text-neutral-500">
+                <div className="border-t border-line pt-3 flex flex-col gap-1.5 text-xs">
+                  <div className="flex justify-between text-fg-muted">
                     <span>Pre-tax</span>
                     <span className="font-mono">{formatAmount(subtotalNum, paCurrency)}</span>
                   </div>
-                  <div className="flex justify-between text-neutral-500">
+                  <div className="flex justify-between text-fg-muted">
                     <span>Tax</span>
                     <span className="font-mono">{formatAmount(taxNum, paCurrency)}</span>
                   </div>
                   {shippingNum > 0 && (
-                    <div className="flex justify-between text-neutral-500">
+                    <div className="flex justify-between text-fg-muted">
                       <span>Shipping</span>
                       <span className="font-mono">{formatAmount(shippingNum, paCurrency)}</span>
                     </div>
                   )}
                   {otherNum > 0 && (
-                    <div className="flex justify-between text-neutral-500">
+                    <div className="flex justify-between text-fg-muted">
                       <span>Other</span>
                       <span className="font-mono">{formatAmount(otherNum, paCurrency)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between font-semibold text-neutral-800 border-t border-neutral-200 pt-1.5 mt-0.5">
+                  <div className="flex justify-between font-semibold text-fg border-t border-line pt-1.5 mt-0.5">
                     <span>Total</span>
                     <span className="font-mono">{formatAmount(paymentTotal, paCurrency)}</span>
                   </div>

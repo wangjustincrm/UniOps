@@ -20,9 +20,9 @@ import { financeApi } from '@/lib/api'
 import { cn, currentMonthISO, formatDate, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
+const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
+const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 interface TBRow {
   account_code: string; account_name: string; account_type: string | null
@@ -115,8 +115,8 @@ export default function GeneralLedgerPage() {
           {TABS.map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)}
                     className={cn('rounded-lg px-4 py-2 text-sm font-medium',
-                      tab === t ? 'bg-[#085E5E] text-white'
-                                : 'border border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-50')}>
+                      tab === t ? 'bg-primary-700 text-white'
+                                : 'border border-line-strong bg-surface text-fg-secondary hover:bg-surface-subtle')}>
               {label}
             </button>
           ))}
@@ -138,7 +138,7 @@ export default function GeneralLedgerPage() {
 
         {banner && (
           <div className={cn('mb-3 rounded-md px-3 py-2 text-sm',
-            banner.kind === 'err' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>
+            banner.kind === 'err' ? 'bg-danger-soft text-danger-fg' : 'bg-success-soft text-success-fg')}>
             {banner.text}
           </div>
         )}
@@ -169,14 +169,14 @@ export default function GeneralLedgerPage() {
 function Balanced({ ok }: { ok: boolean }) {
   return (
     <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
-      ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700')}>
+      ok ? 'bg-success-soft text-success-fg' : 'bg-danger-soft text-danger-fg')}>
       <Scale className="h-3 w-3" /> {ok ? 'Balanced' : 'Out of balance'}
     </span>
   )
 }
 
 function Loading() {
-  return <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
+  return <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
 }
 
 function TrialBalanceTab({ q, onDrill }: { q: any; onDrill: (c: string) => void }) {
@@ -186,9 +186,9 @@ function TrialBalanceTab({ q, onDrill }: { q: any; onDrill: (c: string) => void 
   return (
     <>
       <div className="mb-2 flex justify-end"><Balanced ok={tb.balanced} /></div>
-      <div className="overflow-hidden rounded-lg border border-neutral-200">
+      <div className="overflow-hidden rounded-lg border border-line">
         <table className="w-full text-sm">
-          <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+          <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
             <tr>
               <th className="px-3 py-2 w-20">Code</th>
               <th className="px-3 py-2">Account</th>
@@ -201,14 +201,14 @@ function TrialBalanceTab({ q, onDrill }: { q: any; onDrill: (c: string) => void 
           </thead>
           <tbody>
             {tb.rows.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-6 text-center text-neutral-400">No activity in {tb.period}.</td></tr>
+              <tr><td colSpan={7} className="px-3 py-6 text-center text-fg-muted">No activity in {tb.period}.</td></tr>
             )}
             {tb.rows.map((r, i) => (
               <tr key={r.account_code} onClick={() => onDrill(r.account_code)}
-                  className={cn('cursor-pointer border-t border-neutral-100 hover:bg-primary-50/40', i % 2 && 'bg-neutral-50/40')}>
+                  className={cn('cursor-pointer border-t border-line-subtle hover:bg-primary-50/40', i % 2 && 'bg-surface-subtle/40')}>
                 <td className="px-3 py-2 font-mono text-xs">{r.account_code}</td>
                 <td className="px-3 py-2">{r.account_name}</td>
-                <td className="px-3 py-2 text-right font-mono text-neutral-500">{r.opening !== '0.00' ? money(r.opening) : '—'}</td>
+                <td className="px-3 py-2 text-right font-mono text-fg-muted">{r.opening !== '0.00' ? money(r.opening) : '—'}</td>
                 <td className="px-3 py-2 text-right font-mono">{r.period_debit !== '0.00' ? money(r.period_debit) : ''}</td>
                 <td className="px-3 py-2 text-right font-mono">{r.period_credit !== '0.00' ? money(r.period_credit) : ''}</td>
                 <td className="px-3 py-2 text-right font-mono">{drCol(r.closing)}</td>
@@ -217,7 +217,7 @@ function TrialBalanceTab({ q, onDrill }: { q: any; onDrill: (c: string) => void 
             ))}
           </tbody>
           <tfoot>
-            <tr className="border-t-2 border-neutral-200 bg-neutral-50 font-semibold">
+            <tr className="border-t-2 border-line bg-surface-subtle font-semibold">
               <td className="px-3 py-2" colSpan={3}>Totals</td>
               <td className="px-3 py-2 text-right font-mono">{money(tb.totals.period_debit)}</td>
               <td className="px-3 py-2 text-right font-mono">{money(tb.totals.period_credit)}</td>
@@ -228,7 +228,7 @@ function TrialBalanceTab({ q, onDrill }: { q: any; onDrill: (c: string) => void 
           </tfoot>
         </table>
       </div>
-      <p className="mt-2 text-xs text-neutral-400">Click a row to open its account ledger.</p>
+      <p className="mt-2 text-xs text-fg-muted">Click a row to open its account ledger.</p>
     </>
   )
 }
@@ -236,19 +236,19 @@ function TrialBalanceTab({ q, onDrill }: { q: any; onDrill: (c: string) => void 
 function Section({ title, rows, total }: { title: string; rows: StatementRow[]; total: string }) {
   return (
     <div className="mb-4">
-      <h3 className="mb-1 text-sm font-semibold text-neutral-700">{title}</h3>
-      <div className="overflow-hidden rounded-lg border border-neutral-200">
+      <h3 className="mb-1 text-sm font-semibold text-fg-secondary">{title}</h3>
+      <div className="overflow-hidden rounded-lg border border-line">
         <table className="w-full text-sm">
           <tbody>
-            {rows.length === 0 && <tr><td className="px-3 py-2 text-neutral-400">—</td></tr>}
+            {rows.length === 0 && <tr><td className="px-3 py-2 text-fg-muted">—</td></tr>}
             {rows.map((r) => (
-              <tr key={r.account_code + r.account_name} className="border-t border-neutral-100 first:border-t-0">
-                <td className="px-3 py-2 w-20 font-mono text-xs text-neutral-500">{r.account_code}</td>
+              <tr key={r.account_code + r.account_name} className="border-t border-line-subtle first:border-t-0">
+                <td className="px-3 py-2 w-20 font-mono text-xs text-fg-muted">{r.account_code}</td>
                 <td className="px-3 py-2">{r.account_name}</td>
                 <td className="px-3 py-2 text-right font-mono">{money(r.amount)}</td>
               </tr>
             ))}
-            <tr className="border-t-2 border-neutral-200 bg-neutral-50 font-semibold">
+            <tr className="border-t-2 border-line bg-surface-subtle font-semibold">
               <td className="px-3 py-2" colSpan={2}>Total {title}</td>
               <td className="px-3 py-2 text-right font-mono">{money(total)}</td>
             </tr>
@@ -269,7 +269,7 @@ function BalanceSheetTab({ q }: { q: any }) {
       <Section title="Assets" rows={bs.assets} total={bs.assets_total} />
       <Section title="Liabilities" rows={bs.liabilities} total={bs.liabilities_total} />
       <Section title="Equity" rows={bs.equity} total={bs.equity_total} />
-      <div className="flex justify-end gap-8 rounded-lg bg-neutral-50 px-4 py-3 text-sm font-semibold">
+      <div className="flex justify-end gap-8 rounded-lg bg-surface-subtle px-4 py-3 text-sm font-semibold">
         <span>Assets: <span className="font-mono">{money(bs.assets_total)}</span></span>
         <span>Liabilities + Equity: <span className="font-mono">{money(bs.liabilities_and_equity_total)}</span></span>
       </div>
@@ -282,7 +282,7 @@ function IncomeStatementTab({ q, ytd, setYtd }: { q: any; ytd: boolean; setYtd: 
   return (
     <>
       <div className="mb-2 flex items-center justify-end gap-2 text-sm">
-        <label className="flex items-center gap-1.5 text-neutral-600">
+        <label className="flex items-center gap-1.5 text-fg-secondary">
           <input type="checkbox" checked={ytd} onChange={(e) => setYtd(e.target.checked)} /> Year-to-date
         </label>
       </div>
@@ -290,8 +290,8 @@ function IncomeStatementTab({ q, ytd, setYtd }: { q: any; ytd: boolean; setYtd: 
         <>
           <Section title="Revenue" rows={s.revenue} total={s.revenue_total} />
           <Section title="Expenses" rows={s.expense} total={s.expense_total} />
-          <div className="flex justify-end rounded-lg bg-neutral-50 px-4 py-3 text-base font-semibold">
-            Net income: <span className={cn('ml-2 font-mono', num(s.net_income) >= 0 ? 'text-green-700' : 'text-red-600')}>
+          <div className="flex justify-end rounded-lg bg-surface-subtle px-4 py-3 text-base font-semibold">
+            Net income: <span className={cn('ml-2 font-mono', num(s.net_income) >= 0 ? 'text-success-fg' : 'text-danger-fg')}>
               {money(s.net_income)}</span>
           </div>
         </>
@@ -303,20 +303,20 @@ function IncomeStatementTab({ q, ytd, setYtd }: { q: any; ytd: boolean; setYtd: 
 function JournalTab({ q }: { q: any }) {
   if (q.isFetching && !q.data) return <Loading />
   const entries: any[] = q.data ?? []
-  if (entries.length === 0) return <div className="rounded-lg border border-dashed border-neutral-300 p-10 text-center text-sm text-neutral-500">No posted journal vouchers this period.</div>
+  if (entries.length === 0) return <div className="rounded-lg border border-dashed border-line-strong p-10 text-center text-sm text-fg-muted">No posted journal vouchers this period.</div>
   return (
     <div className="space-y-3">
       {entries.map((e) => (
-        <div key={e.jv_id} className="overflow-hidden rounded-lg border border-neutral-200">
-          <div className="flex items-center justify-between bg-neutral-50 px-3 py-2 text-sm">
+        <div key={e.jv_id} className="overflow-hidden rounded-lg border border-line">
+          <div className="flex items-center justify-between bg-surface-subtle px-3 py-2 text-sm">
             <span className="font-mono text-xs">{formatDate(e.date)} · {e.source}</span>
-            <span className="rounded-full bg-white px-2 py-0.5 font-mono text-xs text-neutral-600">{e.jv_number}</span>
+            <span className="rounded-full bg-surface px-2 py-0.5 font-mono text-xs text-fg-secondary">{e.jv_number}</span>
           </div>
           <table className="w-full text-sm">
             <tbody>
               {e.lines.map((l: any, i: number) => (
-                <tr key={i} className="border-t border-neutral-100">
-                  <td className="px-3 py-1.5 w-20 font-mono text-xs text-neutral-500">{l.account_code ?? '—'}</td>
+                <tr key={i} className="border-t border-line-subtle">
+                  <td className="px-3 py-1.5 w-20 font-mono text-xs text-fg-muted">{l.account_code ?? '—'}</td>
                   <td className="px-3 py-1.5">{l.partner_name || l.summary || '—'}</td>
                   <td className="px-3 py-1.5 w-28 text-right font-mono">{num(l.debit) ? money(l.debit) : ''}</td>
                   <td className="px-3 py-1.5 w-28 text-right font-mono">{num(l.credit) ? money(l.credit) : ''}</td>
@@ -340,13 +340,13 @@ function AccountLedgerModal({ code, period, onClose }: { code: string; period: s
     <Modal title={`Ledger — ${code} ${data?.account_name ?? ''} · ${period}`} onClose={onClose} wide>
       {isLoading ? <Loading /> : data && (
         <>
-          <div className="mb-2 flex justify-between text-sm text-neutral-600">
+          <div className="mb-2 flex justify-between text-sm text-fg-secondary">
             <span>Opening: <span className="font-mono">{money(data.opening)}</span></span>
             <span>Closing: <span className="font-mono font-semibold">{money(data.closing)}</span></span>
           </div>
-          <div className="max-h-96 overflow-y-auto rounded-lg border border-neutral-200">
+          <div className="max-h-96 overflow-y-auto rounded-lg border border-line">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+              <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
                 <tr>
                   <th className="px-3 py-2 w-24">Date</th>
                   <th className="px-3 py-2">Source</th>
@@ -357,14 +357,14 @@ function AccountLedgerModal({ code, period, onClose }: { code: string; period: s
               </thead>
               <tbody>
                 {data.entries.length === 0 && (
-                  <tr><td colSpan={5} className="px-3 py-6 text-center text-neutral-400">No movement this period.</td></tr>
+                  <tr><td colSpan={5} className="px-3 py-6 text-center text-fg-muted">No movement this period.</td></tr>
                 )}
                 {data.entries.map((en: any, i: number) => (
-                  <tr key={i} className="border-t border-neutral-100">
-                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-neutral-600">{formatDate(en.date)}</td>
+                  <tr key={i} className="border-t border-line-subtle">
+                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-fg-secondary">{formatDate(en.date)}</td>
                     <td className="px-3 py-1.5">
                       <span className="font-mono text-xs">{en.source}</span>
-                      {en.partner_name && <span className="ml-1 text-neutral-500">· {en.partner_name}</span>}
+                      {en.partner_name && <span className="ml-1 text-fg-muted">· {en.partner_name}</span>}
                     </td>
                     <td className="px-3 py-1.5 text-right font-mono">{num(en.debit) ? money(en.debit) : ''}</td>
                     <td className="px-3 py-1.5 text-right font-mono">{num(en.credit) ? money(en.credit) : ''}</td>
@@ -427,11 +427,11 @@ function OpeningModal({ onClose, onSaved, onError }: {
 
   return (
     <Modal title="Post opening balance" onClose={onClose} wide>
-      <p className="mb-3 text-xs text-neutral-500">
+      <p className="mb-3 text-xs text-fg-muted">
         Enter the migrated (NC65) trial balance as one balanced opening journal at cut-over.
       </p>
       <label className="mb-3 flex w-48 flex-col gap-1 text-sm">
-        <span className="text-neutral-600">As-of date</span>
+        <span className="text-fg-secondary">As-of date</span>
         <input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} className={inputCls} />
       </label>
       <div className="space-y-2">
@@ -449,7 +449,7 @@ function OpeningModal({ onClose, onSaved, onError }: {
                    onChange={(e) => setLine(i, { amount: e.target.value })}
                    className={cn(inputCls, 'text-right font-mono')} />
             <button onClick={() => setLines((p) => p.filter((_, idx) => idx !== i))}
-                    className="rounded p-1.5 text-neutral-400 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                    className="rounded p-1.5 text-fg-muted hover:text-danger-fg"><Trash2 className="h-4 w-4" /></button>
           </div>
         ))}
       </div>
@@ -458,7 +458,7 @@ function OpeningModal({ onClose, onSaved, onError }: {
         <Plus className="h-4 w-4" /> Add line
       </button>
 
-      <div className="mt-4 flex items-center justify-end gap-6 border-t border-neutral-100 pt-3 text-sm">
+      <div className="mt-4 flex items-center justify-end gap-6 border-t border-line-subtle pt-3 text-sm">
         <span>Debits: <span className="font-mono">{money(String(totals.dr))}</span></span>
         <span>Credits: <span className="font-mono">{money(String(totals.cr))}</span></span>
         <Balanced ok={totals.balanced} />
@@ -492,12 +492,12 @@ function CloseYearModal({ onClose, onDone, onError }: {
 
   return (
     <Modal title="Year-end close" onClose={onClose}>
-      <p className="mb-3 text-sm text-neutral-600">
+      <p className="mb-3 text-sm text-fg-secondary">
         Sweep all revenue and expense balances for the fiscal year into Retained Earnings (3100),
         zeroing the P&L for the new year. This posts one balanced closing journal dated Dec 31.
       </p>
       <label className="flex w-40 flex-col gap-1 text-sm">
-        <span className="text-neutral-600">Fiscal year</span>
+        <span className="text-fg-secondary">Fiscal year</span>
         <input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))}
                className={cn(inputCls, 'font-mono')} />
       </label>
@@ -517,13 +517,13 @@ function Modal({ title, children, onClose, wide }: {
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className={cn('w-full rounded-xl bg-white p-5 shadow-xl', wide ? 'max-w-3xl' : 'max-w-md')}
+      <div className={cn('w-full rounded-xl bg-surface p-5 shadow-xl', wide ? 'max-w-3xl' : 'max-w-md')}
            onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-neutral-800">
-            <BookOpen className="h-4 w-4 text-neutral-400" /> {title}
+          <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
+            <BookOpen className="h-4 w-4 text-fg-muted" /> {title}
           </h2>
-          <button onClick={onClose} className="rounded p-1 text-neutral-400 hover:text-neutral-700">
+          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
             <X className="h-5 w-5" />
           </button>
         </div>

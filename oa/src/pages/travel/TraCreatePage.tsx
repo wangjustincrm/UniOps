@@ -72,7 +72,7 @@ export default function TraCreatePage({ editClaimId }: EditableFormProps = {}) {
   }
 
   if (loadingClaim) {
-    return <div className="p-8 text-sm text-neutral-500">Loading application…</div>
+    return <div className="p-8 text-sm text-fg-muted">Loading application…</div>
   }
   if (loadError) {
     return <ErrorBanner message={loadError.message} />
@@ -81,59 +81,59 @@ export default function TraCreatePage({ editClaimId }: EditableFormProps = {}) {
   return (
     <form onSubmit={submit} className="flex flex-col gap-6 max-w-3xl">
       <div>
-        <BackLink to="/travel" className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 mb-4">
+        <BackLink to="/travel" className="inline-flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg-secondary mb-4">
           <ArrowLeft className="h-4 w-4" />Back to Travel Applications
         </BackLink>
-        <h1 className="text-2xl font-bold text-neutral-900">
+        <h1 className="text-2xl font-bold text-fg">
           {editing ? `Edit ${editing.claim_number}` : 'Travel Application'}
         </h1>
-        <p className="mt-0.5 text-sm text-neutral-500">Apply for a business trip before claiming expenses</p>
+        <p className="mt-0.5 text-sm text-fg-muted">Apply for a business trip before claiming expenses</p>
       </div>
 
-      <div className="rounded-xl border border-neutral-200 bg-white p-5 flex flex-col gap-4">
+      <div className="rounded-xl border border-line bg-surface p-5 flex flex-col gap-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Application Date *</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Application Date *</label>
             <input type="date" required value={appDate} onChange={e => setAppDate(e.target.value)}
-              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" />
+              className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Number of Persons</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Number of Persons</label>
             <input readOnly value={travelers.length}
-              className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-500" />
+              className="w-full rounded-lg border border-line bg-surface-subtle px-3 py-2 text-sm text-fg-muted" />
           </div>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-neutral-600">Travelers (Staff) *</label>
+          <label className="mb-1 block text-xs font-medium text-fg-secondary">Travelers (Staff) *</label>
           <TravelerPicker value={travelers} onChange={setTravelers} />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="sm:col-span-1">
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Destination *</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Destination *</label>
             <input required value={destination} onChange={e => setDestination(e.target.value)}
-              placeholder="e.g. Toronto, ON" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" />
+              placeholder="e.g. Toronto, ON" className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">From *</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">From *</label>
             <input type="date" required value={fromDate} onChange={e => setFromDate(e.target.value)}
-              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" />
+              className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">To *</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">To *</label>
             <input type="date" required value={toDate} min={fromDate} onChange={e => setToDate(e.target.value)}
-              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" />
+              className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
           </div>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-neutral-600">Reasons and Explanation *</label>
+          <label className="mb-1 block text-xs font-medium text-fg-secondary">Reasons and Explanation *</label>
           <textarea required value={reason} onChange={e => setReason(e.target.value)} rows={3}
-            className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm resize-none" />
+            className="w-full rounded-lg border border-line px-3 py-2 text-sm resize-none" />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-neutral-600">Transportation & Accommodation</label>
+          <label className="mb-1 block text-xs font-medium text-fg-secondary">Transportation & Accommodation</label>
           <div className="flex flex-wrap gap-3">
             {TRANSPORT.map(([k, lbl]) => (
-              <label key={k} className="inline-flex items-center gap-1.5 text-sm text-neutral-700">
+              <label key={k} className="inline-flex items-center gap-1.5 text-sm text-fg-secondary">
                 <input type="checkbox" checked={modes.includes(k)} onChange={() => toggleMode(k)} />{lbl}
               </label>
             ))}
@@ -141,20 +141,20 @@ export default function TraCreatePage({ editClaimId }: EditableFormProps = {}) {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Leave From (optional)</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Leave From (optional)</label>
             <input type="date" value={leaveFrom} onChange={e => setLeaveFrom(e.target.value)}
-              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" />
+              className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Leave To (optional)</label>
+            <label className="mb-1 block text-xs font-medium text-fg-secondary">Leave To (optional)</label>
             <input type="date" value={leaveTo} onChange={e => setLeaveTo(e.target.value)}
-              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" />
+              className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
           </div>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-neutral-600">Remarks (external companions, notes)</label>
+          <label className="mb-1 block text-xs font-medium text-fg-secondary">Remarks (external companions, notes)</label>
           <textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2}
-            className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm resize-none" />
+            className="w-full rounded-lg border border-line px-3 py-2 text-sm resize-none" />
         </div>
       </div>
 

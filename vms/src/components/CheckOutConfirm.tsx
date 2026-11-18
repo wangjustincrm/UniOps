@@ -28,20 +28,20 @@ export function CheckOutConfirm({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
+      <div className="w-full max-w-md rounded-lg bg-surface shadow-xl">
         {/* Header */}
-        <div className="flex items-start justify-between border-b border-neutral-100 px-5 py-4">
+        <div className="flex items-start justify-between border-b border-line-subtle px-5 py-4">
           <div>
-            <h3 className="text-base font-semibold text-neutral-900">
+            <h3 className="text-base font-semibold text-fg">
               Check out visitor
             </h3>
-            <p className="mt-0.5 text-xs text-neutral-500">
+            <p className="mt-0.5 text-xs text-fg-muted">
               Confirm departure and badge return.
             </p>
           </div>
           <button
             onClick={onCancel}
-            className="rounded-md p-1 text-neutral-400 hover:bg-neutral-50 hover:text-neutral-600"
+            className="rounded-md p-1 text-fg-muted hover:bg-surface-subtle hover:text-fg-secondary"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -49,24 +49,24 @@ export function CheckOutConfirm({
         </div>
 
         {/* Visit summary */}
-        <div className="space-y-2 border-b border-neutral-100 px-5 py-3 text-sm">
+        <div className="space-y-2 border-b border-line-subtle px-5 py-3 text-sm">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-neutral-500">Visitor</span>
-            <span className="font-medium text-neutral-900">
+            <span className="text-fg-muted">Visitor</span>
+            <span className="font-medium text-fg">
               {visitor ? `${visitor.first_name} ${visitor.last_name}` : '—'}
             </span>
           </div>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-neutral-500">Company</span>
-            <span className="text-neutral-700">{visitor?.company_name ?? '—'}</span>
+            <span className="text-fg-muted">Company</span>
+            <span className="text-fg-secondary">{visitor?.company_name ?? '—'}</span>
           </div>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-neutral-500">Host</span>
-            <span className="text-neutral-700">{host?.full_name ?? '—'}</span>
+            <span className="text-fg-muted">Host</span>
+            <span className="text-fg-secondary">{host?.full_name ?? '—'}</span>
           </div>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-neutral-500">Checked in</span>
-            <span className="text-neutral-700">{formatDateTime(visit.actual_arrival)}</span>
+            <span className="text-fg-muted">Checked in</span>
+            <span className="text-fg-secondary">{formatDateTime(visit.actual_arrival)}</span>
           </div>
           <div className="flex items-center gap-2 pt-1">
             <StatusBadge status={visit.status} />
@@ -84,8 +84,8 @@ export function CheckOutConfirm({
               className="mt-0.5"
             />
             <span>
-              <span className="font-medium text-neutral-800">Badge returned</span>
-              <span className="block text-xs text-neutral-500">
+              <span className="font-medium text-fg">Badge returned</span>
+              <span className="block text-xs text-fg-muted">
                 Visitor handed back their printed badge.
               </span>
             </span>
@@ -98,36 +98,36 @@ export function CheckOutConfirm({
               className="mt-0.5"
             />
             <span>
-              <span className="font-medium text-neutral-800">PPE returned</span>
-              <span className="block text-xs text-neutral-500">
+              <span className="font-medium text-fg">PPE returned</span>
+              <span className="block text-xs text-fg-muted">
                 Hard hat, protective clothing, shoe covers, etc.
               </span>
             </span>
           </label>
           <label className="block text-sm">
-            <span className="font-medium text-neutral-700">Notes (optional)</span>
+            <span className="font-medium text-fg-secondary">Notes (optional)</span>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
               placeholder="Anything to record about the departure…"
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+              className="mt-1 w-full rounded-md border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
             />
           </label>
 
           {error && (
-            <p className="rounded-md bg-danger-50 px-2.5 py-1.5 text-xs text-danger-600">
+            <p className="rounded-md bg-danger-soft px-2.5 py-1.5 text-xs text-danger-fg">
               {error.message}
             </p>
           )}
         </div>
 
         {/* Actions */}
-        <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-3">
+        <div className="flex justify-end gap-2 border-t border-line-subtle px-5 py-3">
           <button
             onClick={onCancel}
             disabled={isPending}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+            className="rounded-md border border-line-strong px-3 py-1.5 text-sm"
           >
             Cancel
           </button>

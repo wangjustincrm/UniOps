@@ -37,14 +37,14 @@ interface CustomFormSummary { code: string; name: string; is_active: boolean }
 
 const TYPE_CONFIG: Record<string, { label: string; class: string }> = {
   EXP: { label: 'EXP',     class: 'bg-primary-50 text-primary-700' },
-  MIL: { label: 'MIL',     class: 'bg-warning-50 text-warning-700' },
-  TRV: { label: 'TRV',     class: 'bg-info-50 text-info-700' },
+  MIL: { label: 'MIL',     class: 'bg-warning-soft text-warning-fg' },
+  TRV: { label: 'TRV',     class: 'bg-info-soft text-info-fg' },
 }
 
 function TypeBadge({ type }: { type: string }) {
-  const cfg = TYPE_CONFIG[type] ?? { label: type, class: 'bg-neutral-100 text-neutral-500' }
+  const cfg = TYPE_CONFIG[type] ?? { label: type, class: 'bg-surface-sunken text-fg-muted' }
   return (
-    <span className={cn('inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide', cfg.class)}>
+    <span className={cn('inline-flex rounded px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide', cfg.class)}>
       {cfg.label}
     </span>
   )
@@ -96,8 +96,8 @@ export default function ExpenseListPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Expense Claims</h1>
-          <p className="mt-0.5 text-sm text-neutral-500">Expense, mileage, travel and custom-form reimbursements</p>
+          <h1 className="text-2xl font-bold text-fg">Expense Claims</h1>
+          <p className="mt-0.5 text-sm text-fg-muted">Expense, mileage, travel and custom-form reimbursements</p>
         </div>
 
         {/* New claim dropdown */}
@@ -113,38 +113,38 @@ export default function ExpenseListPage() {
           {newMenuOpen && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setNewMenuOpen(false)} />
-              <div className="absolute right-0 top-full mt-1 z-20 w-52 rounded-lg border border-neutral-200 bg-white py-1 shadow-lg">
+              <div className="absolute right-0 top-full mt-1 z-20 w-52 rounded-lg border border-line bg-surface py-1 shadow-lg">
                 <button
                   onClick={() => { setNewMenuOpen(false); navigate('/expenses/new/exp') }}
-                  className="flex w-full items-center gap-3 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+                  className="flex w-full items-center gap-3 px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
                 >
                   <Receipt className="h-4 w-4 text-primary-600" />
                   <span>General Expense (EXP)</span>
                 </button>
                 <button
                   onClick={() => { setNewMenuOpen(false); navigate('/expenses/new/mil') }}
-                  className="flex w-full items-center gap-3 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+                  className="flex w-full items-center gap-3 px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
                 >
-                  <Car className="h-4 w-4 text-warning-600" />
+                  <Car className="h-4 w-4 text-warning-fg" />
                   <span>Mileage Claim (MIL)</span>
                 </button>
                 <button
                   onClick={() => { setNewMenuOpen(false); navigate('/expenses/new/trv') }}
-                  className="flex w-full items-center gap-3 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+                  className="flex w-full items-center gap-3 px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
                 >
-                  <Plane className="h-4 w-4 text-info-600" />
+                  <Plane className="h-4 w-4 text-info-fg" />
                   <span>Travel Expense (TRV)</span>
                 </button>
                 {(customForms?.length ?? 0) > 0 && (
                   <>
-                    <div className="my-1 border-t border-neutral-100" />
+                    <div className="my-1 border-t border-line-subtle" />
                     {customForms!.map((cf) => (
                       <button
                         key={cf.code}
                         onClick={() => { setNewMenuOpen(false); navigate(`/expenses/new/cfm/${cf.code}`) }}
-                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
                       >
-                        <FileText className="h-4 w-4 text-neutral-500" />
+                        <FileText className="h-4 w-4 text-fg-muted" />
                         <span>{cf.name} (CFM)</span>
                       </button>
                     ))}
@@ -157,7 +157,7 @@ export default function ExpenseListPage() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-1 border-b border-neutral-200">
+      <div className="flex gap-1 border-b border-line">
         {TABS.map((s) => (
           <button
             key={s}
@@ -166,7 +166,7 @@ export default function ExpenseListPage() {
               'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
               activeStatus === s
                 ? 'border-primary-700 text-primary-700'
-                : 'border-transparent text-neutral-500 hover:text-neutral-700',
+                : 'border-transparent text-fg-muted hover:text-fg-secondary',
             )}
           >
             {s === 'all' ? 'All' : s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
@@ -175,49 +175,49 @@ export default function ExpenseListPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-line bg-surface overflow-hidden">
         {isLoading ? (
-          <div className="flex items-center justify-center py-16 text-sm text-neutral-400">Loading…</div>
+          <div className="flex items-center justify-center py-16 text-sm text-fg-muted">Loading…</div>
         ) : !data?.items.length ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-100">
-              <Receipt className="h-6 w-6 text-neutral-400" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-sunken">
+              <Receipt className="h-6 w-6 text-fg-muted" />
             </div>
-            <p className="mt-3 font-medium text-neutral-700">No expense claims</p>
-            <p className="mt-1 text-sm text-neutral-400">Click "New Claim" to submit a reimbursement.</p>
+            <p className="mt-3 font-medium text-fg-secondary">No expense claims</p>
+            <p className="mt-1 text-sm text-fg-muted">Click "New Claim" to submit a reimbursement.</p>
           </div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="border-b border-neutral-100 bg-neutral-50">
+            <thead className="border-b border-line-subtle bg-surface-subtle">
               <tr>
-                <SortTh label="Claim #" sortKey="claim_number" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
-                <SortTh label="Type" sortKey="claim_type" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
-                <SortTh label="Employee" sortKey="employee_name" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
-                <SortTh label="Net Amount" sortKey="net_amount" sort={sort} onSort={onSort} align="right" className="px-4 py-3 font-medium text-neutral-500 text-xs uppercase tracking-wide" />
-                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
-                <SortTh label="Date" sortKey="date" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
+                <SortTh label="Claim #" sortKey="claim_number" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs uppercase tracking-wide" />
+                <SortTh label="Type" sortKey="claim_type" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs uppercase tracking-wide" />
+                <SortTh label="Employee" sortKey="employee_name" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs uppercase tracking-wide" />
+                <SortTh label="Net Amount" sortKey="net_amount" sort={sort} onSort={onSort} align="right" className="px-4 py-3 font-medium text-fg-muted text-xs uppercase tracking-wide" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs uppercase tracking-wide" />
+                <SortTh label="Date" sortKey="date" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs uppercase tracking-wide" />
               </tr>
             </thead>
             <tbody>
               {data.items.map((c, i) => (
                 <tr
                   key={c.id}
-                  className={cn('border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer', i === data.items.length - 1 && 'border-b-0')}
+                  className={cn('border-b border-line-subtle hover:bg-surface-subtle cursor-pointer', i === data.items.length - 1 && 'border-b-0')}
                   onClick={() => navigate(`/expenses/${c.id}`)}
                 >
                   <td className="px-4 py-3 font-mono text-xs text-primary-600 font-medium">{c.claim_number}</td>
                   <td className="px-4 py-3"><TypeBadge type={c.claim_type} /></td>
-                  <td className="px-4 py-3 text-neutral-700">{c.employee_name}</td>
-                  <td className="px-4 py-3 text-right font-mono text-neutral-900">{formatAmount(c.net_amount, c.currency)}</td>
+                  <td className="px-4 py-3 text-fg-secondary">{c.employee_name}</td>
+                  <td className="px-4 py-3 text-right font-mono text-fg">{formatAmount(c.net_amount, c.currency)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">
                       <StatusBadge status={c.status} />
                       {c.is_over_budget && (
-                        <span className="text-[10px] font-medium text-warning-600 bg-warning-50 rounded px-1 py-0.5">Over Budget</span>
+                        <span className="text-2xs font-medium text-warning-fg bg-warning-soft rounded px-1 py-0.5">Over Budget</span>
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-neutral-500">{formatDate(c.submitted_at ?? c.created_at)}</td>
+                  <td className="px-4 py-3 text-fg-muted">{formatDate(c.submitted_at ?? c.created_at)}</td>
                 </tr>
               ))}
             </tbody>

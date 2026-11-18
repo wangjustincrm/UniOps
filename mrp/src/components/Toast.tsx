@@ -24,8 +24,8 @@ export function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismi
           className={cn(
             'flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm shadow-lg',
             t.kind === 'success'
-              ? 'border-success-200 bg-success-50 text-success-800'
-              : 'border-danger-200 bg-danger-50 text-danger-800',
+              ? 'border-success-line bg-success-soft text-success-fg'
+              : 'border-danger-line bg-danger-soft text-danger-fg',
           )}
         >
           {t.kind === 'success'

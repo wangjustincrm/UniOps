@@ -20,10 +20,10 @@ export default function DataMaintenance() {
   // Matches the sidebar gate (navConfig): the data_maintenance permission — granted
   // via the Access Control matrix — drives visibility, not a hardcoded role.
   if (user?.role !== 'system_admin' && !perms?.data_maintenance) {
-    return <p className="p-6 text-sm text-red-600">You do not have access to Data Maintenance.</p>
+    return <p className="p-6 text-sm text-danger-fg">You do not have access to Data Maintenance.</p>
   }
 
-  if (isLoading) return <p className="p-6 text-neutral-400">Loading…</p>
+  if (isLoading) return <p className="p-6 text-fg-muted">Loading…</p>
 
   const active: EntitySchema | undefined = entities?.find((e) => e.key === (activeKey || entities[0]?.key))
   const systems = Array.from(new Set((entities ?? []).map((e) => e.system)))
@@ -33,15 +33,15 @@ export default function DataMaintenance() {
       <div className="flex flex-col gap-5">
         <div>
           <h1 className="text-lg font-semibold">Data Maintenance</h1>
-          <p className="text-sm text-neutral-500">Browse, edit, and cascade-delete records. Every action is audited.</p>
+          <p className="text-sm text-fg-muted">Browse, edit, and cascade-delete records. Every action is audited.</p>
         </div>
 
         {systems.map((sys) => (
           <div key={sys} className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold uppercase text-neutral-400">{sys}</span>
+            <span className="text-xs font-semibold uppercase text-fg-muted">{sys}</span>
             {entities!.filter((e) => e.system === sys).map((e) => (
               <button key={e.key} onClick={() => setActiveKey(e.key)}
-                className={`rounded-lg px-3 py-1.5 text-sm ${active?.key === e.key ? 'bg-primary-600 text-white' : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'}`}>
+                className={`rounded-lg px-3 py-1.5 text-sm ${active?.key === e.key ? 'bg-primary-600 text-white' : 'bg-surface-sunken text-fg-secondary hover:bg-surface-strong'}`}>
                 {e.label}
               </button>
             ))}

@@ -276,11 +276,11 @@ export function RuleDrawer({
         role="dialog"
         aria-modal="true"
         aria-label={isEdit ? 'Edit capacity rule' : 'New capacity rule'}
-        className="flex h-full w-full max-w-md flex-col bg-white shadow-xl"
+        className="flex h-full w-full max-w-md flex-col bg-surface shadow-xl"
       >
-        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
-          <h2 className="text-base font-semibold text-neutral-900">{isEdit ? 'Edit Capacity Rule' : 'New Capacity Rule'}</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-neutral-400 hover:text-neutral-600">
+        <div className="flex items-center justify-between border-b border-line px-5 py-4">
+          <h2 className="text-base font-semibold text-fg">{isEdit ? 'Edit Capacity Rule' : 'New Capacity Rule'}</h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="text-fg-muted hover:text-fg-secondary">
             <XIcon className="h-5 w-5" />
           </button>
         </div>
@@ -293,7 +293,7 @@ export function RuleDrawer({
                 value={form.scope_type}
                 onChange={(e) => handleScopeTypeChange(e.target.value as CapacityScopeType)}
                 disabled={submitting}
-                className="flex h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {(Object.keys(SCOPE_TYPE_LABEL) as CapacityScopeType[]).map((k) => (
                   <option key={k} value={k}>{SCOPE_TYPE_LABEL[k]}</option>
@@ -344,7 +344,7 @@ export function RuleDrawer({
                 value={form.constraint_type}
                 onChange={(e) => handleConstraintTypeChange(e.target.value as CapacityConstraintType)}
                 disabled={submitting}
-                className="flex h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {(Object.keys(CONSTRAINT_TYPE_LABEL) as CapacityConstraintType[]).map((k) => (
                   <option key={k} value={k}>{CONSTRAINT_TYPE_LABEL[k]}</option>
@@ -414,13 +414,13 @@ export function RuleDrawer({
               </FormField>
             </div>
 
-            <label className="flex items-center gap-2 text-sm text-neutral-700">
+            <label className="flex items-center gap-2 text-sm text-fg-secondary">
               <input
                 type="checkbox"
                 checked={form.is_active}
                 onChange={(e) => set('is_active', e.target.checked)}
                 disabled={submitting}
-                className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+                className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-500"
               />
               Active
             </label>
@@ -429,7 +429,7 @@ export function RuleDrawer({
                 block). role="status" not "alert": this doesn't prevent saving,
                 it's advisory information about what will co-exist. */}
             {overlap && (
-              <div role="status" className="flex items-start gap-1.5 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-800">
+              <div role="status" className="flex items-start gap-1.5 rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-fg">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>
                   Overlaps an existing active rule for the same scope and constraint (
@@ -440,13 +440,13 @@ export function RuleDrawer({
             )}
 
             {submitError && (
-              <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+              <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
                 <AlertTriangle className="h-4 w-4 shrink-0" /> {submitError}
               </p>
             )}
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-4">
+          <div className="flex justify-end gap-2 border-t border-line px-5 py-4">
             <Button type="button" variant="secondary" size="sm" onClick={onClose} disabled={submitting}>Cancel</Button>
             <Button type="submit" size="sm" disabled={submitting}>
               {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}

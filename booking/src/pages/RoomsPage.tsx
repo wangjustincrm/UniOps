@@ -58,13 +58,13 @@ const toISO = (date: string, time: string) => zonedToISO(date, time)
 
 function RoomCardSkeleton() {
   return (
-    <div className="animate-pulse rounded-xl border border-neutral-200 bg-white p-4 flex flex-col gap-3">
-      <div className="h-4 w-3/4 rounded bg-neutral-200" />
-      <div className="h-3 w-1/2 rounded bg-neutral-100" />
-      <div className="h-3 w-1/3 rounded bg-neutral-100" />
+    <div className="animate-pulse rounded-xl border border-line bg-surface p-4 flex flex-col gap-3">
+      <div className="h-4 w-3/4 rounded bg-surface-strong" />
+      <div className="h-3 w-1/2 rounded bg-surface-sunken" />
+      <div className="h-3 w-1/3 rounded bg-surface-sunken" />
       <div className="flex gap-2 mt-auto">
-        <div className="h-8 w-16 rounded bg-neutral-100" />
-        <div className="ml-auto h-8 w-20 rounded bg-neutral-200" />
+        <div className="h-8 w-16 rounded bg-surface-sunken" />
+        <div className="ml-auto h-8 w-20 rounded bg-surface-strong" />
       </div>
     </div>
   )
@@ -89,24 +89,24 @@ function RoomCard({
   const isBookable = room.status === 'available'
 
   return (
-    <div className="flex flex-col rounded-xl border border-neutral-200 bg-white p-4 gap-3 shadow-sm hover:shadow-md transition-shadow">
+    <div className="flex flex-col rounded-xl border border-line bg-surface p-4 gap-3 shadow-sm hover:shadow-md transition-shadow">
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="font-semibold text-neutral-900 truncate">{room.name}</p>
-          <p className="text-xs text-neutral-400 font-mono mt-0.5">{room.code}</p>
+          <p className="font-semibold text-fg truncate">{room.name}</p>
+          <p className="text-xs text-fg-muted font-mono mt-0.5">{room.code}</p>
         </div>
         <RoomStatusBadge status={room.status_now} />
       </div>
 
       {/* Location */}
       {locationLine && (
-        <p className="text-sm text-neutral-500 truncate">{locationLine}</p>
+        <p className="text-sm text-fg-muted truncate">{locationLine}</p>
       )}
 
       {/* Capacity */}
-      <div className="flex items-center gap-1.5 text-sm text-neutral-600">
-        <Users className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
+      <div className="flex items-center gap-1.5 text-sm text-fg-secondary">
+        <Users className="h-3.5 w-3.5 shrink-0 text-fg-muted" />
         <span>Capacity: {room.capacity}</span>
       </div>
 
@@ -121,7 +121,7 @@ function RoomCard({
               <span
                 key={eq}
                 title={label}
-                className="inline-flex items-center gap-1 rounded-md bg-neutral-50 px-1.5 py-0.5 text-xs text-neutral-500 ring-1 ring-neutral-200"
+                className="inline-flex items-center gap-1 rounded-md bg-surface-subtle px-1.5 py-0.5 text-xs text-fg-muted ring-1 ring-line"
               >
                 <Icon className="h-3 w-3" />
                 {label}
@@ -133,7 +133,7 @@ function RoomCard({
 
       {/* Next meeting */}
       {nextTime && (
-        <div className="flex items-center gap-1.5 text-xs text-neutral-400">
+        <div className="flex items-center gap-1.5 text-xs text-fg-muted">
           <Clock className="h-3 w-3" />
           Next meeting {nextTime}
         </div>
@@ -147,8 +147,8 @@ function RoomCard({
           className={cn(
             'w-full rounded-lg px-3 py-2 text-sm font-medium transition-colors',
             isBookable
-              ? 'bg-[#085E5E] text-white hover:bg-[#074f4f]'
-              : 'bg-neutral-100 text-neutral-400 cursor-not-allowed',
+              ? 'bg-primary-700 text-white hover:bg-[#074f4f]'
+              : 'bg-surface-sunken text-fg-muted cursor-not-allowed',
           )}
         >
           {isBookable ? 'Book' : 'Unavailable'}
@@ -222,8 +222,8 @@ export default function RoomsPage() {
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
         {/* Page header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-neutral-900">Meeting Rooms</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <h1 className="text-2xl font-bold text-fg">Meeting Rooms</h1>
+          <p className="mt-1 text-sm text-fg-muted">
             {hasWindow
               ? 'Showing available rooms for the selected time window.'
               : 'Showing all rooms with live status. Select a date and time to filter by availability.'}
@@ -231,26 +231,26 @@ export default function RoomsPage() {
         </div>
 
         {/* Filter bar */}
-        <div className="mb-6 rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
+        <div className="mb-6 rounded-xl border border-line bg-surface p-4 shadow-sm">
           {/* Row 1: date + time window + attendees + location + type */}
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-600">Date</label>
+              <label className="text-xs font-medium text-fg-secondary">Date</label>
               <input
                 type="date"
                 value={date}
                 min={today}
                 onChange={e => setDate(e.target.value)}
-                className="h-9 rounded-md border border-neutral-300 px-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="h-9 rounded-md border border-line-strong px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-700/40"
               />
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-600">Start time</label>
+              <label className="text-xs font-medium text-fg-secondary">Start time</label>
               <select
                 value={startTime}
                 onChange={e => setStartTime(e.target.value)}
-                className="h-9 rounded-md border border-neutral-300 px-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="h-9 rounded-md border border-line-strong px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-700/40"
               >
                 <option value="">-- start --</option>
                 {TIME_OPTIONS.map(t => (
@@ -260,11 +260,11 @@ export default function RoomsPage() {
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-600">End time</label>
+              <label className="text-xs font-medium text-fg-secondary">End time</label>
               <select
                 value={endTime}
                 onChange={e => setEndTime(e.target.value)}
-                className="h-9 rounded-md border border-neutral-300 px-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="h-9 rounded-md border border-line-strong px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-700/40"
               >
                 <option value="">-- end --</option>
                 {TIME_OPTIONS.filter(t => !startTime || t > startTime).map(t => (
@@ -274,43 +274,43 @@ export default function RoomsPage() {
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-600">Min. attendees</label>
+              <label className="text-xs font-medium text-fg-secondary">Min. attendees</label>
               <input
                 type="number"
                 min={1}
                 value={attendees}
                 onChange={e => setAttendees(e.target.value)}
                 placeholder="Any"
-                className="h-9 w-24 rounded-md border border-neutral-300 px-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="h-9 w-24 rounded-md border border-line-strong px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-700/40"
               />
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-600">Floor</label>
+              <label className="text-xs font-medium text-fg-secondary">Floor</label>
               <input
                 type="text"
                 value={floor}
                 onChange={e => setFloor(e.target.value)}
                 placeholder="All floors"
-                className="h-9 w-28 rounded-md border border-neutral-300 px-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="h-9 w-28 rounded-md border border-line-strong px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-700/40"
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-600">Area</label>
+              <label className="text-xs font-medium text-fg-secondary">Area</label>
               <input
                 type="text"
                 value={area}
                 onChange={e => setArea(e.target.value)}
                 placeholder="All areas"
-                className="h-9 rounded-md border border-neutral-300 px-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="h-9 rounded-md border border-line-strong px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-700/40"
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-600">Room type</label>
+              <label className="text-xs font-medium text-fg-secondary">Room type</label>
               <select
                 value={roomType}
                 onChange={e => setRoomType(e.target.value)}
-                className="h-9 rounded-md border border-neutral-300 px-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
+                className="h-9 rounded-md border border-line-strong px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-700/40"
               >
                 <option value="">All types</option>
                 {ROOM_TYPES.map(t => (
@@ -322,7 +322,7 @@ export default function RoomsPage() {
 
           {/* Row 2: equipment checkboxes */}
           <div className="mt-3">
-            <p className="mb-1.5 text-xs font-medium text-neutral-600">Equipment</p>
+            <p className="mb-1.5 text-xs font-medium text-fg-secondary">Equipment</p>
             <div className="flex flex-wrap gap-2">
               {EQUIPMENT_OPTIONS.map(eq => {
                 const Icon = EQUIPMENT_ICONS[eq]
@@ -333,8 +333,8 @@ export default function RoomsPage() {
                     className={cn(
                       'inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium select-none transition-colors',
                       checked
-                        ? 'border-[#085E5E] bg-[#085E5E]/10 text-[#085E5E]'
-                        : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300',
+                        ? 'border-primary-700 bg-primary-700/10 text-primary-700'
+                        : 'border-line bg-surface text-fg-secondary hover:border-line-strong',
                     )}
                   >
                     <input
@@ -354,7 +354,7 @@ export default function RoomsPage() {
 
         {/* Error */}
         {error && (
-          <div className="mb-4 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+          <div className="mb-4 flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4 shrink-0" />
             {error instanceof Error ? error.message : 'Failed to load rooms.'}
           </div>
@@ -368,10 +368,10 @@ export default function RoomsPage() {
             ))}
           </div>
         ) : rooms.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-neutral-200 bg-white py-16 text-center">
-            <Users className="mb-3 h-10 w-10 text-neutral-300" />
-            <p className="text-base font-medium text-neutral-500">No rooms found</p>
-            <p className="mt-1 text-sm text-neutral-400">
+          <div className="flex flex-col items-center justify-center rounded-xl border border-line bg-surface py-16 text-center">
+            <Users className="mb-3 h-10 w-10 text-fg-faint" />
+            <p className="text-base font-medium text-fg-muted">No rooms found</p>
+            <p className="mt-1 text-sm text-fg-muted">
               {hasWindow
                 ? 'No rooms are available for the selected time window. Try adjusting the filters.'
                 : 'No rooms match the current filters. Try broadening your search.'}
@@ -379,7 +379,7 @@ export default function RoomsPage() {
           </div>
         ) : (
           <>
-            <p className="mb-3 text-sm text-neutral-500">
+            <p className="mb-3 text-sm text-fg-muted">
               {rooms.length} room{rooms.length !== 1 ? 's' : ''} found
               {hasWindow ? ' — available for selected window' : ''}
             </p>

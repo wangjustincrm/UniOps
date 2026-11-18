@@ -51,22 +51,22 @@ export function AccountVouchersModal({ accountCode, period, dimsValues, title,
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="max-h-[85vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl"
+      <div className="max-h-[85vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-surface p-5 shadow-xl"
            onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-neutral-800">
-            <BookOpen className="h-4 w-4 text-neutral-400" /> {title}
+          <h2 className="flex items-center gap-2 text-base font-semibold text-fg">
+            <BookOpen className="h-4 w-4 text-fg-muted" /> {title}
           </h2>
-          <button onClick={onClose} className="rounded p-1 text-neutral-400 hover:text-neutral-700">
+          <button onClick={onClose} className="rounded p-1 text-fg-muted hover:text-fg-secondary">
             <X className="h-5 w-5" />
           </button>
         </div>
         {isLoading ? (
-          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
+          <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-fg-muted" /></div>
         ) : (
-          <div className="overflow-hidden rounded-lg border border-neutral-200">
+          <div className="overflow-hidden rounded-lg border border-line">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+              <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
                 <tr>
                   <SortTh label="Date" sortKey="date" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
                   <SortTh label="Voucher" sortKey="voucher" sort={sort} onSort={onSort} className="px-3 py-2 w-36" />
@@ -78,26 +78,26 @@ export function AccountVouchersModal({ accountCode, period, dimsValues, title,
               </thead>
               <tbody>
                 {rows.length === 0 && (
-                  <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">No vouchers.</td></tr>
+                  <tr><td colSpan={6} className="px-3 py-6 text-center text-fg-muted">No vouchers.</td></tr>
                 )}
                 {rows.map((r, i) => (
-                  <tr key={`${r.jv_id}-${i}`} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-neutral-600">{formatDate(r.voucher_date)}</td>
+                  <tr key={`${r.jv_id}-${i}`} className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40')}>
+                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-fg-secondary">{formatDate(r.voucher_date)}</td>
                     <td className="px-3 py-2">
                       <button onClick={() => onOpenJv(r.jv_id)}
-                              className="font-mono text-xs text-[#085E5E] hover:underline">
+                              className="font-mono text-xs text-primary-700 hover:underline">
                         {r.jv_number}
                       </button>
                       {r.posted === false && (
-                        <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                        <span className="ml-1.5 rounded bg-warning-soft px-1.5 py-0.5 text-2xs font-medium text-warning-fg">
                           Unposted
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2 font-mono text-xs text-neutral-600">
+                    <td className="px-3 py-2 font-mono text-xs text-fg-secondary">
                       {r.account_code}{r.account_name ? ` · ${r.account_name}` : ''}
                     </td>
-                    <td className="px-3 py-2 text-neutral-700">{r.summary || '—'}</td>
+                    <td className="px-3 py-2 text-fg-secondary">{r.summary || '—'}</td>
                     <td className="px-3 py-2 text-right font-mono">{money(r.local_debit)}</td>
                     <td className="px-3 py-2 text-right font-mono">{money(r.local_credit)}</td>
                   </tr>

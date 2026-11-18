@@ -20,7 +20,7 @@ function ReceiptCandidateRow({
       className={cn(
         'flex items-start gap-3 rounded-lg border px-3 py-2.5 transition-colors',
         disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
-        selected ? 'border-primary-400 bg-primary-50' : cn('border-neutral-200 bg-white', !disabled && 'hover:bg-neutral-50'),
+        selected ? 'border-primary-400 bg-primary-50' : cn('border-line bg-surface', !disabled && 'hover:bg-surface-subtle'),
       )}
     >
       <input
@@ -32,17 +32,17 @@ function ReceiptCandidateRow({
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="flex items-center gap-2 text-sm font-medium text-neutral-900">
+          <span className="flex items-center gap-2 text-sm font-medium text-fg">
             <Badge variant="neutral">{RECEIPT_TYPE_LABELS[receipt.receipt_type]}</Badge>
             {receipt.receipt_ref ?? '—'}
           </span>
-          <span className="shrink-0 text-xs font-medium text-neutral-700">
+          <span className="shrink-0 text-xs font-medium text-fg-secondary">
             {receiptTotal(receipt) === null
-              ? <span className="font-normal text-neutral-400">no amount</span>
+              ? <span className="font-normal text-fg-muted">no amount</span>
               : formatAmount(receiptTotal(receipt)!, currency)}
           </span>
         </div>
-        <p className="text-[11px] text-neutral-400">{formatDate(receipt.receipt_date)}</p>
+        <p className="text-2xs text-fg-muted">{formatDate(receipt.receipt_date)}</p>
       </div>
     </label>
   )
@@ -370,9 +370,9 @@ function InvoiceReceiptsPanelBody({
 
   if (receiptsForbidden) {
     return (
-      <div className="rounded-lg border border-neutral-200 bg-white p-4 flex flex-col gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Receipt Evidence</p>
-        <p className="text-xs text-neutral-600">
+      <div className="rounded-lg border border-line bg-surface p-4 flex flex-col gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-fg-muted">Receipt Evidence</p>
+        <p className="text-xs text-fg-secondary">
           You can view this invoice but not attach receipts to it. Receipts are attached by AP,
           the invoice's uploader, the agreement's owner, or whoever holds this invoice's
           Match Invoice / Attach Invoice Receipts task.
@@ -382,12 +382,12 @@ function InvoiceReceiptsPanelBody({
   }
 
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-4 flex flex-col gap-3">
-      <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Receipt Evidence</p>
+    <div className="rounded-lg border border-line bg-surface p-4 flex flex-col gap-3">
+      <p className="text-xs font-semibold uppercase tracking-wider text-fg-muted">Receipt Evidence</p>
 
       {lockedByPa && (
-        <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-xs text-neutral-700">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-neutral-500" />
+        <div className="flex items-start gap-2 rounded-lg border border-line bg-surface-subtle px-3 py-2.5 text-xs text-fg-secondary">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-fg-muted" />
           <p>
             <span className="font-medium">Locked — used by {lockedByPa}.</span>{' '}
             Receipt evidence cannot be changed while a payment application lists this invoice.
@@ -398,7 +398,7 @@ function InvoiceReceiptsPanelBody({
       {/* Reference-number accelerator — matches on blur/Enter, never on every
           keystroke (see the comment above receiptRefCommitted). */}
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-neutral-700">
+        <label className="text-xs font-medium text-fg-secondary">
           Reference on the invoice (optional)
         </label>
         <input
@@ -413,7 +413,7 @@ function InvoiceReceiptsPanelBody({
             setReceiptRefCommitted(receiptRefInput)
           }}
           placeholder="e.g. the receipt or delivery note # printed on the invoice"
-          className="h-8 px-3 rounded-lg border border-neutral-300 bg-white text-xs focus:outline-none focus:ring-1 focus:ring-primary-600"
+          className="h-8 px-3 rounded-lg border border-line-strong bg-surface text-xs focus:outline-none focus:ring-1 focus:ring-primary-600"
         />
       </div>
 
@@ -422,7 +422,7 @@ function InvoiceReceiptsPanelBody({
           the operator straight to the no-evidence settlement action below,
           silently bypassing the evidence chain. */}
       {receiptsErrored && !hasReceiptList && (
-        <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
+        <div className="flex items-start gap-2 rounded-lg border border-warning-line bg-warning-soft px-3 py-2.5 text-xs text-warning-fg">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
           <div className="flex flex-1 items-center justify-between gap-2">
             <p>Couldn't load this agreement's receipts — the list below may be incomplete. Do not settle without receipt evidence until this loads.</p>
@@ -436,7 +436,7 @@ function InvoiceReceiptsPanelBody({
       {(!receiptsErrored || hasReceiptList) && (
         <>
           {receiptsErrored && hasReceiptList && (
-            <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
+            <div className="flex items-start gap-2 rounded-lg border border-warning-line bg-warning-soft px-3 py-2.5 text-xs text-warning-fg">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
               <div className="flex flex-1 items-center justify-between gap-2">
                 <p>Couldn't refresh the receipt list — showing the last one loaded.</p>
@@ -447,16 +447,16 @@ function InvoiceReceiptsPanelBody({
             </div>
           )}
           {!receiptsSettled ? (
-            <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-4 text-center text-xs text-neutral-400">
+            <p className="rounded-lg border border-line bg-surface-subtle px-3 py-4 text-center text-xs text-fg-muted">
               Loading receipts…
             </p>
           ) : sortedReceipts.length === 0 ? (
-            <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-4 text-center text-xs text-neutral-400">
+            <p className="rounded-lg border border-line bg-surface-subtle px-3 py-4 text-center text-xs text-fg-muted">
               {emptyReason}
             </p>
           ) : (
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-medium text-neutral-700">
+              <label className="text-xs font-medium text-fg-secondary">
                 Which receipt(s) does this invoice cover?
               </label>
               <div className="flex flex-col gap-2">
@@ -479,12 +479,12 @@ function InvoiceReceiptsPanelBody({
       {selectedReceiptIds.length > 0 && (
         <div className="flex flex-col gap-1.5">
           {hasPricedSelection && (
-          <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-xs">
-            <span className="text-neutral-500">
+          <div className="flex items-center justify-between rounded-lg border border-line bg-surface-subtle px-3 py-2.5 text-xs">
+            <span className="text-fg-muted">
               Selected {formatAmount(selectedTotal, currency)}
               {' · '}Invoice {formatAmount(invoiceTotalAmount, currency)}
             </span>
-            <span className={cn('font-medium', varianceIsZero ? 'text-success-700' : 'text-warning-700')}>
+            <span className={cn('font-medium', varianceIsZero ? 'text-success-fg' : 'text-warning-fg')}>
               Difference {formatAmount(varianceAmount, currency)}
             </span>
           </div>
@@ -497,15 +497,15 @@ function InvoiceReceiptsPanelBody({
               difference. */}
           {!varianceIsZero && (
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-700">
-                Explain the difference <span className="text-danger-600">*</span>
+              <label className="text-xs font-medium text-fg-secondary">
+                Explain the difference <span className="text-danger-fg">*</span>
               </label>
               <textarea
                 rows={2}
                 value={varianceReason}
                 onChange={(e) => setVarianceReason(e.target.value)}
                 placeholder="e.g. Invoice includes freight not itemized on the receipt."
-                className="px-3 py-2 rounded-lg border border-neutral-300 bg-white text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary-600"
+                className="px-3 py-2 rounded-lg border border-line-strong bg-surface text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary-600"
               />
             </div>
           )}
@@ -516,7 +516,7 @@ function InvoiceReceiptsPanelBody({
               the click that was just made. */}
           <div className="flex items-center justify-end gap-3">
             {!receiptsDirty && !pending && (
-              <span className="flex items-center gap-1.5 text-xs text-success-700">
+              <span className="flex items-center gap-1.5 text-xs text-success-fg">
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 {setReceiptsMutation.isSuccess ? 'Receipt evidence saved' : 'Saved — no changes to submit'}
               </span>
@@ -550,15 +550,15 @@ function InvoiceReceiptsPanelBody({
 
       {selectedReceiptIds.length === 0 && receiptsSettled && invoice.agreement_type === 'house_account' && (
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-neutral-700">
-            No receipts selected — reason for settling without receipt evidence <span className="text-danger-600">*</span>
+          <label className="text-xs font-medium text-fg-secondary">
+            No receipts selected — reason for settling without receipt evidence <span className="text-danger-fg">*</span>
           </label>
-          <p className="text-[11px] text-neutral-500">
+          <p className="text-2xs text-fg-muted">
             This invoice will be paid against the agreement with no receipt to reconcile against.
             Explain why — this is recorded for audit.
           </p>
           {receiptsErrored && (
-            <p className="text-[11px] font-medium text-warning-700">
+            <p className="text-2xs font-medium text-warning-fg">
               The receipt list failed to load — settling now will record this invoice as having no receipt evidence, even if receipts actually exist. Consider retrying above first.
             </p>
           )}
@@ -568,7 +568,7 @@ function InvoiceReceiptsPanelBody({
             onChange={(e) => setLegacyReason(e.target.value)}
             disabled={!!lockedByPa}
             placeholder="e.g. Monthly house-account statement; the receipts it covers have not been digitized."
-            className="px-3 py-2 rounded-lg border border-neutral-300 bg-white text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary-600"
+            className="px-3 py-2 rounded-lg border border-line-strong bg-surface text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary-600"
           />
           <div className="flex justify-end">
             <Button size="sm" onClick={handleSettleWithoutReceipt} disabled={pending || !legacyReason.trim()}>
@@ -585,7 +585,7 @@ function InvoiceReceiptsPanelBody({
           request() throws Error(detail) with that exact string as the
           message, so surfacing err.message here reproduces it verbatim. */}
       {activeError && (
-        <div className="flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+        <div className="flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
           {activeError instanceof Error ? activeError.message : 'Could not update receipt evidence'}
         </div>

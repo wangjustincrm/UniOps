@@ -57,9 +57,9 @@ const MAX_SIDE_BY_SIDE = 4
 const TONES: Record<string, string> = {
   teal: 'bg-[#E4F3EE] border-[#9CCFBD]',
   violet: 'bg-[#EEEBFB] border-[#BDB5EC]',
-  outside: 'bg-white border-dashed border-neutral-300',
+  outside: 'bg-surface border-dashed border-line-strong',
 }
-const CARD = 'org-card block w-44 rounded-lg border bg-white px-2.5 py-2 text-left shadow-sm hover:border-[#085E5E] transition-colors'
+const CARD = 'org-card block w-44 rounded-lg border bg-surface px-2.5 py-2 text-left shadow-sm hover:border-primary-700 transition-colors'
 
 function childrenOf<T extends Box>(nodes: T[]) {
   const ids = new Set(nodes.map((n) => n.id))
@@ -95,10 +95,10 @@ function Tree<T extends Box>({ nodes, open, onToggle, card, onDropOn }: {
         const dragged = e.dataTransfer.getData('text/plain')
         if (dragged && dragged !== node.id) onDropOn?.(dragged, node.id, zone(e, stacked))
       }}
-      className={cn('relative rounded-lg', over?.id === node.id && over.where === 'inside' && 'ring-2 ring-[#085E5E]')}>
+      className={cn('relative rounded-lg', over?.id === node.id && over.where === 'inside' && 'ring-2 ring-primary-700')}>
       {card(node)}
       {over?.id === node.id && over.where !== 'inside' && (
-        <span className={cn('pointer-events-none absolute rounded bg-[#085E5E]', stacked
+        <span className={cn('pointer-events-none absolute rounded bg-primary-700', stacked
           ? cn('inset-x-0 h-1', over.where === 'before' ? '-top-1' : '-bottom-1')
           : cn('inset-y-0 w-1', over.where === 'before' ? '-left-1.5' : '-right-1.5'))} />
       )}
@@ -115,7 +115,7 @@ function Tree<T extends Box>({ nodes, open, onToggle, card, onDropOn }: {
       <>
         {all.length > 0 && (
           <button aria-label={shown ? 'Collapse' : 'Expand'} onClick={() => onToggle(node.id)}
-            className="z-[1] -mt-px flex items-center gap-0.5 rounded-b border border-t-0 border-neutral-200 bg-white px-1.5 text-[11px] text-neutral-500 hover:text-[#085E5E]">
+            className="z-[1] -mt-px flex items-center gap-0.5 rounded-b border border-t-0 border-line bg-surface px-1.5 text-2xs text-fg-muted hover:text-primary-700">
             {shown ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}{all.length}
           </button>
         )}
@@ -140,14 +140,14 @@ function Tree<T extends Box>({ nodes, open, onToggle, card, onDropOn }: {
 function BoxStyle({ box, disabled, onSet }: { box: Box; disabled: boolean; onSet: (patch: object) => void }) {
   return (
     <div className="grid grid-cols-2 gap-2">
-      <label className="block text-xs text-neutral-500">Position
+      <label className="block text-xs text-fg-muted">Position
         <select className={`${INPUT} mt-1 w-full`} disabled={disabled} value={box.relation}
           onChange={(e) => onSet({ relation: e.target.value })}>
           <option value="child">Below</option>
           <option value="assistant">On the line</option>
         </select>
       </label>
-      <label className="block text-xs text-neutral-500">Style
+      <label className="block text-xs text-fg-muted">Style
         <select className={`${INPUT} mt-1 w-full`} disabled={disabled} value={box.tone ?? ''}
           onChange={(e) => onSet({ tone: e.target.value || null })}>
           <option value="">Plain</option>
@@ -174,13 +174,13 @@ function AddBox({ withTitle, disabled, onAdd }: {
   const [name, setName] = useState('')
   const [title, setTitle] = useState('')
   return (
-    <div className="border-t border-neutral-100 pt-3">
-      <p className="mb-1.5 text-xs text-neutral-500">Add a box</p>
+    <div className="border-t border-line-subtle pt-3">
+      <p className="mb-1.5 text-xs text-fg-muted">Add a box</p>
       <div className="flex gap-1">
         {WHERE.map((w) => (
           <button key={w.key} title={w.title} onClick={() => setWhere(where === w.key ? null : w.key)}
             className={cn('flex-1 rounded-md border px-1.5 py-1.5 text-xs font-medium',
-              where === w.key ? 'border-[#085E5E] bg-[#E9F3F3] text-[#085E5E]' : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50')}>
+              where === w.key ? 'border-primary-700 bg-[#E9F3F3] text-primary-700' : 'border-line text-fg-secondary hover:bg-surface-subtle')}>
             {w.label}
           </button>
         ))}
@@ -205,7 +205,7 @@ function SavedInput({ label, value, placeholder, disabled, onSave }: {
   const [text, setText] = useState(value)
   useEffect(() => setText(value), [value])
   return (
-    <label className="block text-xs text-neutral-500">{label}
+    <label className="block text-xs text-fg-muted">{label}
       <input className={`${INPUT} mt-1 w-full`} value={text} placeholder={placeholder} disabled={disabled}
         onChange={(e) => setText(e.target.value)}
         onBlur={() => { if (text.trim() !== value) onSave(text.trim()) }} />
@@ -323,11 +323,11 @@ export default function OrgChart() {
       <style>{LINES}</style>
       <div className="p-6">
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <h1 className="mr-2 text-lg font-semibold text-neutral-800">Org Chart</h1>
-          <div className="flex rounded-lg border border-neutral-200 bg-white p-0.5">
+          <h1 className="mr-2 text-lg font-semibold text-fg">Org Chart</h1>
+          <div className="flex rounded-lg border border-line bg-surface p-0.5">
             {(['units', 'people'] as const).map((v) => (
               <button key={v} onClick={() => { setView(v); setPicked(null) }}
-                className={cn('rounded-md px-3 py-1.5 text-sm font-medium', view === v ? 'bg-[#085E5E] text-white' : 'text-neutral-600')}>
+                className={cn('rounded-md px-3 py-1.5 text-sm font-medium', view === v ? 'bg-primary-700 text-white' : 'text-fg-secondary')}>
                 {v === 'units' ? 'Departments' : 'Reporting Lines'}
               </button>
             ))}
@@ -336,11 +336,11 @@ export default function OrgChart() {
             <div className="relative">
               <input className={`${INPUT} w-60`} placeholder="Find a person" value={search} onChange={(e) => setSearch(e.target.value)} />
               {found.length > 0 && (
-                <div className="absolute z-20 mt-1 w-72 rounded-lg border border-neutral-200 bg-white py-1 shadow-lg">
+                <div className="absolute z-20 mt-1 w-72 rounded-lg border border-line bg-surface py-1 shadow-lg">
                   {found.map((p) => (
-                    <button key={p.id} className="block w-full px-3 py-1.5 text-left text-sm hover:bg-neutral-50"
+                    <button key={p.id} className="block w-full px-3 py-1.5 text-left text-sm hover:bg-surface-subtle"
                       onClick={() => { setSearch(''); reveal(p.id) }}>
-                      {p.name} <span className="text-xs text-neutral-400">{p.title}</span>
+                      {p.name} <span className="text-xs text-fg-muted">{p.title}</span>
                     </button>
                   ))}
                 </div>
@@ -348,10 +348,10 @@ export default function OrgChart() {
             </div>
           )}
           <div className="ml-auto flex gap-2">
-            <div className="flex items-center rounded-lg border border-neutral-200 bg-white text-sm text-neutral-600">
-              <button aria-label="Zoom out" className="px-2.5 py-2 hover:text-[#085E5E]" onClick={() => setZoom((z) => Math.max(0.4, z - 0.1))}>−</button>
-              <button className="w-12 py-2 hover:text-[#085E5E]" title="Fit to the page" onClick={() => fit()}>{Math.round(zoom * 100)}%</button>
-              <button aria-label="Zoom in" className="px-2.5 py-2 hover:text-[#085E5E]" onClick={() => setZoom((z) => Math.min(1.2, z + 0.1))}>+</button>
+            <div className="flex items-center rounded-lg border border-line bg-surface text-sm text-fg-secondary">
+              <button aria-label="Zoom out" className="px-2.5 py-2 hover:text-primary-700" onClick={() => setZoom((z) => Math.max(0.4, z - 0.1))}>−</button>
+              <button className="w-12 py-2 hover:text-primary-700" title="Fit to the page" onClick={() => fit()}>{Math.round(zoom * 100)}%</button>
+              <button aria-label="Zoom in" className="px-2.5 py-2 hover:text-primary-700" onClick={() => setZoom((z) => Math.min(1.2, z + 0.1))}>+</button>
             </div>
             {view === 'people' && (
               <>
@@ -367,39 +367,39 @@ export default function OrgChart() {
             )}
           </div>
         </div>
-        <p className="mb-3 text-sm text-neutral-500">
+        <p className="mb-3 text-sm text-fg-muted">
           The company as it really is. Approvals do not use this chart; changing it changes no approver.
           {editable && ' Pick a card to edit it or add a box. Drag a card to the middle of another to put it below, or to its edge to put it beside.'}
         </p>
-        {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
-        {notice && <p className="mb-3 text-sm text-[#085E5E]">{notice}</p>}
+        {error && <p className="mb-3 text-sm text-danger-fg">{error}</p>}
+        {notice && <p className="mb-3 text-sm text-primary-700">{notice}</p>}
 
         {!hasChart ? (
-          <p className="rounded-xl border border-neutral-200 bg-white py-12 text-center text-sm text-neutral-400">
+          <p className="rounded-xl border border-line bg-surface py-12 text-center text-sm text-fg-muted">
             No chart yet.{editable ? ' Generate the first version, then adjust it.' : ''}
           </p>
         ) : (
           <div className="flex items-start gap-4">
-            <div ref={scroller} className="min-w-0 flex-1 overflow-auto rounded-xl border border-neutral-200 bg-neutral-50" style={{ maxHeight: 'calc(100vh - 230px)' }}>
+            <div ref={scroller} className="min-w-0 flex-1 overflow-auto rounded-xl border border-line bg-surface-subtle" style={{ maxHeight: 'calc(100vh - 230px)' }}>
               <div style={{ zoom }}>
                 {view === 'units' ? (
                   <Tree nodes={units} open={unitsOpen} onToggle={(id) => setOpenUnits(toggle(unitsOpen, id))}
                     onDropOn={editable ? drop('units') : undefined}
                     card={(u) => (
-                      <button onClick={() => setPicked(u.id)} className={cn(CARD, u.tone ? TONES[u.tone] : !u.department_id ? 'bg-[#E9F3F3] border-neutral-200' : 'border-neutral-200', picked === u.id && '!border-[#085E5E]')}>
-                        <span className="block truncate text-sm font-medium text-neutral-800">{u.name}</span>
-                        <span className="block truncate text-xs text-neutral-500">{u.head_name ?? 'No head'}</span>
-                        {u.department_id && <span className="block text-xs text-neutral-400">{u.department_code} · {u.employees} people</span>}
+                      <button onClick={() => setPicked(u.id)} className={cn(CARD, u.tone ? TONES[u.tone] : !u.department_id ? 'bg-[#E9F3F3] border-line' : 'border-line', picked === u.id && '!border-primary-700')}>
+                        <span className="block truncate text-sm font-medium text-fg">{u.name}</span>
+                        <span className="block truncate text-xs text-fg-muted">{u.head_name ?? 'No head'}</span>
+                        {u.department_id && <span className="block text-xs text-fg-muted">{u.department_code} · {u.employees} people</span>}
                       </button>
                     )} />
                 ) : (
                   <Tree nodes={people} open={peopleOpen} onToggle={(id) => setOpenPeople(toggle(peopleOpen, id))}
                     onDropOn={editable ? drop('nodes') : undefined}
                     card={(p) => (
-                      <button onClick={() => setPicked(p.id)} className={cn(CARD, p.tone ? TONES[p.tone] : p.review ? 'border-amber-300' : 'border-neutral-200', picked === p.id && '!border-[#085E5E]')}>
-                        <span className="block truncate text-sm font-medium text-neutral-800">{p.name}</span>
-                        <span className="block truncate text-xs text-neutral-500">{p.title ?? '—'}</span>
-                        {p.employee_id && <span className="block truncate text-xs text-neutral-400">{p.adp_department ?? '—'}</span>}
+                      <button onClick={() => setPicked(p.id)} className={cn(CARD, p.tone ? TONES[p.tone] : p.review ? 'border-warning-line' : 'border-line', picked === p.id && '!border-primary-700')}>
+                        <span className="block truncate text-sm font-medium text-fg">{p.name}</span>
+                        <span className="block truncate text-xs text-fg-muted">{p.title ?? '—'}</span>
+                        {p.employee_id && <span className="block truncate text-xs text-fg-muted">{p.adp_department ?? '—'}</span>}
                       </button>
                     )} />
                 )}
@@ -408,30 +408,30 @@ export default function OrgChart() {
 
             <aside className="w-72 shrink-0 space-y-3">
               {view === 'people' && toCheck.length > 0 && !person && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                  <p className="mb-1 text-sm font-medium text-amber-800">To check ({toCheck.length})</p>
-                  <p className="mb-2 text-xs text-amber-700">Several people could be the manager; the first was picked.</p>
+                <div className="rounded-xl border border-warning-line bg-warning-soft p-3">
+                  <p className="mb-1 text-sm font-medium text-warning-fg">To check ({toCheck.length})</p>
+                  <p className="mb-2 text-xs text-warning-fg">Several people could be the manager; the first was picked.</p>
                   <div className="max-h-96 space-y-0.5 overflow-auto">
                     {toCheck.map((p) => (
-                      <button key={p.id} className="block w-full truncate text-left text-sm text-amber-900 hover:underline" onClick={() => reveal(p.id)}>{p.name}</button>
+                      <button key={p.id} className="block w-full truncate text-left text-sm text-warning-fg hover:underline" onClick={() => reveal(p.id)}>{p.name}</button>
                     ))}
                   </div>
                 </div>
               )}
 
               {unit && (
-                <div key={unit.id} className="space-y-3 rounded-xl border border-neutral-200 bg-white p-4">
+                <div key={unit.id} className="space-y-3 rounded-xl border border-line bg-surface p-4">
                   {editable && !unit.department_id
                     ? <SavedInput label="Name" value={unit.name} disabled={busy} onSave={(name) => name && setUnit(unit.id, { name })} />
-                    : <p className="text-sm font-semibold text-neutral-800">{unit.name}</p>}
+                    : <p className="text-sm font-semibold text-fg">{unit.name}</p>}
                   {editable ? (
                     <>
-                      <label className="block text-xs text-neutral-500">Head
+                      <label className="block text-xs text-fg-muted">Head
                         <Combobox label="Head" disabled={busy} value={unit.head_employee_id ?? ''} placeholder="Search name, number or title…"
                           options={[{ value: '', label: 'No head' }, ...employeeOptions]}
                           onChange={(v) => setUnit(unit.id, { head_employee_id: v || null })} />
                       </label>
-                      <label className="block text-xs text-neutral-500">Sits under
+                      <label className="block text-xs text-fg-muted">Sits under
                         <Combobox label="Sits under" disabled={busy} value={unit.parent_id ?? ''}
                           options={[{ value: '', label: 'Top of the chart' },
                             ...units.filter((u) => u.id !== unit.id).map((u) => ({ value: u.id, label: u.name }))]}
@@ -441,30 +441,30 @@ export default function OrgChart() {
                       <AddBox withTitle={false} disabled={busy}
                         onAdd={(where, name) => addBox('/org/units', unit, where, { name })} />
                       {!unit.department_id && (
-                        <button className="text-sm text-red-600 hover:underline" disabled={busy} onClick={() => run(async () => {
+                        <button className="text-sm text-danger-fg hover:underline" disabled={busy} onClick={() => run(async () => {
                           await mdmApi.delete(`/org/units/${unit.id}`); setPicked(null)
                         })}>Remove this box</button>
                       )}
                     </>
-                  ) : <p className="text-sm text-neutral-600">{unit.head_name ?? 'No head'}</p>}
+                  ) : <p className="text-sm text-fg-secondary">{unit.head_name ?? 'No head'}</p>}
                 </div>
               )}
 
               {person && (
-                <div key={person.id} className="space-y-3 rounded-xl border border-neutral-200 bg-white p-4">
+                <div key={person.id} className="space-y-3 rounded-xl border border-line bg-surface p-4">
                   {person.employee_id ? (
                     <div>
-                      <Link to={`/mdm/staff/${person.employee_id}`} className="text-sm font-semibold text-[#085E5E] hover:underline">{person.name}</Link>
-                      <p className="text-xs text-neutral-400">{person.department ?? person.adp_department ?? '—'}</p>
+                      <Link to={`/mdm/staff/${person.employee_id}`} className="text-sm font-semibold text-primary-700 hover:underline">{person.name}</Link>
+                      <p className="text-xs text-fg-muted">{person.department ?? person.adp_department ?? '—'}</p>
                     </div>
                   ) : editable
                     ? <SavedInput label="Name" value={person.name} disabled={busy} onSave={(name) => name && setNode(person.id, { name })} />
-                    : <p className="text-sm font-semibold text-neutral-800">{person.name}</p>}
+                    : <p className="text-sm font-semibold text-fg">{person.name}</p>}
                   {editable ? (
                     <>
                       <SavedInput label="Title on the chart" value={person.custom_title ?? ''} placeholder={person.job_title ?? ''} disabled={busy}
                         onSave={(title) => setNode(person.id, { title })} />
-                      <label className="block text-xs text-neutral-500">Reports to
+                      <label className="block text-xs text-fg-muted">Reports to
                         <Combobox label="Reports to" disabled={busy} value={person.parent_id ?? ''} placeholder="Search name, number or title…"
                           options={[{ value: '', label: 'No one (top of the chart)' }, ...peopleOptions.filter((o) => o.value !== person.id)]}
                           onChange={(v) => setNode(person.id, { parent_id: v || null })} />
@@ -476,18 +476,18 @@ export default function OrgChart() {
                       <AddBox withTitle disabled={busy}
                         onAdd={(where, name, title) => addBox('/org/nodes', person, where, { name, title })} />
                       {!person.employee_id && (
-                        <button className="text-sm text-red-600 hover:underline" disabled={busy} onClick={() => run(async () => {
+                        <button className="text-sm text-danger-fg hover:underline" disabled={busy} onClick={() => run(async () => {
                           await mdmApi.delete(`/org/nodes/${person.id}`); setPicked(null)
                         })}>Remove this box</button>
                       )}
                     </>
-                  ) : <p className="text-sm text-neutral-600">{person.title ?? '—'} · reports to {byId.get(person.parent_id ?? '')?.name ?? 'no one'}</p>}
-                  {person.employee_id && <p className="text-xs text-neutral-400">{person.source === 'manual' ? 'Set by a person' : 'Worked out from the data'}</p>}
+                  ) : <p className="text-sm text-fg-secondary">{person.title ?? '—'} · reports to {byId.get(person.parent_id ?? '')?.name ?? 'no one'}</p>}
+                  {person.employee_id && <p className="text-xs text-fg-muted">{person.source === 'manual' ? 'Set by a person' : 'Worked out from the data'}</p>}
                 </div>
               )}
 
               {!unit && !person && (view === 'units' || toCheck.length === 0) && (
-                <p className="rounded-xl border border-dashed border-neutral-200 p-4 text-sm text-neutral-400">Pick a card to adjust it or add a box.</p>
+                <p className="rounded-xl border border-dashed border-line p-4 text-sm text-fg-muted">Pick a card to adjust it or add a box.</p>
               )}
             </aside>
           </div>

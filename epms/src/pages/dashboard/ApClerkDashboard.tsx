@@ -5,16 +5,16 @@ import { displayTimeZone, formatAmount, formatDate } from '@/lib/utils'
 import { SortTh, useSortableRows } from '@uniops/shell'
 
 const INV_STATUS_STYLES: Record<string, string> = {
-  unmatched: 'bg-warning-100 text-warning-700',
-  matched:   'bg-success-100 text-success-700',
-  exception: 'bg-danger-100 text-danger-700',
-  approved:  'bg-blue-100 text-blue-700',
-  paid:      'bg-neutral-100 text-neutral-500',
+  unmatched: 'bg-warning-soft text-warning-fg',
+  matched:   'bg-success-soft text-success-fg',
+  exception: 'bg-danger-soft text-danger-fg',
+  approved:  'bg-info-soft text-info-fg',
+  paid:      'bg-surface-sunken text-fg-muted',
 }
 
 function InvoiceStatusBadge({ status }: { status: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${INV_STATUS_STYLES[status] ?? 'bg-neutral-100 text-neutral-600'}`}>
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${INV_STATUS_STYLES[status] ?? 'bg-surface-sunken text-fg-secondary'}`}>
       {status}
     </span>
   )
@@ -38,7 +38,7 @@ export default function ApClerkDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-neutral-900">AP Clerk Dashboard</h1>
+      <h1 className="text-2xl font-bold text-fg">AP Clerk Dashboard</h1>
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -66,47 +66,47 @@ export default function ApClerkDashboard() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Recent invoices table */}
         <div className="lg:col-span-8">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-neutral-900">Recent Invoices</h2>
+              <h2 className="text-base font-semibold text-fg">Recent Invoices</h2>
               <Link to="/invoices" className="text-xs text-primary-600 hover:underline">View all →</Link>
             </div>
             {recentInvoices.length === 0 ? (
-              <p className="py-8 text-center text-sm text-neutral-400">No invoices yet.</p>
+              <p className="py-8 text-center text-sm text-fg-muted">No invoices yet.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-neutral-100 text-left">
-                      <SortTh label="Invoice #" sortKey="internal_ref" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                      <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                      <SortTh label="PO #" sortKey="po_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                      <SortTh label="Amount" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-neutral-500" />
-                      <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
-                      <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
+                    <tr className="border-b border-line-subtle text-left">
+                      <SortTh label="Invoice #" sortKey="internal_ref" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                      <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                      <SortTh label="PO #" sortKey="po_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                      <SortTh label="Amount" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
+                      <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
+                      <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-50">
+                  <tbody className="divide-y divide-line-subtle">
                     {recentInvoices.map((inv) => (
-                      <tr key={inv.id} className="hover:bg-neutral-50">
+                      <tr key={inv.id} className="hover:bg-surface-subtle">
                         <td className="py-2 pr-3">
                           <Link to={`/invoices/${inv.id}`} className="font-mono text-xs text-primary-600 hover:underline">
                             {inv.internal_ref}
                           </Link>
                         </td>
-                        <td className="py-2 pr-3 max-w-[140px] truncate text-neutral-700">{inv.vendor_name}</td>
+                        <td className="py-2 pr-3 max-w-[140px] truncate text-fg-secondary">{inv.vendor_name}</td>
                         <td className="py-2 pr-3">
                           {inv.po_number ? (
-                            <span className="font-mono text-xs text-neutral-600">{inv.po_number}</span>
+                            <span className="font-mono text-xs text-fg-secondary">{inv.po_number}</span>
                           ) : (
-                            <span className="text-xs text-neutral-400">—</span>
+                            <span className="text-xs text-fg-muted">—</span>
                           )}
                         </td>
-                        <td className="py-2 pr-3 text-right font-mono text-neutral-900">
+                        <td className="py-2 pr-3 text-right font-mono text-fg">
                           {formatAmount(Number(inv.total_amount), inv.currency)}
                         </td>
                         <td className="py-2 pr-3"><InvoiceStatusBadge status={inv.status} /></td>
-                        <td className="py-2 text-neutral-500">{formatDate(inv.created_at)}</td>
+                        <td className="py-2 text-fg-muted">{formatDate(inv.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -118,17 +118,17 @@ export default function ApClerkDashboard() {
 
         {/* Quick links */}
         <div className="lg:col-span-4">
-          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
-            <h2 className="mb-4 text-base font-semibold text-neutral-900">Quick Actions</h2>
+          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+            <h2 className="mb-4 text-base font-semibold text-fg">Quick Actions</h2>
             <div className="flex flex-col gap-3">
               <Link to="/invoices" className="flex items-center justify-between rounded-lg bg-primary-600 px-4 py-3 text-sm font-semibold text-white hover:bg-primary-700 transition-colors">
                 <span>Upload Invoice</span><span>→</span>
               </Link>
-              <Link to="/invoices" className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors">
-                <span>View Invoices</span><span className="text-neutral-400">→</span>
+              <Link to="/invoices" className="flex items-center justify-between rounded-lg border border-line bg-surface px-4 py-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors">
+                <span>View Invoices</span><span className="text-fg-muted">→</span>
               </Link>
-              <Link to="/pa" className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors">
-                <span>Payment Applications</span><span className="text-neutral-400">→</span>
+              <Link to="/pa" className="flex items-center justify-between rounded-lg border border-line bg-surface px-4 py-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors">
+                <span>Payment Applications</span><span className="text-fg-muted">→</span>
               </Link>
             </div>
           </div>

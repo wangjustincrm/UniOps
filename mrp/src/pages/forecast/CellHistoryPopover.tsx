@@ -74,43 +74,43 @@ export function CellHistoryPopover({
       role="dialog"
       aria-label={`Change history — ${materialLabel}, ${month}`}
       style={{ position: 'fixed', top, left, width }}
-      className="z-[80] flex max-h-72 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-lg"
+      className="z-[80] flex max-h-72 flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
     >
-      <div className="flex items-center justify-between gap-2 border-b border-neutral-100 px-3 py-2">
+      <div className="flex items-center justify-between gap-2 border-b border-line-subtle px-3 py-2">
         <div className="min-w-0">
-          <p className="truncate text-xs font-semibold text-neutral-800">{materialLabel}</p>
-          <p className="text-[11px] text-neutral-400">{month}</p>
+          <p className="truncate text-xs font-semibold text-fg">{materialLabel}</p>
+          <p className="text-2xs text-fg-muted">{month}</p>
         </div>
         <button
           type="button"
           onClick={onClose}
           aria-label="Close history"
-          className="-m-2.5 flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center text-neutral-400 hover:text-neutral-600"
+          className="-m-2.5 flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center text-fg-muted hover:text-fg-secondary"
         >
           <XIcon className="h-3.5 w-3.5" />
         </button>
       </div>
       <div className="overflow-y-auto px-3 py-2">
         {query.isLoading ? (
-          <div className="flex items-center gap-1.5 py-3 text-xs text-neutral-400">
+          <div className="flex items-center gap-1.5 py-3 text-xs text-fg-muted">
             <Loader2 className="h-3 w-3 animate-spin" /> Loading…
           </div>
         ) : query.isError ? (
-          <p role="alert" className="py-2 text-xs text-danger-600">{errMsg(query.error, 'Could not load history.')}</p>
+          <p role="alert" className="py-2 text-xs text-danger-fg">{errMsg(query.error, 'Could not load history.')}</p>
         ) : items.length === 0 ? (
-          <p className="py-2 text-xs text-neutral-400">No edits recorded for this cell yet.</p>
+          <p className="py-2 text-xs text-fg-muted">No edits recorded for this cell yet.</p>
         ) : (
           <ul className="space-y-1.5">
             {items.map((it, i) => (
-              <li key={`${it.changed_at}-${i}`} className="text-xs text-neutral-700">
-                <span className="text-neutral-400">{formatDate(it.changed_at)}:</span>{' '}
+              <li key={`${it.changed_at}-${i}`} className="text-xs text-fg-secondary">
+                <span className="text-fg-muted">{formatDate(it.changed_at)}:</span>{' '}
                 {formatQty(it.old_qty)} → {formatQty(it.new_qty)}
                 {/* Editor NAME only, never the raw changed_by UUID — see
                     seriesApi.ts's ChangeLogItem.changed_by_name docstring.
                     Absent (identity-api was down at write time, or a
                     pre-mrp06 row) renders nothing, never a fallback to the
                     uuid. */}
-                {it.changed_by_name && <span className="text-neutral-400"> · {it.changed_by_name}</span>}
+                {it.changed_by_name && <span className="text-fg-muted"> · {it.changed_by_name}</span>}
               </li>
             ))}
           </ul>
