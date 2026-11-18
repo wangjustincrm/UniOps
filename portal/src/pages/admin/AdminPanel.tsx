@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Building2, ShieldCheck, CreditCard, Bell, Plus, Pencil, Trash2, X, Check, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, Download, Upload, ChevronLeft, ChevronRight, FileText, Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail, DatabaseZap, Warehouse } from 'lucide-react'
-import { Button, Checkbox, ChoiceCard, FileInput, Input, Modal as ShellModal, SearchInput, Segmented, Select, Sidebar, SortTh, Switch, TBody, THead, Table, Tabs, Td, Textarea as ShellTextarea, Th, Topbar, Tr, sortParams, type Sort, useSort, useSortableRows } from '@uniops/shell'
+import { Button, Checkbox, ChoiceCard, FileInput, Input, Modal as ShellModal, SearchInput, Segmented, Select, Sidebar, SortTh, Switch, TBody, THead, Table, Tabs, Td, Textarea as ShellTextarea, Th, Topbar, Tr, sortParams, type Sort, useSort, useSortableRows, Badge } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { adminPageLinks } from '@/components/layout/navConfig'
@@ -494,9 +494,9 @@ export function DepartmentManagement() {
                   <Td className="font-mono text-xs text-fg-secondary">{d.code}</Td>
                   <Td className="font-medium text-fg">{d.name}</Td>
                   <Td>
-                    <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium', d.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
+                    <Badge size="sm" variant={d.is_active ? 'success' : 'neutral'}>
                       {d.is_active ? 'Active' : 'Inactive'}
-                    </span>
+                    </Badge>
                   </Td>
                   <Td>
                     <div className="flex items-center justify-end gap-1">
@@ -791,9 +791,9 @@ export function UserManagement() {
                   <Td className="text-xs text-fg-muted">{u.department_name ?? '—'}</Td>
                   <Td className="font-mono text-xs text-fg-muted">{u.erp_person_code ?? '—'}</Td>
                   <Td>
-                    <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium', u.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
+                    <Badge size="sm" variant={u.is_active ? 'success' : 'neutral'}>
                       {u.is_active ? 'Active' : 'Inactive'}
-                    </span>
+                    </Badge>
                   </Td>
                   <Td>
                     <div className="flex items-center justify-end gap-1">
@@ -2180,10 +2180,9 @@ function ErpMaterialsTab() {
                   <Td className="text-xs text-fg-muted">{m.dim_quality}</Td>
                   <Td className="text-xs text-fg-muted">{m.item_mes_type}</Td>
                   <Td>
-                    <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium',
-                      m.part_status === 'A' ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
+                    <Badge size="sm" variant={m.part_status === 'A' ? 'success' : 'neutral'}>
                       {m.part_status || '—'}
-                    </span>
+                    </Badge>
                   </Td>
                   <Td className="text-2xs text-fg-muted">
                     {m.erp_rowversion ? formatDateTime(m.erp_rowversion) : '—'}
@@ -2336,10 +2335,9 @@ function ErpPersonsTab() {
                     <Td className="text-xs text-fg-muted">{p.company_name}</Td>
                     <Td className="text-xs text-fg-muted">{p.department_name} ({p.department_code})</Td>
                     <Td>
-                      <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium',
-                        p.is_valid ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
+                      <Badge size="sm" variant={p.is_valid ? 'success' : 'neutral'}>
                         {p.is_valid ? 'Yes' : 'No'}
-                      </span>
+                      </Badge>
                     </Td>
                   </Tr>
                 ))}

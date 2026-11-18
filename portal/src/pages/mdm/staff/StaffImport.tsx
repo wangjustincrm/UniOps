@@ -6,7 +6,7 @@ import { mdmApi, mdmDownload, mdmUpload } from '@/lib/api'
 import { formatDate, todayISO } from '@/lib/utils'
 import { StaffShell } from './shared'
 
-import { Button, DisclosureButton, FileInput, Input, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { Button, DisclosureButton, FileInput, Input, TBody, THead, Table, Td, Th, Tr, Badge, type BadgeTone } from '@uniops/shell'
 interface Change { field: string; old: string | null; new: string | null }
 interface Item {
   row?: number; employee_number?: string | null; display_name?: string; work_email?: string | null
@@ -36,14 +36,15 @@ function today(): string {
   return todayISO()
 }
 
-function Group({ title, count, tone, children }: { title: string; count: number; tone?: string; children?: React.ReactNode }) {
+function Group({ title, count, tone, children }: { title: string; count: number; tone?: BadgeTone; children?: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   return (
     <div className="border-t border-line-subtle">
       <DisclosureButton open={open} className="w-full px-4 py-2.5 text-sm [&>svg]:text-fg-muted disabled:cursor-default disabled:opacity-100"
         disabled={!count} onClick={() => setOpen((o) => !o)}>
         <span className="font-medium text-fg">{title}</span>
-        <span className={`rounded-full px-2 py-0.5 text-xs ${count ? tone ?? 'bg-surface-sunken text-fg-secondary' : 'bg-surface-sunken text-fg-muted'}`}>{count}</span>
+        {/* an empty group is the lighter grey → outline */}
+        <Badge variant={count ? tone ?? 'neutral' : 'outline'}>{count}</Badge>
       </DisclosureButton>
       {open && <div className="max-h-72 overflow-auto px-4 pb-3 text-sm text-fg-secondary">{children}</div>}
     </div>
@@ -56,10 +57,10 @@ function Groups({ view, onConvert }: { view: ImportView; onConvert?: (id: string
   const person = (i: Item) => `${i.employee_number} ${i.display_name ?? ''}`
   return (
     <div className="rounded-xl border border-line bg-surface">
-      <Group title="New" count={g('new').length} tone="bg-success-soft text-success-fg">
+      <Group title="New" count={g('new').length} tone="success">
         <ul>{g('new').map((i) => <li key={i.employee_number!}>{person(i)} · {i.adp_department ?? 'no department'}</li>)}</ul>
       </Group>
-      <Group title="Changed" count={g('changed').length} tone="bg-info-soft text-info-fg">
+      <Group title="Changed" count={g('changed').length} tone="blue">
         <ul className="space-y-1">
           {g('changed').map((i) => (
             <li key={i.employee_number!}>{person(i)}
@@ -71,7 +72,7 @@ function Groups({ view, onConvert }: { view: ImportView; onConvert?: (id: string
       <Group title="Unchanged" count={g('unchanged').length}>
         <ul>{g('unchanged').map((i) => <li key={i.employee_number!}>{person(i)}</li>)}</ul>
       </Group>
-      <Group title="Conflicts (not applied)" count={g('conflicts').length} tone="bg-warning-soft text-warning-fg">
+      <Group title="Conflicts (not applied)" count={g('conflicts').length} tone="warning">
         <ul className="space-y-1">
           {g('conflicts').map((i) => (
             <li key={i.row}>Row {i.row}: {person(i)} · {i.work_email} — {CONFLICT[i.kind ?? ''] ?? i.kind}{i.email_owner ? ` (${i.email_owner})` : ''}
@@ -82,14 +83,14 @@ function Groups({ view, onConvert }: { view: ImportView; onConvert?: (id: string
           ))}
         </ul>
       </Group>
-      <Group title="Row errors (not applied)" count={g('errors').length} tone="bg-danger-soft text-danger-fg">
+      <Group title="Row errors (not applied)" count={g('errors').length} tone="danger">
         <ul>{g('errors').map((i) => <li key={i.row}>Row {i.row}: {i.position_id} {i.payroll_name} — {i.reasons?.join('; ')}</li>)}</ul>
       </Group>
-      <Group title="Unmapped ADP departments" count={unmapped.length} tone="bg-warning-soft text-warning-fg">
+      <Group title="Unmapped ADP departments" count={unmapped.length} tone="warning">
         <ul>{unmapped.map((d) => <li key={d}>{d || '(empty)'}</li>)}</ul>
         <Link className="mt-1 inline-block text-xs font-medium text-primary-700 hover:underline" to="/mdm/staff/department-mapping">Open Department Mapping</Link>
       </Group>
-      <Group title="Missing from roster" count={g('missing').length} tone="bg-warning-soft text-warning-fg">
+      <Group title="Missing from roster" count={g('missing').length} tone="warning">
         <ul>{g('missing').map((i) => <li key={i.employee_id!}>{person(i)}</li>)}</ul>
       </Group>
     </div>

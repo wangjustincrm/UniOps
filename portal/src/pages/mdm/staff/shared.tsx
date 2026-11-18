@@ -4,6 +4,7 @@ import { useAuthStore } from '@/store/auth'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { PortalPageLayout } from '@/components/layout/PortalPageLayout'
 import { cn } from '@/lib/utils'
+import { Badge } from '@uniops/shell'
 
 export interface StaffRow {
   id: string
@@ -89,21 +90,17 @@ export { targetText }
 
 export function StatusPill({ status }: { status: string }) {
   return (
-    <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium',
-      status === 'active' ? 'bg-success-soft text-success-fg'
-        : status === 'on_leave' ? 'bg-warning-soft text-warning-fg' : 'bg-surface-sunken text-fg-muted')}>
+    <Badge variant={status === 'active' ? 'success' : status === 'on_leave' ? 'warning' : 'neutral'}>
       {STATUS_LABEL[status] ?? status}
-    </span>
+    </Badge>
   )
 }
 
 export function NcPill({ state }: { state: string }) {
   return (
-    <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap',
-      state === 'in_step' ? 'bg-success-soft text-success-fg'
-        : state === 'unknown' ? 'bg-surface-sunken text-fg-muted' : 'bg-warning-soft text-warning-fg')}>
+    <Badge variant={state === 'in_step' ? 'success' : state === 'unknown' ? 'neutral' : 'warning'}>
       {NC_STATE_LABEL[state] ?? state}
-    </span>
+    </Badge>
   )
 }
 

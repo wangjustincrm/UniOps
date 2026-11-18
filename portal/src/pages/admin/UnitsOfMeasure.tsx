@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { Button, Input, Modal as ShellModal, Select, SortTh, Switch, TBody, THead, Table, Td, Th, Tr, useSortableRows } from '@uniops/shell'
+import { Button, Input, Modal as ShellModal, Select, SortTh, Switch, TBody, THead, Table, Td, Th, Tr, useSortableRows, Badge } from '@uniops/shell'
 import { mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useConfirmDialog } from '@/components/ConfirmDialog'
@@ -105,9 +105,9 @@ export function UnitsOfMeasure() {
                   <Td className="text-fg">{u.name}</Td>
                   <Td className="text-xs text-fg-muted">{u.dimension}</Td>
                   <Td>
-                    <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium', u.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
+                    <Badge size="sm" variant={u.is_active ? 'success' : 'neutral'}>
                       {u.is_active ? 'Active' : 'Inactive'}
-                    </span>
+                    </Badge>
                   </Td>
                   <Td>
                     <div className="flex items-center justify-end gap-1">

@@ -15,7 +15,7 @@ import { PortalSidebar } from '@/components/layout/PortalSidebar'
 import { TopHeader } from '@/components/layout/TopHeader'
 import { FINANCE_ACCESS_PERMS, BOOKING_ACCESS_PERMS, MRP_URL } from '@/components/layout/navConfig'
 
-import { Button, useSidebarCollapsed } from '@uniops/shell'
+import { Button, useSidebarCollapsed, Badge } from '@uniops/shell'
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const EPMS_API = (import.meta.env.VITE_EPMS_API_URL as string | undefined) || 'http://localhost:8000'
@@ -233,11 +233,7 @@ interface ModuleCardProps {
 function ModuleCard({ icon, iconBg, label, description, href, healthy, loading, comingSoon = false }: ModuleCardProps) {
   const isDown = !comingSoon && !loading && healthy === false
   const statusLabel = comingSoon ? 'Coming Soon' : isDown ? 'Offline' : 'Active'
-  const statusColor = comingSoon
-    ? 'bg-surface-sunken text-fg-muted'
-    : isDown
-      ? 'bg-danger-soft text-danger-fg'
-      : 'bg-success-soft text-success-fg'
+  const statusTone = comingSoon ? 'neutral' : isDown ? 'danger' : 'success'
 
   const inner = (
     <div className={cn(
@@ -252,9 +248,9 @@ function ModuleCard({ icon, iconBg, label, description, href, healthy, loading, 
         <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', iconBg)}>
           {icon}
         </div>
-        <span className={cn('rounded-full px-2 py-0.5 text-2xs font-semibold', statusColor)}>
+        <Badge size="sm" variant={statusTone}>
           {statusLabel}
-        </span>
+        </Badge>
       </div>
       <p className="text-sm font-semibold text-fg">{label}</p>
       <p className="mt-1 text-xs text-fg-muted leading-relaxed">{description}</p>
@@ -401,7 +397,7 @@ function TaskRow({ task }: { task: UnifiedTask }) {
           </span>
           <span className="text-2xs text-fg-muted">{timeAgo(task.createdAt)}</span>
           {task.urgent && (
-            <span className="rounded-full bg-danger-soft px-1.5 py-0.5 text-2xs font-semibold text-danger-fg">Urgent</span>
+            <Badge variant="danger" size="sm">Urgent</Badge>
           )}
         </div>
         <p className="text-sm font-medium text-fg truncate">{task.title}</p>
