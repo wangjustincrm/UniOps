@@ -5,7 +5,7 @@ import { cn, displayTimeZone, formatDate, todayISO } from '@/lib/utils'
 import { useDaySummary } from '@/services/api'
 import type { DaySummaryRoom, DaySummaryBooking } from '@/lib/types'
 
-import { Input, Button } from '@uniops/shell'
+import { Input, Button, Badge } from '@uniops/shell'
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
 function addDays(iso: string, n: number): string {
@@ -90,9 +90,9 @@ function RoomHeader({ room, onClick }: { room: DaySummaryRoom; onClick: () => vo
           {room.name}
         </span>
         {isMaint && (
-          <span className="shrink-0 rounded-full bg-warning-soft px-1.5 py-0.5 text-2xs font-semibold text-warning-fg ring-1 ring-inset ring-warning-line">
+          <Badge variant="warning" size="sm" className="shrink-0">
             Maintenance
-          </span>
+          </Badge>
         )}
       </div>
       <div className="flex items-center gap-2 text-2xs text-fg-muted">

@@ -23,7 +23,7 @@ import {
   X as XIcon,
   CheckCircle2,
 } from 'lucide-react'
-import { SortTh, useSortableRows, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Button, Modal } from '@uniops/shell'
+import { SortTh, useSortableRows, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Button, Modal, Badge, type BadgeTone } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import {
   useAdminRoomList,
@@ -37,19 +37,19 @@ import type { RoomType } from '@/lib/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const STATUS_STYLE: Record<string, string> = {
-  available:   'bg-success-soft text-success-fg ring-success-line',
-  disabled:    'bg-surface-sunken text-fg-muted ring-line',
-  maintenance: 'bg-warning-soft text-warning-fg ring-warning-line',
+const STATUS_TONE: Record<string, BadgeTone> = {
+  available:   'success',
+  disabled:    'neutral',
+  maintenance: 'warning',
 }
 
 function RoomStatusBadge({ status }: { status: string }) {
-  const style = STATUS_STYLE[status] ?? 'bg-surface-sunken text-fg-muted ring-line'
+  const tone = STATUS_TONE[status] ?? 'neutral'
   const label = status.charAt(0).toUpperCase() + status.slice(1)
   return (
-    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset', style)}>
+    <Badge variant={tone}>
       {label}
-    </span>
+    </Badge>
   )
 }
 

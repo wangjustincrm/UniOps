@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils'
+import { Badge, type BadgeTone } from '@uniops/shell'
 
 export type BookingStatus =
   | 'pending'
@@ -15,21 +15,18 @@ const STATUS_LABEL: Record<BookingStatus, string> = {
   no_show:    'No Show',
 }
 
-const STATUS_STYLE: Record<BookingStatus, string> = {
-  pending:    'bg-warning-soft text-warning-fg ring-warning-line',
-  confirmed:  'bg-primary-50 text-primary-700 ring-primary-200',
-  cancelled:  'bg-surface-sunken text-fg-muted ring-line',
-  completed:  'bg-success-soft text-success-fg ring-success-line',
-  no_show:    'bg-danger-soft text-danger-fg ring-danger-line',
+const STATUS_TONE: Record<BookingStatus, BadgeTone> = {
+  pending:    'warning',
+  confirmed:  'accent',
+  cancelled:  'neutral',
+  completed:  'success',
+  no_show:    'danger',
 }
 
 export function StatusBadge({ status }: { status: BookingStatus }) {
   return (
-    <span className={cn(
-      'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset',
-      STATUS_STYLE[status],
-    )}>
+    <Badge variant={STATUS_TONE[status]}>
       {STATUS_LABEL[status]}
-    </span>
+    </Badge>
   )
 }

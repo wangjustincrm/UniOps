@@ -9,10 +9,10 @@ import { cn, formatTime, todayISO } from '@/lib/utils'
 import { useRoomList, useRoomAvailability, type RoomListFilters } from '@/services/api'
 import type { RoomWithStatusOut, RoomStatusNow, EquipmentOption } from '@/lib/types'
 import { EQUIPMENT_OPTIONS, EQUIPMENT_LABELS, ROOM_TYPES, ROOM_TYPE_LABELS } from '@/lib/types'
-import { ROOM_STATUS_STYLE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
+import { ROOM_STATUS_TONE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
 import { zonedToISO } from '@/lib/tz'
 
-import { Button, Checkbox, Input, Select } from '@uniops/shell'
+import { Button, Checkbox, Input, Select, Badge } from '@uniops/shell'
 // ── Equipment icon map ────────────────────────────────────────────────────────
 
 const EQUIPMENT_ICONS: Record<EquipmentOption, LucideIcon> = {
@@ -27,12 +27,9 @@ const EQUIPMENT_ICONS: Record<EquipmentOption, LucideIcon> = {
 
 function RoomStatusBadge({ status }: { status: RoomStatusNow }) {
   return (
-    <span className={cn(
-      'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset',
-      ROOM_STATUS_STYLE[status],
-    )}>
+    <Badge variant={ROOM_STATUS_TONE[status]}>
       {ROOM_STATUS_LABEL[status]}
-    </span>
+    </Badge>
   )
 }
 

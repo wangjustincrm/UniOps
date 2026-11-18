@@ -8,9 +8,9 @@
  */
 import { Clock, MapPin, Users, Video, CheckCircle2, AlertTriangle } from 'lucide-react'
 import type { BookingSlimOut, SuggestOut, RoomWithStatusOut } from '@/lib/types'
-import { cn, formatDate, formatDateTime, formatTime } from '@/lib/utils'
-import { ROOM_STATUS_STYLE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
-import { Button, ChoiceCard } from '@uniops/shell'
+import { formatDate, formatDateTime, formatTime } from '@/lib/utils'
+import { ROOM_STATUS_TONE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
+import { Button, ChoiceCard, Badge } from '@uniops/shell'
 
 interface Props {
   conflicts: BookingSlimOut[]
@@ -142,12 +142,9 @@ export function SuggestionPanel({ conflicts, occurrenceConflicts, suggestions, o
                       )}
                     </div>
                   </div>
-                  <span className={cn(
-                    'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset shrink-0',
-                    ROOM_STATUS_STYLE[room.status_now],
-                  )}>
+                  <Badge variant={ROOM_STATUS_TONE[room.status_now]} className="shrink-0">
                     {ROOM_STATUS_LABEL[room.status_now]}
-                  </span>
+                  </Badge>
                 </ChoiceCard>
               )
             })}

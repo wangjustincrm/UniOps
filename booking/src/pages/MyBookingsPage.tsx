@@ -23,8 +23,8 @@ import {
   Pencil,
   X as XIcon,
 } from 'lucide-react'
-import { Button, Modal, Pagination, SortTh, TBody, THead, Table, Tabs, Td, Th, Tr, sortParams, type Sort, useSort } from '@uniops/shell'
-import { cn, formatDate, formatTime } from '@/lib/utils'
+import { Button, Modal, Pagination, SortTh, TBody, THead, Table, Tabs, Td, Th, Tr, sortParams, type Sort, useSort, Badge, type BadgeTone } from '@uniops/shell'
+import { formatDate, formatTime } from '@/lib/utils'
 import { useMyBookingsPaged, useCancelBooking } from '@/services/api'
 import type { BookingOut } from '@/lib/types'
 
@@ -40,24 +40,17 @@ function StatusBadge({ status }: { status: string }) {
   const confirmed = status === 'confirmed'
   const cancelled = status === 'cancelled'
   return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset',
-        confirmed && 'bg-success-soft text-success-fg ring-success-line',
-        cancelled && 'bg-danger-soft text-danger-fg ring-danger-line',
-        !confirmed && !cancelled && 'bg-surface-sunken text-fg-muted ring-line',
-      )}
-    >
+    <Badge variant={confirmed ? 'success' : cancelled ? 'danger' : 'neutral'}>
       {confirmed ? 'Confirmed' : cancelled ? 'Cancelled' : status}
-    </span>
+    </Badge>
   )
 }
 
-const SYNC_STYLE: Record<string, string> = {
-  sent:          'bg-success-soft text-success-fg ring-success-line',
-  pending:       'bg-warning-soft  text-warning-fg  ring-warning-line',
-  compensating:  'bg-warning-soft  text-warning-fg  ring-warning-line',
-  failed:        'bg-danger-soft    text-danger-fg    ring-danger-line',
+const SYNC_TONE: Record<string, BadgeTone> = {
+  sent:          'success',
+  pending:       'warning',
+  compensating:  'warning',
+  failed:        'danger',
 }
 
 const SYNC_LABEL: Record<string, string> = {
@@ -68,18 +61,12 @@ const SYNC_LABEL: Record<string, string> = {
 }
 
 function SyncBadge({ syncStatus }: { syncStatus: string }) {
-  const style = SYNC_STYLE[syncStatus] ?? 'bg-surface-sunken text-fg-muted ring-line'
+  const tone = SYNC_TONE[syncStatus] ?? 'neutral'
   const label = SYNC_LABEL[syncStatus] ?? syncStatus
   return (
-    <span
-      title="Calendar invite delivery"
-      className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset cursor-help',
-        style,
-      )}
-    >
+    <Badge variant={tone} title="Calendar invite delivery" className="cursor-help">
       {label}
-    </span>
+    </Badge>
   )
 }
 

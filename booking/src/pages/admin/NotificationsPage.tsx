@@ -9,7 +9,7 @@
  * Banner warns that resend duplicates emails for already-sent logs.
  */
 import { useState } from 'react'
-import { SortTh, useSort, sortParams, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { SortTh, useSort, sortParams, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Badge, type BadgeTone } from '@uniops/shell'
 import {
   Loader2,
   AlertCircle,
@@ -26,11 +26,11 @@ import type { NotificationLogOut } from '@/lib/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const STATUS_STYLE: Record<string, string> = {
-  sent:     'bg-success-soft text-success-fg ring-success-line',
-  pending:  'bg-warning-soft  text-warning-fg  ring-warning-line',
-  failed:   'bg-danger-soft    text-danger-fg    ring-danger-line',
-  retrying: 'bg-warning-soft  text-warning-fg  ring-warning-line',
+const STATUS_TONE: Record<string, BadgeTone> = {
+  sent:     'success',
+  pending:  'warning',
+  failed:   'danger',
+  retrying: 'warning',
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -38,12 +38,12 @@ const TYPE_LABELS: Record<string, string> = {
 }
 
 function NotifStatusBadge({ status }: { status: string }) {
-  const style = STATUS_STYLE[status] ?? 'bg-surface-sunken text-fg-muted ring-line'
+  const tone = STATUS_TONE[status] ?? 'neutral'
   const label = status.charAt(0).toUpperCase() + status.slice(1)
   return (
-    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset', style)}>
+    <Badge variant={tone}>
       {label}
-    </span>
+    </Badge>
   )
 }
 

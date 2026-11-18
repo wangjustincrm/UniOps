@@ -11,15 +11,15 @@ import {
   Tv, Presentation, PenLine, Video, Phone,
   type LucideIcon,
 } from 'lucide-react'
-import { cn, formatDate, formatTime, todayISO } from '@/lib/utils'
+import { formatDate, formatTime, todayISO } from '@/lib/utils'
 import { useRoomDetail } from '@/services/api'
 import type { EquipmentOption, RoomStatus } from '@/lib/types'
 import { EQUIPMENT_LABELS } from '@/lib/types'
-import { ROOM_STATUS_STYLE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
+import { ROOM_STATUS_TONE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
 import { DayTimeline } from '@/components/DayTimeline'
 import { WeekStrip } from '@/components/WeekStrip'
 import { AuthImage } from '@/components/AuthImage'
-import { Button } from '@uniops/shell'
+import { Button, Badge } from '@uniops/shell'
 
 // ── Equipment icon map ────────────────────────────────────────────────────────
 
@@ -136,12 +136,9 @@ export default function RoomDetailPage() {
               )}
             </div>
             {/* Status badge */}
-            <span className={cn(
-              'inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ring-1 ring-inset',
-              ROOM_STATUS_STYLE[room.status_now],
-            )}>
+            <Badge variant={ROOM_STATUS_TONE[room.status_now]}>
               {ROOM_STATUS_LABEL[room.status_now]}
-            </span>
+            </Badge>
           </div>
 
           {/* Capacity + next meeting */}
