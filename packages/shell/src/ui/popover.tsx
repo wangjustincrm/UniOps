@@ -38,10 +38,13 @@ export function DropdownPortal({ anchorRect, onClose, children, className }: {
   }, [onClose])
   return createPortal(
     <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
+      {/* Above Modal/Drawer (z-50): a dropdown opened inside a dialog must catch the
+          outside click. DOM order cannot be relied on (a child portal mounting with
+          its dialog is inserted before it), so the layer is explicitly higher. */}
+      <div className="fixed inset-0 z-[60]" data-testid="dropdown-dismiss" onClick={onClose} />
       <div
         style={{ position: 'fixed', top: anchorRect.bottom + 4, left: anchorRect.left, width: anchorRect.width }}
-        className={cn('z-50 max-h-64 overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-md', className)}
+        className={cn('z-[60] max-h-64 overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-md', className)}
       >
         {children}
       </div>
@@ -64,7 +67,7 @@ export function ContextMenu({ x, y, onClose, children, className }: {
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
   return createPortal(
-    <div className="fixed inset-0 z-50" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
+    <div className="fixed inset-0 z-[60]" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
       <div
         role="menu"
         style={{ position: 'fixed', top: y, left: x }}

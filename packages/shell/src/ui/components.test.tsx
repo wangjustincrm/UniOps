@@ -127,3 +127,26 @@ describe('Modal closing rules', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 })
+
+describe('DropdownPortal inside a Modal', () => {
+  it('a click elsewhere in the dialog closes the dropdown', async () => {
+    const { DropdownPortal } = await import('./popover')
+    const onClose = vi.fn()
+    render(
+      <Modal open onClose={() => {}} title="Upload">
+        <p>field</p>
+        <DropdownPortal anchorRect={new DOMRect(10, 10, 100, 20)} onClose={onClose}>
+          <button type="button">Vendor A</button>
+        </DropdownPortal>
+      </Modal>,
+    )
+    const layer = screen.getByTestId('dropdown-dismiss')
+    const dialogRoot = screen.getByRole('dialog').parentElement!
+    const z = (el: Element) => Number(/\bz-(?:\[)?(\d+)/.exec(el.className)?.[1] ?? 0)
+    // mounted together, the child portal lands before the dialog in the DOM,
+    // so only a higher z-index keeps the dismiss layer above it
+    expect(z(layer)).toBeGreaterThan(z(dialogRoot))
+    fireEvent.click(layer)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+})
