@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.59
+**Version:** 2.60
 **Date:** 2026-11-17
 **Status:** In Production
+
+> **v2.60 (2026-11-17)** — When the approval engine answers too slowly, EPMS checks whether the action was recorded anyway before reporting it failed (§3.3.3).
 
 > **v2.59 (2026-11-17)** — **OneTime (Deposit) agreements** (§3.17.9, AGR-090 – AGR-096; §3.17.1, AGR-002, AGR-051, §3.15.7, REM-003): a new agreement type for a one-time deposit that is refunded when the agreement ends. The agreement states the **Deposit Amount**; its deposit PA is a Prepayment for exactly that amount, with **no invoice** — the agreement's attachments are its evidence — and one per agreement. When the vendor returns the money, **Record Refund** on the paid deposit PA records the amount refunded (0 up to the deposit, never more), the refund evidence and, when less came back, the reason the rest was retained; Finance confirms the refund (or returns it) and only then is the deposit settled, the retained part recorded as a negative variance. Nothing is paid by the refund and nothing is pushed to NC — Finance books the refund in NC. The remittance advice of a deposit reads "Deposit - <agreement number>".
 
@@ -664,6 +666,8 @@ Admins may add, remove, or reorder steps freely in Portal → Admin → Approval
 | `recall` | Creator, System Admin | submitted, in_review | draft | Next submit restarts from the top |
 | `cancel` | Creator, System Admin, or current approver | PR/PO/AGR: draft, returned, submitted; PA: draft, returned | cancelled | Terminal |
 
+> **A slow engine is not a failed action.** EPMS waits 10 s for the approval engine's answer. If none comes, it checks whether the engine recorded the action anyway (an approval event for that document and action written after the request was sent), waiting up to 10 s more: if it did, the action is reported as done and the document's real status is shown; if not, the user is told the engine did not answer and the action may still go through — refresh before trying again — rather than a bare server error. *(2026-11-17: an agreement submit committed but its answer never arrived, and the page said "saved as a draft but not submitted" for a document already in approval.)*
+>
 > **One decision per step.** The engine locks the document while it acts, so a double-click cannot record an action twice. An approve, return or reject may name the step it was meant for; the PR page does, and the engine refuses it once the PR has moved past that step ("…refresh the page to see where it is now").
 >
 > Approval tasks cannot be dismissed with "Mark done" in the Task Inbox — that action is refused for approval tasks. Approval tasks left open on a document that is no longer awaiting approval are closed automatically (§3.7.1).
