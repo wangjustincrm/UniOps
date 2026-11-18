@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react'
 import { ChevronRight, Info, X } from 'lucide-react'
 import type { MpsRunDetail } from './mpsApi'
 
-import { Button } from '@uniops/shell'
+import { Button, Card } from '@uniops/shell'
 const STORAGE_KEY = 'mrp.planningRules.open'
 
 /** 0 = Monday, so this plant's Saturday start is 5. */
@@ -72,7 +72,7 @@ export function PlanningRulesPanel({ run }: { run: MpsRunDetail }) {
   const leadWeeks = run.production_lead_weeks
 
   return (
-    <aside className="w-72 shrink-0 self-start rounded-lg border border-line bg-surface">
+    <Card inset as="aside" className="w-72 shrink-0 self-start">
       <div className="flex items-center justify-between border-b border-line px-3 py-2">
         <h2 className="flex items-center gap-1.5 text-xs font-semibold text-fg">
           <Info aria-hidden className="h-3.5 w-3.5 text-fg-muted" />
@@ -161,6 +161,6 @@ export function PlanningRulesPanel({ run }: { run: MpsRunDetail }) {
           not the current settings.
         </span>
       </p>
-    </aside>
+    </Card>
   )
 }

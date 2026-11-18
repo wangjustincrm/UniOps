@@ -7,7 +7,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronsDown, ChevronsUp, FileDown, Network, Search, Loader2 } from 'lucide-react'
-import { Button, FormField, Input, Segmented, Badge } from '@uniops/shell'
+import { Button, FormField, Input, Segmented, Badge, Card } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn, todayISO } from '@/lib/utils'
 import { ToastStack } from '@/components/Toast'
@@ -148,7 +148,7 @@ export default function BomExplorerPage() {
         value={mode} onChange={setMode} />
 
       {/* Toolbar */}
-      <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg border border-line bg-surface p-3">
+      <Card inset className="flex flex-wrap items-end justify-between gap-3 p-3">
         <div className="flex flex-wrap items-end gap-3">
           {mode === 'explode' ? (
             <FormField label="Product" htmlFor="bom-product">
@@ -219,7 +219,7 @@ export default function BomExplorerPage() {
             <FileDown className="h-3.5 w-3.5" /> Export Excel
           </Button>
         </div>
-      </div>
+      </Card>
 
       {/* ── Explode mode body ──────────────────────────────────────────── */}
       {mode === 'explode' && (
@@ -332,7 +332,7 @@ function WhereUsedResults({ results }: { results: WhereUsedResult[] }) {
   return (
     <div className="flex flex-col gap-2">
       {results.map((r, i) => (
-        <div key={i} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-sm">
+        <Card inset className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm" key={i}>
           <div className="flex flex-wrap items-center gap-1 font-mono text-xs text-fg-secondary">
             {r.path.map((code, j) => (
               <span key={j} className="flex items-center gap-1">
@@ -348,7 +348,7 @@ function WhereUsedResults({ results }: { results: WhereUsedResult[] }) {
               <Badge variant="warning">cycle detected</Badge>
             )}
           </div>
-        </div>
+        </Card>
       ))}
     </div>
   )

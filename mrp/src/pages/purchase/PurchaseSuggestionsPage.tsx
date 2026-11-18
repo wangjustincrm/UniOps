@@ -12,7 +12,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CalendarClock, Download, Loader2, RefreshCw } from 'lucide-react'
-import { Badge, Button, SortTh, useSortableRows, Checkbox, Select, TBody, THead, Table, Td, Tr } from '@uniops/shell'
+import { Badge, Button, SortTh, useSortableRows, Checkbox, Select, TBody, THead, Table, Td, Tr, Card } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { saveBlob } from '@/pages/forecast/forecastApi'
 import { cn, formatDate, formatDateTime, todayISO, toLocalDate } from '@/lib/utils'
@@ -201,7 +201,7 @@ export default function PurchaseSuggestionsPage() {
         </label>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-line bg-surface">
+      <Card inset className="overflow-x-auto">
         <Table density="compact" className="min-w-full">
           <THead>
             <Tr>
@@ -294,7 +294,7 @@ export default function PurchaseSuggestionsPage() {
             ))}
           </TBody>
         </Table>
-      </div>
+      </Card>
 
       {run && lines.length > 0 && (
         // A legend, not just tooltips: a tooltip only helps somebody who

@@ -13,7 +13,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2 } from 'lucide-react'
-import { Button, Input } from '@uniops/shell'
+import { Button, Input, Card } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { capacityApi } from './capacityApi'
 
@@ -132,7 +132,7 @@ export function LossRatesSection({ canWrite }: { canWrite: boolean }) {
   }
 
   return (
-    <section className="rounded-lg border border-line bg-surface p-4">
+    <Card inset as="section" className="p-4">
       <h2 className="text-sm font-semibold text-fg">Loss Rates</h2>
       <p className="mt-1 text-xs text-fg-muted">
         BOM quantities are treated as exact. Loss is added when material requirements are
@@ -164,6 +164,6 @@ export function LossRatesSection({ canWrite }: { canWrite: boolean }) {
           <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
         </p>
       )}
-    </section>
+    </Card>
   )
 }

@@ -14,7 +14,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ClipboardPaste, Loader2, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react'
-import { Button, SortTh, useSortableRows, Input, TBody, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
+import { Button, SortTh, useSortableRows, Input, TBody, THead, Table, Td, Textarea, Th, Tr, Card } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { ToastStack } from '@/components/Toast'
@@ -242,7 +242,7 @@ export default function SupplyParametersPage() {
         </span>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-line bg-surface">
+      <Card inset className="overflow-x-auto">
         <Table density="compact" className="min-w-full">
           <THead>
             <Tr>
@@ -330,7 +330,7 @@ export default function SupplyParametersPage() {
             ))}
           </TBody>
         </Table>
-      </div>
+      </Card>
 
       {drawer && (
         <SupplyRowDrawer

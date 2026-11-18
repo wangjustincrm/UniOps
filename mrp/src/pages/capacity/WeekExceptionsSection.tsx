@@ -37,7 +37,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2, Plus } from 'lucide-react'
-import { Button, Input, FormField, SortTh, useSortableRows, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Drawer, Badge } from '@uniops/shell'
+import { Button, Input, FormField, SortTh, useSortableRows, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Drawer, Badge, Card } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 import {
@@ -248,7 +248,7 @@ export function WeekExceptionsSection({
   }
 
   return (
-    <section className="rounded-lg border border-line bg-surface p-4">
+    <Card inset as="section" className="p-4">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-fg">Week Exceptions</h2>
@@ -432,6 +432,6 @@ export function WeekExceptionsSection({
             </form>
         </Drawer>
       )}
-    </section>
+    </Card>
   )
 }

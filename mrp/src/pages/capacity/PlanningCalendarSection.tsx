@@ -15,7 +15,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2 } from 'lucide-react'
-import { Button, Radio, Select } from '@uniops/shell'
+import { Button, Radio, Select, Card } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import {
   capacityApi, WEEK_CALENDAR_MODES, WEEK_CALENDAR_MODE_DESCRIPTION, WEEK_START_DOWS,
@@ -118,7 +118,7 @@ export function PlanningCalendarSection({ canWrite }: { canWrite: boolean }) {
   }
 
   return (
-    <section className="rounded-lg border border-line bg-surface p-4">
+    <Card inset as="section" className="p-4">
       <h2 className="text-sm font-semibold text-fg">Planning Calendar</h2>
       <p className="mt-1 text-xs text-fg-muted">
         Which week definition new MPS runs use. Changing it only affects plans generated
@@ -213,6 +213,6 @@ export function PlanningCalendarSection({ canWrite }: { canWrite: boolean }) {
           </p>
         )}
       </div>
-    </section>
+    </Card>
   )
 }

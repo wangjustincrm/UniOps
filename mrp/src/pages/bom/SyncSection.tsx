@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, Loader2, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react'
-import { Button } from '@uniops/shell'
+import { Button, Card } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn, formatDateTime } from '@/lib/utils'
 import { bomApi, NC_NOT_CONFIGURED_DETAIL, type BomSyncStats } from './bomApi'
@@ -102,7 +102,7 @@ export function SyncSection({ canSync, toasts }: { canSync: boolean; toasts: Ret
       )}
 
       {canSync && result && (
-        <div className="mt-1 w-full max-w-sm rounded-md border border-line bg-surface text-xs shadow-sm">
+        <Card inset className="mt-1 w-full max-w-sm text-xs">
           <Button variant="subtle" size="xs"
             type="button"
             onClick={() => setDetailOpen((v) => !v)}
@@ -131,7 +131,7 @@ export function SyncSection({ canSync, toasts }: { canSync: boolean; toasts: Ret
               )}
             </div>
           )}
-        </div>
+        </Card>
       )}
     </div>
   )

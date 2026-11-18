@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ChevronLeft, ChevronRight, Eye, Search, Trash2, X } from 'lucide-react'
-import { Button, SortTh, sortParams, useSort, Input, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { Button, SortTh, sortParams, useSort, Input, TBody, THead, Table, Td, Th, Tr, Card } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { formatDateTime } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -110,7 +110,7 @@ export function OutlooksPanel({
   const to = Math.min(page * PAGE_SIZE, total)
 
   return (
-    <div className="rounded-lg border border-line bg-surface p-3">
+    <Card inset className="p-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-fg">Outlooks</h2>
         <div className="flex items-center gap-2">
@@ -254,6 +254,6 @@ export function OutlooksPanel({
           </p>
         </ConfirmDialog>
       )}
-    </div>
+    </Card>
   )
 }

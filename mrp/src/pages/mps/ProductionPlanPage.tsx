@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, RefreshCw, Sparkles, AlertTriangle, Download, PackageCheck } from 'lucide-react'
-import { Button, FormField, Input, Select, MenuItem, Modal, Badge } from '@uniops/shell'
+import { Button, FormField, Input, Select, MenuItem, Modal, Badge, Card } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { ToastStack } from '@/components/Toast'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -549,7 +549,7 @@ export default function ProductionPlanPage() {
       </div>
 
       {/* ── Toolbar: version picker + unit toggle + Generate/Recalculate/Export/Release ── */}
-      <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg border border-line bg-surface p-3">
+      <Card inset className="flex flex-wrap items-end justify-between gap-3 p-3">
         <div className="flex flex-wrap items-end gap-3">
           <FormField
             label="Forecast Version"
@@ -691,7 +691,7 @@ export default function ProductionPlanPage() {
             </Button>
           )}
         </div>
-      </div>
+      </Card>
 
       {isReleased && (
         <p role="status" className="rounded-md border border-line bg-surface-subtle px-3 py-2 text-sm text-fg-secondary">
