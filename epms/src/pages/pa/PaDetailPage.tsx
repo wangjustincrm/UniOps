@@ -894,6 +894,9 @@ export default function PaDetailPage() {
                       { label: 'Prepayment %', value: `${pa.prepayment_pct}%` },
                       { label: 'Expected Settlement', value: pa.expected_settlement_date ? formatDate(pa.expected_settlement_date) : '—' },
                     ] : []),
+                    ...(depositPa ? [
+                      { label: 'Expected Refund', value: pa.expected_settlement_date ? formatDate(pa.expected_settlement_date) : '—' },
+                    ] : []),
                   ].map(({ label, value }) => (
                     <div key={label}>
                       <p className="text-xs text-neutral-500">{label}</p>
