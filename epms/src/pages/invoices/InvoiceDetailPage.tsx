@@ -3,11 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
 import { useBack, useDocTabTitle } from '@/components/BackLink'
 import { NotFoundState } from '@/components/shared/NotFoundState'
-import {
-  ArrowLeft, FileText, ExternalLink, CheckCircle2,
-  AlertTriangle, GitMerge, TrendingUp, Trash2, Pencil, X, Plus, Save, Upload, UserPlus,
-  Unlink, Info,
-} from 'lucide-react'
+import { ArrowLeft, FileText, ExternalLink, CheckCircle2, AlertTriangle, GitMerge, TrendingUp, Trash2, Pencil, X, Plus, Save, Upload, UserPlus, Unlink, Info, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn, formatAmount, formatDate, formatDateTime } from '@/lib/utils'
@@ -500,12 +496,12 @@ export default function InvoiceDetailPage() {
               <h1 className="text-2xl font-semibold text-fg font-mono">{inv.internal_ref}</h1>
               <InvoiceStatusBadge status={inv.status} />
               {sla && (
-                <span className={cn('text-xs font-medium rounded-full px-2 py-0.5',
-                  sla.status === 'overdue'  ? 'bg-danger-soft text-danger-fg'   :
-                  sla.status === 'warning'  ? 'bg-warning-soft text-warning-fg' :
-                  'bg-success-soft text-success-fg')}>
-                  {sla.status === 'overdue' ? `⚠ SLA overdue (${sla.days}d)` : sla.status === 'warning' ? '⚠ Due today' : '✓ On time'}
-                </span>
+                <Badge variant={sla.status === 'overdue' ? 'danger' : sla.status === 'warning' ? 'warning' : 'success'}>
+                  {sla.status === 'on_time'
+                    ? <Check aria-hidden className="h-3 w-3" />
+                    : <AlertTriangle aria-hidden className="h-3 w-3" />}
+                  {sla.status === 'overdue' ? `SLA overdue (${sla.days}d)` : sla.status === 'warning' ? 'Due today' : 'On time'}
+                </Badge>
               )}
             </div>
             <p className="mt-1 text-sm text-fg-muted">
@@ -1360,7 +1356,7 @@ export default function InvoiceDetailPage() {
                           ? `${matchLabel}: Partially invoiced — ${formatAmount(varianceAbs, inv.currency)} (${variancePctAbs.toFixed(1)}%) below PO${awaitingGr ? ' · awaiting goods receipt' : ''}`
                           : awaitingGr
                           ? `2-Way Match: Invoice within ${matchTolerancePct}% tolerance of PO · awaiting goods receipt`
-                          : `3-Way Match: ✓ Passed — Invoice within ${matchTolerancePct}% tolerance of PO`
+                          : `3-Way Match: Passed — Invoice within ${matchTolerancePct}% tolerance of PO`
                         }
                       </p>
                       {awaitingGr && (

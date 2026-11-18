@@ -1,12 +1,11 @@
 import { useDeferredValue, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, Search, UserPlus, X } from 'lucide-react'
+import { Loader2, Search, UserPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAssignMatch } from '@/hooks/useInvoices'
 import { userService } from '@/services/users'
 
-import { Input, MenuItem } from '@uniops/shell'
+import { Input, MenuItem, Modal } from '@uniops/shell'
 export function AssignMatchDialog({ invoiceId, currentAssigneeName, courier = false, onClose, onAssigned }: {
   invoiceId: string
   currentAssigneeName?: string | null
@@ -37,21 +36,24 @@ export function AssignMatchDialog({ invoiceId, currentAssigneeName, courier = fa
     })
   }
 
-  return createPortal(
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl flex flex-col max-h-[80vh]">
-        <div className="flex items-center justify-between border-b border-line-subtle px-5 py-3.5">
-          <div className="flex items-center gap-2">
-            <UserPlus className="h-4 w-4 text-primary-600" />
-            <h2 className="text-sm font-semibold text-fg">
-              {`${currentAssigneeName ? 'Reassign' : 'Assign'} ${courier ? 'Shipment' : 'PO'} Matching`}
-            </h2>
-          </div>
-          <Button variant="subtle" size="icon-sm" aria-label="Close" onClick={onClose}>
-            <X className="h-4 w-4" />
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      busy={assign.isPending}
+      // Closed only by its buttons, as before.
+      closeOnEscape={false}
+      size="md"
+      icon={<UserPlus />}
+      title={`${currentAssigneeName ? 'Reassign' : 'Assign'} ${courier ? 'Shipment' : 'PO'} Matching`}
+      bodyClassName="flex flex-col gap-3"
+      footer={<>
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" disabled={!selected || assign.isPending} onClick={submit}>
+            {assign.isPending ? 'Assigning…' : 'Assign & Notify'}
           </Button>
-        </div>
-        <div className="flex flex-col gap-3 px-5 py-4 min-h-0">
+      </>}
+    >
           {currentAssigneeName && (
             <p className="text-xs text-fg-muted">
               Currently assigned to <span className="font-medium">{currentAssigneeName}</span> — picking a new
@@ -85,15 +87,6 @@ export function AssignMatchDialog({ invoiceId, currentAssigneeName, courier = fa
               {assign.error instanceof Error ? assign.error.message : 'Assign failed'}
             </p>
           )}
-        </div>
-        <div className="flex justify-end gap-2 border-t border-line-subtle px-5 py-3.5">
-          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" disabled={!selected || assign.isPending} onClick={submit}>
-            {assign.isPending ? 'Assigning…' : 'Assign & Notify'}
-          </Button>
-        </div>
-      </div>
-    </div>,
-    document.body
+    </Modal>
   )
 }

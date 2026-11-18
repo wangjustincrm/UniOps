@@ -9,12 +9,11 @@
    "raw-table": 60
   },
   "epms": {
-   "raw-control": 439,
+   "raw-control": 438,
    "raw-table": 606,
-   "raw-overlay": 29,
+   "raw-overlay": 20,
    "shouting-type": 204,
-   "emoji": 20,
-   "arbitrary-size": 1
+   "emoji": 15
   },
   "finance": {
    "raw-control": 507,
@@ -179,9 +178,6 @@
   "epms/src/components/budget/BudgetAccountSelect.tsx": {
    "raw-control": 1
   },
-  "epms/src/components/invoices/ResolveExceptionPanel.tsx": {
-   "raw-control": 1
-  },
   "epms/src/components/pa/DirectPaBudgetPanel.tsx": {
    "shouting-type": 1
   },
@@ -318,38 +314,8 @@
    "raw-overlay": 1,
    "shouting-type": 4
   },
-  "epms/src/pages/gr/CollectionConfirmPage.tsx": {
-   "emoji": 1
-  },
-  "epms/src/pages/gr/GrDetailPage.tsx": {
-   "raw-overlay": 1
-  },
-  "epms/src/pages/gr/ReceivingReportPage.tsx": {
-   "arbitrary-size": 1
-  },
-  "epms/src/pages/invoices/AssignMatchDialog.tsx": {
-   "raw-overlay": 1
-  },
   "epms/src/pages/invoices/CourierInvoiceReview.tsx": {
    "shouting-type": 1
-  },
-  "epms/src/pages/invoices/InvoiceAllocationPanel.tsx": {
-   "raw-overlay": 1
-  },
-  "epms/src/pages/invoices/InvoiceChainDrawer.tsx": {
-   "raw-overlay": 1
-  },
-  "epms/src/pages/invoices/InvoiceDetailPage.tsx": {
-   "emoji": 4
-  },
-  "epms/src/pages/invoices/InvoiceListPage.tsx": {
-   "raw-overlay": 3
-  },
-  "epms/src/pages/invoices/PdfSplitPanel.tsx": {
-   "raw-overlay": 1
-  },
-  "epms/src/pages/invoices/UnmatchDialog.tsx": {
-   "raw-overlay": 1
   },
   "epms/src/pages/pa/DerivedPaLinesTable.tsx": {
    "raw-table": 13,

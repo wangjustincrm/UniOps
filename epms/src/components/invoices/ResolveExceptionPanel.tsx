@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { useResolveException } from '@/hooks/useInvoices'
 import type { ApiInvoice } from '@/services/invoices'
 
-import { Radio, Textarea } from '@uniops/shell'
+import { IconButton, Radio, Textarea } from '@uniops/shell'
 // Shared by InvoiceListPage's Exceptions tab and InvoiceDetailPage — lifted
 // out (whole-branch review finding 2) so the resolve_exception task's deep
 // link (/invoices/{id}, the detail page) lands somewhere that can actually
@@ -35,9 +35,7 @@ export function ResolveExceptionPanel({ inv, onClose }: { inv: ApiInvoice; onClo
     <div className="mt-2 rounded-xl border border-warning-line bg-warning-soft p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-warning-fg">Resolve Exception</p>
-        <button onClick={onClose} className="text-fg-muted hover:text-fg-secondary">
-          <X className="h-4 w-4" />
-        </button>
+        <IconButton label="Close" icon={<X className="h-4 w-4" />} size="icon-xs" onClick={onClose} />
       </div>
 
       <div className="rounded-lg border border-warning-line bg-surface p-3 text-xs">

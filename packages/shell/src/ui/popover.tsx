@@ -49,3 +49,33 @@ export function DropdownPortal({ anchorRect, onClose, children, className }: {
     document.body,
   )
 }
+
+/** Right-click menu at the pointer. Closes on outside click, right-click and Escape. */
+export function ContextMenu({ x, y, onClose, children, className }: {
+  x: number
+  y: number
+  onClose: () => void
+  children: React.ReactNode
+  className?: string
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return createPortal(
+    <div className="fixed inset-0 z-50" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
+      <div
+        role="menu"
+        style={{ position: 'fixed', top: y, left: x }}
+        className={cn('min-w-52 rounded-lg border border-line bg-surface py-1 shadow-md', className)}
+        // Clicks inside the menu do not reach the closing layer (as the EPMS
+        // original): an item closes the menu itself when it is done.
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>,
+    document.body,
+  )
+}

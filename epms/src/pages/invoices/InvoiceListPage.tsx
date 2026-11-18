@@ -5,10 +5,9 @@ import {
   Upload, Search, AlertTriangle, CheckCircle2, Clock,
   X, FileText, ChevronDown, ChevronUp, ExternalLink, Loader2, Plus, Trash2, UserPlus,
 } from 'lucide-react'
-import { Checkbox, Chip, ChipGroup, FileInput, Input, MenuItem, Radio, Select, SortTh, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr, sortParams, useSort } from '@uniops/shell'
+import { Checkbox, Chip, ChipGroup, DropdownPortal, FileInput, Input, MenuItem, Modal, Radio, Select, SortTh, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr, sortParams, useAnchorRect, useSort } from '@uniops/shell'
 import { parseInvoiceFile, type ParseFailureKind, type ParsedTotalCheck } from '@/lib/invoice-parser'
 import { EXPENSE_BASE } from '@/lib/api'
-import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
@@ -183,6 +182,8 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
   const [selectedVendor, setSelectedVendor] = useState<{ id: string; name: string; code: string } | null>(null)
   const [vendorQuery, setVendorQuery] = useState('')
   const [vendorOpen, setVendorOpen] = useState(false)
+  const vendorAnchorRef = useRef<HTMLDivElement>(null)
+  const vendorRect = useAnchorRect(vendorOpen, vendorAnchorRef)
 
   const { data: vendorsData } = useVendors({ search: vendorQuery || undefined, active_only: true, page_size: 50 })
   const vendorOptions = vendorsData?.items ?? []
@@ -787,27 +788,18 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
 
     return (
       <>
-        {createPortal(
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
-            <div className="w-full max-w-3xl max-h-[92vh] rounded-2xl bg-surface shadow-2xl flex flex-col">
-              <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4 shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-success-soft">
-                    <CheckCircle2 className="h-5 w-5 text-success-fg" />
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-semibold text-fg">Allocate to Purchase Order</h2>
-                    <p className="text-xs text-fg-muted">
-                      Invoice {createdInv.vendor_invoice_number} uploaded — confirm line allocations to complete the match
-                    </p>
-                  </div>
-                </div>
-                <Button variant="subtle" size="icon-sm" aria-label="Close" onClick={finishUnmatched}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-
-              <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 flex flex-col gap-4">
+        <Modal
+          open
+          onClose={finishUnmatched}
+          // Closed only by its buttons, as before; closing leaves the invoice unmatched.
+          closeOnEscape={false}
+          size="lg"
+          className="max-w-3xl"
+          icon={<CheckCircle2 className="text-success-fg" />}
+          title="Allocate to Purchase Order"
+          description={`Invoice ${createdInv.vendor_invoice_number} uploaded — confirm line allocations to complete the match`}
+          bodyClassName="flex flex-col gap-4"
+        >
                 <InvoiceAllocationPanel
                   invoice={createdInv}
                   pos={allocPos}
@@ -830,11 +822,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                     Assign to someone instead
                   </Button>
                 </div>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
+        </Modal>
         {showAssignDialog && (
           <AssignMatchDialog
             invoiceId={createdInv.id}
@@ -846,39 +834,57 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
     )
   }
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
-      <div className={cn(
-        'w-full rounded-2xl bg-surface shadow-2xl flex flex-col',
-        file ? 'max-w-[90rem] h-[92vh]' : 'max-w-xl max-h-[92vh]'
-      )}>
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-50">
-              <Upload className="h-5 w-5 text-primary-600" />
+  return (
+    <>
+      <Modal
+        open
+        onClose={onClose}
+        // Closed only by its buttons, as before.
+        closeOnEscape={false}
+        size="full"
+        className={cn(file ? 'h-[92vh] max-w-[90rem]' : 'max-w-xl')}
+        icon={<Upload />}
+        title={<>
+          {queueTotal > 1 ? `Upload Invoice ${queueIndex + 1} of ${queueTotal}` : 'Upload Invoice'}
+          {courierCarrier && <Badge variant="info" className="ml-2 align-middle">Courier invoice</Badge>}
+          {forDirectPa && !courierCarrier && <Badge variant="warning" className="ml-2 align-middle">Direct PA</Badge>}
+        </>}
+        description={queueTotal > 1
+          ? `${file?.name ?? ''} · ${createdIds.length} of ${queueTotal} created so far`
+          : courierCarrier ? 'Each line is matched to a registered tracking number and cost center after saving'
+          : forDirectPa ? 'For a Direct PA — saved and matched to no PO or agreement'
+          : 'New invoice will be queued for PO matching'}
+        bodyClassName={cn('flex flex-col gap-4', file && 'overflow-hidden')}
+        // Hidden while splitting a PDF and for courier invoices, as before.
+        footer={pendingSplit || courierCarrier ? undefined : <div className="flex w-full flex-col gap-2">
+          {queueRemaining > 0 && (
+            <p className="text-xs text-fg-muted">
+              {queueRemaining} more {queueRemaining === 1 ? 'invoice' : 'invoices'} from this file after
+              this one. Each is created as you confirm it — closing now keeps what is already created.
+            </p>
+          )}
+          {submitError && (
+            <div className="flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              {submitError}
             </div>
-            <div>
-              <h2 className="text-sm font-semibold text-fg">
-                {queueTotal > 1 ? `Upload Invoice ${queueIndex + 1} of ${queueTotal}` : 'Upload Invoice'}
-                {courierCarrier && <span className="ml-2 rounded-full bg-primary-50 px-2 py-0.5 text-2xs font-medium text-primary-700">Courier invoice</span>}
-                {forDirectPa && !courierCarrier && <span className="ml-2 rounded-full bg-warning-soft px-2 py-0.5 text-2xs font-medium text-warning-fg">Direct PA</span>}
-              </h2>
-              <p className="text-xs text-fg-muted">
-                {queueTotal > 1
-                  ? `${file?.name ?? ''} · ${createdIds.length} of ${queueTotal} created so far`
-                  : courierCarrier ? 'Each line is matched to a registered tracking number and cost center after saving'
-                  : forDirectPa ? 'For a Direct PA — saved and matched to no PO or agreement'
-                  : 'New invoice will be queued for PO matching'}
-              </p>
-            </div>
+          )}
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            {/* Held while the duplicate check is in flight (ISS-0130) — the
+                first click used to be refused with "Still checking…". */}
+            <Button onClick={handleSubmit} disabled={createInvoice.isPending || createVendorCredit.isPending || matchInvoiceMutation.isPending || (docType === 'invoice' && dup.checking)} className="gap-2">
+              <Upload className="h-4 w-4" />
+              {createInvoice.isPending || createVendorCredit.isPending || matchInvoiceMutation.isPending
+                ? 'Uploading…'
+                : docType === 'invoice' && dup.checking ? 'Checking…'
+                : docType === 'credit_note' ? 'Upload Credit Note'
+                : queueRemaining > 0 ? 'Upload & next'
+                : 'Upload Invoice'}
+            </Button>
           </div>
-          <Button variant="subtle" size="icon-sm" aria-label="Close" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-
-        <div className={cn('flex-1 min-h-0 px-6 py-5 flex flex-col gap-4', !file && 'overflow-y-auto')}>
+        </div>}
+      >
           {/* File drop zone */}
           <div
             onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
@@ -903,7 +909,6 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                 )}
                 <Button variant="danger-ghost" size="icon-xs" aria-label="Remove"
                   onClick={(e) => { e.stopPropagation(); setFile(null); setAiFields(new Set()); setVendorHint(null); setParseError(null) }}
-                 
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -1019,7 +1024,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                   Vendor <span className="text-danger-fg ml-0.5">*</span>
                   {aiFields.has('vendorName') && <AiBadge />}
                 </label>
-                <div className="relative">
+                <div className="relative" ref={vendorAnchorRef}>
                   <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-muted" />
                   <Input
                     type="text"
@@ -1027,10 +1032,8 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                     value={selectedVendor ? selectedVendor.name : vendorQuery}
                     onFocus={() => { setVendorOpen(true); if (selectedVendor) setVendorQuery('') }}
                     onChange={(e) => { setVendorQuery(e.target.value); setSelectedVendor(null); setVendorOpen(true) }}
-                    className={cn(
-                      'h-9 w-full rounded-lg border pl-8 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      isDuplicate ? 'border-danger-400' : submitted && !selectedVendor ? 'border-danger-400' : 'border-line-strong'
-                    )}
+                    error={isDuplicate || (submitted && !selectedVendor)}
+                    className="pl-8 pr-8"
                   />
                   {selectedVendor && (
                     <Button variant="subtle" size="icon-xs" aria-label="Clear"
@@ -1046,16 +1049,14 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                   <p className="text-xs text-primary-500 mt-0.5">{vendorHint}</p>
                 )}
                 {submitted && !selectedVendor && <p className="text-xs text-danger-fg">Select a vendor</p>}
-                {vendorOpen && !selectedVendor && (
+                {vendorOpen && !selectedVendor && vendorRect && (
                   <>
-                    <div className="fixed inset-0 z-10" onClick={() => setVendorOpen(false)} />
-                    <div className="absolute top-full left-0 z-20 mt-1 w-full rounded-lg border border-line bg-surface py-1 shadow-lg max-h-44 overflow-y-auto">
+                    <DropdownPortal anchorRect={vendorRect} onClose={() => setVendorOpen(false)} className="max-h-44 overflow-y-auto">
                       {vendorOptions.map((v) => (
                         <MenuItem
                           key={v.id}
                           type="button"
                           onClick={() => { setSelectedVendor({ id: v.id, name: v.name, code: v.code }); setVendorOpen(false); setVendorQuery(''); setVendorHint(null); setAiFields((prev) => { const n = new Set(prev); n.delete('vendorName'); return n }) }}
-                         
                         >
                           <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
                           {v.name}
@@ -1064,7 +1065,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                       {vendorOptions.length === 0 && (
                         <p className="px-3 py-2 text-xs text-fg-muted">No vendors found</p>
                       )}
-                    </div>
+                    </DropdownPortal>
                   </>
                 )}
               </div>
@@ -1105,7 +1106,6 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                 setAiFields((prev) => { const n = new Set(prev); n.delete('poNumber'); return n })
               }}
               placeholder="e.g. PO-ABC-2603-01"
-             
             />
             {docType === 'credit_note' && (
               <p className="mt-1 text-xs text-fg-muted">
@@ -1358,7 +1358,6 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                           <Button variant="danger-ghost" size="icon-xs" aria-label="Remove"
                             type="button"
                             onClick={() => setLineItems((prev) => prev.filter((_, i) => i !== idx))}
-                           
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -1389,42 +1388,9 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
           </div>
           </>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className={cn('border-t border-line-subtle px-6 py-4 flex-col gap-2 shrink-0',
-                           pendingSplit || courierCarrier ? 'hidden' : 'flex')}>
-          {queueRemaining > 0 && (
-            <p className="text-xs text-fg-muted">
-              {queueRemaining} more {queueRemaining === 1 ? 'invoice' : 'invoices'} from this file after
-              this one. Each is created as you confirm it — closing now keeps what is already created.
-            </p>
-          )}
-          {submitError && (
-            <div className="flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              {submitError}
-            </div>
-          )}
-          <div className="flex justify-end gap-3">
-            <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            {/* Held while the duplicate check is in flight (ISS-0130) — the
-                first click used to be refused with "Still checking…". */}
-            <Button onClick={handleSubmit} disabled={createInvoice.isPending || createVendorCredit.isPending || matchInvoiceMutation.isPending || (docType === 'invoice' && dup.checking)} className="gap-2">
-              <Upload className="h-4 w-4" />
-              {createInvoice.isPending || createVendorCredit.isPending || matchInvoiceMutation.isPending
-                ? 'Uploading…'
-                : docType === 'invoice' && dup.checking ? 'Checking…'
-                : docType === 'credit_note' ? 'Upload Credit Note'
-                : queueRemaining > 0 ? 'Upload & next'
-                : 'Upload Invoice'}
-            </Button>
-          </div>
-        </div>
-      </div>
+      </Modal>
       {notice.dialog}
-    </div>,
-    document.body
+    </>
   )
 }
 
@@ -1537,7 +1503,6 @@ function UnmatchedTab() {
                           {isAp && (
                             <Button variant="secondary" size="xs"
                               onClick={() => { setExpandedId(null); setDeletingId(null); setAssigningInv(inv) }}
-                             
                               title="Assign to someone"
                             >
                               <UserPlus className="h-3.5 w-3.5" />
@@ -1551,13 +1516,11 @@ function UnmatchedTab() {
                           <Button variant="danger-outline" size="xs"
                             onClick={() => deleteInvoice.mutate(inv.id, { onSuccess: () => setDeletingId(null) })}
                             disabled={deleteInvoice.isPending}
-                           
                           >
                             {deleteInvoice.isPending ? 'Deleting…' : 'Confirm'}
                           </Button>
                           <Button variant="subtle" size="xs"
                             onClick={() => setDeletingId(null)}
-                           
                           >
                             Cancel
                           </Button>
@@ -1573,7 +1536,6 @@ function UnmatchedTab() {
                           {canMatchInvoice(inv) && (
                             <Button variant="outline" size="xs"
                               onClick={() => { setDeletingId(null); setExpandedId(expandedId === inv.id ? null : inv.id) }}
-                             
                             >
                               Match Invoice
                               {expandedId === inv.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -1582,7 +1544,6 @@ function UnmatchedTab() {
                           {isAp && (
                             <Button variant="secondary" size="xs"
                               onClick={() => { setExpandedId(null); setDeletingId(null); setAssigningInv(inv) }}
-                             
                               title="Assign to someone"
                             >
                               <UserPlus className="h-3.5 w-3.5" />
@@ -1592,7 +1553,6 @@ function UnmatchedTab() {
                           {canDelete && (
                             <Button variant="danger-ghost" size="icon-xs" aria-label="Remove"
                               onClick={() => { setExpandedId(null); setDeletingId(inv.id) }}
-                             
                               title="Delete invoice"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -1708,7 +1668,6 @@ function ExceptionsTab() {
                   <Td>
                     <Button variant="warning-outline" size="xs"
                       onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)}
-                     
                     >
                       Resolve
                       {expandedId === inv.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -1900,7 +1859,6 @@ function AllInvoicesTab() {
                       ) : (
                         <Button variant="danger-ghost" size="icon-xs" aria-label="Remove"
                           onClick={() => setDeletingId(inv.id)}
-                         
                           title="Delete invoice"
                         >
                           <Trash2 className="h-3.5 w-3.5" />

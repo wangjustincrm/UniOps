@@ -255,3 +255,37 @@ export function ConfirmDialog({
     </Modal>
   )
 }
+
+/**
+ * Bare full-screen layer for custom layouts (image / PDF lightbox): portal,
+ * backdrop, focus kept inside, body scroll locked. The caller draws everything
+ * inside. Prefer Modal / Drawer whenever the content is a dialog.
+ */
+export function Overlay({ open = true, onClose, closeOnEscape = true, closeOnBackdrop = true, label, className, children }: {
+  open?: boolean
+  onClose: () => void
+  closeOnEscape?: boolean
+  closeOnBackdrop?: boolean
+  /** Accessible name of the layer. */
+  label?: string
+  className?: string
+  children: React.ReactNode
+}) {
+  const panel = useRef<HTMLDivElement>(null)
+  useOverlay(open, onClose, panel, closeOnEscape)
+  if (!open) return null
+  return createPortal(
+    <div
+      ref={panel}
+      role="dialog"
+      aria-modal="true"
+      aria-label={label}
+      tabIndex={-1}
+      className={cn('fixed inset-0 z-50 outline-none', className)}
+      onClick={(e) => { if (closeOnBackdrop && e.target === e.currentTarget) onClose() }}
+    >
+      {children}
+    </div>,
+    document.body,
+  )
+}

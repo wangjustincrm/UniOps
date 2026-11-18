@@ -7,13 +7,12 @@
  * a verified evidence chain was taken apart.
  */
 import { useState } from 'react'
-import { createPortal } from 'react-dom'
-import { Unlink, X } from 'lucide-react'
+import { Unlink } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { useUnmatchInvoice, type UnmatchScope } from '@/hooks/useInvoices'
 
-import { Textarea } from '@uniops/shell'
+import { Modal, Textarea } from '@uniops/shell'
 const COPY: Record<UnmatchScope, { title: string; body: string; confirm: string }> = {
   po: {
     title: 'Unmatch Purchase Order',
@@ -65,20 +64,24 @@ export function UnmatchDialog({
     unmatch.mutate({ id: invoiceId, scope, reason: reason.trim() }, { onSuccess: onClose })
   }
 
-  return createPortal(
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-inverse/40 p-4 backdrop-blur-sm">
-      <div className="flex w-full max-w-md flex-col rounded-2xl bg-surface shadow-2xl">
-        <div className="flex items-center justify-between border-b border-line-subtle px-5 py-3.5">
-          <div className="flex items-center gap-2">
-            <Unlink className="h-4 w-4 text-danger-fg" />
-            <h2 className="text-sm font-semibold text-fg">{copy.title}</h2>
-          </div>
-          <Button variant="subtle" size="icon-sm" aria-label="Close" onClick={onClose}>
-            <X className="h-4 w-4" />
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      busy={unmatch.isPending}
+      // Closed only by its buttons, as before.
+      closeOnEscape={false}
+      size="md"
+      icon={<Unlink />}
+      title={copy.title}
+      bodyClassName="flex flex-col gap-3"
+      footer={<>
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+          <Button variant="destructive" size="sm" disabled={!ready || unmatch.isPending} onClick={submit}>
+            {unmatch.isPending ? 'Unmatching…' : copy.confirm}
           </Button>
-        </div>
-
-        <div className="flex flex-col gap-3 px-5 py-4">
+      </>}
+    >
           <p className="text-xs text-fg-secondary">{copy.body}</p>
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-fg-secondary">Reason (required)</span>
@@ -96,16 +99,6 @@ export function UnmatchDialog({
               {unmatch.error instanceof Error ? unmatch.error.message : 'Unmatch failed'}
             </p>
           )}
-        </div>
-
-        <div className="flex justify-end gap-2 border-t border-line-subtle px-5 py-3.5">
-          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-          <Button variant="destructive" size="sm" disabled={!ready || unmatch.isPending} onClick={submit}>
-            {unmatch.isPending ? 'Unmatching…' : copy.confirm}
-          </Button>
-        </div>
-      </div>
-    </div>,
-    document.body
+    </Modal>
   )
 }

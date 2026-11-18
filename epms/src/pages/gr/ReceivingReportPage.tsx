@@ -325,11 +325,8 @@ function Th({ label, sortKey, sort, onSort, align = 'left' }: {
     // scrolls away from.
     <SortTh
       label={label} sortKey={sortKey} sort={sort} onSort={onSort} align={align}
-      className={cn(
-        'sticky top-0 z-10 bg-surface-subtle px-3 py-3 text-xs font-semibold',
-        'text-fg-muted whitespace-nowrap shadow-[inset_0_-1px_0_var(--color-line)]',
-        align === 'right' ? 'text-right' : 'text-left',
-      )}
+      // THead locks the header row and draws its rule; only the padding is local.
+      className="px-3 py-3"
     />
   )
 }

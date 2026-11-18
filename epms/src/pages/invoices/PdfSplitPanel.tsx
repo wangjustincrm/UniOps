@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import {
   Loader2, Scissors, AlertTriangle, X, ChevronLeft, ChevronRight, Maximize2, Minimize2,
 } from 'lucide-react'
@@ -8,7 +7,7 @@ import {
   MAX_SPLITTABLE_PAGES, describeGroup, groupsFromCuts, type PageGroup,
 } from '@/lib/pdf-split'
 import { Button } from '@/components/ui/button'
-import { ChoiceCard } from '@uniops/shell'
+import { ChoiceCard, Overlay } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 
 // Where a multi-page PDF is cut into one file per invoice — by a person,
@@ -106,11 +105,12 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
     return () => window.removeEventListener('keydown', onKey)
   }, [page, pageCount, onGo, onClose])
 
-  return createPortal(
+  return (
     // z-60: this opens from inside the upload modal, which is z-50.
     // Absolute bands rather than a flex column: the viewport box needs a
     // definite height for both the scroll and the fit measurement above.
-    <div className="fixed inset-0 z-[60] bg-inverse-sunken/80 backdrop-blur-sm" onClick={onClose}>
+    // Escape / arrows are handled by the effect above, so the Overlay's own Escape is off.
+    <Overlay onClose={onClose} closeOnEscape={false} label={`Page ${page}`} className="z-[60] bg-inverse-sunken/80 backdrop-blur-sm">
       <div className="absolute inset-x-0 top-0 flex h-14 items-center justify-between gap-3 px-5 text-sm text-fg-on-inverse"
            onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3">
@@ -166,8 +166,7 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
               className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full disabled:opacity-20">
         <ChevronRight className="h-5 w-5" />
       </Button>
-    </div>,
-    document.body,
+    </Overlay>
   )
 }
 

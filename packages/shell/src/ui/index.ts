@@ -11,7 +11,7 @@ export {
   TableScroll, Table, THead, TBody, TFoot, Tr, Th, Td, TableMessage, thClass, useTableDensity,
   type TableScrollProps, type TableProps, type TrProps, type ThProps, type TdProps,
 } from './table'
-export { Modal, Drawer, ConfirmDialog, type ModalProps, type DrawerProps, type ConfirmDialogProps } from './overlay'
+export { Modal, Drawer, ConfirmDialog, Overlay, type ModalProps, type DrawerProps, type ConfirmDialogProps } from './overlay'
 export { PageHeader, PageBody, Section, Toolbar, Eyebrow, type PageHeaderProps } from './page'
 export { Alert, EmptyState, Spinner, LoadingState, type AlertProps, type EmptyStateProps } from './feedback'
 export { Amount, formatAmount, DocNumber, Stat, DescriptionList, Tabs, Segmented, ChipGroup, Chip, type TabItem } from './data'
@@ -24,5 +24,5 @@ export {
   type Sort, type SortDir, type SortValue, type SortGetters, type SortThProps,
 } from './sortable'
 export { AuthLayout, AuthHeading, type AuthLayoutProps, type AuthModule } from './auth'
-export { DropdownPortal, useAnchorRect } from './popover'
+export { DropdownPortal, useAnchorRect, ContextMenu } from './popover'
 export { MenuItem, ChoiceCard, type MenuItemProps, type ChoiceCardProps } from './choice'

@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { formatAmount } from '@/lib/utils'
 import type { ApiInvoice, InvoiceLineItem, AllocationInput, NonPoLineInput } from '@/services/invoices'
 import type { ApiPo } from '@/services/po'
 import { InvoiceTotalMatchPanel } from './InvoiceTotalMatchPanel'
 
-import { Input, MenuItem, Segmented, Select } from '@uniops/shell'
+import { ContextMenu, Input, MenuItem, Segmented, Select } from '@uniops/shell'
 // invoiceLineId -> { poId, poLineId }
 export type AllocationAssignment = Record<string, { poId: string; poLineId: string }>
 
@@ -284,21 +283,12 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
         </span>
       </div>
 
-      {menu && createPortal(
-        <div className="fixed inset-0 z-50"
-          onClick={() => setMenu(null)}
-          onContextMenu={(e) => { e.preventDefault(); setMenu(null) }}>
-          <div className="absolute min-w-[210px] rounded-lg border border-line bg-surface py-1 shadow-lg"
-            style={{ top: menu.y, left: menu.x }}
-            onClick={(e) => e.stopPropagation()}>
-            <MenuItem
-              className="block"
-              onClick={() => markNonPo(menu.lineId)}>
-              Mark as other fee (shipping etc.)
-            </MenuItem>
-          </div>
-        </div>,
-        document.body,
+      {menu && (
+        <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
+          <MenuItem className="block" onClick={() => markNonPo(menu.lineId)}>
+            Mark as other fee (shipping etc.)
+          </MenuItem>
+        </ContextMenu>
       )}
         </>
       )}

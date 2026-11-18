@@ -20,7 +20,7 @@ import { canCancelGr } from '@/lib/documentActions'
 import { serviceHasIssues } from '@/lib/grNotes'
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
-import { Input, Radio, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr } from '@uniops/shell'
+import { Input, Modal, Radio, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr } from '@uniops/shell'
 // Statuses the backend accepts for POST /gr/{id}/attachments/regenerate-pdf
 // (anything from the acknowledge step onward, excluding cancelled).
 const GR_PDF_REGENERATABLE_STATUSES: GrStatus[] = ['collection_pending', 'collected', 'confirmed', 'discrepancy']
@@ -162,21 +162,24 @@ function AcknowledgeModal({
   onCancel: () => void
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-md rounded-xl bg-surface p-6 shadow-xl">
-        <h2 className="text-lg font-semibold text-fg">Acknowledge Receipt</h2>
-        <p className="mt-2 text-sm text-fg-secondary">
+    <Modal
+      open
+      onClose={onCancel}
+      // Closed only by its buttons, as before (the header X runs Cancel).
+      closeOnEscape={false}
+      title="Acknowledge Receipt"
+      footer={<>
+        <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+        <Button onClick={onConfirm}>Confirm Acknowledgement</Button>
+      </>}
+    >
+        <p className="text-sm text-fg-secondary">
           Confirm that you have reviewed{' '}
           <span className="font-mono font-semibold">{grNumber}</span> and the goods/services
           have been received as described. For physical goods, you will be required to
           confirm collection separately.
         </p>
-        <div className="mt-6 flex justify-end gap-3">
-          <Button variant="secondary" onClick={onCancel}>Cancel</Button>
-          <Button onClick={onConfirm}>Confirm Acknowledgement</Button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

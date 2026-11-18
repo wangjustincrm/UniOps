@@ -373,7 +373,7 @@ export default function CollectionConfirmPage() {
           {allGood ? (
             <>
               <CheckCircle2 className="h-4 w-4" />
-              Confirm Collection ✓
+              Confirm Collection
             </>
           ) : (
             <>

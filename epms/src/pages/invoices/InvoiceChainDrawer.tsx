@@ -7,18 +7,15 @@
  * list row: the invoice→PA link lives in payment_applications.invoice_ids, a
  * JSONB array with no foreign key, so only the server can resolve it.
  */
-import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import {
-  Ban, Check, CircleDashed, EyeOff, Loader2, Minus, X,
-} from 'lucide-react'
+import { Ban, Check, CircleDashed, EyeOff, Loader2, Minus } from 'lucide-react'
 
 import { useInvoiceChain } from '@/hooks/useInvoices'
 import { cn, formatDate } from '@/lib/utils'
 import { dueInfo, type DueTone } from '@/lib/dueDate'
 import type { ChainStep, ChainStepKey, ChainStepRef, ChainStepState } from '@/services/invoices'
 
-import { Button } from '@uniops/shell'
+import { Drawer } from '@uniops/shell'
 const STEP_TITLES: Record<ChainStepKey, string> = {
   match_po: 'Match PO',
   link_gr: 'Link GR',
@@ -142,32 +139,17 @@ export function InvoiceChainDrawer({
 }) {
   const { data, isLoading, isError } = useInvoiceChain(invoiceId)
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  // Escape and backdrop closing come from the Shell Drawer.
 
   const due = data ? dueInfo(data.due_date, data.status) : null
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/40"
-      onClick={onClose}
-      role="presentation"
-    >
-      <aside
-        className="flex h-full w-full max-w-md flex-col bg-surface shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Invoice status"
-      >
-        <header className="flex items-start justify-between border-b border-line px-5 py-4">
-          <div>
-            <p className="text-xs font-semibold text-fg-muted">
-              Invoice status
-            </p>
+    <Drawer
+      open
+      onClose={onClose}
+      className="max-w-md"
+      title="Invoice status"
+      description={<>
             <p className="mt-0.5 font-mono text-sm text-fg">
               {data?.internal_ref ?? '—'}
             </p>
@@ -179,17 +161,8 @@ export function InvoiceChainDrawer({
                 )}
               </p>
             )}
-          </div>
-          <Button variant="subtle" size="icon-xs"
-            onClick={onClose}
-           
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </header>
-
-        <div className="flex-1 overflow-y-auto px-5 py-5">
+      </>}
+    >
           {isLoading && (
             <div className="flex items-center gap-2 text-sm text-fg-muted">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading…
@@ -205,8 +178,6 @@ export function InvoiceChainDrawer({
               ))}
             </ol>
           )}
-        </div>
-      </aside>
-    </div>
+    </Drawer>
   )
 }
