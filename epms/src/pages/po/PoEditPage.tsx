@@ -272,10 +272,7 @@ export default function PoEditPage() {
                     value={selectedVendor ? selectedVendor.name : vendorQuery}
                     onFocus={() => { setVendorOpen(true); if (selectedVendor) setVendorQuery('') }}
                     onChange={(e) => { setVendorQuery(e.target.value); setSelectedVendor(null); setVendorOpen(true); setErrors((p) => ({ ...p, vendor: '' })) }}
-                    className={cn(
-                      'h-10 w-full rounded-md border bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      errors.vendor ? 'border-danger-solid' : 'border-line-strong'
-                    )}
+                    error={!!errors.vendor} className="pl-9 pr-3"
                   />
                   {selectedVendor && (
                     <Button variant="subtle" size="icon-xs" aria-label="Clear" type="button" onClick={() => { setSelectedVendor(null); setVendorQuery('') }}
@@ -335,10 +332,7 @@ export default function PoEditPage() {
                     type="date"
                     value={expectedDelivery}
                     onChange={(e) => { setExpectedDelivery(e.target.value); setErrors((p) => ({ ...p, expectedDelivery: '' })) }}
-                    className={cn(
-                      'h-10 w-full rounded-md border bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      errors.expectedDelivery ? 'border-danger-solid' : 'border-line-strong'
-                    )}
+                    error={!!errors.expectedDelivery} className="pl-9 pr-3"
                   />
                 </div>
                 {errors.expectedDelivery && <p className="text-xs text-danger-fg">{errors.expectedDelivery}</p>}

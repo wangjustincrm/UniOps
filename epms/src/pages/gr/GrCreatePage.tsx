@@ -361,10 +361,7 @@ export default function GrCreatePage() {
                 setSelectedPoId('')
                 setShowPoDropdown(true)
               }}
-              className={cn(
-                'w-full h-10 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                submitted && !selectedPo ? 'border-danger-solid' : 'border-line-strong'
-              )}
+              error={!!(submitted && !selectedPo)}
             />
             {selectedPo && (
               <Button variant="subtle" size="icon-xs" aria-label="Clear"
@@ -635,10 +632,7 @@ export default function GrCreatePage() {
                   placeholder="e.g. Vendor shipped a full case; extra units kept as spares"
                   value={overReceiptReason}
                   onChange={(e) => setOverReceiptReason(e.target.value)}
-                  className={cn(
-                    'w-full px-3 py-1.5 rounded border text-sm bg-surface focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
-                    submitted && !overReceiptReason.trim() ? 'border-danger-400' : 'border-warning-line'
-                  )}
+                  error={!!(submitted && !overReceiptReason.trim())} className="resize-none"
                 />
               </div>
             </div>
@@ -728,10 +722,7 @@ function LineRow({
                 onChange({ qty_received: isNaN(v) ? 0 : v })
               }}
               placeholder="0"
-              className={cn(
-                'w-20 h-8 text-right px-2 rounded border text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary-600',
-                qtyError ? 'border-danger-400 bg-danger-soft' : over ? 'border-warning-400 bg-warning-soft' : 'border-line-strong'
-              )}
+              inputSize="sm" className="w-20 text-right font-mono"
             />
             {qtyError && <span className="text-2xs text-danger-fg">Required</span>}
             {over && <span className="text-2xs text-warning-fg">Over open qty</span>}
@@ -773,10 +764,7 @@ function LineRow({
                 placeholder="Describe the issue — quantity short, damage details, etc."
                 value={line.discrepancy_notes ?? ''}
                 onChange={(e) => onChange({ discrepancy_notes: e.target.value })}
-                className={cn(
-                  'w-full px-3 py-1.5 rounded border text-sm bg-surface focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
-                  noteError ? 'border-danger-400' : 'border-warning-line'
-                )}
+                error={!!noteError} className="resize-none"
               />
               {noteError && <p className="text-xs text-danger-fg">Notes are required for discrepancy/damage</p>}
             </div>

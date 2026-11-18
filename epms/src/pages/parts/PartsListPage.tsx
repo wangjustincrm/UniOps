@@ -177,12 +177,6 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
     ? [form.unit, ...uomCodes]
     : uomCodes
 
-  const inputCls = (err?: string) =>
-    cn(
-      'h-10 w-full rounded-lg border bg-surface-sunken px-3 text-sm focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-focus transition-colors',
-      err ? 'border-danger-solid bg-danger-soft' : 'border-line'
-    )
-
   return (
     <div className="rounded-xl border border-primary-200 bg-primary-50/60 p-5 mb-4">
       <div className="flex items-center justify-between mb-4">
@@ -208,7 +202,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
             <label className="text-xs font-medium text-fg-secondary">
               Part Code <span className="text-danger-fg">*</span>
             </label>
-            <Input className={inputCls(errors.code)} value={form.code}
+            <Input error={!!errors.code} value={form.code}
               onChange={(e) => set('code', e.target.value)} placeholder="PART-0001" />
             {errors.code && <p className="text-xs text-danger-fg">{errors.code}</p>}
           </div>
@@ -219,7 +213,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
               Category <span className="text-danger-fg">*</span>
             </label>
             <Input
-              className={inputCls(errors.category)} list="cat-list"
+              error={!!errors.category} list="cat-list"
               value={form.category} onChange={(e) => set('category', e.target.value)}
               placeholder="Bearings, Seals & Gaskets…"
             />
@@ -234,7 +228,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
             <label className="text-xs font-medium text-fg-secondary">
               Part Name <span className="text-danger-fg">*</span>
             </label>
-            <Input className={inputCls(errors.name)} value={form.name}
+            <Input error={!!errors.name} value={form.name}
               onChange={(e) => set('name', e.target.value)} placeholder="Ball Bearing 6205-2RS" />
             {errors.name && <p className="text-xs text-danger-fg">{errors.name}</p>}
           </div>
@@ -242,7 +236,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
           {/* Description */}
           <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-3">
             <label className="text-xs font-medium text-fg-secondary">Description</label>
-            <Input className={inputCls()} value={form.description}
+            <Input value={form.description}
               onChange={(e) => set('description', e.target.value)}
               placeholder="Optional technical description" />
           </div>
@@ -252,7 +246,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
             <label className="text-xs font-medium text-fg-secondary">
               Supplier <span className="text-danger-fg">*</span>
             </label>
-            <Input className={inputCls(errors.supplier)} value={form.supplier}
+            <Input error={!!errors.supplier} value={form.supplier}
               onChange={(e) => set('supplier', e.target.value)} placeholder="SKF Canada" />
             {errors.supplier && <p className="text-xs text-danger-fg">{errors.supplier}</p>}
           </div>
@@ -260,7 +254,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
           {/* Supplier Part No */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Supplier Part No.</label>
-            <Input className={inputCls()} value={form.supplierPartNo}
+            <Input value={form.supplierPartNo}
               onChange={(e) => set('supplierPartNo', e.target.value)}
               placeholder="6205-2RS/C3" />
           </div>
@@ -268,7 +262,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
           {/* Supplier Item ID */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Supplier Item ID</label>
-            <Input className={inputCls()} value={form.supplierItemId}
+            <Input value={form.supplierItemId}
               onChange={(e) => set('supplierItemId', e.target.value)}
               placeholder="e.g. Amazon ASIN: B00004RFRN" />
             <p className="text-2xs text-fg-muted">ASIN, McMaster #, Grainger ID, etc.</p>
@@ -283,7 +277,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-fg-muted">$</span>
               <Input
                 type="number" min="0" step="0.01"
-                className={cn(inputCls(errors.unitPrice), 'pl-6')}
+                error={!!errors.unitPrice} className="pl-6"
                 value={form.unitPrice}
                 onChange={(e) => set('unitPrice', e.target.value)}
                 placeholder="0.00"

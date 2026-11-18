@@ -198,7 +198,9 @@ export function InvoiceFeeLinksPanel({
               <span className="text-xs text-fg-muted">· {lineLabel(l.invoice_line_id)}</span>
               {l.fee_type === 'other' && (editing ? (
                 <Input
-                  className={`h-7 min-w-[12rem] flex-1 rounded border bg-surface px-2 text-xs ${(l.note ?? '').trim() ? 'border-line-strong' : 'border-danger-solid'}`}
+                  inputSize="sm"
+                  error={!(l.note ?? '').trim()}
+                  className="min-w-[12rem] flex-1"
                   placeholder="What is this fee? (required)"
                   maxLength={200}
                   value={l.note ?? ''}

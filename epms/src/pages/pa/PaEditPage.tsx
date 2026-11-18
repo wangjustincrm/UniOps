@@ -855,10 +855,7 @@ function PoPaEditPage() {
                               setTaxManuallyEdited(false)   // the saved tax was for the old %
                             }
                           }}
-                          className={cn(
-                            'h-9 w-full pl-3 pr-8 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                            submitted && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100) ? 'border-danger-400' : 'border-line-strong'
-                          )}
+                          error={!!(submitted && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100))} className="pl-3 pr-8 font-mono"
                         />
                         <span className="absolute right-3 top-2 text-sm text-fg-muted">%</span>
                       </div>
@@ -872,10 +869,7 @@ function PoPaEditPage() {
                         max="9999-12-31"
                         value={expectedSettlement}
                         onChange={(e) => setExpectedSettlement(e.target.value)}
-                        className={cn(
-                          'h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                          submitted && (!expectedSettlement || settlementDateInvalid) ? 'border-danger-400' : 'border-line-strong'
-                        )}
+                        error={!!(submitted && (!expectedSettlement || settlementDateInvalid))}
                       />
                       {submitted && settlementDateInvalid && (
                         <p className="text-xs text-danger-fg">Expected Settlement Date is not a valid date</p>
@@ -905,10 +899,7 @@ function PoPaEditPage() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Monthly Cleaning Services — April 2026"
-                className={cn(
-                  'h-10 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                  submitted && !title.trim() ? 'border-danger-400' : 'border-line-strong'
-                )}
+                error={!!(submitted && !title.trim())}
               />
               {submitted && !title.trim() && (
                 <p className="text-xs text-danger-fg">PA Title is required</p>
@@ -930,11 +921,7 @@ function PoPaEditPage() {
                     onChange={(e) => setSubtotal(e.target.value)}
                     readOnly={isPrepayment}
                     placeholder="0.00"
-                    className={cn(
-                      'h-10 px-3 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      isPrepayment && 'bg-surface-subtle text-fg-secondary',
-                      submitted && subtotalNum <= 0 ? 'border-danger-400' : 'border-line-strong'
-                    )}
+                    error={!!(submitted && subtotalNum <= 0)} className="font-mono"
                   />
                   {isPrepayment && po && (
                     <p className="text-2xs text-fg-muted">
@@ -961,10 +948,7 @@ function PoPaEditPage() {
                     value={taxAmount}
                     onChange={(e) => { setTaxAmount(e.target.value); setTaxManuallyEdited(true) }}
                     placeholder="0.00"
-                    className={cn(
-                      'h-10 px-3 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      submitted && (taxNum < 0 || taxMissing) ? 'border-danger-400' : 'border-line-strong'
-                    )}
+                    error={!!(submitted && (taxNum < 0 || taxMissing))} className="font-mono"
                   />
                 </div>
 

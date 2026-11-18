@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
 import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
-import { cn, formatBytes } from '@/lib/utils'
+import { formatBytes } from '@/lib/utils'
 import { useAgreement, useAgreementSchedule, useUpdateAgreement } from '@/hooks/useAgreements'
 import { agreementService, type AgreementType, type MilestoneRowIn, type UpdateAgreementBody } from '@/services/agreement'
 import { agreementAttachmentService } from '@/services/agreementAttachments'
@@ -492,10 +492,7 @@ export default function AgreementEditPage() {
                   type="date"
                   value={validFrom}
                   onChange={(e) => { setValidFrom(e.target.value); setErrors((p) => ({ ...p, validFrom: '' })) }}
-                  className={cn(
-                    'h-10 w-full rounded-md border bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                    errors.validFrom ? 'border-danger-solid' : 'border-line-strong'
-                  )}
+                  error={!!errors.validFrom}
                 />
                 {errors.validFrom && <p className="text-xs text-danger-fg">{errors.validFrom}</p>}
               </div>
@@ -505,10 +502,7 @@ export default function AgreementEditPage() {
                   type="date"
                   value={validTo}
                   onChange={(e) => { setValidTo(e.target.value); setErrors((p) => ({ ...p, validTo: '' })) }}
-                  className={cn(
-                    'h-10 w-full rounded-md border bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                    errors.validTo ? 'border-danger-solid' : 'border-line-strong'
-                  )}
+                  error={!!errors.validTo}
                 />
                 {errors.validTo && <p className="text-xs text-danger-fg">{errors.validTo}</p>}
               </div>
@@ -642,10 +636,7 @@ export default function AgreementEditPage() {
                     value={selectedOwner ? selectedOwner.full_name : ownerQuery}
                     onFocus={() => { setOwnerOpen(true); if (selectedOwner) setOwnerQuery('') }}
                     onChange={(e) => { setOwnerQuery(e.target.value); setSelectedOwner(null); setOwnerOpen(true); setErrors((p) => ({ ...p, owner: '' })) }}
-                    className={cn(
-                      'h-10 w-full rounded-md border bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      errors.owner ? 'border-danger-solid' : 'border-line-strong'
-                    )}
+                    error={!!errors.owner} className="pl-9 pr-3"
                   />
                   {selectedOwner && (
                     <Button variant="subtle" size="icon-xs" aria-label="Clear"

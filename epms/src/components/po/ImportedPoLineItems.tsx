@@ -37,11 +37,6 @@ interface ImportedPoLineItemsProps {
   locked?: boolean
 }
 
-const CELL_INPUT =
-  'h-8 w-full rounded border border-line-strong bg-surface px-2 text-sm ' +
-  'focus:outline-none focus:ring-1 focus:ring-primary-600 ' +
-  'disabled:bg-surface-subtle disabled:text-fg-muted'
-
 let addedSeq = 0
 
 /** Line table for the imported-PO buyer-detail form.
@@ -108,7 +103,7 @@ export function ImportedPoLineItems({
                       aria-label={`Description for added line ${i + 1}`}
                       maxLength={500}
                       disabled={locked}
-                      className={CELL_INPUT}
+                      inputSize="sm"
                     />
                   )}
                 </Td>
@@ -129,7 +124,7 @@ export function ImportedPoLineItems({
                       onChange={(e) => update(i, { qty: Number(e.target.value) })}
                       aria-label={`Quantity for added line ${i + 1}`}
                       disabled={locked}
-                      className={`${CELL_INPUT} text-right font-mono`}
+                      inputSize="sm" className="text-right font-mono"
                     />
                   )}
                 </Td>
@@ -142,7 +137,7 @@ export function ImportedPoLineItems({
                       aria-label={`Unit for added line ${i + 1}`}
                       maxLength={30}
                       disabled={locked}
-                      className={CELL_INPUT}
+                      inputSize="sm"
                     />
                   )}
                 </Td>
@@ -154,7 +149,7 @@ export function ImportedPoLineItems({
                       onChange={(e) => update(i, { unitPrice: Number(e.target.value) })}
                       aria-label={`Unit price for added line ${i + 1}`}
                       disabled={locked}
-                      className={`${CELL_INPUT} text-right font-mono`}
+                      inputSize="sm" className="text-right font-mono"
                     />
                   )}
                 </Td>
@@ -175,7 +170,7 @@ export function ImportedPoLineItems({
                     placeholder="SKU / catalog #"
                     aria-label={`Supplier item ID for line ${i + 1}`}
                     maxLength={100}
-                    className={`${CELL_INPUT} font-mono`}
+                    inputSize="sm" className="font-mono"
                   />
                 </Td>
                 <Td>
@@ -186,7 +181,7 @@ export function ImportedPoLineItems({
                     placeholder="e.g. 500 g"
                     aria-label={`Sample requirement for line ${i + 1}`}
                     maxLength={100}
-                    className={CELL_INPUT}
+                    inputSize="sm"
                   />
                 </Td>
                 <Td align="right">

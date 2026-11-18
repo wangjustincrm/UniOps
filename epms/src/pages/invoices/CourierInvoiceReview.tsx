@@ -8,7 +8,7 @@ import {
   freightService, readFreightInvoice,
   type ChargeType, type FreightCarrier, type FreightOcrResult,
 } from '@/services/freight'
-import { CHARGE_TYPE_LABEL, INPUT_SM_CLS, Modal, TH_CLS, addDaysISO, cents, errorMessage, isDateOnly, num } from '@/pages/freight/freightUi'
+import { CHARGE_TYPE_LABEL, Modal, TH_CLS, addDaysISO, cents, errorMessage, isDateOnly, num } from '@/pages/freight/freightUi'
 import { useNoticeDialog } from '@/components/ui/ConfirmDialog'
 
 import { Select, TBody, TFoot, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
@@ -352,14 +352,14 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
                     {Object.entries(CHARGE_TYPE_LABEL).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
                   </Select>
                   <Input type="date" value={l.ship_date} onChange={(e) => updateLine(l.key, { ship_date: e.target.value })}
-                    className={cn(INPUT_SM_CLS, 'w-36')} aria-label={`Line ${i + 1} date`} />
+                    inputSize="sm" className="w-36" aria-label={`Line ${i + 1} date`} />
                   <div className="ml-auto flex items-center gap-1.5">
                     <Input type="number" step="0.01" value={l.amount} placeholder="Amount"
                       onChange={(e) => updateLine(l.key, { amount: e.target.value })}
-                      className={cn(INPUT_SM_CLS, 'w-24 text-right font-mono')} aria-label={`Line ${i + 1} amount`} />
+                      inputSize="sm" className="w-24 text-right font-mono" aria-label={`Line ${i + 1} amount`} />
                     <Input type="number" step="0.01" value={l.tax_amount} placeholder="Tax"
                       onChange={(e) => updateLine(l.key, { tax_amount: e.target.value })}
-                      className={cn(INPUT_SM_CLS, 'w-20 text-right font-mono')} aria-label={`Line ${i + 1} tax`} />
+                      inputSize="sm" className="w-20 text-right font-mono" aria-label={`Line ${i + 1} tax`} />
                     <Button variant="danger-ghost" size="icon-sm" type="button" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}
                       disabled={lines.length === 1}
                       aria-label="Remove line">
@@ -369,13 +369,13 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
                 </div>
                 <div className="grid grid-cols-2 gap-2 pl-7">
                   <Input value={l.tracking_no} placeholder="Tracking no" onChange={(e) => updateLine(l.key, { tracking_no: e.target.value })}
-                    className={cn(INPUT_SM_CLS, 'font-mono')} aria-label={`Line ${i + 1} tracking number`} />
+                    inputSize="sm" className="font-mono" aria-label={`Line ${i + 1} tracking number`} />
                   <Input value={l.packages} placeholder="Other packages (comma separated)" onChange={(e) => updateLine(l.key, { packages: e.target.value })}
-                    className={cn(INPUT_SM_CLS, 'font-mono')} aria-label={`Line ${i + 1} other packages`} />
+                    inputSize="sm" className="font-mono" aria-label={`Line ${i + 1} other packages`} />
                   <Input value={l.reference} placeholder="Reference" onChange={(e) => updateLine(l.key, { reference: e.target.value })}
-                    className={INPUT_SM_CLS} aria-label={`Line ${i + 1} reference`} />
+                    inputSize="sm" aria-label={`Line ${i + 1} reference`} />
                   <Input value={l.description} placeholder="Description" onChange={(e) => updateLine(l.key, { description: e.target.value })}
-                    className={INPUT_SM_CLS} aria-label={`Line ${i + 1} description`} />
+                    inputSize="sm" aria-label={`Line ${i + 1} description`} />
                 </div>
               </div>
             ))}
@@ -411,13 +411,13 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
                         {Object.entries(CHARGE_TYPE_LABEL).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
                       </Select>
                     </Td>
-                    <Td><Input value={l.tracking_no} onChange={(e) => updateLine(l.key, { tracking_no: e.target.value })} className={cn(INPUT_SM_CLS, 'w-40 font-mono')} /></Td>
-                    <Td><Input value={l.packages} onChange={(e) => updateLine(l.key, { packages: e.target.value })} placeholder="comma separated" className={cn(INPUT_SM_CLS, 'w-40 font-mono')} /></Td>
-                    <Td><Input value={l.reference} onChange={(e) => updateLine(l.key, { reference: e.target.value })} className={cn(INPUT_SM_CLS, 'w-28')} /></Td>
-                    <Td><Input type="date" value={l.ship_date} onChange={(e) => updateLine(l.key, { ship_date: e.target.value })} className={cn(INPUT_SM_CLS, 'w-32')} /></Td>
-                    <Td><Input value={l.description} onChange={(e) => updateLine(l.key, { description: e.target.value })} className={cn(INPUT_SM_CLS, 'w-56')} /></Td>
-                    <Td><Input type="number" step="0.01" value={l.amount} onChange={(e) => updateLine(l.key, { amount: e.target.value })} className={cn(INPUT_SM_CLS, 'w-24 text-right font-mono')} /></Td>
-                    <Td><Input type="number" step="0.01" value={l.tax_amount} onChange={(e) => updateLine(l.key, { tax_amount: e.target.value })} className={cn(INPUT_SM_CLS, 'w-20 text-right font-mono')} /></Td>
+                    <Td><Input value={l.tracking_no} onChange={(e) => updateLine(l.key, { tracking_no: e.target.value })} inputSize="sm" className="w-40 font-mono" /></Td>
+                    <Td><Input value={l.packages} onChange={(e) => updateLine(l.key, { packages: e.target.value })} placeholder="comma separated" inputSize="sm" className="w-40 font-mono" /></Td>
+                    <Td><Input value={l.reference} onChange={(e) => updateLine(l.key, { reference: e.target.value })} inputSize="sm" className="w-28" /></Td>
+                    <Td><Input type="date" value={l.ship_date} onChange={(e) => updateLine(l.key, { ship_date: e.target.value })} inputSize="sm" className="w-32" /></Td>
+                    <Td><Input value={l.description} onChange={(e) => updateLine(l.key, { description: e.target.value })} inputSize="sm" className="w-56" /></Td>
+                    <Td><Input type="number" step="0.01" value={l.amount} onChange={(e) => updateLine(l.key, { amount: e.target.value })} inputSize="sm" className="w-24 text-right font-mono" /></Td>
+                    <Td><Input type="number" step="0.01" value={l.tax_amount} onChange={(e) => updateLine(l.key, { tax_amount: e.target.value })} inputSize="sm" className="w-20 text-right font-mono" /></Td>
                     <Td>
                       <Button variant="danger-ghost" size="icon-sm" type="button" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}
                         disabled={lines.length === 1}

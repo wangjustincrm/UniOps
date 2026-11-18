@@ -188,10 +188,7 @@ export default function CollectionConfirmPage() {
               type="date"
               value={collectionDate}
               onChange={(e) => setCollectionDate(e.target.value)}
-              className={cn(
-                'h-10 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                submitted && !collectionDate ? 'border-danger-400' : 'border-line-strong'
-              )}
+              error={!!(submitted && !collectionDate)}
             />
             {submitted && !collectionDate && (
               <p className="text-xs text-danger-fg">Required</p>
@@ -294,10 +291,7 @@ export default function CollectionConfirmPage() {
                       placeholder="Describe what you found when collecting..."
                       value={line.collectionNotes}
                       onChange={(e) => updateLine(idx, { collectionNotes: e.target.value })}
-                      className={cn(
-                        'mt-1 w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
-                        noteErr ? 'border-danger-400' : 'border-line-strong'
-                      )}
+                      error={!!noteErr} className="mt-1 resize-none"
                     />
                     {noteErr && <p className="text-xs text-danger-fg mt-0.5">Notes are required</p>}
                   </div>
@@ -353,10 +347,7 @@ export default function CollectionConfirmPage() {
                   value={overReceiptReason}
                   onChange={(e) => setOverReceiptReason(e.target.value)}
                   placeholder="Why more than the PO line has open is being received"
-                  className={cn(
-                    'w-full px-3 py-1.5 rounded border text-sm bg-surface focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
-                    submitted && !overReceiptReason.trim() ? 'border-danger-400' : 'border-warning-line'
-                  )}
+                  error={!!(submitted && !overReceiptReason.trim())} className="resize-none"
                 />
               </>
             )}

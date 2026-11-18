@@ -82,8 +82,6 @@ function PersonalInfoSection({ profile }: { profile: ApiUser }) {
     teamsAccount !== (profile.teams_account ?? '') ||
     notifChannel !== (profile.notification_channel ?? 'email_only')
 
-  const inputCls = 'h-10 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -93,7 +91,6 @@ function PersonalInfoSection({ profile }: { profile: ApiUser }) {
           <Input
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            className={inputCls}
             placeholder="Your full name"
           />
         </div>
@@ -127,7 +124,7 @@ function PersonalInfoSection({ profile }: { profile: ApiUser }) {
             <Input
               value={teamsAccount}
               onChange={(e) => setTeamsAccount(e.target.value)}
-              className={cn(inputCls, 'pl-8')}
+              className="pl-8"
               placeholder="user@company.com"
               type="email"
             />
@@ -381,11 +378,6 @@ function ChangePasswordSection() {
     return Object.keys(e).length === 0
   }
 
-  const inputCls = (err?: string) => cn(
-    'h-10 w-full rounded-lg border bg-surface px-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-    err ? 'border-danger-solid' : 'border-line-strong'
-  )
-
   const ToggleBtn = ({ show, onToggle }: { show: boolean; onToggle: () => void }) => (
     <Button variant="subtle" size="icon-xs" type="button" onClick={onToggle}
       className="absolute right-1.5 top-1/2 -translate-y-1/2">
@@ -409,7 +401,7 @@ function ChangePasswordSection() {
           <div className="relative">
             <Input type={showCurrent ? 'text' : 'password'} value={currentPwd}
               onChange={(e) => { setCurrentPwd(e.target.value); setErrors((p) => ({ ...p, currentPwd: '' })) }}
-              className={inputCls(errors.currentPwd)} placeholder="Current password" />
+              error={!!errors.currentPwd} className="pr-10" placeholder="Current password" />
             <ToggleBtn show={showCurrent} onToggle={() => setShowCurrent((v) => !v)} />
           </div>
           {errors.currentPwd && <p className="text-xs text-danger-fg">{errors.currentPwd}</p>}
@@ -421,7 +413,7 @@ function ChangePasswordSection() {
           <div className="relative">
             <Input type={showNew ? 'text' : 'password'} value={newPwd}
               onChange={(e) => { setNewPwd(e.target.value); setErrors((p) => ({ ...p, newPwd: '' })) }}
-              className={inputCls(errors.newPwd)} placeholder="Min. 8 characters" />
+              error={!!errors.newPwd} className="pr-10" placeholder="Min. 8 characters" />
             <ToggleBtn show={showNew} onToggle={() => setShowNew((v) => !v)} />
           </div>
           {errors.newPwd && <p className="text-xs text-danger-fg">{errors.newPwd}</p>}
@@ -433,7 +425,7 @@ function ChangePasswordSection() {
           <div className="relative">
             <Input type={showConfirm ? 'text' : 'password'} value={confirmPwd}
               onChange={(e) => { setConfirmPwd(e.target.value); setErrors((p) => ({ ...p, confirmPwd: '' })) }}
-              className={inputCls(errors.confirmPwd)} placeholder="Re-enter password" />
+              error={!!errors.confirmPwd} className="pr-10" placeholder="Re-enter password" />
             <ToggleBtn show={showConfirm} onToggle={() => setShowConfirm((v) => !v)} />
           </div>
           {errors.confirmPwd && <p className="text-xs text-danger-fg">{errors.confirmPwd}</p>}

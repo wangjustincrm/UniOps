@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
 import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { useConfig } from '@/hooks/useConfig'
-import { cn, formatBytes } from '@/lib/utils'
+import { formatBytes } from '@/lib/utils'
 import { enabledCurrencyOptions } from '@/lib/currencies'
 import type { Currency } from '@/types'
 import { useCreateAgreement } from '@/hooks/useAgreements'
@@ -325,10 +325,7 @@ export default function AgreementCreatePage() {
                     value={selectedVendor ? selectedVendor.name : vendorQuery}
                     onFocus={() => { setVendorOpen(true); if (selectedVendor) setVendorQuery('') }}
                     onChange={(e) => { setVendorQuery(e.target.value); setSelectedVendor(null); setVendorOpen(true); setErrors((p) => ({ ...p, vendor: '' })) }}
-                    className={cn(
-                      'h-10 w-full rounded-md border bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      errors.vendor ? 'border-danger-solid' : 'border-line-strong'
-                    )}
+                    error={!!errors.vendor} className="pl-9 pr-3"
                   />
                   {selectedVendor && (
                     <Button variant="subtle" size="icon-xs" aria-label="Clear"
@@ -420,10 +417,7 @@ export default function AgreementCreatePage() {
                   type="date"
                   value={validFrom}
                   onChange={(e) => { setValidFrom(e.target.value); setErrors((p) => ({ ...p, validFrom: '' })) }}
-                  className={cn(
-                    'h-10 w-full rounded-md border bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                    errors.validFrom ? 'border-danger-solid' : 'border-line-strong'
-                  )}
+                  error={!!errors.validFrom}
                 />
                 {errors.validFrom && <p className="text-xs text-danger-fg">{errors.validFrom}</p>}
               </div>
@@ -433,10 +427,7 @@ export default function AgreementCreatePage() {
                   type="date"
                   value={validTo}
                   onChange={(e) => { setValidTo(e.target.value); setErrors((p) => ({ ...p, validTo: '' })) }}
-                  className={cn(
-                    'h-10 w-full rounded-md border bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                    errors.validTo ? 'border-danger-solid' : 'border-line-strong'
-                  )}
+                  error={!!errors.validTo}
                 />
                 {errors.validTo && <p className="text-xs text-danger-fg">{errors.validTo}</p>}
               </div>
@@ -577,10 +568,7 @@ export default function AgreementCreatePage() {
                     value={selectedOwner ? selectedOwner.full_name : ownerQuery}
                     onFocus={() => { setOwnerOpen(true); if (selectedOwner) setOwnerQuery('') }}
                     onChange={(e) => { setOwnerQuery(e.target.value); setSelectedOwner(null); setOwnerOpen(true); setErrors((p) => ({ ...p, owner: '' })) }}
-                    className={cn(
-                      'h-10 w-full rounded-md border bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      errors.owner ? 'border-danger-solid' : 'border-line-strong'
-                    )}
+                    error={!!errors.owner} className="pl-9 pr-3"
                   />
                   {selectedOwner && (
                     <Button variant="subtle" size="icon-xs" aria-label="Clear"

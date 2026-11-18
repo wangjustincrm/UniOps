@@ -271,10 +271,7 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                 </label>
                 <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)}
                           placeholder="Why this credit exists and who confirmed it — e.g. Duplicate payment of invoice 8480321003. Hema Nanjiani (MSC collections) confirmed by email on 2026-09-25 that no credit memo will be issued; deduct on next payment."
-                          className={cn(
-                            'w-full rounded-lg border p-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                            submitted && missing.notes ? 'border-danger-400' : 'border-line-strong',
-                          )} />
+                          error={!!(submitted && missing.notes)} className="p-2" />
                 {submitted && missing.notes && <p className="text-xs text-danger-fg">Say what the credit is for and who confirmed it</p>}
               </div>
 

@@ -284,11 +284,11 @@ function NewFactorForm({ accountId, onClose }: { accountId: string; onClose: () 
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1">
           <label className="text-2xs font-medium text-fg-secondary">Factor Code</label>
-          <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="brand" className="h-8 text-xs font-mono" />
+          <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="brand" inputSize="sm" className="font-mono" />
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-2xs font-medium text-fg-secondary">Factor Name</label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Brand" className="h-8 text-xs" />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Brand" inputSize="sm" />
         </div>
       </div>
       {error && <p className="text-xs text-danger-fg mt-1">{error}</p>}
@@ -522,7 +522,7 @@ function FactorLibraryPicker({
                   value={overrideCode}
                   onChange={(e) => setOverrideCode(e.target.value)}
                   placeholder={selected.factor_code}
-                  className="h-8 text-xs font-mono"
+                  inputSize="sm" className="font-mono"
                 />
               </div>
               <div className="flex flex-col gap-1">
@@ -533,7 +533,7 @@ function FactorLibraryPicker({
                   value={overrideName}
                   onChange={(e) => setOverrideName(e.target.value)}
                   placeholder={selected.factor_name}
-                  className="h-8 text-xs"
+                  inputSize="sm"
                 />
               </div>
             </div>

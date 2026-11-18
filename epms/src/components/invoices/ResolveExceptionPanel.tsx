@@ -69,10 +69,7 @@ export function ResolveExceptionPanel({ inv, onClose }: { inv: ApiInvoice; onClo
           placeholder={resolution === 'accepted'
             ? 'Explain why the excess amount is acceptable...'
             : 'Instructions for the vendor to issue a credit note...'}
-          className={cn(
-            'px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-primary-600 resize-none',
-            submitted && !note.trim() ? 'border-danger-400' : 'border-line-strong bg-surface'
-          )} />
+          error={!!(submitted && !note.trim())} className="resize-none text-xs" />
         {submitted && !note.trim() && <p className="text-xs text-danger-fg">Required</p>}
       </div>
 

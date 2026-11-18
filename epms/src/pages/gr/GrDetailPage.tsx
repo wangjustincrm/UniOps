@@ -698,10 +698,7 @@ function DamageResolutionCard({ gr }: { gr: ApiGr }) {
               maxLength={100}
               value={ref}
               onChange={(e) => setRef(e.target.value)}
-              className={cn(
-                'h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                tried && !ref.trim() ? 'border-danger-400' : 'border-line-strong'
-              )}
+              error={!!(tried && !ref.trim())}
             />
             {tried && !ref.trim() && <p className="text-xs text-danger-fg">Required</p>}
           </div>

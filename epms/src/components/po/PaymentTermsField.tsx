@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { cn } from '@/lib/utils'
 import { MAX_NET_DAYS, PRESET_PAYMENT_TERMS, customDaysToTerms, isPresetTerms, netDays } from '@/lib/paymentTerms'
 
 import { Input, Select } from '@uniops/shell'
@@ -29,7 +28,6 @@ export function PaymentTermsField({ value, onChange, hint, invalid }: {
     else { setMode(CUSTOM); setDays(String(netDays(value) ?? '')); setError(null) }
   }, [value])
 
-  const inputCls = 'h-10 w-full rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex gap-2">
@@ -51,7 +49,7 @@ export function PaymentTermsField({ value, onChange, hint, invalid }: {
           <div className="relative w-32 shrink-0">
             <Input
               type="number" min={1} max={MAX_NET_DAYS} step={1} inputMode="numeric" aria-label="Net days"
-              className={cn(inputCls, 'pr-11', error ? 'border-danger-400' : 'border-line-strong')}
+              error={!!error} className="flex flex-col gap-1.5 gap-2 Payment terms pr-11"
               value={days}
               placeholder="21"
               onChange={(e) => {

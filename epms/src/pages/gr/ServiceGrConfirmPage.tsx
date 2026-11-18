@@ -212,10 +212,7 @@ export default function ServiceGrConfirmPage() {
             type="date"
             value={completionDate}
             onChange={(e) => setCompletionDate(e.target.value)}
-            className={cn(
-              'w-52 h-10 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-              dateError ? 'border-danger-400' : 'border-line-strong'
-            )}
+            error={!!dateError} className="w-52"
           />
           {dateError && <p className="text-xs text-danger-fg">Required</p>}
         </div>
@@ -257,10 +254,7 @@ export default function ServiceGrConfirmPage() {
                 placeholder="Describe the quality issues observed..."
                 value={issueDetails}
                 onChange={(e) => setIssueDetails(e.target.value)}
-                className={cn(
-                  'w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
-                  issueError ? 'border-danger-400' : 'border-warning-line bg-warning-soft'
-                )}
+                error={!!issueError} className="resize-none"
               />
               {issueError && <p className="text-xs text-danger-fg">Required when issues are reported</p>}
             </div>
@@ -277,10 +271,7 @@ export default function ServiceGrConfirmPage() {
             placeholder="Confirm what was delivered, the quality of work, and any outstanding items (min 10 characters)..."
             value={acceptanceNotes}
             onChange={(e) => setAcceptanceNotes(e.target.value)}
-            className={cn(
-              'w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none',
-              notesError ? 'border-danger-400' : 'border-line-strong'
-            )}
+            error={!!notesError} className="resize-none"
           />
           <div className="flex justify-between">
             {notesError
@@ -388,10 +379,7 @@ export default function ServiceGrConfirmPage() {
                   value={overReceiptReason}
                   onChange={(e) => setOverReceiptReason(e.target.value)}
                   placeholder="Why more than the PO line has open is being confirmed"
-                  className={cn(
-                    'w-full px-3 py-1.5 rounded border text-sm bg-surface focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
-                    submitted && !overReceiptReason.trim() ? 'border-danger-400' : 'border-warning-line'
-                  )}
+                  error={!!(submitted && !overReceiptReason.trim())} className="resize-none"
                 />
               </>
             )}

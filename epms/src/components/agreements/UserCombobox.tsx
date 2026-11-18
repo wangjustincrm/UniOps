@@ -77,9 +77,8 @@ export function UserCombobox(props: {
           value={selected ? selected.full_name : query}
           onFocus={() => { setOpen(true); if (selected) setQuery('') }}
           onChange={(e) => { setQuery(e.target.value); onChange(''); setOpen(true) }}
-          className={`h-10 w-full rounded-md border bg-surface pl-9 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted ${
-            invalid ? 'border-danger-400' : 'border-line-strong'
-          }`}
+          error={invalid}
+          className="pl-9 pr-9"
         />
         {value !== '' && !disabled && (
           <Button variant="subtle" size="icon-xs"

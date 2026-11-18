@@ -93,12 +93,6 @@ const NAV: NavEntry[] = [
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
-const inputCls = (err?: boolean) =>
-  cn(
-    'h-10 w-full rounded-lg border bg-surface-sunken px-3 text-sm text-fg placeholder:text-fg-faint focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-focus transition-colors',
-    err ? 'border-danger-solid' : 'border-line'
-  )
-
 function SaveBar({ saved, onSave, label = 'Save Settings' }: { saved: boolean; onSave: () => void; label?: string }) {
   return (
     <div className="flex items-center gap-3 pt-4 border-t border-line">
@@ -191,16 +185,16 @@ function CompanySettings() {
         <h3 className="text-xs font-semibold text-fg-muted">Company Information</h3>
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-fg-secondary">Company Name <span className="text-danger-fg">*</span></label>
-          <Input className={inputCls()} value={name} onChange={(e) => setName(e.target.value)} placeholder="Canada Royal Milk" />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Canada Royal Milk" />
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-fg-secondary">Tagline / Subtitle</label>
-          <Input className={inputCls()} value={tagline} onChange={(e) => setTagline(e.target.value)} placeholder="Enterprise Procurement Management" />
+          <Input value={tagline} onChange={(e) => setTagline(e.target.value)} placeholder="Enterprise Procurement Management" />
           <p className="text-xs text-fg-muted">Shown below the company name in the sidebar</p>
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-fg-secondary">Default Delivery Address</label>
-          <Textarea rows={3} className={inputCls() + ' py-2 resize-none'} value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder="123 Warehouse Rd, Toronto, ON M5V 1A1" />
+          <Textarea rows={3} className="resize-none" value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder="123 Warehouse Rd, Toronto, ON M5V 1A1" />
           <p className="text-xs text-fg-muted">Pre-filled in PR and PO forms. Users can override per order.</p>
         </div>
       </section>
@@ -907,11 +901,11 @@ function EmailTemplates() {
         <p className="text-sm text-fg-muted">Used when a Procurement Officer selects "Email Supplier" while placing an order. Sent via the SMTP server configured above.</p>
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-fg-secondary">Email Subject <span className="text-danger-fg">*</span></label>
-          <Input className={cn(inputCls(), 'bg-surface-sunken')} value={subject} onChange={(e) => setSubject(e.target.value)} />
+          <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-fg-secondary">Email Body <span className="text-danger-fg">*</span></label>
-          <Textarea className={cn(inputCls(), 'min-h-[200px] h-auto py-2.5 resize-y font-mono text-xs leading-relaxed')} value={body} onChange={(e) => setBody(e.target.value)} />
+          <Textarea className="min-h-[200px] h-auto resize-y font-mono text-xs leading-relaxed" value={body} onChange={(e) => setBody(e.target.value)} />
         </div>
       </section>
       <section className="flex flex-col gap-3">
@@ -1046,7 +1040,6 @@ function UserForm({ initial, onSave, onCancel, title, saveError }: { initial: Us
     if (!form.department_id) e.department_id = 'Required'
     setErrors(e); return Object.keys(e).length === 0
   }
-  const fldCls = (err?: string) => cn('h-10 w-full rounded-md border bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600', err ? 'border-danger-solid' : 'border-line-strong')
 
   return (
     <div className="rounded-lg border border-primary-200 bg-primary-50 p-5 mb-4">
@@ -1058,13 +1051,13 @@ function UserForm({ initial, onSave, onCancel, title, saveError }: { initial: Us
         {[{ k: 'full_name' as const, label: 'Full Name', placeholder: 'Jane Smith', type: 'text' }, { k: 'email' as const, label: 'Email Address', placeholder: 'jane@company.ca', type: 'email' }].map(({ k, label, placeholder, type }) => (
           <div key={k} className="flex flex-col gap-1">
             <label className="text-xs font-medium text-fg-secondary">{label}<span className="text-danger-fg"> *</span></label>
-            <Input type={type} className={fldCls(errors[k])} value={form[k]} onChange={(e) => set(k, e.target.value)} placeholder={placeholder} />
+            <Input type={type} error={!!errors[k]} value={form[k]} onChange={(e) => set(k, e.target.value)} placeholder={placeholder} />
             {errors[k] && <p className="text-xs text-danger-fg">{errors[k]}</p>}
           </div>
         ))}
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-fg-secondary">ERP Person Code<span className="text-danger-fg"> *</span></label>
-          <Input type="text" className={fldCls(errors.erp_person_code)} value={form.erp_person_code} onChange={(e) => set('erp_person_code', e.target.value)} placeholder="ERP employee / person code" />
+          <Input type="text" error={!!errors.erp_person_code} value={form.erp_person_code} onChange={(e) => set('erp_person_code', e.target.value)} placeholder="ERP employee / person code" />
           {errors.erp_person_code && <p className="text-xs text-danger-fg">{errors.erp_person_code}</p>}
         </div>
         <div className="flex flex-col gap-1">
@@ -1091,7 +1084,7 @@ function UserForm({ initial, onSave, onCancel, title, saveError }: { initial: Us
         </div>
         <div className="flex flex-col gap-1 sm:col-span-2">
           <label className="text-xs font-medium text-fg-secondary">Teams Account <span className="text-fg-muted font-normal">(UPN / email for Teams approval)</span></label>
-          <Input type="email" className={fldCls()} value={form.teams_account} onChange={(e) => set('teams_account', e.target.value)} placeholder="user@company.onmicrosoft.com" />
+          <Input type="email" value={form.teams_account} onChange={(e) => set('teams_account', e.target.value)} placeholder="user@company.onmicrosoft.com" />
         </div>
         <div className="flex flex-col gap-1 sm:col-span-2">
           <label className="text-xs font-medium text-fg-secondary">Supervisor <span className="text-fg-muted font-normal">(optional — required when dept supervisor step is enabled)</span></label>
@@ -1695,7 +1688,6 @@ function VendorSettingsSection() {
         {/* Add new */}
         <div className="flex gap-2">
           <Input
-            className={inputCls()}
             placeholder="New category name…"
             value={newCat}
             onChange={(e) => setNewCat(e.target.value)}
@@ -1821,7 +1813,7 @@ function IncotermsSettingsSection() {
 
         <div className="flex flex-wrap gap-2">
           <Input
-            className={cn(inputCls(!!code && !canAdd), 'w-28 font-mono uppercase')}
+            error={!!code && !canAdd} className="w-28 font-mono uppercase"
             placeholder="Code"
             value={newCode}
             maxLength={10}
@@ -1829,7 +1821,7 @@ function IncotermsSettingsSection() {
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTerm() } }}
           />
           <Input
-            className={cn(inputCls(), 'flex-1 min-w-[12rem]')}
+            className="flex-1 min-w-[12rem]"
             placeholder="Name (e.g. Free On Board)"
             value={newLabel}
             maxLength={100}
@@ -1859,8 +1851,6 @@ function PrepaymentConfigSection() {
 
   useEffect(() => { if (config?.prepayment_config) setCfg(config.prepayment_config) }, [config?.prepayment_config])
 
-  const numCls = 'h-10 w-24 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 text-center'
-
   return (
     <div className="flex flex-col gap-8 max-w-lg">
       <section className="flex flex-col gap-4">
@@ -1871,7 +1861,7 @@ function PrepaymentConfigSection() {
             <p className="text-xs text-fg-muted mt-0.5">Global cap. Requester cannot request a prepayment above this % of the PO value. Can be overridden per vendor category.</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <Input type="number" min={1} max={100} value={cfg.max_prepayment_pct} onChange={(e) => set('max_prepayment_pct', Math.min(100, Math.max(1, Number(e.target.value))))} className={numCls} />
+            <Input type="number" min={1} max={100} value={cfg.max_prepayment_pct} onChange={(e) => set('max_prepayment_pct', Math.min(100, Math.max(1, Number(e.target.value))))} className="w-24 text-center" />
             <span className="text-sm text-fg-muted">%</span>
           </div>
         </div>
@@ -2024,8 +2014,6 @@ function NotificationSettingsSection() {
     setTemplates((p) => ({ ...p, [key]: { ...(p[key] ?? { subject: '', body: '' }), [field]: value } }))
   }
 
-  const inCls = 'h-10 w-full rounded-lg border border-line bg-surface-sunken px-3 text-sm focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-focus transition-colors'
-
   return (
     <div className="flex flex-col gap-8 max-w-2xl">
 
@@ -2048,7 +2036,7 @@ function NotificationSettingsSection() {
       <section className="flex flex-col gap-3">
         <h3 className="text-xs font-semibold text-fg-muted">Microsoft Teams Webhook URL</h3>
         <p className="text-sm text-fg-muted">Company-level Incoming Webhook URL. Used when channel is "Teams only" or "Both".</p>
-        <Input className={inCls} placeholder="https://outlook.office.com/webhook/…"
+        <Input placeholder="https://outlook.office.com/webhook/…"
           value={settings.teams_webhook_url ?? ''}
           onChange={(e) => setSettings((p) => ({ ...p, teams_webhook_url: e.target.value || null }))} />
       </section>
@@ -2057,7 +2045,7 @@ function NotificationSettingsSection() {
       <section className="flex flex-col gap-3">
         <h3 className="text-xs font-semibold text-fg-muted">Daily Follow-up Time</h3>
         <p className="text-sm text-fg-muted">Time at which the daily pending-task reminder is dispatched, on plant time (Company Settings → Time Zone).</p>
-        <Input type="time" className={cn(inCls, 'w-36')}
+        <Input type="time" className="w-36"
           value={settings.followup_time ?? '08:00'}
           onChange={(e) => setSettings((p) => ({ ...p, followup_time: e.target.value }))} />
       </section>
@@ -2067,7 +2055,7 @@ function NotificationSettingsSection() {
         <h3 className="text-xs font-semibold text-fg-muted">Test Notification</h3>
         <p className="text-sm text-fg-muted">Send a test email using the current SMTP configuration.</p>
         <div className="flex gap-2">
-          <Input className={cn(inCls, 'flex-1')} type="email" placeholder="recipient@example.com"
+          <Input className="flex-1" type="email" placeholder="recipient@example.com"
             value={testEmail} onChange={(e) => setTestEmail(e.target.value)} />
           <Button size="md" onClick={handleTestSmtp} disabled={testStatus === 'sending' || !testEmail}
             className="shrink-0">
@@ -2102,7 +2090,7 @@ function NotificationSettingsSection() {
                   <div className="border-t border-line-subtle px-4 pb-4 pt-3 flex flex-col gap-3 bg-surface-subtle">
                     <div className="flex flex-col gap-1">
                       <label className="text-xs font-medium text-fg-secondary">Subject</label>
-                      <Input className={inCls} value={tpl.subject}
+                      <Input value={tpl.subject}
                         onChange={(e) => updateTemplate(key, 'subject', e.target.value)}
                         placeholder="Email subject…" />
                     </div>

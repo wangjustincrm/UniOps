@@ -123,12 +123,6 @@ interface ProjectFormProps {
 function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: ProjectFormProps) {
   const set = (k: keyof ProjectFormData, v: string) => onChange({ ...form, [k]: v })
 
-  const inputCls = (err?: string) =>
-    cn(
-      'h-10 w-full rounded-lg border bg-surface-sunken px-3 text-sm focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-focus transition-colors',
-      err ? 'border-danger-solid bg-danger-soft' : 'border-line'
-    )
-
   return (
     <div className="rounded-xl border border-primary-200 bg-primary-50/60 p-5 mb-4">
       <div className="flex items-center justify-between mb-4">
@@ -145,7 +139,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
             Project Code <span className="text-danger-fg">*</span>
           </label>
           <Input
-            className={inputCls(errors.code)}
+            error={!!errors.code}
             value={form.code}
             onChange={(e) => set('code', e.target.value)}
             placeholder="PROJ-2026-001"
@@ -159,7 +153,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
             Project Name <span className="text-danger-fg">*</span>
           </label>
           <Input
-            className={inputCls(errors.name)}
+            error={!!errors.name}
             value={form.name}
             onChange={(e) => set('name', e.target.value)}
             placeholder="ERP System Upgrade"
@@ -171,7 +165,6 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
         <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-3">
           <label className="text-xs font-medium text-fg-secondary">Description</label>
           <Input
-            className={inputCls()}
             value={form.description}
             onChange={(e) => set('description', e.target.value)}
             placeholder="Brief description of project scope and objectives"
@@ -184,7 +177,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
             Owner Department <span className="text-danger-fg">*</span>
           </label>
           <Input
-            className={inputCls(errors.ownerDept)}
+            error={!!errors.ownerDept}
             list="proj-dept-list"
             value={form.ownerDept}
             onChange={(e) => set('ownerDept', e.target.value)}
@@ -204,7 +197,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
             Project Manager <span className="text-danger-fg">*</span>
           </label>
           <Input
-            className={inputCls(errors.managerName)}
+            error={!!errors.managerName}
             value={form.managerName}
             onChange={(e) => set('managerName', e.target.value)}
             placeholder="Jane Smith"
@@ -236,7 +229,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
               type="number"
               min="0"
               step="0.01"
-              className={cn(inputCls(errors.budget), 'pl-6')}
+              error={!!errors.budget} className="pl-6"
               value={form.budget}
               onChange={(e) => set('budget', e.target.value)}
               placeholder="0.00"
@@ -249,7 +242,6 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Currency</label>
           <Input
-            className={inputCls()}
             list="proj-currency-list"
             value={form.currency}
             onChange={(e) => set('currency', e.target.value.toUpperCase())}
@@ -270,7 +262,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
           </label>
           <Input
             type="date"
-            className={inputCls(errors.startDate)}
+            error={!!errors.startDate}
             value={form.startDate}
             onChange={(e) => set('startDate', e.target.value)}
           />
@@ -284,7 +276,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
           </label>
           <Input
             type="date"
-            className={inputCls(errors.endDate)}
+            error={!!errors.endDate}
             value={form.endDate}
             onChange={(e) => set('endDate', e.target.value)}
           />

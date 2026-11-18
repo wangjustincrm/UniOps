@@ -727,7 +727,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
     }
   }
 
-  const fieldErr = (val: string) => submitted && !val.trim() ? 'border-danger-400' : 'border-line-strong'
+  const fieldErr = (val: string) => submitted && !val.trim()
 
   // ── Courier invoice: the vendor is a carrier's ─────────────────────────────
   // Rule (2026-10-20): a carrier's invoice is always a courier invoice. Its
@@ -1080,8 +1080,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                     setAiFields((prev) => { const n = new Set(prev); n.delete('vendorInvoiceNumber'); return n })
                   }}
                   placeholder="e.g. INV-2026-001"
-                  className={cn('h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                    isDuplicate ? 'border-danger-400' : fieldErr(vendorInvoiceNumber))} />
+                  error={isDuplicate || fieldErr(vendorInvoiceNumber)} />
               </div>
             </div>
             {isDuplicate && (
@@ -1182,8 +1181,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                   setAiFields((prev) => { const n = new Set(prev); n.delete('amount'); return n })
                 }}
                 placeholder="0.00"
-                className={cn('h-9 px-3 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                  submitted && amtNum <= 0 ? 'border-danger-400' : 'border-line-strong')} />
+                error={!!(submitted && amtNum <= 0)} className="font-mono" />
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-fg-secondary flex items-center">

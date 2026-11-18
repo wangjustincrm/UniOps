@@ -60,8 +60,6 @@ type SortKey =
   | 'department' | 'requested_by' | 'date_ordered' | 'arrival_date' | 'left_warehouse_date'
   | 'warehouse_receiver' | 'person_accepting' | 'lead_time_days' | 'gr_number'
 
-const inputCls = 'h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-600'
-
 export default function ReceivingReportPage() {
   const [preset, setPreset] = useState<Preset>('this_month')
   const [range, setRange] = useState(() => presetRange('this_month'))
@@ -176,12 +174,12 @@ export default function ReceivingReportPage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-fg-muted">Arrival From</label>
-            <Input type="date" className={inputCls} value={range.from}
+            <Input type="date" value={range.from}
               onChange={(e) => setBound('from', e.target.value)} />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-fg-muted">Arrival To</label>
-            <Input type="date" className={inputCls} value={range.to}
+            <Input type="date" value={range.to}
               onChange={(e) => setBound('to', e.target.value)} />
           </div>
           <div className="flex flex-col gap-1">
@@ -213,7 +211,7 @@ export default function ReceivingReportPage() {
                 placeholder="Item, material ID, PO#, supplier…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className={cn(inputCls, 'pl-9')}
+                className="pl-9"
               />
             </div>
           </div>

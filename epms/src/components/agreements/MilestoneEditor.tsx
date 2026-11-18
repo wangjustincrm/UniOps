@@ -9,9 +9,6 @@ function newMilestoneRow(): MilestoneRowIn {
   return { milestone_name: '', expected_timing: '', expected_amount: '', amount_pct: '' }
 }
 
-const cellInputClass =
-  'h-8 w-full rounded border border-line-strong bg-surface px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted'
-
 /**
  * `milestone` agreement stage editor. Rendered only by the parent when
  * `agreement_type === 'milestone'` — mirrors the backend rejection of
@@ -171,7 +168,7 @@ export function MilestoneEditor(props: {
                     disabled={disabled}
                     onChange={(e) => update(i, { milestone_name: e.target.value })}
                     placeholder="e.g. Design sign-off"
-                    className={cellInputClass}
+                    inputSize="sm"
                   />
                 </Td>
                 <Td>
@@ -181,7 +178,7 @@ export function MilestoneEditor(props: {
                     disabled={disabled}
                     onChange={(e) => update(i, { expected_timing: e.target.value })}
                     placeholder="e.g. Within 1 week after contract signing"
-                    className={cellInputClass}
+                    inputSize="sm"
                   />
                 </Td>
                 <Td>
@@ -192,7 +189,7 @@ export function MilestoneEditor(props: {
                     value={row.expected_amount ?? ''}
                     disabled={disabled}
                     onChange={(e) => updateFromAmount(i, e.target.value)}
-                    className={cn(cellInputClass, 'text-right')}
+                    inputSize="sm" className="text-right"
                   />
                 </Td>
                 <Td>
@@ -210,7 +207,7 @@ export function MilestoneEditor(props: {
                     value={row.amount_pct || dp || ''}
                     disabled={disabled || !pctEnabled}
                     onChange={(e) => updateFromPct(i, e.target.value)}
-                    className={cn(cellInputClass, 'text-right')}
+                    inputSize="sm" className="text-right"
                   />
                 </Td>
                 <Td>

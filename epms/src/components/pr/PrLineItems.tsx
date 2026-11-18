@@ -176,7 +176,7 @@ function PartsPicker({ value, onSelect, onClear, hasError }: PartsPickerProps) {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search by name, code, category, supplier…"
-                bare className="h-7 flex-1"
+                bare className="flex-1"
               />
               {query && (
                 <Button variant="subtle" size="icon-xs" aria-label="Clear" type="button" onClick={() => setQuery('')}>
@@ -495,10 +495,7 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
                           value={item.description}
                           onChange={(e) => update(i, { description: e.target.value })}
                           placeholder="Item description"
-                          className={cn(
-                            'h-8 w-full rounded border bg-surface px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600',
-                            rowErrors.description ? 'border-danger-solid' : 'border-line-strong'
-                          )}
+                          error={!!rowErrors.description} inputSize="sm"
                           aria-invalid={!!rowErrors.description}
                         />
                         {rowErrors.description && (
@@ -517,10 +514,7 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
                         onChange={(e) => update(i, { materialId: e.target.value })}
                         readOnly={isType3 || isType1}
                         placeholder="MAT-XXXXXX"
-                        className={cn(
-                          'h-8 w-full rounded border border-line-strong bg-surface px-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary-600',
-                          (isType3 || isType1) && 'bg-surface-subtle text-fg-muted cursor-default'
-                        )}
+                        inputSize="sm" className={cn('font-mono', (isType3 || isType1) && 'cursor-default')}
                       />
                     </Td>
                   )}
@@ -544,10 +538,7 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
                       step="1"
                       value={item.qty || ''}
                       onChange={(e) => update(i, { qty: parseFloat(e.target.value) || 0 })}
-                      className={cn(
-                        'h-8 w-full rounded border bg-surface px-2 text-sm text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-600',
-                        rowErrors.qty ? 'border-danger-solid' : 'border-line-strong'
-                      )}
+                      error={!!rowErrors.qty} inputSize="sm" className="text-right font-mono"
                       aria-invalid={!!rowErrors.qty}
                     />
                   </Td>
@@ -678,10 +669,7 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
                     value={item.description}
                     onChange={(e) => update(i, { description: e.target.value })}
                     placeholder="Item description"
-                    className={cn(
-                      'h-9 w-full rounded border px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600',
-                      rowErrors.description ? 'border-danger-solid' : 'border-line-strong'
-                    )}
+                    error={!!rowErrors.description}
                   />
                 )}
               </div>
@@ -695,10 +683,7 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
                     onChange={(e) => update(i, { materialId: e.target.value })}
                     readOnly={isType3 || isType1}
                     placeholder="MAT-XXXXXX"
-                    className={cn(
-                      'h-9 w-full rounded border border-line-strong px-2 font-mono text-sm focus:outline-none focus:ring-1 focus:ring-primary-600',
-                      (isType3 || isType1) && 'bg-surface-subtle text-fg-muted'
-                    )}
+                    className="font-mono"
                   />
                 </div>
               )}

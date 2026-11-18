@@ -4,7 +4,6 @@ import { useVendors } from '@/hooks/useVendors'
 import { useReceiptVendorCheck } from '@/hooks/useAgreementReceipts'
 import { AiBadge } from '@/components/ui/AiBadge'
 import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
-import { cn } from '@/lib/utils'
 import type { ApiVendor } from '@/services/vendors'
 
 import { Input, MenuItem, Button } from '@uniops/shell'
@@ -257,10 +256,7 @@ export function ReceiptVendorPicker({
           value={value.vendorName}
           onFocus={() => { if (!disabled) setOpen(true) }}
           onChange={(e) => typed(e.target.value)}
-          className={cn(
-            'h-10 w-full rounded-md border bg-surface pl-9 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-            'border-line-strong disabled:cursor-not-allowed disabled:bg-surface-subtle disabled:text-fg-muted',
-          )}
+          className="pl-9 pr-9"
         />
         {value.vendorName !== '' && !disabled && (
           <Button variant="subtle" size="icon-xs"

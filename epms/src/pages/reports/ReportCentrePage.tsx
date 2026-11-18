@@ -74,19 +74,17 @@ const PO_TYPES = [
 
 // ─── Shared UI helpers ────────────────────────────────────────────────────────
 
-const inputCls  = 'h-9 w-full rounded-lg border border-line bg-surface px-3 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-600'
-
 function DateRangeRow({ value, onChange }: { value: DateRange; onChange: (v: DateRange) => void }) {
   return (
     <div className="grid grid-cols-2 gap-2">
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium text-fg-muted">From</label>
-        <Input type="date" className={inputCls} value={value.date_from}
+        <Input type="date" value={value.date_from}
           onChange={(e) => onChange({ ...value, date_from: e.target.value })} />
       </div>
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium text-fg-muted">To</label>
-        <Input type="date" className={inputCls} value={value.date_to}
+        <Input type="date" value={value.date_to}
           onChange={(e) => onChange({ ...value, date_to: e.target.value })} />
       </div>
     </div>
