@@ -14,7 +14,7 @@
 // leaf-only buckets (CR->raw, CP->packaging-material) that table doesn't
 // need server-side (those codes never own a BOM, so the backend never
 // classifies them) but the design spec's 5-value badge legend calls for.
-import { cn } from '@/lib/utils'
+import { Badge, type BadgeTone } from '@uniops/shell'
 
 export type ForecastVersionStatus = 'draft' | 'confirmed' | 'superseded'
 // `powdering` replaces the old `milling` label for CS-prefix semi-products,
@@ -39,28 +39,25 @@ const LABEL: Record<ForecastVersionStatus | BomTypeStatus, string> = {
   'packaging-material': 'Packaging Material',
 }
 
-const STYLE: Record<ForecastVersionStatus | BomTypeStatus, string> = {
-  draft: 'bg-warning-soft text-warning-fg ring-warning-line',
-  confirmed: 'bg-success-soft text-success-fg ring-success-line',
-  superseded: 'bg-surface-sunken text-fg-muted ring-line',
-  milling: 'bg-cat4-soft text-cat4-fg ring-cat4-line',
-  powdering: 'bg-cat4-soft text-cat4-fg ring-cat4-line',
-  drymix: 'bg-cat2-soft text-cat2-fg ring-cat2-line',
-  packaging: 'bg-cat8-soft text-cat8-fg ring-cat8-line',
-  past: 'bg-cat5-soft text-cat5-fg ring-cat5-line',
-  raw: 'bg-cat1-soft text-cat1-fg ring-cat1-line',
-  'packaging-material': 'bg-cat7-soft text-cat7-fg ring-cat7-line',
+const TONE: Record<ForecastVersionStatus | BomTypeStatus, BadgeTone> = {
+  draft: 'warning',
+  confirmed: 'success',
+  superseded: 'neutral',
+  milling: 'cat4',
+  powdering: 'cat4',
+  drymix: 'cat2',
+  packaging: 'cat8',
+  past: 'cat5',
+  raw: 'cat1',
+  'packaging-material': 'cat7',
 }
 
 export function StatusBadge({ status }: { status: string }) {
   const key = status as ForecastVersionStatus | BomTypeStatus
   const known = key in LABEL
   return (
-    <span className={cn(
-      'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset whitespace-nowrap',
-      known ? STYLE[key] : 'bg-surface-sunken text-fg-muted ring-line',
-    )}>
+    <Badge variant={known ? TONE[key] : 'neutral'}>
       {known ? LABEL[key] : status}
-    </span>
+    </Badge>
   )
 }

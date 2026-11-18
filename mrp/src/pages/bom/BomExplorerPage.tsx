@@ -7,7 +7,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronsDown, ChevronsUp, FileDown, Network, Search, Loader2 } from 'lucide-react'
-import { Button, FormField, Input, Segmented } from '@uniops/shell'
+import { Button, FormField, Input, Segmented, Badge } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn, todayISO } from '@/lib/utils'
 import { ToastStack } from '@/components/Toast'
@@ -345,7 +345,7 @@ function WhereUsedResults({ results }: { results: WhereUsedResult[] }) {
             <span>{r.levels} level{r.levels === 1 ? '' : 's'} up</span>
             <span className="font-semibold text-fg">{formatQty(r.qty_accumulated)} per 1 unit of {r.top_product}</span>
             {r.cycle_detected && (
-              <span className="rounded-full bg-warning-soft px-2 py-0.5 font-medium text-warning-fg">cycle detected</span>
+              <Badge variant="warning">cycle detected</Badge>
             )}
           </div>
         </div>
