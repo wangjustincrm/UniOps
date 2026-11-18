@@ -19,7 +19,7 @@ interface Unit extends Box {
 interface Person extends Box {
   employee_id: string | null; employee_number: string | null; name: string; title: string | null
   job_title: string | null; custom_title: string | null; department: string | null
-  adp_department: string | null; source: string; review: boolean
+  adp_department: string | null; source: string; review: boolean; is_manager: boolean
 }
 
 const STUB = 18
@@ -395,7 +395,12 @@ export default function OrgChart() {
                       <ChoiceCard selected={picked === p.id} onClick={() => setPicked(p.id)} className={cn(CARD, p.tone ? TONES[p.tone] : p.review ? 'border-warning-line bg-surface' : 'border-line bg-surface', picked === p.id && '!border-accent')}>
                         <span className="block truncate text-sm font-medium text-fg">{p.name}</span>
                         <span className="block truncate text-xs text-fg-muted">{p.title ?? '—'}</span>
-                        {p.employee_id && <span className="block truncate text-xs text-fg-muted">{p.adp_department ?? '—'}</span>}
+                        {p.employee_id && (
+                          <span className="block truncate text-xs text-fg-muted">
+                            {p.is_manager && <span className="mr-1 rounded bg-primary-50 px-1 font-medium text-primary-700" title="Marked as a manager in Staff">Manager</span>}
+                            {p.adp_department ?? '—'}
+                          </span>
+                        )}
                       </ChoiceCard>
                     )} />
                 )}

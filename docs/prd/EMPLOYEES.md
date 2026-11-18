@@ -1,9 +1,18 @@
 # UniOps Staff (Employee Master) & ADP Roster Import — Product Requirements Document
 
-**Version:** 0.6
-**Date:** 2026-11-11
+**Version:** 0.7
+**Date:** 2026-11-18
 **Status:** In production; decisions recorded 2026-11-02
 **Scope:** A new employee master in UniOps, kept up to date from the ADP Workforce Now roster that HR exports every two weeks; creating UniOps user accounts from employee records; and a to-do list that keeps the NC65 HR person records in step with UniOps, checked automatically by reading NC.
+
+**What changed in v0.7** (2026-11-18) — not in production yet
+
+- Three new fields on the employee, needed by Performance Review (PERFORMANCE-REVIEW.md §11.3): **Hire date**, **Pay type** (Hourly / Salaried) and a **Manager** tick (§3).
+- The ADP roster may now carry two optional columns, Hire Date and Pay Type. When the file has them, the import fills and updates the two fields; when it does not, the stored values are left alone (IMP-015).
+- The Manager tick is set by HR on the employee, never by an import, and shows on the Org Chart (EMP-009).
+- The Staff list shows, sorts and filters by the three fields, and the export includes them (EMP-001, EMP-008).
+- **An import no longer overwrites an existing employee.** Where the roster differs from what UniOps has, the difference waits on the employee, and HR chooses **Follow ADP** or **Keep Current**, one by one or for everyone, on the Staff list or the employee page (IMP-016). New employees are still created by the import.
+- **Edit** on the employee page makes every field editable, for ADP employees too (EMP-004).
 
 **What changed in v0.6** (2026-11-11)
 
@@ -103,6 +112,9 @@ The module is called **Staff** in the UI. It is an entry in the expandable **MDM
 | UniOps department | Set from the department mapping (§5) or chosen by hand. |
 | Status | **Active**, **On Leave** or **Left**. *Left* is never set by an import on its own (IMP-009). |
 | Left on | Date, entered when an employee is marked Left. |
+| Hire date | From the roster's Hire Date column when the file has it (IMP-015); otherwise entered by hand. Can be empty. |
+| Pay type | **Hourly** or **Salaried**, from the roster's Pay Type column when the file has it (IMP-015); otherwise entered by hand. Can be empty. |
+| Manager | A tick set by HR (EMP-009). Never set by an import. |
 | Linked user | At most one. |
 | NC state | Read from NC: whether NC has the person, NC department and person category, and the NC internal key. Shown, never edited (§7.3). |
 | Notes | Free text. |
@@ -110,14 +122,15 @@ The module is called **Staff** in the UI. It is an entry in the expandable **MDM
 
 | FR ID | Requirement |
 |---|---|
-| **EMP-001** | The **Staff** list (Portal → MDM → Staff) shows employee number, display name, email, job title, ADP department, UniOps department, status, source, linked user and NC state. It follows the standard list rules: sortable headers (EPMS.md §3.20, UI-SORT-001…007), server-side paging and sorting, a locked header row, search by number, name or email, and filters for status, source, UniOps department, has user / no user, and NC state (in step / to-do open / not in NC). |
+| **EMP-001** | The **Staff** list (Portal → MDM → Staff) shows employee number, display name, email, job title, ADP department, UniOps department, status, source, hire date, pay type, Manager, linked user and NC state. It follows the standard list rules: sortable headers (EPMS.md §3.20, UI-SORT-001…007), server-side paging and sorting, a locked header row, search by number, name or email, and filters for status, source, pay type (Hourly / Salaried / not set), Manager, UniOps department, has user / no user, and NC state (in step / to-do open / not in NC). |
 | **EMP-002** | **Employee detail** shows every field in §3, the history, the linked user (with a link to it), the open NC to-dos, and the differences between employee and user (§6.4). |
 | **EMP-003** | **Non-ADP employees** are created and edited by hand. The employee number must be six digits and must not be in use. |
-| **EMP-004** | For **ADP employees**, name, email, job title, ADP department and status are read-only in the UI, because the next import overwrites them. UniOps department and notes stay editable. A change to either takes effect only on **Save**; until then the page shows it as not saved. |
+| **EMP-004** | **Edit** (needs `employee.edit`): the employee page is read-only until **Edit** is clicked; then name, payroll name, work email, job title, ADP department, UniOps department, status (Active / On Leave), left date (for someone who has left), hire date, pay type, Manager and notes can all be changed, for both sources. **Save** writes only the fields that changed, each recorded in history; **Cancel** discards. Name and payroll name cannot be empty; an email that belongs to another employee is refused. Employee number stays with Correct number (EMP-006), Left with Mark as Left / Reinstate (EMP-005). On an ADP employee, a later roster with a different value does not overwrite the edit: the difference waits for Follow ADP or Keep Current (IMP-016). |
 | **EMP-005** | **Mark as Left** (both sources) asks for the date. It creates an NC to-do (§7). If the employee has an active user, it offers to deactivate that user through the existing deactivation, which also re-syncs their in-flight approvals (PORTAL.md USR-003). It never deactivates the user silently. **Reinstate** reverses Left. |
 | **EMP-006** | **Correct employee number** is allowed for administrators only. It asks for a reason, refuses a number that is already in use, updates the linked user's ERP person code in the same step, records the change in history and creates an NC to-do. |
 | **EMP-007** | Employees cannot be deleted; they are marked Left. |
 | **EMP-008** | **Export** downloads the filtered list as XLSX. |
+| **EMP-009** | **Manager**: HR ticks it on the employee (`employee.edit`), for both sources, and it is recorded in history like any other field. An import never sets or clears it. The Org Chart's reporting lines show a Manager marker on the person's box. It decides who gets the manager review form in Performance Review; it is loaded once from HR's list of managers and then kept up to date by hand. |
 
 ---
 
@@ -125,7 +138,7 @@ The module is called **Staff** in the UI. It is an entry in the expandable **MDM
 
 ### 4.1 File
 
-The file is the ADP Workforce Now report that HR exports every two weeks before payroll: one sheet with these six columns, found by header name (the column order may change).
+The file is the ADP Workforce Now report that HR exports every two weeks before payroll: one sheet with these six columns, found by header name (the column order may change), and optionally two more (IMP-015).
 
 | ADP column | Used as | Normalisation |
 |---|---|---|
@@ -135,6 +148,8 @@ The file is the ADP Workforce Now report that HR exports every two weeks before 
 | Job Title Description | Job title | Trimmed. |
 | Home Department Description | ADP department | Trimmed. An empty value is allowed and flagged. |
 | Work Contact: Work Email | Work email | Trimmed and lower-cased. ADP sends mixed case, e.g. `NOFTALL@CANADAROYALMILK.COM`. |
+| Hire Date *(optional; also accepted as Hire/Rehire Date or Original Hire Date)* | Hire date | An Excel date, `YYYY-MM-DD`, or month-first `MM/DD/YYYY` as ADP writes it. Empty is allowed. Anything else is a row error. |
+| Pay Type *(optional; also accepted as Regular Pay Rate Description)* | Pay type | `Hourly` → Hourly; `Salary` or `Salaried` → Salaried (any case). Empty is allowed. Anything else is a row error. |
 
 The roster lists Active and Leave employees only. **People who have left do not appear in it at all**, so a departure can only be seen as "was on the last roster, missing from this one".
 
@@ -164,11 +179,11 @@ On 2026-11-02 a pure number match would have written one employee's details onto
 | FR ID | Requirement |
 |---|---|
 | **IMP-001** | The import needs the new permission `employee.import` (§8). |
-| **IMP-002** | Only `.xlsx` is accepted. The six headers must all be present; otherwise the file is refused with the missing header names. Extra columns are ignored. |
+| **IMP-002** | Only `.xlsx` is accepted. The six headers must all be present; otherwise the file is refused with the missing header names. The two optional headers (IMP-015) may be present or not. Other extra columns are ignored. |
 | **IMP-003** | Rows are normalised as in §4.1. A bad row is reported with its row number and reason, and does not stop the other rows. |
 | **IMP-004** | **Preview** groups the rows into: **New**; **Changed**, with old → new for each changed field; **Unchanged**; **Conflicts**; **Row errors**; **Unmapped ADP departments** (§5); and **Missing from roster**: ADP employees that are not Left and are not in the file. Each group shows its count and can be expanded. |
-| **IMP-005** | **Apply** writes New and Changed rows in one transaction. It is all or nothing. Conflicts and row errors are skipped and listed in the result. |
-| **IMP-006** | For an employee whose source is ADP, apply overwrites payroll name, display name, email, job title, ADP department and status (D6). The UniOps department follows MAP-003. |
+| **IMP-005** | **Apply** creates the New employees and records the Changed ones as differences waiting for a decision (IMP-016), in one transaction. It is all or nothing. Conflicts and row errors are skipped and listed in the result. |
+| **IMP-006** | The roster owns, for an ADP employee, payroll name, display name, email, job title, ADP department and status (D6), and hire date and pay type when the file has those columns (IMP-015). Apply does not write them on an existing employee; **Follow ADP** does (IMP-016), and the UniOps department then follows MAP-003. |
 | **IMP-007** | Apply never changes a user account (§6.4), so an import cannot trigger an approval re-sync. |
 | **IMP-008** | A Non-ADP employee whose number appears in the roster is shown as a conflict, with the choice to convert them to ADP. |
 | **IMP-009** | **Missing from roster** never marks anyone Left automatically. The list stays on the import result until each employee is either marked Left (EMP-005), or kept with a reason (for example, "on long-term leave, removed from the report by mistake"). A Non-ADP employee is never in this list. |
@@ -177,6 +192,8 @@ On 2026-11-02 a pure number match would have written one employee's details onto
 | **IMP-012** | Only one import can be in preview-to-apply at a time. A second upload is refused until the first is applied or discarded. A preview older than 24 hours must be regenerated before apply. |
 | **IMP-013** | **Import history** lists every applied import: roster date, uploaded by, applied at, file name, and the counts per group. It keeps the original file, which can be downloaded by `employee.import` holders, and the per-row results. |
 | **IMP-014** | After apply, the result page shows the NC to-dos that the import created (§7) and links to them. |
+| **IMP-015** | **Hire Date and Pay Type columns** (optional). When the file has a column, every row's value is compared, including an empty value, and a difference is handled like any other (IMP-016). When the file does not have it, that field is not compared or written, so an older-style roster changes nothing. They create no NC to-dos. HR confirmed on 2026-11-17 that the ADP report can include both. |
+| **IMP-016** | **Follow ADP / Keep Current.** For an existing employee, apply writes nothing; the fields where the roster differs are stored on the employee with the roster date. The Staff list shows a banner with the count and a **Differs from ADP** filter; each such employee has a line under their row with each field (UniOps value → ADP value) and the buttons **Follow ADP** and **Keep Current**, and the banner has **Follow ADP for all** and **Keep Current for all** (each asks for confirmation). The employee page shows the same table and buttons. **Follow ADP** writes the ADP values exactly as an import used to: a person who had left is reinstated (rehire to-do), and an ADP department change applies the mapping and raises a department to-do. **Keep Current** changes nothing on the employee, records the decision in history, and remembers the declined ADP value, so a later roster with the same value is not asked about again; a different value is asked about. Once ADP agrees with UniOps again, the remembered value is forgotten. A newer roster replaces what was waiting, or clears it if ADP now matches. The import preview and result call the group "Differs from ADP" and link to the filtered Staff list. Needs `employee.edit`. |
 
 ---
 
@@ -360,7 +377,7 @@ NC65's external exchange interface (XChange) has a person-record import. It was 
 | ID | Item | Status |
 |---|---|---|
 | EMP-OI-01 | HR to classify the 11 active UniOps users not on the roster (head-office / Non-ADP, or left) | Open (HR) |
-| EMP-OI-02 | Ask HR whether the ADP report can add **Reports To** (supervisor), **Hire Date** and **Termination Date**. With Reports To, the Supervisor default for new users could come from ADP; with Termination Date, departures could be shown instead of inferred. | Open (HR) |
+| EMP-OI-02 | Ask HR whether the ADP report can add **Reports To** (supervisor), **Hire Date** and **Termination Date**. With Reports To, the Supervisor default for new users could come from ADP; with Termination Date, departures could be shown instead of inferred. | Hire Date (and Pay Type) confirmed by HR 2026-11-17 and built (IMP-015); the exact ADP header names are to be checked against HR's first file with them. Reports To and Termination Date still open (HR) |
 | EMP-OI-03 | Confirm the department mapping in §5, including which Quality Assurance staff belong to R&D, and the NC department for Business Development | Open (HR / Finance) |
 | EMP-OI-04 | One NC person still carries an old code (ADP 000995 is 100100 in NC); two employees on the roster (000750, 000775) are not in NC yet | Open (NC) |
 | EMP-OI-05 | Who in HR receives `employee.import` and `employee.nc_todo` | Open |
@@ -368,6 +385,7 @@ NC65's external exchange interface (XChange) has a person-record import. It was 
 | EMP-OI-07 | Plan B: estimate for custom NC import into the HR module (§10) | Future |
 | EMP-OI-08 | ADP API connection or automatic pick-up of an emailed roster, instead of manual upload (D4) | Future |
 | EMP-OI-09 | Ownership of the users table moving from EPMS to MDM. This is separate work; this PRD does not depend on it. | Future |
+| EMP-OI-10 | HR's list of managers, to set the Manager tick (EMP-009) | Open (HR) |
 
 ---
 

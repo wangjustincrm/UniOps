@@ -474,6 +474,8 @@ modules:
       - Create a sign-in account for an employee (Create user on the employee)
       - Work the list of changes HR must make in NC (MDM → Staff → NC To-do)
       - See or adjust departments and reporting lines (MDM → Org Chart)
+      - Mark who is a manager, or set a hire date or pay type (Edit on the employee in MDM → Staff)
+      - Decide where the ADP roster differs from UniOps (Follow ADP or Keep Current in MDM → Staff)
     notes:
       - >-
         An employee and a user are separate records. The employee number, the
@@ -482,6 +484,12 @@ modules:
         names and departments on a user are changed on purpose, with Apply to
         user on the employee.
       - >-
+        An ADP import creates new employees but never overwrites an existing
+        one. Where the roster differs, the Staff list shows the difference
+        under the person with Follow ADP (take ADP's value) and Keep Current
+        (keep UniOps' value; not asked again unless ADP changes it once more),
+        one by one or for everyone. Edit on an employee changes any field.
+      - >-
         An import never marks anyone as left. People who left are simply not in
         the ADP file, so they are listed on the import result and someone
         decides for each one.
@@ -489,6 +497,12 @@ modules:
         UniOps cannot write people into NC. HR makes the change in NC's HR
         module from the NC To-do list, and each item closes by itself when
         UniOps reads NC and sees the change.
+      - >-
+        Hire date and pay type (Hourly or Salaried) come from the ADP roster
+        when the file has those columns, and can also be entered by hand. A
+        roster without them leaves the stored values alone. The Manager tick is
+        set by HR only, never by an import; it shows on the Org Chart and
+        decides who gets the manager review form.
   - key: admin
     label: Admin
     covers: >

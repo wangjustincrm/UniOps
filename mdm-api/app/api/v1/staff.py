@@ -38,6 +38,8 @@ AdminDep = Annotated[dict, Depends(require_roles("system_admin"))]
 Db = Annotated[AsyncSession, Depends(get_db)]
 
 _NUMBER = r"^\d{6}$"
+PayType = Literal["hourly", "salaried"]
+PAY_TYPE_LABEL = {"hourly": "Hourly", "salaried": "Salaried"}
 PREVIEW_MAX_AGE = timedelta(hours=24)
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -64,6 +66,9 @@ STAFF_SORTABLE = {
     "source": Employee.source,
     "user": func.lower(User.email),
     "nc_state": Employee.nc_state,
+    "hire_date": Employee.hire_date,
+    "pay_type": Employee.pay_type,
+    "is_manager": Employee.is_manager,
 }
 TODO_SORTABLE = {
     "employee_number": Employee.employee_number,
@@ -96,7 +101,8 @@ def _xlsx(title: str, header: list[str], rows: list[list], filename: str) -> Res
                              "Access-Control-Expose-Headers": "Content-Disposition"})
 
 
-def _staff_query(*, search, status_, source, department_id, has_user, nc, differs, needs_department):
+def _staff_query(*, search, status_, source, department_id, has_user, nc, differs, needs_department,
+                 pay_type=None, is_manager=None, adp_differs=False):
     q = (
         select(Employee, Department.name.label("department_name"), User, _OPEN_TODOS.label("open_todos"))
         .outerjoin(Department, Department.id == Employee.department_id)
@@ -124,6 +130,14 @@ def _staff_query(*, search, status_, source, department_id, has_user, nc, differ
         q = q.where(User.id.is_not(None), _DIFFERS)
     if needs_department:
         q = q.where(Employee.needs_department.is_(True))
+    if pay_type == "none":
+        q = q.where(Employee.pay_type.is_(None))
+    elif pay_type:
+        q = q.where(Employee.pay_type == pay_type)
+    if is_manager is not None:
+        q = q.where(Employee.is_manager.is_(is_manager))
+    if adp_differs:
+        q = q.where(Employee.adp_pending.is_not(None))
     return q
 
 
@@ -138,7 +152,18 @@ def _staff_row(employee: Employee, department_name, user: User | None, open_todo
         "user": {"id": str(user.id), "email": user.email, "full_name": user.full_name,
                  "is_active": user.is_active} if user else None,
         "nc_state": employee.nc_state, "open_todos": open_todos,
+        "hire_date": employee.hire_date and employee.hire_date.isoformat(),
+        "pay_type": employee.pay_type, "is_manager": employee.is_manager,
+        "adp_pending": _pending(employee), "adp_pending_since": employee.adp_pending_since and employee.adp_pending_since.isoformat(),
     }
+
+
+def _pending(employee: Employee) -> list[dict] | None:
+    """IMP-016: each field where ADP differs, with what UniOps has now."""
+    if not employee.adp_pending:
+        return None
+    current = staff.employee_dict(employee)
+    return [{"field": f, "current": current.get(f), "adp": v} for f, v in employee.adp_pending.items()]
 
 
 def _filters(
@@ -150,9 +175,13 @@ def _filters(
     nc: Literal["in_step", "todo_open", "not_in_nc"] | None = None,
     differs: bool = False,
     needs_department: bool = False,
+    pay_type: Literal["hourly", "salaried", "none"] | None = None,
+    is_manager: bool | None = None,
+    adp_differs: bool = False,
 ) -> dict:
     return dict(search=search, status_=status_, source=source, department_id=department_id,
-                has_user=has_user, nc=nc, differs=differs, needs_department=needs_department)
+                has_user=has_user, nc=nc, differs=differs, needs_department=needs_department,
+                pay_type=pay_type, is_manager=is_manager, adp_differs=adp_differs)
 
 
 @router.get("")
@@ -168,7 +197,35 @@ async def list_staff(
     except UnknownSortKey as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     rows = (await db.execute(q.offset((page - 1) * page_size).limit(page_size))).all()
-    return {"items": [_staff_row(*r) for r in rows], "total": total}
+    differs = (await db.execute(select(func.count(Employee.id)).where(Employee.adp_pending.is_not(None)))).scalar_one()
+    return {"items": [_staff_row(*r) for r in rows], "total": total, "adp_differs": differs}
+
+
+class AdpDecision(BaseModel):
+    action: Literal["follow", "keep"]
+    employee_ids: list[uuid.UUID] = Field(default_factory=list, max_length=1000)
+    all: bool = False      # every employee waiting on a decision
+
+
+@router.post("/adp-decisions")
+async def decide_adp(body: AdpDecision, db: Db, payload: EditDep):
+    """IMP-016: Follow ADP or Keep Current, for some employees or all that wait."""
+    if not body.all and not body.employee_ids:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Choose at least one employee")
+    q = select(Employee).where(Employee.adp_pending.is_not(None))
+    if not body.all:
+        q = q.where(Employee.id.in_(body.employee_ids))
+    employees = (await db.execute(q.order_by(Employee.employee_number))).scalars().all()
+    by = _actor(payload)
+    for employee in employees:
+        if body.action == "follow":
+            await staff.follow_adp(db, employee, by=by)
+        else:
+            staff.keep_current(db, employee, by=by)
+    if body.action == "follow" and employees:
+        await db.flush()
+        await nc_readback.sync_task(db)
+    return {"decided": len(employees)}
 
 
 @router.get("/export")
@@ -177,10 +234,12 @@ async def export_staff(db: Db, _: ViewDep, filters: Annotated[dict, Depends(_fil
     rows = [_staff_row(*r) for r in (await db.execute(q)).all()]
     return _xlsx("Staff", [
         "Employee No.", "Name", "Payroll Name", "Email", "Job Title", "ADP Department",
-        "UniOps Department", "Status", "Source", "User", "NC State",
+        "UniOps Department", "Status", "Source", "Hire Date", "Pay Type", "Manager", "User", "NC State",
     ], [[
         r["employee_number"], r["display_name"], r["payroll_name"], r["work_email"], r["job_title"],
         r["adp_department"], r["department_name"], r["status"], r["source"],
+        r["hire_date"] and date.fromisoformat(r["hire_date"]), PAY_TYPE_LABEL.get(r["pay_type"]),
+        "Yes" if r["is_manager"] else None,
         r["user"]["email"] if r["user"] else None, r["nc_state"],
     ] for r in rows], f"staff-{plant_today().isoformat()}.xlsx")
 
@@ -192,6 +251,9 @@ class EmployeeCreate(BaseModel):
     job_title: str | None = Field(default=None, max_length=255)
     department_id: uuid.UUID | None = None
     notes: str | None = None
+    hire_date: date | None = None
+    pay_type: PayType | None = None
+    is_manager: bool = False
 
 
 async def _email_owner(db: AsyncSession, email: str | None, exclude: uuid.UUID | None = None) -> Employee | None:
@@ -220,6 +282,7 @@ async def create_employee(body: EmployeeCreate, db: Db, payload: EditDep):
         id=uuid.uuid4(), employee_number=body.employee_number, source="non_adp",
         payroll_name=body.display_name.strip(), display_name=body.display_name.strip(), work_email=email,
         job_title=body.job_title, department_id=body.department_id, notes=body.notes,
+        hire_date=body.hire_date, pay_type=body.pay_type, is_manager=body.is_manager,
         needs_department=body.department_id is None)
     db.add(employee)
     await db.flush()
@@ -631,13 +694,25 @@ async def get_employee(employee_id: uuid.UUID, db: Db, _: ViewDep):
 
 
 class EmployeeUpdate(BaseModel):
+    """EMP-004 (Edit): every field of the record, for both sources. On an ADP
+    employee the next import overwrites the roster's fields again (IMP-006) and
+    shows them under Changed; the Manager tick is never imported (EMP-009)."""
     department_id: uuid.UUID | None = None
     notes: str | None = None
-    # Non-ADP only (EMP-004): the next import overwrites these on an ADP employee.
+    hire_date: date | None = None
+    pay_type: PayType | None = None
+    is_manager: bool | None = None
     display_name: str | None = Field(default=None, min_length=1, max_length=255)
+    payroll_name: str | None = Field(default=None, min_length=1, max_length=255)
     work_email: str | None = Field(default=None, max_length=255)
     job_title: str | None = Field(default=None, max_length=255)
+    adp_department: str | None = Field(default=None, max_length=255)
     status: Literal["active", "on_leave"] | None = None
+    left_on: date | None = None
+
+
+def _blank_to_none(value: str | None) -> str | None:
+    return (value or "").strip() or None
 
 
 @router.patch("/{employee_id}")
@@ -645,21 +720,32 @@ async def update_employee(employee_id: uuid.UUID, body: EmployeeUpdate, db: Db, 
     employee = await _get_employee(db, employee_id)
     sent = body.model_fields_set
     by = _actor(payload)
-    adp_only = sent & {"display_name", "work_email", "job_title", "status"}
-    if employee.source == "adp" and adp_only:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            f"ADP provides {', '.join(sorted(adp_only))} for this employee")
-    if "status" in sent and employee.status == "left":
+    for required in ("display_name", "payroll_name", "is_manager", "status"):
+        if required in sent and getattr(body, required) is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"{required} cannot be empty")
+    if "status" in sent and employee.status == "left" and body.status != "left":
         raise HTTPException(status.HTTP_409_CONFLICT, "Use Reinstate for an employee who has left")
+    if "left_on" in sent:
+        if employee.status != "left":
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Only an employee who has left has a left date")
+        if body.left_on is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Enter the date they left")
     if "work_email" in sent:
         email = _clean_email(body.work_email)
         if await _email_owner(db, email, exclude=employee.id):
             raise HTTPException(status.HTTP_409_CONFLICT, f"Email {email} belongs to another employee")
         staff.set_field(db, employee, "work_email", email, by=by)
-    if "display_name" in sent and body.display_name:
+    if "display_name" in sent:
         staff.set_field(db, employee, "display_name", body.display_name.strip(), by=by)
-        staff.set_field(db, employee, "payroll_name", body.display_name.strip(), by=by)
-    for field in ("job_title", "status", "notes"):
+        # A Non-ADP employee has no payroll name of their own unless one is given.
+        if employee.source == "non_adp" and "payroll_name" not in sent:
+            staff.set_field(db, employee, "payroll_name", body.display_name.strip(), by=by)
+    if "payroll_name" in sent:
+        staff.set_field(db, employee, "payroll_name", body.payroll_name.strip(), by=by)
+    for field in ("job_title", "adp_department"):
+        if field in sent:
+            staff.set_field(db, employee, field, _blank_to_none(getattr(body, field)), by=by)
+    for field in ("status", "left_on", "notes", "hire_date", "pay_type", "is_manager"):
         if field in sent:
             staff.set_field(db, employee, field, getattr(body, field), by=by)
     if "department_id" in sent:

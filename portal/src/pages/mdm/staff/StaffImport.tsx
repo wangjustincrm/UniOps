@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Upload } from 'lucide-react'
 import { mdmApi, mdmDownload, mdmUpload } from '@/lib/api'
 import { formatDate, todayISO } from '@/lib/utils'
-import { StaffShell } from './shared'
+import { FIELD_LABEL, StaffShell } from './shared'
 
 import { Button, DisclosureButton, FileInput, Input, TBody, THead, Table, Td, Th, Tr, Badge, type BadgeTone, Card } from '@uniops/shell'
 interface Change { field: string; old: string | null; new: string | null }
@@ -60,11 +60,11 @@ function Groups({ view, onConvert }: { view: ImportView; onConvert?: (id: string
       <Group title="New" count={g('new').length} tone="success">
         <ul>{g('new').map((i) => <li key={i.employee_number!}>{person(i)} · {i.adp_department ?? 'no department'}</li>)}</ul>
       </Group>
-      <Group title="Changed" count={g('changed').length} tone="blue">
+      <Group title="Differs from ADP (not applied; decide in Staff: Follow ADP or Keep Current)" count={g('changed').length} tone="blue">
         <ul className="space-y-1">
           {g('changed').map((i) => (
             <li key={i.employee_number!}>{person(i)}
-              {i.changes?.map((c) => <div key={c.field} className="pl-4 text-xs text-fg-muted">{c.field}: {c.old ?? '—'} → {c.new ?? '—'}</div>)}
+              {i.changes?.map((c) => <div key={c.field} className="pl-4 text-xs text-fg-muted">{FIELD_LABEL[c.field] ?? c.field}: {c.old ?? '—'} → {c.new ?? '—'}</div>)}
             </li>
           ))}
         </ul>
@@ -219,6 +219,11 @@ export default function StaffImport() {
           <div className="mb-2 flex items-center gap-2">
             <h2 className="text-sm font-semibold text-fg">Result: roster of {formatDate(shown.roster_date)}</h2>
             <Link to="/mdm/staff/nc-todo" className="text-sm font-medium text-primary-700 hover:underline">{shown.todos ?? 0} NC to-do(s) created</Link>
+            {(shown.counts.changed ?? 0) > 0 && (
+              <Link to="/mdm/staff?adp_differs=true" className="text-sm font-medium text-primary-700 hover:underline">
+                {shown.counts.changed} employee(s) differ from ADP: decide in Staff
+              </Link>
+            )}
           </div>
           <Groups view={shown} />
           <MissingReview view={shown} onChanged={refresh} />
@@ -231,7 +236,7 @@ export default function StaffImport() {
           <Table>
             <THead><Tr>
               <Th>Roster date</Th><Th>Applied</Th><Th>File</Th>
-              <Th>New</Th><Th>Changed</Th><Th>Conflicts</Th><Th>Errors</Th>
+              <Th>New</Th><Th>Differs</Th><Th>Conflicts</Th><Th>Errors</Th>
               <Th>To review</Th><Th />
             </Tr></THead>
             <TBody>
