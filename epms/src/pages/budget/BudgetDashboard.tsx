@@ -393,15 +393,15 @@ export default function BudgetDashboard() {
             </tbody>
             <tfoot>
               <tr>
-                <td className="sticky bottom-0 z-20 border-t-2 border-line-strong bg-surface-strong py-3 px-3 text-sm font-bold text-fg uppercase tracking-wide">
+                <td className="sticky bottom-0 z-20 border-t-2 border-fg-faint bg-surface-strong py-3 px-3 text-sm font-bold text-fg uppercase tracking-wide">
                   Total
                 </td>
                 {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                  <td key={m} className="sticky bottom-0 z-20 border-t-2 border-line-strong bg-surface-strong py-3 px-1.5">
+                  <td key={m} className="sticky bottom-0 z-20 border-t-2 border-fg-faint bg-surface-strong py-3 px-1.5">
                     <PlanActualCell plan={monthlyGrandTotals.plan[m]} nc={monthlyGrandTotals.nc[m]} strong />
                   </td>
                 ))}
-                <td className="sticky bottom-0 z-20 border-t-2 border-line-strong bg-line-strong py-3 px-2">
+                <td className="sticky bottom-0 z-20 border-t-2 border-fg-faint bg-line-strong py-3 px-2">
                   <PlanActualCell plan={monthlyGrandTotals.planYear} nc={monthlyGrandTotals.ncYear} strong />
                 </td>
               </tr>

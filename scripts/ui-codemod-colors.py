@@ -57,10 +57,11 @@ def neutral(util: str, shade: int) -> str | None:
         if shade >= 400: return 'fg-muted'
         return 'fg-faint'
     if util in LINEISH:
-        if shade <= 100: return 'line-subtle'
-        if shade <= 200: return 'line'
-        if shade <= 500: return 'line-strong'
-        return 'fg-muted'
+        # Step for step, like backgrounds: a 400 rule must stay darker than a
+        # 300 fill next to it (budget totals row lost its 2px top rule).
+        return {50: 'line-subtle', 100: 'line-subtle', 200: 'line', 300: 'line-strong',
+                400: 'fg-faint', 500: 'fg-muted', 600: 'fg-secondary', 700: 'inverse-raised',
+                800: 'inverse'}.get(shade, 'inverse-sunken')
     if util in BGISH:
         # Exact step for step: a solid mid/dark grey must not drift lighter or
         # darker (bg-neutral-600 badge -> near black, toggle tracks fading).
