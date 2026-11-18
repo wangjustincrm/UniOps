@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Segmented, Select } from '@uniops/shell'
+import { Button, Segmented, Select, Badge, type BadgeTone } from '@uniops/shell'
 import {
   CheckCircle2, Clock, AlertTriangle, ArrowRight,
   Inbox, Receipt, RotateCcw, Banknote, RefreshCw,
@@ -41,7 +41,7 @@ const TASK_META: Record<string, {
   icon: React.ReactNode
   border: string
   bg: string
-  badge: string
+  tone: BadgeTone
   text: string
 }> = {
   approve_expense: {
@@ -49,7 +49,7 @@ const TASK_META: Record<string, {
     icon: <Receipt className="h-4 w-4" />,
     border: 'border-primary-200',
     bg: 'bg-primary-50',
-    badge: 'bg-primary-100 text-primary-700',
+    tone: 'accent',
     text: 'text-primary-700',
   },
   revise_expense: {
@@ -57,7 +57,7 @@ const TASK_META: Record<string, {
     icon: <RotateCcw className="h-4 w-4" />,
     border: 'border-warning-line',
     bg: 'bg-warning-soft',
-    badge: 'bg-warning-soft text-warning-fg',
+    tone: 'warning',
     text: 'text-warning-fg',
   },
   pay_expense: {
@@ -65,7 +65,7 @@ const TASK_META: Record<string, {
     icon: <Banknote className="h-4 w-4" />,
     border: 'border-info-line',
     bg: 'bg-info-soft',
-    badge: 'bg-info-soft text-info-fg',
+    tone: 'blue',
     text: 'text-info-fg',
   },
   submitted_expense: {
@@ -73,7 +73,7 @@ const TASK_META: Record<string, {
     icon: <Clock className="h-4 w-4" />,
     border: 'border-line',
     bg: 'bg-surface',
-    badge: 'bg-surface-sunken text-fg-secondary',
+    tone: 'neutral',
     text: 'text-fg-secondary',
   },
 }
@@ -142,16 +142,13 @@ function TaskCard({ task }: { task: OaTaskItem }) {
         <div className="flex-1 min-w-0">
           {/* Type badge + doc type chip */}
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-            <span className={cn(
-              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold',
-              meta.badge,
-            )}>
+            <Badge variant={meta.tone}>
               {meta.icon}
               {meta.label}
-            </span>
-            <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-xs text-fg-muted">
+            </Badge>
+            <Badge>
               {DOC_TYPE_LABELS[task.doc_type] ?? task.doc_type.toUpperCase()}
-            </span>
+            </Badge>
           </div>
 
           {/* Doc number + submitter + amount */}
@@ -170,16 +167,9 @@ function TaskCard({ task }: { task: OaTaskItem }) {
             <span className="font-medium text-fg-secondary">
               {formatAmount(task.amount, task.currency)}
             </span>
-            <span className={cn(
-              'rounded-full px-1.5 py-0.5 text-2xs font-medium',
-              task.status === STATUS.RETURNED
-                ? 'bg-warning-soft text-warning-fg'
-                : task.status === STATUS.APPROVED
-                ? 'bg-success-soft text-success-fg'
-                : 'bg-surface-sunken text-fg-secondary',
-            )}>
+            <Badge size="sm" variant={task.status === STATUS.RETURNED ? 'warning' : task.status === STATUS.APPROVED ? 'success' : 'neutral'}>
               {STATUS_LABELS[task.status] ?? task.status}
-            </span>
+            </Badge>
             {task.submitted_at && (
               <span className="flex items-center gap-1">
                 <Clock className="h-3 w-3" />

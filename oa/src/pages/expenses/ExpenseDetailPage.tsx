@@ -12,7 +12,7 @@ import { ActionModal } from '@/components/ui/ActionModal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
-import { FileInput, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { FileInput, TBody, THead, Table, Td, Th, Tr, Button, Badge, type BadgeTone } from '@uniops/shell'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ApprovalEvent {
@@ -379,12 +379,12 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
     approved: 'Approved', current: 'Pending', waiting: 'Waiting',
     returned: 'Returned', rejected: 'Rejected',
   }
-  const stateBadge: Record<ApprovalStep['state'], string> = {
-    approved: 'bg-success-soft text-success-fg',
-    current:  'bg-primary-700/10 text-primary-700',
-    waiting:  'bg-surface-sunken text-fg-muted',
-    returned: 'bg-warning-soft text-warning-fg',
-    rejected: 'bg-danger-soft text-danger-fg',
+  const stateTone: Record<ApprovalStep['state'], BadgeTone> = {
+    approved: 'success',
+    current:  'accent',
+    waiting:  'neutral',
+    returned: 'warning',
+    rejected: 'danger',
   }
 
   return (
@@ -403,9 +403,9 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-fg">{s.label}</span>
-                <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium', stateBadge[s.state])}>
+                <Badge size="sm" variant={stateTone[s.state]}>
                   {stateLabel[s.state]}
-                </span>
+                </Badge>
               </div>
               {s.state === 'approved' && s.actor_name && (
                 <p className="mt-0.5 text-xs text-fg-muted">
@@ -588,10 +588,10 @@ export default function ExpenseDetailPage() {
               <h1 className="text-2xl font-semibold text-fg">{claim.claim_number}</h1>
               <StatusBadge status={claim.status} />
               {claim.is_over_budget && (
-                <span className="flex items-center gap-1 rounded-full bg-warning-soft border border-warning-line px-2 py-0.5 text-xs text-warning-fg">
+                <Badge variant="warning" className="flex">
                   <AlertTriangle className="h-3 w-3" />
                   Over Budget
-                </span>
+                </Badge>
               )}
             </div>
             <p className="mt-1 text-sm text-fg-muted">

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BackLink } from '@/components/BackLink'
-import { Button, DisclosureButton, FileInput, Input, Segmented, Select, Textarea, useReplaceTab } from '@uniops/shell'
+import { Button, DisclosureButton, FileInput, Input, Segmented, Select, Textarea, useReplaceTab, Badge } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Plus, Trash2, AlertTriangle, ArrowLeft, Paperclip, Upload, X } from 'lucide-react'
@@ -180,9 +180,9 @@ function CategorySection({
         <span className="flex flex-1 items-center gap-2">
           {label}
           {lines.length > 0 && (
-            <span className="ml-1 rounded-full bg-primary-100 px-2 py-0.5 text-xs font-semibold text-primary-700">
+            <Badge variant="accent" className="ml-1">
               {lines.length}
-            </span>
+            </Badge>
           )}
         </span>
         {limit && (
