@@ -70,6 +70,16 @@ def find_tag_end(s, i):
                 continue
             if c == quote:
                 quote = None
+        elif depth > 0 and s.startswith('//', j):
+            # A comment inside an attribute expression: its prose (an apostrophe
+            # in "plant's") must not open a string and lose the tag's end.
+            nl_at = s.find('\n', j)
+            j = len(s) if nl_at < 0 else nl_at
+            continue
+        elif depth > 0 and s.startswith('/*', j):
+            close = s.find('*/', j + 2)
+            j = len(s) if close < 0 else close + 2
+            continue
         elif c in '"\'`':
             quote = c
         elif c == '{':
@@ -130,6 +140,8 @@ def convert(src):
         closing, name = m.group(1), m.group(2)
         end = find_tag_end(src, m.start())
         if end < 0:
+            # Never stop silently: everything after this point is left as it was.
+            print(f'    SKIP rest of file from line {src.count(chr(10), 0, m.start()) + 1}: could not find the end of <{m.group(2)}>')
             out.append(src[m.start():])
             break
         tag = src[m.start():end]
