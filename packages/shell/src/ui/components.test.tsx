@@ -101,3 +101,13 @@ describe('Select', () => {
     expect(container.querySelector('select')!.className).toContain('w-full')
   })
 })
+
+describe('Modal dismissible=false', () => {
+  it('has no close button and ignores Escape', () => {
+    const onClose = vi.fn()
+    render(<Modal open dismissible={false} onClose={onClose} title="Change password">x</Modal>)
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+})

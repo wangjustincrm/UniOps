@@ -179,7 +179,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
 
   const inputCls = (err?: string) =>
     cn(
-      'h-10 w-full rounded-lg border bg-surface-sunken px-3 text-sm focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-[0_0_0_3px_rgba(10,124,124,0.10)] transition-colors',
+      'h-10 w-full rounded-lg border bg-surface-sunken px-3 text-sm focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-focus transition-colors',
       err ? 'border-danger-solid bg-danger-soft' : 'border-line'
     )
 
@@ -600,7 +600,7 @@ export default function PartsListPage() {
       )}
 
       {/* Table */}
-      <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
+      <div className="rounded-xl bg-surface shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>

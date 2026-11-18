@@ -438,7 +438,7 @@ export default function AgreementEditPage() {
         <div className="lg:col-span-9 flex flex-col gap-6">
 
           {/* Basic details */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+          <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-5">
             <h2 className="text-base font-semibold text-fg">Agreement Details</h2>
 
             <FormField label="Title" required htmlFor="title" error={errors.title}>
@@ -526,7 +526,7 @@ export default function AgreementEditPage() {
           </div>
 
           {/* Financial terms */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+          <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-5">
             <h2 className="text-base font-semibold text-fg">Financial Terms</h2>
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
@@ -688,7 +688,7 @@ export default function AgreementEditPage() {
           {/* Recurring cycle — agreement_type is locked post-creation, so this
               renders only when the loaded agreement already is 'recurring'. */}
           {agreement.agreement_type === 'recurring' && (
-            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+            <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-5">
               <h2 className="text-base font-semibold text-fg">Recurring Cycle</h2>
               <RecurringFields value={recurringValue} validFrom={validFrom} onChange={setRecurringValue} />
               {errors.recurring && <p className="text-xs text-danger-fg">{errors.recurring}</p>}
@@ -697,7 +697,7 @@ export default function AgreementEditPage() {
 
           {/* Milestone stages — same lock as above, keyed off the existing type. */}
           {agreement.agreement_type === 'milestone' && (
-            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+            <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-4">
               <h2 className="text-base font-semibold text-fg">Milestone Stages</h2>
               {milestonesLoading ? (
                 // Not "no stages" — the schedule query hasn't resolved yet.
@@ -736,7 +736,7 @@ export default function AgreementEditPage() {
           )}
 
           {/* Notes */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+          <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-4">
             <h2 className="text-base font-semibold text-fg">Notes</h2>
             <FormField label="Internal Notes" htmlFor="notes">
               <textarea
@@ -750,7 +750,7 @@ export default function AgreementEditPage() {
           </div>
 
           {/* Attachments */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+          <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-4">
             <h2 className="text-base font-semibold text-fg">Attachments</h2>
             <label
               htmlFor="agreement-file-upload"
@@ -782,7 +782,7 @@ export default function AgreementEditPage() {
           </div>
 
           {/* Footer actions */}
-          <div className="flex items-center justify-between rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-6 py-4">
+          <div className="flex items-center justify-between rounded-xl bg-surface shadow-sm px-6 py-4">
             <Link to={`/agreements/${id}`}>
               <Button variant="ghost">Cancel</Button>
             </Link>
@@ -807,7 +807,7 @@ export default function AgreementEditPage() {
 
         {/* Sidebar */}
         <div className="lg:col-span-3">
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
+          <div className="rounded-xl bg-surface shadow-sm p-5 sticky top-6">
             <h3 className="text-sm font-semibold text-fg-secondary mb-3">Agreement Info</h3>
             <dl className="flex flex-col gap-2 text-xs">
               <div className="flex justify-between">

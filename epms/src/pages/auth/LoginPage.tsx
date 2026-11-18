@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Eye, EyeOff, Building2 } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
+import { Alert, AuthHeading, AuthLayout, IconButton } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
@@ -79,80 +80,52 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center p-4">
-      <div className="w-full max-w-[480px]">
-        {/* Card */}
-        <div className="rounded-xl bg-surface shadow-xl px-8 py-10">
-          {/* Logo */}
-          <div className="mb-8 flex flex-col items-center gap-3">
-            {branding?.logo_data_url ? (
-              <img src={branding.logo_data_url} alt="Company logo" className="h-14 w-14 rounded-xl object-contain" />
-            ) : (
-              <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary-600 text-white">
-                <Building2 className="h-8 w-8" />
-              </div>
-            )}
-            <div className="text-center">
-              <h1 className="text-2xl font-bold text-fg">{branding?.name ?? 'EPMS'}</h1>
-              <p className="text-sm text-fg-muted">{branding?.tagline ?? 'Enterprise Procurement Management System'}</p>
-            </div>
+    <AuthLayout
+      brand={{ name: branding?.name ?? 'EPMS', logoUrl: branding?.logo_data_url ?? null }}
+      product="UniOps"
+      headline="Every team’s daily work, on one platform"
+      description="UniOps works alongside the ERP, so purchasing, expenses, sales, finance and operations run in one place."
+      footer={<>© {new Date().getFullYear()} {branding?.name ?? 'UniOps'}</>}
+    >
+      <AuthHeading title="Sign in" description={branding?.tagline || 'Use your company email and password'} />
+      <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-5">
+        <FormField label="Email" required htmlFor="email" error={errors.email?.message}>
+          <Input
+            id="email"
+            type="email"
+            placeholder="you@company.ca"
+            autoComplete="email"
+            error={!!errors.email}
+            {...register('email')}
+          />
+        </FormField>
+
+        <FormField label="Password" required htmlFor="password" error={errors.password?.message}>
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              error={!!errors.password}
+              className="pr-11"
+              {...register('password')}
+            />
+            <IconButton
+              type="button"
+              label={showPassword ? 'Hide password' : 'Show password'}
+              icon={showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-1 top-1"
+            />
           </div>
+        </FormField>
 
-          <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-5">
-            <FormField label="Email" required htmlFor="email" error={errors.email?.message}>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@company.ca"
-                autoComplete="email"
-                error={!!errors.email}
-                {...register('email')}
-              />
-            </FormField>
+        {serverError && <Alert tone="danger">{serverError}</Alert>}
 
-            <FormField label="Password" required htmlFor="password" error={errors.password?.message}>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  error={!!errors.password}
-                  className="pr-10"
-                  {...register('password')}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </FormField>
-
-            {serverError && (
-              <div
-                className="rounded-md bg-danger-soft border border-danger-line px-4 py-3 text-sm text-danger-fg"
-                role="alert"
-              >
-                {serverError}
-              </div>
-            )}
-
-            <Button type="submit" size="lg" className="w-full mt-1" disabled={isSubmitting}>
-              {isSubmitting ? 'Signing in…' : 'Sign In'}
-            </Button>
-          </form>
-
-          <div className="mt-5 text-center">
-            <a href="#" className="text-sm text-primary-600 hover:underline">
-              Forgot password?
-            </a>
-          </div>
-        </div>
-      </div>
-    </div>
+        <Button type="submit" className="mt-1 w-full" loading={isSubmitting}>
+          {isSubmitting ? 'Signing in…' : 'Sign in'}
+        </Button>
+      </form>
+    </AuthLayout>
   )
 }

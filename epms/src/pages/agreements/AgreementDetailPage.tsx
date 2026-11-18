@@ -639,7 +639,7 @@ export default function AgreementDetailPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Left: details */}
         <div className="lg:col-span-8 flex flex-col gap-6">
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-6">
+          <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-6">
             <section>
               <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">Terms</h2>
               <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2 text-sm">
@@ -692,7 +692,7 @@ export default function AgreementDetailPage() {
               ensure_period_rows only fires for recurring_type; milestone rows are
               never generated for house_account either), so nothing renders here. */}
           {agreement.agreement_type === 'recurring' && (
-            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+            <div className="rounded-xl bg-surface shadow-sm p-6">
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
                   Payment Schedule <span className="normal-case font-normal text-fg-muted">({periodRows.length})</span>
@@ -720,7 +720,7 @@ export default function AgreementDetailPage() {
           )}
 
           {agreement.agreement_type === 'milestone' && (
-            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+            <div className="rounded-xl bg-surface shadow-sm p-6">
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
                   Payment Schedule <span className="normal-case font-normal text-fg-muted">({milestoneRows.length})</span>
@@ -760,7 +760,7 @@ export default function AgreementDetailPage() {
               creating one is a separate page — recording now happens on the
               standalone /receipts/new page (linked below), not inline. */}
           {!isDeposit && (receipts.length > 0 || (canRecordReceipt && isAgreementAdmissible(agreement))) && (
-            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+            <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-5">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
                   Agreement Receipts <span className="normal-case font-normal text-fg-muted">({receipts.length})</span>
@@ -793,7 +793,7 @@ export default function AgreementDetailPage() {
 
           {/* Invoices matched to this agreement — none on a deposit agreement */}
           {!isDeposit && (
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+          <div className="rounded-xl bg-surface shadow-sm p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
                 Matched Invoices <span className="normal-case font-normal text-fg-muted">({invoices.length})</span>
@@ -866,7 +866,7 @@ export default function AgreementDetailPage() {
           )}
 
           {/* Attachments */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+          <div className="rounded-xl bg-surface shadow-sm p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
                 Attachments <span className="normal-case font-normal text-fg-muted">({attachments.length})</span>
@@ -955,7 +955,7 @@ export default function AgreementDetailPage() {
               not just the date (PO's History tab shows the date alone) — submit
               and cancel are routinely seconds apart, and a date alone puts them
               on the same line with no order. */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+          <div className="rounded-xl bg-surface shadow-sm p-6">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">Audit History</h2>
             {events && events.length > 0 ? (
               <ul className="flex flex-col gap-3">
@@ -982,7 +982,7 @@ export default function AgreementDetailPage() {
 
         {/* Right: approval timeline */}
         <div className="lg:col-span-4">
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
+          <div className="rounded-xl bg-surface shadow-sm p-5 sticky top-6">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">Approval Timeline</h2>
             <ApprovalTimeline steps={approvalSteps} />
 
@@ -994,7 +994,7 @@ export default function AgreementDetailPage() {
 
       {/* Fixed bottom approver action bar */}
       {canApprove && (
-        <div className="fixed bottom-0 left-60 right-0 z-10 bg-surface border-t border-line px-6 py-3 flex items-center justify-between shadow-[0_-1px_8px_rgba(0,0,0,0.06)] max-md:left-0">
+        <div className="fixed bottom-0 left-60 right-0 z-10 bg-surface border-t border-line px-6 py-3 flex items-center justify-between shadow-up max-md:left-0">
           <p className="text-sm text-fg-muted">
             Reviewing <span className="font-medium text-fg">{agreement.number}</span>
           </p>

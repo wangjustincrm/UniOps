@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, Mail } from 'lucide-react'
+import { Alert, AuthHeading, AuthLayout, Input } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth.store'
 import { authService } from '@/services/auth'
@@ -109,76 +109,52 @@ export default function MfaPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center p-4">
-      <div className="w-full max-w-[420px]">
-        <div className="rounded-xl bg-surface shadow-xl px-8 py-10">
-          <div className="mb-8 flex flex-col items-center gap-3">
-            {branding?.logo_data_url ? (
-              <img src={branding.logo_data_url} alt="Company logo" className="h-12 w-12 rounded-xl object-contain" />
-            ) : (
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary-600 text-white">
-                <Building2 className="h-7 w-7" />
-              </div>
-            )}
-            <div className="text-center">
-              <h1 className="text-xl font-bold text-fg">Email Verification</h1>
-              <p className="text-sm text-fg-muted mt-1">A 6-digit code has been sent to your registered email address</p>
-            </div>
-          </div>
-
-          <div className="flex flex-col items-center gap-6">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-50">
-              <Mail className="h-7 w-7 text-primary-600" />
-            </div>
-
-            <div className="flex gap-2" onPaste={handlePaste} role="group" aria-label="One-time password">
-              {digits.map((d, i) => (
-                <input
-                  key={i}
-                  ref={(el) => { inputs.current[i] = el }}
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={d}
-                  onChange={(e) => handleChange(i, e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(i, e)}
-                  className={[
-                    'h-12 w-11 rounded-md border text-center text-xl font-semibold',
-                    'focus:outline-none focus:ring-2 focus:ring-primary-600',
-                    error ? 'border-danger-solid' : 'border-line-strong',
-                  ].join(' ')}
-                  aria-label={`Digit ${i + 1}`}
-                />
-              ))}
-            </div>
-
-            {error && <p className="text-sm text-danger-fg" role="alert">{error}</p>}
-
-            <Button
-              onClick={() => handleVerify()}
-              size="lg"
-              className="w-full"
-              disabled={isVerifying || digits.some((d) => !d)}
-            >
-              {isVerifying ? 'Verifying…' : 'Verify'}
-            </Button>
-
-            <div className="flex gap-4 text-sm">
-              <button
-                type="button"
-                onClick={handleResend}
-                disabled={resendStatus === 'sending' || resendStatus === 'sent' || resendStatus === 'wait'}
-                className="text-primary-600 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {resendStatus === 'sending' ? 'Sending…'
-                  : resendStatus === 'sent' ? 'Code sent!'
-                  : resendStatus === 'wait' ? 'Please wait…'
-                  : 'Resend code'}
-              </button>
-            </div>
-          </div>
+    <AuthLayout
+      brand={{ name: branding?.name ?? 'EPMS', logoUrl: branding?.logo_data_url ?? null }}
+      product="UniOps"
+      headline="Every team’s daily work, on one platform"
+      description="UniOps works alongside the ERP, so purchasing, expenses, sales, finance and operations run in one place."
+      footer={<>© {new Date().getFullYear()} {branding?.name ?? 'UniOps'}</>}
+    >
+      <AuthHeading title="Verify it is you" description="A 6-digit code has been sent to your registered email address" />
+      <div className="flex flex-col gap-5">
+        <div className="grid grid-cols-6 gap-2" onPaste={handlePaste} role="group" aria-label="One-time password">
+          {digits.map((d, i) => (
+            <Input
+              key={i}
+              ref={(el) => { inputs.current[i] = el }}
+              type="text"
+              inputMode="numeric"
+              autoComplete={i === 0 ? 'one-time-code' : 'off'}
+              maxLength={1}
+              value={d}
+              error={!!error}
+              onChange={(e) => handleChange(i, e.target.value)}
+              onKeyDown={(e) => handleKeyDown(i, e)}
+              className="h-12 px-0 text-center font-mono text-lg"
+              aria-label={`Digit ${i + 1}`}
+            />
+          ))}
         </div>
+
+        {error && <Alert tone="danger">{error}</Alert>}
+
+        <Button onClick={() => handleVerify()} className="w-full" loading={isVerifying} disabled={digits.some((d) => !d)}>
+          {isVerifying ? 'Verifying…' : 'Verify'}
+        </Button>
+
+        <Button
+          variant="link"
+          className="self-center"
+          onClick={handleResend}
+          disabled={resendStatus === 'sending' || resendStatus === 'sent' || resendStatus === 'wait'}
+        >
+          {resendStatus === 'sending' ? 'Sending…'
+            : resendStatus === 'sent' ? 'Code sent'
+            : resendStatus === 'wait' ? 'Please wait…'
+            : 'Resend code'}
+        </Button>
       </div>
-    </div>
+    </AuthLayout>
   )
 }

@@ -56,7 +56,7 @@ export default function FinanceBpDashboard() {
       </div>
 
       {/* PAs in review table */}
-      <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+      <div className="rounded-xl bg-surface shadow-sm p-5">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold text-fg">
             Payment Applications In Review

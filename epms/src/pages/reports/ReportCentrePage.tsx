@@ -129,7 +129,7 @@ function ReportCard({
   error: string | null
 }) {
   return (
-    <div className="flex flex-col rounded-2xl border border-line bg-surface shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
+    <div className="flex flex-col rounded-2xl border border-line bg-surface shadow-sm overflow-hidden">
       {/* Header */}
       <div className="flex items-start gap-3 px-5 py-4 border-b border-line-subtle">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50">

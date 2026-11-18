@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight, ChevronDown, Package, Warehouse, FileText, CreditCard } from 'lucide-react'
+import { AlertTriangle, Check, ChevronRight, ChevronDown, Package, Warehouse, FileText, CreditCard } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { formatCAD } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/badge'
@@ -56,7 +56,7 @@ function PrRow({ pr }: PrRowProps) {
   const [expanded, setExpanded] = useState(false)
 
   return (
-    <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
+    <div className="rounded-xl bg-surface shadow-sm overflow-hidden">
       {/* PR header */}
       <div
         className="flex items-center gap-3 px-4 py-3 hover:bg-surface-subtle cursor-pointer"
@@ -64,9 +64,10 @@ function PrRow({ pr }: PrRowProps) {
         role="button"
         aria-expanded={expanded}
       >
-        <button className="text-fg-muted hover:text-fg-secondary" aria-label={expanded ? 'Collapse' : 'Expand'}>
+        {/* The whole row is the toggle (role=button above); this is only its chevron. */}
+        <span aria-hidden className="text-fg-muted">
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        </button>
+        </span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <Link
@@ -105,13 +106,13 @@ function PrRow({ pr }: PrRowProps) {
               {po.grs.map((gr) => (
                 <div key={gr.id} className="flex items-center gap-2 py-1 pl-10 border-l-2 border-primary-200 ml-2">
                   <Warehouse className="h-3 w-3 text-fg-muted shrink-0" />
-                  <Link to={`/gr/${gr.id}`} className="text-xs text-fg-secondary hover:text-primary-600">
+                  <Link to={`/gr/${gr.id}`} className="text-xs text-fg-secondary hover:text-accent-fg">
                     {gr.number}
                   </Link>
                   <StatusBadge status={gr.status} />
-                  {gr.acknowledged && <span className="text-xs text-success-fg">✓ Ack</span>}
+                  {gr.acknowledged && <span className="inline-flex items-center gap-1 text-xs text-success-fg"><Check aria-hidden className="h-3 w-3" />Ack</span>}
                   {gr.collectionPending && (
-                    <span className="text-xs font-medium text-warning-fg">⚠ Collection Pending</span>
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-warning-fg"><AlertTriangle aria-hidden className="h-3 w-3" />Collection Pending</span>
                   )}
                 </div>
               ))}
@@ -120,7 +121,7 @@ function PrRow({ pr }: PrRowProps) {
               {po.invoices.map((inv) => (
                 <div key={inv.id} className="flex items-center gap-2 py-1 pl-10 border-l-2 border-primary-200 ml-2">
                   <FileText className="h-3 w-3 text-fg-muted shrink-0" />
-                  <Link to={`/invoices/${inv.id}`} className="text-xs text-fg-secondary hover:text-primary-600">
+                  <Link to={`/invoices/${inv.id}`} className="text-xs text-fg-secondary hover:text-accent-fg">
                     {inv.number}
                   </Link>
                   <StatusBadge status={inv.status} />
@@ -133,7 +134,7 @@ function PrRow({ pr }: PrRowProps) {
                 <div className="flex items-center gap-2 py-1 pl-10 border-l-2 border-primary-200 ml-2">
                   <CreditCard className="h-3 w-3 text-fg-muted shrink-0" />
                   {po.pa.number ? (
-                    <Link to={`/pa/${po.pa.id}`} className="text-xs text-fg-secondary hover:text-primary-600">
+                    <Link to={`/pa/${po.pa.id}`} className="text-xs text-fg-secondary hover:text-accent-fg">
                       {po.pa.number}
                     </Link>
                   ) : (
@@ -170,7 +171,7 @@ export function PrPipeline({ items }: PrPipelineProps) {
       </div>
 
       {items.length === 0 && (
-        <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] py-10 text-center">
+        <div className="rounded-xl bg-surface shadow-sm py-10 text-center">
           <p className="text-sm text-fg-muted mb-3">No purchase requisitions yet</p>
           <Link to="/pr/new" className="text-sm text-primary-600 hover:underline">
             Create your first PR →

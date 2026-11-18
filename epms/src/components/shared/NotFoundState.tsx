@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { SearchX } from 'lucide-react'
 import { BackLink } from '@/components/BackLink'
 import { Button } from '@/components/ui/button'
 
@@ -13,7 +14,7 @@ export function NotFoundState({ title, message, backTo, backLabel }: {
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="text-5xl mb-4">🔍</div>
+      <SearchX aria-hidden className="mb-4 h-10 w-10 stroke-[1.5] text-fg-faint" />
       <h2 className="text-xl font-semibold text-fg-secondary">{title}</h2>
       <p className="mt-2 text-sm text-fg-muted">{message}</p>
       <BackLink to={backTo} className="mt-4">

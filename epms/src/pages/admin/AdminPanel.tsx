@@ -95,7 +95,7 @@ const NAV: NavEntry[] = [
 
 const inputCls = (err?: boolean) =>
   cn(
-    'h-10 w-full rounded-lg border bg-surface-sunken px-3 text-sm text-fg placeholder:text-fg-faint focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-[0_0_0_3px_rgba(10,124,124,0.10)] transition-colors',
+    'h-10 w-full rounded-lg border bg-surface-sunken px-3 text-sm text-fg placeholder:text-fg-faint focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-focus transition-colors',
     err ? 'border-danger-solid' : 'border-line'
   )
 
@@ -1449,7 +1449,7 @@ function UserManagement() {
         }}
         onCancel={() => { setMode('none'); setSaveError(null) }} />}
 
-      <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
+      <div className="rounded-xl bg-surface shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="border-b border-line bg-surface-subtle">
@@ -2048,7 +2048,7 @@ function NotificationSettingsSection() {
     setTemplates((p) => ({ ...p, [key]: { ...(p[key] ?? { subject: '', body: '' }), [field]: value } }))
   }
 
-  const inCls = 'h-10 w-full rounded-lg border border-line bg-surface-sunken px-3 text-sm focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-[0_0_0_3px_rgba(10,124,124,0.10)] transition-colors'
+  const inCls = 'h-10 w-full rounded-lg border border-line bg-surface-sunken px-3 text-sm focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-focus transition-colors'
 
   return (
     <div className="flex flex-col gap-8 max-w-2xl">
@@ -2136,7 +2136,7 @@ function NotificationSettingsSection() {
                     <div className="flex flex-col gap-1">
                       <label className="text-xs font-medium text-fg-secondary">Body</label>
                       <textarea rows={6}
-                        className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary-600 focus:shadow-[0_0_0_3px_rgba(10,124,124,0.10)] transition-colors resize-y"
+                        className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary-600 focus:shadow-focus transition-colors resize-y"
                         value={tpl.body}
                         onChange={(e) => updateTemplate(key, 'body', e.target.value)}
                         placeholder="Email body (HTML or plain text)…" />
@@ -2240,7 +2240,7 @@ export default function AdminPanel() {
         <p className="mt-1 text-sm text-fg-muted">System configuration and user management</p>
       </div>
       <div className="flex gap-6 items-start">
-        <nav className="w-56 shrink-0 rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
+        <nav className="w-56 shrink-0 rounded-xl bg-surface shadow-sm overflow-hidden">
           {NAV.map((entry) => {
             const Icon = entry.icon
             return (
@@ -2253,7 +2253,7 @@ export default function AdminPanel() {
             )
           })}
         </nav>
-        <div className="flex-1 min-w-0 rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+        <div className="flex-1 min-w-0 rounded-xl bg-surface shadow-sm p-6">
           <h2 className="text-base font-semibold text-fg mb-5">{current.label}</h2>
           {renderSection()}
         </div>

@@ -836,7 +836,7 @@ export default function PoDetailPage() {
 
           {/* Details Tab */}
           {activeTab === 'Details' && (
-            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-6">
+            <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-6">
               <section>
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">Details</h2>
                 <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2 text-sm">
@@ -1028,7 +1028,7 @@ export default function PoDetailPage() {
 
           {/* Linked GRs Tab */}
           {activeTab === 'Linked GRs' && (
-            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+            <div className="rounded-xl bg-surface shadow-sm p-6">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">Linked Goods Receipts</h2>
               {grsLoading ? (
                 <div className="flex items-center justify-center py-12 text-fg-muted">
@@ -1071,7 +1071,7 @@ export default function PoDetailPage() {
 
           {/* Attachments Tab */}
           {activeTab === 'Attachments' && (
-            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+            <div className="rounded-xl bg-surface shadow-sm p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">Attachments</h2>
                 {['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_pending', 'nc_milk'].includes(po.status) && (
@@ -1113,7 +1113,7 @@ export default function PoDetailPage() {
 
           {/* History Tab */}
           {activeTab === 'History' && (
-            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+            <div className="rounded-xl bg-surface shadow-sm p-6">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">Audit History</h2>
               {events && events.length > 0 ? (
                 <ul className="flex flex-col gap-3">
@@ -1141,7 +1141,7 @@ export default function PoDetailPage() {
 
         {/* Right: approval timeline */}
         <div className="lg:col-span-4">
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
+          <div className="rounded-xl bg-surface shadow-sm p-5 sticky top-6">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">Approval Timeline</h2>
             <ApprovalTimeline
               steps={approvalSteps}
@@ -1172,7 +1172,7 @@ export default function PoDetailPage() {
 
       {/* Fixed bottom approver action bar */}
       {canApprove && (
-        <div className="fixed bottom-0 left-60 right-0 z-10 bg-surface border-t border-line px-6 py-3 flex items-center justify-between shadow-[0_-1px_8px_rgba(0,0,0,0.06)] max-md:left-0">
+        <div className="fixed bottom-0 left-60 right-0 z-10 bg-surface border-t border-line px-6 py-3 flex items-center justify-between shadow-up max-md:left-0">
           <p className="text-sm text-fg-muted">
             Reviewing <span className="font-medium text-fg">{po.number}</span>
           </p>

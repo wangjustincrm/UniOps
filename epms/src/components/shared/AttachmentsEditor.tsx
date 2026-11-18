@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Upload, Paperclip, X } from 'lucide-react'
+import { Button, FileInput, IconButton, Spinner } from '@uniops/shell'
 import { ATTACHMENT_RULE, partitionUploads } from '@/lib/uploadLimits'
 import { formatBytes } from '@/lib/utils'
 
@@ -57,18 +58,17 @@ export function AttachmentsEditor({
     <div className="flex flex-col gap-2">
       <label
         htmlFor={inputId}
-        className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-line-strong p-6 text-center hover:border-primary-400 hover:bg-primary-50 transition-colors"
+        className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-line-strong p-6 text-center transition-colors hover:border-accent hover:bg-accent-soft"
       >
-        <Upload className={`h-8 w-8 text-fg-muted ${isUploading ? 'animate-pulse' : ''}`} />
+        {isUploading ? <Spinner className="h-8 w-8" label="Uploading" /> : <Upload className="h-8 w-8 text-fg-muted" />}
         <div>
           <p className="text-sm font-medium text-fg-secondary">
             {isUploading ? 'Uploading…' : 'Drag & drop or click to upload'}
           </p>
           <p className="text-xs text-fg-muted mt-1">{ATTACHMENT_RULE.hint}</p>
         </div>
-        <input
+        <FileInput
           id={inputId}
-          type="file"
           multiple
           accept={ATTACHMENT_RULE.accept}
           className="sr-only"
@@ -87,22 +87,17 @@ export function AttachmentsEditor({
           <Paperclip className="h-4 w-4 shrink-0 text-fg-muted" />
           <span className="flex-1 truncate text-fg-secondary">{att.filename}</span>
           <span className="text-xs text-fg-muted">{formatBytes(att.file_size)}</span>
-          <button
-            type="button"
-            onClick={() => onDownload(att)}
-            className="text-xs text-primary-600 hover:underline"
-          >
+          <Button type="button" variant="link" className="text-xs" onClick={() => onDownload(att)}>
             Download
-          </button>
-          <button
+          </Button>
+          <IconButton
             type="button"
+            label={`Remove ${att.filename}`}
+            icon={<X className="h-3.5 w-3.5" />}
+            size="icon-xs"
             disabled={isDeleting}
             onClick={() => { setError(null); onDelete(att.id) }}
-            className="text-fg-muted hover:text-danger-fg disabled:opacity-50"
-            aria-label={`Remove ${att.filename}`}
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+          />
         </div>
       ))}
     </div>

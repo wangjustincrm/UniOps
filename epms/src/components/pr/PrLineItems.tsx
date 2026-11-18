@@ -161,7 +161,7 @@ function PartsPicker({ value, onSelect, onClear, hasError }: PartsPickerProps) {
         <div
           ref={dropdownRef}
           style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 9999 }}
-          className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-[0_8px_24px_rgba(10,124,124,0.12)]"
+          className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
         >
           {/* Search box inside dropdown */}
           <div className="border-b border-line-subtle p-2">
@@ -645,7 +645,7 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
           return (
             <div
               key={item.id}
-              className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-3 flex flex-col gap-2"
+              className="rounded-xl bg-surface shadow-sm p-3 flex flex-col gap-2"
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-fg-muted">Line {i + 1}</span>

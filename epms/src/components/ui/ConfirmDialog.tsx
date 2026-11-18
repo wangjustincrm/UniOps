@@ -1,10 +1,13 @@
 import { useCallback, useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
-import { AlertTriangle, CheckCircle2, X } from 'lucide-react'
+import { AlertTriangle, X } from 'lucide-react'
+import { Alert, ConfirmDialog as ShellConfirmDialog, IconButton, Modal } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
-import { useCloseOnEscape } from '@/hooks/useCloseOnEscape'
-import { runConfirmAction } from '@/lib/confirmAction'
-import { cn } from '@/lib/utils'
+import { errorMessage } from '@/lib/submitFailure'
+
+/**
+ * EPMS's in-page confirm / notice / message, drawn by the Shell (Modal,
+ * ConfirmDialog, Alert). The API is unchanged so the ~20 callers keep working.
+ */
 
 export interface ConfirmOptions {
   /** Short heading, e.g. "Cancel GR". */
@@ -27,68 +30,26 @@ export interface ConfirmOptions {
 }
 
 /**
- * In-page confirmation, in the same shape as the PA / agreement Reject
- * dialogs, used wherever the pages used the browser's native confirm().
- * Escape, Cancel and the close button close it without doing anything.
+ * In-page confirmation, used wherever the pages used the browser's native
+ * confirm(). Escape, Cancel and the close button close it without doing anything.
  */
 export function ConfirmDialog({
   title, subtitle, message, confirmLabel, cancelLabel = 'Cancel', tone = 'danger', onConfirm, failureFallback, onClose,
 }: ConfirmOptions & { onClose: () => void }) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const close = useCallback(() => { if (!busy) onClose() }, [busy, onClose])
-  useCloseOnEscape(true, close)
-
-  const confirm = async () => {
-    setBusy(true)
-    setError(null)
-    const failure = await runConfirmAction(onConfirm, failureFallback)
-    setBusy(false)
-    if (failure === null) onClose()
-    else setError(failure)
-  }
-
-  const danger = tone === 'danger'
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl" role="dialog" aria-modal="true" aria-label={title}>
-        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', danger ? 'bg-danger-soft' : 'bg-warning-soft')}>
-              <AlertTriangle className={cn('h-5 w-5', danger ? 'text-danger-fg' : 'text-warning-fg')} />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-fg">{title}</h2>
-              {subtitle && <p className="text-xs text-fg-muted">{subtitle}</p>}
-            </div>
-          </div>
-          <button onClick={close} disabled={busy} aria-label="Close" className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary disabled:opacity-40">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="px-6 py-5 flex flex-col gap-4">
-          <div className="text-sm text-fg-secondary whitespace-pre-line">{message}</div>
-          {error && (
-            <p role="alert" className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg whitespace-pre-line">{error}</p>
-          )}
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={close} disabled={busy}>{cancelLabel}</Button>
-            <button
-              onClick={confirm}
-              disabled={busy}
-              autoFocus
-              className={cn(
-                'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
-                danger ? 'bg-danger-solid hover:bg-danger-700' : 'bg-primary-600 hover:bg-primary-700',
-              )}
-            >
-              {busy ? 'Working…' : confirmLabel}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
+  return (
+    <ShellConfirmDialog
+      title={title}
+      subtitle={subtitle}
+      message={message}
+      confirmLabel={confirmLabel}
+      cancelLabel={cancelLabel}
+      tone={tone}
+      onConfirm={onConfirm}
+      onClose={onClose}
+      // Same wording rules as runConfirmAction (lib/confirmAction).
+      failureFallback={failureFallback ?? 'The action failed'}
+      formatError={(err, fallback) => errorMessage(err, fallback)}
+    />
   )
 }
 
@@ -122,26 +83,17 @@ export interface NoticeOptions {
  * it waited for the browser's alert.
  */
 export function NoticeDialog({ title, message, tone = 'warning', onClose }: NoticeOptions & { onClose: () => void }) {
-  useCloseOnEscape(true, onClose)
-  const error = tone === 'error'
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl" role="alertdialog" aria-modal="true" aria-label={title}>
-        <div className="flex items-center gap-3 border-b border-line-subtle px-6 py-4">
-          <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', error ? 'bg-danger-soft' : 'bg-warning-soft')}>
-            <AlertTriangle className={cn('h-5 w-5', error ? 'text-danger-fg' : 'text-warning-fg')} />
-          </div>
-          <h2 className="text-sm font-semibold text-fg">{title}</h2>
-        </div>
-        <div className="px-6 py-5 flex flex-col gap-4">
-          <div className="text-sm text-fg-secondary whitespace-pre-line">{message}</div>
-          <div className="flex justify-end">
-            <Button size="sm" onClick={onClose} autoFocus>OK</Button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="sm"
+      title={title}
+      icon={<AlertTriangle className={tone === 'error' ? 'text-danger-fg' : 'text-warning-fg'} />}
+      footer={<Button size="sm" onClick={onClose} data-autofocus>OK</Button>}
+    >
+      <div className="whitespace-pre-line text-sm text-fg-secondary">{message}</div>
+    </Modal>
   )
 }
 
@@ -176,25 +128,17 @@ export function ActionMessage({ tone = 'error', children, onDismiss, className }
   onDismiss?: () => void
   className?: string
 }) {
-  const ok = tone === 'success'
   return (
-    <div
-      role={tone === 'error' ? 'alert' : 'status'}
-      className={cn(
-        'flex items-start gap-2 rounded-lg border px-3 py-2 text-sm whitespace-pre-line',
-        tone === 'error' && 'border-danger-line bg-danger-soft text-danger-fg',
-        tone === 'warning' && 'border-warning-line bg-warning-soft text-warning-fg',
-        ok && 'border-success-line bg-success-soft text-success-fg',
-        className,
+    <Alert
+      tone={tone === 'error' ? 'danger' : tone}
+      className={className}
+      action={onDismiss && (
+        <IconButton label="Dismiss" icon={<X className="h-3.5 w-3.5" />} size="icon-xs" variant="subtle"
+          className="-my-1 text-current opacity-70 hover:opacity-100" onClick={onDismiss} />
       )}
     >
-      {ok ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
-      <div className="flex-1">{children}</div>
-      {onDismiss && (
-        <button onClick={onDismiss} aria-label="Dismiss" className="rounded p-0.5 opacity-70 hover:opacity-100">
-          <X className="h-3.5 w-3.5" />
-        </button>
-      )}
-    </div>
+      {children}
+    </Alert>
   )
 }
+

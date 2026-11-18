@@ -33,9 +33,9 @@ export function groupStatus(
 }
 
 const TONE = {
-  red:   { bar: 'bg-danger-solid',  text: 'text-danger-fg',  icon: '🔴' },
-  amber: { bar: 'bg-warning-solid', text: 'text-warning-fg', icon: '🟡' },
-  green: { bar: 'bg-success-solid', text: 'text-success-fg', icon: '🟢' },
+  red:   { bar: 'bg-danger-solid',  text: 'text-danger-fg' },
+  amber: { bar: 'bg-warning-solid', text: 'text-warning-fg' },
+  green: { bar: 'bg-success-solid', text: 'text-success-fg' },
 } as const
 
 function BudgetBar({ dept, tone, label, barPct }: { dept: string; tone: Tone; label: string; barPct: number }) {
@@ -45,8 +45,9 @@ function BudgetBar({ dept, tone, label, barPct }: { dept: string; tone: Tone; la
     <div className="mb-3">
       <div className="mb-1 flex items-center justify-between gap-2 text-xs">
         <span className="font-medium text-fg-secondary">{dept}</span>
-        <span className={cn('shrink-0 font-semibold', t.text)}>
-          {label} {t.icon}
+        <span className={cn('inline-flex shrink-0 items-center gap-1.5 font-semibold tabular-nums', t.text)}>
+          <span aria-hidden className={cn('size-1.5 rounded-full', t.bar)} />
+          {label}
         </span>
       </div>
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-strong">
@@ -70,7 +71,7 @@ export function BudgetOverview({ groups, yellow: propYellow, red: propRed }: Bud
   const items = (groups ?? []).map((g) => ({ dept: g.l1_name, ...groupStatus(g, yellow, red) }))
 
   return (
-    <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+    <div className="rounded-xl bg-surface shadow-sm p-5">
       <h2 className="mb-4 text-base font-semibold text-fg">Budget Overview</h2>
       {items.length === 0 ? (
         <p className="py-4 text-center text-sm text-fg-muted">No budget data available</p>

@@ -36,7 +36,7 @@ function SectionCard({ title, icon, children }: {
   children: React.ReactNode
 }) {
   return (
-    <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
+    <div className="rounded-xl bg-surface shadow-sm overflow-hidden">
       <div className="flex items-center gap-3 px-6 py-4 border-b border-line-subtle">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
           {icon}

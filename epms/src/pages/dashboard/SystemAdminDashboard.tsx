@@ -39,7 +39,7 @@ export default function SystemAdminDashboard() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Users by role */}
         <div className="lg:col-span-6">
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+          <div className="rounded-xl bg-surface shadow-sm p-5">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-base font-semibold text-fg">Users by Role</h2>
               <Link to="/admin" className="text-xs text-primary-600 hover:underline">Manage Users →</Link>
@@ -73,7 +73,7 @@ export default function SystemAdminDashboard() {
 
         {/* Quick links */}
         <div className="lg:col-span-6">
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+          <div className="rounded-xl bg-surface shadow-sm p-5">
             <h2 className="mb-4 text-base font-semibold text-fg">Admin Sections</h2>
             <div className="flex flex-col gap-2">
               {QUICK_LINKS.map((item) => (

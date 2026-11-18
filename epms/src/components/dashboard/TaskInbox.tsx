@@ -26,7 +26,7 @@ function TaskCard({ task }: TaskCardProps) {
   return (
     <div
       className={cn(
-        'rounded-lg border p-3 transition-shadow hover:shadow-[0_1px_3px_rgba(10,124,124,0.08)]',
+        'rounded-lg border p-3 transition-shadow hover:shadow-sm',
         isUrgent ? 'border-danger-line bg-danger-soft' : 'border-line bg-surface'
       )}
     >
@@ -90,21 +90,21 @@ export function TaskInbox({ tasks, maxItems = 10, onViewAll }: TaskInboxProps) {
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-fg">
           To-Do List{' '}
-          <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1 text-2xs font-bold text-white">
+          <span className="ml-1.5 font-mono text-sm font-normal tabular-nums text-fg-muted">
             {total}
           </span>
         </h2>
       </div>
 
       {total === 0 && (
-        <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] py-10 text-center">
+        <div className="rounded-xl bg-surface shadow-sm py-10 text-center">
           <p className="text-sm text-fg-muted">No pending tasks</p>
         </div>
       )}
 
       {urgent.length > 0 && (
         <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-danger-fg flex items-center gap-1">
+          <p className="mb-2 flex items-center gap-1 text-xs font-semibold text-danger-fg">
             <AlertCircle className="h-3.5 w-3.5" />
             Urgent ({urgent.length})
           </p>
@@ -118,7 +118,7 @@ export function TaskInbox({ tasks, maxItems = 10, onViewAll }: TaskInboxProps) {
 
       {normal.length > 0 && (
         <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+          <p className="mb-2 text-xs font-semibold text-fg-muted">
             Normal ({normal.length})
           </p>
           <div className="flex flex-col gap-2">
@@ -130,12 +130,9 @@ export function TaskInbox({ tasks, maxItems = 10, onViewAll }: TaskInboxProps) {
       )}
 
       {total > maxItems && (
-        <button
-          onClick={onViewAll}
-          className="mt-1 text-sm text-primary-600 hover:underline text-left"
-        >
+        <Button variant="link" onClick={onViewAll} className="mt-1 self-start text-sm">
           View all {total} tasks →
-        </button>
+        </Button>
       )}
     </div>
   )

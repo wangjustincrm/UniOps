@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { Sidebar as ShellSidebar, useSidebarCollapsed } from '@uniops/shell'
 import {
   LayoutDashboard,
   CheckSquare,
@@ -15,12 +14,8 @@ import {
   FileSignature,
   Receipt,
   Settings,
-  ChevronLeft,
-  ChevronRight,
-  ArrowLeft,
   Truck,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import type { UserRole } from '@/types'
@@ -111,15 +106,13 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ]
 
-// Derive initials from a company name (up to 2 chars)
-function nameInitials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2)
+/** "MY WORKSPACE" -> "My workspace": section labels in sentence case. */
+function sentence(title: string) {
+  const t = title.toLowerCase()
+  return t.charAt(0).toUpperCase() + t.slice(1)
 }
+
+const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
 
 interface SidebarProps {
   mobileOpen?: boolean
@@ -127,14 +120,9 @@ interface SidebarProps {
 }
 
 export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, toggleCollapsed] = useSidebarCollapsed('epms.sidebar.collapsed')
   const { user } = useAuthStore()
   const { data: config } = useConfig()
-  const companyName = config?.name ?? 'EPMS'
-  const companyTagline = config?.module_taglines?.epms ?? config?.tagline ?? ''
-  const companyLogoUrl = config?.logo_data_url ?? null
-  const location = useLocation()
-
   const perms = useRolePermissions().data?.permissions
 
   const isItemVisible = (item: NavItemDef) => {
@@ -149,160 +137,26 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
     return true
   }
 
-  const isSectionVisible = (section: NavSection) =>
-    section.items.some(isItemVisible)
-
-  const handleNavClick = () => {
-    onMobileClose?.()
-  }
+  const sections = NAV_SECTIONS
+    .map((section) => ({
+      title: sentence(section.title),
+      items: section.items.filter(isItemVisible).map(({ label, href, icon, badge }) => ({ label, href, icon, badge })),
+    }))
+    .filter((section) => section.items.length > 0)
 
   return (
-    <aside
-      className={cn(
-        'flex h-screen flex-col bg-primary-700 transition-all duration-200',
-        // Desktop: fixed width, always visible
-        collapsed ? 'w-16' : 'w-60',
-        // Mobile: absolute overlay, hidden by default, slides in when open
-        'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-30',
-        mobileOpen ? 'max-md:translate-x-0 max-md:opacity-100' : 'max-md:-translate-x-full max-md:opacity-0',
-        'max-md:w-60 max-md:shadow-2xl'
-      )}
-    >
-      {/* Brand area */}
-      <div className="flex h-[60px] items-center justify-between border-b border-white/10 px-3 gap-2">
-        {/* Logo + name — expanded */}
-        {!collapsed && (
-          <div className="flex items-center gap-2.5 min-w-0">
-            {/* Logo image or initials badge */}
-            {companyLogoUrl ? (
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface overflow-hidden">
-                <img
-                  src={companyLogoUrl}
-                  alt={companyName}
-                  className="h-full w-full object-contain p-0.5"
-                />
-              </div>
-            ) : (
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/15">
-                <span className="text-xs font-bold text-white">{nameInitials(companyName)}</span>
-              </div>
-            )}
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-white/95 leading-tight truncate">{companyName}</p>
-              {companyTagline && (
-                <p className="text-2xs text-white/45 leading-tight truncate">{companyTagline}</p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Collapsed — icon only */}
-        {collapsed && (
-          <div className="mx-auto">
-            {companyLogoUrl ? (
-              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-surface overflow-hidden">
-                <img
-                  src={companyLogoUrl}
-                  alt={companyName}
-                  className="h-full w-full object-contain p-0.5"
-                />
-              </div>
-            ) : (
-              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white/15">
-                <span className="text-xs font-bold text-white">{nameInitials(companyName)}</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Collapse toggle */}
-        {!collapsed && (
-          <button
-            onClick={() => setCollapsed(true)}
-            className="shrink-0 rounded p-1 text-white/50 hover:bg-white/10 hover:text-white/90 transition-colors"
-            aria-label="Collapse sidebar"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-        )}
-      </div>
-
-      {/* Nav */}
-      {/* No scrollbar of its own (ISS-0182): Chrome on Windows gives it ~15px,
-          narrowing the menu out of line with the logo above; it still scrolls. */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {NAV_SECTIONS.map((section) => {
-          if (!isSectionVisible(section)) return null
-          return (
-            <div key={section.title} className="mb-4">
-              {!collapsed && (
-                <p className="mb-1 px-2 text-2xs font-semibold uppercase tracking-wider text-white/40">
-                  {section.title}
-                </p>
-              )}
-              {collapsed && <div className="my-2 border-t border-white/10" />}
-              {section.items.filter(isItemVisible).map((item) => (
-                <NavLink
-                  key={item.href}
-                  to={item.href}
-                  title={collapsed ? item.label : undefined}
-                  onClick={handleNavClick}
-                  className={({ isActive }) =>
-                    cn(
-                      'group relative flex items-center gap-2.5 rounded-md px-2 py-2.5 text-sm transition-colors min-h-[44px]',
-                      isActive || location.pathname.startsWith(item.href + '/')
-                        ? 'bg-white/15 text-white font-medium'
-                        : 'text-white/70 hover:bg-white/10 hover:text-white/95',
-                      collapsed && 'justify-center px-0'
-                    )
-                  }
-                >
-                  <span className="shrink-0">{item.icon}</span>
-                  {!collapsed && <span className="truncate">{item.label}</span>}
-                  {!collapsed && item.badge ? (
-                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-danger-solid px-1 text-2xs font-bold text-white">
-                      {item.badge > 99 ? '99+' : item.badge}
-                    </span>
-                  ) : null}
-                  {collapsed && item.badge ? (
-                    <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-solid text-2xs font-bold text-white">
-                      {item.badge > 99 ? '99+' : item.badge}
-                    </span>
-                  ) : null}
-                </NavLink>
-              ))}
-            </div>
-          )
-        })}
-      </nav>
-
-      {/* Back to Portal */}
-      <div className="border-t border-white/10 p-2">
-        <a
-          href={(import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'}
-          className={cn(
-            'flex items-center gap-2 rounded-md px-2 py-2 text-sm text-white/60 hover:bg-white/10 hover:text-white/90 transition-colors',
-            collapsed && 'justify-center px-0'
-          )}
-          title="Back to UniOps Portal"
-        >
-          <ArrowLeft className="h-4 w-4 shrink-0" />
-          {!collapsed && <span>Back to Portal</span>}
-        </a>
-      </div>
-
-      {/* Expand button when collapsed */}
-      {collapsed && (
-        <div className="border-t border-white/10 p-2">
-          <button
-            onClick={() => setCollapsed(false)}
-            className="flex w-full items-center justify-center rounded p-2 text-white/50 hover:bg-white/10 hover:text-white/90 transition-colors"
-            aria-label="Expand sidebar"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-    </aside>
+    <ShellSidebar
+      brand={{
+        name: config?.name ?? 'EPMS',
+        tagline: config?.module_taglines?.epms ?? config?.tagline ?? '',
+        logoUrl: config?.logo_data_url ?? null,
+      }}
+      sections={sections}
+      collapsed={collapsed}
+      onToggleCollapse={toggleCollapsed}
+      mobileOpen={mobileOpen}
+      onMobileClose={onMobileClose}
+      portalUrl={PORTAL_URL}
+    />
   )
 }

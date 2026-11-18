@@ -13,6 +13,7 @@
  * the ink would come out a fraction of its intended size.
  */
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { Button } from '@uniops/shell'
 
 export interface SignaturePadHandle {
   isEmpty(): boolean
@@ -85,7 +86,8 @@ export const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(
       ctx.lineWidth = 2
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
-      ctx.strokeStyle = '#111827'
+      // Canvas needs a concrete colour, so read the ink from the fg token.
+      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-fg').trim() || 'black'
     }, [])
 
     const setEmptyState = (value: boolean) => {
@@ -184,14 +186,15 @@ export const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(
           <p className="text-xs text-fg-muted">
             {empty ? 'Sign inside the box above.' : 'Looks right? Save it below.'}
           </p>
-          <button
+          <Button
             type="button"
+            variant="subtle"
+            size="xs"
             onClick={clear}
             disabled={empty}
-            className="text-xs font-medium text-fg-muted hover:text-fg-secondary disabled:opacity-40"
           >
             Clear
-          </button>
+          </Button>
         </div>
       </div>
     )

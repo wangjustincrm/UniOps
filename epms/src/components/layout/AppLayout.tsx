@@ -81,7 +81,7 @@ export function AppLayout() {
   // Embedded (iframe): single page, no chrome, no tabs — Portal owns navigation.
   if (isEmbedded) {
     return (
-      <div className="flex h-screen flex-col overflow-hidden bg-[#FAFBFC]">
+      <div className="flex h-screen flex-col overflow-hidden bg-canvas">
         <main id="main-content" className="flex-1 overflow-y-auto p-6 pb-20 sm:pb-6" tabIndex={-1}>
           <div className="mx-auto max-w-[1440px]">
             <Routes>
@@ -101,16 +101,8 @@ export function AppLayout() {
   // Normal: full chrome + keep-alive multi-tab workspace.
   return (
     <TabStoreProvider options={{ initialTabs: EPMS_INITIAL_TABS, userId }}>
-      <div className="flex h-screen overflow-hidden bg-[#FAFBFC] relative">
-        {/* Mobile overlay backdrop */}
-        {mobileOpen && (
-          <div
-            className="fixed inset-0 z-20 bg-inverse/50 backdrop-blur-sm md:hidden animate-[fadeIn_0.15s_ease-out]"
-            onClick={() => setMobileOpen(false)}
-            aria-hidden="true"
-          />
-        )}
-
+      {/* The Shell Sidebar draws its own mobile backdrop. */}
+      <div className="relative flex h-screen overflow-hidden bg-canvas">
         <Sidebar mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
 
         <div className="flex flex-1 flex-col overflow-hidden">

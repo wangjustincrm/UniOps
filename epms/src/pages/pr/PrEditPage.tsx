@@ -391,7 +391,7 @@ export default function PrEditPage() {
             and follows every change before saving (OBG-001; ISS-0142). */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <div className="lg:col-span-9 flex flex-col gap-6">
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+          <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-5">
             <h2 className="text-base font-semibold text-fg">Requisition Details</h2>
 
             {/* Title */}
@@ -774,7 +774,7 @@ export default function PrEditPage() {
           </div>
 
           {/* Line Items */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+          <div className="rounded-xl bg-surface shadow-sm p-6">
             <PrLineItems
               procurementType={procurementType ?? 2}
               items={lineItems}
@@ -787,7 +787,7 @@ export default function PrEditPage() {
           </div>
 
           {/* Attachments */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-3">
+          <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-3">
             <div>
               <h2 className="text-base font-semibold text-fg">Attachments</h2>
               <p className="text-xs text-fg-muted mt-1">Uploads and removals are saved immediately.</p>

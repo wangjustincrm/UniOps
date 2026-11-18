@@ -66,7 +66,7 @@ export default function ApClerkDashboard() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Recent invoices table */}
         <div className="lg:col-span-8">
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+          <div className="rounded-xl bg-surface shadow-sm p-5">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-base font-semibold text-fg">Recent Invoices</h2>
               <Link to="/invoices" className="text-xs text-primary-600 hover:underline">View all →</Link>
@@ -118,7 +118,7 @@ export default function ApClerkDashboard() {
 
         {/* Quick links */}
         <div className="lg:col-span-4">
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+          <div className="rounded-xl bg-surface shadow-sm p-5">
             <h2 className="mb-4 text-base font-semibold text-fg">Quick Actions</h2>
             <div className="flex flex-col gap-3">
               <Link to="/invoices" className="flex items-center justify-between rounded-lg bg-primary-600 px-4 py-3 text-sm font-semibold text-white hover:bg-primary-700 transition-colors">

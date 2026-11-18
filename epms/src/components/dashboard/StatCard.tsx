@@ -18,10 +18,10 @@ export function StatCard({ title, value, subtitle, alert, className }: StatCardP
         className
       )}
     >
-      <p className="text-xs font-medium uppercase tracking-wider text-fg-muted">{title}</p>
+      <p className="text-xs font-medium text-fg-muted">{title}</p>
       <p
         className={cn(
-          'mt-1 text-2xl font-bold',
+          'mt-1 text-2xl font-semibold tabular-nums',
           alert ? 'text-danger-fg' : 'text-fg'
         )}
       >

@@ -298,7 +298,7 @@ export default function AgreementCreatePage() {
         <div className="lg:col-span-9 flex flex-col gap-6">
 
           {/* Basic details */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+          <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-5">
             <h2 className="text-base font-semibold text-fg">Agreement Details</h2>
 
             <FormField label="Title" required htmlFor="title" error={errors.title}>
@@ -454,7 +454,7 @@ export default function AgreementCreatePage() {
           </div>
 
           {/* Financial terms */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+          <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-5">
             <h2 className="text-base font-semibold text-fg">Financial Terms</h2>
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
@@ -617,7 +617,7 @@ export default function AgreementCreatePage() {
 
           {/* Recurring cycle — only for agreement_type === 'recurring' */}
           {agreementType === 'recurring' && (
-            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+            <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-5">
               <h2 className="text-base font-semibold text-fg">Recurring Cycle</h2>
               <RecurringFields value={recurringValue} validFrom={validFrom} onChange={setRecurringValue} />
               {errors.recurring && <p className="text-xs text-danger-fg">{errors.recurring}</p>}
@@ -626,7 +626,7 @@ export default function AgreementCreatePage() {
 
           {/* Milestone stages — only for agreement_type === 'milestone' */}
           {agreementType === 'milestone' && (
-            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+            <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-4">
               <h2 className="text-base font-semibold text-fg">Milestone Stages</h2>
               <MilestoneEditor
                 rows={milestoneRows}
@@ -639,7 +639,7 @@ export default function AgreementCreatePage() {
           )}
 
           {/* Notes */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+          <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-4">
             <h2 className="text-base font-semibold text-fg">Notes</h2>
             <FormField label="Internal Notes" htmlFor="notes">
               <textarea
@@ -654,7 +654,7 @@ export default function AgreementCreatePage() {
           </div>
 
           {/* Attachments */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+          <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-4">
             <h2 className="text-base font-semibold text-fg">Attachments</h2>
             <label
               htmlFor="agreement-file-upload"
@@ -690,7 +690,7 @@ export default function AgreementCreatePage() {
           </div>
 
           {/* Footer actions */}
-          <div className="flex items-center justify-between rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-6 py-4">
+          <div className="flex items-center justify-between rounded-xl bg-surface shadow-sm px-6 py-4">
             <Link to="/agreements">
               <Button variant="ghost">Cancel</Button>
             </Link>
@@ -715,7 +715,7 @@ export default function AgreementCreatePage() {
 
         {/* Sidebar — Tips */}
         <div className="lg:col-span-3 flex flex-col gap-4">
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
+          <div className="rounded-xl bg-surface shadow-sm p-5 sticky top-6">
             <h3 className="text-sm font-semibold text-fg-secondary mb-3">💡 Tips</h3>
             <ul className="flex flex-col gap-2.5 text-xs text-fg-muted leading-relaxed">
               <li>• An agreement replaces keeping one PO open indefinitely — use it for house-account spend with no PO and no goods receipt.</li>

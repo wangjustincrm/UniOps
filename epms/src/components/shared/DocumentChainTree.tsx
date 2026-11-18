@@ -47,6 +47,7 @@ import type { InvoiceStatus } from '@/services/invoices'
 import type { ApiPa, PaStatus } from '@/services/pa'
 import { RECEIPT_TYPE_LABELS, type ApiReceipt, type ReceiptStatus } from '@/services/agreementReceipts'
 import type { DocumentStatus } from '@/types'
+import { Button } from '@uniops/shell'
 
 // ─── Status maps ──────────────────────────────────────────────────────────────
 
@@ -537,17 +538,13 @@ function ChainForPo({ currentType, id, poIdOverride }: DocumentChainTreeProps & 
   return (
     <div className={poIdOverride ? 'mt-3 border-t border-dashed border-line-subtle pt-3' : 'mt-5 border-t border-line-subtle pt-4'}>
       {!poIdOverride && <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+        <h3 className="text-sm font-semibold text-fg">
           Document Chain
         </h3>
         {isPa && currentPa && (
-          <button
-            type="button"
-            onClick={() => setShowAttachments(true)}
-            className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-2xs font-medium text-fg-secondary hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700 transition-colors"
-          >
+          <Button type="button" variant="secondary" size="xs" onClick={() => setShowAttachments(true)}>
             <Paperclip className="h-3 w-3" /> Attachments
-          </button>
+          </Button>
         )}
       </div>}
 

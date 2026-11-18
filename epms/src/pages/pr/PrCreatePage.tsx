@@ -611,7 +611,7 @@ export default function PrCreatePage() {
           <div className="lg:col-span-9 flex flex-col gap-6">
 
             {/* Procurement Type */}
-            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+            <div className="rounded-xl bg-surface shadow-sm p-6">
               <h2 className="text-base font-semibold text-fg mb-4">
                 Select Procurement Type <span className="text-danger-fg">*</span>
               </h2>
@@ -624,7 +624,7 @@ export default function PrCreatePage() {
             {/* Basic info + Line Items */}
             {selectedType && (
               <>
-                <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+                <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-5">
                   <h2 className="text-base font-semibold text-fg">Requisition Details</h2>
 
                   {/* PR Title */}
@@ -981,7 +981,7 @@ export default function PrCreatePage() {
                 </div>
 
                 {/* Line Items — separate card */}
-                <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+                <div className="rounded-xl bg-surface shadow-sm p-6">
                   <PrLineItems
                     procurementType={selectedType}
                     items={lineItems}
@@ -994,7 +994,7 @@ export default function PrCreatePage() {
                 </div>
 
                 {/* Supporting documents + notes */}
-                <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+                <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-5">
                   <h2 className="text-base font-semibold text-fg">Supporting Documents &amp; Notes</h2>
 
                   <div className="flex flex-col gap-2">
@@ -1083,7 +1083,7 @@ export default function PrCreatePage() {
             )}
 
             {/* Tips card */}
-            <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-4">
+            <div className="rounded-xl bg-surface shadow-sm p-4">
               <h3 className="text-sm font-semibold text-fg-secondary mb-3">💡 Tips</h3>
               <ul className="space-y-2 text-xs text-fg-muted">
                 <li>• Select the procurement type that best matches your purchase</li>

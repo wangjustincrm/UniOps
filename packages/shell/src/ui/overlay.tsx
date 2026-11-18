@@ -62,17 +62,21 @@ export interface ModalProps {
   busy?: boolean
   /** Backdrop click closes (default true). Turn off for long forms. */
   closeOnBackdrop?: boolean
+  /** false: no close button, Escape and backdrop do nothing (a step the user
+   *  must finish, e.g. a forced password change). */
+  dismissible?: boolean
   className?: string
   bodyClassName?: string
   children?: React.ReactNode
 }
 
 export function Modal({
-  open, onClose, title, description, icon, size = 'md', footer, busy, closeOnBackdrop = true, className, bodyClassName, children,
+  open, onClose, title, description, icon, size = 'md', footer, busy, closeOnBackdrop = true, dismissible = true,
+  className, bodyClassName, children,
 }: ModalProps) {
   const panel = useRef<HTMLDivElement>(null)
   const titleId = useId()
-  const safeClose = useCallback(() => { if (!busy) onClose() }, [busy, onClose])
+  const safeClose = useCallback(() => { if (!busy && dismissible) onClose() }, [busy, dismissible, onClose])
   useOverlay(open, safeClose, panel)
   if (!open) return null
   return createPortal(
@@ -99,15 +103,17 @@ export function Modal({
               {description && <div className="mt-0.5 text-sm text-fg-muted">{description}</div>}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={safeClose}
-            disabled={busy}
-            aria-label="Close"
-            className="-mr-1 rounded-md p-1.5 text-fg-faint transition-colors hover:bg-surface-sunken hover:text-fg-secondary disabled:opacity-40"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          {dismissible && (
+            <button
+              type="button"
+              onClick={safeClose}
+              disabled={busy}
+              aria-label="Close"
+              className="-mr-1 rounded-md p-1.5 text-fg-faint transition-colors hover:bg-surface-sunken hover:text-fg-secondary disabled:opacity-40"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
         <div className={cn('min-h-0 flex-1 overflow-y-auto px-5 py-4', bodyClassName)}>{children}</div>
         {footer && <div className="flex items-center justify-end gap-2 border-t border-line-subtle px-5 py-3">{footer}</div>}

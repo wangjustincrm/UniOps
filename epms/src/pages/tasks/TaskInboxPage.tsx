@@ -103,8 +103,8 @@ function FullTaskCard({ task }: FullTaskCardProps) {
         isDone
           ? 'border-line bg-surface-subtle'
           : isUrgent
-          ? 'border-danger-line bg-danger-soft hover:shadow-[0_2px_8px_rgba(185,28,28,0.08)]'
-          : 'border-line bg-surface hover:shadow-[0_2px_8px_rgba(10,124,124,0.08)]'
+          ? 'border-danger-line bg-danger-soft hover:shadow-md'
+          : 'border-line bg-surface hover:shadow-md'
       )}
     >
       <div className="flex items-start justify-between gap-3">

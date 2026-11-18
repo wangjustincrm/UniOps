@@ -112,6 +112,20 @@ HEX_PRIMARY = {
     '0f9999': 'primary-500', 'e5f2f2': 'primary-50', 'c4e0e0': 'primary-100',
 }
 ARB_HEX_RE = re.compile(r'(?P<pre>(?:[\w\-\[\]&>=.:]+?:)*)(?P<util>text|bg|border|ring|fill|stroke|from|to|via)-\[#(?P<hex>[0-9a-fA-F]{6})\]')
+# Hand-written shadows -> the elevation tokens (tokens.css --shadow-*).
+SHADOWS = {
+    'shadow-[0_1px_3px_rgba(10,124,124,0.08)]': 'shadow-sm',
+    'shadow-[0_2px_8px_rgba(10,124,124,0.08)]': 'shadow-md',
+    'shadow-[0_2px_8px_rgba(185,28,28,0.08)]': 'shadow-md',
+    'shadow-[0_8px_24px_rgba(10,124,124,0.12)]': 'shadow-lg',
+    'shadow-[0_1px_3px_rgba(0,0,0,0.06)]': 'shadow-sm',
+    'shadow-[0_0_0_3px_rgba(10,124,124,0.10)]': 'shadow-focus',
+    'shadow-[0_0_0_3px_rgba(10,124,124,0.15)]': 'shadow-focus',
+    'shadow-[0_-1px_8px_rgba(0,0,0,0.06)]': 'shadow-up',
+    'shadow-[inset_0_-1px_0_var(--color-neutral-200)]': 'shadow-[inset_0_-1px_0_var(--color-line)]',
+}
+SHADOW_RE = re.compile('|'.join(re.escape(k) for k in sorted(SHADOWS, key=len, reverse=True)))
+
 SMALL_TEXT_RE = re.compile(r'(?<![\w-])((?:[\w\-\[\]&>=.:]+?:)*)text-\[(?:9|10|11)px\]')
 BG_WHITE_RE = re.compile(r'(?<![\w/-])((?:[\w\-\[\]&>=.:]+?:)*)bg-white(?![\w/-])')
 STYLE_HEX_RE = re.compile(r'["\']#[0-9a-fA-F]{3,8}["\']|rgba?\(')
@@ -123,6 +137,7 @@ def rewrite(text: str, report: list) -> str:
         tok = HEX_PRIMARY.get(m['hex'].lower())
         return f"{m['pre']}{m['util']}-{tok}" if tok else m[0]
     text = ARB_HEX_RE.sub(hexsub, text)
+    text = SHADOW_RE.sub(lambda m: SHADOWS[m.group(0)], text)
     text = SMALL_TEXT_RE.sub(lambda m: f'{m[1]}text-2xs', text)
     text = BG_WHITE_RE.sub(lambda m: f'{m[1]}bg-surface', text)
     return fix_collapse(text)

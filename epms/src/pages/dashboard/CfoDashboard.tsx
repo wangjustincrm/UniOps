@@ -45,7 +45,7 @@ export default function CfoDashboard() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Budget group breakdown */}
         <div className="lg:col-span-8">
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+          <div className="rounded-xl bg-surface shadow-sm p-5">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-base font-semibold text-fg">Budget by Group</h2>
               <Link to="/budget" className="text-xs text-primary-600 hover:underline">Full Dashboard →</Link>
@@ -97,7 +97,7 @@ export default function CfoDashboard() {
         {/* PA summary + links */}
         <div className="lg:col-span-4 flex flex-col gap-4">
           {/* PA summary card */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+          <div className="rounded-xl bg-surface shadow-sm p-5">
             <h2 className="mb-4 text-base font-semibold text-fg">Payment Applications</h2>
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between text-sm">
@@ -125,7 +125,7 @@ export default function CfoDashboard() {
           </div>
 
           {/* Budget dashboard link */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5">
+          <div className="rounded-xl bg-surface shadow-sm p-5">
             <h2 className="mb-3 text-base font-semibold text-fg">Budget Management</h2>
             <p className="text-sm text-fg-muted">View detailed budget breakdown, configure thresholds, and manage accounts.</p>
             <Link to="/budget" className="mt-4 flex items-center justify-between rounded-lg bg-primary-600 px-4 py-3 text-sm font-semibold text-white hover:bg-primary-700 transition-colors">

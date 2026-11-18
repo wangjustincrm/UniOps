@@ -1037,7 +1037,7 @@ function PoPaEditPage() {
           </div>
 
           {/* Attachments */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+          <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-4">
             <div>
               <h2 className="text-base font-semibold text-fg">Attachments</h2>
               <p className="text-xs text-fg-muted mt-1">Uploads and removals are saved immediately.</p>

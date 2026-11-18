@@ -75,7 +75,7 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
   const { data, isLoading } = usePoFeeStatus(poId)
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center rounded-xl bg-surface p-6 text-fg-muted shadow-[0_1px_3px_rgba(10,124,124,0.08)]">
+      <div className="flex items-center justify-center rounded-xl bg-surface p-6 text-fg-muted shadow-sm">
         <Loader2 className="h-5 w-5 animate-spin" />
       </div>
     )
@@ -95,7 +95,7 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
   const incoterms = [data.incoterms_code, data.incoterms_place].filter(Boolean).join(' ')
 
   return (
-    <div className="flex flex-col gap-4 rounded-xl bg-surface p-6 shadow-[0_1px_3px_rgba(10,124,124,0.08)]">
+    <div className="flex flex-col gap-4 rounded-xl bg-surface p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-fg-muted">
           <Truck className="h-4 w-4" />

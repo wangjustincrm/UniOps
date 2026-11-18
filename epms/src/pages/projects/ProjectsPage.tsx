@@ -125,7 +125,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
 
   const inputCls = (err?: string) =>
     cn(
-      'h-10 w-full rounded-lg border bg-surface-sunken px-3 text-sm focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-[0_0_0_3px_rgba(10,124,124,0.10)] transition-colors',
+      'h-10 w-full rounded-lg border bg-surface-sunken px-3 text-sm focus:outline-none focus:bg-surface focus:border-primary-600 focus:shadow-focus transition-colors',
       err ? 'border-danger-solid bg-danger-soft' : 'border-line'
     )
 
@@ -447,19 +447,19 @@ export default function ProjectsPage() {
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-4 py-3">
+        <div className="rounded-xl bg-surface shadow-sm px-4 py-3">
           <p className="text-xs text-fg-muted font-medium uppercase tracking-wide">Total</p>
           <p className="mt-1 text-2xl font-bold text-fg">{totalProjects}</p>
         </div>
-        <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-4 py-3">
+        <div className="rounded-xl bg-surface shadow-sm px-4 py-3">
           <p className="text-xs text-fg-muted font-medium uppercase tracking-wide">Active</p>
           <p className="mt-1 text-2xl font-bold text-success-fg">{activeProjects}</p>
         </div>
-        <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-4 py-3">
+        <div className="rounded-xl bg-surface shadow-sm px-4 py-3">
           <p className="text-xs text-fg-muted font-medium uppercase tracking-wide">On Hold</p>
           <p className="mt-1 text-2xl font-bold text-warning-fg">{onHoldProjects}</p>
         </div>
-        <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-4 py-3">
+        <div className="rounded-xl bg-surface shadow-sm px-4 py-3">
           <p className="text-xs text-fg-muted font-medium uppercase tracking-wide">Closed</p>
           <p className="mt-1 text-2xl font-bold text-fg-muted">{closedProjects}</p>
         </div>
@@ -525,7 +525,7 @@ export default function ProjectsPage() {
       )}
 
       {/* Table */}
-      <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
+      <div className="rounded-xl bg-surface shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>

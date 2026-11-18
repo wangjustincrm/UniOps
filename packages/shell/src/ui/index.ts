@@ -24,3 +24,4 @@ export {
   type Sort, type SortDir, type SortValue, type SortGetters, type SortThProps,
 } from './sortable'
 export { AuthLayout, AuthHeading, type AuthLayoutProps, type AuthModule } from './auth'
+export { DropdownPortal, useAnchorRect } from './popover'

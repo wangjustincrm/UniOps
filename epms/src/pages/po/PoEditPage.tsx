@@ -243,7 +243,7 @@ export default function PoEditPage() {
         <div className="lg:col-span-9 flex flex-col gap-6">
 
           {/* Order Details */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+          <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-5">
             <h2 className="text-base font-semibold text-fg">Order Details</h2>
 
             <FormField label="PO Title / Description" required htmlFor="title" error={errors.title}>
@@ -366,7 +366,7 @@ export default function PoEditPage() {
           </div>
 
           {/* Line Items */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
+          <div className="rounded-xl bg-surface shadow-sm p-6">
             <PrLineItems
               procurementType={procurementType}
               items={lineItems}
@@ -376,7 +376,7 @@ export default function PoEditPage() {
           </div>
 
           {/* Currency, Tax & Total */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+          <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-4">
             <div className="flex items-center gap-2">
               <Receipt className="h-4 w-4 text-fg-muted" />
               <h2 className="text-base font-semibold text-fg">Currency, Tax &amp; Total</h2>
@@ -438,7 +438,7 @@ export default function PoEditPage() {
           </div>
 
           {/* Notes */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+          <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-4">
             <h2 className="text-base font-semibold text-fg">Notes</h2>
             <FormField label="Buyer Notes / Terms &amp; Conditions" htmlFor="notes">
               <textarea id="notes" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)}
@@ -462,7 +462,7 @@ export default function PoEditPage() {
           </div>
 
           {/* Attachments */}
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+          <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-4">
             <div>
               <h2 className="text-base font-semibold text-fg">Attachments</h2>
               <p className="text-xs text-fg-muted mt-1">Uploads and removals are saved immediately.</p>
@@ -479,7 +479,7 @@ export default function PoEditPage() {
           </div>
 
           {/* Footer actions */}
-          <div className="flex items-center justify-between rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] px-6 py-4">
+          <div className="flex items-center justify-between rounded-xl bg-surface shadow-sm px-6 py-4">
             <Link to={`/po/${id}`}>
               <Button variant="ghost">Cancel</Button>
             </Link>
@@ -499,7 +499,7 @@ export default function PoEditPage() {
 
         {/* Sidebar */}
         <div className="lg:col-span-3">
-          <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
+          <div className="rounded-xl bg-surface shadow-sm p-5 sticky top-6">
             <h3 className="text-sm font-semibold text-fg-secondary mb-3">PO Info</h3>
             <dl className="flex flex-col gap-2 text-xs">
               <div className="flex justify-between">

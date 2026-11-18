@@ -1249,7 +1249,7 @@ export default function PaDetailPage() {
 
       {/* Fixed bottom approver action bar */}
       {canApprove && (
-        <div className="fixed bottom-0 left-60 right-0 z-10 bg-surface border-t border-line px-6 py-3 flex items-center justify-between shadow-[0_-1px_8px_rgba(0,0,0,0.06)] max-md:left-0">
+        <div className="fixed bottom-0 left-60 right-0 z-10 bg-surface border-t border-line px-6 py-3 flex items-center justify-between shadow-up max-md:left-0">
           <p className="text-sm text-fg-muted">
             Reviewing <span className="font-medium text-fg">{pa.pa_number}</span>
           </p>

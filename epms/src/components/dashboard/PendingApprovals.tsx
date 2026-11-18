@@ -37,7 +37,7 @@ export function PendingApprovals({
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-fg">
           Pending Approvals
-          <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning-solid px-1 text-2xs font-bold text-white">
+          <span className="ml-1.5 font-mono text-sm font-normal tabular-nums text-fg-muted">
             {items.length}
           </span>
         </h2>
@@ -47,7 +47,7 @@ export function PendingApprovals({
       </div>
 
       {items.length === 0 && (
-        <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] py-10 text-center">
+        <div className="rounded-xl bg-surface shadow-sm py-10 text-center">
           <p className="text-sm text-fg-muted">No pending approvals</p>
         </div>
       )}
@@ -56,7 +56,7 @@ export function PendingApprovals({
         {items.map((item) => (
           <div
             key={item.id}
-            className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-4"
+            className="rounded-xl bg-surface shadow-sm p-4"
           >
             <div className="flex items-start justify-between gap-3 mb-2">
               <div className="flex-1 min-w-0">

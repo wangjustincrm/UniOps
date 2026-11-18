@@ -1,15 +1,13 @@
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Bell, Globe, ChevronDown, User, Settings, LogOut, KeyRound, Eye, EyeOff, X, Mail, ShieldCheck, ShieldOff, AlertTriangle, Menu } from 'lucide-react'
+import { Bell, User, Settings, KeyRound, Eye, EyeOff } from 'lucide-react'
 import { useState } from 'react'
+import { Alert, FormField, IconButton, Input, Modal, Topbar, UserMenu } from '@uniops/shell'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTasks } from '@/hooks/useTasks'
 import { isEpmsInboxTask } from '@/lib/taskTypes'
-import { createPortal } from 'react-dom'
-import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth.store'
 import { api } from '@/lib/api'
 import { globalSignOut } from '@/lib/signOut'
-import { authService } from '@/services/auth'
 import { Button } from '@/components/ui/button'
 
 const BREADCRUMB_LABELS: Record<string, string> = {
@@ -97,15 +95,29 @@ interface ChangePasswordModalProps {
   onClose: () => void
 }
 
+function PasswordField({ id, label, value, onChange, error, placeholder, autoFocus }: {
+  id: string; label: string; value: string; onChange: (v: string) => void
+  error?: string; placeholder?: string; autoFocus?: boolean
+}) {
+  const [show, setShow] = useState(false)
+  return (
+    <FormField label={label} required htmlFor={id} error={error || undefined}>
+      <div className="relative">
+        <Input id={id} type={show ? 'text' : 'password'} value={value} error={!!error} placeholder={placeholder}
+          autoFocus={autoFocus} className="pr-11" onChange={(e) => onChange(e.target.value)} />
+        <IconButton type="button" label={show ? 'Hide password' : 'Show password'} className="absolute right-1 top-1"
+          icon={show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} onClick={() => setShow((v) => !v)} />
+      </div>
+    </FormField>
+  )
+}
+
 function ChangePasswordModal({ forced = false, forceReason, onClose }: Omit<ChangePasswordModalProps, 'userId'>) {
   const { user } = useAuthStore()
 
   const [currentPwd, setCurrentPwd] = useState('')
   const [newPwd, setNewPwd] = useState('')
   const [confirmPwd, setConfirmPwd] = useState('')
-  const [showCurrent, setShowCurrent] = useState(false)
-  const [showNew, setShowNew] = useState(false)
-  const [showConfirm, setShowConfirm] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -136,245 +148,44 @@ function ChangePasswordModal({ forced = false, forceReason, onClose }: Omit<Chan
     }
   }
 
-  const inputCls = (err?: string) => cn(
-    'h-10 w-full rounded-lg border bg-surface px-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 transition-colors',
-    err ? 'border-danger-solid' : 'border-line-strong'
-  )
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4 animate-[overlay-in_0.15s_ease-out]">
-      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl animate-[modal-in_0.18s_ease-out]">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-50">
-              <KeyRound className="h-5 w-5 text-primary-600" />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-fg">Change Password</h2>
-              {user && <p className="text-xs text-fg-muted">{user.name} · {user.email}</p>}
-
-            </div>
-          </div>
-          {!forced && (
-            <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary">
-              <X className="h-4 w-4" />
-            </button>
-          )}
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      dismissible={!forced}
+      busy={submitting}
+      size="sm"
+      icon={<KeyRound />}
+      title="Change Password"
+      description={user ? `${user.name} · ${user.email}` : undefined}
+      bodyClassName="flex flex-col gap-4"
+      footer={success ? undefined : <>
+        {!forced && <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>}
+        <Button size="sm" onClick={handleSubmit} loading={submitting}>
+          <KeyRound className="h-3.5 w-3.5" />
+          {submitting ? 'Saving…' : 'Change Password'}
+        </Button>
+      </>}
+    >
+      {forced && forceReason && <Alert tone="warning">{forceReason}</Alert>}
+      {success ? (
+        <div className="flex flex-col items-center gap-2 py-6 text-center">
+          <KeyRound className="h-6 w-6 text-success-fg" />
+          <p className="text-sm font-medium text-fg">Password changed successfully</p>
+          <p className="text-xs text-fg-muted">Redirecting…</p>
         </div>
-
-        <div className="px-6 py-5 flex flex-col gap-4">
-          {/* Forced reason banner */}
-          {forced && forceReason && (
-            <div className="flex items-start gap-2.5 rounded-lg bg-warning-soft border border-warning-line px-4 py-3">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-warning-fg mt-0.5" />
-              <p className="text-xs text-warning-fg">{forceReason}</p>
-            </div>
-          )}
-
-          {success ? (
-            <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success-soft">
-                <KeyRound className="h-6 w-6 text-success-fg" />
-              </div>
-              <p className="text-sm font-medium text-fg">Password changed successfully</p>
-              <p className="text-xs text-fg-muted">Redirecting…</p>
-            </div>
-          ) : (
-            <>
-              {/* Current password */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium text-fg-secondary">
-                  Current Password <span className="text-danger-fg">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type={showCurrent ? 'text' : 'password'}
-                    value={currentPwd}
-                    onChange={(e) => { setCurrentPwd(e.target.value); setErrors((p) => ({ ...p, currentPwd: '' })) }}
-                    className={inputCls(errors.currentPwd)}
-                    placeholder="Enter current password"
-                    autoFocus
-                  />
-                  <button type="button" onClick={() => setShowCurrent((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
-                    {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                {errors.currentPwd && <p className="text-xs text-danger-fg">{errors.currentPwd}</p>}
-              </div>
-
-              {/* New password */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium text-fg-secondary">
-                  New Password <span className="text-danger-fg">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type={showNew ? 'text' : 'password'}
-                    value={newPwd}
-                    onChange={(e) => { setNewPwd(e.target.value); setErrors((p) => ({ ...p, newPwd: '' })) }}
-                    className={inputCls(errors.newPwd)}
-                    placeholder="Min. 8 characters"
-                  />
-                  <button type="button" onClick={() => setShowNew((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
-                    {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                {errors.newPwd && <p className="text-xs text-danger-fg">{errors.newPwd}</p>}
-              </div>
-
-              {/* Confirm password */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium text-fg-secondary">
-                  Confirm New Password <span className="text-danger-fg">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type={showConfirm ? 'text' : 'password'}
-                    value={confirmPwd}
-                    onChange={(e) => { setConfirmPwd(e.target.value); setErrors((p) => ({ ...p, confirmPwd: '' })) }}
-                    className={inputCls(errors.confirmPwd)}
-                    placeholder="Re-enter new password"
-                  />
-                  <button type="button" onClick={() => setShowConfirm((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
-                    {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                {errors.confirmPwd && <p className="text-xs text-danger-fg">{errors.confirmPwd}</p>}
-              </div>
-
-              <div className="flex justify-end gap-2 pt-1">
-                {!forced && (
-                  <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-                )}
-                <Button size="sm" onClick={handleSubmit} disabled={submitting}>
-                  <KeyRound className="h-3.5 w-3.5" />
-                  {submitting ? 'Saving…' : 'Change Password'}
-                </Button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </div>,
-    document.body
-  )
-}
-
-// ─── Profile Modal ────────────────────────────────────────────────────────────
-
-function ProfileModal({ onClose }: { onClose: () => void }) {
-  const { user } = useAuthStore()
-  const [mfaLoading, setMfaLoading] = useState(false)
-  const [mfaMsg, setMfaMsg] = useState('')
-
-  // Read live mfa_enabled from users list isn't available here; use a simple local toggle
-  const [mfaEnabled, setMfaEnabled] = useState<boolean | null>(null)
-
-  // Fetch current user's mfa status on open
-  useState(() => {
-    authService.me().then((u) => setMfaEnabled(u.mfa_enabled)).catch(() => {})
-  })
-
-  const toggleMfa = async () => {
-    if (mfaEnabled === null) return
-    setMfaLoading(true); setMfaMsg('')
-    try {
-      if (mfaEnabled) {
-        await authService.mfaDisable()
-        setMfaEnabled(false)
-        setMfaMsg('Email MFA disabled.')
-      } else {
-        await authService.mfaEnable()
-        setMfaEnabled(true)
-        setMfaMsg('Email MFA enabled. A code will be sent to your email at next login.')
-      }
-    } catch (e) {
-      setMfaMsg(e instanceof Error ? e.message : 'Action failed')
-    } finally {
-      setMfaLoading(false)
-    }
-  }
-
-  const ROLE_LABELS: Record<string, string> = {
-    system_admin: 'System Admin', dept_manager: 'Department Manager',
-    gm: 'General Manager', opm: 'Operations Manager',
-    procurement_officer: 'Procurement Officer', procurement_manager: 'Procurement Manager',
-    ap_clerk: 'AP Clerk', finance_bp: 'Finance Business Partner',
-    finance_manager: 'Finance Manager', finance_director: 'Finance Director', hr: 'HR', cfo: 'CFO',
-    requester: 'Requester', auditor: 'Auditor',
-    vendor_manager: 'Vendor Manager', warehouse: 'Warehouse',
-  }
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4 animate-[overlay-in_0.15s_ease-out]">
-      <div className="w-full max-w-sm rounded-2xl bg-surface shadow-2xl animate-[modal-in_0.18s_ease-out]">
-        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-50">
-              <User className="h-5 w-5 text-primary-600" />
-            </div>
-            <h2 className="text-sm font-semibold text-fg">My Profile</h2>
-          </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="px-6 py-5 flex flex-col gap-4">
-          {/* Avatar + name */}
-          <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-lg font-bold text-primary-700">
-              {user?.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
-            </div>
-            <div>
-              <p className="text-base font-semibold text-fg">{user?.name}</p>
-              <p className="text-xs text-fg-muted">{ROLE_LABELS[user?.role ?? ''] ?? user?.role}</p>
-            </div>
-          </div>
-
-          {/* Info rows */}
-          <div className="rounded-xl border border-line-subtle bg-surface-subtle divide-y divide-line-subtle">
-            <div className="flex items-center gap-3 px-4 py-3">
-              <Mail className="h-4 w-4 text-fg-muted shrink-0" />
-              <div>
-                <p className="text-xs text-fg-muted">Email</p>
-                <p className="text-sm text-fg">{user?.email}</p>
-              </div>
-            </div>
-            <div className="flex items-center justify-between px-4 py-3">
-              <div className="flex items-center gap-3">
-                {mfaEnabled ? <ShieldCheck className="h-4 w-4 text-success-fg shrink-0" /> : <ShieldOff className="h-4 w-4 text-fg-muted shrink-0" />}
-                <div>
-                  <p className="text-xs text-fg-muted">Email MFA</p>
-                  <p className="text-sm text-fg">{mfaEnabled === null ? 'Loading…' : mfaEnabled ? 'Enabled' : 'Disabled'}</p>
-                </div>
-              </div>
-              <button
-                onClick={toggleMfa}
-                disabled={mfaLoading || mfaEnabled === null}
-                className={cn(
-                  'relative h-5 w-9 shrink-0 rounded-full transition-colors focus:outline-none disabled:opacity-50',
-                  mfaEnabled ? 'bg-primary-600' : 'bg-line-strong'
-                )}
-              >
-                <span className={cn('absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-surface shadow transition-transform', mfaEnabled ? 'translate-x-4' : 'translate-x-0')} />
-              </button>
-            </div>
-          </div>
-
-          {mfaMsg && <p className="text-xs text-fg-secondary bg-surface-subtle rounded-lg px-3 py-2">{mfaMsg}</p>}
-
-          <div className="flex justify-end">
-            <Button variant="secondary" size="sm" onClick={onClose}>Close</Button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body
+      ) : (
+        <>
+          <PasswordField id="pwd-current" label="Current Password" value={currentPwd} autoFocus
+            placeholder="Enter current password" error={errors.currentPwd}
+            onChange={(v) => { setCurrentPwd(v); setErrors((p) => ({ ...p, currentPwd: '' })) }} />
+          <PasswordField id="pwd-new" label="New Password" value={newPwd} placeholder="Min. 8 characters"
+            error={errors.newPwd} onChange={(v) => { setNewPwd(v); setErrors((p) => ({ ...p, newPwd: '' })) }} />
+          <PasswordField id="pwd-confirm" label="Confirm New Password" value={confirmPwd} placeholder="Re-enter new password"
+            error={errors.confirmPwd} onChange={(v) => { setConfirmPwd(v); setErrors((p) => ({ ...p, confirmPwd: '' })) }} />
+        </>
+      )}
+    </Modal>
   )
 }
 
@@ -396,11 +207,17 @@ interface HeaderProps {
   onMobileMenuToggle?: () => void
 }
 
+/** "procurement_officer" -> "Procurement officer" (what the old menu showed). */
+function roleLabel(role?: string) {
+  if (!role) return null
+  const t = role.replace(/_/g, ' ')
+  return t.charAt(0).toUpperCase() + t.slice(1)
+}
+
 export function Header({ onMobileMenuToggle }: HeaderProps) {
   const { user } = useAuthStore()
   const navigate = useNavigate()
   const breadcrumbs = useBreadcrumbs()
-  const [menuOpen, setMenuOpen] = useState(false)
   const [showChangePwd, setShowChangePwd] = useState(false)
   // Same hook as the Task Inbox and every detail page — see useTasks for why
   // this must not be a hand-rolled useQuery on the same key.
@@ -410,128 +227,53 @@ export function Header({ onMobileMenuToggle }: HeaderProps) {
 
   return (
     <>
-      <header className="flex h-[60px] items-center justify-between bg-surface px-4 md:px-6 shadow-[0_1px_3px_rgba(10,124,124,0.08)]" style={{ zIndex: 10, position: 'relative' }}>
-        {/* Hamburger — mobile only */}
-        <button
-          className="mr-3 rounded-md p-2 text-fg-muted hover:bg-surface-subtle md:hidden"
-          aria-label="Open navigation menu"
-          onClick={onMobileMenuToggle}
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-
-        {/* Breadcrumb */}
-        <nav aria-label="Breadcrumb">
-          <ol className="flex items-center gap-1 text-sm">
-            {breadcrumbs.map((crumb, i) => (
-              <li key={crumb.href} className="flex items-center gap-1">
-                {i > 0 && <span className="text-fg-faint">/</span>}
-                {i === breadcrumbs.length - 1 ? (
-                  <span className="font-medium text-fg">{crumb.label}</span>
-                ) : (
-                  <Link to={crumb.href} className="text-fg-muted hover:text-primary-600">
-                    {crumb.label}
-                  </Link>
-                )}
-              </li>
-            ))}
-          </ol>
-        </nav>
-
-        {/* Right controls */}
-        <div className="flex items-center gap-3">
-          {/* Notification bell */}
-          <button
-            onClick={() => navigate('/tasks')}
-            className="relative rounded-md p-2 text-fg-muted hover:bg-surface-subtle hover:text-fg-secondary"
-            aria-label={`${notificationCount} notifications`}
-          >
-            <Bell className="h-5 w-5" />
-            {notificationCount > 0 && (
-              <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-solid px-0.5 text-2xs font-bold text-white">
-                {notificationCount > 99 ? '99+' : notificationCount}
-              </span>
-            )}
-          </button>
-
-          {/* Language toggle */}
-          <button className="rounded-md px-2 py-1.5 text-xs font-medium text-fg-secondary hover:bg-surface-subtle flex items-center gap-1">
-            <Globe className="h-3.5 w-3.5" />
-            EN
-          </button>
-
-          {/* User menu */}
-          <div className="relative">
-            <button
-              onClick={() => setMenuOpen((v) => !v)}
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle"
-              aria-haspopup="true"
-              aria-expanded={menuOpen}
-            >
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary-100 text-xs font-semibold text-primary-700">
-                {user?.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
-              </div>
-              <span className="hidden sm:block font-medium">{user?.name}</span>
-              <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', menuOpen && 'rotate-180')} />
-            </button>
-
-            {menuOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-10"
-                  onClick={() => setMenuOpen(false)}
-                  aria-hidden="true"
-                />
-                <div className="absolute right-0 top-full z-20 mt-1 w-52 rounded-lg border border-line bg-surface py-1 shadow-lg">
-                  <div className="border-b border-line-subtle px-3 py-2">
-                    <p className="text-sm font-medium text-fg">{user?.name}</p>
-                    <p className="text-xs text-fg-muted capitalize">{user?.role?.replace('_', ' ')}</p>
-                  </div>
-                  <button
-                    onClick={() => { navigate('/profile'); setMenuOpen(false) }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
-                  >
-                    <User className="h-4 w-4" />
-                    Profile
-                  </button>
-                  {user?.role === 'system_admin' && (
-                    <button
-                      onClick={() => { navigate('/admin'); setMenuOpen(false) }}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
-                    >
-                      <Settings className="h-4 w-4" />
-                      Settings
-                    </button>
+      <Topbar
+        onMobileMenu={onMobileMenuToggle}
+        className="relative z-10"
+        start={
+          <nav aria-label="Breadcrumb">
+            <ol className="flex items-center gap-1 text-sm">
+              {breadcrumbs.map((crumb, i) => (
+                <li key={crumb.href} className="flex items-center gap-1">
+                  {i > 0 && <span className="text-fg-faint">/</span>}
+                  {i === breadcrumbs.length - 1 ? (
+                    <span className="font-medium text-fg">{crumb.label}</span>
+                  ) : (
+                    <Link to={crumb.href} className="text-fg-muted hover:text-accent-fg">
+                      {crumb.label}
+                    </Link>
                   )}
-                  <button
-                    onClick={() => { setShowChangePwd(true); setMenuOpen(false) }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
-                  >
-                    <KeyRound className="h-4 w-4" />
-                    Change Password
-                  </button>
-                  <div className="border-t border-line-subtle mt-1">
-                    <button
-                      onClick={globalSignOut}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger-fg hover:bg-danger-soft"
-                    >
-                      <LogOut className="h-4 w-4" />
-                      Sign Out
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
+                </li>
+              ))}
+            </ol>
+          </nav>
+        }
+        end={
+          <>
+            <span className="relative">
+              <IconButton label={`${notificationCount} open tasks`} icon={<Bell className="h-5 w-5" />} size="icon"
+                onClick={() => navigate('/tasks')} />
+              {notificationCount > 0 && (
+                <span aria-hidden className="pointer-events-none absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-solid px-1 font-mono text-2xs text-fg-on-accent">
+                  {notificationCount > 99 ? '99+' : notificationCount}
+                </span>
+              )}
+            </span>
+            <UserMenu
+              name={user?.name ?? ''}
+              subtitle={roleLabel(user?.role)}
+              items={[
+                { label: 'Profile', icon: <User />, onSelect: () => navigate('/profile') },
+                ...(user?.role === 'system_admin' ? [{ label: 'Settings', icon: <Settings />, onSelect: () => navigate('/admin') }] : []),
+                { label: 'Change Password', icon: <KeyRound />, onSelect: () => setShowChangePwd(true) },
+              ]}
+              onSignOut={globalSignOut}
+            />
+          </>
+        }
+      />
 
-      {/* Change Password Modal */}
-      {showChangePwd && (
-        <ChangePasswordModal
-          onClose={() => setShowChangePwd(false)}
-        />
-      )}
+      {showChangePwd && <ChangePasswordModal onClose={() => setShowChangePwd(false)} />}
     </>
   )
 }
