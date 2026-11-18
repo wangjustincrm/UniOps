@@ -133,10 +133,10 @@ function emptyLine(n: number, category: string, taxCode: string | null): TrvLine
 function OverLimitBadge({ amount, limit }: { amount: number; limit: number }) {
   if (!limit || amount <= limit) return null
   return (
-    <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs font-semibold bg-warning-soft text-warning-fg">
+    <Badge variant="warning" size="sm">
       <AlertTriangle className="h-2.5 w-2.5" />
       Over limit (${limit.toFixed(2)})
-    </span>
+    </Badge>
   )
 }
 

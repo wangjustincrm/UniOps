@@ -845,7 +845,7 @@ export default function ExpenseDetailPage() {
                   <Td className="text-xs text-fg-secondary">{formatDate(ti.trip_date)}</Td>
                   <Td className="text-xs text-fg">
                     {ti.from_location} → {ti.to_location}
-                    {ti.is_round_trip && <span className="ml-1.5 text-2xs text-fg-muted bg-surface-sunken rounded px-1 py-0.5">Round trip</span>}
+                    {ti.is_round_trip && <Badge size="sm" className="ml-1.5">Round trip</Badge>}
                   </Td>
                   <Td className="text-xs text-fg-secondary">{ti.purpose}</Td>
                   <Td align="right" className="text-xs font-mono">{Number(ti.distance_km).toFixed(1)}{ti.is_round_trip ? ' ×2' : ''}</Td>

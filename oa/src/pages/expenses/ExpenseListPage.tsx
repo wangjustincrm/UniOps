@@ -7,7 +7,7 @@ import { api } from '@/lib/api'
 import { STATUS } from '@/lib/status'
 import { Pagination } from '@/components/ui/Pagination'
 import { StatusBadge } from '@/components/ui/badge'
-import { Button, DropdownPortal, MenuItem, SortTh, TBody, THead, Table, Tabs, Td, Tr, useAnchorRect, useSort } from '@uniops/shell'
+import { Button, DropdownPortal, MenuItem, SortTh, TBody, THead, Table, Tabs, Td, Tr, useAnchorRect, useSort, Badge, type BadgeTone } from '@uniops/shell'
 
 type ExpenseSortKey = 'claim_number' | 'claim_type' | 'employee_name' | 'net_amount' | 'status' | 'date'
 
@@ -35,19 +35,15 @@ interface CustomFormSummary { code: string; name: string; is_active: boolean }
 
 // ── Badges ────────────────────────────────────────────────────────────────────
 
-const TYPE_CONFIG: Record<string, { label: string; class: string }> = {
-  EXP: { label: 'EXP',     class: 'bg-primary-50 text-primary-700' },
-  MIL: { label: 'MIL',     class: 'bg-warning-soft text-warning-fg' },
-  TRV: { label: 'TRV',     class: 'bg-info-soft text-info-fg' },
+const TYPE_CONFIG: Record<string, { label: string; tone: BadgeTone }> = {
+  EXP: { label: 'EXP',     tone: 'accent' },
+  MIL: { label: 'MIL',     tone: 'warning' },
+  TRV: { label: 'TRV',     tone: 'blue' },
 }
 
 function TypeBadge({ type }: { type: string }) {
-  const cfg = TYPE_CONFIG[type] ?? { label: type, class: 'bg-surface-sunken text-fg-muted' }
-  return (
-    <span className={cn('inline-flex rounded px-1.5 py-0.5 text-2xs font-semibold', cfg.class)}>
-      {cfg.label}
-    </span>
-  )
+  const cfg = TYPE_CONFIG[type] ?? { label: type, tone: 'neutral' as const }
+  return <Badge size="sm" variant={cfg.tone}>{cfg.label}</Badge>
 }
 
 
@@ -203,7 +199,7 @@ export default function ExpenseListPage() {
                     <div className="flex items-center gap-1.5">
                       <StatusBadge status={c.status} />
                       {c.is_over_budget && (
-                        <span className="text-2xs font-medium text-warning-fg bg-warning-soft rounded px-1 py-0.5">Over Budget</span>
+                        <Badge variant="warning" size="sm">Over Budget</Badge>
                       )}
                     </div>
                   </Td>
