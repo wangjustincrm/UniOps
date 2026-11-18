@@ -18,7 +18,7 @@ import { VisitAttachments } from '@/components/VisitAttachments'
 import { EditVisitModal } from '@/components/EditVisitModal'
 import { formatDateTime } from '@/lib/utils'
 
-import { Button, Checkbox, Modal, Textarea } from '@uniops/shell'
+import { Button, Checkbox, Modal, Textarea, Badge } from '@uniops/shell'
 function getRole(): string | null {
   try {
     for (const key of ['vms-auth', 'portal-auth']) {
@@ -243,14 +243,9 @@ export default function VisitDetailPage() {
                   <p className="font-medium text-fg">{v.first_name} {v.last_name}</p>
                   <p className="text-xs text-fg-muted">{v.company_name}</p>
                 </div>
-                <span className={
-                  'rounded px-2 py-0.5 text-xs ' +
-                  (v.id_verified
-                    ? 'bg-success-soft text-success-fg'
-                    : 'bg-warning-soft text-warning-fg')
-                }>
+                <Badge variant={v.id_verified ? 'success' : 'warning'}>
                   {v.id_verified ? 'ID verified' : 'ID not verified'}
-                </span>
+                </Badge>
               </li>
             ))}
           </ul>
