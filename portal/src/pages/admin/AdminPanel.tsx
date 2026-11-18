@@ -2655,7 +2655,7 @@ export default function AdminPanel() {
         />
 
         {/* Scrollable content — no max-width cap so wide sections (User Management) expand fully */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main data-print-page="" className="flex-1 overflow-y-auto p-6">
           {section === 'company'       && <CompanySettings />}
           {section === 'security'      && <SecuritySettings />}
           {section === 'uom'           && <UnitsOfMeasure />}

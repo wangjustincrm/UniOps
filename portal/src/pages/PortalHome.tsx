@@ -794,7 +794,7 @@ export default function PortalHome() {
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         <TopHeader session={session} onMobileMenuToggle={() => setMobileOpen(v => !v)} />
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">
+        <main data-print-page="" className="flex-1 overflow-y-auto p-4 md:p-6">
           <div className="w-full">
             <div className="grid grid-cols-1 xl:grid-cols-[1fr_280px] gap-6">
 
