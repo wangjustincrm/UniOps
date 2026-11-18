@@ -9,7 +9,7 @@ import type { Layout } from './resource/viewState'
 
 // Grouping by drag and drop (user 2026-11-18): a header's grip dropped on the Grouping row groups by it, with the
 // column menu's rules (groupable, MAX_GROUP_KEYS) and the same spec; a drop on another header still only moves
-// the column; a grouping chip is dragged to another level, or out of the row to stop grouping.
+// the column; a grouping chip is dragged to another level, or onto "Drop here to remove" (a cancelled drag: nothing).
 
 const f = (name: string, label: string, groupable: boolean): FieldMeta => ({
   name, label, type: 'text', enum_values: [], filterable: true, sortable: true, groupable, operators: ['eq'], in_row: true })
@@ -99,7 +99,7 @@ describe('grouping by drag and drop', () => {
     expect(full.onSpec).not.toHaveBeenCalled()
   })
 
-  it('a grouping chip dragged onto another changes the nesting; dragged out of the row, it is removed', async () => {
+  it('a grouping chip dragged onto another changes the nesting; onto Drop here to remove, it is removed; a cancelled drag changes nothing', async () => {
     const t = await setup({ page: 1, pageSize: 50, group: [{ field: 'code' }, { field: 'status' }] })
     const chip = (id: string) => document.querySelector(`[data-group-chip="${id}"]`)!
     const dt = transfer()
@@ -109,9 +109,16 @@ describe('grouping by drag and drop', () => {
     dt.dropEffect = 'move'
     fireEvent.dragEnd(chip('status'), { dataTransfer: dt })
     expect(t.last().group?.map((g) => g.field)).toEqual(['status', 'code'])
-    const out = transfer()                                 // dropped nowhere: dropEffect stays 'none'
+    const calls = t.onSpec.mock.calls.length
+    const cancel = transfer()                              // Esc or a slip: the drag ends with no drop
+    fireEvent.dragStart(chip('code'), { dataTransfer: cancel })
+    fireEvent.dragEnd(chip('code'), { dataTransfer: cancel })
+    expect(t.onSpec.mock.calls.length).toBe(calls)         // nothing changed
+    const out = transfer()                                 // onto "Drop here to remove": removed
     fireEvent.dragStart(chip('code'), { dataTransfer: out })
-    fireEvent.dragEnd(chip('code'), { dataTransfer: out })
+    const bin = document.querySelector('[data-group-remove]')!
+    fireEvent.dragOver(bin, { dataTransfer: out })
+    fireEvent.drop(bin, { dataTransfer: out })
     expect(t.last().group?.map((g) => g.field)).toEqual(['status'])
   })
 })

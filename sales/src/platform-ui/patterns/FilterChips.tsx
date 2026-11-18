@@ -17,7 +17,8 @@ export interface FilterChipsProps {
   labelOf?: (field: string) => string
   /** Grouping by drag and drop: while a column header is dragged (`dragging`), the Grouping row is a
    *  drop target; `refuse` says why a column cannot be grouped now (null: it can); `onGroup` groups by it.
-   *  Its chips can be dragged to another level, or out of the row to stop grouping by them. */
+   *  Its chips can be dragged to another level, or onto "Drop here to remove" to stop grouping by them
+   *  (a drag that ends anywhere else changes nothing). */
   groupDrop?: { dragging: string | null; refuse: (field: string) => string | null; onGroup: (field: string) => void }
 }
 
@@ -97,11 +98,7 @@ export function FilterChips({ spec, onSpecChange, fields, locked = [], labelOf, 
               data-group-chip={g.field}
               className={cn('inline-flex', movingGroup === g.field && 'opacity-40', groupDrop && 'cursor-grab active:cursor-grabbing')}
               onDragStart={groupDrop ? (e) => { e.dataTransfer.setData(GROUP_CHIP, g.field); e.dataTransfer.effectAllowed = 'move'; setMovingGroup(g.field) } : undefined}
-              onDragEnd={groupDrop ? (e) => {
-                setMovingGroup(null)
-                hover.reset()
-                if (e.dataTransfer.dropEffect === 'none') onSpecChange(removeGroup(spec, g.field))  // dragged out of the row
-              } : undefined}
+              onDragEnd={groupDrop ? () => { setMovingGroup(null); hover.reset() } : undefined}  // no drop (Esc, a slip): nothing changes
               onDragOver={groupDrop ? (e) => { if (e.dataTransfer.types.includes(GROUP_CHIP)) e.preventDefault() } : undefined}
               onDrop={groupDrop ? (e) => {
                 const chip = e.dataTransfer.getData(GROUP_CHIP)
@@ -123,6 +120,24 @@ export function FilterChips({ spec, onSpecChange, fields, locked = [], labelOf, 
               </Chip>
             </span>
           ))}
+          {movingGroup && (
+            <span
+              data-group-remove
+              className="rounded border border-dashed border-danger-200 px-2 py-0.5 text-xs text-danger-700"
+              onDragOver={(e) => { if (e.dataTransfer.types.includes(GROUP_CHIP)) { e.preventDefault(); e.dataTransfer.dropEffect = 'move' } }}
+              onDrop={(e) => {
+                const chip = e.dataTransfer.getData(GROUP_CHIP)
+                if (!chip) return
+                e.preventDefault()
+                e.stopPropagation()
+                hover.reset()
+                setMovingGroup(null)
+                onSpecChange(removeGroup(spec, chip))
+              }}
+            >
+              Drop here to remove
+            </span>
+          )}
           {dragging && (
             <span role="status" className={cn('text-xs', refusal ? 'text-neutral-500' : 'text-primary-700')}>
               {refusal ?? `Drop here to group by ${label(dragging)}`}
