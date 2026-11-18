@@ -147,7 +147,7 @@ function StatusPill({ status }: { status: string }) {
   const map: Record<string, string> = {
     draft: 'bg-surface-sunken text-fg-secondary', executed: 'bg-success-soft text-success-fg',
     cancelled: 'bg-surface-sunken text-fg-muted', reversed: 'bg-warning-soft text-warning-fg',
-    paid: 'bg-success-soft text-success-fg', failed: 'bg-danger-soft text-danger-fg',
+    paid: 'bg-fg-secondary text-fg-on-accent', failed: 'bg-danger-soft text-danger-fg',
     pending: 'bg-warning-soft text-warning-fg',
   }
   return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-surface-sunken text-fg-secondary')}>{status}</span>
@@ -962,7 +962,7 @@ const NC_LABEL: Record<NcStatus, string> = {
   paid: 'Paid', closed: 'Closed', partial: 'Part paid', open: 'Unpaid', not_in_nc: 'Not in NC',
 }
 const NC_CLS: Record<NcStatus, string> = {
-  paid: 'bg-success-soft text-success-fg', closed: 'bg-primary-50 text-primary-800',
+  paid: 'bg-fg-secondary text-fg-on-accent', closed: 'bg-primary-50 text-primary-800',
   partial: 'bg-warning-soft text-warning-fg', open: 'text-fg-muted', not_in_nc: 'text-fg-muted',
 }
 const ncTitle = (nc: NcInvoice): string => {

@@ -53,7 +53,7 @@ function fmtMoney(v: string, ccy?: string): string {
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, string> = {
     draft: 'bg-surface-sunken text-fg-secondary', posted: 'bg-info-soft text-info-fg',
-    partially_paid: 'bg-warning-soft text-warning-fg', paid: 'bg-success-soft text-success-fg',
+    partially_paid: 'bg-warning-soft text-warning-fg', paid: 'bg-fg-secondary text-fg-on-accent',
     void: 'bg-surface-sunken text-fg-muted',
   }
   return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-surface-sunken text-fg-secondary')}>{status.replace('_', ' ')}</span>
