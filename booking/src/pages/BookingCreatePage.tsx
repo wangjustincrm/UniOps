@@ -466,7 +466,7 @@ export default function BookingCreatePage() {
                 checked={needsVideo}
                 disabled={!roomHasVideo && !needsVideo}
                 onChange={(e) => setNeedsVideo(e.target.checked)}
-                className="mt-0.5 accent-[#085E5E]"
+                className="mt-0.5"
               />
               <span>
                 <span className={cn('text-sm font-medium', !roomHasVideo ? 'text-fg-muted' : 'text-fg-secondary')}>

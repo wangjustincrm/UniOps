@@ -38,7 +38,7 @@ export const METRICS = {
   // colour outside the semantic tokens: raw Tailwind hues, raw neutral steps,
   // hex / rgb literals, arbitrary colour classes
   'raw-color': new RegExp(
-    String.raw`(?<![\w-])(?:[\w\-\[\]&>=.:]+:)?(?:text|bg|border(?:-[trblxy])?|divide|ring|outline|fill|stroke|from|via|to|decoration|placeholder|shadow)-` +
+    String.raw`(?<![\w-])(?:[\w\-\[\]&>=.:]+:)?(?:text|bg|border(?:-[trblxy])?|divide|ring|outline|fill|stroke|from|via|to|decoration|placeholder|shadow|accent|caret)-` +
     String.raw`(?:(?:red|rose|amber|yellow|orange|green|emerald|lime|blue|sky|teal|cyan|purple|violet|indigo|fuchsia|pink|gray|slate|zinc|stone|neutral)-\d{2,3}|\[#[0-9a-fA-F]{3,8}\]|\[rgba?\()` +
     String.raw`|["'\x60]#[0-9a-fA-F]{3,8}["'\x60]|\brgba?\(`, 'g'),
   // one-off sizes the type scale already has, hand-written shadows

@@ -859,7 +859,7 @@ export default function BankReconciliationPage() {
                                   && 'bg-accent-soft/60 ring-1 ring-inset ring-primary-700/30')}>
                             <Td className="w-10">
                               <Checkbox readOnly checked={pickedBook.has(c.jv_line_id)}
-                                     className="h-3.5 w-3.5 accent-[#085E5E]" />
+                                     className="h-3.5 w-3.5" />
                             </Td>
                             <Td className="w-24 whitespace-nowrap font-mono text-xs text-fg-muted">
                               {shortDate(c.voucher_date)}
@@ -963,7 +963,7 @@ export default function BankReconciliationPage() {
                 <CheckCircle2 className="h-4 w-4 text-success-fg" /> matched — click to see its group
               </span>
               <span className="flex items-center gap-1">
-                <Checkbox readOnly className="h-3.5 w-3.5 accent-[#085E5E]" />
+                <Checkbox readOnly className="h-3.5 w-3.5" />
                 not matched — tick both sides, then Match these
               </span>
               <span className="flex items-center gap-1">
@@ -1025,7 +1025,7 @@ export default function BankReconciliationPage() {
                             {b.cleared
                               ? <CheckCircle2 className="h-4 w-4 text-success-fg" />
                               : <Checkbox readOnly checked={pickedBank.has(b.id)}
-                                       className="h-3.5 w-3.5 accent-[#085E5E]" />}
+                                       className="h-3.5 w-3.5" />}
                           </Td>
                           <Td className="whitespace-nowrap font-mono text-xs text-fg-muted">{shortDate(b.txn_date)}</Td>
                           <Td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
@@ -1083,7 +1083,7 @@ export default function BankReconciliationPage() {
                             {b.cleared
                               ? <CheckCircle2 className="h-4 w-4 text-success-fg" />
                               : <Checkbox readOnly checked={pickedBook.has(b.jv_line_id)}
-                                       className="h-3.5 w-3.5 accent-[#085E5E]" />}
+                                       className="h-3.5 w-3.5" />}
                           </Td>
                           <Td className="whitespace-nowrap font-mono text-xs text-fg-muted">{shortDate(b.voucher_date)}</Td>
                           <Td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
