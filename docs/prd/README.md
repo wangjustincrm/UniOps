@@ -28,7 +28,7 @@ This folder holds the **authoritative, maintained PRD for every UniOps module**.
 | VMS visitor self-registration & QR check-in | [VMS-SELF-REGISTRATION.md](VMS-SELF-REGISTRATION.md) | 0.2 | Proposed: stakeholder decisions pending |
 | Order Bridge (migration from Zoho) | [ORDER-BRIDGE.md](ORDER-BRIDGE.md) | 1.0 | Proposed: in team review |
 | CMMS — maintenance management | [CMMS.md](CMMS.md) | 2.1 | Proposed: not started |
-| Staff — employee master & ADP roster import | [EMPLOYEES.md](EMPLOYEES.md) | 0.5 | In production |
+| Staff — employee master & ADP roster import | [EMPLOYEES.md](EMPLOYEES.md) | 0.7 | In production; 0.7 (hire date, pay type, Manager) not yet released |
 
 ## Where shared behaviour is specified
 
