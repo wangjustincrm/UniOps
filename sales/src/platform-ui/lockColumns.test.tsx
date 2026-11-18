@@ -5,10 +5,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { type ColumnDef, type QuerySpec } from './index'
 import { QueryTable } from './patterns/QueryTable'
 import { type FieldMeta, type ListMeta } from './resource/listMeta'
-import { viewStateOf, type Layout, type ViewState } from './resource/viewState'
+import { type Layout, type ViewState } from './resource/viewState'
 
-// Locked columns from a column's menu (user 2026-11-18): "Lock columns up to here" (at most 3, else refused with
-// its reason), "Unlock columns"; saved in the view's layout; a 🔒 in the chooser; a page's own default.
+// Locked columns (user 2026-11-18): "Lock column" joins the end of the locked group, "Unlock column" leaves to the first
+// place after it (the others stay frozen, in order); at most 3, else refused with its reason; saved in the view's layout
+// (order + count); the same toggle in the chooser; no lock icon in the headers; a page's own default.
 
 const f = (name: string, label: string): FieldMeta => ({
   name, label, type: 'text', enum_values: [], filterable: true, sortable: true, groupable: false, operators: ['eq'], in_row: true })
@@ -37,29 +38,48 @@ const menu = async (col: string) => {
 }
 const frozen = () => [...document.querySelectorAll('thead th[data-frozen]')].map((el) => el.getAttribute('data-col'))
 
-describe('locking columns from the column menu', () => {
-  it('locks up to a column, saves it in the view, shows 🔒 in the chooser, and unlocks', async () => {
+const order = () => [...document.querySelectorAll('thead th[data-col]')].map((el) => el.getAttribute('data-col'))
+const pick = async (col: string, item: string) => fireEvent.click(within(await menu(col)).getByText(item))
+
+describe('locking columns (user 2026-11-18): Lock column / Unlock column', () => {
+  it('a locked column joins the end of the locked group; the view saves order and count', async () => {
     const t = await setup()
     expect(frozen()).toEqual(['a'])                                   // the default: 1
-    fireEvent.click(within(await menu('B')).getByText('Lock columns up to here'))
-    expect(frozen()).toEqual(['a', 'b'])
+    await pick('C', 'Lock column')
+    expect(order()).toEqual(['a', 'c', 'b', 'd'])
+    expect(frozen()).toEqual(['a', 'c'])
     expect(t.last().locked).toBe(2)
-    expect(viewStateOf({ page: 1, pageSize: 50 }, { columns: [], hidden: [], locked: 2 }).locked).toBe(2)
-    fireEvent.click(within(await menu('A')).getByText('Unlock columns'))
-    expect(frozen()).toEqual([])
-    expect(t.last().locked).toBe(0)
-    fireEvent.click(within(await menu('C')).getByText('Lock columns up to here'))
-    fireEvent.click(screen.getByRole('button', { name: 'Show, hide or move columns' }))
-    expect(within(screen.getByRole('list', { name: 'On this list' })).getAllByLabelText('locked')).toHaveLength(3)
-    expect(document.querySelectorAll('thead [aria-label="locked"]')).toHaveLength(3)  // and on the headers
+    expect(t.last().columns.slice(0, 2)).toEqual(['a', 'c'])
   })
 
-  it('a fourth is refused with its reason; a page sets its own default', async () => {
-    await setup(2)
-    expect(frozen()).toEqual(['a', 'b'])
+  it('unlocking one in the middle keeps the others frozen and in order; it goes right after the group', async () => {
+    const t = await setup()
+    await pick('C', 'Lock column')
+    await pick('D', 'Lock column')
+    expect(order()).toEqual(['a', 'c', 'd', 'b'])
+    await pick('C', 'Unlock column')
+    expect(order()).toEqual(['a', 'd', 'c', 'b'])
+    expect(frozen()).toEqual(['a', 'd'])
+    expect(t.last().locked).toBe(2)
+  })
+
+  it('a fourth is refused with its reason; the headers show no lock icon', async () => {
+    await setup(3)
+    expect(frozen()).toEqual(['a', 'b', 'c'])
     const m = await menu('D')
-    const item = within(m).getByText('Lock columns up to here').closest('[role="menuitem"]')!
+    const item = within(m).getByText('Lock column').closest('[role="menuitem"]')!
     expect(item).toHaveAttribute('data-disabled')
-    expect(within(m).getByText(/At most 3 locked columns/)).toBeInTheDocument()
+    expect(within(m).getByText(/At most 3 locked columns: unlock one first/)).toBeInTheDocument()
+    expect(document.querySelector('thead .lucide-lock, thead [aria-label="locked"]')).toBeNull()
+  })
+
+  it('the chooser locks and unlocks a shown column the same way', async () => {
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Show, hide or move columns' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Lock D' }))
+    expect(order()).toEqual(['a', 'd', 'b', 'c'])
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock A' }))
+    expect(frozen()).toEqual(['d'])
+    expect(order()).toEqual(['d', 'a', 'b', 'c'])
   })
 })

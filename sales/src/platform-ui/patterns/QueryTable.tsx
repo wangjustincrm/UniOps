@@ -212,8 +212,21 @@ function QueryTableView<T>({
   const exportIds = visible.map(columnId).filter((id) => fields.get(id)?.in_row).join(',')
   useEffect(() => { onExportColumns?.(exportIds ? exportIds.split(',') : []) }, [exportIds])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  const lockedCount = Math.min(layout.locked ?? defaultLocked, MAX_LOCKED)
   const visibleIds = visible.map(columnId)
+  const lockedCount = Math.min(layout.locked ?? defaultLocked, MAX_LOCKED, visibleIds.length)
+  const lockedIds = visibleIds.slice(0, lockedCount)
+  const [frozen, setFrozen] = useState(lockedCount)  // how many DataTable could freeze (fewer on a narrow window)
+  /** Lock: the column joins the end of the locked group; Unlock: it leaves to the first place after the group.
+   *  The others keep their place and order; `locked` stays the count of the first visible columns. */
+  const toggleLock = (id: string) => {
+    const isLocked = lockedIds.includes(id)
+    if (!isLocked && lockedCount >= MAX_LOCKED) return
+    const keep = lockedIds.filter((x) => x !== id)                 // the locked group without this column
+    const rest = order.filter((x) => x !== id)
+    const after = keep.length ? rest.indexOf(keep[keep.length - 1]) + 1 : 0
+    rest.splice(after, 0, id)
+    setLayout({ ...layout, columns: rest, hidden, locked: isLocked ? keep.length : keep.length + 1 })
+  }
   const shownKey = visibleIds.join(',')
   const shownIds = shownKey.split(',')
 
@@ -301,6 +314,7 @@ function QueryTableView<T>({
         {...empty}
         columns={visible}
         locked={lockedCount}
+        onFrozenChange={setFrozen}
         grouping={grouping}
         footer={footer}
         errorMessage={error ? errorText(error, errorMessages) : null}
@@ -320,14 +334,16 @@ function QueryTableView<T>({
               onGroup={(desc) => change(groupBy(spec, id, desc))}
               canGroup={(spec.group ?? []).length < MAX_GROUP_KEYS || (spec.group ?? []).some((g) => g.field === id)}
               onHide={() => setHidden([...hidden, id])}
-              lock={{ index: visibleIds.indexOf(id), locked: lockedCount, max: MAX_LOCKED, onLock: (n) => setLayout({ ...layout, locked: n }) }}
+              lock={{ locked: lockedIds.includes(id), full: lockedCount >= MAX_LOCKED, max: MAX_LOCKED, onToggle: () => toggleLock(id) }}
             />
           ) : null
         }}
         leadingHeader={meta ? (
           <ColumnChooser
             columns={order.map((id) => ({ id, label: headerText(byId.get(id)!, fields.get(id)), group: pageIds.has(id) ? 'page' : 'more',
-              locked: visibleIds.indexOf(id) > -1 && visibleIds.indexOf(id) < lockedCount }))}
+              locked: lockedIds.includes(id) }))}
+            locking={{ onToggle: toggleLock, full: lockedCount >= MAX_LOCKED, max: MAX_LOCKED,
+              note: frozen < lockedCount ? `${frozen} of ${lockedCount} locked columns frozen: the window is too narrow` : null }}
             groups={COLUMN_GROUPS}
             hidden={hidden}
             onChange={setHidden}

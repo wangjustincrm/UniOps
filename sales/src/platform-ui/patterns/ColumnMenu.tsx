@@ -11,9 +11,9 @@ export interface ColumnMenuProps {
   onGroup?: (desc: boolean) => void
   canGroup?: boolean
   onHide: () => void
-  /** Locked columns (DataTable `locked`): this column's place among the visible ones (0 = first), how many
-   *  are locked now, the cap, and the setter. Absent: no locking from this menu. */
-  lock?: { index: number; locked: number; max: number; onLock: (count: number) => void }
+  /** Locked columns (they stay in place while the table scrolls sideways): whether this one is locked, whether
+   *  one more may be (the cap), the cap, and the toggle. Absent: no locking from this menu. */
+  lock?: { locked: boolean; full: boolean; max: number; onToggle: () => void }
 }
 
 /** The chevron on a column header: search on it, sort by it, hide it. What a
@@ -29,13 +29,10 @@ export function ColumnMenu({ field, onSearch, onSort, onGroup, canGroup = true, 
       { label: 'Group ascending', icon: <ListTree className="h-3.5 w-3.5" />, onSelect: () => onGroup(false), separated: true, disabled: !canGroup },
       { label: 'Group descending', icon: <ListTree className="h-3.5 w-3.5" />, onSelect: () => onGroup(true), disabled: !canGroup },
     ] : []),
-    ...(lock ? [
-      { label: 'Lock columns up to here', icon: <Lock className="h-3.5 w-3.5" />, onSelect: () => lock.onLock(lock.index + 1), separated: true,
-        disabled: lock.index + 1 > lock.max || lock.locked === lock.index + 1,
-        disabledReason: lock.index + 1 > lock.max ? `At most ${lock.max} locked columns: move it among the first ${lock.max}`
-          : 'Already locked up to here' },
-      ...(lock.locked > 0 ? [{ label: 'Unlock columns', icon: <LockOpen className="h-3.5 w-3.5" />, onSelect: () => lock.onLock(0) }] : []),
-    ] : []),
+    ...(lock ? [lock.locked
+      ? { label: 'Unlock column', icon: <LockOpen className="h-3.5 w-3.5" />, onSelect: lock.onToggle, separated: true }
+      : { label: 'Lock column', icon: <Lock className="h-3.5 w-3.5" />, onSelect: lock.onToggle, separated: true,
+          disabled: lock.full, disabledReason: `At most ${lock.max} locked columns: unlock one first` }] : []),
     { label: 'Hide column', icon: <EyeOff className="h-3.5 w-3.5" />, onSelect: onHide, separated: true },
   ]
   return (

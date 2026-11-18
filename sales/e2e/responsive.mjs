@@ -182,22 +182,30 @@ async function run(name, viewport) {
     check(scrolled > 0 && Math.abs(x1 - x0) < 1, `${name} frozen column: the first column stays while the table scrolls (scrolled ${scrolled}px, x ${x0} → ${x1})`)
     await shot('frozen-column')
     await page.locator('[data-table-scroll]:visible').first().evaluate((el) => { el.scrollLeft = 0 })
-    // Locked columns from a column's menu (user 2026-11-18): up to Customer = 3; on a narrow window only those that fit freeze.
-    await page.getByRole('button', { name: 'Customer column menu' }).first().click()
-    await page.getByRole('menuitem', { name: /Lock columns up to here/ }).click()
-    await page.waitForTimeout(300)
+    // Locked columns (user 2026-11-18): "Lock column" joins the locked group at the left; no lock icon in the headers;
+    // on a narrow window only those that fit freeze, and the column chooser says so.
+    for (const col of ['Order ref', 'Customer']) {
+      await page.getByRole('button', { name: `${col} column menu` }).first().click()
+      await page.getByRole('menuitem', { name: /^Lock column/ }).click()
+      await page.waitForTimeout(250)
+    }
     check(await page.locator('thead th[data-frozen]:visible').count() === 3, `${name} lock columns: three columns locked from the menu`)
+    check(await page.locator('thead .lucide-lock:visible').count() === 0, `${name} lock columns: no lock icon in the headers`)
     await page.setViewportSize({ width: 1024, height: 800 })
     await page.waitForTimeout(400)
     const frozenNarrow = await page.locator('thead th[data-frozen]:visible').count()
-    const note = await page.locator('thead th[data-locked="unfrozen"]:visible').first().getAttribute('title').catch(() => null)
-    check(frozenNarrow < 3 && /locked columns frozen: the window is too narrow/.test(note ?? ''),
-      `${name} lock columns: a narrow window freezes only what fits (${frozenNarrow} of 3) and says so`)
+    await page.getByRole('button', { name: 'Show, hide or move columns' }).first().click()
+    const note = await page.getByRole('note').filter({ hasText: 'locked columns frozen' }).first().textContent().catch(() => '')
+    check(frozenNarrow < 3 && /of 3 locked columns frozen: the window is too narrow/.test(note ?? ''),
+      `${name} lock columns: a narrow window freezes only what fits (${frozenNarrow} of 3) and the chooser says so`)
     await shot('locked-narrow')
+    await page.keyboard.press('Escape')
     await page.setViewportSize(viewport)
-    await page.getByRole('button', { name: 'Customer column menu' }).first().click()
-    await page.getByRole('menuitem', { name: /Unlock columns/ }).click()
-    await page.waitForTimeout(300)
+    for (const col of ['Customer', 'Order ref']) {
+      await page.getByRole('button', { name: `${col} column menu` }).first().click()
+      await page.getByRole('menuitem', { name: /^Unlock column/ }).click()
+      await page.waitForTimeout(250)
+    }
     const tableTop = async () => (await page.locator('thead:visible').first().boundingBox()).y
     const top0 = await tableTop()
     const dt = await page.evaluateHandle(() => new DataTransfer())

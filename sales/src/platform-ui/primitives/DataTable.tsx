@@ -1,9 +1,9 @@
-import { Fragment, createElement, isValidElement, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { Fragment, createElement, isValidElement, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import {
   getCoreRowModel, useReactTable,
   type ColumnDef, type SortingState, type Updater,
 } from '@tanstack/react-table'
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, GripVertical, Lock } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react'
 import { Button, Input, Pagination, Skeleton, SkeletonRow } from './shell'
 import { DropdownMenu } from './DropdownMenu'
 import { useElementWidth } from './useResponsive'
@@ -119,6 +119,8 @@ export interface DataTableProps<T> {
    *  0 none. Only as many as fit in half the table's width are frozen (the header's title says so). The table
    *  only, never the cards. */
   locked?: number
+  /** How many of the locked columns are frozen now (fewer on a narrow window): e.g. for the column chooser's note. */
+  onFrozenChange?: (frozen: number) => void
   /** In a card, at most this many lines when a row opens (the rest is in the record); every line otherwise. */
   cardLines?: number
 }
@@ -138,7 +140,7 @@ const FROZEN_EDGE = 'shadow-[inset_-1px_0_0_0_var(--color-neutral-200,#e5e7eb)]'
 export function DataTable<T>({
   columns, rows, rowKey, onRowClick, loading, fetching, stale, busyNow, highlight, fit, statusBar, errorMessage, onRetry, emptyTitle = 'Nothing here yet', emptyText, emptyAction,
   sort, sortable = [], onSortChange, headerAddon, leadingHeader, chips, grouping, leading, afterSearch, onColumnMove, onColumnDrag, search, filters,
-  toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs, expand, cardsBelow = 640, cardLines = 6, locked = 1,
+  toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs, expand, cardsBelow = 640, cardLines = 6, locked = 1, onFrozenChange,
 }: DataTableProps<T>) {
   const rootRef = useRef<HTMLDivElement>(null)
   const searchStop = useTourStop({ help: 'list.search', slot: 'list.search' })
@@ -184,6 +186,7 @@ export function DataTable<T>({
     frozenCount++
   }
   const freezeLead = want > 0
+  useEffect(() => { onFrozenChange?.(cards ? want : frozenCount) }, [frozenCount, want, cards])  // eslint-disable-line react-hooks/exhaustive-deps
   const leftOf = (i: number) => leadPx + lockWidths.slice(0, i).reduce((a, b) => a + b, 0)
   const frozenAt = (i: number) => i < frozenCount
   const frozenStyle = (i: number) => (frozenAt(i) ? { left: leftOf(i) } : undefined)
@@ -489,11 +492,6 @@ export function DataTable<T>({
                             </button>
                           ) : (
                             <Render def={h.column.columnDef.header} ctx={h.getContext()} />
-                          )}
-                          {hi < want && (
-                            // locked: frozen, or (a narrow window) kept but not frozen — the title says which
-                            <Lock aria-label={frozenAt(hi) ? 'locked' : 'locked, not frozen: the window is too narrow'}
-                              className={cn('h-3 w-3', frozenAt(hi) ? 'text-neutral-400' : 'text-neutral-300')} />
                           )}
                           {h.column.columnDef.meta?.help && <HelpTip id={h.column.columnDef.meta.help} />}
                           {headerAddon?.(h.column.id)}

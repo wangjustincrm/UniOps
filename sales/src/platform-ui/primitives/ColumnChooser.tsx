@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowDown, ArrowUp, Eye, Lock } from 'lucide-react'
+import { ArrowDown, ArrowUp, Eye, Lock, LockOpen } from 'lucide-react'
 import { Checkbox } from './Checkbox'
 import { Popover } from './Popover'
 import { Input } from './shell'
@@ -10,8 +10,17 @@ export interface ColumnChoice {
   label: string
   /** The group it is listed under (a ColumnGroup id); none: one plain list. */
   group?: string
-  /** Locked: it stays in place while the table scrolls sideways (a 🔒 beside it). */
+  /** Locked: it stays in place while the table scrolls sideways. */
   locked?: boolean
+}
+
+/** Locking from the chooser (the same as a column's menu): the toggle per shown column, the cap, and a note
+ *  when the window is too narrow to freeze them all. */
+export interface ColumnLocking {
+  onToggle: (id: string) => void
+  full: boolean
+  max: number
+  note?: string | null
 }
 
 export interface ColumnGroup {
@@ -34,13 +43,14 @@ const triOf = (ids: string[], hidden: string[]): Tri => {
  *  columns are listed under them ("On this list", "More fields"); a box at the
  *  top and one per group shows or hides them all at once (a dash: some shown),
  *  only the ones a find matches. The last column shown always stays. */
-export function ColumnChooser({ columns, hidden, onChange, onMove, groups }: {
+export function ColumnChooser({ columns, hidden, onChange, onMove, groups, locking }: {
   /** In display order. */
   columns: ColumnChoice[]
   hidden: string[]
   onChange: (hidden: string[]) => void
   onMove?: (id: string, delta: -1 | 1) => void
   groups?: ColumnGroup[]
+  locking?: ColumnLocking
 }) {
   const [find, setFind] = useState('')
   const q = find.trim().toLowerCase()
@@ -70,13 +80,23 @@ export function ColumnChooser({ columns, hidden, onChange, onMove, groups }: {
     return (
       <li key={c.id} className="flex items-center gap-1 rounded px-1 py-1 hover:bg-neutral-50">
         <Checkbox
-          label={c.locked ? <span className="inline-flex items-center gap-1">{c.label}<Lock aria-label="locked" className="h-3 w-3 text-neutral-400" /></span> : c.label}
-          aria-label={c.label}
+          label={c.label}
           className="min-w-0 flex-1"
           checked={shown}
           disabled={shown && visibleCount === 1}  /* never hide the last column */
           onCheckedChange={() => onChange(shown ? [...hidden, c.id] : hidden.filter((h) => h !== c.id))}
         />
+        {locking && (
+          // a hidden column cannot be locked: show it first
+          <button type="button" aria-pressed={!!c.locked}
+            aria-label={c.locked ? `Unlock ${c.label}` : `Lock ${c.label}`}
+            title={!shown ? 'Show it first' : !c.locked && locking.full ? `At most ${locking.max} locked columns: unlock one first`
+              : c.locked ? 'Locked: stays in place while the table scrolls sideways' : 'Lock: keep it in place while the table scrolls sideways'}
+            disabled={!shown || (!c.locked && locking.full)} onClick={() => locking.onToggle(c.id)}
+            className={c.locked ? 'rounded p-0.5 text-primary-600 hover:bg-neutral-200' : 'rounded p-0.5 text-neutral-300 hover:bg-neutral-200 hover:text-neutral-700 disabled:opacity-30'}>
+            {c.locked ? <Lock className="h-3.5 w-3.5" /> : <LockOpen className="h-3.5 w-3.5" />}
+          </button>
+        )}
         {onMove && !q && (
           <>
             <button type="button" aria-label={`Move ${c.label} up`} disabled={i === 0} onClick={() => onMove(c.id, -1)}
@@ -116,6 +136,7 @@ export function ColumnChooser({ columns, hidden, onChange, onMove, groups }: {
           {allBox(matching.map((c) => c.id), q ? `All matching (${matching.length})` : 'All columns', 'Show or hide all columns')}
         </div>
         {matching.length === 0 && <p className="px-1 py-2 text-xs text-neutral-500">No field matches.</p>}
+        {locking?.note && <p role="note" className="px-1 py-1 text-xs text-warning-700">{locking.note}</p>}
         {sections.map(({ g, items }) => (
           <div key={g?.id ?? 'all'} role="group" aria-label={g?.label ?? 'Columns'}>
             {g && (

@@ -78,7 +78,7 @@ export interface ListPageProps<T extends { id: number }> {
   errorMessages?: Record<string, string>
   toolbar?: (ctx: ListContext<T>) => ReactNode
   /** How many first columns stay in place while the table scrolls sideways when the view does not say
-   *  (default 1; 0 none). The user changes it from a column's menu ("Lock columns up to here"). */
+   *  (default 1; 0 none). The user changes it from a column's menu ("Lock column" / "Unlock column") or the chooser. */
   defaultLocked?: number
   /** Export CSV in the toolbar: every row of the list as it is filtered and sorted now (not only
    *  this page). Gets the resource's export path; downloads it (the page names the file). */
