@@ -19,6 +19,7 @@ const TYPE_LABELS: Record<AgreementType, string> = {
   house_account: 'House Account',
   recurring: 'Recurring',
   milestone: 'Milestone',
+  deposit: 'OneTime (Deposit)',
 }
 
 // Full AgreementStatus set, including 'submitted' and 'rejected' — omitting

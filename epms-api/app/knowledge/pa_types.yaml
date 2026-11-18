@@ -122,6 +122,10 @@ values:
       - The pre-tax amount is calculated — Prepayment % × the whole PO's
         pre-tax total — and cannot be typed. Tax is pre-filled with the same
         share of the PO's tax and can be changed; freight may be added.
+      - >-
+        The deposit of a OneTime (Deposit) agreement is also a prepayment, with
+        no PO and no invoice: its amount is the agreement's deposit amount and
+        its evidence is the agreement's attachments (see agreement_types).
 
   - value: settlement
     label: Settlement
@@ -140,6 +144,10 @@ values:
         amount (net payable 0, a credit note is expected for the difference)
         and a finance confirmation task gates the reconciliation rather than it
         going through silently.
+      - >-
+        A deposit's settlement is its refund (Record Refund on the paid deposit
+        PA): the amount returned, 0 up to the deposit, with evidence and — when
+        less came back — the reason. It pays nothing and Finance confirms it.
       - The paid prepayment PA offers Settle Prepayment / Settle Now to a System
         Admin, and to a user whose primary role is Requester who may create PAs
         and either raised the order's PR, also holds Procurement Officer or

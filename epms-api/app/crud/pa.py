@@ -540,6 +540,10 @@ async def mark_prepayment_settled(
         select(User.full_name).where(User.id == actor_id))).scalar_one_or_none()
     prepaid = sum((p.payment_amount for p in pool), Decimal("0"))
     variance = _settlement_variance(settlement_pa, prepaid)
+    if settlement_pa.deposit_refund_amount is not None:
+        # Deposit refund: the money comes BACK. variance = refunded − deposit,
+        # so 0 = refunded in full and < 0 = the part the vendor retained.
+        variance = settlement_pa.deposit_refund_amount - prepaid
     now = datetime.now(timezone.utc)
     for p in pool:
         p.settlement_status = "settled"
@@ -551,7 +555,14 @@ async def mark_prepayment_settled(
         others = [o.pa_number for o in pool if o is not p]
         if others:
             note += f" together with {', '.join(others)}"
-        if p is orig and variance < 0:
+        if settlement_pa.deposit_refund_amount is not None:
+            note = (f"Deposit refund of {settlement_pa.deposit_refund_amount} "
+                    f"{settlement_pa.currency} confirmed via {settlement_pa.pa_number}")
+            if variance < 0:
+                note += f" — {abs(variance)} retained by the vendor"
+                if settlement_pa.deposit_retained_reason:
+                    note += f": {settlement_pa.deposit_retained_reason}"
+        elif p is orig and variance < 0:
             note += f" — overpaid by {abs(variance)}, credit note expected"
         elif p is not orig:
             note += f" (variance recorded on {orig.pa_number})"
@@ -787,6 +798,35 @@ async def create_settlement_confirm_task(
             f"(overpaid — credit note expected). Confirm to settle; no payment will be made."
         ),
         amount=pa.payment_amount,
+        vendor=pa.vendor_name,
+    ))
+    await db.flush()
+
+
+async def create_deposit_refund_confirm_task(
+    db: AsyncSession, pa: PaymentApplication, deposit_pa: PaymentApplication,
+) -> None:
+    """A recorded deposit refund waits for Finance to confirm the money has come
+    back (user decision 2026-11-17: even a full refund is confirmed). Same task
+    type as the overpaid-settlement sign-off — closed by the same endpoint."""
+    refund = pa.deposit_refund_amount or Decimal("0")
+    retained = deposit_pa.payment_amount - refund
+    desc = (f"Deposit {deposit_pa.pa_number} ({deposit_pa.payment_amount} {pa.currency}) on "
+            f"agreement {pa.agreement_number}: refund recorded {refund} {pa.currency}")
+    if retained > 0:
+        desc += f", {retained} retained by the vendor — {pa.deposit_retained_reason}"
+    desc += (". Check the refund evidence and that the money has been received, then "
+             "confirm (no payment will be made) or return it.")
+    db.add(Task(
+        type="confirm_settlement",
+        priority="normal",
+        document_type="pa",
+        document_id=pa.id,
+        document_number=pa.pa_number,
+        assigned_role="finance_bp",
+        title=f"Confirm Deposit Refund: {pa.pa_number} — {pa.title}",
+        description=desc,
+        amount=refund,
         vendor=pa.vendor_name,
     ))
     await db.flush()

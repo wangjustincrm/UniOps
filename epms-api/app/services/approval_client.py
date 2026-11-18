@@ -21,14 +21,38 @@ async def delegate_action(
     Returns the ActionResult dict.  Raises ValueError on 422/409, RuntimeError on other errors.
     """
     url = f"{settings.APPROVAL_ENGINE_URL}/approvals/{doc_type}/{doc_id}/action"
+    # DB clock before the call: an engine event written after this instant is
+    # this call's (see _outcome_after_timeout).
+    sent_at = await _db_now()
     t0 = time.monotonic()
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=ACTION_TIMEOUT_S) as client:
             resp = await client.post(
                 url,
                 json={"action": action, "comment": comment, "expected_step": expected_step},
                 headers={"Authorization": f"Bearer {bearer_token}"},
             )
+    except httpx.TimeoutException:
+        # The engine may well have done it and only been slow to answer —
+        # 2026-11-17 an agreement submit committed (status, event, approver
+        # task) but its reply never came, and the page reported "saved as a
+        # draft but not submitted" for a document that was in approval. The
+        # engine shares this database and records every action as an
+        # approval_events row, so look there instead of guessing.
+        outcome = await _outcome_after_timeout(doc_type, doc_id, action, sent_at)
+        dur_ms = int((time.monotonic() - t0) * 1000)
+        if outcome is not None:
+            _log.warning(
+                "outbound | service=approval-api | doc_type=%s | doc_id=%s | action=%s | status=TIMEOUT_BUT_APPLIED"
+                " | new_status=%s | dur=%dms", doc_type, doc_id, action, outcome["new_status"], dur_ms)
+            return outcome
+        _log.error(
+            "outbound | service=approval-api | doc_type=%s | doc_id=%s | action=%s | status=TIMEOUT | dur=%dms",
+            doc_type, doc_id, action, dur_ms)
+        raise RuntimeError(
+            "The approval engine did not answer in time, and the action has not been "
+            "recorded yet. It may still go through — refresh the page in a moment "
+            "before trying again.")
     except httpx.ConnectError:
         dur_ms = int((time.monotonic() - t0) * 1000)
         _log.error(
@@ -61,6 +85,91 @@ async def delegate_action(
         raise RuntimeError(f"Approval Engine error {resp.status_code}: {resp.text[:200]}")
 
     return resp.json()
+
+
+# How long to wait for the engine's answer, and then how long to keep looking
+# in the database for the action having landed anyway.
+ACTION_TIMEOUT_S = 10.0
+SETTLE_WAIT_S = 10.0
+SETTLE_POLL_S = 0.5
+
+
+def _session_factory():
+    # Indirection so tests can point the probe at the test database.
+    from app.db.session import AsyncSessionLocal
+    return AsyncSessionLocal
+
+
+async def _db_now():
+    from sqlalchemy import text
+    try:
+        async with _session_factory()() as s:
+            return (await s.execute(text("SELECT clock_timestamp()"))).scalar_one()
+    except Exception:  # never let the probe itself block the action
+        _log.warning("approval_client: could not read the DB clock", exc_info=True)
+        return None
+
+
+def _status_model(doc_type: str):
+    from app.models.agreement import PurchaseAgreement
+    from app.models.pa import PaymentApplication
+    from app.models.po import PurchaseOrder
+    from app.models.pr import PurchaseRequest
+    return {"pr": PurchaseRequest, "po": PurchaseOrder, "pa": PaymentApplication,
+            "agr": PurchaseAgreement}.get(doc_type)
+
+
+async def _outcome_after_timeout(doc_type: str, doc_id: str, action: str, sent_at):
+    """The engine's ActionResult-shaped outcome if the timed-out action was in
+    fact applied, else None.
+
+    Applied = the engine committed an approval_events row for this document and
+    action after the request was sent (the engine writes action.lower(), with
+    created_at = its transaction start, so it can only be later than sent_at).
+    The engine locks the document row for the whole action, so a still-running
+    action shows up here as soon as it commits — hence the short poll.
+    """
+    import asyncio
+    import uuid as _uuid
+
+    from sqlalchemy import select
+
+    from app.models.approval import ApprovalEvent
+
+    if sent_at is None:
+        return None
+    doc_uuid = _uuid.UUID(str(doc_id))
+    deadline = time.monotonic() + SETTLE_WAIT_S
+    while True:
+        try:
+            async with _session_factory()() as s:
+                hit = (await s.execute(
+                    select(ApprovalEvent.id).where(
+                        ApprovalEvent.document_type == doc_type,
+                        ApprovalEvent.document_id == doc_uuid,
+                        ApprovalEvent.action == action.lower(),
+                        ApprovalEvent.created_at >= sent_at,
+                    ).limit(1)
+                )).scalar_one_or_none()
+                if hit is not None:
+                    new_status = None
+                    step = None
+                    Model = _status_model(doc_type)
+                    if Model is not None:
+                        row = (await s.execute(
+                            select(Model.status, Model.approval_step_idx).where(Model.id == doc_uuid)
+                        )).first()
+                        if row is not None:
+                            new_status, step = row
+                    return {"doc_type": doc_type, "doc_id": str(doc_uuid),
+                            "new_status": new_status, "approval_step_idx": step,
+                            "recovered_after_timeout": True}
+        except Exception:
+            _log.warning("approval_client: timeout probe failed", exc_info=True)
+            return None
+        if time.monotonic() >= deadline:
+            return None
+        await asyncio.sleep(SETTLE_POLL_S)
 
 
 async def resync_document(doc_type: str, doc_id: str, bearer_token: str) -> dict:

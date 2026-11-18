@@ -192,7 +192,8 @@ rules:
       that agreement and cleared for payment (Matched, or Approved after AP
       review — not Pending Review, Exception or Unmatched); the agreement must
       be active or still in its grace window; and only a Regular PA can be
-      raised. Recurring agreement: each invoice must be linked to a billing
+      raised (except on a OneTime (Deposit) agreement, whose only PA is its
+      deposit — see deposit_agreement). Recurring agreement: each invoice must be linked to a billing
       period whose service the department has confirmed. House account: each
       invoice must have its agreement receipts attached, or be settled
       explicitly without receipt evidence, with a reason; on New PA an

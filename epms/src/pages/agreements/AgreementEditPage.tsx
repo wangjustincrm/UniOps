@@ -30,6 +30,7 @@ const TYPE_LABELS: Record<AgreementType, string> = {
   house_account: 'House Account',
   recurring: 'Recurring',
   milestone: 'Milestone',
+  deposit: 'OneTime (Deposit)',
 }
 
 export default function AgreementEditPage() {
@@ -56,6 +57,7 @@ export default function AgreementEditPage() {
   const [validTo, setValidTo] = useState('')
   const [graceDays, setGraceDays] = useState(30)
   const [notToExceed, setNotToExceed] = useState('')
+  const [depositAmount, setDepositAmount] = useState('')
   const [taxCode, setTaxCode] = useState<string | null>(null)
   const [taxRate, setTaxRate] = useState<number | null>(null)
   const [departmentId, setDepartmentId] = useState('')
@@ -149,6 +151,7 @@ export default function AgreementEditPage() {
     setValidTo(agreement.valid_to)
     setGraceDays(agreement.grace_days)
     setNotToExceed(agreement.not_to_exceed ?? '')
+    setDepositAmount(agreement.deposit_amount ?? '')
     setTaxCode(agreement.tax_code ?? null)
     setTaxRate(agreement.tax_rate ? Number(agreement.tax_rate) : null)
     setDepartmentId(agreement.department_id ?? '')
@@ -270,6 +273,9 @@ export default function AgreementEditPage() {
     if (agreement?.agreement_type === 'milestone' && milestoneRows.some((r) => !r.milestone_name.trim())) {
       e.milestones = 'Every stage needs a name'
     }
+    if (agreement?.agreement_type === 'deposit' && !(Number(depositAmount) > 0)) {
+      e.depositAmount = 'Deposit amount is required and must be greater than 0'
+    }
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -304,7 +310,8 @@ export default function AgreementEditPage() {
         valid_from: validFrom,
         valid_to: validTo,
         grace_days: graceDays,
-        not_to_exceed: notToExceed ? Number(notToExceed) : null,
+        not_to_exceed: agreement?.agreement_type !== 'deposit' && notToExceed ? Number(notToExceed) : null,
+        ...(agreement?.agreement_type === 'deposit' ? { deposit_amount: Number(depositAmount) } : {}),
         tax_code: taxCode ?? null,
         tax_rate: taxRate ?? null,
         department_id: departmentId || null,
@@ -523,6 +530,25 @@ export default function AgreementEditPage() {
             <h2 className="text-base font-semibold text-fg">Financial Terms</h2>
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              {agreement.agreement_type === 'deposit' ? (
+              <FormField
+                label="Deposit Amount"
+                required
+                htmlFor="depositAmount"
+                error={errors.depositAmount}
+                hint="The deposit PA pays exactly this amount (no tax). It needs no invoice — the agreement's attachments are its evidence."
+              >
+                <Input
+                  id="depositAmount"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={depositAmount}
+                  error={!!errors.depositAmount}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setDepositAmount(e.target.value); setErrors((p) => ({ ...p, depositAmount: '' })) }}
+                />
+              </FormField>
+              ) : (
               <FormField
                 label="Not to Exceed (pre-tax)"
                 htmlFor="notToExceed"
@@ -538,6 +564,7 @@ export default function AgreementEditPage() {
                   onChange={(e) => setNotToExceed(e.target.value)}
                 />
               </FormField>
+              )}
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-fg-secondary">Currency</label>

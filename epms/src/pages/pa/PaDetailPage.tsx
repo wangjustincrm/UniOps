@@ -14,7 +14,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn, formatAmount, formatDate, formatDateTime, formatQty, formatUnitPrice } from '@/lib/utils'
-import { usePa, usePaAction, usePaEvents, useConfirmSettlement, usePaWorkflowSteps } from '@/hooks/usePas'
+import { usePa, usePas, usePaAction, usePaEvents, useConfirmSettlement, usePaWorkflowSteps } from '@/hooks/usePas'
+import {
+  DepositRefundPanel, RecordRefundDialog, canConfirmDepositRefund, isDepositPa, isDepositRefund,
+} from '@/components/agreements/DepositPanel'
 import { usePosByIds } from '@/hooks/usePos'
 import { useInvoices, useInvoicesByIds, useInvoicesForPos } from '@/hooks/useInvoices'
 import { useTasks } from '@/hooks/useTasks'
@@ -510,6 +513,18 @@ export default function PaDetailPage() {
   const linkedInvoices = invoiceCandidates.filter((inv) => pa?.invoice_ids.includes(inv.id))
   const { user } = useAuthStore()
   const myAuthz = useRolePermissions().data
+  // OneTime (Deposit) agreement: the deposit PA (a prepayment with no PO) is
+  // settled by recording its refund, and that refund is confirmed by Finance.
+  const depositPa = !!pa && isDepositPa(pa)
+  const depositRefund = !!pa && isDepositRefund(pa)
+  const { data: depositSource } = usePa(depositRefund && pa?.prepayment_pa_id ? pa.prepayment_pa_id : '')
+  const { data: agreementPas } = usePas(
+    pa?.agreement_number ? { search: pa.agreement_number } : undefined,
+    depositPa && !!pa?.agreement_number,
+  )
+  const hasLiveRefund = (agreementPas?.items ?? []).some(
+    (p) => p.prepayment_pa_id === pa?.id && !['cancelled', 'rejected'].includes(p.status))
+  const [recordingRefund, setRecordingRefund] = useState(false)
   // Same hook/pattern InvoiceDetailPage.tsx uses for its 3-way-match tolerance.
   const matchTolerancePct = useConfig().data?.invoice_match_tolerance_pct ?? 5
 
@@ -604,6 +619,11 @@ export default function PaDetailPage() {
     && (!settleScoped || (linkedPos.items !== undefined
       && linkedPos.items.length > 0
       && linkedPos.items.every((p) => scopedRequesterMayPay(p, user?.id, myAuthz?.roles))))
+
+  const canRecordRefund = depositPa && pa.status === 'processed' && pa.settlement_status === 'pending'
+    && !hasLiveRefund
+    && (user?.role === 'system_admin' || !!myAuthz?.permissions?.['epms.pa.write'])
+  const canFinanceRefund = canConfirmDepositRefund(user?.role, myAuthz?.roles)
 
   const handleConfirm = (action: ApprovalAction, comment: string) => {
     paAction.mutate(
@@ -790,13 +810,22 @@ export default function PaDetailPage() {
               {paAction.isPending ? 'Processing…' : 'Mark as Processed'}
             </Button>
           )}
-          {pa.status === 'processed' && pa.pa_type === 'prepayment' && pa.settlement_status === 'pending' && canSettle && (
+          {canRecordRefund && (
+            <Button onClick={() => setRecordingRefund(true)} variant="secondary" className="gap-2">
+              <FileText className="h-4 w-4" />
+              Record Refund
+            </Button>
+          )}
+          {recordingRefund && (
+            <RecordRefundDialog deposit={pa} onClose={() => setRecordingRefund(false)} />
+          )}
+          {!depositPa && pa.status === 'processed' && pa.pa_type === 'prepayment' && pa.settlement_status === 'pending' && canSettle && (
             <Button onClick={() => navigate(`/pa/new?settleFrom=${pa.id}`)} variant="secondary" className="gap-2">
               <FileText className="h-4 w-4" />
               Settle Prepayment
             </Button>
           )}
-          {pa.pa_type === 'settlement' && pa.status === 'submitted' && Number(pa.payment_amount) === 0 && canProcess && (
+          {!depositRefund && pa.pa_type === 'settlement' && pa.status === 'submitted' && Number(pa.payment_amount) === 0 && canProcess && (
             <Button
               onClick={() => confirmSettlement.mutate()}
               disabled={confirmSettlement.isPending}
@@ -865,6 +894,9 @@ export default function PaDetailPage() {
                       { label: 'Prepayment %', value: `${pa.prepayment_pct}%` },
                       { label: 'Expected Settlement', value: pa.expected_settlement_date ? formatDate(pa.expected_settlement_date) : '—' },
                     ] : []),
+                    ...(depositPa ? [
+                      { label: 'Expected Refund', value: pa.expected_settlement_date ? formatDate(pa.expected_settlement_date) : '—' },
+                    ] : []),
                   ].map(({ label, value }) => (
                     <div key={label}>
                       <p className="text-xs text-fg-muted">{label}</p>
@@ -922,6 +954,14 @@ export default function PaDetailPage() {
                 <CreditCard className="h-10 w-10 text-primary-300" />
               </div>
 
+              {depositRefund && (
+                <DepositRefundPanel
+                  pa={pa}
+                  depositAmount={depositSource ? Number(depositSource.payment_amount) : null}
+                  canFinance={canFinanceRefund}
+                />
+              )}
+
               {/* Prepayment settlement status */}
               {pa.pa_type === 'prepayment' && (
                 <div className={cn(
@@ -932,15 +972,26 @@ export default function PaDetailPage() {
                 )}>
                   <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-3">Settlement Status</h3>
                   {pa.settlement_status === 'pending' && pa.status !== 'processed' && (
-                    <p className="text-sm text-fg-muted">Settlement required after payment is processed and final invoice received.</p>
+                    <p className="text-sm text-fg-muted">
+                      {depositPa
+                        ? 'A deposit — once paid, its refund is recorded here when the agreement ends.'
+                        : 'Settlement required after payment is processed and final invoice received.'}
+                    </p>
                   )}
                   {pa.settlement_status === 'pending' && pa.status === 'processed' && (
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-warning-fg">
                         <AlertTriangle className="h-4 w-4" />
-                        <span className="text-sm font-medium">Settlement pending</span>
+                        <span className="text-sm font-medium">
+                          {depositPa ? (hasLiveRefund ? 'Refund recorded — waiting for Finance' : 'Refund pending') : 'Settlement pending'}
+                        </span>
                       </div>
-                      {canSettle && (
+                      {canRecordRefund && (
+                        <Button variant="secondary" onClick={() => setRecordingRefund(true)}>
+                          Record Refund →
+                        </Button>
+                      )}
+                      {!depositPa && canSettle && (
                         <Button variant="secondary" onClick={() => navigate(`/pa/new?settleFrom=${pa.id}`)}>
                           Settle Now →
                         </Button>
@@ -953,7 +1004,7 @@ export default function PaDetailPage() {
                         { label: 'Status',    value: pa.settlement_status === 'settled' ? '✅ Settled' : '⚠ Disputed' },
                         { label: 'Settled By', value: pa.settled_by_name ?? pa.settled_by ?? '—' },
                         { label: 'Settled At', value: pa.settled_at ? formatDateTime(pa.settled_at) : '—' },
-                        { label: 'Variance',   value: pa.settlement_variance !== undefined ? formatAmount(pa.settlement_variance, pa.currency) : '—' },
+                        { label: depositPa ? 'Refund − Deposit' : 'Variance', value: pa.settlement_variance !== undefined ? formatAmount(pa.settlement_variance, pa.currency) : '—' },
                       ].map(({ label, value }) => (
                         <div key={label}>
                           <p className="text-xs text-fg-muted">{label}</p>

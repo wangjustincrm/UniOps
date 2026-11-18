@@ -252,6 +252,8 @@ class PaResponse(BaseModel):
     settled_by: uuid.UUID | None
     settled_by_name: str | None
     settlement_note: str | None
+    deposit_refund_amount: Decimal | None = None
+    deposit_retained_reason: str | None = None
     settlement_variance: Decimal | None
     approval_step_idx: int
     created_by: uuid.UUID

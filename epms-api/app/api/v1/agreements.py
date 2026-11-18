@@ -239,6 +239,23 @@ async def agreement_action(
                        "agreement for approval — once approved and active, no stage "
                        "can be added, and no invoice will ever be matchable to it.",
             )
+    # OneTime (Deposit): the attachments are the deposit PA's only evidence
+    # (pa.py _apply_deposit_pa_rules), so an agreement without one must not be
+    # approved only to be stopped at Create Deposit PA — found in DEV1 testing
+    # 2026-11-17 (AGR-202611-0001 went all the way through with none).
+    if body.action == "submit" and agr.agreement_type == "deposit":
+        from app.models.agreement_attachment import AgreementAttachment
+        has_att = (await db.execute(
+            select(AgreementAttachment.id)
+            .where(AgreementAttachment.agreement_id == agr.id).limit(1)
+        )).first()
+        if has_att is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Upload the signed agreement (or the deposit request) under "
+                       "Attachments before submitting — it is the only evidence the "
+                       "deposit PA is paid on.",
+            )
     try:
         await delegate_action("agr", str(agreement_id), body.action, body.comment, token)
     except LookupError as exc:

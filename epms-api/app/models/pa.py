@@ -79,6 +79,12 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     # 思路 A：Settlement PA 抵扣的预付金额。payment_amount 已是净付余款
     # (= subtotal+tax+shipping+other − prepayment_applied)。仅 settlement/balance 用。
     prepayment_applied: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
+    # 押金退还(ag10,deposit 协议的 settlement 专用):对方实际退回的金额,
+    # 0 ≤ x ≤ 押金。押金方向与普通预付相反 —— 钱是退回来的,本 PA 不付款
+    # (payment_amount 恒 0),只登记退款并在 Finance 确认后把押金 PA 标 settled。
+    deposit_refund_amount: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
+    # 退回少于押金时(被扣留)必填的原因。
+    deposit_retained_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     subtotal: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
     tax_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False, default=Decimal("0"))

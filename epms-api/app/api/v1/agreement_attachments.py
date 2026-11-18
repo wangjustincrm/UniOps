@@ -127,6 +127,23 @@ async def delete_attachment(
     att = result.scalar_one_or_none()
     if att is None:
         raise HTTPException(status_code=404, detail="Attachment not found")
+    # A deposit agreement past draft must keep at least one attachment — the
+    # submit gate (agreements.py) and the deposit PA rely on it.
+    agr = await get_agreement(db, agreement_id)
+    if (agr is not None and agr.agreement_type == "deposit"
+            and agr.status not in ("draft", "returned", "cancelled")):
+        others = (await db.execute(
+            select(AgreementAttachment.id).where(
+                AgreementAttachment.agreement_id == agreement_id,
+                AgreementAttachment.id != att_id,
+            ).limit(1)
+        )).first()
+        if others is None:
+            raise HTTPException(
+                status_code=409,
+                detail="This is the deposit agreement's only attachment — the deposit's "
+                       "evidence. Upload the replacement first, then remove this one.",
+            )
     if att.storage_key:
         await delete_from_file_server(att.storage_key, token)
     await db.delete(att)

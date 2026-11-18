@@ -13,7 +13,7 @@ export type AgreementStatus =
   | 'returned'
   | 'rejected'
 
-export type AgreementType = 'house_account' | 'recurring' | 'milestone'
+export type AgreementType = 'house_account' | 'recurring' | 'milestone' | 'deposit'
 
 export type AgreementAction = 'submit' | 'approve' | 'return' | 'reject' | 'cancel' | 'recall'
 
@@ -90,6 +90,8 @@ export interface ApiAgreement {
   valid_to: string
   grace_days: number
   not_to_exceed: string | null
+  /** ag10 — OneTime (Deposit) only: the deposit; the deposit PA's locked amount. */
+  deposit_amount?: string | null
   consumed_amount: string
   currency: string
   tax_code?: string | null
@@ -129,6 +131,7 @@ export interface CreateAgreementBody {
   valid_to: string
   grace_days?: number
   not_to_exceed?: number
+  deposit_amount?: number
   currency?: string
   tax_code?: string | null
   tax_rate?: number | null
@@ -163,6 +166,7 @@ export interface UpdateAgreementBody {
   valid_to?: string
   grace_days?: number
   not_to_exceed?: number | null
+  deposit_amount?: number | null
   tax_code?: string | null
   tax_rate?: number | null
   department_id?: string | null

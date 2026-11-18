@@ -12,6 +12,7 @@ import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
 import { ScheduleTable } from '@/components/agreements/ScheduleTable'
 import { ReceiptTable } from '@/components/agreements/ReceiptTable'
+import { DepositCard } from '@/components/agreements/DepositPanel'
 import { formatAmount, formatDate, formatDateTime, formatBytes, cn } from '@/lib/utils'
 import type { ApprovalStep, CurrentStep, DocumentStatus } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
@@ -42,6 +43,7 @@ const TYPE_LABELS: Record<AgreementType, string> = {
   house_account: 'House Account',
   recurring: 'Recurring',
   milestone: 'Milestone',
+  deposit: 'OneTime (Deposit)',
 }
 
 // Statuses in which the agreement is still awaiting the current approver's
@@ -360,8 +362,11 @@ export default function AgreementDetailPage() {
   // window, at least one matched invoice), so the button isn't offered when
   // clicking it would just 422.
   const canCreatePaPerm = user?.role === 'system_admin' || !!perms?.['epms.pa.write']
+  // A deposit agreement takes no invoices — its one PA is the deposit, raised
+  // from the Deposit card below.
+  const isDeposit = agreement?.agreement_type === 'deposit'
   const canCreatePa =
-    canCreatePaPerm && !!agreement && isAgreementAdmissible(agreement) && payableInvoiceCount > 0
+    !isDeposit && canCreatePaPerm && !!agreement && isAgreementAdmissible(agreement) && payableInvoiceCount > 0
   // Gates the pickup-receipt AP Approve/Reject buttons — mirrors the backend's
   // ApDep = require_permission("epms.invoice.match") on POST .../ap-review
   // (epms-api/app/api/v1/agreement_receipts.py), the same permission that gates
@@ -456,6 +461,14 @@ export default function AgreementDetailPage() {
 
   const { data: attachmentsData, isLoading: attachmentsLoading } = useAgreementAttachments(agreement?.id ?? '')
   const attachments = attachmentsData ?? []
+  // OneTime (Deposit): the attachments are the deposit's only evidence —
+  // required to submit, and the last one cannot be removed once submitted
+  // (agreements.py / agreement_attachments.py enforce both).
+  const missingDepositAttachment =
+    isDeposit && !attachmentsLoading && attachments.length === 0
+  const lockLastDepositAttachment =
+    isDeposit && !!agreement && !['draft', 'returned', 'cancelled'].includes(agreement.status)
+    && attachments.length === 1
   const uploadAttachment = useUploadAgreementAttachment(agreement?.id ?? '')
   const confirmDlg = useConfirmDialog()
   // A picked file the upload rule refuses (ISS-0093), shown under the button.
@@ -537,14 +550,21 @@ export default function AgreementDetailPage() {
                   variant="secondary"
                   size="sm"
                   onClick={() => { agreementAction.reset(); agreementAction.mutate({ action: 'submit' }) }}
-                  disabled={agreementAction.isPending || missingOwner}
-                  title={missingOwner ? 'Set an Owner on this agreement before submitting it' : undefined}
+                  disabled={agreementAction.isPending || missingOwner || missingDepositAttachment}
+                  title={missingOwner ? 'Set an Owner on this agreement before submitting it'
+                    : missingDepositAttachment ? 'Upload the signed agreement or deposit request under Attachments first'
+                    : undefined}
                 >
                   Submit for Approval
                 </Button>
                 {missingOwner && (
                   <span className="text-xs text-danger-fg">
                     Set an Owner (Edit) before submitting — the owner confirms each period.
+                  </span>
+                )}
+                {!missingOwner && missingDepositAttachment && (
+                  <span className="text-xs text-danger-fg">
+                    Upload the signed agreement or deposit request under Attachments before submitting — it is the deposit’s only evidence.
                   </span>
                 )}
               </>
@@ -595,7 +615,7 @@ export default function AgreementDetailPage() {
             {/* Shown disabled rather than hidden when something is matched but
                 not yet payable — the tooltip is the only place that says what
                 is missing. */}
-            {!canCreatePa && canCreatePaPerm && blockedReason && (
+            {!isDeposit && !canCreatePa && canCreatePaPerm && blockedReason && (
               <span title={blockedReason}>
                 <Button size="sm" disabled>
                   <CreditCard className="h-3.5 w-3.5" />
@@ -650,11 +670,22 @@ export default function AgreementDetailPage() {
               </dl>
             </section>
 
+            {!isDeposit && (
             <section>
               <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">Consumed / Not to Exceed (pre-tax)</h2>
               <NteBar consumedAmount={agreement.consumed_amount} notToExceed={agreement.not_to_exceed} currency={agreement.currency} />
             </section>
+            )}
           </div>
+
+          {isDeposit && (
+            <DepositCard
+              agreement={agreement}
+              attachmentCount={attachments.length}
+              canCreatePaPerm={canCreatePaPerm}
+              admissible={isAgreementAdmissible(agreement)}
+            />
+          )}
 
           {/* Payment schedule — recurring (periods) or milestone (stages).
               house_account has no schedule rows at all (crud/agreement_schedule.py
@@ -728,7 +759,7 @@ export default function AgreementDetailPage() {
               Task 10: display-only here, mirroring how a PO shows its GRs but
               creating one is a separate page — recording now happens on the
               standalone /receipts/new page (linked below), not inline. */}
-          {(receipts.length > 0 || (canRecordReceipt && isAgreementAdmissible(agreement))) && (
+          {!isDeposit && (receipts.length > 0 || (canRecordReceipt && isAgreementAdmissible(agreement))) && (
             <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
@@ -760,7 +791,8 @@ export default function AgreementDetailPage() {
             </div>
           )}
 
-          {/* Invoices matched to this agreement */}
+          {/* Invoices matched to this agreement — none on a deposit agreement */}
+          {!isDeposit && (
           <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
@@ -831,6 +863,7 @@ export default function AgreementDetailPage() {
               </div>
             )}
           </div>
+          )}
 
           {/* Attachments */}
           <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
@@ -898,7 +931,7 @@ export default function AgreementDetailPage() {
                     >
                       Download
                     </button>
-                    {canWrite && (
+                    {canWrite && !lockLastDepositAttachment && (
                       <button
                         type="button"
                         onClick={() => { uploadAttachment.reset(); deleteAttachment.mutate(att.id) }}

@@ -21,6 +21,8 @@ import { DueWindowNotice } from './DueWindowNotice'
 import { DerivedPaLinesTable } from './DerivedPaLinesTable'
 import { FreightPaEditForm } from './FreightPaEditForm'
 import { DirectPaEditForm } from './DirectPaEditForm'
+import { DepositPaEditForm } from './DepositPaEditForm'
+import { isDepositPa } from '@/components/agreements/DepositPanel'
 import { derivePaLines, derivedLinesTotal, invoiceOwnLines } from '@/lib/paLinesFromInvoices'
 import { paEditAutoAmounts } from './paEditAmounts'
 import { dueWindowViolation } from './invoiceDueWindow'
@@ -45,6 +47,8 @@ export default function PaEditPage() {
   }
   if (pa?.source === 'freight') return <FreightPaEditForm pa={pa} />
   if (pa?.source === 'direct') return <DirectPaEditForm pa={pa} />
+  // A deposit agreement's deposit PA: amount locked to the deposit, no invoice.
+  if (pa && isDepositPa(pa)) return <DepositPaEditForm pa={pa} />
   return <PoPaEditPage />
 }
 

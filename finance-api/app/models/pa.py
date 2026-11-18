@@ -28,6 +28,9 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     # crud/payment_execute.py and crud/payment_batch.py: pa_dir means Direct
     # PA specifically, not merely "no PO".
     agreement_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Denormalised agreement number (epms-api ag02) — the remittance reference
+    # of a deposit PA (an agreement-sourced prepayment, see _prepayment_reference).
+    agreement_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # po | agreement | freight | direct | oa_direct (epms-api fr01_freight,
     # dp01_direct_pa). Read to tell EPMS's PO-less PAs (freight, direct) apart
     # from OA's retired Direct PA (oa_direct) — see is_direct.

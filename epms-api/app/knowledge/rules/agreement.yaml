@@ -42,6 +42,34 @@ rules:
     provenance: pinned
     test:
       - "tests/test_assistant_iss_batch1.py::test_grace_window_rule_matches_the_admission_predicate"
+  - id: deposit_agreement
+    also_in: [pa]
+    asked_as:
+      - how do I pay a deposit without an invoice
+      - the vendor only refunded part of the deposit
+      - 押金怎么付 退还怎么登记
+    answer: >
+      Use a OneTime (Deposit) agreement with its Deposit Amount filled in and
+      the signed agreement attached. Once it is active, raise its deposit PA (a
+      Prepayment, no invoice): the amount is the agreement's deposit and cannot
+      be changed, and one agreement pays its deposit once. When the vendor
+      returns the money, Record Refund on the paid deposit PA: the amount
+      refunded may be anything from 0 to the deposit, never more; the refund
+      evidence is required, and so is the reason when less than the deposit
+      came back. Finance then confirms the refund (or returns it with a
+      reason); only on confirmation is the deposit marked settled, with the
+      retained part recorded as a negative variance. The agreement's validity
+      window does not stop a refund being recorded after it has ended.
+    enforced_in: "epms-api app/api/v1/pa.py _apply_deposit_pa_rules + record_deposit_refund / return_deposit_refund / confirm_settlement; app/schemas/agreement.py validate_deposit; app/crud/agreement.py candidates_for_vendor; app/crud/invoice.py agreement match branch; PRD EPMS AGR-090..095"
+    provenance: pinned
+    test:
+      - "tests/test_agreement_deposit.py::test_deposit_pa_amount_locked_to_agreement"
+      - "tests/test_agreement_deposit.py::test_deposit_pa_needs_attachment"
+      - "tests/test_agreement_deposit.py::test_deposit_pa_only_once"
+      - "tests/test_agreement_deposit.py::test_partial_refund_requires_reason_and_records_retained"
+      - "tests/test_agreement_deposit.py::test_refund_cannot_exceed_deposit"
+      - "tests/test_agreement_deposit.py::test_refund_allowed_after_agreement_expired"
+      - "tests/test_agreement_deposit.py::test_only_finance_confirms_or_returns"
   - id: nte_is_warning_only
     asked_as:
       - can we still pay once the Not to Exceed is reached

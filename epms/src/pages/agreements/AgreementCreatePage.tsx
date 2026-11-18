@@ -35,6 +35,7 @@ const TYPE_OPTIONS: { value: AgreementType; label: string; hint: string }[] = [
   { value: 'house_account', label: 'House Account', hint: 'Ongoing spend on a running account with a vendor, billed periodically — evidenced by receipts, delivery notes or service sign-offs' },
   { value: 'recurring', label: 'Recurring', hint: 'A repeating service or subscription-style spend' },
   { value: 'milestone', label: 'Milestone', hint: 'Spend released against agreed project milestones' },
+  { value: 'deposit', label: 'OneTime (Deposit)', hint: 'A one-time deposit paid without an invoice and refunded (in full or in part) when the agreement ends' },
 ]
 
 export default function AgreementCreatePage() {
@@ -55,6 +56,7 @@ export default function AgreementCreatePage() {
   const [validTo, setValidTo] = useState('')
   const [graceDays, setGraceDays] = useState(30)
   const [notToExceed, setNotToExceed] = useState('')
+  const [depositAmount, setDepositAmount] = useState('')
   const [currency, setCurrency] = useState<Currency>('CAD')
   const [taxCode, setTaxCode] = useState<string | null>(null)
   const [taxRate, setTaxRate] = useState<number | null>(null)
@@ -161,12 +163,22 @@ export default function AgreementCreatePage() {
     if (agreementType === 'milestone' && milestoneRows.some((r) => !r.milestone_name.trim())) {
       e.milestones = 'Every stage needs a name'
     }
+    if (agreementType === 'deposit' && !(Number(depositAmount) > 0)) {
+      e.depositAmount = 'Deposit amount is required and must be greater than 0'
+    }
     setErrors(e)
     return Object.keys(e).length === 0
   }
 
   const handleSubmit = async (submitForApproval: boolean) => {
     if (!validate()) return
+    // A deposit agreement cannot be submitted without its evidence — the
+    // server refuses it; say so here instead of creating a draft that then
+    // fails to submit. Saving as a draft without one is fine.
+    if (submitForApproval && agreementType === 'deposit' && attachments.length === 0) {
+      setAttachmentError('Attach the signed agreement or deposit request — a deposit agreement cannot be submitted without it. (Save as Draft does not need it.)')
+      return
+    }
     setIsSubmitting(true)
     setSaveError(null)
     try {
@@ -180,7 +192,10 @@ export default function AgreementCreatePage() {
         valid_from: validFrom,
         valid_to: validTo,
         grace_days: graceDays,
-        not_to_exceed: notToExceed ? Number(notToExceed) : undefined,
+        // A deposit agreement has no invoices to measure against a ceiling;
+        // its one payment is the deposit itself.
+        not_to_exceed: agreementType !== 'deposit' && notToExceed ? Number(notToExceed) : undefined,
+        deposit_amount: agreementType === 'deposit' ? Number(depositAmount) : undefined,
         currency,
         tax_code: taxCode ?? undefined,
         tax_rate: taxRate ?? undefined,
@@ -443,6 +458,25 @@ export default function AgreementCreatePage() {
             <h2 className="text-base font-semibold text-fg">Financial Terms</h2>
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              {agreementType === 'deposit' ? (
+              <FormField
+                label="Deposit Amount"
+                required
+                htmlFor="depositAmount"
+                error={errors.depositAmount}
+                hint="The deposit PA pays exactly this amount (no tax). It needs no invoice — attach the signed agreement or deposit request below; the vendor refunds it when the agreement ends."
+              >
+                <Input
+                  id="depositAmount"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={depositAmount}
+                  error={!!errors.depositAmount}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDepositAmount(e.target.value)}
+                />
+              </FormField>
+              ) : (
               <FormField
                 label="Not to Exceed (pre-tax)"
                 htmlFor="notToExceed"
@@ -458,6 +492,7 @@ export default function AgreementCreatePage() {
                   onChange={(e) => setNotToExceed(e.target.value)}
                 />
               </FormField>
+              )}
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-fg-secondary">Currency <span className="text-danger-fg">*</span></label>
@@ -628,7 +663,11 @@ export default function AgreementCreatePage() {
               <Upload className="h-8 w-8 text-fg-muted" />
               <div>
                 <p className="text-sm font-medium text-fg-secondary">Drag &amp; drop or click to upload</p>
-                <p className="text-xs text-fg-muted mt-1">Contract copies, signed schedules, etc.</p>
+                <p className="text-xs text-fg-muted mt-1">
+                  {agreementType === 'deposit'
+                    ? 'Required before the deposit PA can be raised — the signed agreement or deposit request is its only evidence.'
+                    : 'Contract copies, signed schedules, etc.'}
+                </p>
                 <p className="text-xs text-fg-muted mt-1">{ATTACHMENT_RULE.hint}</p>
               </div>
               <input id="agreement-file-upload" type="file" multiple accept={ATTACHMENT_RULE.accept} className="sr-only" onChange={handleFileInput} />
