@@ -3,8 +3,10 @@
  * column. The app supplies the words, the photo and the form; the look lives
  * here, so the sign-in screen re-skins with the rest of UniOps.
  *
- * Desktop: 1000 : 440 split (the form column is fixed, the brand panel takes
- * the rest). Below lg: the brand panel becomes a short header above the form.
+ * Desktop: 900 : 540 split, proportional (user, 2026-11-18 — the earlier fixed
+ * 440px form column left the brand panel ~2120px wide on a 2K screen). The form
+ * column never goes below 400px; the form itself stays max 360px, centred.
+ * Below lg: the brand panel becomes a short header above the form.
  */
 import React from 'react'
 import { cn } from '../lib/cn'
@@ -89,7 +91,7 @@ export function AuthLayout({
   brand, product, headline, description, photoUrl, photoPosition, modules, footer, children,
 }: AuthLayoutProps) {
   return (
-    <div className="grid min-h-screen bg-surface lg:grid-cols-[minmax(0,1fr)_440px]">
+    <div className="grid min-h-screen bg-surface lg:grid-cols-[minmax(0,900fr)_minmax(400px,540fr)]">
       {/* Desktop brand panel */}
       <section className="relative hidden overflow-hidden bg-nav text-white lg:block">
         <Photo url={photoUrl} position={photoPosition} />
