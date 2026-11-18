@@ -115,6 +115,9 @@ export interface DataTableProps<T> {
    *  "label: value" lines (column meta `card`), and a Sort menu instead of the headers. Default
    *  640; false keeps the table at every width. */
   cardsBelow?: number | false
+  /** The first column (whatever is first now) stays in place while the table scrolls sideways; default on.
+   *  The table only, never the cards. */
+  freezeFirst?: boolean
   /** In a card, at most this many lines when a row opens (the rest is in the record); every line otherwise. */
   cardLines?: number
 }
@@ -126,10 +129,15 @@ export type RowAttrs = { className?: string } & { [data: `data-${string}`]: stri
 /** The table view: rows, a sortable header, a search box, paging and the
  *  empty / loading / error states. It knows nothing about the API or the
  *  query contract — QueryTable (patterns) adapts it to a QuerySpec. */
+/** The frozen first column's right edge: a line, so the rows passing under it read apart. */
+/** The leading cell (the chooser, a row's ▸): exactly 2rem wide, where the frozen first column starts. */
+const LEAD = 'w-8 min-w-8 max-w-8 px-1.5'
+const FROZEN_EDGE = 'shadow-[inset_-1px_0_0_0_var(--color-neutral-200,#e5e7eb)]'
+
 export function DataTable<T>({
   columns, rows, rowKey, onRowClick, loading, fetching, stale, busyNow, highlight, fit, statusBar, errorMessage, onRetry, emptyTitle = 'Nothing here yet', emptyText, emptyAction,
   sort, sortable = [], onSortChange, headerAddon, leadingHeader, chips, grouping, leading, afterSearch, onColumnMove, onColumnDrag, search, filters,
-  toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs, expand, cardsBelow = 640, cardLines = 6,
+  toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs, expand, cardsBelow = 640, cardLines = 6, freezeFirst = true,
 }: DataTableProps<T>) {
   const rootRef = useRef<HTMLDivElement>(null)
   const searchStop = useTourStop({ help: 'list.search', slot: 'list.search' })
@@ -156,6 +164,7 @@ export function DataTable<T>({
   })
   // The leading cell: the header's (e.g. the column chooser) and each row's ▸.
   const leadCell = leadingHeader !== undefined || !!expand
+  const frozenLeft = leadCell ? '2rem' : 0  // after the leading cell (w-8), itself frozen at 0
   const toggle = (k: string) => setCollapsed((s) => {
     const next = new Set(s)
     if (next.has(k)) next.delete(k)
@@ -399,15 +408,17 @@ export function DataTable<T>({
             <thead data-sticky-head className="sticky top-0 z-[1] bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500 shadow-[inset_0_-1px_0_0_var(--color-neutral-200,#e5e7eb)]">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
-                  {leadCell && <th className="w-8 px-2 py-2">{leadingHeader}</th>}
-                  {hg.headers.map((h) => {
+                  {leadCell && <th className={cn(LEAD, 'py-2', freezeFirst && 'sticky left-0 z-[2] bg-neutral-50')}>{leadingHeader}</th>}
+                  {hg.headers.map((h, hi) => {
                     const canSort = sortableSet.has(h.column.id) && !!onSortChange
                     const dir = h.column.getIsSorted()
                     const priority = sorting.length > 1 ? sorting.findIndex((s) => s.id === h.column.id) + 1 : 0
                     return (
                       <th
                         key={h.id}
-                        className={cn(cellPad, 'font-medium',
+                        style={freezeFirst && hi === 0 ? { left: frozenLeft } : undefined}
+                        data-frozen={freezeFirst && hi === 0 ? true : undefined}
+                        className={cn(cellPad, 'font-medium', freezeFirst && hi === 0 && cn('sticky z-[2] bg-neutral-50', FROZEN_EDGE),
                           dragging === h.column.id && 'opacity-40', dropOn === h.column.id && dragging !== h.column.id && 'shadow-[inset_2px_0_0_0_var(--color-primary-600,#0a7c7c)]')}
                         aria-sort={dir ? (dir === 'desc' ? 'descending' : 'ascending') : undefined}
                         onDragOver={onColumnMove ? (e) => { if (dragging) { e.preventDefault(); setDropOn(h.column.id) } } : undefined}
@@ -482,11 +493,11 @@ export function DataTable<T>({
                       onKeyDown={onRowClick ? (e) => {
                         if (e.target === e.currentTarget && e.key === 'Enter') { e.preventDefault(); onRowClick(r.original) }
                       } : undefined}
-                      className={cn('border-t border-neutral-100', onRowClick && 'cursor-pointer hover:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary-500', rowClass,
+                      className={cn('border-t border-neutral-100', freezeFirst && 'bg-white', onRowClick && 'cursor-pointer hover:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary-500', rowClass,
                         flash && 'bg-primary-50 animate-[platform-flash_2s_ease-out_forwards] motion-reduce:animate-none')}
                     >
                       {leadCell && (
-                        <td className="w-8 px-2">
+                        <td className={cn(LEAD, freezeFirst && 'sticky left-0 bg-inherit')}>
                           {detail !== null && (
                             <button type="button" ref={r.id === firstDetailId ? detailStop.attach : undefined} data-help={r.id === firstDetailId ? 'list.rowDetails' : undefined} aria-expanded={isOpen} aria-label={isOpen ? 'Hide details' : 'Show details'}
                               onClick={() => toggleRow(r.id)}
@@ -496,8 +507,9 @@ export function DataTable<T>({
                           )}
                         </td>
                       )}
-                      {r.getVisibleCells().map((c) => (
-                        <td key={c.id} className={cn(cellPad, 'text-neutral-700')}>
+                      {r.getVisibleCells().map((c, ci) => (
+                        <td key={c.id} style={freezeFirst && ci === 0 ? { left: frozenLeft } : undefined}
+                          className={cn(cellPad, 'text-neutral-700', freezeFirst && ci === 0 && cn('sticky bg-inherit', FROZEN_EDGE))}>
                           <Render def={c.column.columnDef.cell} ctx={c.getContext()} />
                         </td>
                       ))}
@@ -515,8 +527,11 @@ export function DataTable<T>({
                   const headers = heads.map((g) => (
                     <tr key={`g:${g.key}`} ref={i === 0 && g.level === 0 ? groupStop.attach : undefined} data-help={i === 0 && g.level === 0 ? 'list.groups' : undefined} className="border-t border-neutral-200 bg-neutral-50/70">
                       <td colSpan={span} className="py-1.5 pr-3" style={{ paddingLeft: `${0.75 + g.level * 1.25}rem` }}>
-                        {groupButton(g)}
-                        {g.summary && <span data-group-summary className="ml-3 text-xs font-medium text-neutral-600">{g.summary}</span>}
+                        {/* in view while the table scrolls sideways */}
+                        <span className={cn('inline-flex items-center', freezeFirst && 'sticky left-3')}>
+                          {groupButton(g)}
+                          {g.summary && <span data-group-summary className="ml-3 text-xs font-medium text-neutral-600">{g.summary}</span>}
+                        </span>
                       </td>
                     </tr>
                   ))
@@ -526,8 +541,9 @@ export function DataTable<T>({
             {footer && rows.length > 0 && (
               <tfoot ref={totalsStop.attach} data-help="list.totals" data-stale={dim || undefined} className={cn('sticky bottom-0 z-[1] bg-neutral-50 font-medium shadow-[inset_0_1px_0_0_var(--color-neutral-200,#e5e7eb)] transition-opacity', dim && 'opacity-60')}>
                 <tr>
-                  {leadCell && <td />}
-                  {footer.map((f, i) => <td key={i} className={cn(cellPad, 'text-neutral-800')}>{f}</td>)}
+                  {leadCell && <td className={cn(LEAD, freezeFirst && 'sticky left-0 bg-neutral-50')} />}
+                  {footer.map((f, i) => <td key={i} style={freezeFirst && i === 0 ? { left: frozenLeft } : undefined}
+                    className={cn(cellPad, 'text-neutral-800', freezeFirst && i === 0 && cn('sticky bg-neutral-50', FROZEN_EDGE))}>{f}</td>)}
                 </tr>
               </tfoot>
             )}

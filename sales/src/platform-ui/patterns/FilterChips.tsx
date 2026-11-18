@@ -48,31 +48,16 @@ export function FilterChips({ spec, onSpecChange, fields, locked = [], labelOf, 
   const group = spec.group ?? []
   const dragging = groupDrop?.dragging ?? null
   const refusal = dragging ? groupDrop!.refuse(dragging) : null
-  if (sort.length === 0 && group.length === 0 && filters.length === 0 && !search && !dragging) return null
-  return (
-    <TourMark as="div" role="group" aria-label="Active sort, grouping and search" help="list.chips" slot="list.chips" className="flex flex-col gap-1.5 text-xs">
-      {sort.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="w-16 font-medium uppercase tracking-wide text-neutral-400">Sorting</span>
-          {sort.map((s) => (
-            <Chip
-              key={s.field}
-              onClick={() => onSpecChange(flipSort(spec, s.field))}
-              onRemove={() => onSpecChange(removeSort(spec, s.field))}
-              removeLabel={`Remove sort by ${label(s.field)}`}
-            >
-              <span className="inline-flex items-center gap-1">
-                {label(s.field)} {s.desc ? <ArrowDown aria-label="descending" className="h-3 w-3" /> : <ArrowUp aria-label="ascending" className="h-3 w-3" />}
-              </span>
-            </Chip>
-          ))}
-        </div>
-      )}
-      {(group.length > 0 || dragging) && (
+  const overlay = !!dragging && group.length === 0
+  const groupRow = (
         <div
           data-group-drop={dragging ? (refusal ? 'refused' : 'open') : undefined}
           className={cn('flex flex-wrap items-center gap-1.5 rounded',
-            dragging && 'border border-dashed px-1.5 py-1',
+            // the same box whether a drag is on or not: nothing below moves when the row turns into a target
+            groupDrop && 'border border-transparent px-1.5 py-1',
+            // no grouping yet: the target is laid over what is above the table (nothing moves under the cursor)
+            overlay && 'absolute inset-x-0 bottom-0 z-20 bg-white shadow-md',
+            dragging && 'border-dashed',
             dragging && !refusal && (hover.over ? 'border-primary-600 bg-primary-50' : 'border-primary-300'),
             dragging && refusal && 'border-neutral-300 bg-neutral-50')}
           {...(groupDrop ? hover.bind : {})}
@@ -144,7 +129,32 @@ export function FilterChips({ spec, onSpecChange, fields, locked = [], labelOf, 
             </span>
           )}
         </div>
+  )
+  const others = sort.length > 0 || filters.length > 0 || !!search
+  // A header dragged over a list with no chips: only the target, laid over the toolbar (a zero-height
+  // anchor whose own gap is taken back, so the table does not move).
+  if (!others && group.length === 0) return overlay ? <div className="relative -mb-3 h-0 text-xs">{groupRow}</div> : null
+  return (
+    <TourMark as="div" role="group" aria-label="Active sort, grouping and search" help="list.chips" slot="list.chips" className="relative flex flex-col gap-1.5 text-xs">
+      {overlay && groupRow}
+      {sort.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="w-16 font-medium uppercase tracking-wide text-neutral-400">Sorting</span>
+          {sort.map((s) => (
+            <Chip
+              key={s.field}
+              onClick={() => onSpecChange(flipSort(spec, s.field))}
+              onRemove={() => onSpecChange(removeSort(spec, s.field))}
+              removeLabel={`Remove sort by ${label(s.field)}`}
+            >
+              <span className="inline-flex items-center gap-1">
+                {label(s.field)} {s.desc ? <ArrowDown aria-label="descending" className="h-3 w-3" /> : <ArrowUp aria-label="ascending" className="h-3 w-3" />}
+              </span>
+            </Chip>
+          ))}
+        </div>
       )}
+      {(group.length > 0 && !overlay) && groupRow}
       {(filters.length > 0 || search) && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="w-16 font-medium uppercase tracking-wide text-neutral-400">Search</span>

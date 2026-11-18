@@ -172,11 +172,24 @@ async function run(name, viewport) {
     // Grouping by drag and drop (user 2026-11-18): a header's grip onto the Grouping row groups by it.
     // The browser's own drag events with one DataTransfer (a pointer-driven HTML5 drag does not run headless).
     await open('/payments')
+    // The first column stays put while the table scrolls sideways (user 2026-11-18).
+    const first = page.locator('thead th[data-frozen]:visible').first()
+    const x0 = (await first.boundingBox()).x
+    await page.locator('[data-table-scroll]:visible').first().evaluate((el) => { el.scrollLeft = 400 })
+    await page.waitForTimeout(200)
+    const scrolled = await page.locator('[data-table-scroll]:visible').first().evaluate((el) => el.scrollLeft)
+    const x1 = (await first.boundingBox()).x
+    check(scrolled > 0 && Math.abs(x1 - x0) < 1, `${name} frozen column: the first column stays while the table scrolls (scrolled ${scrolled}px, x ${x0} → ${x1})`)
+    await shot('frozen-column')
+    await page.locator('[data-table-scroll]:visible').first().evaluate((el) => { el.scrollLeft = 0 })
+    const tableTop = async () => (await page.locator('thead:visible').first().boundingBox()).y
+    const top0 = await tableTop()
     const dt = await page.evaluateHandle(() => new DataTransfer())
     const grip = page.locator('[data-column-grip="method"]').first()
     await grip.dispatchEvent('dragstart', { dataTransfer: dt })
     const zone = page.locator('[data-group-drop]')
     await zone.waitFor({ timeout: 5000 })
+    check(Math.abs((await tableTop()) - top0) < 1, `${name} drag to group: the table does not move when the Grouping row shows`)
     check(await zone.getAttribute('data-group-drop') === 'open', `${name} drag to group: the Grouping row opens for a groupable column`)
     await zone.dispatchEvent('dragenter', { dataTransfer: dt })
     await zone.dispatchEvent('dragover', { dataTransfer: dt })
