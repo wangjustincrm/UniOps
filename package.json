@@ -9,5 +9,9 @@
     "portal",
     "vms",
     "finance"
-  ]
+  ],
+  "scripts": {
+    "ui:guard": "node scripts/ui-guard.mjs",
+    "ui:guard:report": "node scripts/ui-guard.mjs --report"
+  }
 }
