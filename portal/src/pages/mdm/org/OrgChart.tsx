@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import { useStaffPerm } from '@/pages/mdm/staff/shared'
 import { Combobox, type ComboOption } from './Combobox'
 
-import { Button, ChoiceCard, Input, MenuItem, Segmented, Select, Card } from '@uniops/shell'
+import { Button, ChoiceCard, Input, MenuItem, Segmented, Select, Card, Badge } from '@uniops/shell'
 type Relation = 'child' | 'assistant'
 type Drop = 'before' | 'after' | 'inside'
 interface Box { id: string; parent_id: string | null; relation: Relation; tone: string | null }
@@ -397,7 +397,7 @@ export default function OrgChart() {
                         <span className="block truncate text-xs text-fg-muted">{p.title ?? '—'}</span>
                         {p.employee_id && (
                           <span className="block truncate text-xs text-fg-muted">
-                            {p.is_manager && <span className="mr-1 rounded bg-primary-50 px-1 font-medium text-primary-700" title="Marked as a manager in Staff">Manager</span>}
+                            {p.is_manager && <Badge variant="accent" size="sm" className="mr-1" title="Marked as a manager in Staff">Manager</Badge>}
                             {p.adp_department ?? '—'}
                           </span>
                         )}
