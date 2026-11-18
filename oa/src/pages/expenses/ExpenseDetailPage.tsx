@@ -12,7 +12,7 @@ import { ActionModal } from '@/components/ui/ActionModal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
-import { FileInput, TBody, THead, Table, Td, Th, Tr, Button, Badge, type BadgeTone } from '@uniops/shell'
+import { FileInput, TBody, THead, Table, Td, Th, Tr, Button, Badge, type BadgeTone, Card } from '@uniops/shell'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ApprovalEvent {
@@ -244,7 +244,7 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
   }
 
   return (
-    <div className="rounded-xl border border-line bg-surface overflow-hidden">
+    <Card className="overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3 border-b border-line-subtle">
         <h2 className="text-sm font-semibold text-fg-secondary flex items-center gap-2">
           <Paperclip className="h-4 w-4 text-fg-muted" />
@@ -327,7 +327,7 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
           ))}
         </div>
       )}
-    </div>
+    </Card>
   )
 }
 
@@ -388,7 +388,7 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
   }
 
   return (
-    <div className="rounded-xl border border-line bg-surface overflow-hidden">
+    <Card className="overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3 border-b border-line-subtle">
         <h2 className="text-sm font-semibold text-fg-secondary">Approval Status</h2>
         <span className="text-xs text-fg-muted">{approvedCount} of {steps.length} approved</span>
@@ -450,7 +450,7 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
           </li>
         ))}
       </ol>
-    </div>
+    </Card>
   )
 }
 
@@ -672,7 +672,7 @@ export default function ExpenseDetailPage() {
       <div className="lg:col-span-8 flex flex-col gap-6 min-w-0">
 
       {/* Claim summary */}
-      <div className="grid grid-cols-2 gap-4 rounded-xl border border-line bg-surface p-5">
+      <Card className="grid grid-cols-2 gap-4 p-5">
         <div>
           <p className="text-xs font-medium text-fg-muted">Submission Date</p>
           <p className="mt-0.5 text-sm font-medium text-fg">{formatDate(claim.submission_date)}</p>
@@ -720,11 +720,11 @@ export default function ExpenseDetailPage() {
           </div>
         </div>
         )}
-      </div>
+      </Card>
 
       {/* Custom form answers, labelled as on the claim PDF (OA.md §6.2) */}
       {isCfm && claim.form_fields && (
-        <div className="rounded-xl border border-line bg-surface p-5 flex flex-col gap-3">
+        <Card className="p-5 flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-fg-secondary">
             Form Details{claim.form_name ? ` — ${claim.form_name}` : ''}
           </h2>
@@ -736,12 +736,12 @@ export default function ExpenseDetailPage() {
               </div>
             ))}
           </dl>
-        </div>
+        </Card>
       )}
 
       {/* Travel Application details (TRA — no money/line items, has its own PDF) */}
       {claim.claim_type === 'TRA' && (
-        <div className="rounded-xl border border-line bg-surface p-5 flex flex-col gap-3">
+        <Card className="p-5 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-fg-secondary">Travel Application</h2>
             <Button variant="link" onClick={() => regenPdf.mutate()} disabled={regenPdf.isPending}
@@ -764,12 +764,12 @@ export default function ExpenseDetailPage() {
               <dd>{claim.leave_from_date ? `${formatDate(claim.leave_from_date)} → ${formatDate(claim.leave_to_date)}` : '—'}</dd></div>
             <div className="sm:col-span-2"><dt className="text-fg-muted">Remarks</dt><dd>{claim.notes || '—'}</dd></div>
           </dl>
-        </div>
+        </Card>
       )}
 
       {/* Line items (EXP / TRV / CFM — MIL uses the trip log below, TRA has no line items) */}
       {claim.claim_type !== 'MIL' && claim.claim_type !== 'TRA' && claim.line_items.length > 0 && (
-        <div className="rounded-xl border border-line bg-surface overflow-hidden">
+        <Card className="overflow-hidden">
           <div className="border-b border-line-subtle px-5 py-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-fg-secondary">Line Items</h2>
             {claim.claim_type === 'TRV' && claim.travel_country && claim.travel_country !== 'CA' && (
@@ -817,12 +817,12 @@ export default function ExpenseDetailPage() {
               ))}
             </TBody>
           </Table>
-        </div>
+        </Card>
       )}
 
       {/* Trip items (MIL) */}
       {claim.claim_type === 'MIL' && claim.trip_items.length > 0 && (
-        <div className="rounded-xl border border-line bg-surface overflow-hidden">
+        <Card className="overflow-hidden">
           <div className="border-b border-line-subtle px-5 py-3">
             <h2 className="text-sm font-semibold text-fg-secondary">Trip Log</h2>
           </div>
@@ -855,7 +855,7 @@ export default function ExpenseDetailPage() {
               ))}
             </TBody>
           </Table>
-        </div>
+        </Card>
       )}
 
       {/* Attachment requirement hint */}
@@ -883,7 +883,7 @@ export default function ExpenseDetailPage() {
 
         {/* Approval timeline — every action on the claim, with its comment */}
         {claim.approval_events.length > 0 && (
-          <div className="rounded-xl border border-line bg-surface p-5">
+          <Card className="p-5">
             <h2 className="mb-4 text-sm font-semibold text-fg-secondary">Approval Timeline</h2>
             <div className="space-y-3">
               {claim.approval_events.map((evt) => (
@@ -905,7 +905,7 @@ export default function ExpenseDetailPage() {
                 </div>
               ))}
             </div>
-          </div>
+          </Card>
         )}
       </div>
       </div>

@@ -7,7 +7,7 @@ import { api } from '@/lib/api'
 import { STATUS } from '@/lib/status'
 import { Pagination } from '@/components/ui/Pagination'
 import { StatusBadge } from '@/components/ui/badge'
-import { Button, DropdownPortal, MenuItem, SortTh, TBody, THead, Table, Tabs, Td, Tr, useAnchorRect, useSort, Badge, type BadgeTone } from '@uniops/shell'
+import { Button, DropdownPortal, MenuItem, SortTh, TBody, THead, Table, Tabs, Td, Tr, useAnchorRect, useSort, Badge, type BadgeTone, Card } from '@uniops/shell'
 
 type ExpenseSortKey = 'claim_number' | 'claim_type' | 'employee_name' | 'net_amount' | 'status' | 'date'
 
@@ -161,7 +161,7 @@ export default function ExpenseListPage() {
       />
 
       {/* Table */}
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         {isLoading ? (
           <div className="flex items-center justify-center py-16 text-sm text-fg-muted">Loading…</div>
         ) : !data?.items.length ? (
@@ -218,7 +218,7 @@ export default function ExpenseListPage() {
             onPageSizeChange={(s) => { setPageSize(s); setPage(1) }}
           />
         )}
-      </div>
+      </Card>
     </div>
   )
 }

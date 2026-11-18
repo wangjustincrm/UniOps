@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useReplaceTab, Button, Checkbox, Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { useReplaceTab, Button, Checkbox, Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Card } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2, AlertTriangle } from 'lucide-react'
@@ -291,7 +291,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
       </div>
 
       {/* Claim header */}
-      <div className="rounded-xl border border-line bg-surface p-5">
+      <Card className="p-5">
         <h2 className="mb-4 text-sm font-semibold text-fg-secondary">Claim Details</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
@@ -337,7 +337,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
             </Select>
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Over-km warning */}
       {isOverMaxKm && (
@@ -351,7 +351,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
       )}
 
       {/* Trip log */}
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-line-subtle px-5 py-3">
           <h2 className="text-sm font-semibold text-fg-secondary">Trip Log</h2>
           <span className="text-xs text-fg-muted">Rate: ${parseFloat(currentRate).toFixed(4)}/km</span>
@@ -454,7 +454,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
             Add trip
           </Button>
         </div>
-      </div>
+      </Card>
 
       {/* Error */}
       {createMutation.isError && (

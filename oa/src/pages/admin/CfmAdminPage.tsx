@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
-import { Button, DisclosureButton, Input, Select, Switch, Textarea } from '@uniops/shell'
+import { Button, DisclosureButton, Input, Select, Switch, Textarea, Card } from '@uniops/shell'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface CfmField {
@@ -138,7 +138,7 @@ function FormEditor({ form, onChange, onRemove }: {
     onChange({ ...form, fields: form.fields.filter((_, idx) => idx !== i) })
 
   return (
-    <div className="rounded-xl border border-line bg-surface">
+    <Card>
       <div className="flex items-center justify-between px-4 py-3 border-b border-line-subtle">
         <DisclosureButton open={open} onClick={() => setOpen(v => !v)}
           className="text-sm font-semibold text-fg">
@@ -225,7 +225,7 @@ function FormEditor({ form, onChange, onRemove }: {
           </div>
         </div>
       )}
-    </div>
+    </Card>
   )
 }
 

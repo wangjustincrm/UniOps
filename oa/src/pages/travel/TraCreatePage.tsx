@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BackLink } from '@/components/BackLink'
-import { useReplaceTab, Button, Checkbox, Input, Textarea } from '@uniops/shell'
+import { useReplaceTab, Button, Checkbox, Input, Textarea, Card } from '@uniops/shell'
 import { ArrowLeft } from 'lucide-react'
 import { oaRoutes } from '@/app/routes'
 import { todayLocal } from '@/lib/utils'
@@ -90,7 +90,7 @@ export default function TraCreatePage({ editClaimId }: EditableFormProps = {}) {
         <p className="mt-0.5 text-sm text-fg-muted">Apply for a business trip before claiming expenses</p>
       </div>
 
-      <div className="rounded-xl border border-line bg-surface p-5 flex flex-col gap-4">
+      <Card className="p-5 flex flex-col gap-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">Application Date *</label>
@@ -156,7 +156,7 @@ export default function TraCreatePage({ editClaimId }: EditableFormProps = {}) {
           <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2}
             className="w-full resize-none" />
         </div>
-      </div>
+      </Card>
 
       {error && <ErrorBanner message={error} />}
       <Button type="submit" size="sm" disabled={mutation.isPending} className="self-start">

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { BackLink } from '@/components/BackLink'
-import { useReplaceTab, Button, Input, Select, Textarea } from '@uniops/shell'
+import { useReplaceTab, Button, Input, Select, Textarea, Card } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2 } from 'lucide-react'
@@ -170,7 +170,7 @@ export default function CfmCreatePage({ editClaimId }: EditableFormProps = {}) {
         )}
       </div>
 
-      <div className="rounded-xl border border-line bg-surface p-5 flex flex-col gap-4">
+      <Card className="p-5 flex flex-col gap-4">
         {(form.fields ?? []).map(field => (
           <div key={field.name}>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">
@@ -194,7 +194,7 @@ export default function CfmCreatePage({ editClaimId }: EditableFormProps = {}) {
           <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
             className="w-full resize-none" />
         </div>
-      </div>
+      </Card>
 
       {error && <ErrorBanner message={error} />}
 

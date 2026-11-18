@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useReplaceTab, Button, Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { useReplaceTab, Button, Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Card } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2, AlertTriangle, Paperclip, X } from 'lucide-react'
@@ -428,7 +428,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
       </div>
 
       {/* Form header */}
-      <div className="rounded-xl border border-line bg-surface p-5">
+      <Card className="p-5">
         <h2 className="mb-4 text-sm font-semibold text-fg-secondary">Claim Details</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
@@ -463,7 +463,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
             />
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Over-budget warning */}
       {overBudgetLines.length > 0 && (
@@ -479,7 +479,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
       {/* Line items — a table from lg up; below that each line is a card with
           its fields stacked full width (ISS-0255). Both are built from the
           same renderLine() controls, so state and handlers are shared. */}
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-line-subtle px-5 py-3">
           <h2 className="text-sm font-semibold text-fg-secondary">Line Items</h2>
           <span className="text-xs text-fg-muted">Default rate: {(hstRate * 100).toFixed(0)}% · per-line tax code overrides</span>
@@ -600,7 +600,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
             </Button>
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Missing line fields — one message per line, live until fixed */}
       {lineIssues.length > 0 && (

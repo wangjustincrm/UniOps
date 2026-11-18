@@ -8,7 +8,7 @@ import { STATUS } from '@/lib/status'
 import { Pagination } from '@/components/ui/Pagination'
 import { StatusBadge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { Button, SortTh, TBody, THead, Table, Tabs, Td, Th, Tr, useSort } from '@uniops/shell'
+import { Button, SortTh, TBody, THead, Table, Tabs, Td, Th, Tr, useSort, Card } from '@uniops/shell'
 
 type TravelSortKey = 'claim_number' | 'employee_name' | 'department_name' | 'travel_destination' | 'submission_date' | 'status'
 
@@ -99,7 +99,7 @@ export default function TravelApplicationsListPage() {
       />
 
       {/* Table */}
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         {isLoading ? (
           <div className="flex items-center justify-center py-16 text-sm text-fg-muted">Loading…</div>
         ) : !data?.items.length ? (
@@ -162,7 +162,7 @@ export default function TravelApplicationsListPage() {
             onPageSizeChange={(s) => { setPageSize(s); setPage(1) }}
           />
         )}
-      </div>
+      </Card>
 
       {pendingDelete && (
         <ConfirmDialog

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BackLink } from '@/components/BackLink'
-import { Button, DisclosureButton, FileInput, Input, Segmented, Select, Textarea, useReplaceTab, Badge } from '@uniops/shell'
+import { Button, DisclosureButton, FileInput, Input, Segmented, Select, Textarea, useReplaceTab, Badge, Card } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Plus, Trash2, AlertTriangle, ArrowLeft, Paperclip, Upload, X } from 'lucide-react'
@@ -171,7 +171,7 @@ function CategorySection({
   const limit = rawLimit != null ? Number(rawLimit) : null
 
   return (
-    <div className="rounded-xl border border-line bg-surface overflow-hidden">
+    <Card className="overflow-hidden">
       <DisclosureButton
         open={open}
         onClick={() => setOpen(v => !v)}
@@ -467,7 +467,7 @@ function CategorySection({
           </Button>
         </div>
       )}
-    </div>
+    </Card>
   )
 }
 
@@ -792,7 +792,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
       )}
 
       {/* Travel Application selector */}
-      <div className="rounded-xl border border-line bg-surface p-5">
+      <Card className="p-5">
         <label className="mb-1 block text-xs font-medium text-fg-secondary">Travel Application *</label>
         <Select required value={travelApplicationId}
           onChange={e => {
@@ -836,10 +836,10 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
             <p className="mt-1 text-xs text-fg-muted">The reimbursement is paid to this traveler.</p>
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Trip header */}
-      <div className="rounded-xl border border-line bg-surface p-5 flex flex-col gap-4">
+      <Card className="p-5 flex flex-col gap-4">
         <h2 className="text-sm font-semibold text-fg-secondary">Trip Details</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
@@ -879,7 +879,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
               className="w-full" />
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Expense lines by category */}
       {TRV_CATEGORIES.map(({ key, label }) => (
@@ -909,7 +909,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
       </div>
 
       {/* Summary */}
-      <div className="rounded-xl border border-line bg-surface p-4 space-y-1.5 text-sm">
+      <Card className="p-4 space-y-1.5 text-sm">
         <div className="flex justify-between text-fg-muted">
           <span>Subtotal (net)</span>
           <span className="font-mono">{formatAmount(totalNet, currency)}</span>
@@ -922,7 +922,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
           <span>Total Claim</span>
           <span className="font-mono text-primary-700">{formatAmount(totalGross, currency)}</span>
         </div>
-      </div>
+      </Card>
 
       {lineIssues.length > 0 && (
         <div role="alert" data-line-issues className="flex items-start gap-2 rounded-lg border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">
