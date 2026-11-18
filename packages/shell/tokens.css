@@ -5,9 +5,19 @@
  *   @import "tailwindcss";
  *   @import "@uniops/shell/tokens.css";
  *
- * Tailwind v4 collects the @theme below (even from this imported file) and
- * generates the color/font utilities. Keep app-specific overrides (if any) in
- * the app's own index.css after this import.
+ * Two layers:
+ *
+ *   1. Primitive ramps (primary / neutral / success / warning / danger / info).
+ *      Raw values. Pages should NOT reach for these directly.
+ *
+ *   2. Semantic roles (fg / surface / line / canvas / inverse, and the
+ *      <status>-fg / -soft / -line / -solid quads). These are what pages and
+ *      Shell components use. Re-skinning UniOps means changing the values in
+ *      this file and the Shell components, nothing else.
+ *
+ * Contrast: every text role below reaches 4.5:1 on surface (#FFFFFF) and on
+ * surface-subtle. fg-faint does NOT and is only for icons, placeholders and
+ * disabled text.
  */
 
 @theme {
@@ -18,74 +28,147 @@
   --color-primary-300: #64A6A6;
   --color-primary-400: #2FAAAA;
   --color-primary-500: #0F9999;
-  --color-primary-600: #0A7C7C;
+  --color-primary-600: #0A7C7C;   /* 5.0:1 on white */
   --color-primary-700: #085E5E;
   --color-primary-800: #064A4A;
   --color-primary-900: #053838;
 
-  /* ── Success — emerald (full scale; existing 50/500/600/700 kept) ─ */
-  --color-success-50:  #D1FAE5;
+  /* ── Success — emerald. 600 was #10B981 (= 500, 2.5:1); now 5.5:1 ── */
+  --color-success-50:  #ECFDF5;
   --color-success-100: #D1FAE5;
   --color-success-200: #A7F3D0;
   --color-success-300: #6EE7B7;
   --color-success-400: #34D399;
   --color-success-500: #10B981;
-  --color-success-600: #10B981;
-  --color-success-700: #059669;
-  --color-success-800: #065F46;
-  --color-success-900: #064E3B;
+  --color-success-600: #047857;
+  --color-success-700: #065F46;
+  --color-success-800: #064E3B;
+  --color-success-900: #022C22;
 
-  /* ── Warning — amber (full scale; existing 50/500/600 kept) ─────── */
-  --color-warning-50:  #FEF3C7;
+  /* ── Warning — amber. 600 was #D97706 (3.2:1); now 5.0:1 ────────── */
+  --color-warning-50:  #FFFBEB;
   --color-warning-100: #FEF3C7;
   --color-warning-200: #FDE68A;
   --color-warning-300: #FCD34D;
   --color-warning-400: #FBBF24;
   --color-warning-500: #F59E0B;
-  --color-warning-600: #D97706;
-  --color-warning-700: #B45309;
-  --color-warning-800: #92400E;
-  --color-warning-900: #78350F;
+  --color-warning-600: #B45309;
+  --color-warning-700: #92400E;
+  --color-warning-800: #78350F;
+  --color-warning-900: #451A03;
 
-  /* ── Danger — red (full scale; existing 50/500/600/700 kept) ────── */
-  --color-danger-50:  #FEE2E2;
+  /* ── Danger — red ──────────────────────────────────────────────── */
+  --color-danger-50:  #FEF2F2;
   --color-danger-100: #FEE2E2;
   --color-danger-200: #FECACA;
   --color-danger-300: #FCA5A5;
   --color-danger-400: #F87171;
   --color-danger-500: #EF4444;
-  --color-danger-600: #DC2626;
+  --color-danger-600: #DC2626;    /* 4.8:1 */
   --color-danger-700: #B91C1C;
   --color-danger-800: #991B1B;
   --color-danger-900: #7F1D1D;
 
-  /* ── Info — blue (full scale; existing 50/500 kept) ─────────────── */
-  --color-info-50:  #DBEAFE;
+  /* ── Info — blue ───────────────────────────────────────────────── */
+  --color-info-50:  #EFF6FF;
   --color-info-100: #DBEAFE;
   --color-info-200: #BFDBFE;
   --color-info-300: #93C5FD;
   --color-info-400: #60A5FA;
   --color-info-500: #3B82F6;
-  --color-info-600: #2563EB;
+  --color-info-600: #2563EB;      /* 5.2:1 */
   --color-info-700: #1D4ED8;
   --color-info-800: #1E40AF;
   --color-info-900: #1E3A8A;
 
   /* ── Neutral — cool-tinted grays ──────────────────────────────── */
-  --color-neutral-50:  #F7F8F9;   /* container secondary bg     */
-  --color-neutral-100: #ECEEF0;   /* inset bg, disabled fields  */
-  --color-neutral-200: #D9DFE3;   /* borders, dividers          */
-  --color-neutral-300: #B3BEC9;   /* placeholder, muted icons   */
-  --color-neutral-400: #8C9AA8;   /* tertiary text              */
-  --color-neutral-500: #667685;   /* secondary text             */
-  --color-neutral-600: #4E6070;   /* medium text                */
-  --color-neutral-700: #3A4D5C;   /* strong text                */
-  --color-neutral-800: #263240;   /* very dark                  */
-  --color-neutral-900: #1A2730;   /* primary text               */
+  --color-neutral-50:  #F7F8F9;
+  --color-neutral-100: #ECEEF0;
+  --color-neutral-200: #D9DFE3;
+  --color-neutral-300: #B3BEC9;
+  --color-neutral-400: #8C9AA8;   /* 2.9:1 — icons only */
+  --color-neutral-500: #667685;   /* 4.7:1 */
+  --color-neutral-600: #4E6070;
+  --color-neutral-700: #3A4D5C;
+  --color-neutral-800: #263240;
+  --color-neutral-900: #1A2730;
 
-  /* ── Font ─────────────────────────────────────────────────────── */
+  /* ══ Semantic roles ═══════════════════════════════════════════════ */
+
+  /* Text: three roles plus faint (non-text) */
+  --color-fg:           var(--color-neutral-900);
+  --color-fg-secondary: var(--color-neutral-600);
+  --color-fg-muted:     var(--color-neutral-500);
+  --color-fg-faint:     var(--color-neutral-400);
+  --color-fg-on-accent: #FFFFFF;
+
+  /* Surfaces, from back to front */
+  --color-canvas:          #FAFBFC;   /* page background */
+  --color-surface:         #FFFFFF;   /* cards, tables, inputs */
+  --color-surface-subtle:  var(--color-neutral-50);   /* hover rows, headers */
+  --color-surface-sunken:  var(--color-neutral-100);  /* insets, disabled */
+  --color-surface-strong:  var(--color-neutral-200);  /* tracks, dividers as fill */
+  --color-inverse:         var(--color-neutral-800);  /* tooltips, dark chips */
+
+  /* Lines */
+  --color-line-subtle: var(--color-neutral-100);
+  --color-line:        var(--color-neutral-200);
+  --color-line-strong: var(--color-neutral-300);
+
+  /* Accent (the brand). solid = filled buttons; fg = text/links on surface */
+  --color-accent:        var(--color-primary-600);
+  --color-accent-hover:  var(--color-primary-700);
+  --color-accent-active: var(--color-primary-800);
+  --color-accent-fg:     var(--color-primary-700);
+  --color-accent-soft:   var(--color-primary-50);
+  --color-accent-line:   var(--color-primary-200);
+
+  /* Status quads: fg (text on surface/soft), soft (tinted fill), line, solid */
+  --color-success-fg:    var(--color-success-700);
+  --color-success-soft:  var(--color-success-50);
+  --color-success-line:  var(--color-success-200);
+  --color-success-solid: var(--color-success-600);
+
+  --color-warning-fg:    var(--color-warning-700);
+  --color-warning-soft:  var(--color-warning-50);
+  --color-warning-line:  var(--color-warning-200);
+  --color-warning-solid: var(--color-warning-600);
+
+  --color-danger-fg:     var(--color-danger-700);
+  --color-danger-soft:   var(--color-danger-50);
+  --color-danger-line:   var(--color-danger-200);
+  --color-danger-solid:  var(--color-danger-600);
+
+  --color-info-fg:       var(--color-info-700);
+  --color-info-soft:     var(--color-info-50);
+  --color-info-line:     var(--color-info-200);
+  --color-info-solid:    var(--color-info-600);
+
+  /* Sidebar (app chrome) */
+  --color-nav:           var(--color-primary-700);
+  --color-nav-fg:        rgb(255 255 255 / 0.72);
+  --color-nav-fg-active: #FFFFFF;
+  --color-nav-item-hover:  rgb(255 255 255 / 0.08);
+  --color-nav-item-active: rgb(255 255 255 / 0.14);
+  --color-nav-line:      rgb(255 255 255 / 0.10);
+
+  /* ── Type ─────────────────────────────────────────────────────── */
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+
+  /* Smallest size on any screen. Replaces text-[9px] / [10px] / [11px]. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+
+  /* ── Elevation — neutral, soft, small ─────────────────────────── */
+  --shadow-xs: 0 1px 2px rgb(26 39 48 / 0.05);
+  --shadow-sm: 0 1px 3px rgb(26 39 48 / 0.08), 0 1px 2px rgb(26 39 48 / 0.04);
+  --shadow-md: 0 4px 12px rgb(26 39 48 / 0.08), 0 1px 3px rgb(26 39 48 / 0.05);
+  --shadow-lg: 0 12px 32px rgb(26 39 48 / 0.12), 0 2px 6px rgb(26 39 48 / 0.06);
+  --shadow-focus: 0 0 0 3px rgb(10 124 124 / 0.18);
+
+  /* ── Motion ───────────────────────────────────────────────────── */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }
 
 @layer base {
@@ -94,7 +177,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-primary-500);
+    outline: 2px solid var(--color-accent);
     outline-offset: 2px;
     border-radius: 3px;
   }
@@ -106,8 +189,8 @@
 
   body {
     margin: 0;
-    background-color: #FAFBFC;
-    color: #1A2730;
+    background-color: var(--color-canvas);
+    color: var(--color-fg);
   }
 
   #root {
@@ -123,6 +206,14 @@
   input[type="number"] {
     -moz-appearance: textfield;
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
 @layer utilities {
@@ -134,22 +225,22 @@
     white-space: nowrap;
   }
 
+  /* Same, tighter column. No negative tracking: small digits must stay legible. */
   .amount-compact {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     text-align: right;
     white-space: nowrap;
-    letter-spacing: -0.02em;
   }
 
-  /* Teal-tinted shadow scale */
-  .shadow-teal-sm  { box-shadow: 0 1px 3px  rgba(10,124,124,0.08); }
-  .shadow-teal-md  { box-shadow: 0 2px 8px  rgba(10,124,124,0.10); }
-  .shadow-teal-lg  { box-shadow: 0 4px 16px rgba(10,124,124,0.12); }
-  .shadow-teal-focus { box-shadow: 0 0 0 3px rgba(10,124,124,0.10); }
+  /* Legacy names kept for unmigrated pages; now neutral, not teal-tinted. */
+  .shadow-teal-sm  { box-shadow: var(--shadow-xs); }
+  .shadow-teal-md  { box-shadow: var(--shadow-sm); }
+  .shadow-teal-lg  { box-shadow: var(--shadow-md); }
+  .shadow-teal-focus { box-shadow: var(--shadow-focus); }
 
   .skeleton {
-    background: var(--color-neutral-100);
+    background: var(--color-surface-sunken);
     border-radius: 4px;
     animation: skeleton-pulse 1.5s ease-in-out infinite;
   }
@@ -168,8 +259,8 @@
 }
 
 @keyframes modal-in {
-  from { opacity: 0; transform: scale(0.96) translateY(8px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes overlay-in {
