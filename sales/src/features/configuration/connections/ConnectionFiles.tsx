@@ -1,7 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
 import {
-  Button, ErrorView, LocalTable, StatusCell, queryKeys, useOpenView, type ColumnDef, columnsOf
- } from '@/platform-ui'
+  Button, LocalTable, StatusCell, useOpenView, type ColumnDef, columnsOf, useRecordList, QueryState,
+} from '@/platform-ui'
 import { documentsClient, type DocumentRead } from '@/features/operations/operationsApi'
 import type { ConnectionRead } from './connectionsApi'
 
@@ -19,11 +18,8 @@ const columns: ColumnDef<DocumentRead, unknown>[] = [
 export function ConnectionFiles({ connection: c }: { connection: ConnectionRead }) {
   const openView = useOpenView()
   const filters = [{ field: 'connection_id', op: 'eq' as const, value: String(c.id) }]
-  const q = useQuery({
-    queryKey: [...queryKeys.list(documentsClient), 'connection', c.id],
-    queryFn: () => documentsClient.list({ page: 1, pageSize: 20, sort: [{ field: 'created_at', desc: true }], filters }),
-  })
-  if (q.error) return <ErrorView error={q.error} />
+  const q = useRecordList(documentsClient, { page: 1, pageSize: 20, sort: [{ field: 'created_at', desc: true }], filters }, { errors: 'inline' })
+  if (q.isError) return <QueryState q={q}>{() => null}</QueryState>
   return (
     <div className="flex flex-col gap-2">
       <LocalTable<DocumentRead> ariaLabel="Last files" columns={columns} rows={q.data?.items ?? []} rowKey={(d) => d.id}

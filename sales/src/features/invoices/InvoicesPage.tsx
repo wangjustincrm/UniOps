@@ -1,13 +1,10 @@
 import { factTone } from '@/features/common/statusTones'
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, ConfirmAction, DetailList, ListPage, LocalTable, MasterDetailForm, MoneyCell,
-  RecordSheet, Section, StatusCell, formatDate, formatDateTime, formatMoney, numberColumn, queryKeys, readColumn, textColumn,
-  type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab,
-  compareRecord, useRefresh, Callout, columnsOf
- } from '@/platform-ui'
+  ActionButton, ConfirmAction, DetailList, ListPage, LocalTable, MasterDetailForm, MoneyCell, RecordSheet, Section, StatusCell, formatDate, formatDateTime, formatMoney, numberColumn, queryKeys, readColumn, textColumn, type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab, compareRecord, useRefresh, Callout, columnsOf, useRecord,
+} from '@/platform-ui'
 import { editInvoice, fetchInvoice, invoicesClient, releaseInvoice, sendInvoice, type InvoiceDetail, type InvoiceRead } from './invoicesApi'
 import { PartnerCell } from '@/features/common/PartnerCell'
 import { partnerLabel } from '@/features/common/labels'
@@ -117,7 +114,7 @@ function InvoiceForm({ inv, onSaved, onCancel }: { inv: InvoiceDetail; onSaved: 
 function Detail({ row }: { row: InvoiceRead }) {
   const id = row.id
   const qc = useQueryClient()
-  const q = useQuery({ queryKey: queryKeys.detail(invoicesClient, id), queryFn: () => fetchInvoice(id) })
+  const q = useRecord(invoicesClient, id, fetchInvoice, { errors: 'inline' })
   const sheetRefresh = useRefresh(q, { queryKey: queryKeys.detail(invoicesClient, id), compare: compareRecord, noChange: 'Up to date', auto: 'follow' })
   const [editing, setEditing] = useState(false)
   const [releasing, setReleasing] = useState(false)

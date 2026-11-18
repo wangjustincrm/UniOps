@@ -1,9 +1,8 @@
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, Button, DateInput, Dialog, ErrorMessage, FormField, MasterDetailForm, Skeleton, numberColumn, queryKeys, readColumn,
-  todayDate, useCan, type ActionDone, type FieldSpec,
+  ActionButton, Button, DateInput, Dialog, ErrorMessage, FormField, MasterDetailForm, numberColumn, queryKeys, readColumn, todayDate, useCan, type ActionDone, type FieldSpec, useRecord, QueryState,
 } from '@/platform-ui'
 import { useTestRunRefusal } from '@/features/common/testRun'
 import { OrderList } from '@/features/orders/OrdersPage'
@@ -43,8 +42,8 @@ function ConfirmOne({ o, close }: { o: OrderRead; close: () => void }) {
   const can = useCan(OPERATE)
   const canSend = useCan(MANAGE)
   const refused = useTestRunRefusal()
-  const q = useQuery({ queryKey: queryKeys.detail(ordersClient, o.id), queryFn: () => fetchOrder(o.id) })
-  if (q.isLoading || !q.data) return <Skeleton className="h-20 w-full" />
+  const q = useRecord(ordersClient, o.id, fetchOrder, { errors: 'inline' })
+  if (!q.data) return <QueryState q={q}>{() => null}</QueryState>
   const save = async (v: Record<string, unknown>, lines: Delivered[], send: boolean) => {
     await confirmDelivery({ order_id: o.id, confirmed_date: String(v.confirmed_date), ...(send ? { send } : {}),
       lines: lines.map((d) => ({ order_line_id: d.line.id, delivered_qty: deliveredOf(d) })) }).catch(refused)

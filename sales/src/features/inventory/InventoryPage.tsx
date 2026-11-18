@@ -1,10 +1,8 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import { z } from 'zod'
 import {
-  ActionButton, Button, Callout, IconButton, formatDate, formatNumber, ListPage, LocalTable, RecordSheet, SchemaForm, Section, columnsOf, queryKeys, useNotices,
-  type ColumnDef, type FieldSpec, type QuerySpec, type RecordTab,
+  ActionButton, Button, Callout, IconButton, formatDate, formatNumber, ListPage, LocalTable, RecordSheet, SchemaForm, Section, columnsOf, useNotices, type ColumnDef, type FieldSpec, type QuerySpec, type RecordTab, useRecordList,
 } from '@/platform-ui'
 import {
   PLACE, SOURCE, adjustStock, exportStock, stockItemsClient, stockLotsClient, stockMovesClient,
@@ -22,7 +20,7 @@ const ADJUST = 'sales.inventory.adjust'
 function ActiveLots({ item }: { item: string }) {
   const spec: QuerySpec = { page: 1, pageSize: 200, filters: [{ field: 'item_code', op: 'eq', value: item }, { field: 'on_hand_ea', op: 'ne', value: '0' }],
     sort: [{ field: 'expiry', desc: false }] }
-  const q = useQuery({ queryKey: [...queryKeys.list(stockLotsClient), 'active', item], queryFn: () => stockLotsClient.list(spec) })
+  const q = useRecordList(stockLotsClient, spec)
   return (
     <LocalTable<StockLotRead> ariaLabel={`Active lots of ${item}`} density="compact" fetching={q.isFetching}
       columns={lotColumns.filter((c) => (c as { accessorKey?: string }).accessorKey !== 'item_code')}
@@ -69,8 +67,8 @@ function AdjustForm({ item, lots, onDone }: { item: StockItemRead; lots: StockLo
 function ItemSheet({ row }: { row: StockItemRead }) {
   const [adjusting, setAdjusting] = useState(false)
   const spec: QuerySpec = { page: 1, pageSize: 500, filters: [{ field: 'item_code', op: 'eq', value: row.item_code }] }
-  const lotsQ = useQuery({ queryKey: [...queryKeys.list(stockLotsClient), 'item', row.item_code], queryFn: () => stockLotsClient.list(spec) })
-  const movesQ = useQuery({ queryKey: [...queryKeys.list(stockMovesClient), 'item', row.item_code], queryFn: () => stockMovesClient.list(spec) })
+  const lotsQ = useRecordList(stockLotsClient, spec, { errors: 'inline' })
+  const movesQ = useRecordList(stockMovesClient, spec, { errors: 'inline' })
   const lots = lotsQ.data?.items ?? []
   const moves = movesQ.data?.items ?? []
   const held = lots.filter((l) => l.on_hand_ea !== 0)

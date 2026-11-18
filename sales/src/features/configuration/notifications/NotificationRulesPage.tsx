@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, Badge, CrudPage, DetailList, formatDateTime, queryKeys, type ColumnDef, type FieldSpec, Hint,
+  ActionButton, Badge, CrudPage, DetailList, formatDateTime, queryKeys, type ColumnDef, type FieldSpec, Hint, useLookup,
 } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import {
@@ -65,8 +64,8 @@ function TestRule({ rule }: { rule: NotificationRuleRead }) {
  *  With no rule an event's task goes to the operator and no email is sent
  *  (AC-OB-52). */
 export default function NotificationRulesPage() {
-  const events = useQuery({ queryKey: ['sales', 'notification-events'], queryFn: fetchEvents, staleTime: 60_000 })
-  const users = useQuery({ queryKey: ['sales', 'notification-users'], queryFn: () => fetchUsers(), staleTime: 300_000 })
+  const events = useLookup(['sales', 'notification-events'], fetchEvents, { staleTime: 60_000 })
+  const users = useLookup(['sales', 'notification-users'], () => fetchUsers(), { staleTime: 300_000 })
   const fields: FieldSpec[] = [
     { name: 'event_type', label: 'Event', type: 'select', required: true,
       options: (events.data ?? []).filter((e) => e.rule_id === null).map((e) => ({ value: e.key, label: e.label })) },

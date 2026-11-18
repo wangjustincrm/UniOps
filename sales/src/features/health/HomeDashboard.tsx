@@ -1,10 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
 import { NEEDS_REVIEW } from '@/app/oldAddresses'
 import { useNavigate } from 'react-router-dom'
 import {
-  Button, ErrorView, LocalTable, PageHeader, Section, Skeleton, StatCard, useOpenView, type ColumnDef,
-  useRefresh, Hint, Muted, columnsOf
- } from '@/platform-ui'
+  Button, LocalTable, PageHeader, Section, Skeleton, StatCard, useOpenView, type ColumnDef, useRefresh, Hint, Muted, columnsOf, useLookup, QueryState,
+} from '@/platform-ui'
 import { fetchEvents } from '@/features/configuration/notifications/notificationsApi'
 import { fetchDashboard, fetchHealth, type DashboardRead } from './healthApi'
 import { HealthBadge } from './HealthBadge'
@@ -26,18 +24,17 @@ const runColumns: ColumnDef<RunRow, unknown>[] = [
  *  the list it opens. */
 export function HomeDashboard() {
   const navigate = useNavigate()
-  const dash = useQuery({ queryKey: ['sales', 'dashboard'], queryFn: fetchDashboard, refetchInterval: 60_000 })
-  const health = useQuery({ queryKey: ['sales', 'health'], queryFn: fetchHealth, refetchInterval: 60_000 })
-  const refresh = useRefresh(dash, { queryKey: ['sales', 'dashboard'], compare: () => ({ text: null }) })
-  const events = useQuery({ queryKey: ['sales', 'notification-events'], queryFn: fetchEvents, staleTime: 300_000 })
+  const dash = useLookup(['sales', 'dashboard'], fetchDashboard, { refetchInterval: 60_000, errors: 'inline' })
+  const health = useLookup(['sales', 'health'], fetchHealth, { refetchInterval: 60_000 })
+  useRefresh(dash, { queryKey: ['sales', 'dashboard'], compare: () => ({ text: null }) })
+  const events = useLookup(['sales', 'notification-events'], fetchEvents, { staleTime: 300_000 })
   const label = (type: string) => events.data?.find((e) => `sales_${e.key}` === type)?.label
     ?? (type === 'sales_test' ? 'Test notification' : type)
   const go = (page: string) => navigate(page)
   const openList = useOpenList()
   const openView = useOpenView()
 
-  if (dash.isLoading) return <Skeleton className="h-60 w-full" />
-  if (dash.error || !dash.data) return <ErrorView error={dash.error} onRetry={() => { void refresh.refresh() }} />
+  if (!dash.data) return <QueryState q={dash} skeleton="h-60">{() => null}</QueryState>
   const d = dash.data
   const h = health.data
   return (

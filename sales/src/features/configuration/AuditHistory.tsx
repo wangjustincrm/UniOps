@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
-import { EmptyState, ErrorView, Section, Skeleton, formatDateTime, queryKeys, Muted } from '@/platform-ui'
+import {
+  EmptyState, Section, formatDateTime, queryKeys, Muted, useLookup, QueryState,
+} from '@/platform-ui'
 
 /** One entry of a record's audit history (sales-api schemas/audit.py). */
 export interface AuditEntry {
@@ -34,10 +35,10 @@ export function AuditHistory({ resource, id, version, load }: {
   version?: number
   load: (id: number) => Promise<AuditEntry[]>
 }) {
-  const q = useQuery({ queryKey: [...queryKeys.audit({ basePath: resource }, id), version], queryFn: () => load(id) })
+  const q = useLookup([...queryKeys.audit({ basePath: resource }, id), version], () => load(id), { errors: 'inline' })
   return (
     <Section title="History" plain className="text-sm">
-      {q.isLoading ? <Skeleton className="h-16 w-full" /> : q.error ? <ErrorView error={q.error} /> : !q.data?.length ? (
+      {!q.data ? <QueryState q={q} skeleton="h-16">{() => null}</QueryState> : !q.data.length ? (
         <EmptyState title="No changes recorded" className="py-4" />
       ) : (
         <ol className="flex flex-col gap-2 text-xs">

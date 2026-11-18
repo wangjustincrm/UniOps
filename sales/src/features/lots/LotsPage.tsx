@@ -1,10 +1,8 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import {
-  Badge, Button, Dialog, ListPage, Textarea, type ColumnDef, type Filter,
-  IconButton, Callout, useNotices, columnsOf
- } from '@/platform-ui'
+  Badge, Button, Dialog, ListPage, Textarea, type ColumnDef, type Filter, IconButton, Callout, useNotices, columnsOf, useRecordList,
+} from '@/platform-ui'
 import { PartnerCell } from '@/features/common/PartnerCell'
 import { exportLots, lotsClient, parseLots, type LotRead } from './lotsApi'
 
@@ -32,11 +30,8 @@ const columns: ColumnDef<LotRead, unknown>[] = [
 
 /** How far a recall reaches: the orders and customers its lots went to. */
 function RecallReach({ lots }: { lots: string[] }) {
-  const q = useQuery({
-    queryKey: ['lots', 'recall', lots],
-    queryFn: () => lotsClient.list({ page: 1, pageSize: 1, filters: [{ field: 'lot', op: 'in', value: lots }],
-      group: [{ field: 'partner_name' }, { field: 'order_ref' }] }),
-  })
+  const q = useRecordList(lotsClient, { page: 1, pageSize: 1, filters: [{ field: 'lot', op: 'in', value: lots }],
+    group: [{ field: 'partner_name' }, { field: 'order_ref' }] })
   if (!q.data) return null
   const groups = q.data.groups ?? []
   const customers = new Set(groups.map((g) => g.key[0])).size

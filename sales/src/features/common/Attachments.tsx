@@ -1,9 +1,7 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { Paperclip, Trash2 } from 'lucide-react'
 import {
-  ActionButton, Button, ConfirmAction, Dialog, FilePicker, IconButton, LocalTable, Section, Textarea, columnsOf, formatNumber, useCan,
-  useFileViewer, useNotices, type ColumnDef,
+  ActionButton, Button, ConfirmAction, Dialog, FilePicker, IconButton, LocalTable, Section, Textarea, columnsOf, formatNumber, useCan, useFileViewer, useNotices, type ColumnDef, useLookup,
 } from '@/platform-ui'
 import {
   ATTACH_PERMISSION, attachFile, downloadRecordFile, listAttachments, recordFile, removeAttachment, type RecordDocument, type RecordType,
@@ -55,7 +53,7 @@ export function Attachments({ type, id }: { type: RecordType; id: number }) {
   const { view, viewer } = useFileViewer()
   const [attaching, setAttaching] = useState(false)
   const [removing, setRemoving] = useState<RecordDocument | null>(null)
-  const q = useQuery({ queryKey: ['attachments', type, id], queryFn: () => listAttachments(type, id) })
+  const q = useLookup(['attachments', type, id], () => listAttachments(type, id))
   const rows = q.data ?? []
   const failed = (e: unknown) => notices.notify({ tone: 'error', text: `Download failed: ${e instanceof Error ? e.message : String(e)}` })
   const columns: ColumnDef<RecordDocument, unknown>[] = [

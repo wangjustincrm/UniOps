@@ -1,9 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import {
-  ActionBar, ActionButton, Button, Callout, Checkbox, ConfirmAction, StatusCell, DateTimeInput, Dialog, FilePicker, FormField, ListPage, LocalTable, RecordSheet, Section,
-  Textarea, ViewFileButton, columnsOf, formatDate, formatDateTime, formatNumber, queryKeys, startHidden,
-  type ColumnDef, type RecordTab,
+  ActionBar, ActionButton, Button, Callout, Checkbox, ConfirmAction, StatusCell, DateTimeInput, Dialog, FilePicker, FormField, ListPage, LocalTable, RecordSheet, Section, Textarea, ViewFileButton, columnsOf, formatDate, formatDateTime, formatNumber, queryKeys, startHidden, type ColumnDef, type RecordTab, useLookup,
 } from '@/platform-ui'
 import { api } from '@/lib/api'
 import {
@@ -120,7 +118,7 @@ const colGroup = columnsOf<ItemGroup>()
 function Comparison({ count }: { count: StockCountRead }) {
   const [onlyDiff, setOnlyDiff] = useState(false)
   const [showClosed, setShowClosed] = useState(false)
-  const q = useQuery({ queryKey: ['stock-count-compare', count.id, count.version], queryFn: () => fetchCountCompare(count.id) })
+  const q = useLookup(['stock-count-compare', count.id, count.version], () => fetchCountCompare(count.id))
   const all = useMemo(() => q.data ?? [], [q.data])
   // An item lists its open lots and adds up only them; a closed lot (no stock, not in Radiant's report, no move
   // after it) shows only on request, greyed, in no total (user 2026-11-13).
@@ -201,7 +199,7 @@ function CountSheet({ row }: { row: StockCountRead }) {
   const [applying, setApplying] = useState(false)
   const [undoing, setUndoing] = useState(false)
   const [changing, setChanging] = useState(false)
-  const linesQ = useQuery({ queryKey: ['stock-count-lines', row.id], queryFn: () => fetchCountLines(row.id) })
+  const linesQ = useLookup(['stock-count-lines', row.id], () => fetchCountLines(row.id), { errors: 'inline' })
   const refresh = async () => {
     for (const c of [stockCountsClient, stockItemsClient, stockLotsClient]) await qc.invalidateQueries({ queryKey: queryKeys.list(c) })
     await qc.invalidateQueries({ queryKey: ['stock-count-compare', row.id] })

@@ -1,11 +1,8 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  ActionButton, Badge, Button, DetailList, ErrorMessage, ErrorView, LocalTable, PageHeader, Section, Skeleton, StatCard, TourScope, formatDateTime,
-  useOpenRecord, type ColumnDef,
-  useRefresh, columnsOf
- } from '@/platform-ui'
+  ActionButton, Badge, Button, DetailList, ErrorMessage, LocalTable, PageHeader, Section, StatCard, TourScope, formatDateTime, useOpenRecord, type ColumnDef, useRefresh, columnsOf, useLookup, QueryState,
+} from '@/platform-ui'
 import { testConnection, type ConnectionTest } from '@/features/configuration/connections/connectionsApi'
 import { fetchHealth, type CheckRead, type GateEventRead, type HealthRead } from './healthApi'
 import { HealthBadge } from './HealthBadge'
@@ -54,10 +51,9 @@ export default function HealthPage() {
   const navigate = useNavigate()
   const openRecord = useOpenRecord()
   const openList = useOpenList()
-  const q = useQuery({ queryKey: ['sales', 'health'], queryFn: fetchHealth, refetchInterval: 60_000 })
-  const refresh = useRefresh(q, { queryKey: ['sales', 'health'], compare: () => ({ text: null }) })
-  if (q.isLoading) return <Skeleton className="h-60 w-full" />
-  if (q.error || !q.data) return <ErrorView error={q.error} onRetry={() => { void refresh.refresh() }} />
+  const q = useLookup(['sales', 'health'], fetchHealth, { refetchInterval: 60_000, errors: 'inline' })
+  useRefresh(q, { queryKey: ['sales', 'health'], compare: () => ({ text: null }) })
+  if (!q.data) return <QueryState q={q} skeleton="h-60">{() => null}</QueryState>
   const h: HealthRead = q.data
   const byKey = Object.fromEntries(h.checks.map((c) => [c.key, c]))
   const open = (c: CheckRead) => {

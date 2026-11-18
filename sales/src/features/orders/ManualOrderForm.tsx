@@ -1,10 +1,8 @@
 import { useState } from 'react'
-import { useQueries, useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { z } from 'zod'
 import {
-  ADDRESS_FIELDS, ActionButton, Autocomplete, ErrorMessage, MasterDetailForm, formatNumber, Skeleton, addressSchema, cleanAddress, numberColumn, readColumn,
-  selectColumn, type EditableColumn, type FieldSpec,
+  ADDRESS_FIELDS, ActionButton, Autocomplete, ErrorMessage, MasterDetailForm, formatNumber, Skeleton, addressSchema, cleanAddress, numberColumn, readColumn, selectColumn, type EditableColumn, type FieldSpec, useLookup, useLookups,
 } from '@/platform-ui'
 import { itemOptions, itemUnits, manualPartnerOptions } from '../configuration/lookups'
 import { fetchEdiSettings } from '../configuration/connections/connectionsApi'
@@ -63,16 +61,16 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
   const [lines, setLines] = useState<ManualLine[]>(() => draft
     ? draft.lines.filter((l) => !l.removed).map((l) => ({ item_code: l.item_code ?? '', quantity: Number(l.ordered_qty), unit: l.order_unit ?? 'EA' }))
     : [{ ...blank }])
-  const customers = useQuery({ queryKey: ['sales', 'lookup', 'manual-customers'], queryFn: () => manualPartnerOptions(''), enabled: !draft })
+  const customers = useLookup(['sales', 'lookup', 'manual-customers'], () => manualPartnerOptions(''), { enabled: !draft })
   const codes = [...new Set(lines.map((l) => l.item_code).filter(Boolean))]
-  const unitQueries = useQueries({ queries: codes.map((c) => ({ queryKey: ['sales', 'lookup', 'units', c], queryFn: () => itemUnits(c), staleTime: 60_000 })) })
+  const unitQueries = useLookups(codes.map((c) => ['sales', 'lookup', 'units', c]), (k) => itemUnits(String(k[3])), { staleTime: 60_000 })
   const units: Record<string, { value: string; label: string }[]> = Object.fromEntries(codes.map((c, i) => [c, unitQueries[i]?.data ?? []]))
   const [checkError, setCheckError] = useState<unknown>(null)  // a preview refused: said under its button too
   const check = (ls: ManualLine[]) => async () => {
     setCheckError(null)
     try { return await previewManual(ls) } catch (e) { setCheckError(e); throw e }
   }
-  const settings = useQuery({ queryKey: EDI_KEY, queryFn: fetchEdiSettings })
+  const settings = useLookup(EDI_KEY, fetchEdiSettings)
   const fields = fieldsFor(carriersFor(settings.data?.express_offered ?? true))
 
   if (!draft && customers.isLoading) return <Skeleton className="h-40 w-full" />

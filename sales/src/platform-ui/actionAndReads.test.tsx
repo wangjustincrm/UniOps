@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { ActionButton, ConfirmAction, NoticeScope, compareRecord, queryKeys, useLookup, useRecord, useRefresh } from './index'
+import { ActionButton, ConfirmAction, NoticeScope, QueryState, compareRecord, queryKeys, useLookup, useRecord, useRefresh } from './index'
 
 // The one way pages act and read (step 1, user 2026-11-18): an action's result-dependent notice and its `after`,
 // a targeted refresh, ConfirmAction's success said like a button's; reads keyed by the resource, off without an id.
@@ -88,5 +88,40 @@ describe('useRecord / useLookup', () => {
     expect(fetch).not.toHaveBeenCalled()
     rerender(<QueryClientProvider client={qc}><NoticeScope><L k="a" /></NoticeScope></QueryClientProvider>)
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+  })
+})
+
+describe('a failed read, the same everywhere', () => {
+  const things = { basePath: '/things' }
+  it('is said in the status row with Retry, and cleared once it reads', async () => {
+    let fail = true
+    const get = vi.fn(async (id: number) => { if (fail) throw new Error('server down'); return { id } })
+    function Show() { const q = useRecord(things, 1, get); return <p>{q.data ? 'loaded' : 'waiting'}</p> }
+    wrap(new QueryClient({ defaultOptions: { queries: { retry: false } } }), <Show />)
+    expect(await screen.findByText(/Could not load: server down/)).toBeInTheDocument()
+    fail = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('loaded')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText(/Could not load/)).toBeNull())
+  })
+
+  it('QueryState: a skeleton, then the error with Retry where the content goes (inline, not in the row)', async () => {
+    const fetch = vi.fn(async () => { throw new Error('nope') })
+    function Show() {
+      const q = useLookup(['x'], fetch, { errors: 'inline' })
+      return <QueryState q={q}>{() => <p>content</p>}</QueryState>
+    }
+    wrap(new QueryClient({ defaultOptions: { queries: { retry: false } } }), <Show />)
+    expect(await screen.findByText('nope')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+    expect(screen.queryByText(/Could not load/)).toBeNull()
+  })
+
+  it('a record with no way to read it says so in development', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    function Show() { useRecord({ basePath: '/nothing' } as never, 1, undefined as never); return null }
+    wrap(new QueryClient(), <Show />)
+    expect(err).toHaveBeenCalledWith(expect.stringContaining('/nothing'))
+    err.mockRestore()
   })
 })

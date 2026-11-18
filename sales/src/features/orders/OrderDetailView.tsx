@@ -1,9 +1,7 @@
 import { useContext, useState, type ReactNode } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, Badge, ConfirmAction, Hint, RecordSheet, RecordSheetHostContext, formatDate, formatMoney,
-  queryKeys, type RecordFact, type RecordTab,
-  compareRecord, useFileViewer, useRefresh,
+  ActionButton, Badge, ConfirmAction, Hint, RecordSheet, RecordSheetHostContext, formatDate, formatMoney, queryKeys, type RecordFact, type RecordTab, compareRecord, useFileViewer, useRefresh, useRecord,
 } from '@/platform-ui'
 import { SOURCE_LABEL, downloadPacket, fetchOrder, poPdf, ordersClient, type OrderRead } from './ordersApi'
 import { OrderHoldActions } from './OrderHoldActions'
@@ -43,7 +41,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
   const qc = useQueryClient()
   const host = useContext(RecordSheetHostContext)
   const { view, viewer } = useFileViewer()
-  const q = useQuery({ queryKey: queryKeys.detail(ordersClient, o.id), queryFn: () => fetchOrder(o.id) })
+  const q = useRecord(ordersClient, o.id, fetchOrder, { errors: 'inline' })
   const sheetRefresh = useRefresh(q, { queryKey: queryKeys.detail(ordersClient, o.id), compare: compareRecord, noChange: 'Up to date', auto: 'follow' })
   const [pricing, setPricing] = useState(false)
   const [returning, setReturning] = useState(false)

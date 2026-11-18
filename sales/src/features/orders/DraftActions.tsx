@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, ConfirmAction, Skeleton, queryKeys } from '@/platform-ui'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  ActionButton, ConfirmAction, Skeleton, queryKeys, useRecord,
+} from '@/platform-ui'
 import { ManualOrderForm } from './ManualOrderForm'
 import { cancelManual, fetchOrder, ordersClient, submitManual, type OrderRead } from './ordersApi'
 
@@ -18,7 +20,7 @@ export function DraftActions({ o, close }: { o: OrderRead; close: () => void }) 
   const qc = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [cancelling, setCancelling] = useState(false)
-  const detail = useQuery({ queryKey: queryKeys.detail(ordersClient, o.id), queryFn: () => fetchOrder(o.id), enabled: editing })
+  const detail = useRecord(ordersClient, o.id, fetchOrder, { enabled: editing })
   // Submitted or cancelled: the list reads again and the sheet closes.
   const closes = { invalidates: [queryKeys.list(ordersClient)], after: close }
   if (editing) {

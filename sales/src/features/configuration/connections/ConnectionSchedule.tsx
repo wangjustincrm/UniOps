@@ -1,8 +1,7 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import {
-  Button, DetailList, LocalTable, SchemaForm, Section, formatDateTime, queryKeys,
-  useOpenView, useCan, useNotices, type ColumnDef, columnsOf
- } from '@/platform-ui'
+  Button, DetailList, LocalTable, SchemaForm, Section, formatDateTime, queryKeys, useOpenView, useCan, useNotices, type ColumnDef, columnsOf, useRecordList,
+} from '@/platform-ui'
 import { runsClient, type RunRead } from '@/features/operations/operationsApi'
 import { connectionsClient, type ConnectionRead } from './connectionsApi'
 import { connectionScheduleSchema, connectionToFormValues, scheduleFields } from './connectionSchema'
@@ -37,10 +36,9 @@ export function ConnectionSchedule({ connection: c }: { connection: ConnectionRe
   const canEdit = useCan('sales.config')
   const scope = `connection:${c.id}`
   const spec = { page: 1, pageSize: 5, filters: [{ field: 'scope', op: 'eq' as const, value: scope }], sort: [{ field: 'started_at', desc: true }] }
-  const runs = useQuery({
-    queryKey: [...queryKeys.list(runsClient), 'connection', c.id], queryFn: () => runsClient.list(spec),
+  const runs = useRecordList(runsClient, spec, {
     // While a run is going, the table follows it.
-    refetchInterval: (q) => (q.state.data?.items.some((r) => r.status === 'RUNNING') ? 2000 : false),
+    refetchInterval: (d) => ((d as Awaited<ReturnType<typeof runsClient.list>> | undefined)?.items.some((r) => r.status === 'RUNNING') ? 2000 : false),
   })
   return (
     <Section title="Schedule" plain className="gap-3 text-sm">

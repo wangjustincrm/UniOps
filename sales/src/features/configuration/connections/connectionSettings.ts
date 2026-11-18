@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useLookup } from '@/platform-ui'
 import { fetchUsers } from '../notifications/notificationsApi'
 import { connectionsClient, fetchEdiSettings, fetchSchedulerSettings } from './connectionsApi'
 
@@ -9,20 +9,18 @@ export type AutomaticRuns = 'on' | 'off' | 'unavailable'
 
 /** Automatic runs here: On, Off (switched off here) or not available on this server. */
 export function useAutomaticRuns() {
-  const q = useQuery({ queryKey: SCHEDULER_KEY, queryFn: fetchSchedulerSettings })
+  const q = useLookup(SCHEDULER_KEY, fetchSchedulerSettings, { errors: 'inline' })
   const state: AutomaticRuns | undefined = !q.data ? undefined : !q.data.enabled ? 'unavailable' : q.data.paused ? 'off' : 'on'
   return { state, settings: q.data, error: q.error }
 }
 
 /** The EDI settings and the connections they can name (active SFTP ones). */
 export function useEdiSettings() {
-  const settings = useQuery({ queryKey: EDI_KEY, queryFn: fetchEdiSettings })
-  const conns = useQuery({
-    queryKey: [...EDI_KEY, 'sftp-connections'],
-    queryFn: () => connectionsClient.list({ page: 1, pageSize: 100, filters: [{ field: 'kind', op: 'eq', value: 'SFTP' }, { field: 'active', op: 'eq', value: 'true' }], sort: [{ field: 'name' }] }),
-  })
+  const settings = useLookup(EDI_KEY, fetchEdiSettings, { errors: 'inline' })
+  const conns = useLookup([...EDI_KEY, 'sftp-connections'], () => connectionsClient.list({ page: 1, pageSize: 100,
+    filters: [{ field: 'kind', op: 'eq', value: 'SFTP' }, { field: 'active', op: 'eq', value: 'true' }], sort: [{ field: 'name' }] }), { errors: 'inline' })
   const items = conns.data?.items ?? []
-  const users = useQuery({ queryKey: [...EDI_KEY, 'users'], queryFn: () => fetchUsers('') })
+  const users = useLookup([...EDI_KEY, 'users'], () => fetchUsers(''))
   return {
     /** The operator's name: "No one" for none. */
     userName: (id: string | null | undefined) => (id == null ? 'No one' : users.data?.find((u) => u.id === id)?.name ?? '…'),

@@ -1,7 +1,8 @@
 import { z } from 'zod'
-import { Autocomplete, MasterDetailForm, readColumn, textColumn, type EditableColumn, type FieldSpec } from '@/platform-ui'
+import {
+  Autocomplete, MasterDetailForm, readColumn, textColumn, type EditableColumn, type FieldSpec, useLookup,
+} from '@/platform-ui'
 import { itemOptions } from '@/features/configuration/lookups'
-import { useQuery } from '@tanstack/react-query'
 import { fetchEdiSettings } from '@/features/configuration/connections/connectionsApi'
 import { EDI_KEY } from '@/features/configuration/connections/connectionSettings'
 import { amendOrder, carriersFor, isCarrier, lineNumbers, type OrderDetail } from './ordersApi'
@@ -47,7 +48,7 @@ const fields: FieldSpec[] = [
 export function AmendForm({ o, onSaved, onCancel }: { o: OrderDetail; onSaved: () => void; onCancel: () => void }) {
   const numbers = lineNumbers(o)
   const open = o.lines.filter((ln) => !ln.removed)
-  const settings = useQuery({ queryKey: EDI_KEY, queryFn: fetchEdiSettings })
+  const settings = useLookup(EDI_KEY, fetchEdiSettings)
   return (
     <MasterDetailForm<AmendLine>
       schema={schema} fields={o.source_type === 'MANUAL' ? [carrierField(carriersFor(settings.data?.express_offered ?? true)), ...fields] : fields}

@@ -1,6 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
 import { useCallback, useRef, type ReactNode } from 'react'
-import { HelpProvider, PLATFORM_HELP, type HelpEntry } from '@/platform-ui'
+import {
+  HelpProvider, PLATFORM_HELP, type HelpEntry, useLookup,
+} from '@/platform-ui'
 import { hasSession } from '@/lib/api'
 import { PAGE_HELP } from './pageHelp'
 import { fetchStatusHelp } from './statusHelpApi'
@@ -29,8 +30,7 @@ const PART = { status: 'statuses', hold: 'holds', detail: 'details', term: 'term
 const KIND = { status: 'order status', hold: 'On Hold reason', detail: 'order detail', term: 'term' } as const
 
 export function SalesHelpProvider({ children }: { children: ReactNode }) {
-  const q = useQuery({ queryKey: ['sales', 'help', 'texts'], queryFn: fetchStatusHelp, staleTime: Infinity, gcTime: Infinity,
-    enabled: hasSession(), retry: 1 })
+  const q = useLookup(['sales', 'help', 'texts'], fetchStatusHelp, { staleTime: Infinity, gcTime: Infinity, enabled: hasSession(), retry: 1, errors: 'inline' })
   const data = q.data
   const source = useCallback((id: string): HelpEntry | undefined => {
     const [kind, ...rest] = id.split(':')

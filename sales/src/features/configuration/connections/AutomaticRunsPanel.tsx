@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
-import { ActionButton, ConfirmAction, ErrorMessage, Hint, SchemaForm, Skeleton, queryKeys, useCan, type FieldSpec } from '@/platform-ui'
+import {
+  ActionButton, ConfirmAction, ErrorMessage, Hint, SchemaForm, Skeleton, queryKeys, useCan, type FieldSpec, useRecordList,
+} from '@/platform-ui'
 import { connectionsClient, describeSchedule, saveSchedulerSettings, type ConnectionRead } from './connectionsApi'
 import { SCHEDULER_KEY, useAutomaticRuns } from './connectionSettings'
 
@@ -32,10 +34,8 @@ export function AutomaticRunsPanel() {
   const { state, settings, error } = useAutomaticRuns()
   const canEdit = useCan('sales.config')
   const [confirming, setConfirming] = useState(false)
-  const active = useQuery({
-    queryKey: [...queryKeys.list(connectionsClient), 'active'], enabled: state === 'off',
-    queryFn: () => connectionsClient.list({ page: 1, pageSize: 100, filters: [{ field: 'active', op: 'eq', value: 'true' }], sort: [{ field: 'name' }] }),
-  })
+  const active = useRecordList(connectionsClient, state === 'off'
+    ? { page: 1, pageSize: 100, filters: [{ field: 'active', op: 'eq', value: 'true' }], sort: [{ field: 'name' }] } : null)
   const save = async (data: { paused?: boolean; system_minutes?: number }) => {
     await saveSchedulerSettings(data)
     await Promise.all([qc.invalidateQueries({ queryKey: SCHEDULER_KEY }), qc.invalidateQueries({ queryKey: queryKeys.list(connectionsClient) }),

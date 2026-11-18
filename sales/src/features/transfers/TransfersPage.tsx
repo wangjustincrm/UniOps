@@ -1,13 +1,10 @@
 import { factTone } from '@/features/common/statusTones'
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, Autocomplete, ConfirmAction, DateCell, DetailList, ListPage, LocalTable, ViewFileButton,
-  MasterDetailForm, RecordSheet, SchemaForm, Section, StatusCell, numberColumn, queryKeys, useFileViewer,
-  type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab,
-  compareRecord, useRefresh, Muted, columnsOf
- } from '@/platform-ui'
+  ActionButton, Autocomplete, ConfirmAction, DateCell, DetailList, ListPage, LocalTable, ViewFileButton, MasterDetailForm, RecordSheet, SchemaForm, Section, StatusCell, numberColumn, queryKeys, useFileViewer, type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab, compareRecord, useRefresh, Muted, columnsOf, useRecord,
+} from '@/platform-ui'
 import { itemOptions, warehouseOptions } from '../configuration/lookups'
 import { Attachments } from '@/features/common/Attachments'
 import { RecordActivity } from '@/features/common/RecordActivity'
@@ -189,7 +186,7 @@ function Detail({ row }: { row: TransferRead }) {
   const id = row.id
   const qc = useQueryClient()
   const { view, viewer } = useFileViewer()
-  const q = useQuery({ queryKey: queryKeys.detail(transfersClient, id), queryFn: () => fetchTransfer(id) })
+  const q = useRecord(transfersClient, id, fetchTransfer, { errors: 'inline' })
   const sheetRefresh = useRefresh(q, { queryKey: queryKeys.detail(transfersClient, id), compare: compareRecord, noChange: 'Up to date', auto: 'follow' })
   const [cancelling, setCancelling] = useState(false)
   const [releasing, setReleasing] = useState(false)

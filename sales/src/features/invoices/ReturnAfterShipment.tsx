@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { orderRef } from '@/features/common/labels'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, Dialog, MasterDetailForm, numberColumn, queryKeys, readColumn, useCan, type FieldSpec,
+  ActionButton, Dialog, MasterDetailForm, numberColumn, queryKeys, readColumn, useCan, type FieldSpec, useRecord,
 } from '@/platform-ui'
 import { fetchOrder, ordersClient, type LineRead, type OrderRead } from '@/features/orders/ordersApi'
 import { recordReturn } from './invoicesApi'
@@ -38,7 +38,7 @@ export function ReturnAfterShipment({ o }: { o: OrderRead }) {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const shipped = o.fulfillment_status === 'Shipped' || o.fulfillment_status === 'On Hold'
-  const q = useQuery({ queryKey: queryKeys.detail(ordersClient, o.id), queryFn: () => fetchOrder(o.id), enabled: open })
+  const q = useRecord(ordersClient, o.id, fetchOrder, { enabled: open })
   if (!shipped || !can || o.source_type !== 'EDI_850') return null
   return (
     <>
