@@ -11,13 +11,12 @@
  */
 import { useState } from 'react'
 import { Loader2, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { Button, Checkbox, Input, MenuItem, Modal, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import {
   useCreateZone, useDeleteZone, useUpdateZone, useUserDirectory, useZones,
   type UserBrief, type Zone,
 } from '@/services/api'
 
-const btnCls =
-  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50'
 const inputCls =
   'mt-1 w-full rounded-md border border-line-strong px-3 py-1.5 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500'
 
@@ -43,9 +42,9 @@ export default function ZonesPage() {
             check-in, and count in the GMP reports.
           </p>
         </div>
-        <button onClick={() => setEditing('new')} className={`${btnCls} shrink-0 bg-primary-600 text-white hover:bg-primary-700`}>
+        <Button size="md" className="shrink-0" onClick={() => setEditing('new')}>
           <Plus className="h-4 w-4" /> Add zone
-        </button>
+        </Button>
       </div>
 
       {(error || actionError) && (
@@ -55,29 +54,29 @@ export default function ZonesPage() {
       )}
 
       <div className="mt-4 overflow-x-auto rounded-md border border-line bg-surface">
-        <table className="w-full text-sm">
-          <thead className="bg-surface-subtle text-left text-xs font-semibold uppercase tracking-wider text-fg-muted">
-            <tr>
-              <th className="px-3 py-2">Zone</th>
-              <th className="px-3 py-2">GMP-grade</th>
-              <th className="px-3 py-2">Zone managers (approval)</th>
-              <th className="px-3 py-2">Visits</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
+        <Table density="compact">
+          <THead>
+            <Tr>
+              <Th>Zone</Th>
+              <Th>GMP-grade</Th>
+              <Th>Zone managers (approval)</Th>
+              <Th>Visits</Th>
+              <Th>Status</Th>
+              <Th />
+            </Tr>
+          </THead>
+          <TBody>
             {isLoading && (
-              <tr><td colSpan={6} className="px-3 py-4 text-xs text-fg-muted">Loading…</td></tr>
+              <Tr><Td colSpan={6} className="text-xs text-fg-muted">Loading…</Td></Tr>
             )}
             {zones?.map((z) => (
-              <tr key={z.id} className={`border-t border-line-subtle ${z.is_active ? '' : 'text-fg-muted'}`}>
-                <td className="px-3 py-2">
+              <Tr key={z.id} className={`border-t border-line-subtle ${z.is_active ? '' : 'text-fg-muted'}`}>
+                <Td>
                   <p className="font-medium">{z.name}</p>
                   <p className="font-mono text-2xs text-fg-muted">{z.code}</p>
-                </td>
-                <td className="px-3 py-2">{z.gmp_grade ? 'Yes' : '—'}</td>
-                <td className="px-3 py-2">
+                </Td>
+                <Td>{z.gmp_grade ? 'Yes' : '—'}</Td>
+                <Td>
                   {z.managers.length === 0
                     ? <span className="text-xs text-fg-muted">None — no approval needed</span>
                     : (
@@ -93,36 +92,36 @@ export default function ZonesPage() {
                         )}
                       </div>
                     )}
-                </td>
-                <td className="px-3 py-2 text-fg-secondary">{z.visit_count}</td>
-                <td className="px-3 py-2">{z.is_active ? 'Active' : 'Retired'}</td>
-                <td className="px-3 py-2">
+                </Td>
+                <Td className="text-fg-secondary">{z.visit_count}</Td>
+                <Td>{z.is_active ? 'Active' : 'Retired'}</Td>
+                <Td>
                   <div className="flex justify-end gap-1">
-                    <button onClick={() => setEditing(z)} disabled={busy} title="Edit"
-                      className="rounded p-1 text-fg-muted hover:bg-surface-sunken disabled:opacity-40">
+                    <Button variant="subtle" size="icon-xs" onClick={() => setEditing(z)} disabled={busy} title="Edit" aria-label="Edit"
+                     >
                       <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
+                    </Button>
+                    <Button variant="subtle" size="xs"
                       disabled={busy}
                       onClick={() => update.mutate({ id: z.id, is_active: !z.is_active })}
-                      className="rounded px-2 py-1 text-xs text-fg-secondary hover:bg-surface-sunken disabled:opacity-40">
+                     >
                       {z.is_active ? 'Retire' : 'Reactivate'}
-                    </button>
+                    </Button>
                     {z.visit_count === 0 && (
-                      <button
+                      <Button variant="subtle" size="icon-xs" aria-label="Delete zone"
                         disabled={busy}
                         title="Delete (only zones no visit has used)"
                         onClick={() => { if (confirm(`Delete zone “${z.name}”?`)) remove.mutate(z.id) }}
-                        className="rounded p-1 text-danger-fg hover:bg-danger-soft disabled:opacity-40">
+                        className="text-danger-fg hover:bg-danger-soft">
                         <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      </Button>
                     )}
                   </div>
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </div>
 
       {editing && (
@@ -167,9 +166,17 @@ function ZoneModal({ zone, onClose }: { zone: Zone | null; onClose: () => void }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="w-full max-w-lg rounded-lg bg-surface p-5 shadow-xl">
-        <h3 className="text-base font-semibold text-fg">{zone ? `Edit zone — ${zone.name}` : 'Add zone'}</h3>
+    <Modal
+      open
+      onClose={onClose}
+      busy={save.isPending}
+      title={zone ? `Edit zone — ${zone.name}` : 'Add zone'}
+      // Closes by Cancel / the close button only (no Escape, no backdrop), as before.
+      closeOnEscape={false}
+      size="full"
+      className="max-w-lg"
+    >
+      <div>
         {zone && (
           <p className="mt-1 text-xs text-fg-muted">
             Manager changes apply to visits submitted from now on. A visit already waiting for approval
@@ -179,14 +186,14 @@ function ZoneModal({ zone, onClose }: { zone: Zone | null; onClose: () => void }
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="text-xs font-medium text-fg-secondary sm:col-span-2">Name
-            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} className={inputCls} />
+            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} className={inputCls} />
           </label>
           <label className="text-xs font-medium text-fg-secondary">Order
-            <input type="number" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className={inputCls} />
+            <Input type="number" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className={inputCls} />
           </label>
         </div>
         <label className="mt-3 inline-flex items-center gap-2 text-sm text-fg-secondary">
-          <input type="checkbox" checked={gmp} onChange={(e) => setGmp(e.target.checked)} />
+          <Checkbox checked={gmp} onChange={(e) => setGmp(e.target.checked)} />
           GMP-grade (health declaration, training / PPE at check-in, GMP reports)
         </label>
 
@@ -196,20 +203,20 @@ function ZoneModal({ zone, onClose }: { zone: Zone | null; onClose: () => void }
           {managers.map((m) => (
             <span key={m.id} title={m.email} className="inline-flex items-center gap-1 rounded-full bg-primary-50 px-2 py-0.5 text-xs text-primary-700">
               {m.name}
-              <button onClick={() => setManagers(managers.filter((x) => x.id !== m.id))} aria-label={`Remove ${m.name}`}>
+              <Button variant="subtle" size="icon-xs" onClick={() => setManagers(managers.filter((x) => x.id !== m.id))} aria-label={`Remove ${m.name}`}>
                 <X className="h-3 w-3" />
-              </button>
+              </Button>
             </span>
           ))}
           {managers.length === 0 && <span className="text-xs text-fg-muted">None — no approval needed</span>}
         </div>
         <div className="relative mt-2">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-fg-muted" />
-          <input
+          <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Add a manager — search by name or email (≥ 2 chars)…"
-            className="w-full rounded-md border border-line-strong bg-surface py-2 pl-8 pr-3 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+            className="w-full pl-8 pr-3"
           />
         </div>
         {query.length >= 2 && (
@@ -219,12 +226,12 @@ function ZoneModal({ zone, onClose }: { zone: Zone | null; onClose: () => void }
               <p className="px-3 py-2 text-xs text-fg-muted">No matches.</p>
             )}
             {dir.data?.items.map((u: UserBrief) => (
-              <button key={u.id} type="button" onClick={() => add(u)}
+              <MenuItem key={u.id} onClick={() => add(u)}
                 disabled={managers.some((m) => m.id === u.id)}
-                className="block w-full border-b border-line-subtle px-3 py-2 text-left text-sm hover:bg-primary-50/40 disabled:text-fg-muted">
+                className="block border-b border-line-subtle disabled:text-fg-muted disabled:opacity-100">
                 <p className="font-medium">{u.full_name}</p>
                 <p className="text-xs text-fg-muted">{u.email}{u.department_name && ` · ${u.department_name}`}</p>
-              </button>
+              </MenuItem>
             ))}
           </div>
         )}
@@ -232,14 +239,13 @@ function ZoneModal({ zone, onClose }: { zone: Zone | null; onClose: () => void }
         {save.error && <p className="mt-3 text-xs text-danger-fg">{save.error.message}</p>}
 
         <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onClose} disabled={save.isPending} className={`${btnCls} border border-line-strong`}>Cancel</button>
-          <button onClick={onSave} disabled={save.isPending || !name.trim()}
-            className={`${btnCls} bg-primary-600 text-white hover:bg-primary-700`}>
+          <Button variant="secondary" size="md" onClick={onClose} disabled={save.isPending}>Cancel</Button>
+          <Button size="md" onClick={onSave} disabled={save.isPending || !name.trim()}>
             {save.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {zone ? 'Save changes' : 'Add zone'}
-          </button>
+          </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

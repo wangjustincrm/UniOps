@@ -8,8 +8,8 @@
 import { useState } from 'react'
 import { Search, UserPlus, X } from 'lucide-react'
 import { useVisitors, type Visitor } from '@/services/api'
-import { cn } from '@/lib/utils'
 
+import { Button, Input, MenuItem } from '@uniops/shell'
 interface Props {
   primary: Visitor | null
   additional: Visitor[]
@@ -75,12 +75,12 @@ export function VisitorSearch({ primary, additional, onChange, onNew }: Props) {
       </label>
       <div className="relative mt-1">
         <Search className="absolute left-2 top-2.5 h-4 w-4 text-fg-muted" />
-        <input
+        <Input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Start typing…"
-          className="w-full rounded-md border border-line-strong bg-surface py-2 pl-8 pr-3 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+          className="w-full pl-8 pr-3"
         />
       </div>
 
@@ -90,27 +90,24 @@ export function VisitorSearch({ primary, additional, onChange, onNew }: Props) {
           {!isLoading && items.length === 0 && (
             <div className="flex items-center justify-between px-3 py-2 text-xs">
               <span className="text-fg-muted">No visitors match — register a new one.</span>
-              <button
+              <Button size="xs"
                 type="button"
                 onClick={onNew}
-                className="ml-2 inline-flex items-center gap-1 rounded bg-primary-600 px-2 py-1 text-white hover:bg-primary-700"
+                className="ml-2"
               >
                 <UserPlus className="h-3 w-3" />
                 New
-              </button>
+              </Button>
             </div>
           )}
           {items.map((v) => {
             const already = pickedIds.has(v.id)
             return (
-              <button
+              <MenuItem
                 key={v.id}
-                type="button"
                 disabled={already}
                 onClick={() => addVisitor(v)}
-                className={cn(
-                  'block w-full border-b border-line-subtle px-3 py-2 text-left text-sm hover:bg-primary-50/40 disabled:opacity-40 disabled:hover:bg-transparent',
-                )}
+                className="block border-b border-line-subtle disabled:opacity-40 disabled:hover:bg-transparent"
               >
                 <p className="font-medium text-fg">
                   {v.first_name} {v.last_name}
@@ -119,21 +116,21 @@ export function VisitorSearch({ primary, additional, onChange, onNew }: Props) {
                 <p className="text-xs text-fg-muted">
                   {v.company_name}{v.email ? ` · ${v.email}` : ''}
                 </p>
-              </button>
+              </MenuItem>
             )
           })}
         </div>
       )}
 
       {query.length === 0 && (
-        <button
+        <Button variant="link"
           type="button"
           onClick={onNew}
-          className="mt-2 inline-flex items-center gap-1.5 text-sm text-primary-600 hover:underline"
+          className="mt-2 text-sm"
         >
           <UserPlus className="h-4 w-4" />
           Register a new visitor
-        </button>
+        </Button>
       )}
     </div>
   )
@@ -158,14 +155,15 @@ function VisitorChip({
           {visitor.email ? ` · ${visitor.email}` : ''}
         </p>
       </div>
-      <button
+      <Button variant="ghost" size="icon-xs"
         type="button"
         onClick={onRemove}
         title="Remove visitor"
-        className="shrink-0 rounded p-1 text-primary-700 hover:bg-primary-100"
+        aria-label="Remove visitor"
+        className="shrink-0"
       >
         <X className="h-4 w-4" />
-      </button>
+      </Button>
     </div>
   )
 }

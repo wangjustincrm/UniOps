@@ -8,6 +8,7 @@
  */
 import { useState } from 'react'
 import { CheckCircle2, Loader2 } from 'lucide-react'
+import { Input, Button } from '@uniops/shell'
 import {
   useNotificationContacts, useSetNotificationContacts,
 } from '@/services/api'
@@ -49,16 +50,16 @@ export default function NotificationContactsPage() {
             after the visit is confirmed.
           </p>
         </div>
-        <button
+        <Button size="sm"
           onClick={onSave}
           disabled={!dirty || save.isPending}
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+         
         >
           {save.isPending
             ? <Loader2 className="h-4 w-4 animate-spin" />
             : <CheckCircle2 className="h-4 w-4" />}
           Save
-        </button>
+        </Button>
       </div>
 
       {save.error && (
@@ -109,13 +110,13 @@ function Field({
   return (
     <label className="block text-sm">
       <span className="block font-medium text-fg-secondary">{label}</span>
-      <input
+      <Input
         type="email"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={loading}
         placeholder={placeholder}
-        className="mt-1 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 disabled:opacity-50"
+        className="mt-1 w-full"
       />
       <span className="mt-1 block text-xs text-fg-muted">{help}</span>
     </label>

@@ -12,6 +12,7 @@ import { FileDown, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { downloadReport, type ReportKind } from '@/services/api'
 import { localToday } from '@/lib/utils'
 
+import { Input, Button } from '@uniops/shell'
 interface ReportDef {
   kind: ReportKind
   label: string
@@ -62,7 +63,7 @@ export default function ReportsPage() {
 
   return (
     <div className="max-w-3xl">
-      <h1 className="text-2xl font-bold text-fg">Compliance Reports</h1>
+      <h1 className="text-2xl font-semibold text-fg">Compliance Reports</h1>
       <p className="mt-1 text-sm text-fg-muted">
         Export CSV reports for regulator inspections (CFIA) and internal
         compliance review. Every export is recorded in the audit log.
@@ -70,26 +71,26 @@ export default function ReportsPage() {
 
       {/* Date range */}
       <div className="mt-5 rounded-lg border border-line bg-surface p-4">
-        <p className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
+        <p className="text-xs font-semibold text-fg-muted">
           Report period
         </p>
         <div className="mt-2 flex flex-wrap items-end gap-3">
           <label className="text-sm">
             <span className="block text-xs text-fg-muted">From</span>
-            <input
+            <Input
               type="date"
               value={from}
               onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
-              className="mt-0.5 rounded-md border border-line-strong px-2 py-1.5 text-sm"
+              className="mt-0.5"
             />
           </label>
           <label className="text-sm">
             <span className="block text-xs text-fg-muted">To</span>
-            <input
+            <Input
               type="date"
               value={to}
               onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
-              className="mt-0.5 rounded-md border border-line-strong px-2 py-1.5 text-sm"
+              className="mt-0.5"
             />
           </label>
           {!validRange && (
@@ -125,17 +126,17 @@ export default function ReportsPage() {
               <p className="text-sm font-semibold text-fg">{r.label}</p>
               <p className="mt-0.5 text-xs text-fg-muted">{r.description}</p>
             </div>
-            <button
+            <Button size="sm"
               type="button"
               onClick={() => onDownload(r.kind)}
               disabled={!validRange || busy === r.kind}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+              className="shrink-0"
             >
               {busy === r.kind
                 ? <Loader2 className="h-4 w-4 animate-spin" />
                 : <FileDown className="h-4 w-4" />}
               Download CSV
-            </button>
+            </Button>
           </div>
         ))}
       </div>

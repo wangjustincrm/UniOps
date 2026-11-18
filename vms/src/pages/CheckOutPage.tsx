@@ -20,6 +20,7 @@ import { useCheckOutVisit, useVisitor, useUserBrief, type Visit } from '@/servic
 import { QrScanner } from '@/components/QrScanner'
 import { CheckOutConfirm } from '@/components/CheckOutConfirm'
 
+import { Button, Input, Segmented } from '@uniops/shell'
 type Mode = 'scan' | 'input'
 
 // UUID v4-ish — the API returns the proper format, but we want to accept any
@@ -105,34 +106,22 @@ export default function CheckOutPage() {
         Back
       </BackLink>
 
-      <h1 className="mt-2 text-2xl font-bold text-fg">Check out</h1>
+      <h1 className="mt-2 text-2xl font-semibold text-fg">Check out</h1>
       <p className="mt-1 text-sm text-fg-muted">
         Scan the QR code on the visitor badge — or paste the visit ID — to record their departure.
       </p>
 
       {/* Mode toggle */}
-      <div className="mt-5 inline-flex rounded-md border border-line bg-surface p-0.5 text-sm">
-        <button
-          onClick={() => setMode('scan')}
-          className={
-            'inline-flex items-center gap-1.5 rounded px-3 py-1.5 ' +
-            (mode === 'scan' ? 'bg-primary-600 text-white' : 'text-fg-secondary hover:bg-surface-subtle')
-          }
-        >
-          <Camera className="h-4 w-4" />
-          Camera
-        </button>
-        <button
-          onClick={() => setMode('input')}
-          className={
-            'inline-flex items-center gap-1.5 rounded px-3 py-1.5 ' +
-            (mode === 'input' ? 'bg-primary-600 text-white' : 'text-fg-secondary hover:bg-surface-subtle')
-          }
-        >
-          <Keyboard className="h-4 w-4" />
-          Scanner / type
-        </button>
-      </div>
+      <Segmented<Mode>
+        size="md"
+        className="mt-5"
+        items={[
+          { key: 'scan', label: <span className="inline-flex items-center gap-1.5"><Camera className="h-4 w-4" />Camera</span> },
+          { key: 'input', label: <span className="inline-flex items-center gap-1.5"><Keyboard className="h-4 w-4" />Scanner / type</span> },
+        ]}
+        value={mode}
+        onChange={setMode}
+      />
 
       {/* Mode body */}
       <div className="mt-4">
@@ -147,21 +136,21 @@ export default function CheckOutPage() {
               Visit ID (paste / scan into this field)
             </label>
             <div className="mt-1 flex gap-2">
-              <input
+              <Input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="e.g. 8a7b3f8e-…"
                 autoFocus
-                className="flex-1 rounded-md border border-line-strong px-3 py-2 text-sm font-mono outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                className="flex-1 font-mono"
               />
-              <button
+              <Button size="md"
                 type="submit"
                 disabled={lookingUp || !input.trim()}
-                className="inline-flex items-center gap-1 rounded-md bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+               
               >
                 {lookingUp ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 Look up
-              </button>
+              </Button>
             </div>
             <p className="mt-2 text-xs text-fg-muted">
               A USB barcode scanner sends the QR contents as keyboard input — focus this field and

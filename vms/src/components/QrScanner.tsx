@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from 'react'
 import QrScannerLib from 'qr-scanner'
 import { AlertCircle, Camera, RefreshCcw } from 'lucide-react'
 
+import { Button } from '@uniops/shell'
 interface Props {
   onDecode: (text: string) => void
   /** Suppresses the same payload firing repeatedly. Defaults to 1500ms. */
@@ -99,13 +100,13 @@ export function QrScanner({ onDecode, cooldownMs = 1500 }: Props) {
           <div>
             <p className="font-medium">Camera unavailable</p>
             <p className="text-xs">{error}</p>
-            <button
+            <Button variant="link"
               onClick={() => window.location.reload()}
-              className="mt-1 inline-flex items-center gap-1 text-xs text-danger-fg hover:underline"
+              className="mt-1 text-xs text-danger-fg"
             >
               <RefreshCcw className="h-3 w-3" />
               Reload page to retry
-            </button>
+            </Button>
           </div>
         </div>
       )}

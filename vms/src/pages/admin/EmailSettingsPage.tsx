@@ -11,6 +11,7 @@
  * clears the credential.
  */
 import { useState } from 'react'
+import { Checkbox, Input, Button } from '@uniops/shell'
 import {
   AlertCircle, CheckCircle2, Loader2, Send, Mail,
 } from 'lucide-react'
@@ -61,16 +62,16 @@ export default function EmailSettingsPage() {
             OA mail server when these fields are blank.
           </p>
         </div>
-        <button
+        <Button size="sm"
           onClick={onSave}
           disabled={!dirty || save.isPending}
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+         
         >
           {save.isPending
             ? <Loader2 className="h-4 w-4 animate-spin" />
             : <CheckCircle2 className="h-4 w-4" />}
           Save
-        </button>
+        </Button>
       </div>
 
       {save.error && (
@@ -143,23 +144,23 @@ export default function EmailSettingsPage() {
         <div className="mt-3 flex flex-wrap items-end gap-2">
           <label className="text-sm">
             <span className="block text-xs text-fg-secondary">Recipient</span>
-            <input
+            <Input
               type="email"
               value={testTo}
               onChange={(e) => setTestTo(e.target.value)}
               placeholder="you@example.com"
-              className="mt-0.5 rounded-md border border-line-strong px-2.5 py-1.5 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+              className="mt-0.5"
             />
           </label>
-          <button
+          <Button variant="outline" size="sm"
             type="button"
             onClick={onTest}
             disabled={!testTo.trim() || test.isPending}
-            className="inline-flex items-center gap-1.5 rounded-md border border-primary-600 px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-50 disabled:opacity-50"
+           
           >
             {test.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             Send test
-          </button>
+          </Button>
         </div>
         {test.data && (
           <p className={
@@ -192,14 +193,14 @@ function TextField({
   return (
     <label className="block text-sm">
       <span className="block font-medium text-fg-secondary">{label}</span>
-      <input
+      <Input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={loading}
         placeholder={placeholder}
         autoComplete={type === 'password' ? 'new-password' : 'off'}
-        className="mt-1 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 disabled:opacity-50"
+        className="mt-1 w-full"
       />
     </label>
   )
@@ -215,13 +216,13 @@ function NumberField({
   return (
     <label className="block text-sm">
       <span className="block font-medium text-fg-secondary">{label}</span>
-      <input
+      <Input
         type="number"
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
         disabled={loading}
         placeholder={placeholder}
-        className="mt-1 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 disabled:opacity-50"
+        className="mt-1 w-full"
       />
     </label>
   )
@@ -236,12 +237,12 @@ function BoolField({
 }) {
   return (
     <label className="flex cursor-pointer items-center gap-2 text-sm">
-      <input
-        type="checkbox"
+      <Checkbox
+       
         checked={!!value}
         disabled={loading}
         onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4"
+       
       />
       <span className="font-medium text-fg-secondary">{label}</span>
     </label>

@@ -10,9 +10,8 @@
  * handlers (not during render) for new question ids.
  */
 import { useMemo, useState } from 'react'
-import {
-  AlertTriangle, CheckCircle2, Loader2, Plus, RotateCcw, X,
-} from 'lucide-react'
+import { Input, Select, Button } from '@uniops/shell'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Loader2, Plus, RotateCcw, X } from 'lucide-react'
 import {
   useHealthQuestionsAdmin, useSetHealthQuestions,
   type HealthQuestionEntry, type HealthQuestionsTemplateFull,
@@ -94,36 +93,36 @@ export default function HealthQuestionsPage() {
             at submit time — past declarations stay readable after edits.
           </p>
         </div>
-        <button
+        <Button size="sm"
           onClick={onSave}
           disabled={!canSave || save.isPending}
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+         
         >
           {save.isPending
             ? <Loader2 className="h-4 w-4 animate-spin" />
             : <CheckCircle2 className="h-4 w-4" />}
           Save
-        </button>
+        </Button>
       </div>
 
       {/* Version + bump */}
       <div className="mt-4 flex items-center gap-2 text-sm">
         <label className="text-fg-secondary">Template version:</label>
-        <input
+        <Input inputSize="sm"
           type="number"
           min="1"
           value={current.version}
           onChange={(e) => setVersion(parseInt(e.target.value) || 1)}
-          className="w-20 rounded-md border border-line-strong px-2 py-1 text-sm"
+          className="w-20"
         />
-        <button
+        <Button variant="subtle" size="xs"
           type="button"
           onClick={() => setVersion(current.version + 1)}
-          className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-fg-secondary"
+         
         >
           <RotateCcw className="h-3 w-3" />
           Bump
-        </button>
+        </Button>
       </div>
 
       {/* Warnings */}
@@ -171,54 +170,53 @@ export default function HealthQuestionsPage() {
             }
           >
             <div className="grid grid-cols-1 gap-2 md:grid-cols-[180px_1fr_120px_auto]">
-              <input
+              <Input inputSize="sm"
                 value={q.id}
                 onChange={(e) => updateQuestion(idx, { id: e.target.value })}
                 placeholder="id"
-                className="rounded-md border border-line-strong px-2 py-1.5 text-xs font-mono"
+                className="font-mono"
               />
-              <input
+              <Input
                 value={q.text}
                 onChange={(e) => updateQuestion(idx, { text: e.target.value })}
                 placeholder="Question text"
-                className="rounded-md border border-line-strong px-2 py-1.5 text-sm"
+               
               />
-              <select
+              <Select
                 value={q.fail_on}
                 onChange={(e) => updateQuestion(idx, { fail_on: e.target.value })}
-                className="rounded-md border border-line-strong px-2 py-1.5 text-sm"
+               
               >
                 <option value="yes">fail on YES</option>
                 <option value="no">fail on NO</option>
-              </select>
+              </Select>
               <div className="flex items-center gap-1">
-                <button
+                <Button variant="subtle" size="icon-xs" aria-label="Move up"
                   onClick={() => move(idx, -1)}
                   disabled={idx === 0}
-                  className="rounded p-1 text-fg-muted hover:bg-surface-sunken disabled:opacity-30"
-                >▲</button>
-                <button
+                ><ChevronUp className="h-3.5 w-3.5" /></Button>
+                <Button variant="subtle" size="icon-xs" aria-label="Move down"
                   onClick={() => move(idx, 1)}
                   disabled={idx === current.questions.length - 1}
-                  className="rounded p-1 text-fg-muted hover:bg-surface-sunken disabled:opacity-30"
-                >▼</button>
-                <button
+                 
+                ><ChevronDown className="h-3.5 w-3.5" /></Button>
+                <Button variant="subtle" size="icon-xs" aria-label="Remove question"
                   onClick={() => removeQuestion(idx)}
-                  className="rounded p-1 text-danger-fg hover:bg-danger-soft"
-                ><X className="h-3.5 w-3.5" /></button>
+                  className="text-danger-fg hover:bg-danger-soft"
+                ><X className="h-3.5 w-3.5" /></Button>
               </div>
             </div>
           </div>
         ))}
       </div>
 
-      <button
+      <Button variant="secondary" size="md"
         onClick={addQuestion}
-        className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-dashed border-line-strong px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
+        className="mt-3"
       >
         <Plus className="h-4 w-4" />
         Add question
-      </button>
+      </Button>
     </div>
   )
 }

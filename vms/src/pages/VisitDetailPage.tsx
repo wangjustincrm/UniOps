@@ -2,9 +2,7 @@ import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import {
-  ArrowLeft, AlertCircle, Calendar, Clock, Printer, X, Loader2, RotateCw, LogOut,
-  ShieldCheck, ShieldAlert, ThumbsUp, ThumbsDown, Undo2, Users, HardHat, Eye,
-  Pencil, Send,
+  AlertCircle, ArrowLeft, Calendar, Check, Clock, Eye, HardHat, Loader2, LogOut, Pencil, Printer, RotateCw, Send, ShieldAlert, ShieldCheck, ThumbsDown, ThumbsUp, Undo2, Users, X,
 } from 'lucide-react'
 import {
   useVisit, useVisitor, useUserBrief, useCancelVisit, useVerifyVisitorId,
@@ -20,6 +18,7 @@ import { VisitAttachments } from '@/components/VisitAttachments'
 import { EditVisitModal } from '@/components/EditVisitModal'
 import { formatDateTime } from '@/lib/utils'
 
+import { Button, Checkbox, Modal, Textarea } from '@uniops/shell'
 function getRole(): string | null {
   try {
     for (const key of ['vms-auth', 'portal-auth']) {
@@ -157,7 +156,7 @@ export default function VisitDetailPage() {
 
       <div className="mt-2 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-fg">
+          <h1 className="text-2xl font-semibold text-fg">
             {visitor ? `${visitor.first_name} ${visitor.last_name}` : `Visit #${visit.id.slice(0, 8)}`}
             {visit.additional_visitors.length > 0 && (
               <span className="ml-2 text-sm font-medium text-fg-muted">
@@ -216,7 +215,7 @@ export default function VisitDetailPage() {
                 : 'Shoe covers'
             return (
               <div key={item.visitor_id} className="py-2">
-                <p className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
+                <p className="text-xs font-semibold text-fg-muted">
                   {label}
                 </p>
                 <Row label="Clothing size" value={clothing} />
@@ -300,7 +299,7 @@ export default function VisitDetailPage() {
       {isGmpZone && !isPendingApproval && (
         <div className="mt-6 space-y-2">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
+            <p className="text-xs font-semibold text-fg-muted">
               Health declarations
             </p>
             <span className="text-xs text-fg-muted">
@@ -336,26 +335,22 @@ export default function VisitDetailPage() {
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   {decl && (
-                    <button
+                    <Button variant="secondary" size="xs"
                       onClick={() => setViewDecl({ name, decl })}
-                      className="inline-flex items-center gap-1 rounded-md border border-line-strong bg-surface px-2.5 py-1 text-xs font-medium text-fg-secondary hover:bg-surface-subtle"
+                     
                     >
                       <Eye className="h-3.5 w-3.5" /> View
-                    </button>
+                    </Button>
                   )}
                   {canDeclare && (
-                    <button
+                    <Button
+                      size="xs"
+                      variant={status === undefined ? 'warning' : 'secondary'}
                       onClick={() => setDeclaringVisitor({ id: v.id, name })}
-                      className={
-                        'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium ' +
-                        (status === undefined
-                          ? 'bg-warning-solid text-white hover:bg-warning-700'
-                          : 'border border-line-strong bg-surface text-fg-secondary hover:bg-surface-subtle')
-                      }
                     >
                       {status === undefined ? <ShieldCheck className="h-3.5 w-3.5" /> : <RotateCw className="h-3 w-3" />}
                       {status === undefined ? 'Declare' : 'Re-file'}
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -369,7 +364,7 @@ export default function VisitDetailPage() {
       {!isClosed && !isPendingApproval && gateVisitors.length > 0 && (
         <div className="mt-6 space-y-2">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
+            <p className="text-xs font-semibold text-fg-muted">
               ID verification
             </p>
             <span className="text-xs text-fg-muted">
@@ -386,8 +381,8 @@ export default function VisitDetailPage() {
               </p>
             ) : (
               <label key={v.id} className="flex cursor-pointer items-start gap-2.5 rounded-md border border-warning-line bg-warning-soft px-3 py-2.5 text-sm text-warning-fg">
-                <input
-                  type="checkbox"
+                <Checkbox
+                 
                   checked={false}
                   disabled={pending}
                   onChange={() => verifyId.mutate(v.id)}
@@ -416,14 +411,14 @@ export default function VisitDetailPage() {
             has been asked to approve it and the badge cannot print until it is submitted.
           </p>
           {canManage && (
-            <button
+            <Button size="sm"
               onClick={() => submit.mutate()}
               disabled={submit.isPending}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+              className="mt-3"
             >
               {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               Submit for approval
-            </button>
+            </Button>
           )}
           {submit.error && <p className="mt-2 text-xs text-danger-fg">{submit.error.message}</p>}
         </div>
@@ -443,20 +438,20 @@ export default function VisitDetailPage() {
           )}
           {canManage ? (
             <div className="mt-3 flex flex-wrap gap-2">
-              <button
+              <Button variant="secondary" size="sm"
                 onClick={() => setShowEdit(true)}
-                className="inline-flex items-center gap-1.5 rounded-md border border-warning-400 bg-surface px-3 py-1.5 text-sm font-medium text-warning-fg hover:bg-warning-soft"
+               
               >
                 <Pencil className="h-4 w-4" /> Edit visit
-              </button>
-              <button
+              </Button>
+              <Button size="sm"
                 onClick={() => submit.mutate()}
                 disabled={submit.isPending}
-                className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+               
               >
                 {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 Submit for approval
-              </button>
+              </Button>
             </div>
           ) : (
             <p className="mt-1 text-xs">Waiting for the person who booked it, or the Host, to edit and resubmit.</p>
@@ -489,30 +484,30 @@ export default function VisitDetailPage() {
             edit, or reject.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <button
+            <Button variant="success" size="sm"
               onClick={() => { setApprovalKind('approve'); setApprovalComment('') }}
               disabled={action.isPending}
-              className="inline-flex items-center gap-1.5 rounded-md bg-success-solid px-3 py-1.5 text-sm font-medium text-white hover:bg-success-700 disabled:opacity-50"
+             
             >
               <ThumbsUp className="h-4 w-4" />
               Approve
-            </button>
-            <button
+            </Button>
+            <Button variant="warning-outline" size="sm"
               onClick={() => { setApprovalKind('return'); setApprovalComment('') }}
               disabled={action.isPending}
-              className="inline-flex items-center gap-1.5 rounded-md border border-warning-line bg-surface px-3 py-1.5 text-sm font-medium text-warning-fg hover:bg-warning-soft disabled:opacity-50"
+             
             >
               <Undo2 className="h-4 w-4" />
               Return for edit
-            </button>
-            <button
+            </Button>
+            <Button variant="danger-outline" size="sm"
               onClick={() => { setApprovalKind('reject'); setApprovalComment('') }}
               disabled={action.isPending}
-              className="inline-flex items-center gap-1.5 rounded-md border border-danger-line bg-surface px-3 py-1.5 text-sm font-medium text-danger-fg hover:bg-danger-soft disabled:opacity-50"
+             
             >
               <ThumbsDown className="h-4 w-4" />
               Reject
-            </button>
+            </Button>
           </div>
           {action.error && (
             <p className="mt-2 text-xs text-danger-fg">{action.error.message}</p>
@@ -529,57 +524,57 @@ export default function VisitDetailPage() {
         )}
 
         {!isPendingApproval && !isClosed && isFirstPrint && (
-          <button
+          <Button size="md"
             onClick={() => goPrint()}
             disabled={!canPrint}
             title={canPrint ? undefined : `Before printing: ${printBlockers.join('; ')}`}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+           
           >
             <Printer className="h-4 w-4" />
             Print badge &amp; check in
-          </button>
+          </Button>
         )}
 
         {isCheckedIn && (
           <>
-            <button
+            <Button size="md"
               onClick={() => setShowCheckoutModal(true)}
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+             
             >
               <LogOut className="h-4 w-4" />
               Check out
-            </button>
-            <button
+            </Button>
+            <Button variant="secondary" size="md"
               onClick={() => setShowReprintModal(true)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-4 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
+             
             >
               <RotateCw className="h-4 w-4" />
               Reprint badge
-            </button>
+            </Button>
           </>
         )}
 
         {canEdit && !returnedForEdit && (
-          <button
+          <Button variant="secondary" size="md"
             onClick={() => setShowEdit(true)}
-            className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-4 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
+           
           >
             <Pencil className="h-4 w-4" />
             Edit visit
-          </button>
+          </Button>
         )}
 
         {isCancellable && canManage && (
-          <button
+          <Button variant="danger-outline" size="md"
             onClick={onCancel}
             disabled={cancel.isPending}
-            className="inline-flex items-center gap-1.5 rounded-md border border-danger-line bg-surface px-4 py-2 text-sm text-danger-fg hover:bg-danger-soft disabled:opacity-50"
+           
           >
             {cancel.isPending
               ? <Loader2 className="h-4 w-4 animate-spin" />
               : <X className="h-4 w-4" />}
             Cancel visit
-          </button>
+          </Button>
         )}
       </div>
 
@@ -628,54 +623,65 @@ export default function VisitDetailPage() {
 
       {/* Reprint modal */}
       {showReprintModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="w-full max-w-md rounded-lg bg-surface p-5 shadow-xl">
-            <h3 className="text-base font-semibold text-fg">Reprint badge</h3>
+        <Modal
+          open
+          onClose={() => { setShowReprintModal(false); setReprintReason('') }}
+          title="Reprint badge"
+          // Closes by Cancel / the close button only (no Escape, no backdrop), as before.
+          closeOnEscape={false}
+          size="full"
+          className="max-w-md"
+        >
+          <div>
             <p className="mt-1 text-xs text-fg-muted">
               Reprints are logged. Tell us why a new badge is needed.
             </p>
-            <textarea
+            <Textarea
               value={reprintReason}
               onChange={(e) => setReprintReason(e.target.value)}
               rows={3}
               placeholder="Damaged badge / lost / info change / …"
-              className="mt-3 w-full rounded-md border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+              className="mt-3 w-full"
               autoFocus
             />
             <div className="mt-4 flex justify-end gap-2">
-              <button
+              <Button variant="secondary" size="sm"
                 onClick={() => { setShowReprintModal(false); setReprintReason('') }}
-                className="rounded-md border border-line-strong px-3 py-1.5 text-sm"
+               
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button size="sm"
                 onClick={onReprintSubmit}
                 disabled={!reprintReason.trim()}
-                className="rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+               
               >
                 Reprint
-              </button>
+              </Button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Approval modal — comment is required for reject/return, optional for approve. */}
       {approvalKind && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="w-full max-w-md rounded-lg bg-surface p-5 shadow-xl">
-            <h3 className="text-base font-semibold text-fg">
-              {approvalKind === 'approve' && 'Approve visit'}
-              {approvalKind === 'return'  && 'Return for edit'}
-              {approvalKind === 'reject'  && 'Reject visit'}
-            </h3>
+        <Modal
+          open
+          onClose={() => { setApprovalKind(null); setApprovalComment(''); action.reset() }}
+          busy={action.isPending}
+          title={approvalKind === 'approve' ? 'Approve visit' : approvalKind === 'return' ? 'Return for edit' : 'Reject visit'}
+          // Closes by Cancel / the close button only (no Escape, no backdrop), as before.
+          closeOnEscape={false}
+          size="full"
+          className="max-w-md"
+        >
+          <div>
             <p className="mt-1 text-xs text-fg-muted">
               {approvalKind === 'approve'
                 ? 'Optional comment — visible in the visit history.'
                 : 'Tell the requester why so they can fix it.'}
             </p>
-            <textarea
+            <Textarea
               value={approvalComment}
               onChange={(e) => setApprovalComment(e.target.value)}
               rows={3}
@@ -684,18 +690,20 @@ export default function VisitDetailPage() {
                   ? 'Optional note…'
                   : 'Reason (required)…'
               }
-              className="mt-3 w-full rounded-md border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+              className="mt-3 w-full"
               autoFocus
             />
             <div className="mt-4 flex justify-end gap-2">
-              <button
+              <Button variant="secondary" size="sm"
                 onClick={() => { setApprovalKind(null); setApprovalComment(''); action.reset() }}
                 disabled={action.isPending}
-                className="rounded-md border border-line-strong px-3 py-1.5 text-sm"
+               
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
+                size="sm"
+                variant={approvalKind === 'approve' ? 'success' : approvalKind === 'reject' ? 'danger' : 'warning'}
                 onClick={() => action.mutate(
                   { action: approvalKind, comment: approvalComment.trim() || undefined },
                   { onSuccess: () => { setApprovalKind(null); setApprovalComment('') } },
@@ -704,21 +712,13 @@ export default function VisitDetailPage() {
                   action.isPending
                   || (approvalKind !== 'approve' && !approvalComment.trim())
                 }
-                className={
-                  'rounded-md px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 ' +
-                  (approvalKind === 'approve'
-                    ? 'bg-success-solid hover:bg-success-700'
-                    : approvalKind === 'reject'
-                      ? 'bg-danger-solid hover:bg-danger-700'
-                      : 'bg-warning-solid hover:bg-warning-700')
-                }
               >
-                {action.isPending && <Loader2 className="h-3 w-3 animate-spin inline mr-1" />}
+                {action.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
                 Confirm
-              </button>
+              </Button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )
@@ -732,7 +732,7 @@ function Card({
   return (
     <div className={'rounded-lg border border-line bg-surface p-4 ' + (className ?? '')}>
       {title && (
-        <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-fg-muted">
+        <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-fg-muted">
           {icon}
           {title}
         </div>
@@ -787,7 +787,7 @@ function ComplianceGate({ primary, extras }: { primary: Visitor; extras: Visitor
           if (tFresh && pFresh) {
             return (
               <li key={v.id} className="text-success-fg">
-                ✓ {v.first_name} {v.last_name} — training + PPE on file
+                <Check aria-hidden className="mr-1 inline h-3.5 w-3.5" />{v.first_name} {v.last_name} — training + PPE on file
               </li>
             )
           }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus, AlertCircle } from 'lucide-react'
-import { Pagination, SortTh, useSort, sortParams } from '@uniops/shell'
+import { Pagination, SortTh, useSort, sortParams, TBody, THead, Table, Td, Tr } from '@uniops/shell'
 import { useVisits, type Visit } from '@/services/api'
 import { StatusBadge, AccessAreaBadge, OverdueBadge, isVisitOverdue } from '@/components/StatusBadge'
 import { displayTimeZone, formatDate, formatDateTime, localToday } from '@/lib/utils'
@@ -36,7 +36,7 @@ export default function VisitListPage({ scope }: { scope: 'today' | 'all' }) {
     <div>
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-fg">{title}</h1>
+          <h1 className="text-2xl font-semibold text-fg">{title}</h1>
           <p className="mt-1 text-sm text-fg-muted">{subtitle}</p>
         </div>
         <Link
@@ -56,55 +56,55 @@ export default function VisitListPage({ scope }: { scope: 'today' | 'all' }) {
       )}
 
       <div className="mt-6 overflow-hidden rounded-lg border border-line bg-surface">
-        <table className="min-w-full divide-y divide-line">
-          <thead className="bg-surface-subtle text-left text-xs font-semibold uppercase tracking-wider text-fg-muted">
-            <tr>
+        <Table density="compact" className="min-w-full divide-y divide-line">
+          <THead>
+            <Tr>
               <SortTh label="Visitor" sortKey="visitor" sort={sort} onSort={onSort} className="px-4 py-2.5" />
               <SortTh label="Company" sortKey="company" sort={sort} onSort={onSort} className="px-4 py-2.5 hidden md:table-cell" />
               <SortTh label="Planned Arrival" sortKey="planned_arrival" sort={sort} onSort={onSort} className="px-4 py-2.5 hidden md:table-cell" />
               <SortTh label="Area" sortKey="access_area" sort={sort} onSort={onSort} className="px-4 py-2.5" />
               <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-2.5" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line-subtle bg-surface text-sm">
+            </Tr>
+          </THead>
+          <TBody className="text-sm">
             {isLoading && (
-              <tr><td colSpan={5} className="px-4 py-6 text-center text-fg-muted">Loading…</td></tr>
+              <Tr><Td align="center" colSpan={5} className="text-fg-muted">Loading…</Td></Tr>
             )}
             {!isLoading && items.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-4 py-12 text-center text-fg-muted">
+              <Tr>
+                <Td align="center" colSpan={5} className="text-fg-muted">
                   No visits {scope === 'today' ? 'today' : 'on record'} yet.
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             )}
             {items.map((v: Visit) => (
-              <tr key={v.id} className="hover:bg-primary-50/30">
-                <td className="px-4 py-2.5">
+              <Tr key={v.id} className="hover:bg-primary-50/30">
+                <Td>
                   <Link to={`/${v.id}`} className="text-primary-700 hover:underline">
                     {v.visitor
                       ? `${v.visitor.first_name} ${v.visitor.last_name}`
                       : `Visit #${v.id.slice(0, 8)}`}
                   </Link>
-                </td>
-                <td className="px-4 py-2.5 hidden md:table-cell text-fg-secondary">
+                </Td>
+                <Td className="hidden md:table-cell text-fg-secondary">
                   {v.visitor?.company_name ?? '—'}
-                </td>
-                <td className="px-4 py-2.5 hidden md:table-cell text-fg-secondary">
+                </Td>
+                <Td className="hidden md:table-cell text-fg-secondary">
                   {formatDateTime(v.planned_arrival)}
-                </td>
-                <td className="px-4 py-2.5">
+                </Td>
+                <Td>
                   <AccessAreaBadge area={v.access_area} />
-                </td>
-                <td className="px-4 py-2.5">
+                </Td>
+                <Td>
                   <span className="inline-flex items-center gap-1.5">
                     <StatusBadge status={v.status} />
                     {isVisitOverdue(v) && <OverdueBadge />}
                   </span>
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
         {total > 0 && (
           <Pagination
             page={page} pageSize={pageSize} total={total}

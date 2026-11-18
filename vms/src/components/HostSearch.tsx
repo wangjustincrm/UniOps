@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Search } from 'lucide-react'
 import { useUserDirectory, type UserBrief } from '@/services/api'
 
+import { Button, Input, MenuItem } from '@uniops/shell'
 export function HostSearch({
   selected,
   onSelect,
@@ -25,13 +26,13 @@ export function HostSearch({
           {selected.email}
           {selected.department_name ? ` · ${selected.department_name}` : ''}
         </p>
-        <button
+        <Button variant="link"
           type="button"
           onClick={() => onSelect(null as unknown as UserBrief)}
-          className="mt-2 text-xs text-primary-700 hover:underline"
+          className="mt-2 text-xs"
         >
           Change
-        </button>
+        </Button>
       </div>
     )
   }
@@ -43,12 +44,12 @@ export function HostSearch({
       </label>
       <div className="relative mt-1">
         <Search className="absolute left-2 top-2.5 h-4 w-4 text-fg-muted" />
-        <input
+        <Input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Name or email (at least 2 chars)…"
-          className="w-full rounded-md border border-line-strong bg-surface py-2 pl-8 pr-3 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+          className="w-full pl-8 pr-3"
         />
       </div>
 
@@ -59,17 +60,16 @@ export function HostSearch({
             <p className="px-3 py-2 text-xs text-fg-muted">No matches.</p>
           )}
           {items.map((u) => (
-            <button
+            <MenuItem
               key={u.id}
-              type="button"
               onClick={() => onSelect(u)}
-              className="block w-full border-b border-line-subtle px-3 py-2 text-left text-sm hover:bg-primary-50/40"
+              className="block border-b border-line-subtle"
             >
               <p className="font-medium text-fg">{u.full_name}</p>
               <p className="text-xs text-fg-muted">
                 {u.email}{u.department_name ? ` · ${u.department_name}` : ''}
               </p>
-            </button>
+            </MenuItem>
           ))}
         </div>
       )}

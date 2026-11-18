@@ -8,6 +8,7 @@ import { PURPOSES, mayMoveConfirmed, zoneOptions } from '@/lib/visitOptions'
 import { plantWallClockToISO } from '@/lib/plantTime'
 import { formatTime } from '@/lib/utils'
 
+import { Input, Select, Textarea, Button, Modal } from '@uniops/shell'
 /** "HH:MM" of an ISO instant on the plant's clock (company time zone). */
 function localTime(iso: string | null): string {
   if (!iso) return ''
@@ -59,9 +60,17 @@ export function EditVisitModal({ visit, onClose }: { visit: Visit; onClose: () =
   const inputCls = 'mt-1 w-full rounded-md border border-line-strong px-3 py-1.5 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="w-full max-w-lg rounded-lg bg-surface p-5 shadow-xl">
-        <h3 className="text-base font-semibold text-fg">Edit visit</h3>
+    <Modal
+      open
+      onClose={onClose}
+      busy={update.isPending}
+      title="Edit visit"
+      // Closes by Cancel / the close button only (no Escape, no backdrop), as before.
+      closeOnEscape={false}
+      size="full"
+      className="max-w-lg"
+    >
+      <div>
         <p className="mt-1 text-xs text-fg-muted">
           {awaitingResubmit
             ? 'Make the changes the approver asked for, then use “Submit for approval”.'
@@ -70,49 +79,49 @@ export function EditVisitModal({ visit, onClose }: { visit: Visit; onClose: () =
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="text-xs font-medium text-fg-secondary">Date
-            <input type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} className={inputCls} />
+            <Input type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} className={inputCls} />
           </label>
           <label className="text-xs font-medium text-fg-secondary">Planned arrival
-            <input type="time" value={arrival} onChange={(e) => setArrival(e.target.value)} className={inputCls} />
+            <Input type="time" value={arrival} onChange={(e) => setArrival(e.target.value)} className={inputCls} />
           </label>
           <label className="text-xs font-medium text-fg-secondary">Planned departure
-            <input type="time" value={departure} onChange={(e) => setDeparture(e.target.value)} className={inputCls} />
+            <Input type="time" value={departure} onChange={(e) => setDeparture(e.target.value)} className={inputCls} />
           </label>
         </div>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="text-xs font-medium text-fg-secondary">Visit purpose
-            <select value={purpose} onChange={(e) => setPurpose(e.target.value as VisitPurpose)} className={inputCls}>
+            <Select value={purpose} onChange={(e) => setPurpose(e.target.value as VisitPurpose)} className="mt-1 w-full">
               {PURPOSES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            </Select>
           </label>
           <label className="text-xs font-medium text-fg-secondary">Access zone
-            <select value={area} onChange={(e) => setArea(e.target.value as AccessArea)} className={inputCls}>
+            <Select value={area} onChange={(e) => setArea(e.target.value as AccessArea)} className="mt-1 w-full">
               {zoneOptions(rules, visit.access_area).filter((o) => areaAllowed(o.value)).map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
-            </select>
+            </Select>
           </label>
         </div>
         <label className="mt-3 block text-xs font-medium text-fg-secondary">Notes
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={inputCls} />
+          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={inputCls} />
         </label>
 
         {update.error && <p className="mt-3 text-xs text-danger-fg">{update.error.message}</p>}
 
         <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} disabled={update.isPending} className="rounded-md border border-line-strong px-3 py-1.5 text-sm">
+          <Button variant="secondary" size="sm" onClick={onClose} disabled={update.isPending}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button size="sm"
             onClick={save}
             disabled={update.isPending || !visitDate || !arrival}
-            className="inline-flex items-center gap-1 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+           
           >
             {update.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
             Save changes
-          </button>
+          </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

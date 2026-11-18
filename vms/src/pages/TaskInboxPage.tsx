@@ -51,7 +51,7 @@ export default function TaskInboxPage() {
     <div>
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-fg">Task Inbox</h1>
+          <h1 className="text-2xl font-semibold text-fg">Task Inbox</h1>
           <p className="mt-1 text-sm text-fg-muted">
             Visit approvals + training / PPE confirmations waiting on you.
             Same list as the Portal task inbox.

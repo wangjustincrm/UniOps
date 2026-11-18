@@ -10,6 +10,7 @@
  * person's selections stable when the companion list changes upstream.
  */
 import { useMemo } from 'react'
+import { Checkbox, Input, Select, Textarea } from '@uniops/shell'
 import type {
   ClothingSize, FootwearKind, PpeItem, PpeRequest, ShoeSize, Visitor,
 } from '@/services/api'
@@ -72,8 +73,8 @@ export function PpeRequestForm({ visitors, value, onChange }: Props) {
   return (
     <div className="space-y-3">
       <label className="flex cursor-pointer items-start gap-2.5 text-sm text-fg">
-        <input
-          type="checkbox"
+        <Checkbox
+         
           checked={enabled}
           onChange={(e) => toggle(e.target.checked)}
           className="mt-0.5"
@@ -100,7 +101,7 @@ export function PpeRequestForm({ visitors, value, onChange }: Props) {
             key={v.id}
             className="rounded-md border border-line bg-surface-subtle/40 p-3"
           >
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-muted">
+            <p className="mb-2 text-xs font-semibold text-fg-muted">
               {v.first_name} {v.last_name}
               <span className="ml-2 font-normal normal-case text-fg-muted">
                 {v.company_name}
@@ -109,7 +110,7 @@ export function PpeRequestForm({ visitors, value, onChange }: Props) {
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <Field label="Clothing size">
-                <select
+                <Select
                   value={item.clothing_size}
                   onChange={(e) => updateItem(v.id, {
                     clothing_size: e.target.value as ClothingSize,
@@ -117,17 +118,17 @@ export function PpeRequestForm({ visitors, value, onChange }: Props) {
                       ? item.clothing_size_other ?? ''
                       : null,
                   })}
-                  className={inputCls}
+                  className="block w-full"
                 >
                   {CLOTHING_SIZES.map((s) => (
                     <option key={s} value={s}>{s === 'other' ? 'Other' : s}</option>
                   ))}
-                </select>
+                </Select>
               </Field>
 
               {item.clothing_size === 'other' && (
                 <Field label="Clothing size — describe">
-                  <input
+                  <Input
                     type="text"
                     value={item.clothing_size_other ?? ''}
                     onChange={(e) => updateItem(v.id, { clothing_size_other: e.target.value })}
@@ -138,23 +139,23 @@ export function PpeRequestForm({ visitors, value, onChange }: Props) {
               )}
 
               <Field label="Footwear">
-                <select
+                <Select
                   value={item.footwear}
                   onChange={(e) => updateItem(v.id, {
                     footwear: e.target.value as FootwearKind,
                     shoe_size: e.target.value === 'shoes' ? item.shoe_size ?? '10' : null,
                     shoe_size_other: null,
                   })}
-                  className={inputCls}
+                  className="block w-full"
                 >
                   <option value="shoe_covers">Shoe covers</option>
                   <option value="shoes">Safety shoes</option>
-                </select>
+                </Select>
               </Field>
 
               {item.footwear === 'shoes' && (
                 <Field label="Shoe size (US)">
-                  <select
+                  <Select
                     value={item.shoe_size ?? ''}
                     onChange={(e) => updateItem(v.id, {
                       shoe_size: e.target.value as ShoeSize,
@@ -162,18 +163,18 @@ export function PpeRequestForm({ visitors, value, onChange }: Props) {
                         ? item.shoe_size_other ?? ''
                         : null,
                     })}
-                    className={inputCls}
+                    className="block w-full"
                   >
                     {SHOE_SIZES.map((s) => (
                       <option key={s} value={s}>{s === 'other' ? 'Other' : s}</option>
                     ))}
-                  </select>
+                  </Select>
                 </Field>
               )}
 
               {item.footwear === 'shoes' && item.shoe_size === 'other' && (
                 <Field label="Shoe size — describe">
-                  <input
+                  <Input
                     type="text"
                     value={item.shoe_size_other ?? ''}
                     onChange={(e) => updateItem(v.id, { shoe_size_other: e.target.value })}
@@ -189,7 +190,7 @@ export function PpeRequestForm({ visitors, value, onChange }: Props) {
 
       {enabled && value && visitors.length > 0 && (
         <Field label="Notes (optional — applies to the whole group)">
-          <textarea
+          <Textarea
             value={value.notes ?? ''}
             onChange={(e) => onChange({ ...value, notes: e.target.value })}
             rows={2}

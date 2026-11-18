@@ -2,10 +2,11 @@
  *  visitor's e-signature. Shared by the visit detail page and the standalone
  *  declarations browser. Pure presentational: caller supplies the data.
  */
-import { CheckCircle2, AlertCircle, X } from 'lucide-react'
+import { CheckCircle2, AlertCircle } from 'lucide-react'
 import type { HealthDeclarationAnswer, HealthDeclStatus } from '@/services/api'
 import { formatDateTime } from '@/lib/utils'
 
+import { Button, Modal } from '@uniops/shell'
 interface Props {
   visitorName: string
   result: HealthDeclStatus
@@ -20,25 +21,17 @@ export function HealthDeclView({
 }: Props) {
   const passed = result === 'passed'
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-surface shadow-xl">
-        {/* Header */}
-        <div className="flex items-start justify-between border-b border-line-subtle px-5 py-4">
-          <div>
-            <h3 className="text-base font-semibold text-fg">
-              Health declaration — {visitorName}
-            </h3>
-            <p className="mt-0.5 text-xs text-fg-muted">Filed {formatDateTime(submittedAt)}</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-md p-1 text-fg-muted hover:bg-surface-subtle hover:text-fg-secondary"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
+    <Modal
+      open
+      onClose={onClose}
+      title={`Health declaration — ${visitorName}`}
+      description={`Filed ${formatDateTime(submittedAt)}`}
+      // Closes by Cancel / the close button only (no Escape, no backdrop), as before.
+      closeOnEscape={false}
+      size="full"
+      className="max-w-2xl"
+      bodyClassName="flex min-h-0 flex-col p-0"
+    >
         {/* Result banner */}
         <div
           className={
@@ -67,7 +60,7 @@ export function HealthDeclView({
           </dl>
 
           <div className="mt-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
+            <p className="text-xs font-semibold text-fg-muted">
               Visitor signature
             </p>
             {signature ? (
@@ -84,14 +77,13 @@ export function HealthDeclView({
 
         {/* Footer */}
         <div className="flex justify-end border-t border-line-subtle px-5 py-3">
-          <button
+          <Button size="sm"
             onClick={onClose}
-            className="rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
+           
           >
             Close
-          </button>
+          </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

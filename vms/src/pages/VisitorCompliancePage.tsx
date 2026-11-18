@@ -17,6 +17,7 @@ import {
 } from '@/services/api'
 import { formatDateTime } from '@/lib/utils'
 
+import { Button } from '@uniops/shell'
 export default function VisitorCompliancePage() {
   const { visitorId } = useParams<{ visitorId: string }>()
   const { data: visitor, isLoading, error } = useVisitor(visitorId)
@@ -50,7 +51,7 @@ export default function VisitorCompliancePage() {
         Back to task inbox
       </BackLink>
 
-      <h1 className="mt-2 text-2xl font-bold text-fg">
+      <h1 className="mt-2 text-2xl font-semibold text-fg">
         {visitor.first_name} {visitor.last_name}
       </h1>
       <p className="mt-0.5 text-sm text-fg-muted">{visitor.company_name}</p>
@@ -128,18 +129,18 @@ function ComplianceCard({
           )}
         </div>
 
-        <button
+        <Button size="sm"
           type="button"
           onClick={onConfirm}
           disabled={isPending || fresh}
           title={fresh ? 'Already fresh — no action needed' : undefined}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+          className="shrink-0"
         >
           {isPending
             ? <Loader2 className="h-4 w-4 animate-spin" />
             : <CheckCircle2 className="h-4 w-4" />}
           {fresh ? 'Confirmed' : 'Confirm now'}
-        </button>
+        </Button>
       </div>
 
       {error && (

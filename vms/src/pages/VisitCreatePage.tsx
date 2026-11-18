@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useReplaceTab } from '@uniops/shell'
+import { useReplaceTab, Input, Select, Textarea, Button } from '@uniops/shell'
 import { vmsRoutes } from '@/app/routes'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { VisitorSearch } from '@/components/VisitorSearch'
@@ -96,24 +96,24 @@ function InlineNewVisitorForm({
       <p className="text-xs font-medium text-fg-secondary">Register a new visitor</p>
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
         <Field label="First name *">
-          <input value={first} onChange={(e) => setFirst(e.target.value)} className={inputCls} />
+          <Input value={first} onChange={(e) => setFirst(e.target.value)} className={inputCls} />
         </Field>
         <Field label="Last name *">
-          <input value={last} onChange={(e) => setLast(e.target.value)} className={inputCls} />
+          <Input value={last} onChange={(e) => setLast(e.target.value)} className={inputCls} />
         </Field>
         <Field label="Company (optional)">
-          <input value={company} onChange={(e) => setCo(e.target.value)} className={inputCls} />
+          <Input value={company} onChange={(e) => setCo(e.target.value)} className={inputCls} />
         </Field>
         <Field label="Phone (optional)">
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} />
+          <Input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} />
         </Field>
         <Field label="Email (optional)">
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
+          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
         </Field>
         <Field label="Visitor type">
-          <select value={type} onChange={(e) => setType(e.target.value as VisitorType)} className={inputCls}>
+          <Select value={type} onChange={(e) => setType(e.target.value as VisitorType)} className="w-full">
             {VISITOR_TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+          </Select>
         </Field>
       </div>
       {error && (
@@ -123,18 +123,18 @@ function InlineNewVisitorForm({
         </p>
       )}
       <div className="flex justify-end gap-2 pt-1">
-        <button type="button" onClick={onCancel} className="rounded-md border border-line-strong px-3 py-1.5 text-xs">
+        <Button variant="secondary" size="xs" type="button" onClick={onCancel}>
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button size="xs"
           type="button"
           onClick={submit}
           disabled={!ok || isPending}
-          className="inline-flex items-center gap-1 rounded-md bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+         
         >
           {isPending && <Loader2 className="h-3 w-3 animate-spin" />}
           Save visitor
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -197,7 +197,7 @@ export default function VisitCreatePage() {
 
   return (
     <div className="max-w-3xl">
-      <h1 className="text-2xl font-bold text-fg">New Visit</h1>
+      <h1 className="text-2xl font-semibold text-fg">New Visit</h1>
       <p className="mt-1 text-sm text-fg-muted">
         Pre-register a visitor — you'll print the badge (and check them in) when they arrive.
       </p>
@@ -232,13 +232,13 @@ export default function VisitCreatePage() {
         <Section title="Schedule">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <Field label="Date">
-              <input type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} className={inputCls} />
+              <Input type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} className={inputCls} />
             </Field>
             <Field label="Planned arrival">
-              <input type="time" value={arrivalTime} onChange={(e) => setArrivalTime(e.target.value)} className={inputCls} />
+              <Input type="time" value={arrivalTime} onChange={(e) => setArrivalTime(e.target.value)} className={inputCls} />
             </Field>
             <Field label="Planned departure">
-              <input type="time" value={departureTime} onChange={(e) => setDepartureTime(e.target.value)} className={inputCls} />
+              <Input type="time" value={departureTime} onChange={(e) => setDepartureTime(e.target.value)} className={inputCls} />
             </Field>
           </div>
         </Section>
@@ -247,14 +247,14 @@ export default function VisitCreatePage() {
         <Section title="Purpose & access">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Field label="Visit purpose">
-              <select value={purpose} onChange={(e) => setPurpose(e.target.value as VisitPurpose)} className={inputCls}>
+              <Select value={purpose} onChange={(e) => setPurpose(e.target.value as VisitPurpose)} className="w-full">
                 {PURPOSES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              </Select>
             </Field>
             <Field label="Access zone">
-              <select value={area} onChange={(e) => setArea(e.target.value as AccessArea)} className={inputCls}>
+              <Select value={area} onChange={(e) => setArea(e.target.value as AccessArea)} className="w-full">
                 {zones.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              </Select>
             </Field>
           </div>
           {areaHint && (
@@ -276,7 +276,7 @@ export default function VisitCreatePage() {
 
         {/* Notes */}
         <Section title="Notes">
-          <textarea
+          <Textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
@@ -293,21 +293,21 @@ export default function VisitCreatePage() {
         )}
 
         <div className="flex justify-end gap-2 pt-2">
-          <button
+          <Button variant="secondary" size="md"
             type="button"
             onClick={() => replaceTab('/')}
-            className="rounded-md border border-line-strong px-4 py-2 text-sm"
+           
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button size="md"
             type="submit"
             disabled={!isReady || isPending}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+           
           >
             {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             Create visit
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -331,7 +331,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-fg-muted">{title}</h2>
+      <h2 className="mb-2 text-sm font-semibold text-fg-muted">{title}</h2>
       {children}
     </section>
   )

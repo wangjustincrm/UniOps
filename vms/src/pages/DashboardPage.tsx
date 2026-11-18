@@ -1,6 +1,6 @@
 /** VMS home dashboard (PRD §6.5.5 / §2.5.2 VMS-AU-016). */
 import { Link } from 'react-router-dom'
-import { SortTh, useSort, sortParams } from '@uniops/shell'
+import { SortTh, useSort, sortParams, TBody, THead, Table, Td, Tr } from '@uniops/shell'
 import {
   UserCheck, CalendarCheck, CalendarRange, AlertTriangle, ArrowRight,
   ShieldCheck, FileWarning, MoonStar, Inbox,
@@ -42,7 +42,7 @@ export default function DashboardPage() {
     <div>
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-fg">Dashboard</h1>
+          <h1 className="text-2xl font-semibold text-fg">Dashboard</h1>
           <p className="mt-1 text-sm text-fg-muted">
             {new Date().toLocaleDateString('en-CA', { weekday: 'long', timeZone: displayTimeZone() })}, {formatDate(new Date())}
           </p>
@@ -174,29 +174,29 @@ export default function DashboardPage() {
         </div>
 
         <div className="overflow-hidden rounded-lg border border-line bg-surface">
-          <table className="min-w-full divide-y divide-line">
-            <thead className="bg-surface-subtle text-left text-xs font-semibold uppercase tracking-wider text-fg-muted">
-              <tr>
+          <Table density="compact" className="min-w-full divide-y divide-line">
+            <THead>
+              <Tr>
                 <SortTh label="Visit" sortKey="visitor" sort={sort} onSort={onSort} className="px-4 py-2.5" />
                 <SortTh label="Planned arrival" sortKey="planned_arrival" sort={sort} onSort={onSort} className="px-4 py-2.5 hidden md:table-cell" />
                 <SortTh label="Area" sortKey="access_area" sort={sort} onSort={onSort} className="px-4 py-2.5" />
                 <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-2.5" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line-subtle bg-surface text-sm">
+              </Tr>
+            </THead>
+            <TBody className="text-sm">
               {todayVisits.isLoading && (
-                <tr><td colSpan={4} className="px-4 py-6 text-center text-fg-muted">Loading…</td></tr>
+                <Tr><Td align="center" colSpan={4} className="text-fg-muted">Loading…</Td></Tr>
               )}
               {!todayVisits.isLoading && (todayVisits.data?.items.length ?? 0) === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-12 text-center text-fg-muted">
+                <Tr>
+                  <Td align="center" colSpan={4} className="text-fg-muted">
                     No visits scheduled for today.
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               )}
               {todayVisits.data?.items.map((v: Visit) => (
-                <tr key={v.id} className="hover:bg-primary-50/30">
-                  <td className="px-4 py-2.5">
+                <Tr key={v.id} className="hover:bg-primary-50/30">
+                  <Td>
                     <Link to={`/${v.id}`} className="text-primary-700 hover:underline">
                       {v.visitor
                         ? `${v.visitor.first_name} ${v.visitor.last_name}`
@@ -205,20 +205,20 @@ export default function DashboardPage() {
                     {v.visitor?.company_name && (
                       <p className="text-xs text-fg-muted">{v.visitor.company_name}</p>
                     )}
-                  </td>
-                  <td className="px-4 py-2.5 hidden md:table-cell text-fg-secondary">
+                  </Td>
+                  <Td className="hidden md:table-cell text-fg-secondary">
                     {formatDateTime(v.planned_arrival)}
-                  </td>
-                  <td className="px-4 py-2.5">
+                  </Td>
+                  <Td>
                     <AccessAreaBadge area={v.access_area} />
-                  </td>
-                  <td className="px-4 py-2.5">
+                  </Td>
+                  <Td>
                     <StatusBadge status={v.status} />
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
           {/* Summary widget, not a list: it shows the first 50 of today's
               visits; the full paged list lives on Today's Visits. */}
           {(todayVisits.data?.total ?? 0) > (todayVisits.data?.items.length ?? 0) && (
@@ -262,10 +262,10 @@ function Card({
         </span>
         {link && <ArrowRight className="h-4 w-4 text-fg-faint" />}
       </div>
-      <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-fg-muted">
+      <p className="mt-3 text-xs font-semibold text-fg-muted">
         {label}
       </p>
-      <p className="mt-1 text-3xl font-bold text-fg tabular-nums">
+      <p className="mt-1 text-3xl font-semibold text-fg tabular-nums">
         {loading
           ? '–'
           : value === undefined

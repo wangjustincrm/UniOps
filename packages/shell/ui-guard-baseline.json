@@ -21,12 +21,8 @@
    "raw-color": 1
   },
   "vms": {
-   "raw-color": 3,
-   "shouting-type": 41,
-   "raw-control": 166,
-   "raw-overlay": 8,
-   "raw-table": 92,
-   "emoji": 1
+   "raw-color": 2,
+   "shouting-type": 2
   }
  },
  "files": {
@@ -156,121 +152,8 @@
    "raw-color": 1,
    "shouting-type": 2
   },
-  "vms/src/components/CheckOutConfirm.tsx": {
-   "raw-control": 6,
-   "raw-overlay": 1
-  },
-  "vms/src/components/EditVisitModal.tsx": {
-   "raw-control": 8,
-   "raw-overlay": 1
-  },
   "vms/src/components/HealthDeclForm.tsx": {
-   "raw-control": 7,
-   "raw-overlay": 1,
-   "raw-color": 1,
-   "shouting-type": 1
-  },
-  "vms/src/components/HealthDeclView.tsx": {
-   "raw-control": 2,
-   "raw-overlay": 1,
-   "shouting-type": 1
-  },
-  "vms/src/components/HostSearch.tsx": {
-   "raw-control": 3
-  },
-  "vms/src/components/PpeRequestForm.tsx": {
-   "raw-control": 7,
-   "shouting-type": 1
-  },
-  "vms/src/components/QrScanner.tsx": {
-   "raw-control": 1
-  },
-  "vms/src/components/VisitAttachments.tsx": {
-   "raw-control": 3,
-   "shouting-type": 1
-  },
-  "vms/src/components/VisitorSearch.tsx": {
-   "raw-control": 5
-  },
-  "vms/src/components/layout/AppLayout.tsx": {
-   "raw-control": 4,
-   "raw-overlay": 1,
-   "raw-color": 1,
-   "shouting-type": 7
-  },
-  "vms/src/pages/ActiveVisitsPage.tsx": {
-   "raw-control": 1,
-   "raw-table": 13,
-   "shouting-type": 2
-  },
-  "vms/src/pages/AuditLogPage.tsx": {
-   "raw-control": 10,
-   "raw-table": 15,
-   "shouting-type": 3
-  },
-  "vms/src/pages/BadgePrintPage.tsx": {
-   "raw-control": 1
-  },
-  "vms/src/pages/CheckOutPage.tsx": {
-   "raw-control": 4,
-   "shouting-type": 1
-  },
-  "vms/src/pages/DashboardPage.tsx": {
-   "raw-table": 13,
-   "shouting-type": 4
-  },
-  "vms/src/pages/HealthDeclarationsPage.tsx": {
-   "raw-control": 6,
-   "raw-table": 18,
-   "shouting-type": 2
-  },
-  "vms/src/pages/ReportsPage.tsx": {
-   "raw-control": 3,
-   "shouting-type": 2
-  },
-  "vms/src/pages/TaskInboxPage.tsx": {
-   "shouting-type": 1
-  },
-  "vms/src/pages/VisitCreatePage.tsx": {
-   "raw-control": 16,
-   "shouting-type": 2
-  },
-  "vms/src/pages/VisitDetailPage.tsx": {
-   "raw-control": 20,
-   "raw-overlay": 2,
-   "shouting-type": 5,
-   "emoji": 1
-  },
-  "vms/src/pages/VisitListPage.tsx": {
-   "raw-table": 14,
-   "shouting-type": 2
-  },
-  "vms/src/pages/VisitorCompliancePage.tsx": {
-   "raw-control": 1,
-   "shouting-type": 1
-  },
-  "vms/src/pages/admin/AdminPanel.tsx": {
-   "raw-control": 1,
-   "shouting-type": 1
-  },
-  "vms/src/pages/admin/BadgeTemplatesPage.tsx": {
-   "raw-control": 27,
-   "shouting-type": 1
-  },
-  "vms/src/pages/admin/EmailSettingsPage.tsx": {
-   "raw-control": 6
-  },
-  "vms/src/pages/admin/HealthQuestionsPage.tsx": {
-   "raw-control": 10
-  },
-  "vms/src/pages/admin/NotificationContactsPage.tsx": {
-   "raw-control": 2
-  },
-  "vms/src/pages/admin/ZonesPage.tsx": {
-   "raw-control": 12,
-   "raw-table": 19,
-   "raw-overlay": 1,
-   "shouting-type": 1
+   "raw-color": 1
   }
  }
 }

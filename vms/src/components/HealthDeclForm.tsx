@@ -8,8 +8,9 @@
  * Designed as a modal-style overlay (caller controls open/close).
  */
 import { useRef, useState } from 'react'
-import { AlertCircle, CheckCircle2, Loader2, RotateCw, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Loader2, RotateCw } from 'lucide-react'
 import SignatureCanvas from 'react-signature-canvas'
+import { Checkbox, Radio, Button, Modal } from '@uniops/shell'
 import {
   useHealthQuestions, useSubmitHealthDeclaration,
 } from '@/services/api'
@@ -62,28 +63,17 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
   const result = submit.data?.result
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-surface shadow-xl">
-        {/* Header */}
-        <div className="flex items-start justify-between border-b border-line-subtle px-5 py-4">
-          <div>
-            <h3 className="text-base font-semibold text-fg">
-              Health declaration{visitorName ? ` — ${visitorName}` : ''}
-            </h3>
-            <p className="mt-0.5 text-xs text-fg-muted">
-              Required before printing a badge for GMP, Laboratory and Entire Plant visits.
-              Ask the visitor each question; mark “Yes” / “No” based on their answer.
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-md p-1 text-fg-muted hover:bg-surface-subtle hover:text-fg-secondary"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
+    <Modal
+      open
+      onClose={onClose}
+      title={`Health declaration${visitorName ? ` — ${visitorName}` : ''}`}
+      description="Required before printing a badge for GMP, Laboratory and Entire Plant visits."
+      // Closes by Cancel / the close button only (no Escape, no backdrop), as before.
+      closeOnEscape={false}
+      size="full"
+      className="max-w-2xl"
+      bodyClassName="flex min-h-0 flex-col p-0"
+    >
         {/* Result banner (only after a submit completes) */}
         {result === 'passed' && (
           <div className="border-b border-success-line bg-success-soft px-5 py-3 text-sm text-success-fg">
@@ -128,8 +118,8 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
                         : 'text-fg-muted hover:text-fg-secondary')
                     }
                   >
-                    <input
-                      type="radio"
+                    <Radio
+                     
                       name={q.id}
                       value={v}
                       checked={answers[q.id] === v}
@@ -146,8 +136,8 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
           {/* Safety training confirmation */}
           {!tplLoading && (
             <label className="mt-4 flex items-start gap-2 rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-sm">
-              <input
-                type="checkbox"
+              <Checkbox
+               
                 checked={trainingOK}
                 onChange={(e) => setTrainingOK(e.target.checked)}
                 className="mt-0.5"
@@ -165,7 +155,7 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
           {/* Signature */}
           {!tplLoading && (
             <div className="mt-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
+              <p className="text-xs font-semibold text-fg-muted">
                 Visitor signature
               </p>
               <div className="mt-1 rounded-md border border-dashed border-line-strong bg-surface-subtle">
@@ -179,14 +169,14 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
                   penColor="#1A2730"
                 />
               </div>
-              <button
+              <Button variant="subtle" size="xs"
                 type="button"
                 onClick={() => sigRef.current?.clear()}
-                className="mt-1.5 inline-flex items-center gap-1 text-xs text-fg-muted hover:text-fg-secondary"
+                className="mt-1.5"
               >
                 <RotateCw className="h-3 w-3" />
                 Clear signature
-              </button>
+              </Button>
             </div>
           )}
 
@@ -201,35 +191,34 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
         {/* Footer */}
         <div className="flex justify-end gap-2 border-t border-line-subtle px-5 py-3">
           {result ? (
-            <button
+            <Button size="sm"
               onClick={onClose}
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
+             
             >
               Done
-            </button>
+            </Button>
           ) : (
             <>
-              <button
+              <Button variant="secondary" size="sm"
                 onClick={onClose}
                 disabled={submit.isPending}
-                className="rounded-md border border-line-strong px-3 py-1.5 text-sm"
+               
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button size="sm"
                 onClick={submitForm}
                 disabled={!ready || submit.isPending}
-                className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+               
               >
                 {submit.isPending
                   ? <Loader2 className="h-4 w-4 animate-spin" />
                   : <CheckCircle2 className="h-4 w-4" />}
                 Submit declaration
-              </button>
+              </Button>
             </>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

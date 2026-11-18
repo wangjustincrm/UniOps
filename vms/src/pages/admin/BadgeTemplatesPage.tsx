@@ -16,6 +16,7 @@ import { localToday } from '@/lib/utils'
 import { badgeAreaStyle, zoneOptions } from '@/lib/visitOptions'
 
 
+import { Checkbox, Input, Select, Button } from '@uniops/shell'
 // Sample data so the preview shows a realistic badge while editing.
 const SAMPLE_VISIT = {
   id: '00000000-0000-0000-0000-000000000000',
@@ -34,7 +35,7 @@ const SAMPLE_HOST = { id: 'h', full_name: 'Pat Morgan' } as unknown as UserBrief
 const inputCls =
   'rounded-md border border-line-strong px-2 py-1 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500'
 const sectionCls = 'rounded-md border border-line bg-surface p-3 space-y-2'
-const headCls = 'text-xs font-semibold uppercase tracking-wider text-fg-muted'
+const headCls = 'text-xs font-semibold text-fg-muted'
 
 export default function BadgeTemplatesPage() {
   const { data, isLoading } = useBadgeConfig()
@@ -74,14 +75,14 @@ export default function BadgeTemplatesPage() {
             The preview matches what prints.
           </p>
         </div>
-        <button
+        <Button size="sm"
           onClick={onSave}
           disabled={!dirty || save.isPending}
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+         
         >
           {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
           Save
-        </button>
+        </Button>
       </div>
 
       {save.error && (
@@ -96,20 +97,20 @@ export default function BadgeTemplatesPage() {
           <div className={sectionCls}>
             <p className={headCls}>Top band</p>
             <label className="block text-xs text-fg-secondary">Title
-              <input className={`${inputCls} mt-1 w-full`} value={cfg.band.title}
+              <Input className={`${inputCls} mt-1 w-full`} value={cfg.band.title}
                 onChange={(e) => update((c) => { c.band.title = e.target.value })} />
             </label>
             <div className="flex flex-wrap gap-4 text-xs text-fg-secondary">
               <label className="inline-flex items-center gap-1.5">
-                <input type="checkbox" checked={cfg.band.show_zone}
+                <Checkbox checked={cfg.band.show_zone}
                   onChange={(e) => update((c) => { c.band.show_zone = e.target.checked })} /> Show zone
               </label>
               <label className="inline-flex items-center gap-1.5">
-                <input type="checkbox" checked={cfg.band.show_risk}
+                <Checkbox checked={cfg.band.show_risk}
                   onChange={(e) => update((c) => { c.band.show_risk = e.target.checked })} /> Show risk
               </label>
               <label className="inline-flex items-center gap-1.5">Risk suffix
-                <input className={`${inputCls} w-20`} value={cfg.band.risk_suffix}
+                <Input className={`${inputCls} w-20`} value={cfg.band.risk_suffix}
                   onChange={(e) => update((c) => { c.band.risk_suffix = e.target.value })} />
               </label>
             </div>
@@ -124,13 +125,13 @@ export default function BadgeTemplatesPage() {
                 return (
                   <div key={a} className="flex items-center gap-2">
                     <span className="w-32 shrink-0 truncate text-2xs text-fg-muted" title={zoneLabel}>{zoneLabel}</span>
-                    <input className={`${inputCls} flex-1`} value={st.label}
+                    <Input className={`${inputCls} flex-1`} value={st.label}
                       onChange={(e) => set('label', e.target.value)} />
-                    <input type="color" className="h-7 w-9 rounded border" value={st.bg}
+                    <Input inputSize="sm" type="color" className="w-9" value={st.bg}
                       onChange={(e) => set('bg', e.target.value.toUpperCase())} title="background" />
-                    <input type="color" className="h-7 w-9 rounded border" value={st.fg}
+                    <Input inputSize="sm" type="color" className="w-9" value={st.fg}
                       onChange={(e) => set('fg', e.target.value.toUpperCase())} title="text" />
-                    <input className={`${inputCls} w-24`} value={st.risk}
+                    <Input className={`${inputCls} w-24`} value={st.risk}
                       onChange={(e) => set('risk', e.target.value)} title="risk label" />
                   </div>
                 )
@@ -143,11 +144,11 @@ export default function BadgeTemplatesPage() {
             <p className={headCls}>Name & company</p>
             <div className="flex gap-4 text-xs text-fg-secondary">
               <label className="inline-flex items-center gap-1.5">
-                <input type="checkbox" checked={cfg.identity.name_uppercase}
+                <Checkbox checked={cfg.identity.name_uppercase}
                   onChange={(e) => update((c) => { c.identity.name_uppercase = e.target.checked })} /> Uppercase name
               </label>
               <label className="inline-flex items-center gap-1.5">
-                <input type="checkbox" checked={cfg.identity.show_company}
+                <Checkbox checked={cfg.identity.show_company}
                   onChange={(e) => update((c) => { c.identity.show_company = e.target.checked })} /> Show company
               </label>
             </div>
@@ -158,15 +159,15 @@ export default function BadgeTemplatesPage() {
             <p className={headCls}>Detail rows</p>
             {cfg.meta_fields.map((f, i) => (
               <div key={f.key} className="flex items-center gap-2">
-                <input type="checkbox" checked={f.visible}
+                <Checkbox checked={f.visible}
                   onChange={(e) => update((c) => { c.meta_fields[i].visible = e.target.checked })} />
                 <span className="w-32 shrink-0 text-2xs text-fg-muted">{f.key}</span>
-                <input className={`${inputCls} flex-1`} value={f.label}
+                <Input className={`${inputCls} flex-1`} value={f.label}
                   onChange={(e) => update((c) => { c.meta_fields[i].label = e.target.value })} />
-                <button onClick={() => moveMeta(i, -1)} disabled={i === 0}
-                  className="rounded p-1 text-fg-muted hover:bg-surface-sunken disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" /></button>
-                <button onClick={() => moveMeta(i, 1)} disabled={i === cfg.meta_fields.length - 1}
-                  className="rounded p-1 text-fg-muted hover:bg-surface-sunken disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button>
+                <Button variant="subtle" size="icon-xs" aria-label="Move up" onClick={() => moveMeta(i, -1)} disabled={i === 0}
+                 ><ArrowUp className="h-3.5 w-3.5" /></Button>
+                <Button variant="subtle" size="icon-xs" aria-label="Move down" onClick={() => moveMeta(i, 1)} disabled={i === cfg.meta_fields.length - 1}
+                 ><ArrowDown className="h-3.5 w-3.5" /></Button>
               </div>
             ))}
           </div>
@@ -175,7 +176,7 @@ export default function BadgeTemplatesPage() {
           <div className={sectionCls}>
             <p className={headCls}>QR code</p>
             <label className="inline-flex items-center gap-1.5 text-xs text-fg-secondary">
-              <input type="checkbox" checked={cfg.qr.show}
+              <Checkbox checked={cfg.qr.show}
                 onChange={(e) => update((c) => { c.qr.show = e.target.checked })} /> Show QR
             </label>
             {!cfg.qr.show && (
@@ -184,7 +185,7 @@ export default function BadgeTemplatesPage() {
               </p>
             )}
             <label className="block text-xs text-fg-secondary">QR caption
-              <input className={`${inputCls} mt-1 w-full`} value={cfg.qr.label}
+              <Input className={`${inputCls} mt-1 w-full`} value={cfg.qr.label}
                 onChange={(e) => update((c) => { c.qr.label = e.target.value })} />
             </label>
           </div>
@@ -193,19 +194,19 @@ export default function BadgeTemplatesPage() {
           <div className={sectionCls}>
             <div className="flex items-center justify-between">
               <p className={headCls}>Footer lines</p>
-              <button className="text-xs text-primary-700 hover:underline"
-                onClick={() => update((c) => { c.footer.lines.push('') })}>+ Add line</button>
+              <Button variant="link" className="text-xs"
+                onClick={() => update((c) => { c.footer.lines.push('') })}>+ Add line</Button>
             </div>
             <label className="inline-flex items-center gap-1.5 text-xs text-fg-secondary">
-              <input type="checkbox" checked={cfg.footer.show}
+              <Checkbox checked={cfg.footer.show}
                 onChange={(e) => update((c) => { c.footer.show = e.target.checked })} /> Show footer
             </label>
             {cfg.footer.lines.map((line, i) => (
               <div key={i} className="flex items-center gap-2">
-                <input className={`${inputCls} flex-1`} value={line}
+                <Input className={`${inputCls} flex-1`} value={line}
                   onChange={(e) => update((c) => { c.footer.lines[i] = e.target.value })} />
-                <button className="text-xs text-danger-fg hover:underline"
-                  onClick={() => update((c) => { c.footer.lines.splice(i, 1) })}>Remove</button>
+                <Button variant="link" className="text-xs text-danger-fg"
+                  onClick={() => update((c) => { c.footer.lines.splice(i, 1) })}>Remove</Button>
               </div>
             ))}
           </div>
@@ -215,32 +216,32 @@ export default function BadgeTemplatesPage() {
             <p className={headCls}>Style</p>
             <div className="grid grid-cols-2 gap-2 text-xs text-fg-secondary">
               <label>Name size (pt)
-                <input type="number" className={`${inputCls} mt-1 w-full`} value={cfg.style.name_size_pt}
+                <Input type="number" className={`${inputCls} mt-1 w-full`} value={cfg.style.name_size_pt}
                   onChange={(e) => update((c) => { c.style.name_size_pt = Number(e.target.value) })} />
               </label>
               <label>Band title size (pt)
-                <input type="number" className={`${inputCls} mt-1 w-full`} value={cfg.style.band_title_size_pt}
+                <Input type="number" className={`${inputCls} mt-1 w-full`} value={cfg.style.band_title_size_pt}
                   onChange={(e) => update((c) => { c.style.band_title_size_pt = Number(e.target.value) })} />
               </label>
               <label className="flex items-center gap-2">Text color
-                <input type="color" className="h-7 w-9 rounded border" value={cfg.style.text_color}
+                <Input inputSize="sm" type="color" className="w-9" value={cfg.style.text_color}
                   onChange={(e) => update((c) => { c.style.text_color = e.target.value.toUpperCase() })} />
               </label>
               <label className="flex items-center gap-2">Company color
-                <input type="color" className="h-7 w-9 rounded border" value={cfg.style.company_color}
+                <Input inputSize="sm" type="color" className="w-9" value={cfg.style.company_color}
                   onChange={(e) => update((c) => { c.style.company_color = e.target.value.toUpperCase() })} />
               </label>
               <label className="flex items-center gap-2">Footer color
-                <input type="color" className="h-7 w-9 rounded border" value={cfg.style.footer_color}
+                <Input inputSize="sm" type="color" className="w-9" value={cfg.style.footer_color}
                   onChange={(e) => update((c) => { c.style.footer_color = e.target.value.toUpperCase() })} />
               </label>
               <label>Name align
-                <select className={`${inputCls} mt-1 w-full`} value={cfg.style.name_align}
+                <Select className="mt-1 w-full" value={cfg.style.name_align}
                   onChange={(e) => update((c) => { c.style.name_align = e.target.value as BadgeConfig['style']['name_align'] })}>
                   <option value="left">left</option>
                   <option value="center">center</option>
                   <option value="right">right</option>
-                </select>
+                </Select>
               </label>
             </div>
           </div>

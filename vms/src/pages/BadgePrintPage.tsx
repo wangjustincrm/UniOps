@@ -19,6 +19,7 @@ import {
 } from '@/services/api'
 import { BadgePreview } from '@/components/BadgePreview'
 
+import { Button } from '@uniops/shell'
 /** Printed badge size as a fraction of the designed size (140mm wide).
  *  0.7 is what operators were setting by hand in the print dialog. */
 const BADGE_PRINT_SCALE = 0.7
@@ -82,13 +83,13 @@ export default function BadgePrintPage() {
             — even if the check-in API is slow or stuck, the operator can still
             print the badge. */}
         {visit && visitor && (
-          <button
+          <Button size="sm"
             onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
+           
           >
             <Printer className="h-4 w-4" />
             {readyToPrint ? 'Print again' : 'Print now'}
-          </button>
+          </Button>
         )}
       </div>
 

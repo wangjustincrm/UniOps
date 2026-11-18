@@ -11,6 +11,7 @@ import {
 } from '@/services/api'
 import { formatDateTime } from '@/lib/utils'
 
+import { FileInput, Button } from '@uniops/shell'
 interface Props {
   visitId: string
   readOnly?: boolean
@@ -37,30 +38,30 @@ export function VisitAttachments({ visitId, readOnly }: Props) {
   return (
     <div className="rounded-lg border border-line bg-surface p-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-fg-muted">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-fg-muted">
           <Paperclip className="h-4 w-4" />
           Attachments
         </div>
         {!readOnly && (
           <>
-            <input
+            <FileInput
               ref={inputRef}
-              type="file"
+             
               hidden
               onChange={onChange}
               accept=".pdf,.png,.jpg,.jpeg,.gif,.doc,.docx,.xls,.xlsx"
             />
-            <button
+            <Button variant="secondary" size="xs"
               type="button"
               onClick={onPick}
               disabled={upload.isPending}
-              className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-2.5 py-1 text-xs text-fg-secondary hover:bg-surface-subtle disabled:opacity-50"
+             
             >
               {upload.isPending
                 ? <Loader2 className="h-3 w-3 animate-spin" />
                 : <Upload className="h-3 w-3" />}
               Upload
-            </button>
+            </Button>
           </>
         )}
       </div>
@@ -97,13 +98,13 @@ function AttachmentRow({ att }: { att: VisitAttachment }) {
       <div className="flex min-w-0 items-center gap-2">
         <FileText className="h-4 w-4 shrink-0 text-fg-muted" />
         <div className="min-w-0">
-          <button
+          <Button variant="link"
             type="button"
             onClick={() => openAttachment(att).catch((e: Error) => alert(`Could not open the file: ${e.message}`))}
-            className="truncate text-left text-primary-700 hover:underline"
+            className="truncate text-left"
           >
             {att.original_filename}
-          </button>
+          </Button>
           <p className="text-2xs text-fg-muted">
             {formatBytes(att.file_size)} ·{' '}
             {att.created_at ? formatDateTime(att.created_at) : 'unknown date'}

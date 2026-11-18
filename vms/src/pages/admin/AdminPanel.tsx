@@ -13,12 +13,12 @@ import { useState } from 'react'
 import {
   AlertCircle, Bell, ClipboardList, Image, Mail, MapPin,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import ZonesPage from '@/pages/admin/ZonesPage'
 import NotificationContactsPage from '@/pages/admin/NotificationContactsPage'
 import HealthQuestionsPage from '@/pages/admin/HealthQuestionsPage'
 import BadgeTemplatesPage from '@/pages/admin/BadgeTemplatesPage'
 import EmailSettingsPage from '@/pages/admin/EmailSettingsPage'
+import { Tabs } from '@uniops/shell'
 
 type Tab = 'zones' | 'notifications' | 'email' | 'health' | 'badges'
 
@@ -61,31 +61,20 @@ export default function AdminPanel() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-fg">VMS Admin</h1>
+      <h1 className="text-2xl font-semibold text-fg">VMS Admin</h1>
       <p className="mt-1 text-sm text-fg-muted">
         Zones, notification, email, questionnaire, and badge template configuration.
       </p>
 
       {/* Tabs */}
-      <div className="mt-6 border-b border-line">
-        <nav className="-mb-px flex flex-wrap gap-1">
-          {TABS.map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={cn(
-                'inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-                tab === key
-                  ? 'border-primary-600 text-primary-700'
-                  : 'border-transparent text-fg-muted hover:border-line hover:text-fg-secondary',
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </button>
-          ))}
-        </nav>
-      </div>
+      <Tabs<Tab>
+        className="mt-6"
+        items={TABS.map(({ key, label, icon: Icon }) => ({
+          key, label: <span className="inline-flex items-center gap-1.5"><Icon className="h-4 w-4" />{label}</span>,
+        }))}
+        value={tab}
+        onChange={setTab}
+      />
 
       {/* Body */}
       <div className="mt-6">
