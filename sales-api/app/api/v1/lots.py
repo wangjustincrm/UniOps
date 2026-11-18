@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Response
 
 from app.core.deps import get_uow
 from app.platform.crud_router import page_body
-from app.platform.query import QuerySpec, query_spec
+from app.platform.query import QuerySpec, export_columns, query_spec
 from app.services.lots import LotService
 
 UoW = Annotated[Any, Depends(get_uow)]
@@ -31,6 +31,6 @@ async def lots_suggest(u: UoW, field: str, q: str = "") -> list[str]:
 
 
 @router.get("/export.csv")
-async def export_lots(u: UoW, spec: Spec) -> Response:
-    return Response(await LotService(u).export_csv(spec), media_type="text/csv",
+async def export_lots(u: UoW, spec: Spec, columns: Annotated[list[str] | None, Depends(export_columns)] = None) -> Response:
+    return Response(await LotService(u).export_csv(spec, columns), media_type="text/csv",
                     headers={"Content-Disposition": 'attachment; filename="lots.csv"'})

@@ -81,7 +81,12 @@ class ReadOnlyService(Generic[T, R]):
     def csv_value(self, entity: T, column: str) -> Any:
         return getattr(entity, column)
 
-    async def export_csv(self, spec: QuerySpec) -> bytes:
+    async def export_csv(self, spec: QuerySpec, columns: list[str] | None = None) -> bytes:
+        """Every row the spec selects. `columns`: the columns the user sees, in their order and with their
+        labels (each a field the rows carry, /meta `in_row`; never a meta_hidden one), from the rows as the
+        list reads them; an amount gets its currency column. None: the list's own full export."""
+        if columns is not None:
+            return await self._export_columns(spec, columns)
         await self._authorize(self.read_permission)
         out = io.StringIO()
         w = csv.writer(out, lineterminator="\n")
@@ -97,6 +102,33 @@ class ReadOnlyService(Generic[T, R]):
             page_no += 1
         return out.getvalue().encode("utf-8")
 
+
+    async def _export_columns(self, spec: QuerySpec, columns: list[str]) -> bytes:
+        await self._authorize(self.read_permission)
+        fields = {f["name"]: f for f in self.repo_cls.field_meta(self.read_schema) if f["in_row"]}
+        unknown = [c for c in columns if c not in fields]
+        if unknown:
+            raise InvalidInput("export.unknown_column", f"this list cannot export {', '.join(unknown)}",
+                               {"columns": unknown, "field": "columns"})
+        cols: list[str] = []
+        for c in columns:  # an amount without its currency column beside it gets one, once
+            cols.append(c)
+            cur = fields[c].get("currency_field")
+            if fields[c].get("money") and cur and cur not in columns and cur not in cols:
+                cols.append(cur)
+        labels = [fields[c]["label"] if c in fields else c.replace("_", " ").capitalize() for c in cols]
+        out = io.StringIO()
+        w = csv.writer(out, lineterminator="\n")
+        w.writerow([_csv_cell(x) for x in labels])
+        page_no = 1
+        while True:
+            page = await self.repo.list(spec.model_copy(update={"page": page_no, "page_size": EXPORT_PAGE}))
+            for r in await self._read_all(list(page.items)):
+                w.writerow([_csv_cell(getattr(r, c, None)) for c in cols])
+            if page_no * EXPORT_PAGE >= page.total:
+                break
+            page_no += 1
+        return out.getvalue().encode("utf-8")
 
     def to_read(self, entity: T) -> R:
         return self.read_schema.model_validate(entity, from_attributes=True)

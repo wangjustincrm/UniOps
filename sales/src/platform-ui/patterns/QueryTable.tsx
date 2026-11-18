@@ -73,6 +73,9 @@ export interface QueryTableProps<T> {
   onLayoutChange?: (layout: Layout) => void
   /** The list's saved views (useListView(...).picker): shown left of the toolbar. */
   picker?: ViewPickerModel
+  /** The visible columns an export can write, in their order: those /meta says each row carries
+   *  (a page's own computed cell is not a field). Told on every change. */
+  onExportColumns?: (ids: string[]) => void
 }
 
 /** The chooser's two groups: the page's own columns, then every other field of the row. */
@@ -135,7 +138,7 @@ function WithMeta<T>({ resource, ...props }: ViewProps<T> & { resource: NonNulla
 
 function QueryTableView<T>({
   columns, defaultHidden, spec, onSpecChange, meta, locked = [], sortable = [], total, groups, groupsTruncated, totals, searchable, error,
-  errorMessages, toolbar, onViewChange, layout: layoutProp, onLayoutChange, picker, suggest, ...view
+  errorMessages, toolbar, onViewChange, layout: layoutProp, onLayoutChange, picker, suggest, onExportColumns, ...view
 }: ViewProps<T> & { meta: ListMeta | undefined; suggest?: (field: string, query: string) => Promise<string[]> }) {
   const fields = useMemo(() => new Map((meta?.fields ?? []).map((f) => [f.name, f])), [meta])
   const [ownLayout, setOwnLayout] = useState<Layout>({ columns: [], hidden: [] })
@@ -202,6 +205,9 @@ function QueryTableView<T>({
   // The same object each render (a new column definition would remount its cells).
   const asChosen = useMemo(() => new Map(allColumns.map((c) => [columnId(c), { ...c, meta: { ...c.meta, chosen: true } }])), [allColumns])
   const visible = order.filter((id) => !isHidden(id)).map((id) => (shownByDefault(id) ? byId.get(id)! : asChosen.get(id)!))
+
+  const exportIds = visible.map(columnId).filter((id) => fields.get(id)?.in_row).join(',')
+  useEffect(() => { onExportColumns?.(exportIds ? exportIds.split(',') : []) }, [exportIds])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // The summed fields, in the response's order; labelled when there are several.
   const summed = useMemo(() => [...new Set((totals ?? []).flatMap((t) => Object.keys(t.sums)))], [totals])

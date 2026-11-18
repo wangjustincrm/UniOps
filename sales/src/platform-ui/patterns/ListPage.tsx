@@ -13,7 +13,7 @@ import { queryKeys } from '../resource/queryKeys'
 import { takeOpenRequest, useOpenRequest } from '../resource/viewRequests'
 import type { Filter, Page, QuerySpec } from '../resource/querySpec'
 import { Download } from 'lucide-react'
-import { IconButton } from '../primitives/IconButton'
+import { DropdownMenu } from '../primitives/DropdownMenu'
 import { ActionButton } from './ActionButton'
 import { RefreshControl } from './RefreshControl'
 import { compareRows, useRefresh } from './useRefresh'
@@ -32,8 +32,9 @@ export interface ListResource<T> {
   meta: () => Promise<ListMeta>
   /** One record by id: a record asked for from elsewhere opens with its data. */
   get?: (id: number) => Promise<T>
-  /** The CSV of every row a query selects (the server's export.csv): needed for `onExport`. */
-  exportPath?: (spec: QuerySpec) => string
+  /** The CSV of every row a query selects (the server's export.csv): needed for `onExport`. `columns`:
+   *  only those, in that order (the visible columns); none: the list's full export. */
+  exportPath?: (spec: QuerySpec, file?: string, columns?: string[]) => string
 }
 
 export interface ListContext<T> {
@@ -145,6 +146,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
     refetchOnWindowFocus: (q) => q.state.status === 'error' || Date.now() - q.state.dataUpdatedAt > 30_000,
   })
   // THE list's notices (its status row) and THE refresh: the button, the auto ticks, what changed, the highlight.
+  const [exportCols, setExportCols] = useState<string[]>([])  // the visible columns an export can write (QueryTable)
   const [ownNotices] = useState(createNoticeStore)
   const notices = props.notices ?? ownNotices
   const refresh = useRefresh(list, { queryKey: listKey, compare: compareRows<T>((r) => r.id), auto, setAuto, notices })
@@ -205,15 +207,28 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
     if (row && renderDetail) setOpen(row)
   }
   const create = props.create
+  const exportCsv = (columns: string[] | undefined) => {
+    Promise.resolve(props.onExport!(resource.exportPath!(spec, undefined, columns))).then(() => notices.notify({ key: 'csv', tone: 'success', text: 'CSV exported' }),
+      (e: unknown) => notices.notify({ key: 'csv', tone: 'error', text: `Export failed: ${errorText(e, props.errorMessages)}` }))
+  }
   const toolbar = (
     <>
       <TourMark help="list.refresh" slot="list.refresh" className="inline-flex"><RefreshControl state={refresh} /></TourMark>
       {props.onExport && resource.exportPath && (
-        <TourMark help="list.export" slot="list.export" className="inline-flex"><IconButton label="Export CSV" icon={<Download className="h-4 w-4" />} className="h-8 w-8 rounded-lg border border-neutral-200 bg-white"
-          onClick={() => {
-            Promise.resolve(props.onExport!(resource.exportPath!(spec))).then(() => notices.notify({ key: 'csv', tone: 'success', text: 'CSV exported' }),
-              (e: unknown) => notices.notify({ key: 'csv', tone: 'error', text: `Export failed: ${errorText(e, props.errorMessages)}` }))
-          }} /></TourMark>
+        // The visible columns as the list shows them (the default), or every field of the list's own export.
+        <TourMark help="list.export" slot="list.export" className="inline-flex">
+          <DropdownMenu label="Export CSV" align="end"
+            items={[
+              { label: `Visible columns (${exportCols.length})`, onSelect: () => exportCsv(exportCols), disabled: exportCols.length === 0,
+                disabledReason: 'No column shown can be exported' },
+              { label: 'All fields', onSelect: () => exportCsv(undefined) },
+            ]}
+            trigger={
+              <button type="button" aria-label="Export CSV" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-600 hover:text-neutral-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+                <Download aria-hidden className="h-4 w-4" />
+              </button>
+            } />
+        </TourMark>
       )}
       {props.toolbar?.(ctx)}
       {create && <ActionButton size="sm" permission={create.permission} onAction={() => setCreating(true)}>{create.label}</ActionButton>}
@@ -238,6 +253,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
         groups={list.data?.groups}
         groupsTruncated={list.data?.groups_truncated}
         totals={list.data?.totals}
+        onExportColumns={setExportCols}
         {...view.tableProps}
         searchable={props.searchable ?? true}
         loading={list.isLoading || !view.ready}

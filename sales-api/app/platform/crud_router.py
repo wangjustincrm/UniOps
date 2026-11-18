@@ -20,7 +20,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 
 from app.platform.entities import Deactivatable
-from app.platform.query import Page, QuerySpec, query_spec
+from app.platform.query import Page, QuerySpec, export_columns, query_spec
 from app.platform.services import MAX_IMPORT_BYTES, CrudService, ReadOnlyService
 
 
@@ -130,8 +130,8 @@ def crud_router(
 
 def _export_route(r: APIRouter, prefix: str, service_cls: type[ReadOnlyService], UoW: Any, Spec: Any) -> None:
     @r.get("/export.csv")
-    async def export(u: UoW, spec: Spec) -> Response:
-        data = await service_cls(u).export_csv(spec)
+    async def export(u: UoW, spec: Spec, columns: Annotated[list[str] | None, Depends(export_columns)] = None) -> Response:
+        data = await service_cls(u).export_csv(spec, columns)
         name = prefix.strip("/").replace("/", "-") or "export"
         return Response(data, media_type="text/csv",
                         headers={"Content-Disposition": f'attachment; filename="{name}.csv"'})

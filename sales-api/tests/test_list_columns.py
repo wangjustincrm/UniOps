@@ -50,3 +50,24 @@ async def test_the_orders_rows_carry_the_source_amounts_and_the_connection_by_na
         [o] = (await OrderService(u).list(QuerySpec())).items
     assert (o.subtotal, o.tax, o.connection_name) == (Decimal("90.00"), Decimal("10.00"), "store")
     assert o.discount is not None and o.shipping is not None
+
+
+async def test_the_csv_follows_the_view_columns_labels_currency_and_refuses_what_the_row_lacks(env):  # noqa: F811
+    from app.platform.errors import InvalidInput
+    env.shop.orders = [shopify_order(1, 9301) | {"tags": "=HYPERLINK(\"x\")"}]
+    await env.pull()
+    async with env.factory(OP) as u:
+        svc = OrderService(u)
+        text = (await svc.export_csv(QuerySpec(), ["source_reference", "subtotal", "connection_name", "tags"])).decode()
+        full = (await svc.export_csv(QuerySpec())).decode()  # no columns: the list's own full export, unchanged
+        for bad in (["source_reference", "shadow"], ["connection_id"], ["nope"]):  # meta-hidden, hidden, unknown
+            try:
+                await svc.export_csv(QuerySpec(), bad)
+                raise AssertionError(bad)
+            except InvalidInput as e:
+                assert e.code == "export.unknown_column"
+    head, row = text.splitlines()[:2]
+    assert head == "Order ref,Subtotal,Currency,Connection,Tags"  # the amount's currency beside it, once
+    assert row.split(",")[:4] == [row.split(",")[0], "90.00", "CAD", "store"] and row.split(",")[0].endswith("9301")
+    assert "'=HYPERLINK" in row                                    # the formula guard stays
+    assert full.splitlines()[0].startswith("order_number,")

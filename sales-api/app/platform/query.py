@@ -237,6 +237,20 @@ def parse_filter(raw: str) -> Filter:
     return Filter(field=field, op=op, value=values if len(values) > 1 or op in ("in", "not_in") else values[0])
 
 
+MAX_EXPORT_COLUMNS = 100
+
+
+def export_columns(columns: Annotated[str | None, Query(max_length=4000)] = None) -> list[str] | None:
+    """FastAPI dependency: `?columns=a,b,c` — the columns an export writes, in this order (what the
+    list shows); none: the list's own full export."""
+    if not columns:
+        return None
+    names = [c.strip() for c in columns.split(",") if c.strip()]
+    if len(names) > MAX_EXPORT_COLUMNS:
+        raise InvalidInput("export.too_many_columns", f"at most {MAX_EXPORT_COLUMNS} columns", {"max": MAX_EXPORT_COLUMNS})
+    return list(dict.fromkeys(names)) or None
+
+
 def query_spec(
     page: Annotated[int, Query(ge=1, le=MAX_PAGE)] = 1,
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = 50,

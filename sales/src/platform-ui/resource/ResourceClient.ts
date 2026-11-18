@@ -48,7 +48,7 @@ export interface ResourceClient<TRead, TCreate, TUpdate> {
   deactivate: (id: number) => Promise<TRead>
   /** Every row the query selects, as a file the back end serves under the resource (default its
    *  CSV export; e.g. "report/settlements.pdf"): the list's filters and sort, no paging. */
-  exportPath: (spec: QuerySpec, file?: string) => string
+  exportPath: (spec: QuerySpec, file?: string, columns?: string[]) => string
   importCsv: (file: File, dryRun: boolean) => Promise<ImportReport>
 }
 
@@ -69,10 +69,11 @@ export function createResourceClient<TRead, TCreate, TUpdate = TCreate>(
     update: (id, data, version) =>
       http.put<TRead>(version === undefined ? `${base}/${id}` : `${base}/${id}?version=${version}`, data),
     deactivate: (id) => http.post<TRead>(`${base}/${id}/deactivate`),
-    exportPath: (spec, file = 'export.csv') => {
+    exportPath: (spec, file = 'export.csv', columns) => {
       const p = toSearchParams(spec)
       p.delete('page')
       p.delete('page_size')
+      if (columns?.length) p.set('columns', columns.join(','))  // the columns the user sees, in their order
       const qs = p.toString()
       const path = `${base}/${file.replace(/^\/+/, '')}`
       return qs ? `${path}?${qs}` : path

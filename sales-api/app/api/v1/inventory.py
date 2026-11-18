@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
 
 from app.core.deps import get_uow
 from app.platform.crud_router import page_body
-from app.platform.query import QuerySpec, query_spec
+from app.platform.query import QuerySpec, export_columns, query_spec
 from app.schemas.stock import (AdjustIn, CountCompareRow, CountUndoIn, CountUpdateIn, CountVersionIn, StockCountLineRead,
                                StockCountRead, StockMoveRead)
 from app.services.record_files import MAX_BYTES
@@ -36,8 +36,8 @@ for name, svc, file in (("items", StockItemService, "inventory-items.csv"), ("lo
             return await svc(u).suggest(field, q[:100])
 
         @router.get(f"/{name}/export.csv", name=f"inventory_{name}_csv")
-        async def export(u: UoW, spec: Spec) -> Response:
-            return Response(await svc(u).export_csv(spec), media_type="text/csv",
+        async def export(u: UoW, spec: Spec, columns: Annotated[list[str] | None, Depends(export_columns)] = None) -> Response:
+            return Response(await svc(u).export_csv(spec, columns), media_type="text/csv",
                             headers={"Content-Disposition": f'attachment; filename="{file}"'})
     _routes()
 
