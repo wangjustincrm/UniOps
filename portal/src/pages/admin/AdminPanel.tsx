@@ -784,9 +784,9 @@ export function UserManagement() {
                     <p className="text-2xs text-fg-muted">{u.email}</p>
                   </Td>
                   <Td>
-                    <span className="rounded bg-primary-50 px-1.5 py-0.5 text-2xs font-medium text-primary-700">
+                    <Badge variant="accent" size="sm">
                       {ROLE_LABELS[u.role] ?? u.role}
-                    </span>
+                    </Badge>
                   </Td>
                   <Td className="text-xs text-fg-muted">{u.department_name ?? '—'}</Td>
                   <Td className="font-mono text-xs text-fg-muted">{u.erp_person_code ?? '—'}</Td>
