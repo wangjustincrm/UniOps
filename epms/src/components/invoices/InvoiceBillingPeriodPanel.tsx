@@ -7,7 +7,7 @@ import { useAssignBillingPeriod } from '@/hooks/useInvoices'
 import type { ApiInvoice } from '@/services/invoices'
 import type { ApiScheduleRow } from '@/services/agreement'
 
-import { Radio } from '@uniops/shell'
+import { Radio, Card } from '@uniops/shell'
 /**
  * The invoice's billing period on a recurring agreement — and the way to set
  * or change it.
@@ -75,7 +75,7 @@ function InvoiceBillingPeriodPanelBody({
   if (linked && !changing) {
     const others = (currentRow?.invoices ?? []).filter((i) => i.id !== invoice.id)
     return (
-      <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
+      <Card inset className="flex flex-col gap-2 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex flex-col gap-0.5">
             <p className="text-xs font-medium text-fg-muted">Billing period</p>
@@ -104,7 +104,7 @@ function InvoiceBillingPeriodPanelBody({
         {canChange && changeBlockedReason && (
           <p className="text-xs text-fg-muted">{changeBlockedReason}</p>
         )}
-      </div>
+      </Card>
     )
   }
 

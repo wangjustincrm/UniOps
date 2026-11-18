@@ -20,7 +20,7 @@ import { canCancelGr } from '@/lib/documentActions'
 import { serviceHasIssues } from '@/lib/grNotes'
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
-import { Input, Modal, Radio, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr, type BadgeTone } from '@uniops/shell'
+import { Input, Modal, Radio, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr, type BadgeTone, Card } from '@uniops/shell'
 // Statuses the backend accepts for POST /gr/{id}/attachments/regenerate-pdf
 // (anything from the acknowledge step onward, excluding cancelled).
 const GR_PDF_REGENERATABLE_STATUSES: GrStatus[] = ['collection_pending', 'collected', 'confirmed', 'discrepancy']
@@ -106,7 +106,7 @@ function GrTimeline({ gr }: { gr: ApiGr }) {
   ]
 
   return (
-    <div className="rounded-xl border border-line bg-surface p-5">
+    <Card className="p-5">
       <h3 className="text-sm font-semibold text-fg mb-5">GR Progress</h3>
       <div className="relative flex flex-col gap-0">
         {steps.map((step, i) => {
@@ -146,7 +146,7 @@ function GrTimeline({ gr }: { gr: ApiGr }) {
           )
         })}
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -382,7 +382,7 @@ export default function GrDetailPage() {
           {activeTab === 'details' && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {/* GR Info */}
-              <div className="rounded-xl border border-line bg-surface p-5">
+              <Card className="p-5">
                 <h3 className="text-xs font-semibold text-fg-muted mb-3">Receipt Details</h3>
                 <div className="flex flex-col gap-2">
                   <MetaRow label="GR Number"   value={gr.number} mono />
@@ -400,9 +400,9 @@ export default function GrDetailPage() {
                   )}
                   {gr.over_receipt_reason && <MetaRow label="Over-receipt Reason" value={gr.over_receipt_reason} />}
                 </div>
-              </div>
+              </Card>
               {/* Linked Documents */}
-              <div className="rounded-xl border border-line bg-surface p-5">
+              <Card className="p-5">
                 <h3 className="text-xs font-semibold text-fg-muted mb-3">Linked Documents</h3>
                 <div className="flex flex-col gap-3">
                   {po && (
@@ -419,9 +419,9 @@ export default function GrDetailPage() {
                     </div>
                   )}
                 </div>
-              </div>
+              </Card>
               {/* Value summary */}
-              <div className="rounded-xl border border-line bg-surface p-5 sm:col-span-2">
+              <Card className="p-5 sm:col-span-2">
                 <h3 className="text-xs font-semibold text-fg-muted mb-3">Value Summary</h3>
                 <div className="grid grid-cols-3 gap-4">
                   <div>
@@ -441,12 +441,12 @@ export default function GrDetailPage() {
                     </p>
                   </div>
                 </div>
-              </div>
+              </Card>
 
               {hasDiscrepancy && <DamageResolutionCard gr={gr} />}
 
               {/* Line Items */}
-              <div className="rounded-xl border border-line bg-surface overflow-hidden sm:col-span-2">
+              <Card className="overflow-hidden sm:col-span-2">
                 <div className="px-5 py-3 border-b border-line bg-surface-subtle">
                   <h3 className="text-xs font-semibold text-fg-muted">
                     Line Items ({gr.line_items.length})
@@ -480,13 +480,13 @@ export default function GrDetailPage() {
                     </div>
                   </div>
                 </div>
-              </div>
+              </Card>
             </div>
           )}
 
           {/* Attachments tab */}
           {activeTab === 'attachments' && (
-            <div className="rounded-xl border border-line bg-surface p-6">
+            <Card className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-semibold text-fg-muted">
                   Attachments
@@ -544,7 +544,7 @@ export default function GrDetailPage() {
                   ))}
                 </div>
               )}
-            </div>
+            </Card>
           )}
         </div>
 
@@ -646,7 +646,7 @@ function DamageResolutionCard({ gr }: { gr: ApiGr }) {
   }
 
   return (
-    <div className="rounded-xl border border-line bg-surface p-5 sm:col-span-2">
+    <Card className="p-5 sm:col-span-2">
       <div className="flex items-center justify-between gap-4 mb-3">
         <h3 className="text-xs font-semibold text-fg-muted">Vendor Resolution</h3>
         {!gr.damage_resolution && gr.status !== 'cancelled' && canResolve && !open && (
@@ -723,7 +723,7 @@ function DamageResolutionCard({ gr }: { gr: ApiGr }) {
           </div>
         </div>
       )}
-    </div>
+    </Card>
   )
 }
 

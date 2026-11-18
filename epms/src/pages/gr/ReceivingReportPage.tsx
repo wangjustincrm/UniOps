@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Download, Loader2, PackageSearch, Search } from 'lucide-react'
-import { ChipGroup, Input, Select, SortTh, TBody, THead, Table, Td, Tr, sortParams, type Sort, useSort } from '@uniops/shell'
+import { ChipGroup, Input, Select, SortTh, TBody, THead, Table, Td, Tr, sortParams, type Sort, useSort, Card } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Pagination } from '@/components/ui/Pagination'
 import { cn, formatDate, todayISO, toLocalDate } from '@/lib/utils'
@@ -150,7 +150,7 @@ export default function ReceivingReportPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 shrink-0">
+      <Card className="flex flex-col gap-3 p-4 shrink-0">
         <div className="flex flex-wrap items-center gap-1.5">
           <ChipGroup label="Period" items={PRESETS.map((p) => ({ key: p.value, label: p.label }))} value={preset} onChange={(k) => applyPreset(k as Preset)} />
           {preset === 'custom' && (
@@ -216,7 +216,7 @@ export default function ReceivingReportPage() {
             </div>
           </div>
         </div>
-      </div>
+      </Card>
 
       {exportError && (
         <div className="rounded-lg border border-danger-line bg-danger-soft px-4 py-2 text-sm text-danger-fg shrink-0">
@@ -226,7 +226,7 @@ export default function ReceivingReportPage() {
 
       {/* Table — scrolls in both directions inside this box; header row and
           pager stay put. */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface">
+      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {isLoading || isError || rows.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center py-20 text-center">
             <PackageSearch className="h-10 w-10 text-fg-faint mb-3" />
@@ -287,7 +287,7 @@ export default function ReceivingReportPage() {
             onPageSizeChange={(size) => { setPageSize(size); setPage(1) }}
           />
         </div>
-      </div>
+      </Card>
 
       {data?.truncated && (
         <p className="shrink-0 text-xs text-warning-fg">

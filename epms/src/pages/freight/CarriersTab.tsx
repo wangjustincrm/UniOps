@@ -8,7 +8,7 @@ import { useVendors } from '@/hooks/useVendors'
 import { useFreightCarriersAll, useFreightSettings, useSaveCarrier, useSaveFreightSettings } from '@/hooks/useFreight'
 import type { FreightCarrier } from '@/services/freight'
 import { CostCenterSelect, Modal, SELECT_CLS, TH_CLS, errorMessage } from './freightUi'
-import { SortTh, useSortableRows, Checkbox, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, Select, TBody, THead, Table, Td, Th, Tr, Card } from '@uniops/shell'
 
 /** Couriers paid through Freight. Doubles as the whitelist: only a vendor set
  *  up here can be paid by a Freight PA (design §1.1). epms.freight.admin only. */
@@ -34,7 +34,7 @@ export function CarriersTab() {
 
   return (
     <div className="flex flex-col gap-4">
-    <div className="rounded-xl border border-line bg-surface shadow-sm">
+    <Card>
       <div className="flex items-center justify-between gap-3 border-b border-line-subtle px-5 py-4">
         <p className="text-sm text-fg-muted">
           Only these vendors can be paid by a Freight PA. Charges without a tracking number
@@ -92,7 +92,7 @@ export function CarriersTab() {
           onClose={() => setEditing(null)}
         />
       )}
-    </div>
+    </Card>
     <ProjectFreightSetting costCenters={costCenters} departments={departments} />
     </div>
   )
@@ -113,7 +113,7 @@ function ProjectFreightSetting({ costCenters, departments }: {
     save.mutate(id || null, { onError: (e) => setError(errorMessage(e, 'Could not save the setting')) })
   }
   return (
-    <div className="rounded-xl border border-line bg-surface px-5 py-4 shadow-sm">
+    <Card className="px-5 py-4">
       <h3 className="text-sm font-semibold text-fg">Project freight</h3>
       <p className="mt-0.5 text-xs text-fg-muted">
         A shipment registered as <em>Project related</em> has no cost center. When the carrier&apos;s invoice is
@@ -132,7 +132,7 @@ function ProjectFreightSetting({ costCenters, departments }: {
         {save.isPending && <span className="text-xs text-fg-muted">Saving…</span>}
       </div>
       {error && <p className="mt-2 text-xs text-danger-fg">{error}</p>}
-    </div>
+    </Card>
   )
 }
 

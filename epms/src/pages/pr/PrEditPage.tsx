@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
-import { useReplaceTab, Checkbox, Select, Textarea, MenuItem, Badge } from '@uniops/shell'
+import { useReplaceTab, Checkbox, Select, Textarea, MenuItem, Badge, Card } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, X, Calendar, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -797,7 +797,7 @@ export default function PrEditPage() {
           </div>
 
           {/* Action bar */}
-          <div className="flex items-center justify-between rounded-lg border border-line bg-surface px-6 py-4">
+          <Card inset className="flex items-center justify-between px-6 py-4">
             <Link to={`/pr/${id}`}>
               <Button variant="secondary">Cancel</Button>
             </Link>
@@ -812,7 +812,7 @@ export default function PrEditPage() {
                 {isSubmitting ? 'Submitting…' : 'Submit for Approval'}
               </Button>
             </div>
-          </div>
+          </Card>
         </div>
 
         <div className="lg:col-span-3 flex flex-col gap-4">

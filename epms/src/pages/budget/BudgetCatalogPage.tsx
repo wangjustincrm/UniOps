@@ -14,7 +14,7 @@ import { BUDGET_BASE } from '@/lib/api'
 import { FactorConfigPanel } from './FactorConfigPanel'
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
-import { Checkbox, FileInput, MenuItem, Modal, Textarea, Badge } from '@uniops/shell'
+import { Checkbox, FileInput, MenuItem, Modal, Textarea, Badge, Card } from '@uniops/shell'
 const WRITE_ROLES = new Set(['system_admin', 'finance_manager', 'finance_bp'])
 
 export default function BudgetCatalogPage() {
@@ -142,7 +142,7 @@ export default function BudgetCatalogPage() {
       {/* Body: 2-column layout */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 flex-1 min-h-0">
         {/* ─ Left: L1 list ─ */}
-        <aside className="md:col-span-4 lg:col-span-3 rounded-xl border border-line bg-surface overflow-hidden flex flex-col">
+        <Card as="aside" className="md:col-span-4 lg:col-span-3 overflow-hidden flex flex-col">
           <div className="flex items-center justify-between px-4 py-3 border-b border-line">
             <h2 className="text-sm font-semibold text-fg">L1 Categories</h2>
             {canEdit && (
@@ -185,7 +185,7 @@ export default function BudgetCatalogPage() {
               </ul>
             )}
           </div>
-        </aside>
+        </Card>
 
         {/* ─ Right: Account list for selected L1 ─ */}
         <main className="md:col-span-8 lg:col-span-9 rounded-xl border border-line bg-surface overflow-hidden flex flex-col">

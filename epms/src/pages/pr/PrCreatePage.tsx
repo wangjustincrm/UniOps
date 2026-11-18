@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useReplaceTab, Checkbox, FileInput, Select, Textarea, MenuItem, Badge } from '@uniops/shell'
+import { useReplaceTab, Checkbox, FileInput, Select, Textarea, MenuItem, Badge, Card } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -1032,7 +1032,7 @@ export default function PrCreatePage() {
                 </div>
 
                 {/* Action bar — inside 8-col column so it aligns with cards above */}
-                <div className="flex items-center justify-between rounded-lg border border-line bg-surface px-6 py-4">
+                <Card inset className="flex items-center justify-between px-6 py-4">
                   <Link to="/pr">
                     <Button variant="secondary">Cancel</Button>
                   </Link>
@@ -1045,18 +1045,18 @@ export default function PrCreatePage() {
                       {isSubmitting ? 'Submitting…' : 'Submit for Approval'}
                     </Button>
                   </div>
-                </div>
+                </Card>
               </>
             )}
 
             {/* Action bar fallback when no type selected yet */}
             {!selectedType && (
-              <div className="flex items-center justify-between rounded-lg border border-line bg-surface px-6 py-4">
+              <Card inset className="flex items-center justify-between px-6 py-4">
                 <Link to="/pr">
                   <Button variant="secondary">Cancel</Button>
                 </Link>
                 <Button type="submit" disabled>Submit for Approval</Button>
-              </div>
+              </Card>
             )}
           </div>
 

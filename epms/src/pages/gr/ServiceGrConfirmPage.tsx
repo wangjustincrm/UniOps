@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { NotFoundState } from '@/components/shared/NotFoundState'
-import { ChoiceCard, FileInput, Input, TBody, THead, Table, Td, Textarea, Th, Tr, useReplaceTab } from '@uniops/shell'
+import { ChoiceCard, FileInput, Input, TBody, THead, Table, Td, Textarea, Th, Tr, useReplaceTab, Card } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, CheckCircle2, AlertTriangle, Upload, X, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -154,7 +154,7 @@ export default function ServiceGrConfirmPage() {
       </div>
 
       {/* Service summary */}
-      <div className="rounded-xl border border-line bg-surface p-5">
+      <Card className="p-5">
         <h2 className="text-sm font-semibold text-fg mb-3">Service Details</h2>
         <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
           <MetaRow label="Vendor"         value={gr.vendor_name} />
@@ -197,10 +197,10 @@ export default function ServiceGrConfirmPage() {
             <span className="font-medium">Receipt notes: </span>{gr.notes}
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Acceptance form */}
-      <div className="rounded-xl border border-line bg-surface p-5 flex flex-col gap-5">
+      <Card className="p-5 flex flex-col gap-5">
         <h2 className="text-sm font-semibold text-fg">Service Acceptance</h2>
 
         {/* Completion date */}
@@ -333,7 +333,7 @@ export default function ServiceGrConfirmPage() {
             </div>
           )}
         </div>
-      </div>
+      </Card>
 
       {/* Confirmation summary banner */}
       {qualityRating === 'satisfactory' ? (

@@ -10,7 +10,7 @@ import { useVendors } from '@/hooks/useVendors'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import { useConfig } from '@/hooks/useConfig'
 
-import { Checkbox, Input, Select } from '@uniops/shell'
+import { Checkbox, Input, Select, Card } from '@uniops/shell'
 // ─── Shared filter state types ────────────────────────────────────────────────
 
 interface DateRange { date_from: string; date_to: string }
@@ -127,7 +127,7 @@ function ReportCard({
   error: string | null
 }) {
   return (
-    <div className="flex flex-col rounded-2xl border border-line bg-surface shadow-sm overflow-hidden">
+    <Card className="flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-start gap-3 px-5 py-4 border-b border-line-subtle">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50">
@@ -159,7 +159,7 @@ function ReportCard({
             : <><Download className="h-3.5 w-3.5" />Export CSV</>}
         </Button>
       </div>
-    </div>
+    </Card>
   )
 }
 

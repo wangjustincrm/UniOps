@@ -29,7 +29,7 @@ import type { DocumentStatus } from '@/types'
 import { BreakdownMatrixModal } from './BreakdownMatrixModal'
 import { ActionMessage, useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
-import { Drawer, FileInput, Input, Modal, Textarea, Badge } from '@uniops/shell'
+import { Drawer, FileInput, Input, Modal, Textarea, Badge, Card } from '@uniops/shell'
 const MONTHS = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
@@ -242,7 +242,7 @@ export default function BudgetPlanEditPage() {
       </div>
 
       {/* Plan header card */}
-      <div className="rounded-xl border border-line bg-surface p-5">
+      <Card className="p-5">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <div className="flex items-center gap-3 flex-wrap">
@@ -346,7 +346,7 @@ export default function BudgetPlanEditPage() {
             )}
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Draft-revision-in-progress banner (visible when viewing the approved
           parent of an active draft revision). */}
@@ -411,7 +411,7 @@ export default function BudgetPlanEditPage() {
       {/* Virtualized grid — single scroll container.
           Sticky header (top:0) and sticky totals footer (bottom:0) share the
           same horizontal scroll, so only one scrollbar pair is visible. */}
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         <div
           ref={parentRef}
           className="overflow-auto"
@@ -475,7 +475,7 @@ export default function BudgetPlanEditPage() {
 
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Breakdown matrix modal */}
       {breakdownCell && (

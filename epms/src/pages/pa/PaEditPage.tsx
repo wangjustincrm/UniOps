@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
-import { Checkbox, Input, MenuItem, TBody, THead, Table, Td, Textarea, Th, Tr, useReplaceTab, Badge } from '@uniops/shell'
+import { Checkbox, Input, MenuItem, TBody, THead, Table, Td, Textarea, Th, Tr, useReplaceTab, Badge, Card } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDot } from 'lucide-react'
@@ -494,7 +494,7 @@ function PoPaEditPage() {
         <div className="col-span-2 flex flex-col gap-5">
 
           {/* ── PO / Agreement (locked) ────────────────────────────────────── */}
-          <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-3">
+          <Card className="p-5 flex flex-col gap-3">
             <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-semibold">1</span>
               {isAgreementMode ? 'Purchase Agreement' : (isMultiPo ? 'Purchase Orders' : 'Purchase Order')}
@@ -600,10 +600,10 @@ function PoPaEditPage() {
                 )}
               </div>
             )}
-          </div>
+          </Card>
 
           {/* ── Step 2 — Link Invoices / GRs + PA Type ─────────────────────── */}
-          <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-5">
+          <Card className="p-5 flex flex-col gap-5">
             <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-semibold">2</span>
               {isAgreementMode ? 'Link Invoices' : 'Link Invoices & Goods Receipts'}
@@ -880,10 +880,10 @@ function PoPaEditPage() {
               )}
             </div>
             )}
-          </div>
+          </Card>
 
           {/* ── Step 3 — Charge Breakdown & Details ────────────────────────── */}
-          <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-5">
+          <Card className="p-5 flex flex-col gap-5">
             <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-semibold">3</span>
               Charge Breakdown & Details
@@ -1013,7 +1013,7 @@ function PoPaEditPage() {
                 className="resize-none"
               />
             </div>
-          </div>
+          </Card>
 
           {/* Attachments */}
           <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-4">
@@ -1064,7 +1064,7 @@ function PoPaEditPage() {
 
         {/* ── Sidebar — Summary ───────────────────────────────────────────────── */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-line bg-surface p-4 shadow-sm sticky top-6">
+          <Card className="p-4 sticky top-6">
             <p className="text-xs font-semibold text-fg-secondary mb-3">Payment Summary</p>
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-1.5 text-xs">
@@ -1136,7 +1136,7 @@ function PoPaEditPage() {
                 </div>
               )}
             </div>
-          </div>
+          </Card>
         </div>
       </div>
     </div>

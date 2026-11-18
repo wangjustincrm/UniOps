@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { useReplaceTab, FileInput, Input, Radio, TBody, THead, Table, Td, Textarea, Th, Tr, MenuItem } from '@uniops/shell'
+import { useReplaceTab, FileInput, Input, Radio, TBody, THead, Table, Td, Textarea, Th, Tr, MenuItem, Card } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, AlertTriangle, CheckCircle2, Package, Paperclip, X, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -343,7 +343,7 @@ export default function GrCreatePage() {
       )}
 
       {/* PO Selection */}
-      <div className="rounded-xl border border-line bg-surface p-6 flex flex-col gap-4">
+      <Card className="p-6 flex flex-col gap-4">
         <h2 className="text-base font-semibold text-fg">Purchase Order</h2>
 
         <div className="flex flex-col gap-1">
@@ -435,12 +435,12 @@ export default function GrCreatePage() {
             {selectedPo.delivery_address && <MetaRow label="Delivery Address" value={selectedPo.delivery_address} />}
           </div>
         )}
-      </div>
+      </Card>
 
       {selectedPo && (
         <>
           {/* Receipt Details */}
-          <div className="rounded-xl border border-line bg-surface p-6 flex flex-col gap-4">
+          <Card className="p-6 flex flex-col gap-4">
             <h2 className="text-base font-semibold text-fg">Receipt Details</h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <FormField
@@ -508,10 +508,10 @@ export default function GrCreatePage() {
                 className="w-full resize-none"
               />
             </FormField>
-          </div>
+          </Card>
 
           {/* Pack List Attachments */}
-          <div className="rounded-xl border border-line bg-surface p-6 flex flex-col gap-4">
+          <Card className="p-6 flex flex-col gap-4">
             <div>
               <h2 className="text-base font-semibold text-fg">Pack List / Supporting Documents</h2>
               <p className="mt-0.5 text-sm text-fg-muted">Optional — attach scanned packing lists, delivery notes, or photos</p>
@@ -562,10 +562,10 @@ export default function GrCreatePage() {
                 ))}
               </ul>
             )}
-          </div>
+          </Card>
 
           {/* Line Items */}
-          <div className="rounded-xl border border-line bg-surface overflow-hidden">
+          <Card className="overflow-hidden">
             <div className="px-6 py-4 border-b border-line flex items-center justify-between">
               <h2 className="text-base font-semibold text-fg">Items Received</h2>
               <span className="text-xs text-fg-muted">{lineItems.length} line{lineItems.length !== 1 ? 's' : ''}</span>
@@ -610,7 +610,7 @@ export default function GrCreatePage() {
                 </div>
               </div>
             </div>
-          </div>
+          </Card>
 
           {/* Over-receipt: allowed with a reason */}
           {needsOverReason && (

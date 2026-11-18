@@ -9,6 +9,7 @@ import { useFreightShipment } from '@/hooks/useFreight'
 import { ProjectBadge, ShipmentStatusBadge } from './freightUi'
 import { ShipmentAttachmentsPanel } from './ShipmentAttachments'
 import { ShipmentDialog } from './ShipmentsTab'
+import { Card } from '@uniops/shell'
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -66,7 +67,7 @@ export default function ShipmentDetailPage() {
         )}
       </div>
 
-      <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+      <Card className="p-5">
         <h2 className="mb-4 text-sm font-semibold text-fg-secondary">Shipment</h2>
         <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Carrier">{s.carrier_code ?? '—'}</Field>
@@ -108,9 +109,9 @@ export default function ShipmentDetailPage() {
             </Field>
           </div>
         </dl>
-      </div>
+      </Card>
 
-      <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+      <Card className="p-5">
         <h2 className="mb-1 text-sm font-semibold text-fg-secondary">Attachments</h2>
         <p className="mb-4 text-xs text-fg-muted">
           {s.status === 'void'
@@ -118,7 +119,7 @@ export default function ShipmentDetailPage() {
             : 'The scanned shipping label and any supporting documents.'}
         </p>
         <ShipmentAttachmentsPanel shipmentId={s.id} editable={s.status !== 'void'} />
-      </div>
+      </Card>
 
       {editing && <ShipmentDialog shipment={s} onClose={() => setEditing(false)} />}
     </div>

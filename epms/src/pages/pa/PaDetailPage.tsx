@@ -40,7 +40,7 @@ import type { ApiPa } from '@/services/pa'
 import { historyLine } from '@/lib/approvalHistory'
 import { approvalNodeStates } from '@/lib/approvalTimeline'
 
-import { Alert, Checkbox, FormField, MenuItem, Modal, Select, TBody, TFoot, THead, Table, Tabs, Td, Textarea, Th, Tr, type BadgeTone } from '@uniops/shell'
+import { Alert, Checkbox, FormField, MenuItem, Modal, Select, TBody, TFoot, THead, Table, Tabs, Td, Textarea, Th, Tr, type BadgeTone, Card } from '@uniops/shell'
 // ─── Status config ────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<PaStatus, { label: string; variant: BadgeTone }> = {
@@ -823,7 +823,7 @@ export default function PaDetailPage() {
           {activeTab === 'details' && (
             <>
               {/* PA Details */}
-              <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+              <Card className="p-5">
                 <h3 className="text-xs font-semibold text-fg-muted mb-4">Payment Details</h3>
                 <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
                   {[
@@ -859,10 +859,10 @@ export default function PaDetailPage() {
                     <p className="whitespace-pre-wrap break-words text-sm text-fg-secondary">{pa.notes}</p>
                   </div>
                 )}
-              </div>
+              </Card>
 
               {/* Charge Breakdown */}
-              <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+              <Card className="p-5">
                 <h3 className="text-xs font-semibold text-fg-muted mb-4">Charge Breakdown</h3>
                 <div className="flex flex-col gap-2 text-sm">
                   {[
@@ -891,7 +891,7 @@ export default function PaDetailPage() {
                     <span className="font-mono font-semibold text-lg text-fg">{formatAmount(Number(pa.payment_amount), pa.currency)}</span>
                   </div>
                 </div>
-              </div>
+              </Card>
 
               {/* Payment amount box */}
               <div className="rounded-xl border-2 border-primary-200 bg-primary-50 p-5 flex items-center justify-between">
@@ -971,7 +971,7 @@ export default function PaDetailPage() {
               )}
 
               {/* PA Line Items */}
-              <div className="rounded-xl border border-line bg-surface overflow-hidden">
+              <Card className="overflow-hidden">
                 <div className="px-5 py-3 border-b border-line bg-surface-subtle">
                   <h3 className="text-xs font-semibold text-fg-muted">
                     PA Line Items ({pa.line_items.length})
@@ -1022,14 +1022,14 @@ export default function PaDetailPage() {
                     </div>
                   </>
                 )}
-              </div>
+              </Card>
 
               {/* Freight PA: the cost split replaces the PO / invoice links. */}
               {isFreight && <FreightCostAllocation pa={pa} />}
 
               {/* Linked documents */}
               {!isFreight && (
-              <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+              <Card className="p-5">
                 <h3 className="text-xs font-semibold text-fg-muted mb-4">Linked Documents</h3>
                 <div className="flex flex-col gap-2">
                   {/* PO(s) — one payment may settle several purchase orders. */}
@@ -1067,7 +1067,7 @@ export default function PaDetailPage() {
                     </div>
                   )}
                 </div>
-              </div>
+              </Card>
               )}
 
               {/* Invoice-to-PO / invoice-to-receipts variance — per-invoice,
@@ -1095,7 +1095,7 @@ export default function PaDetailPage() {
           )}
 
           {activeTab === 'attachments' && (
-            <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+            <Card className="p-5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xs font-semibold text-fg-muted">Attachments</h3>
                 {['approved', 'processed'].includes(pa.status) && (
@@ -1130,11 +1130,11 @@ export default function PaDetailPage() {
                   })
                 }}
               />
-            </div>
+            </Card>
           )}
 
           {activeTab === 'history' && (
-            <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+            <Card className="p-5">
               <h3 className="text-xs font-semibold text-fg-muted mb-4">Activity History</h3>
               <div className="flex flex-col text-sm">
                 {events && events.length > 0 ? (
@@ -1169,13 +1169,13 @@ export default function PaDetailPage() {
                   </div>
                 )}
               </div>
-            </div>
+            </Card>
           )}
         </div>
 
         {/* Right sidebar — timeline + document chain */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-line bg-surface p-5 shadow-sm sticky top-6">
+          <Card className="p-5 sticky top-6">
             <p className="text-xs font-semibold text-fg-muted mb-4">Approval Progress</p>
             {steps.map((step, i) => (
               <TimelineStep key={i} {...step} />
@@ -1191,7 +1191,7 @@ export default function PaDetailPage() {
                   showAfter={!(['processed', 'cancelled', 'rejected'] as PaStatus[]).includes(pa.status)} />
               </div>
             )}
-          </div>
+          </Card>
         </div>
       </div>
 
@@ -1281,7 +1281,7 @@ function FreightCostAllocation({ pa }: { pa: ApiPa }) {
   const amount = rows.reduce((t, r) => t + Number(r.amount), 0)
   const tax = rows.reduce((t, r) => t + Number(r.tax_amount), 0)
   return (
-    <div className="rounded-xl border border-line bg-surface overflow-hidden">
+    <Card className="overflow-hidden">
       <div className="px-5 py-3 border-b border-line bg-surface-subtle">
         <h3 className="text-xs font-semibold text-fg-muted">
           Cost Allocation ({pa.invoice_ids.length} courier invoice{pa.invoice_ids.length !== 1 ? 's' : ''})
@@ -1328,6 +1328,6 @@ function FreightCostAllocation({ pa }: { pa: ApiPa }) {
           </Table>
         </div>
       )}
-    </div>
+    </Card>
   )
 }

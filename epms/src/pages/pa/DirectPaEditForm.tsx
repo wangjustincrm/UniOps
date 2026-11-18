@@ -1,6 +1,6 @@
 import { useState, type ChangeEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useReplaceTab, Select, Textarea } from '@uniops/shell'
+import { useReplaceTab, Select, Textarea, Card } from '@uniops/shell'
 import { ArrowLeft, Info } from 'lucide-react'
 import { epmsRoutes } from '@/app/routes'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
@@ -92,7 +92,7 @@ export function DirectPaEditForm({ pa }: { pa: ApiPa }) {
         </span>
       </div>
 
-      <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-4">
+      <Card className="p-5 flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Title *</label>
           <Input value={title} onChange={(e: ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)} maxLength={255} />
@@ -120,7 +120,7 @@ export function DirectPaEditForm({ pa }: { pa: ApiPa }) {
         </div>
         <DirectPaBudgetPanel costCenterId={costCenterId} budgetCode={budgetCode}
           amount={Number(pa.subtotal)} currency={pa.currency} />
-      </div>
+      </Card>
 
       <div className="flex justify-end gap-2">
         <Button variant="secondary" onClick={() => replaceTab(`/pa/${pa.id}`)} disabled={busy}>Cancel</Button>

@@ -21,7 +21,7 @@ import {
 } from '@/hooks/usePos'
 import type { PoSignoffState, PoSignoffStatus, PoSignoffStep } from '@/services/po'
 
-import { Textarea, Badge } from '@uniops/shell'
+import { Textarea, Badge, Card } from '@uniops/shell'
 export const STATUS_LABELS: Record<PoSignoffStatus, { label: string; className: string }> = {
   draft:      { label: 'Not started',       className: 'bg-surface-sunken text-fg-secondary' },
   submitted:  { label: 'Awaiting signature', className: 'bg-warning-soft text-warning-fg' },
@@ -154,9 +154,9 @@ export function PoSignoffPanel({ poId, source }: { poId: string; source: string 
   if (!enabled) return null
   if (isLoading) {
     return (
-      <div className="rounded-lg border border-line bg-surface px-6 py-5">
+      <Card inset className="px-6 py-5">
         <Loader2 className="h-4 w-4 animate-spin text-fg-muted" />
-      </div>
+      </Card>
     )
   }
   // A signatory who is not part of this sign-off (and has no scope on the PO)
@@ -175,7 +175,7 @@ export function PoSignoffPanel({ poId, source }: { poId: string; source: string 
   const canRestart = state.status === 'draft' || state.status === 'returned'
 
   return (
-    <div className="rounded-lg border border-line bg-surface">
+    <Card inset>
       <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
@@ -331,6 +331,6 @@ export function PoSignoffPanel({ poId, source }: { poId: string; source: string 
           </p>
         )}
       </div>
-    </div>
+    </Card>
   )
 }

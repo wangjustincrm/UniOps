@@ -43,7 +43,7 @@ import {
 } from '@/services/agreementReceipts'
 import type { DocumentStatus } from '@/types'
 
-import { ChoiceCard, FileInput, Textarea, Badge } from '@uniops/shell'
+import { ChoiceCard, FileInput, Textarea, Badge, Card } from '@uniops/shell'
 const TYPE_OPTIONS: ReceiptType[] = ['counter_slip', 'delivery', 'service']
 
 // Why the edit form is locked, in the receipt's own terms. Never just a
@@ -392,7 +392,7 @@ function ReceiptDetail({
         {/* Main column */}
         <div className="flex-1 min-w-0 flex flex-col gap-4">
           {/* Receipt details — editable form, or read-only with the reason */}
-          <div className="rounded-xl border border-line bg-surface p-6">
+          <Card className="p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold text-fg-muted">
                 Receipt Details
@@ -610,7 +610,7 @@ function ReceiptDetail({
                 <MetaRow label="Notes" value={receipt.notes ?? '—'} />
               </div>
             )}
-          </div>
+          </Card>
 
           {/* Photos / proof files */}
           <ReceiptAttachmentsCard
@@ -622,7 +622,7 @@ function ReceiptDetail({
 
         {/* Right column — context that isn't editable here */}
         <div className="w-72 flex-shrink-0 flex flex-col gap-4">
-          <div className="rounded-xl border border-line bg-surface p-5">
+          <Card className="p-5">
             <h3 className="text-xs font-semibold text-fg-muted mb-3">
               Linked Documents
             </h3>
@@ -658,9 +658,9 @@ function ReceiptDetail({
                 <p className="text-xs text-fg-muted">Not claimed by any invoice yet.</p>
               )}
             </div>
-          </div>
+          </Card>
 
-          <div className="rounded-xl border border-line bg-surface p-5">
+          <Card className="p-5">
             <h3 className="text-xs font-semibold text-fg-muted mb-3">
               Record
             </h3>
@@ -683,7 +683,7 @@ function ReceiptDetail({
                 <MetaRow label="AP review" value="Not reviewed" />
               )}
             </div>
-          </div>
+          </Card>
         </div>
       </div>
 
@@ -756,7 +756,7 @@ function ReceiptAttachmentsCard({
   }
 
   return (
-    <div className="rounded-xl border border-line bg-surface p-6">
+    <Card className="p-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-semibold text-fg-muted">
           Photos &amp; Proof Files
@@ -838,7 +838,7 @@ function ReceiptAttachmentsCard({
           ))}
         </div>
       )}
-    </div>
+    </Card>
   )
 }
 

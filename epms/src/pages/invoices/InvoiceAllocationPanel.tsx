@@ -5,7 +5,7 @@ import type { ApiInvoice, InvoiceLineItem, AllocationInput, NonPoLineInput } fro
 import type { ApiPo } from '@/services/po'
 import { InvoiceTotalMatchPanel } from './InvoiceTotalMatchPanel'
 
-import { ContextMenu, Input, MenuItem, Segmented, Select, Badge } from '@uniops/shell'
+import { ContextMenu, Input, MenuItem, Segmented, Select, Badge, Card } from '@uniops/shell'
 // invoiceLineId -> { poId, poLineId }
 export type AllocationAssignment = Record<string, { poId: string; poLineId: string }>
 
@@ -171,7 +171,7 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
       <p className="text-xs text-fg-secondary">Drag each invoice line onto the PO line it belongs to.</p>
       <div className="grid grid-cols-2 gap-4">
         {/* Invoice lines (drag source) */}
-        <div className="rounded-xl border border-line bg-surface p-4">
+        <Card className="p-4">
           <h4 className="mb-3 text-xs font-semibold text-fg-muted">Invoice lines · Pretax total {formatAmount(total, currency)}</h4>
           <div className="flex max-h-[55vh] flex-col gap-2 overflow-y-auto pr-1">
             {lines.map((l) => {
@@ -226,10 +226,10 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
               )
             })}
           </div>
-        </div>
+        </Card>
 
         {/* PO lines (drop target) */}
-        <div className="rounded-xl border border-line bg-surface p-4">
+        <Card className="p-4">
           <h4 className="mb-3 text-xs font-semibold text-fg-muted">
             PO lines (drop here)
             <span className="ml-2 normal-case font-normal text-fg-faint">same accent color = same amount on both sides (hint only)</span>
@@ -267,7 +267,7 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
               </div>
             ))}
           </div>
-        </div>
+        </Card>
       </div>
 
       <div className="flex flex-col items-end gap-1">

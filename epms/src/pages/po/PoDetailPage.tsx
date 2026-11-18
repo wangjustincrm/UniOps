@@ -38,7 +38,7 @@ import { isImportedEditablePo } from '@/lib/importedPoEdit'
 import { canWithdrawDocument } from '@/lib/documentActions'
 import { formatPaymentTerms } from '@/lib/paymentTerms'
 
-import { Alert, ChoiceCard, FormField, Input, MenuItem, Modal, TBody, TFoot, THead, Table, Tabs, Td, Textarea, Th, Tr } from '@uniops/shell'
+import { Alert, ChoiceCard, FormField, Input, MenuItem, Modal, TBody, TFoot, THead, Table, Tabs, Td, Textarea, Th, Tr, Card } from '@uniops/shell'
 const TYPE_LABELS: Record<number, string> = {
   1: 'Raw Mat./Pack.',
   2: 'Consumables',
@@ -303,7 +303,7 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
                   />
                 </div>
               </div>
-              <div className="rounded-lg border border-line bg-surface">
+              <Card inset>
                 <div className="px-4 py-2.5 border-b border-line-subtle flex items-center justify-between">
                   <span className="text-xs font-medium text-fg-muted">Email Body</span>
                   <span className="text-xs text-fg-muted">Editable · plain text</span>
@@ -314,7 +314,7 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
                   onChange={(e) => setEmailBody(e.target.value)}
                   className="w-full resize-none font-mono leading-relaxed"
                 />
-              </div>
+              </Card>
               {/* PDF attachment indicator */}
               <div className="flex items-center gap-2 rounded-lg border border-line bg-surface-subtle px-3 py-2">
                 <FileText className="h-4 w-4 shrink-0 text-primary-500" />
@@ -655,7 +655,7 @@ export default function PoDetailPage() {
   return (
     <div className={cn('flex flex-col gap-6', canApprove && 'pb-16')}>
       {/* Page header */}
-      <div className="rounded-lg border border-line bg-surface px-6 py-4">
+      <Card inset className="px-6 py-4">
         <div className="flex items-center gap-3 mb-3">
           <BackLink to="/po">
             <Button variant="ghost" size="sm">
@@ -757,7 +757,7 @@ export default function PoDetailPage() {
             )}
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Main content + timeline */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">

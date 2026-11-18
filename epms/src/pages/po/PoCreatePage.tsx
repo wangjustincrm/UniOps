@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { useSearchParams, useNavigate, Link } from 'react-router-dom'
-import { useReplaceTab, Checkbox, FileInput, Select, Textarea, MenuItem, Badge } from '@uniops/shell'
+import { useReplaceTab, Checkbox, FileInput, Select, Textarea, MenuItem, Badge, Card } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Upload, X, Calendar, Search, Receipt, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -605,7 +605,7 @@ export default function PoCreatePage() {
               {attachments.length > 0 && (
                 <ul className="flex flex-col gap-1.5">
                   {attachments.map((f, i) => (
-                    <li key={i} className="flex items-center justify-between rounded-lg border border-line bg-surface px-3 py-2 text-sm">
+                    <Card inset as="li" className="flex items-center justify-between px-3 py-2 text-sm" key={i}>
                       <span className="flex items-center gap-2 text-fg-secondary">
                         <Upload className="h-3.5 w-3.5 text-fg-muted" />
                         {f.name}
@@ -617,7 +617,7 @@ export default function PoCreatePage() {
                       >
                         <X className="h-3.5 w-3.5" />
                       </Button>
-                    </li>
+                    </Card>
                   ))}
                 </ul>
               )}

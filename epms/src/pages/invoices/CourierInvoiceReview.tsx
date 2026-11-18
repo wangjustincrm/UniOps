@@ -11,7 +11,7 @@ import {
 import { CHARGE_TYPE_LABEL, Modal, TH_CLS, addDaysISO, cents, errorMessage, isDateOnly, num } from '@/pages/freight/freightUi'
 import { useNoticeDialog } from '@/components/ui/ConfirmDialog'
 
-import { Select, TBody, TFoot, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
+import { Select, TBody, TFoot, THead, Table, Td, Textarea, Th, Tr, Card } from '@uniops/shell'
 interface LineDraft {
   key: number
   charge_type: ChargeType
@@ -344,7 +344,7 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
         {embedded ? (
           <div className="flex flex-col gap-2">
             {lines.map((l, i) => (
-              <div key={l.key} className="rounded-lg border border-line bg-surface p-3 flex flex-col gap-2">
+              <Card inset className="p-3 flex flex-col gap-2" key={l.key}>
                 <div className="flex items-center gap-2">
                   <span className="w-5 text-xs text-fg-muted">{i + 1}</span>
                   <Select value={l.charge_type} onChange={(e) => updateLine(l.key, { charge_type: e.target.value as ChargeType })}
@@ -377,7 +377,7 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
                   <Input value={l.description} placeholder="Description" onChange={(e) => updateLine(l.key, { description: e.target.value })}
                     inputSize="sm" aria-label={`Line ${i + 1} description`} />
                 </div>
-              </div>
+              </Card>
             ))}
             <div className="flex items-center justify-between rounded-lg bg-surface-subtle px-3 py-2 text-xs font-semibold">
               <Button variant="link" type="button" onClick={() => setLines((ls) => [...ls, emptyLine()])}

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { ChoiceCard, Input, MenuItem, useReplaceTab } from '@uniops/shell'
+import { ChoiceCard, Input, MenuItem, useReplaceTab, Card } from '@uniops/shell'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { epmsRoutes } from '@/app/routes'
 import { Button } from '@/components/ui/button'
@@ -88,7 +88,7 @@ export default function ReceiptCreatePage() {
       </div>
 
       {/* Agreement Selection */}
-      <div className="rounded-xl border border-line bg-surface p-6 flex flex-col gap-4">
+      <Card className="p-6 flex flex-col gap-4">
         <h2 className="text-base font-semibold text-fg">Agreement</h2>
 
         <div className="flex flex-col gap-1">
@@ -183,12 +183,12 @@ export default function ReceiptCreatePage() {
             )}
           </div>
         )}
-      </div>
+      </Card>
 
       {selectedAgreement && (
         <>
           {/* Receipt Type */}
-          <div className="rounded-xl border border-line bg-surface p-6 flex flex-col gap-4">
+          <Card className="p-6 flex flex-col gap-4">
             <h2 className="text-base font-semibold text-fg">Receipt Type</h2>
             <div className="flex gap-3">
               {TYPE_OPTIONS.map((t) => (
@@ -200,13 +200,13 @@ export default function ReceiptCreatePage() {
                 </ChoiceCard>
               ))}
             </div>
-          </div>
+          </Card>
 
           {/* Photo → OCR → editable fields → submit → attach, reused as-is
               (Task 5's ReceiptEntryForm) — only the agreement/type it records
               against are now supplied by this page instead of being fixed to
               whatever agreement the form used to be embedded in. */}
-          <div className="rounded-xl border border-line bg-surface p-6">
+          <Card className="p-6">
             {/* replaceTab(cancelHref), not resetForm() alone — Task 10 fix
                 round 1: a form that silently clears itself is indistinguishable
                 from one that silently failed. Navigating to wherever Cancel
@@ -219,7 +219,7 @@ export default function ReceiptCreatePage() {
               taxRate={selectedAgreement.tax_rate != null ? Number(selectedAgreement.tax_rate) : null}
               onSuccess={() => replaceTab(cancelHref)}
             />
-          </div>
+          </Card>
         </>
       )}
 

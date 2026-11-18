@@ -13,7 +13,7 @@ import { authService, type ApiUser } from '@/services/auth'
 import { api } from '@/lib/api'
 import { SignaturePad, type SignaturePadHandle } from '@/components/shared/SignaturePad'
 
-import { ChoiceCard, FileInput, Input, Segmented, Switch } from '@uniops/shell'
+import { ChoiceCard, FileInput, Input, Segmented, Switch, Card } from '@uniops/shell'
 const ROLE_LABELS: Record<string, string> = {
   system_admin: 'System Admin',
   dept_manager: 'Department Manager',
@@ -534,7 +534,7 @@ export default function ProfilePage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Page header */}
-      <div className="rounded-lg border border-line bg-surface px-6 py-4">
+      <Card inset className="px-6 py-4">
         <Button variant="subtle" size="xs" onClick={() => navigate(-1)} className="mb-3 text-sm">
           <ArrowLeft className="h-4 w-4" />
           Back
@@ -549,7 +549,7 @@ export default function ProfilePage() {
             <p className="text-sm text-fg-muted">{ROLE_LABELS[profile.role] ?? profile.role} · {profile.email}</p>
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Content */}
       <div className="flex flex-col gap-5">

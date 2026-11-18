@@ -25,7 +25,7 @@ import {
 import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
-import { FileInput, Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { FileInput, Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Card } from '@uniops/shell'
 /** What would free an invoice from its PA, by the PA's status. Only a draft /
  *  returned PA can be cancelled; one in approval must first be recalled or
  *  returned; an approved / processed one can no longer let go of it (PRD
@@ -173,7 +173,7 @@ export function CourierInvoiceView({ id }: { id: string }) {
       <div className="grid grid-cols-1 gap-6 2xl:grid-cols-4">
         <div className="2xl:col-span-3 min-w-0 flex flex-col gap-5">
           {/* Header card */}
-          <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+          <Card className="p-5">
             <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm md:grid-cols-4">
               <Field label="Carrier" value={inv.carrier_code ?? '—'} />
               <Field label="Invoice date" value={formatDate(inv.invoice_date)} />
@@ -190,10 +190,10 @@ export function CourierInvoiceView({ id }: { id: string }) {
               <Field label="Currency" value={ccy} />
             </div>
             {inv.notes && <p className="mt-4 border-t border-line-subtle pt-3 text-sm text-fg-secondary whitespace-pre-wrap">{inv.notes}</p>}
-          </div>
+          </Card>
 
           {/* Lines */}
-          <div className="rounded-xl border border-line bg-surface shadow-sm overflow-hidden">
+          <Card className="overflow-hidden">
             <div className="flex items-center justify-between border-b border-line bg-surface-subtle px-5 py-3">
               <h3 className="text-xs font-semibold text-fg-muted">Charges</h3>
               {editable
@@ -232,10 +232,10 @@ export function CourierInvoiceView({ id }: { id: string }) {
                 </TFoot>
               </Table>
             </div>
-          </div>
+          </Card>
 
           {editable && pending.length > 0 && (
-            <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+            <Card className="p-5">
               <h3 className="text-xs font-semibold text-fg-muted mb-1">Still pending for {inv.carrier_code}</h3>
               <p className="text-xs text-fg-muted mb-3">Registered but not billed on this invoice — usually they come on the next one. Nothing to do here.</p>
               <div className="flex flex-wrap gap-2">
@@ -246,13 +246,13 @@ export function CourierInvoiceView({ id }: { id: string }) {
                   </span>
                 ))}
               </div>
-            </div>
+            </Card>
           )}
         </div>
 
         {/* Side panel */}
         <div className="order-first grid items-start gap-4 md:grid-cols-3 2xl:order-none 2xl:flex 2xl:flex-col">
-          <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-2">
+          <Card className="p-5 flex flex-col gap-2">
             {inv.match_assignee_name && inv.status === 'unmatched' && (
               <p className="flex items-center gap-1.5 text-xs text-fg-secondary">
                 <UserPlus className="h-3.5 w-3.5 text-primary-600" /> Assigned to <span className="font-medium">{inv.match_assignee_name}</span>
@@ -295,7 +295,7 @@ export function CourierInvoiceView({ id }: { id: string }) {
                 <Trash2 className="h-3.5 w-3.5" /> {del.isPending ? 'Deleting…' : 'Delete invoice'}
               </Button>
             )}
-          </div>
+          </Card>
 
           {editable && (
             <div className={cn('rounded-xl border p-5 shadow-sm',
@@ -313,7 +313,7 @@ export function CourierInvoiceView({ id }: { id: string }) {
             </div>
           )}
 
-          <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+          <Card className="p-5">
             <h3 className="text-xs font-semibold text-fg-muted mb-3">By Cost Center</h3>
             <Table density="compact">
               <TBody>
@@ -335,7 +335,7 @@ export function CourierInvoiceView({ id }: { id: string }) {
                 ))}
               </TBody>
             </Table>
-          </div>
+          </Card>
 
           <InvoicePdfPanel invoiceId={inv.id} />
         </div>
@@ -512,7 +512,7 @@ function InvoicePdfPanel({ invoiceId }: { invoiceId: string }) {
   }
 
   return (
-    <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+    <Card className="p-5">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-xs font-semibold text-fg-muted">Invoice PDF</h3>
         <FileInput ref={input} accept="application/pdf,image/*" className="sr-only" onChange={onFile} />
@@ -540,6 +540,6 @@ function InvoicePdfPanel({ invoiceId }: { invoiceId: string }) {
         </div>
       )}
       {err && <p className="mt-2 text-xs text-danger-fg">{err}</p>}
-    </div>
+    </Card>
   )
 }

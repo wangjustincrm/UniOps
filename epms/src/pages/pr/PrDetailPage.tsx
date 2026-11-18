@@ -27,7 +27,7 @@ import { generatePrHtml } from '@/lib/pr-document'
 import { downloadPdf } from '@/lib/pdf-utils'
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
-import { Alert, FormField, Modal, Tabs, TBody, TFoot, THead, Table, Td, Textarea, Th, Tr, MenuItem } from '@uniops/shell'
+import { Alert, FormField, Modal, Tabs, TBody, TFoot, THead, Table, Td, Textarea, Th, Tr, MenuItem, Card } from '@uniops/shell'
 const TYPE_LABELS: Record<number, string> = {
   1: 'Raw Mat./Pack.',
   2: 'Consumables',
@@ -305,7 +305,7 @@ export default function PrDetailPage() {
   return (
     <div className={cn('flex flex-col gap-6', canApprove && 'pb-16')}>
       {/* Page header */}
-      <div className="rounded-lg border border-line bg-surface px-6 py-4">
+      <Card inset className="px-6 py-4">
         <div className="flex items-center gap-3 mb-3">
           <BackLink to="/pr">
             <Button variant="ghost" size="sm">
@@ -401,7 +401,7 @@ export default function PrDetailPage() {
             {actionError}
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Main content + timeline */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">

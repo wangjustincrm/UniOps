@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Database, Download, RefreshCw, Paperclip, AlertTriangle, CheckCircle2, Loader2, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn, formatDateTime } from '@/lib/utils'
-import { Checkbox, MenuItem, Badge } from '@uniops/shell'
+import { Checkbox, MenuItem, Badge, Card } from '@uniops/shell'
 import {
   pmsImportService as svc,
   type PmsConfig, type PmsRun, type PmsReport,
@@ -177,7 +177,7 @@ export function PmsImportPanel() {
       )}
 
       {/* Controls */}
-      <div className="rounded-xl border border-line bg-surface p-4 flex flex-col gap-3">
+      <Card className="p-4 flex flex-col gap-3">
         <div className="flex items-center gap-4">
           <label className="flex items-center gap-2 text-sm text-fg-secondary select-none">
             <Checkbox checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} disabled={running} />
@@ -204,11 +204,11 @@ export function PmsImportPanel() {
           <i> Modified</i> is newer than the last sync; existing docs get header-level updates,
           locally-edited docs are skipped.
         </p>
-      </div>
+      </Card>
 
       {/* Current run */}
       {current && (
-        <div className="rounded-xl border border-line bg-surface p-4">
+        <Card className="p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm">
               <StatusBadge s={current.status} />
@@ -220,7 +220,7 @@ export function PmsImportPanel() {
           </div>
           {current.error && <div className="mt-2 text-sm text-danger-fg">{current.error}</div>}
           {current.report && <ReportView r={current.report} />}
-        </div>
+        </Card>
       )}
 
       {/* History */}
@@ -231,7 +231,7 @@ export function PmsImportPanel() {
             <RefreshCw className="h-3 w-3" /> Refresh
           </Button>
         </div>
-        <div className="rounded-xl border border-line bg-surface divide-y divide-line-subtle">
+        <Card className="divide-y divide-line-subtle">
           {runs.length === 0 && <div className="p-4 text-sm text-fg-muted">No runs yet.</div>}
           {runs.map((run) => (
             <div key={run.id}>
@@ -267,7 +267,7 @@ export function PmsImportPanel() {
               })()}
             </div>
           ))}
-        </div>
+        </Card>
       </div>
     </div>
   )

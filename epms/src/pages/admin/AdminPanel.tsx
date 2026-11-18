@@ -31,7 +31,7 @@ import { TEMPLATE_VARIABLE_DOCS } from '@/lib/email-template'
 import type { UserRole, Currency, CurrencyDef } from '@/types'
 import { CURRENCIES } from '@/types'
 
-import { Checkbox, ChoiceCard, DropdownPortal, FileInput, MenuItem, Modal, Radio, Select, Switch, TBody, THead, Table, Td, Textarea, Th, Tr, useAnchorRect, Badge } from '@uniops/shell'
+import { Checkbox, ChoiceCard, DropdownPortal, FileInput, MenuItem, Modal, Radio, Select, Switch, TBody, THead, Table, Td, Textarea, Th, Tr, useAnchorRect, Badge, Card } from '@uniops/shell'
 // Roles that may only ever be held as ADDITIONAL roles (granted per-user via
 // identity's user_roles), never as a user's primary/base login role. Keep in
 // step with ApiUserRole in services/users.ts, which deliberately excludes them.
@@ -785,7 +785,7 @@ function PoSmtpSettings() {
   }
 
   return (
-    <section className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5">
+    <Card as="section" className="flex flex-col gap-4 p-5">
       <div>
         <h3 className="text-sm font-semibold text-fg">PO Email SMTP — External Vendors</h3>
         <p className="text-xs text-fg-muted mt-1 leading-relaxed">
@@ -869,7 +869,7 @@ function PoSmtpSettings() {
           {testResult.msg}
         </p>
       )}
-    </section>
+    </Card>
   )
 }
 
@@ -1213,7 +1213,7 @@ function ImportPanel({ rows, existingEmails, onConfirm, onCancel }: {
       </div>
 
       {/* Row table */}
-      <div className="max-h-72 overflow-y-auto rounded-lg border border-line bg-surface">
+      <Card inset className="max-h-72 overflow-y-auto">
         <Table density="compact">
           <THead><Tr className="bg-surface-subtle sticky top-0">
             <Th className="w-10">#</Th>
@@ -1250,7 +1250,7 @@ function ImportPanel({ rows, existingEmails, onConfirm, onCancel }: {
             })}
           </TBody>
         </Table>
-      </div>
+      </Card>
 
       <div className="flex items-center gap-2">
         <Button size="sm" disabled={valid.length === 0} onClick={() => onConfirm(valid)}>

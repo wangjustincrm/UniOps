@@ -4,7 +4,7 @@ import { formatAmount } from '@/lib/utils'
 import type { ApiInvoice, AllocationInput } from '@/services/invoices'
 import type { ApiPo } from '@/services/po'
 
-import { Input } from '@uniops/shell'
+import { Input, Card } from '@uniops/shell'
 // poId -> amount allocated to that PO from THIS invoice (this session)
 type TotalAssign = Record<string, number>
 
@@ -72,7 +72,7 @@ export function InvoiceTotalMatchPanel({ invoice, pos, onSubmit, submitting }: P
 
       <div className="grid grid-cols-2 gap-4">
         {/* Whole-invoice drag source */}
-        <div className="rounded-xl border border-line bg-surface p-4">
+        <Card className="p-4">
           <h4 className="mb-3 text-xs font-semibold text-fg-muted">Invoice</h4>
           <div
             draggable
@@ -85,10 +85,10 @@ export function InvoiceTotalMatchPanel({ invoice, pos, onSubmit, submitting }: P
             </div>
             <span className="mt-1 block text-2xs text-fg-muted">Pretax total · drag onto a PO to match by total amount</span>
           </div>
-        </div>
+        </Card>
 
         {/* PO header drop targets */}
-        <div className="rounded-xl border border-line bg-surface p-4">
+        <Card className="p-4">
           <h4 className="mb-3 text-xs font-semibold text-fg-muted">Purchase orders (drop here)</h4>
           <div className="flex max-h-[55vh] flex-col gap-2 overflow-y-auto pr-1">
             {pos.map((po) => {
@@ -118,7 +118,7 @@ export function InvoiceTotalMatchPanel({ invoice, pos, onSubmit, submitting }: P
               )
             })}
           </div>
-        </div>
+        </Card>
       </div>
 
       <div className="flex justify-end">

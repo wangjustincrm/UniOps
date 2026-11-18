@@ -12,7 +12,7 @@ import {
 } from '@/hooks/useFreight'
 import { TH_CLS, cents, errorMessage, num } from '@/pages/freight/freightUi'
 
-import { Checkbox, Select, TBody, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
+import { Checkbox, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Card } from '@uniops/shell'
 /** New PA → Freight payment (/pa/new?source=freight[&invoice=<id>]): matched
  *  courier invoices of one carrier, split over cost centres, become one draft
  *  Freight PA. Gated like the API on epms.freight.manage. */
@@ -34,10 +34,10 @@ export function FreightPaCreate({ preselectInvoiceId }: { preselectInvoiceId: st
       ) : access?.manage ? (
         <FreightPaForm preselectInvoiceId={preselectInvoiceId} />
       ) : (
-        <div className="rounded-xl border border-line bg-surface py-16 text-center">
+        <Card className="py-16 text-center">
           <p className="text-sm font-medium text-fg-muted">You do not have access to Freight payments</p>
           <p className="text-xs text-fg-muted mt-1">Raising a Freight PA needs the Freight manage permission.</p>
-        </div>
+        </Card>
       )}
     </div>
   )
@@ -114,7 +114,7 @@ function FreightPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nu
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-      <div className="lg:col-span-2 rounded-xl border border-line bg-surface shadow-sm overflow-hidden">
+      <Card className="lg:col-span-2 overflow-hidden">
         <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
           <Select value={carrierId} onChange={(e) => { setCarrierId(e.target.value); setSelected(new Set()) }}>
             <option value="">Select carrier…</option>
@@ -172,10 +172,10 @@ function FreightPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nu
             </TBody>
           </Table>
         )}
-      </div>
+      </Card>
 
       <div className="flex flex-col gap-4">
-        <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+        <Card className="p-5">
           <h3 className="text-xs font-semibold text-fg-muted mb-3">Cost Split Preview</h3>
           {selectedIds.length === 0 ? (
             <p className="text-xs text-fg-muted">Tick one or more invoices.</p>
@@ -218,9 +218,9 @@ function FreightPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nu
           {currencies.size > 1 && (
             <p className="mt-2 flex items-center gap-1 text-xs text-danger-fg"><AlertTriangle className="h-3.5 w-3.5" /> The ticked invoices are in different currencies.</p>
           )}
-        </div>
+        </Card>
 
-        <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-3">
+        <Card className="p-5 flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Title</label>
             <Input value={title} onChange={(e: ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)} placeholder="Default: Freight — carrier + invoice numbers" />
@@ -236,7 +236,7 @@ function FreightPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nu
             {createPa.isPending ? 'Creating…' : 'Create Freight PA'}
           </Button>
           <p className="text-2xs text-fg-muted">The PA opens as a draft. Check it, then press Submit for Approval on the PA page.</p>
-        </div>
+        </Card>
       </div>
     </div>
   )

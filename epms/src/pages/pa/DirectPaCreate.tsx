@@ -16,7 +16,7 @@ import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 import type { LinkedPoDefaults } from '@/services/pa'
 import { TH_CLS, cents, errorMessage, num } from '@/pages/freight/freightUi'
 
-import { Checkbox, Select, TBody, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
+import { Checkbox, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Card } from '@uniops/shell'
 /** Payment Applications → Create Direct PA (/pa/new?source=direct[&invoice=<id>]).
  *  Pays invoices matched to no PO and no agreement (Match → Direct PA on the
  *  invoice): one or more of one vendor and currency, charged to a department
@@ -43,10 +43,10 @@ export function DirectPaCreate({ preselectInvoiceId }: { preselectInvoiceId: str
       ) : canCreate ? (
         <DirectPaForm preselectInvoiceId={preselectInvoiceId} />
       ) : (
-        <div className="rounded-xl border border-line bg-surface py-16 text-center">
+        <Card className="py-16 text-center">
           <p className="text-sm font-medium text-fg-muted">You do not have access to create payment applications</p>
           <p className="text-xs text-fg-muted mt-1">Raising a Direct PA needs the Create / Edit PAs permission.</p>
-        </div>
+        </Card>
       )}
     </div>
   )
@@ -160,7 +160,7 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-      <div className="lg:col-span-2 rounded-xl border border-line bg-surface shadow-sm overflow-hidden">
+      <Card className="lg:col-span-2 overflow-hidden">
         <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
           <span className="text-sm font-semibold text-fg-secondary">Invoices for a Direct PA</span>
           <span className="text-sm text-fg-muted">
@@ -237,10 +237,10 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
             </TBody>
           </Table>
         )}
-      </div>
+      </Card>
 
       <div className="flex flex-col gap-4">
-        <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-3">
+        <Card className="p-5 flex flex-col gap-3">
           <h3 className="text-xs font-semibold text-fg-muted">Charged To</h3>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Department *</label>
@@ -268,9 +268,9 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
             )}
           </div>
           <DirectPaBudgetPanel costCenterId={costCenterId} budgetCode={budgetCode} amount={subtotal} currency={currency} />
-        </div>
+        </Card>
 
-        <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-3">
+        <Card className="p-5 flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Reason for payment *</label>
             <Textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)}
@@ -306,7 +306,7 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
             The PA opens as a draft. Check it, then press Submit for Approval on the PA page — it goes through the
             PA (Direct) approval workflow.
           </p>
-        </div>
+        </Card>
       </div>
     </div>
   )

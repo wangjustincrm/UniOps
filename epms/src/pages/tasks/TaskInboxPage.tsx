@@ -11,7 +11,7 @@ import type { TaskType } from '@/lib/taskTypes'
 import type { ApiTask } from '@/services/tasks'
 import { groupTasks } from '@/lib/groupTasks'
 
-import { Segmented, Select, Badge } from '@uniops/shell'
+import { Segmented, Select, Badge, Card } from '@uniops/shell'
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 type TabValue = 'all' | 'urgent' | 'normal' | 'completed'
@@ -351,7 +351,7 @@ export default function TaskInboxPage() {
         </div>
 
         {/* Normal */}
-        <div className="rounded-xl border border-line bg-surface px-4 py-3">
+        <Card className="px-4 py-3">
           <div className="flex items-center gap-1.5 mb-1">
             <Clock className="h-4 w-4 text-fg-muted" />
             <p className="text-xs font-semibold text-fg-muted">Normal</p>
@@ -360,7 +360,7 @@ export default function TaskInboxPage() {
           <p className="text-xs text-fg-muted mt-0.5">
             {normalCount === 1 ? 'task' : 'tasks'} in queue
           </p>
-        </div>
+        </Card>
 
         {/* Completed today */}
         <div className="rounded-xl border border-success-line bg-success-soft px-4 py-3">

@@ -11,7 +11,7 @@ import { PartThumbnail } from '@/pages/parts/PartsListPage'
 import { useQuery } from '@tanstack/react-query'
 import { mdmApi } from '@/lib/api'
 
-import { Input, MenuItem, PickerTrigger, Select, TBody, THead, Table, Td, Th, Tr, Badge } from '@uniops/shell'
+import { Input, MenuItem, PickerTrigger, Select, TBody, THead, Table, Td, Th, Tr, Badge, Card } from '@uniops/shell'
 function newLine(): PrLineItem {
   return {
     id: crypto.randomUUID(),
@@ -761,12 +761,12 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
           Add Line
         </Button>
 
-        <div className="flex items-center justify-between rounded-lg border border-line bg-surface px-4 py-3">
+        <Card inset className="flex items-center justify-between px-4 py-3">
           <span className="text-sm font-semibold text-fg-secondary">Total (CAD)</span>
           <span className={cn('amount text-lg font-semibold', total > 0 ? 'text-fg' : 'text-fg-faint')}>
             {formatCAD(total)}
           </span>
-        </div>
+        </Card>
       </div>
     </div>
   )

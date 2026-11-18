@@ -5,7 +5,7 @@ import {
   Upload, Search, AlertTriangle, CheckCircle2, Clock,
   X, FileText, ChevronDown, ChevronUp, ExternalLink, Loader2, Plus, Trash2, UserPlus,
 } from 'lucide-react'
-import { Checkbox, Chip, ChipGroup, DropdownPortal, FileInput, Input, MenuItem, Modal, Radio, Select, SortTh, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr, sortParams, useAnchorRect, useSort, type BadgeTone } from '@uniops/shell'
+import { Checkbox, Chip, ChipGroup, DropdownPortal, FileInput, Input, MenuItem, Modal, Radio, Select, SortTh, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr, sortParams, useAnchorRect, useSort, type BadgeTone, Card } from '@uniops/shell'
 import { parseInvoiceFile, type ParseFailureKind, type ParsedTotalCheck } from '@/lib/invoice-parser'
 import { EXPENSE_BASE } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -1448,7 +1448,7 @@ function UnmatchedTab() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         <Table>
           <THead>
             <Tr className="bg-surface-subtle">
@@ -1572,7 +1572,7 @@ function UnmatchedTab() {
             ))}
           </TBody>
         </Table>
-      </div>
+      </Card>
       <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
       {assigningInv && (
         <AssignMatchDialog
@@ -1618,7 +1618,7 @@ function ExceptionsTab() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         <Table>
           <THead>
             <Tr className="bg-surface-subtle">
@@ -1683,7 +1683,7 @@ function ExceptionsTab() {
             ))}
           </TBody>
         </Table>
-      </div>
+      </Card>
       <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
     </div>
   )
@@ -1785,7 +1785,7 @@ function AllInvoicesTab() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16">
             <FileText className="h-8 w-8 text-fg-faint mb-2" />
@@ -1867,7 +1867,7 @@ function AllInvoicesTab() {
             </TBody>
           </Table>
         )}
-      </div>
+      </Card>
       <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
 
       {chainInvoiceId && (
@@ -1924,14 +1924,14 @@ function OaInvoicesTab() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 max-w-xs">
+      <Card inset className="flex items-center gap-2 px-3 py-2 max-w-xs">
         <Search className="h-4 w-4 text-fg-muted shrink-0" />
         <Input className="flex-1" placeholder="Search vendor or invoice #…"
           value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
         {search && <Button variant="subtle" size="icon-xs" aria-label="Clear search" onClick={() => { setSearch(''); setPage(1) }}><X className="h-3.5 w-3.5" /></Button>}
-      </div>
+      </Card>
 
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         {isLoading ? (
           <div className="py-10 text-center text-sm text-fg-muted">Loading OA invoices…</div>
         ) : !data?.items.length ? (
@@ -1982,7 +1982,7 @@ function OaInvoicesTab() {
             onPageSizeChange={(s) => { setPageSize(s); setPage(1) }}
           />
         )}
-      </div>
+      </Card>
     </div>
   )
 }
@@ -2054,10 +2054,10 @@ export default function InvoiceListPage() {
           { label: 'Matched / Ready', value: counts.matched,                                        color: 'text-success-fg' },
           { label: 'Paid',            value: counts.paid,                                           color: 'text-primary-600' },
         ].map((s) => (
-          <div key={s.label} className="rounded-xl border border-line bg-surface p-4">
+          <Card className="p-4" key={s.label}>
             <p className="text-xs text-fg-muted">{s.label}</p>
             <p className={cn('text-2xl font-semibold mt-1', s.color)}>{s.value}</p>
-          </div>
+          </Card>
         ))}
       </div>
 

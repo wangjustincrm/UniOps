@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { NotFoundState } from '@/components/shared/NotFoundState'
-import { useReplaceTab, Input, Radio, Textarea } from '@uniops/shell'
+import { useReplaceTab, Input, Radio, Textarea, Card } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Truck, CheckCircle2, AlertTriangle, Package } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -177,7 +177,7 @@ export default function CollectionConfirmPage() {
       </div>
 
       {/* Collection Date */}
-      <div className="rounded-xl border border-line bg-surface p-5">
+      <Card className="p-5">
         <h2 className="text-sm font-semibold text-fg mb-4">Collection Details</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1">
@@ -205,10 +205,10 @@ export default function CollectionConfirmPage() {
             />
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Items to collect */}
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         <div className="px-5 py-4 border-b border-line bg-surface-subtle">
           <h2 className="text-sm font-semibold text-fg">Items to Collect</h2>
           <p className="text-xs text-fg-muted mt-0.5">
@@ -300,7 +300,7 @@ export default function CollectionConfirmPage() {
             )
           })}
         </div>
-      </div>
+      </Card>
 
       {/* Status summary */}
       {allGood ? (

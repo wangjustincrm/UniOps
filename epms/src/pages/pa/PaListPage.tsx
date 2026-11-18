@@ -1,7 +1,7 @@
 import { useState, type ChangeEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Plus, Search, FileText, CreditCard, Loader2, Truck, FileInput, AlertTriangle } from 'lucide-react'
-import { SortTh, sortParams, useSort, Select, TBody, THead, Table, Td, Th, Tr, type BadgeTone } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Select, TBody, THead, Table, Td, Th, Tr, type BadgeTone, Card } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -156,7 +156,7 @@ export default function PaListPage() {
       </div>
 
       {/* Filters */}
-      <div className="rounded-xl border border-line bg-surface shadow-sm overflow-hidden">
+      <Card className="overflow-hidden">
         <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
           <div className="relative flex-1 min-w-48">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
@@ -281,7 +281,7 @@ export default function PaListPage() {
         )}
 
         <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
-      </div>
+      </Card>
     </div>
   )
 }

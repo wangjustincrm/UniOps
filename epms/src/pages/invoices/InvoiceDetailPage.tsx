@@ -30,7 +30,7 @@ import { CourierInvoiceView } from './CourierInvoiceView'
 import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 import { ATTACHMENT_RULE, uploadProblem } from '@/lib/uploadLimits'
 
-import { Checkbox, FileInput, Input, Select, TBody, TFoot, THead, Table, Tabs, Td, Textarea, Th, Tr, type BadgeTone } from '@uniops/shell'
+import { Checkbox, FileInput, Input, Select, TBody, TFoot, THead, Table, Tabs, Td, Textarea, Th, Tr, type BadgeTone, Card } from '@uniops/shell'
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<InvoiceStatus, { label: string; variant: BadgeTone; dot: string }> = {
@@ -700,7 +700,7 @@ export default function InvoiceDetailPage() {
               )}
 
               {/* Invoice fields */}
-              <div className="rounded-xl border border-line bg-surface p-5">
+              <Card className="p-5">
                 <h3 className="text-xs font-semibold text-fg-muted mb-3">Invoice Information</h3>
                 <div className="flex flex-col gap-2.5">
                   <MetaRow label="Internal Ref"     value={inv.internal_ref}          mono />
@@ -711,10 +711,10 @@ export default function InvoiceDetailPage() {
                   <MetaRow label="Uploaded"         value={formatDateTime(inv.uploaded_at)} />
                   <MetaRow label="Uploaded By"      value={inv.uploaded_by_name ?? '—'} />
                 </div>
-              </div>
+              </Card>
 
               {/* Amounts */}
-              <div className="rounded-xl border border-line bg-surface p-5">
+              <Card className="p-5">
                 <h3 className="text-xs font-semibold text-fg-muted mb-3">Amounts</h3>
                 <div className="flex flex-col gap-2.5">
                   <MetaRow label="Pre-tax Amount"  value={formatAmount(inv.amount, inv.currency)}    mono />
@@ -732,10 +732,10 @@ export default function InvoiceDetailPage() {
                     </>
                   )}
                 </div>
-              </div>
+              </Card>
 
               {/* Linked documents */}
-              <div className="rounded-xl border border-line bg-surface p-5 sm:col-span-2">
+              <Card className="p-5 sm:col-span-2">
                 <h3 className="text-xs font-semibold text-fg-muted mb-3">Linked Documents</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {(() => {
@@ -856,11 +856,11 @@ export default function InvoiceDetailPage() {
                     </div>
                   )}
                 </div>
-              </div>
+              </Card>
 
               {/* Line Items */}
               {inv.line_items && inv.line_items.length > 0 && (
-                <div className="rounded-xl border border-line bg-surface p-5 sm:col-span-2">
+                <Card className="p-5 sm:col-span-2">
                   <h3 className="text-xs font-semibold text-fg-muted mb-3">
                     Line Items <span className="ml-1 normal-case font-normal text-fg-faint">({inv.line_items.length})</span>
                   </h3>
@@ -906,7 +906,7 @@ export default function InvoiceDetailPage() {
                       </TFoot>
                     </Table>
                   </div>
-                </div>
+                </Card>
               )}
 
               {/* Tax lines — line-level GST/HST/PST/QST split with ITC (A2) */}
@@ -942,9 +942,9 @@ export default function InvoiceDetailPage() {
                   Attachments above (ISS-0243: it used to repeat here with a
                   Download button that did nothing). */}
               {inv.notes && (
-                <div className="rounded-xl border border-line bg-surface p-5 sm:col-span-2">
+                <Card className="p-5 sm:col-span-2">
                   <p className="text-sm text-fg-secondary">{inv.notes}</p>
-                </div>
+                </Card>
               )}
             </div>
           )}
@@ -953,7 +953,7 @@ export default function InvoiceDetailPage() {
           {editing && (
             <div className="flex flex-col gap-4">
               {/* Basic info */}
-              <div className="rounded-xl border border-line bg-surface p-5">
+              <Card className="p-5">
                 <h3 className="text-xs font-semibold text-fg-muted mb-4">Invoice Information</h3>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
@@ -1040,10 +1040,10 @@ export default function InvoiceDetailPage() {
                     </div>
                   )}
                 </div>
-              </div>
+              </Card>
 
               {/* Amounts */}
-              <div className="rounded-xl border border-line bg-surface p-5">
+              <Card className="p-5">
                 <h3 className="text-xs font-semibold text-fg-muted mb-4">Amounts</h3>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
@@ -1093,10 +1093,10 @@ export default function InvoiceDetailPage() {
                     {editCurrency} {((parseFloat(editAmount) || 0) + (parseFloat(editTaxAmount) || 0)).toLocaleString('en-CA', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
-              </div>
+              </Card>
 
               {/* Notes */}
-              <div className="rounded-xl border border-line bg-surface p-5">
+              <Card className="p-5">
                 <h3 className="text-xs font-semibold text-fg-muted mb-4">Notes</h3>
                 <Textarea
                   value={editNotes}
@@ -1105,10 +1105,10 @@ export default function InvoiceDetailPage() {
                   placeholder="Optional notes…"
                   className="w-full resize-none"
                 />
-              </div>
+              </Card>
 
               {/* Line Items */}
-              <div className="rounded-xl border border-line bg-surface p-5">
+              <Card className="p-5">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-xs font-semibold text-fg-muted">Line Items</h3>
                   <Button variant="link"
@@ -1188,7 +1188,7 @@ export default function InvoiceDetailPage() {
                     </Table>
                   </div>
                 )}
-              </div>
+              </Card>
 
               {/* Save / Cancel */}
               {editError && (
@@ -1217,12 +1217,12 @@ export default function InvoiceDetailPage() {
           {activeTab === 'match' && (
             <div className="flex flex-col gap-4">
               {inv.status === 'unmatched' ? (
-                <div className="rounded-xl border border-line bg-surface p-8 flex flex-col items-center text-center gap-3">
+                <Card className="p-8 flex flex-col items-center text-center gap-3">
                   <FileText className="h-10 w-10 text-fg-faint" />
                   <p className="text-sm font-medium text-fg-muted">Not yet matched to a PO</p>
                   <p className="text-xs text-fg-muted">Go to the Unmatched Queue to link this invoice to a PO</p>
                   <Link to="/invoices"><Button variant="secondary" size="sm">Go to Unmatched Queue</Button></Link>
-                </div>
+                </Card>
               ) : isDirectRoute ? (
                 <DirectRouteCard
                   inv={inv}
@@ -1378,7 +1378,7 @@ export default function InvoiceDetailPage() {
                   </div>
 
                   {/* Match table */}
-                  <div className="rounded-xl border border-line bg-surface overflow-hidden">
+                  <Card className="overflow-hidden">
                     <Table>
                       <THead>
                         <Tr className="bg-surface-subtle">
@@ -1486,11 +1486,11 @@ export default function InvoiceDetailPage() {
                         </span>
                       </div>
                     </div>
-                  </div>
+                  </Card>
 
                   {/* PO allocations breakdown (multi-PO) */}
                   {inv.allocations && inv.allocations.length > 0 && (
-                    <div className="rounded-xl border border-line bg-surface overflow-hidden">
+                    <Card className="overflow-hidden">
                       <div className="px-4 py-3 border-b border-line bg-surface-subtle">
                         <h3 className="text-xs font-semibold text-fg-muted">PO Allocations</h3>
                       </div>
@@ -1521,12 +1521,12 @@ export default function InvoiceDetailPage() {
                           ))}
                         </TBody>
                       </Table>
-                    </div>
+                    </Card>
                   )}
 
                   {/* Exception resolution detail */}
                   {inv.exception_resolved_at && (
-                    <div className="rounded-xl border border-line bg-surface p-5">
+                    <Card className="p-5">
                       <h3 className="text-xs font-semibold text-fg-muted mb-3">Exception Resolution</h3>
                       <div className="flex flex-col gap-2">
                         <MetaRow label="Resolution" value={inv.exception_resolution === 'accepted' ? 'Accepted with justification' : 'Credit note requested'} />
@@ -1539,7 +1539,7 @@ export default function InvoiceDetailPage() {
                           </div>
                         )}
                       </div>
-                    </div>
+                    </Card>
                   )}
                 </>
               )}
@@ -1548,7 +1548,7 @@ export default function InvoiceDetailPage() {
 
           {/* ── History tab ───────────────────────────────────────────────────── */}
           {activeTab === 'history' && (
-            <div className="rounded-xl border border-line bg-surface p-5">
+            <Card className="p-5">
               <h3 className="text-xs font-semibold text-fg-muted mb-4">Activity Log</h3>
               {historyError && (
                 <p role="alert" className="mb-3 text-xs text-danger-fg">
@@ -1620,13 +1620,13 @@ export default function InvoiceDetailPage() {
                   })
                 }
               </div>
-            </div>
+            </Card>
           )}
         </div>
 
         {/* Right sidebar */}
         <div className="w-full lg:w-56 flex-shrink-0 flex flex-col gap-4">
-          <div className="rounded-xl border border-line bg-surface p-4">
+          <Card className="p-4">
             <h3 className="text-xs font-semibold text-fg-muted mb-3">Quick Info</h3>
             <div className="flex flex-col gap-2 text-xs">
               <div className="flex justify-between">
@@ -1642,7 +1642,7 @@ export default function InvoiceDetailPage() {
                 <InvoiceStatusBadge status={inv.status} />
               </div>
             </div>
-          </div>
+          </Card>
 
         </div>
       </div>
@@ -1826,7 +1826,7 @@ function InvoiceAttachments({
   )
 
   return (
-    <div className="rounded-xl border border-line bg-surface p-4">
+    <Card className="p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-xs font-semibold text-fg-muted">
           Attachments {attachments.length > 0 && `(${attachments.length})`}
@@ -1872,7 +1872,7 @@ function InvoiceAttachments({
           ))}
         </div>
       )}
-    </div>
+    </Card>
   )
 }
 

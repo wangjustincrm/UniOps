@@ -8,7 +8,7 @@ import { useInvoiceAgreementReceipts, useSetInvoiceReceipts, useSettleWithoutRec
 import type { ApiInvoice } from '@/services/invoices'
 import { RECEIPT_TYPE_LABELS, receiptTotal, type ApiReceipt, type ReceiptStatus } from '@/services/agreementReceipts'
 
-import { Checkbox, Input, Textarea } from '@uniops/shell'
+import { Checkbox, Input, Textarea, Card } from '@uniops/shell'
 // One selectable candidate row — multi-select checkbox, mirrors MatchPanel's
 // (now-removed) ReceiptCandidateRow. Shows the type badge (Task 5/6 receipts
 // are typed — counter slip / delivery note / service sign-off), the
@@ -371,19 +371,19 @@ function InvoiceReceiptsPanelBody({
 
   if (receiptsForbidden) {
     return (
-      <div className="rounded-lg border border-line bg-surface p-4 flex flex-col gap-2">
+      <Card inset className="p-4 flex flex-col gap-2">
         <p className="text-xs font-semibold text-fg-muted">Receipt Evidence</p>
         <p className="text-xs text-fg-secondary">
           You can view this invoice but not attach receipts to it. Receipts are attached by AP,
           the invoice's uploader, the agreement's owner, or whoever holds this invoice's
           Match Invoice / Attach Invoice Receipts task.
         </p>
-      </div>
+      </Card>
     )
   }
 
   return (
-    <div className="rounded-lg border border-line bg-surface p-4 flex flex-col gap-3">
+    <Card inset className="p-4 flex flex-col gap-3">
       <p className="text-xs font-semibold text-fg-muted">Receipt Evidence</p>
 
       {lockedByPa && (
@@ -591,7 +591,7 @@ function InvoiceReceiptsPanelBody({
           {activeError instanceof Error ? activeError.message : 'Could not update receipt evidence'}
         </div>
       )}
-    </div>
+    </Card>
   )
 }
 

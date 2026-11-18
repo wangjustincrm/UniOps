@@ -14,7 +14,7 @@ import type { ApiAgreement, ApiScheduleRow } from '@/services/agreement'
 import type { DocumentStatus } from '@/types'
 import { InvoiceAllocationPanel } from './InvoiceAllocationPanel'
 
-import { Input, Radio, Tabs, Textarea } from '@uniops/shell'
+import { Input, Radio, Tabs, Textarea, Card } from '@uniops/shell'
 // 'direct' = no PO and no agreement: the invoice is paid by a Direct PA.
 type Route = 'po' | 'agreement' | 'direct'
 
@@ -460,7 +460,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
       </div>
 
       {route === 'direct' && (
-        <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-3">
+        <Card inset className="flex flex-col gap-3 p-3">
           <div className="flex items-start gap-2 text-xs text-fg-secondary">
             <FileInput className="h-4 w-4 shrink-0 text-primary-600 mt-px" />
             <p>
@@ -483,7 +483,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
               Match & Create Direct PA
             </Button>
           </div>
-        </div>
+        </Card>
       )}
 
       {route === 'direct' ? null : route === 'po' ? (

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { FreightPaCreate } from './FreightPaCreate'
 import { DirectPaCreate } from './DirectPaCreate'
-import { Checkbox, ChoiceCard, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, useReplaceTab, Badge } from '@uniops/shell'
+import { Checkbox, ChoiceCard, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, useReplaceTab, Badge, Card } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDot } from 'lucide-react'
@@ -992,7 +992,7 @@ function PoPaCreate() {
 
           {/* ── Step 1 — Select PO / Agreement ─────────────────────────────── */}
           {isAgreementMode ? (
-            <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-4">
+            <Card className="p-5 flex flex-col gap-4">
               <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-semibold">1</span>
                 Agreement
@@ -1034,9 +1034,9 @@ function PoPaCreate() {
                   </p>
                 </div>
               )}
-            </div>
+            </Card>
           ) : (
-          <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-4">
+          <Card className="p-5 flex flex-col gap-4">
             <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-semibold">1</span>
               {lockedFromSettle || (fromTask && !changingPo)
@@ -1188,12 +1188,12 @@ function PoPaCreate() {
                 )}
               </div>
             )}
-          </div>
+          </Card>
           )}
 
           {/* ── Step 2 — Link Invoices / GRs + PA Type (PO mode only) ──────── */}
           {!isAgreementMode && selectedPo && (
-            <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-5">
+            <Card className="p-5 flex flex-col gap-5">
               <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-semibold">2</span>
                 Link Invoices & Goods Receipts
@@ -1513,12 +1513,12 @@ function PoPaCreate() {
                   </div>
                 )}
               </div>
-            </div>
+            </Card>
           )}
 
           {/* ── Step 2 (agreement mode) — Link Invoices only ────────────────── */}
           {isAgreementMode && (
-            <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-4">
+            <Card className="p-5 flex flex-col gap-4">
               <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-semibold">2</span>
                 Link Invoices
@@ -1566,12 +1566,12 @@ function PoPaCreate() {
               {agreementLines && (
                 <DerivedPaLinesTable lines={agreementLines} currency={formCurrency} fromInvoiceLines />
               )}
-            </div>
+            </Card>
           )}
 
           {/* ── Step 3 — Charge Breakdown & Details (shared by both modes) ─── */}
           {contextSelected && (
-            <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-5">
+            <Card className="p-5 flex flex-col gap-5">
               <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-2xs font-semibold">3</span>
                 Charge Breakdown & Details
@@ -1760,7 +1760,7 @@ function PoPaCreate() {
                   className="resize-none"
                 />
               </div>
-            </div>
+            </Card>
           )}
 
           {/* Receipt gate — no matched, GR-backed invoice on this PO, or (with
@@ -1841,7 +1841,7 @@ function PoPaCreate() {
 
         {/* ── Sidebar — Payment Summary ───────────────────────────────────────── */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-line bg-surface p-4 shadow-sm sticky top-6">
+          <Card className="p-4 sticky top-6">
             <p className="text-xs font-semibold text-fg-secondary mb-3">Payment Summary</p>
 
             {!contextSelected ? (
@@ -1931,7 +1931,7 @@ function PoPaCreate() {
                 )}
               </div>
             )}
-          </div>
+          </Card>
         </div>
       </div>
     </div>

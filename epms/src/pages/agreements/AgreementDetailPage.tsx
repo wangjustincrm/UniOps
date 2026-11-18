@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { ArrowLeft, CheckCircle2, RotateCcw, XCircle, MessageSquare, X, FileText, AlertTriangle, ExternalLink, Pencil, CreditCard, Upload, Paperclip, Info, Plus, SearchX } from 'lucide-react'
-import { Alert, FileInput, FormField, Modal, SortTh, TBody, THead, Table, Td, Textarea, Tr, useSortableRows, type BadgeTone } from '@uniops/shell'
+import { Alert, FileInput, FormField, Modal, SortTh, TBody, THead, Table, Td, Textarea, Tr, useSortableRows, type BadgeTone, Card } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
@@ -492,7 +492,7 @@ export default function AgreementDetailPage() {
   return (
     <div className={cn('flex flex-col gap-6', canApprove && 'pb-16')}>
       {/* Page header */}
-      <div className="rounded-lg border border-line bg-surface px-6 py-4">
+      <Card inset className="px-6 py-4">
         <div className="flex items-center gap-3 mb-3">
           <BackLink to="/agreements">
             <Button variant="ghost" size="sm">
@@ -606,7 +606,7 @@ export default function AgreementDetailPage() {
             )}
           </div>
         </div>
-      </div>
+      </Card>
 
       {(agreementAction.isError || (createSubmitError && agreement.status === 'draft')) && (
         <p role="alert" className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger-fg">

@@ -26,7 +26,7 @@ import { useFeeLinkCandidates, useInvoiceFeeLinks, useSaveInvoiceFeeLinks } from
 import { FEE_TYPE_LABEL, type FeeType } from '@/services/poFee'
 import type { InvoiceLineItem } from '@/services/invoices'
 
-import { Checkbox, Select, Badge } from '@uniops/shell'
+import { Checkbox, Select, Badge, Card } from '@uniops/shell'
 interface DraftLink {
   fee_type: FeeType
   /** What an Other fee is; required for that type. */
@@ -158,7 +158,7 @@ export function InvoiceFeeLinksPanel({
   }))
 
   return (
-    <div className="rounded-xl border border-line bg-surface p-5">
+    <Card className="p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-1.5 text-xs font-semibold text-fg-muted">
           <Link2 className="h-3.5 w-3.5" />
@@ -362,6 +362,6 @@ export function InvoiceFeeLinksPanel({
           </div>
         </div>
       )}
-    </div>
+    </Card>
   )
 }

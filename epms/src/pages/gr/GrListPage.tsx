@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Plus, Search, Warehouse, ClipboardList } from 'lucide-react'
-import { ChipGroup, Input, SortTh, TBody, THead, Table, Td, Tr, sortParams, type Sort, useSort, type BadgeTone } from '@uniops/shell'
+import { ChipGroup, Input, SortTh, TBody, THead, Table, Td, Tr, sortParams, type Sort, useSort, type BadgeTone, Card } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
@@ -98,7 +98,7 @@ export default function GrListPage() {
       </div>
 
       {/* Filters */}
-      <div className="rounded-xl border border-line bg-surface p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+      <Card className="p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
         <div className="relative flex-1 min-w-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-fg-muted" />
           <Input inputSize="sm"
@@ -112,10 +112,10 @@ export default function GrListPage() {
         <div className="flex flex-wrap gap-1.5">
           <ChipGroup label="Status" items={STATUS_FILTERS.map((f) => ({ key: f.value, label: f.label }))} value={statusFilter} onChange={(k) => { setStatusFilter(k as GrStatus | 'all'); setPage(1) }} />
         </div>
-      </div>
+      </Card>
 
       {/* Table */}
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         {isLoading || grs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <Warehouse className="h-10 w-10 text-fg-faint mb-3" />
@@ -145,11 +145,11 @@ export default function GrListPage() {
             </TBody>
           </Table>
         )}
-      </div>
+      </Card>
 
-      <div className="rounded-xl border border-line bg-surface">
+      <Card>
         <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
-      </div>
+      </Card>
     </div>
   )
 }

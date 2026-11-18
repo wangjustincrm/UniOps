@@ -1,6 +1,7 @@
 import { cn, formatCAD } from '@/lib/utils'
 import { overBudgetFigures } from '@/lib/prBudget'
 import { TrendingUp, TrendingDown, Info, AlertTriangle } from 'lucide-react'
+import { Card } from '@uniops/shell'
 
 interface BudgetData {
   accountCode: string
@@ -26,7 +27,7 @@ export function BudgetBalanceWidget({ data, thisAmount = 0, thisLabel = 'After t
   const statusColor = isOverBudget ? 'text-danger-fg' : 'text-success-fg'
 
   return (
-    <div className="rounded-lg border border-line bg-surface overflow-hidden">
+    <Card inset className="overflow-hidden">
       <div className="flex items-center gap-2 border-b border-line-subtle bg-primary-50 px-4 py-2.5">
         <Info className="h-3.5 w-3.5 text-primary-600" />
         <div className="min-w-0">
@@ -70,7 +71,7 @@ export function BudgetBalanceWidget({ data, thisAmount = 0, thisLabel = 'After t
           </div>
         )}
       </div>
-    </div>
+    </Card>
   )
 }
 

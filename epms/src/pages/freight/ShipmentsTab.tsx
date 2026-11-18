@@ -17,7 +17,7 @@ import {
   type DefaultCostCenter, type Direction, type FreightShipment, type ShipmentStatus,
 } from '@/services/freight'
 import { CostCenterSelect, Modal, ProjectBadge, ShipmentStatusBadge, TH_CLS, daysSince, errorMessage } from './freightUi'
-import { Checkbox, Chip, FileInput, Radio, Select, SortTh, TBody, THead, Table, Td, Textarea, Th, Tr, sortParams, useSort } from '@uniops/shell'
+import { Checkbox, Chip, FileInput, Radio, Select, SortTh, TBody, THead, Table, Td, Textarea, Th, Tr, sortParams, useSort, Card } from '@uniops/shell'
 import { ShipmentAttachmentsPanel, StagedShipmentAttachments } from './ShipmentAttachments'
 import { useConfirmDialog, useNoticeDialog } from '@/components/ui/ConfirmDialog'
 
@@ -68,7 +68,7 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
 
   return (
     <>
-      <div className="rounded-xl border border-line bg-surface shadow-sm overflow-hidden">
+      <Card className="overflow-hidden">
         <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
           <div className="relative flex-1 min-w-48">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
@@ -215,7 +215,7 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
         )}
 
         <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
-      </div>
+      </Card>
 
       {confirmDlg.dialog}
       {dialog && (

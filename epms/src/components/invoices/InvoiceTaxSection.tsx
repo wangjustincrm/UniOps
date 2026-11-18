@@ -10,7 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, Loader2, Percent, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn, formatAmount } from '@/lib/utils'
-import { Checkbox, Input, Select } from '@uniops/shell'
+import { Checkbox, Input, Select, Card } from '@uniops/shell'
 import {
   getTaxCodes, getTaxLines, saveTaxLines, type TaxLine,
 } from '@/services/invoiceTax'
@@ -100,7 +100,7 @@ export function InvoiceTaxSection({ invoiceId, currency, pretaxAmount, headerTax
   const canSave = dirty && rows.every((r) => r.tax_code && Number(r.tax_amount) >= 0)
 
   return (
-    <div className="rounded-lg border border-line bg-surface">
+    <Card inset>
       <div className="flex items-center justify-between border-b border-line-subtle px-4 py-2.5">
         <h3 className="flex items-center gap-2 text-xs font-semibold text-fg-muted">
           <Percent className="h-3.5 w-3.5" />
@@ -217,6 +217,6 @@ export function InvoiceTaxSection({ invoiceId, currency, pretaxAmount, headerTax
           </div>
         )}
       </div>
-    </div>
+    </Card>
   )
 }

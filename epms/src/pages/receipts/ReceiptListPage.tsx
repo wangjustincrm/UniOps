@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, Receipt, Plus, CheckCircle2, XCircle, Trash2, Paperclip, AlertTriangle } from 'lucide-react'
-import { ChipGroup, Input, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, type Sort, useSort, Badge } from '@uniops/shell'
+import { ChipGroup, Input, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, type Sort, useSort, Badge, Card } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, statusLabel } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
@@ -164,7 +164,7 @@ export default function ReceiptListPage() {
       )}
 
       {/* Filters */}
-      <div className="rounded-xl border border-line bg-surface p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+      <Card className="p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
         <div className="relative flex-1 min-w-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-fg-muted" />
           <Input inputSize="sm"
@@ -187,10 +187,10 @@ export default function ReceiptListPage() {
         <div className="flex flex-wrap gap-1.5">
           <ChipGroup label="Status" items={STATUS_FILTERS.map((f) => ({ key: f.value, label: f.label }))} value={statusFilter} onChange={(k) => { setStatusFilter(k as typeof statusFilter); setPage(1) }} />
         </div>
-      </div>
+      </Card>
 
       {/* Table */}
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         {isLoading || receipts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <Receipt className="h-10 w-10 text-fg-faint mb-3" />
@@ -258,11 +258,11 @@ export default function ReceiptListPage() {
             </TBody>
           </Table>
         )}
-      </div>
+      </Card>
 
-      <div className="rounded-xl border border-line bg-surface">
+      <Card>
         <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
-      </div>
+      </Card>
 
       {confirmDlg.dialog}
       {rejectTarget && (
