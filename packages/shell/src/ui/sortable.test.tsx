@@ -111,7 +111,11 @@ describe('SortTh', () => {
 
   it('keeps the caller th classes and right-aligns amounts', () => {
     const html = render(null, { align: 'right', className: 'px-4 py-3 text-xs' })
-    expect(html).toMatch(/<th class="[^"]*text-right[^"]*px-4 py-3 text-xs/)
+    const th = html.match(/<th [^>]*>/)![0]
+    const cls = th.match(/class="([^"]*)"/)![1].split(' ')
+    // caller classes survive the merge with the default <Th> look
+    expect(cls).toEqual(expect.arrayContaining(['text-right', 'px-4', 'py-3', 'text-xs']))
+    expect(th).toContain('scope="col"')
     expect(html).toContain('flex-row-reverse')
   })
 })

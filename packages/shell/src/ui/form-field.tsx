@@ -2,38 +2,23 @@ import { cn } from '../lib/cn'
 import { Label } from './label'
 
 interface FormFieldProps {
-  label: string
+  label: React.ReactNode
   required?: boolean
-  error?: string
-  hint?: string
+  error?: string | null
+  hint?: React.ReactNode
   className?: string
   children: React.ReactNode
   htmlFor?: string
 }
 
-export function FormField({
-  label,
-  required,
-  error,
-  hint,
-  className,
-  children,
-  htmlFor,
-}: FormFieldProps) {
+/** Label + control + hint/error, stacked. The standard way to lay out a field. */
+export function FormField({ label, required, error, hint, className, children, htmlFor }: FormFieldProps) {
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>
-      <Label htmlFor={htmlFor} required={required}>
-        {label}
-      </Label>
+      <Label htmlFor={htmlFor} required={required}>{label}</Label>
       {children}
-      {hint && !error && (
-        <p className="text-xs text-neutral-500">{hint}</p>
-      )}
-      {error && (
-        <p className="text-xs text-danger-600" role="alert">
-          {error}
-        </p>
-      )}
+      {hint && !error && <p className="text-xs text-fg-muted">{hint}</p>}
+      {error && <p className="text-xs text-danger-fg" role="alert">{error}</p>}
     </div>
   )
 }

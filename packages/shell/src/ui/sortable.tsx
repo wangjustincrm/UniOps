@@ -27,6 +27,7 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import { cn } from '../lib/cn'
+import { thClass, useTableDensity } from './table'
 
 export type SortDir = 'asc' | 'desc'
 export interface Sort<K extends string = string> { key: K; dir: SortDir }
@@ -132,27 +133,28 @@ export interface SortThProps<K extends string> {
   rowSpan?: number
 }
 
-/** A header cell that sorts on click. Keeps the table's own <th> styling. */
+/** A header cell that sorts on click. Same look as <Th>; className may extend it. */
 export function SortTh<K extends string>({
   label, children, sortKey, sort, onSort, align = 'left', className, title, colSpan, rowSpan,
 }: SortThProps<K>) {
+  const density = useTableDensity()
   const active = sort?.key === sortKey
   const Icon = !active ? ArrowUpDown : sort!.dir === 'asc' ? ArrowUp : ArrowDown
   const text = children ?? label
   return (
-    <th className={cn(align === 'right' && 'text-right', align === 'center' && 'text-center', className)}
+    <th scope="col" className={cn(thClass(density, align), className)}
         colSpan={colSpan} rowSpan={rowSpan}
         aria-sort={active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
       <button type="button" onClick={() => onSort(sortKey)}
               title={title ?? (typeof text === 'string' ? `Sort by ${text}` : undefined)}
               className={cn(
                 'inline-flex items-center gap-1 select-none whitespace-nowrap',
-                // preflight resets text-transform on buttons; keep UPPERCASE headers
-                '[text-transform:inherit] hover:text-neutral-800',
+                // preflight resets text-transform on buttons; inherit the <th>'s
+                '[text-transform:inherit] [font-weight:inherit] hover:text-fg',
                 align === 'right' && 'flex-row-reverse',
-                active && 'text-neutral-900')}>
+                active && 'text-fg')}>
         {text}
-        <Icon aria-hidden className={cn('h-3.5 w-3.5 shrink-0', active ? 'text-primary-700' : 'text-neutral-300')} />
+        <Icon aria-hidden className={cn('h-3.5 w-3.5 shrink-0', active ? 'text-accent-fg' : 'text-fg-faint')} />
       </button>
     </th>
   )
