@@ -244,7 +244,8 @@ def _find_close(src, start):
 
 
 def main(argv):
-    dry = '--dry' in argv
+    # --heuristic only writes with an explicit --write: its guesses must be reviewed first.
+    dry = '--dry' in argv or ('--heuristic' in argv and '--write' not in argv)
     files = []
     for a in (x for x in argv if not x.startswith('--')):
         p = Path(a)
