@@ -41,7 +41,9 @@ export function DropdownPortal({ anchorRect, onClose, children, className, align
   const w = width ?? anchorRect.width
   const rawLeft = align === 'end' ? anchorRect.right - w : anchorRect.left
   // Keep the panel inside the viewport (a wide panel under a narrow trigger near the edge).
-  const left = Math.max(8, Math.min(rawLeft, window.innerWidth - w - 8))
+  // clientWidth excludes a vertical scrollbar, which innerWidth would let the panel slide under.
+  const viewportW = document.documentElement.clientWidth || window.innerWidth
+  const left = Math.max(8, Math.min(rawLeft, viewportW - w - 8))
   const up = flipHeight !== undefined
     && anchorRect.bottom + 4 + flipHeight > window.innerHeight && anchorRect.top > flipHeight
   const vertical = up ? { bottom: window.innerHeight - anchorRect.top + 4 } : { top: anchorRect.bottom + 4 }
