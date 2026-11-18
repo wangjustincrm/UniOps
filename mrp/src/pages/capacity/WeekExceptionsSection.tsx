@@ -37,7 +37,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2, Plus } from 'lucide-react'
-import { Button, Input, FormField, SortTh, useSortableRows, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Drawer } from '@uniops/shell'
+import { Button, Input, FormField, SortTh, useSortableRows, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Drawer, Badge } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 import {
@@ -306,15 +306,9 @@ export function WeekExceptionsSection({
                   </Td>
                   <Td className="max-w-xs truncate text-xs text-fg-secondary" title={row.reason ?? undefined}>{row.reason ?? '—'}</Td>
                   <Td>
-                    <span
-                      className={
-                        row.is_active
-                          ? 'inline-flex items-center rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success-fg ring-1 ring-inset ring-success-line'
-                          : 'inline-flex items-center rounded-full bg-surface-sunken px-2 py-0.5 text-xs font-medium text-fg-muted ring-1 ring-inset ring-line'
-                      }
-                    >
+                    <Badge variant={row.is_active ? 'success' : 'neutral'}>
                       {row.is_active ? 'Active' : 'Inactive'}
-                    </span>
+                    </Badge>
                   </Td>
                   {canWrite && (
                     <Td align="right">

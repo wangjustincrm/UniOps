@@ -64,24 +64,22 @@ function lacksReceiptEvidence(inv: ApiInvoice): boolean {
 // an arbitrary subset — the operator sees some boxes ticked and no reason for
 // the others, which is how "the system missed one" starts.
 function ReceiptEvidenceBadge({ invoice }: { invoice: ApiInvoice }) {
-  const cls0 = 'shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-2xs font-medium'
   if (invoice.agreement_type === 'recurring') {
     // Only worth a badge when it is the thing standing in the way — a period
     // that IS linked needs no announcement.
     return invoice.schedule_id
       ? null
-      : <span className={cn(cls0, 'bg-danger-soft text-danger-fg')}>No billing period</span>
+      : <Badge variant="danger" size="sm" className="shrink-0">No billing period</Badge>
   }
   if (invoice.agreement_type !== 'house_account') return null
   const n = invoice.receipt_ids?.length ?? 0
-  const cls = 'shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-2xs font-medium'
   if (n > 0) {
-    return <span className={cn(cls, 'bg-success-soft text-success-fg')}>{n} receipt{n === 1 ? '' : 's'}</span>
+    return <Badge variant="success" size="sm" className="shrink-0">{n} receipt{n === 1 ? '' : 's'}</Badge>
   }
   if (invoice.legacy_settlement) {
-    return <span className={cn(cls, 'bg-warning-soft text-warning-fg')}>Settled without receipts</span>
+    return <Badge variant="warning" size="sm" className="shrink-0">Settled without receipts</Badge>
   }
-  return <span className={cn(cls, 'bg-danger-soft text-danger-fg')}>No receipt evidence yet</span>
+  return <Badge variant="danger" size="sm" className="shrink-0">No receipt evidence yet</Badge>
 }
 
 // Only invoices this payment could actually settle reach here — one already

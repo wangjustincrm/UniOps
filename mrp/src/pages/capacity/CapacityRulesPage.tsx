@@ -13,7 +13,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Pencil, Plus, Trash2, X as XIcon } from 'lucide-react'
-import { Button, SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { Button, SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr, Badge } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 import { ToastStack } from '@/components/Toast'
@@ -238,15 +238,9 @@ function RulesTable({
                 {formatDate(rule.effective_from)} – {rule.effective_to ? formatDate(rule.effective_to) : 'open-ended'}
               </Td>
               <Td>
-                <span
-                  className={
-                    rule.is_active
-                      ? 'inline-flex items-center rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success-fg ring-1 ring-inset ring-success-line'
-                      : 'inline-flex items-center rounded-full bg-surface-sunken px-2 py-0.5 text-xs font-medium text-fg-muted ring-1 ring-inset ring-line'
-                  }
-                >
+                <Badge variant={rule.is_active ? 'success' : 'neutral'}>
                   {rule.is_active ? 'Active' : 'Inactive'}
-                </span>
+                </Badge>
               </Td>
               {canWrite && (
                 <Td align="right">
