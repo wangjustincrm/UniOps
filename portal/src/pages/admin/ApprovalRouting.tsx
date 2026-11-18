@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { SortTh, useSortableRows, Checkbox, Select, TBody, THead, Table, Td, Tr, Button } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, Select, TBody, THead, Table, Td, Tr, Button, Card } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -249,7 +249,7 @@ function ApprovalRoutingBody() {
     <div className="flex flex-col gap-4">
       {error && <ErrorBlock message={error} />}
 
-      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+      <Card className="overflow-x-auto">
         <Table density="compact" className="min-w-max">
           <THead>
             <Tr>
@@ -319,9 +319,9 @@ function ApprovalRoutingBody() {
             )}
           </TBody>
         </Table>
-      </div>
+      </Card>
 
-      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4">
+      <Card className="flex flex-col gap-3 p-4">
         <h2 className="text-sm font-semibold text-fg-secondary">Cross-Department Payments</h2>
         <p className="text-xs text-fg-muted">
           A vendor invoice often covers purchase orders from several departments, and such a
@@ -343,9 +343,9 @@ function ApprovalRoutingBody() {
             <option value="opm">OPM</option>
           </Select>
         </div>
-      </div>
+      </Card>
 
-      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4">
+      <Card className="flex flex-col gap-3 p-4">
         <h2 className="text-sm font-semibold text-fg-secondary">Backup Approvers</h2>
         <p className="text-xs text-fg-muted">
           Stand-in approver used when the primary GM or OPM is unavailable.
@@ -369,7 +369,7 @@ function ApprovalRoutingBody() {
             </div>
           ))}
         </div>
-      </div>
+      </Card>
 
       {dirtyCount > 0 && (
         <div className="sticky bottom-4 flex items-center gap-3 self-start rounded-xl border border-line bg-surface px-4 py-3 shadow-lg">

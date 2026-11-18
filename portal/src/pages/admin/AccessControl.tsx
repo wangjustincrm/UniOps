@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Lock, Loader2, Search, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Checkbox, Chip, Input, Select, SortTh, TBody, THead, Table, Tabs, Td, Th, Tr, useSortableRows } from '@uniops/shell'
+import { Button, Checkbox, Chip, Input, Select, SortTh, TBody, THead, Table, Tabs, Td, Th, Tr, useSortableRows, Card } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -282,7 +282,7 @@ function PermissionMatrixTab() {
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+      <Card className="overflow-x-auto">
         <Table density="compact" className="min-w-max">
           <THead>
             <Tr>
@@ -339,7 +339,7 @@ function PermissionMatrixTab() {
             ))}
           </TBody>
         </Table>
-      </div>
+      </Card>
 
       {dirtyCount > 0 && (
         <div className="sticky bottom-4 flex items-center gap-3 self-start rounded-xl border border-line bg-surface px-4 py-3 shadow-lg">
@@ -473,7 +473,7 @@ function UserRolesTab() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 max-w-xs">
+      <Card inset className="flex items-center gap-2 px-3 py-2 max-w-xs">
         <Search className="h-4 w-4 shrink-0 text-fg-muted" />
         <Input
           className="flex-1"
@@ -481,9 +481,9 @@ function UserRolesTab() {
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
-      </div>
+      </Card>
 
-      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+      <Card className="overflow-x-auto">
         {filtered.length === 0 ? (
           <div className="py-10 text-center text-sm text-fg-muted">No users found.</div>
         ) : (
@@ -570,7 +570,7 @@ function UserRolesTab() {
             </TBody>
           </Table>
         )}
-      </div>
+      </Card>
     </div>
   )
 }

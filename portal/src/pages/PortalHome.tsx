@@ -15,7 +15,7 @@ import { PortalSidebar } from '@/components/layout/PortalSidebar'
 import { TopHeader } from '@/components/layout/TopHeader'
 import { FINANCE_ACCESS_PERMS, BOOKING_ACCESS_PERMS, MRP_URL } from '@/components/layout/navConfig'
 
-import { Button, useSidebarCollapsed, Badge } from '@uniops/shell'
+import { Button, useSidebarCollapsed, Badge, Card } from '@uniops/shell'
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const EPMS_API = (import.meta.env.VITE_EPMS_API_URL as string | undefined) || 'http://localhost:8000'
@@ -439,7 +439,7 @@ function PlatformHealth({
   ]
 
   return (
-    <div className="rounded-xl border border-line bg-surface p-5">
+    <Card className="p-5">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-fg flex items-center gap-2">
           <Activity className="h-4 w-4 text-fg-muted" />
@@ -510,7 +510,7 @@ function PlatformHealth({
           {allOk ? 'All systems are operational.' : 'Some services are degraded.'}
         </p>
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -519,7 +519,7 @@ function PlatformHealth({
 function RecentActivity({ tasks }: { tasks: UnifiedTask[] }) {
   const recent = tasks.slice(0, 5)
   return (
-    <div className="rounded-xl border border-line bg-surface p-5">
+    <Card className="p-5">
       <h3 className="mb-4 text-sm font-semibold text-fg">Recent Activity</h3>
       {recent.length === 0 ? (
         <p className="text-xs text-fg-muted text-center py-4">No recent activity</p>
@@ -539,7 +539,7 @@ function RecentActivity({ tasks }: { tasks: UnifiedTask[] }) {
           ))}
         </div>
       )}
-    </div>
+    </Card>
   )
 }
 

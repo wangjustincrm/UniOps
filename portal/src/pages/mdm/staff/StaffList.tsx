@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Plus, Search, UserPlus, X } from 'lucide-react'
-import { Button, Checkbox, Input, Modal, Pagination, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, useSort } from '@uniops/shell'
+import { Button, Checkbox, Input, Modal, Pagination, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, useSort, Card } from '@uniops/shell'
 import { epmsApi, mdmApi, mdmDownload } from '@/lib/api'
 import {
   NC_STATE_LABEL, NcPill, SOURCE_LABEL, StaffShell, StatusPill, useStaffPerm, type Department, type StaffRow,
@@ -146,7 +146,7 @@ export default function StaffList() {
         </div>
       )}
 
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         <div className="max-h-[calc(100vh-300px)] overflow-auto">
           <Table>
             <THead>
@@ -206,7 +206,7 @@ export default function StaffList() {
         </div>
         <Pagination page={page} pageSize={pageSize} total={data?.total ?? 0}
           onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
-      </div>
+      </Card>
 
       {adding && <AddEmployee departments={depts?.items ?? []} onClose={() => setAdding(false)}
         onSaved={(id) => { qc.invalidateQueries({ queryKey: ['staff'] }); navigate(`/mdm/staff/${id}`) }} />}

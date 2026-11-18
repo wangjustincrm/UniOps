@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { Button, Input, Modal as ShellModal, Select, SortTh, Switch, TBody, THead, Table, Td, Th, Tr, useSortableRows, Badge } from '@uniops/shell'
+import { Button, Input, Modal as ShellModal, Select, SortTh, Switch, TBody, THead, Table, Td, Th, Tr, useSortableRows, Badge, Card } from '@uniops/shell'
 import { mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useConfirmDialog } from '@/components/ConfirmDialog'
@@ -82,7 +82,7 @@ export function UnitsOfMeasure() {
       </div>
       {listError && <p role="alert" className="mb-4 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-fg">{listError}</p>}
       {dlg.dialog}
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         {isLoading ? (
           <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
         ) : !data?.items.length ? (
@@ -120,7 +120,7 @@ export function UnitsOfMeasure() {
             </TBody>
           </Table>
         )}
-      </div>
+      </Card>
 
       {modal && (
         <ShellModal open onClose={() => setModal(null)} title={modal.mode === 'create' ? 'Add Unit' : 'Edit Unit'} closeOnEscape={false} size="full" className="max-w-sm">

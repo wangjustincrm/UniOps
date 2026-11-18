@@ -14,7 +14,7 @@ import { Clock, Loader2 } from 'lucide-react'
 import { epmsApi, financeApi, mdmApi } from '@/lib/api'
 import { formatDateTime } from '@/lib/utils'
 
-import { Button, Checkbox, Input, Select } from '@uniops/shell'
+import { Button, Checkbox, Input, Select, Card } from '@uniops/shell'
 export interface ScheduleState {
   interval_minutes: number
   next_due_at: string | null
@@ -113,9 +113,9 @@ export function ScheduleCard({ endpoint, title, maxMinutes = DEFAULT_MAX_MINUTES
 
   if (isLoading) {
     return (
-      <div className="rounded-xl border border-line bg-surface px-4 py-6 text-center text-sm text-fg-muted">
+      <Card className="px-4 py-6 text-center text-sm text-fg-muted">
         Loading schedule…
-      </div>
+      </Card>
     )
   }
 
@@ -134,7 +134,7 @@ export function ScheduleCard({ endpoint, title, maxMinutes = DEFAULT_MAX_MINUTES
   }
 
   return (
-    <div className="rounded-xl border border-line bg-surface p-4">
+    <Card className="p-4">
       <div className="mb-3 flex items-center gap-2">
         <Clock className="h-4 w-4 text-fg-muted" />
         <h3 className="text-sm font-semibold text-fg">{title}</h3>
@@ -174,6 +174,6 @@ export function ScheduleCard({ endpoint, title, maxMinutes = DEFAULT_MAX_MINUTES
       </p>
 
       {err && <div className="mt-2 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{err}</div>}
-    </div>
+    </Card>
   )
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateActio
 import { createPortal } from 'react-dom'
 import { AlertCircle, ChevronDown, Loader2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, FormField, Input, MenuItem, SortTh, TBody, THead, Table, Td, Th, Tr, useSortableRows } from '@uniops/shell'
+import { Badge, Button, FormField, Input, MenuItem, SortTh, TBody, THead, Table, Td, Th, Tr, useSortableRows, Card } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi } from '@/lib/api'
 import { adminApi, type DelegationCreate, type DelegationOut, type DelegationUpdate } from '@/services/adminApi'
@@ -373,7 +373,7 @@ function ApprovalDelegationBody() {
         />
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+      <Card className="overflow-x-auto">
         <Table density="compact" className="min-w-max">
           <THead>
             <Tr>
@@ -431,7 +431,7 @@ function ApprovalDelegationBody() {
             )}
           </TBody>
         </Table>
-      </div>
+      </Card>
       {dlg.dialog}
     </div>
   )
@@ -454,7 +454,7 @@ function DelegationForm({ mode, form, setForm, users, error, isSubmitting, onSub
   const isEdit = mode.kind === 'edit'
 
   return (
-    <div className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-4">
+    <Card className="flex flex-col gap-4 p-4">
       <h2 className="text-sm font-semibold text-fg-secondary">{isEdit ? 'Edit delegation' : 'New delegation'}</h2>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -522,6 +522,6 @@ function DelegationForm({ mode, form, setForm, users, error, isSubmitting, onSub
         </Button>
         <Button variant="secondary" onClick={onCancel} disabled={isSubmitting}>Cancel</Button>
       </div>
-    </div>
+    </Card>
   )
 }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, RefreshCw } from 'lucide-react'
-import { Button, Checkbox, Input, Pagination, Segmented, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, useSort } from '@uniops/shell'
+import { Button, Checkbox, Input, Pagination, Segmented, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, useSort, Card } from '@uniops/shell'
 import { mdmApi, mdmDownload } from '@/lib/api'
 import { formatDate, cn } from '@/lib/utils'
 import {
@@ -127,7 +127,7 @@ export default function StaffNcTodo() {
               </div>
             )}
           </div>
-          <div className="overflow-hidden rounded-xl border border-line bg-surface">
+          <Card className="overflow-hidden">
             <div className="max-h-[calc(100vh-340px)] overflow-auto">
               <Table>
                 <THead><Tr>
@@ -161,7 +161,7 @@ export default function StaffNcTodo() {
             </div>
             <Pagination page={page} pageSize={pageSize} total={data?.total ?? 0}
               onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
-          </div>
+          </Card>
         </>
       ) : (
         <div className="space-y-4">
@@ -198,7 +198,7 @@ export default function StaffNcTodo() {
 
 function Section({ title, head, rows }: { title: string; head: string[]; rows: React.ReactNode[][] }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-line bg-surface">
+    <Card as="section" className="overflow-hidden">
       <h2 className="px-4 pt-4 text-sm font-semibold text-fg">{title}</h2>
       <div className="mt-2 max-h-96 overflow-auto">
         <Table>
@@ -209,6 +209,6 @@ function Section({ title, head, rows }: { title: string; head: string[]; rows: R
         </Table>
         {!rows.length && <p className="py-6 text-center text-sm text-fg-muted">Nothing here.</p>}
       </div>
-    </section>
+    </Card>
   )
 }

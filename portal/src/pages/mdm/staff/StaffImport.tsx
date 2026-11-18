@@ -6,7 +6,7 @@ import { mdmApi, mdmDownload, mdmUpload } from '@/lib/api'
 import { formatDate, todayISO } from '@/lib/utils'
 import { StaffShell } from './shared'
 
-import { Button, DisclosureButton, FileInput, Input, TBody, THead, Table, Td, Th, Tr, Badge, type BadgeTone } from '@uniops/shell'
+import { Button, DisclosureButton, FileInput, Input, TBody, THead, Table, Td, Th, Tr, Badge, type BadgeTone, Card } from '@uniops/shell'
 interface Change { field: string; old: string | null; new: string | null }
 interface Item {
   row?: number; employee_number?: string | null; display_name?: string; work_email?: string | null
@@ -56,7 +56,7 @@ function Groups({ view, onConvert }: { view: ImportView; onConvert?: (id: string
   const unmapped = (view.groups?.unmapped ?? []) as string[]
   const person = (i: Item) => `${i.employee_number} ${i.display_name ?? ''}`
   return (
-    <div className="rounded-xl border border-line bg-surface">
+    <Card>
       <Group title="New" count={g('new').length} tone="success">
         <ul>{g('new').map((i) => <li key={i.employee_number!}>{person(i)} · {i.adp_department ?? 'no department'}</li>)}</ul>
       </Group>
@@ -93,7 +93,7 @@ function Groups({ view, onConvert }: { view: ImportView; onConvert?: (id: string
       <Group title="Missing from roster" count={g('missing').length} tone="warning">
         <ul>{g('missing').map((i) => <li key={i.employee_id!}>{person(i)}</li>)}</ul>
       </Group>
-    </div>
+    </Card>
   )
 }
 
@@ -201,7 +201,7 @@ export default function StaffImport() {
           })} />
         </section>
       ) : (
-        <section className="flex flex-wrap items-end gap-3 rounded-xl border border-line bg-surface p-4">
+        <Card as="section" className="flex flex-wrap items-end gap-3 p-4">
           <label className="text-sm text-fg-secondary">ADP roster (.xlsx)
             <FileInput accept=".xlsx" className="mt-1 block" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           </label>
@@ -211,7 +211,7 @@ export default function StaffImport() {
           <Button size="md" disabled={!file || !rosterDate || busy} onClick={upload}>
             <Upload className="h-4 w-4" />{busy ? 'Reading…' : 'Upload and preview'}
           </Button>
-        </section>
+        </Card>
       )}
 
       {shown && shown.status === 'applied' && (
@@ -225,7 +225,7 @@ export default function StaffImport() {
         </section>
       )}
 
-      <section className="mt-6 overflow-hidden rounded-xl border border-line bg-surface">
+      <Card as="section" className="mt-6 overflow-hidden">
         <h2 className="px-4 pt-4 text-sm font-semibold text-fg">Import history</h2>
         <div className="mt-2 max-h-80 overflow-auto">
           <Table>
@@ -256,7 +256,7 @@ export default function StaffImport() {
           </Table>
           {!history?.items.length && <p className="py-6 text-center text-sm text-fg-muted">No imports yet.</p>}
         </div>
-      </section>
+      </Card>
     </StaffShell>
   )
 }

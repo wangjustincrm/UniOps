@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Building2, ShieldCheck, CreditCard, Bell, Plus, Pencil, Trash2, X, Check, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, Download, Upload, ChevronLeft, ChevronRight, FileText, Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail, DatabaseZap, Warehouse } from 'lucide-react'
-import { Button, Checkbox, ChoiceCard, FileInput, Input, Modal as ShellModal, SearchInput, Segmented, Select, Sidebar, SortTh, Switch, TBody, THead, Table, Tabs, Td, Textarea as ShellTextarea, Th, Topbar, Tr, sortParams, type Sort, useSort, useSortableRows, Badge } from '@uniops/shell'
+import { Button, Checkbox, ChoiceCard, FileInput, Input, Modal as ShellModal, SearchInput, Segmented, Select, Sidebar, SortTh, Switch, TBody, THead, Table, Tabs, Td, Textarea as ShellTextarea, Th, Topbar, Tr, sortParams, type Sort, useSort, useSortableRows, Badge, Card } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { adminPageLinks } from '@/components/layout/navConfig'
@@ -473,7 +473,7 @@ export function DepartmentManagement() {
       </div>
       {listError && <div className="mb-4"><Toast ok={false} msg={listError} /></div>}
       {dlg.dialog}
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         {isLoading ? (
           <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
         ) : !data?.items.length ? (
@@ -509,7 +509,7 @@ export function DepartmentManagement() {
             </TBody>
           </Table>
         )}
-      </div>
+      </Card>
 
       {modal && (
         <ShellModal open onClose={() => setModal(null)} title={modal.mode === 'create' ? 'Add Department' : 'Edit Department'} closeOnEscape={false} size="full" className="max-w-sm">
@@ -759,7 +759,7 @@ export function UserManagement() {
       )}
 
       {/* Table */}
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         {isLoading && !data ? (
           <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
         ) : !data?.items.length ? (
@@ -846,7 +846,7 @@ export function UserManagement() {
             </div>
           </div>
         )}
-      </div>
+      </Card>
 
       {/* From-ERP import drawer */}
       {showErpImport && <ErpUserImportDrawer onClose={() => setShowErpImport(false)} />}
@@ -1501,7 +1501,7 @@ function RemittanceSettings() {
 
       <div className="rounded-lg border border-line bg-surface-subtle p-4">
         <p className="text-sm font-semibold text-fg-secondary mb-3">Preview (sample data — the payment table is added automatically)</p>
-        <div className="rounded-lg border border-line bg-surface p-5 font-sans text-fg">
+        <Card inset className="p-5 font-sans text-fg">
           {tplShowLogoVal && cfg?.logo_data_url && (
             <img src={cfg.logo_data_url} alt="" className="mb-3 max-h-12" />
           )}
@@ -1516,7 +1516,7 @@ function RemittanceSettings() {
           <div className="whitespace-pre-line text-xs text-fg-muted">
             {fillRemittancePreview(tplFooterVal)}
           </div>
-        </div>
+        </Card>
       </div>
 
       <div className="flex items-center gap-3">
@@ -2153,7 +2153,7 @@ function ErpMaterialsTab() {
           </Select>
         }
       />
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         {isLoading && !data ? (
           <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
         ) : !data?.items.length ? (
@@ -2210,7 +2210,7 @@ function ErpMaterialsTab() {
             </div>
           </div>
         )}
-      </div>
+      </Card>
     </>
   )
 }
@@ -2240,7 +2240,7 @@ function ErpSuppliersTab() {
   return (
     <>
       <ErpSyncToolbar kind="supplier" search={search} onSearchChange={(v) => { setSearch(v); setPage(1) }} />
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         {isLoading && !data ? <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
           : !data?.items.length ? <div className="py-10 text-center text-sm text-fg-muted">No suppliers. Click Sync.</div>
           : <Table>
@@ -2282,7 +2282,7 @@ function ErpSuppliersTab() {
             </div>
           </div>
         )}
-      </div>
+      </Card>
     </>
   )
 }
@@ -2314,7 +2314,7 @@ function ErpPersonsTab() {
   return (
     <>
       <ErpSyncToolbar kind="person" search={search} onSearchChange={(v) => { setSearch(v); setPage(1) }} />
-      <div className="rounded-xl border border-line bg-surface overflow-hidden">
+      <Card className="overflow-hidden">
         {isLoading && !data ? <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
           : !data?.items.length ? <div className="py-10 text-center text-sm text-fg-muted">No persons. Click Sync.</div>
           : <Table>
@@ -2360,7 +2360,7 @@ function ErpPersonsTab() {
             </div>
           </div>
         )}
-      </div>
+      </Card>
     </>
   )
 }

@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import { useStaffPerm } from '@/pages/mdm/staff/shared'
 import { Combobox, type ComboOption } from './Combobox'
 
-import { Button, ChoiceCard, Input, MenuItem, Segmented, Select } from '@uniops/shell'
+import { Button, ChoiceCard, Input, MenuItem, Segmented, Select, Card } from '@uniops/shell'
 type Relation = 'child' | 'assistant'
 type Drop = 'before' | 'after' | 'inside'
 interface Box { id: string; parent_id: string | null; relation: Relation; tone: string | null }
@@ -344,11 +344,11 @@ export default function OrgChart() {
             </div>
           )}
           <div className="ml-auto flex gap-2">
-            <div className="flex items-center rounded-lg border border-line bg-surface">
+            <Card inset className="flex items-center">
               <Button variant="subtle" size="icon" aria-label="Zoom out" onClick={() => setZoom((z) => Math.max(0.4, z - 0.1))}><Minus className="h-4 w-4" /></Button>
               <Button variant="subtle" size="md" className="w-14 px-0 font-mono tabular-nums" title="Fit to the page" onClick={() => fit()}>{Math.round(zoom * 100)}%</Button>
               <Button variant="subtle" size="icon" aria-label="Zoom in" onClick={() => setZoom((z) => Math.min(1.2, z + 0.1))}><Plus className="h-4 w-4" /></Button>
-            </div>
+            </Card>
             {view === 'people' && (
               <>
                 <Button variant="secondary" size="md" onClick={() => setOpenPeople(new Set(people.map((p) => p.id)))}>Expand all</Button>
@@ -416,7 +416,7 @@ export default function OrgChart() {
               )}
 
               {unit && (
-                <div key={unit.id} className="space-y-3 rounded-xl border border-line bg-surface p-4">
+                <Card className="space-y-3 p-4" key={unit.id}>
                   {editable && !unit.department_id
                     ? <SavedInput label="Name" value={unit.name} disabled={busy} onSave={(name) => name && setUnit(unit.id, { name })} />
                     : <p className="text-sm font-semibold text-fg">{unit.name}</p>}
@@ -443,11 +443,11 @@ export default function OrgChart() {
                       )}
                     </>
                   ) : <p className="text-sm text-fg-secondary">{unit.head_name ?? 'No head'}</p>}
-                </div>
+                </Card>
               )}
 
               {person && (
-                <div key={person.id} className="space-y-3 rounded-xl border border-line bg-surface p-4">
+                <Card className="space-y-3 p-4" key={person.id}>
                   {person.employee_id ? (
                     <div>
                       <Link to={`/mdm/staff/${person.employee_id}`} className="text-sm font-semibold text-primary-700 hover:underline">{person.name}</Link>
@@ -479,7 +479,7 @@ export default function OrgChart() {
                     </>
                   ) : <p className="text-sm text-fg-secondary">{person.title ?? '—'} · reports to {byId.get(person.parent_id ?? '')?.name ?? 'no one'}</p>}
                   {person.employee_id && <p className="text-xs text-fg-muted">{person.source === 'manual' ? 'Set by a person' : 'Worked out from the data'}</p>}
-                </div>
+                </Card>
               )}
 
               {!unit && !person && (view === 'units' || toCheck.length === 0) && (

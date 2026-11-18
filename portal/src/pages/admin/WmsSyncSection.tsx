@@ -24,7 +24,7 @@ import { AlertTriangle, Loader2, RefreshCw, Warehouse } from 'lucide-react'
 import { mrpApi } from '@/lib/api'
 import { formatDateTime } from '@/lib/utils'
 
-import { Input, Button } from '@uniops/shell'
+import { Input, Button, Card } from '@uniops/shell'
 
 const INTERVAL_KEY = 'wms_sync_interval_minutes'
 const MAX_INTERVAL_MINUTES = 1440
@@ -127,7 +127,7 @@ export function WmsSyncSection() {
   const failed = status?.status === 'failed'
 
   return (
-    <div className="rounded-xl border border-line bg-surface p-6">
+    <Card className="p-6">
       <SectionHeader
         title="WMS Sync"
         description="Flux warehouse stock is mirrored into UniOps and read by Inventory → WMS Inventory, aging and MRP purchase suggestions. This is how often that mirror refreshes."
@@ -213,6 +213,6 @@ export function WmsSyncSection() {
 
       {note && <p className="mt-3 text-sm text-success-fg">{note}</p>}
       {err && <p className="mt-3 text-sm text-danger-fg">{err}</p>}
-    </div>
+    </Card>
   )
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { SortTh, useSortableRows, Select, TBody, THead, Table, Td, Tr } from '@uniops/shell'
+import { SortTh, useSortableRows, Select, TBody, THead, Table, Td, Tr, Card } from '@uniops/shell'
 import { mdmApi } from '@/lib/api'
 import { StaffShell, useStaffPerm, type Department } from './shared'
 
@@ -52,7 +52,7 @@ export default function StaffDepartmentMap() {
       </p>
       {error && <p className="mb-3 text-sm text-danger-fg">{error}</p>}
       {notice && <p className="mb-3 text-sm text-primary-700">{notice}</p>}
-      <div className="overflow-hidden rounded-xl border border-line bg-surface">
+      <Card className="overflow-hidden">
         <div className="max-h-[calc(100vh-280px)] overflow-auto">
           <Table>
             <THead><Tr>
@@ -81,7 +81,7 @@ export default function StaffDepartmentMap() {
           </Table>
           {!data?.items.length && <p className="py-8 text-center text-sm text-fg-muted">ADP departments appear here once a roster has been uploaded.</p>}
         </div>
-      </div>
+      </Card>
     </StaffShell>
   )
 }

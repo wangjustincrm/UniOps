@@ -5,7 +5,7 @@ import { ArrowLeft } from 'lucide-react'
 import { epmsApi, mdmApi } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 import { useConfirmDialog } from '@/components/ConfirmDialog'
-import { Checkbox, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Button } from '@uniops/shell'
+import { Checkbox, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Button, Card } from '@uniops/shell'
 import {
   NcPill, SOURCE_LABEL, StaffShell, StatusPill, TODO_LABEL, targetText, useStaffPerm, type Department, type NcTodoRow, type StaffRow,
 } from './shared'
@@ -113,7 +113,7 @@ export default function StaffDetail() {
       {error && <p className="mb-3 text-sm text-danger-fg">{error}</p>}
 
       {leaving && (
-        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface p-3">
+        <Card inset className="mb-4 flex flex-wrap items-center gap-3 p-3">
           <label className="text-sm text-fg-secondary">Left on <Input type="date" className="ml-1" value={leftOn} onChange={(ev) => setLeftOn(ev.target.value)} /></label>
           {e.user?.is_active && (
             <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
@@ -123,11 +123,11 @@ export default function StaffDetail() {
           )}
           <Button size="md" disabled={!leftOn || busy} onClick={markLeft}>Confirm</Button>
           <Button variant="secondary" size="md" onClick={() => setLeaving(false)}>Cancel</Button>
-        </div>
+        </Card>
       )}
 
       {correcting && (
-        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface p-3">
+        <Card inset className="mb-4 flex flex-wrap items-center gap-3 p-3">
           <Input placeholder="New number (six digits)" value={number} onChange={(ev) => setNumber(ev.target.value)} />
           <Input className="min-w-64" placeholder="Reason" value={reason} onChange={(ev) => setReason(ev.target.value)} />
           <Button size="md" disabled={!/^\d{6}$/.test(number) || !reason.trim() || busy}
@@ -136,11 +136,11 @@ export default function StaffDetail() {
               setCorrecting(false)
             })}>Save</Button>
           <Button variant="secondary" size="md" onClick={() => setCorrecting(false)}>Cancel</Button>
-        </div>
+        </Card>
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-xl border border-line bg-surface p-4">
+        <Card as="section" className="p-4">
           <h2 className="mb-3 text-sm font-semibold text-fg">Employee</h2>
           <dl className="grid grid-cols-2 gap-3">
             <Line label="Source">{SOURCE_LABEL[e.source]}</Line>
@@ -182,10 +182,10 @@ export default function StaffDetail() {
             </div>
           )}
           {e.source === 'adp' && <p className="mt-3 text-xs text-fg-muted">Name, email, job title, ADP department and status come from ADP and are overwritten by each import.</p>}
-        </section>
+        </Card>
 
         <div className="space-y-4">
-          <section className="rounded-xl border border-line bg-surface p-4">
+          <Card as="section" className="p-4">
             <h2 className="mb-3 text-sm font-semibold text-fg">User</h2>
             {e.user ? (
               <>
@@ -210,9 +210,9 @@ export default function StaffDetail() {
                 )}
               </>
             ) : <p className="text-sm text-fg-muted">No user account.</p>}
-          </section>
+          </Card>
 
-          <section className="rounded-xl border border-line bg-surface p-4">
+          <Card as="section" className="p-4">
             <h2 className="mb-3 text-sm font-semibold text-fg">NC</h2>
             <dl className="grid grid-cols-2 gap-3">
               <Line label="State"><NcPill state={e.nc_state} /></Line>
@@ -225,11 +225,11 @@ export default function StaffDetail() {
                 {e.todos.map((t) => <li key={t.id}><span className="font-medium">{TODO_LABEL[t.type]}</span> <span className="text-fg-muted">{targetText(t)}</span></li>)}
               </ul>
             )}
-          </section>
+          </Card>
         </div>
       </div>
 
-      <section className="mt-4 overflow-hidden rounded-xl border border-line bg-surface">
+      <Card as="section" className="mt-4 overflow-hidden">
         <h2 className="px-4 pt-4 text-sm font-semibold text-fg">History</h2>
         <div className="mt-2 max-h-80 overflow-auto">
           <Table>
@@ -247,7 +247,7 @@ export default function StaffDetail() {
             </TBody>
           </Table>
         </div>
-      </section>
+      </Card>
       {dlg.dialog}
     </StaffShell>
   )
