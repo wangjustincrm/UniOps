@@ -20,7 +20,9 @@ const badgeVariants = cva(
         success: 'bg-success-soft text-success-fg',
         warning: 'bg-warning-soft text-warning-fg',
         danger: 'bg-danger-soft text-danger-fg',
-        dark: 'bg-inverse text-fg-on-accent',
+        // Finished / closed states (Paid, Closed, Processed). Mid grey, as before
+        // the token migration — not near-black (white on #4E6070 = 6.6:1).
+        dark: 'bg-fg-secondary text-fg-on-accent',
         outline: 'border border-line text-fg-secondary',
       },
     },
