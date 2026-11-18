@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useReplaceTab, Input, Select, Textarea, Button } from '@uniops/shell'
+import { useReplaceTab, Input, Select, Textarea, Button, Card } from '@uniops/shell'
 import { vmsRoutes } from '@/app/routes'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { VisitorSearch } from '@/components/VisitorSearch'
@@ -92,7 +92,7 @@ function InlineNewVisitorForm({
   // New-Visit <form>, and HTML forbids nested forms (the inner one is
   // silently dropped, sending the Enter / Save click to the outer form).
   return (
-    <div className="space-y-3 rounded-md border border-line bg-surface p-3">
+    <Card inset className="space-y-3 p-3">
       <p className="text-xs font-medium text-fg-secondary">Register a new visitor</p>
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
         <Field label="First name *">
@@ -136,7 +136,7 @@ function InlineNewVisitorForm({
           Save visitor
         </Button>
       </div>
-    </div>
+    </Card>
   )
 }
 

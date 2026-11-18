@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Search } from 'lucide-react'
 import { useUserDirectory, type UserBrief } from '@/services/api'
 
-import { Button, Input, MenuItem } from '@uniops/shell'
+import { Button, Input, MenuItem, Card } from '@uniops/shell'
 export function HostSearch({
   selected,
   onSelect,
@@ -54,7 +54,7 @@ export function HostSearch({
       </div>
 
       {query.length >= 2 && (
-        <div className="mt-2 max-h-64 overflow-y-auto rounded-md border border-line bg-surface">
+        <Card inset className="mt-2 max-h-64 overflow-y-auto">
           {isLoading && <p className="px-3 py-2 text-xs text-fg-muted">Searching…</p>}
           {!isLoading && items.length === 0 && (
             <p className="px-3 py-2 text-xs text-fg-muted">No matches.</p>
@@ -71,7 +71,7 @@ export function HostSearch({
               </p>
             </MenuItem>
           ))}
-        </div>
+        </Card>
       )}
     </div>
   )

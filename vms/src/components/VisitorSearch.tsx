@@ -9,7 +9,7 @@ import { useState } from 'react'
 import { Search, UserPlus, X } from 'lucide-react'
 import { useVisitors, type Visitor } from '@/services/api'
 
-import { Button, Input, MenuItem } from '@uniops/shell'
+import { Button, Input, MenuItem, Card } from '@uniops/shell'
 interface Props {
   primary: Visitor | null
   additional: Visitor[]
@@ -85,7 +85,7 @@ export function VisitorSearch({ primary, additional, onChange, onNew }: Props) {
       </div>
 
       {query.length > 0 && (
-        <div className="mt-2 max-h-64 overflow-y-auto rounded-md border border-line bg-surface">
+        <Card inset className="mt-2 max-h-64 overflow-y-auto">
           {isLoading && <p className="px-3 py-2 text-xs text-fg-muted">Searching…</p>}
           {!isLoading && items.length === 0 && (
             <div className="flex items-center justify-between px-3 py-2 text-xs">
@@ -119,7 +119,7 @@ export function VisitorSearch({ primary, additional, onChange, onNew }: Props) {
               </MenuItem>
             )
           })}
-        </div>
+        </Card>
       )}
 
       {query.length === 0 && (

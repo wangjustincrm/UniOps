@@ -11,7 +11,7 @@ import {
 } from '@/services/api'
 import { formatDateTime } from '@/lib/utils'
 
-import { FileInput, Button } from '@uniops/shell'
+import { FileInput, Button, Card } from '@uniops/shell'
 interface Props {
   visitId: string
   readOnly?: boolean
@@ -36,7 +36,7 @@ export function VisitAttachments({ visitId, readOnly }: Props) {
   }
 
   return (
-    <div className="rounded-lg border border-line bg-surface p-4">
+    <Card inset className="p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-fg-muted">
           <Paperclip className="h-4 w-4" />
@@ -88,7 +88,7 @@ export function VisitAttachments({ visitId, readOnly }: Props) {
           ))}
         </ul>
       )}
-    </div>
+    </Card>
   )
 }
 

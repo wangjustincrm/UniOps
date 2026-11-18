@@ -8,7 +8,7 @@
  */
 import { useState } from 'react'
 import { CheckCircle2, Loader2 } from 'lucide-react'
-import { Input, Button } from '@uniops/shell'
+import { Input, Button, Card } from '@uniops/shell'
 import {
   useNotificationContacts, useSetNotificationContacts,
 } from '@/services/api'
@@ -73,7 +73,7 @@ export default function NotificationContactsPage() {
         </p>
       )}
 
-      <div className="mt-5 space-y-4 rounded-lg border border-line bg-surface p-4">
+      <Card inset className="mt-5 space-y-4 p-4">
         <Field
           label="Training Contact email"
           help="HR-designated. Receives a notification when a visit's access area requires food-safety training."
@@ -90,7 +90,7 @@ export default function NotificationContactsPage() {
           loading={isLoading}
           placeholder="e.g. ppe-issuance@royalmilk.com"
         />
-      </div>
+      </Card>
 
       <p className="mt-4 text-xs text-fg-muted">
         Leave a field blank to disable that channel. Emails are sent through the

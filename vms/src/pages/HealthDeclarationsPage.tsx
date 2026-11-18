@@ -5,7 +5,7 @@
  * declaration (answers + e-signature) in a read-only modal.
  */
 import { useState } from 'react'
-import { SortTh, useSort, sortParams, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { SortTh, useSort, sortParams, Input, TBody, THead, Table, Td, Th, Tr, Button, Card } from '@uniops/shell'
 import { Eye, Search, ShieldCheck, ShieldAlert } from 'lucide-react'
 import {
   useAreaRules, useBrowseHealthDeclarations, type HealthDeclarationListItem,
@@ -73,7 +73,7 @@ export default function HealthDeclarationsPage() {
       </div>
 
       {/* Table */}
-      <div className="mt-4 overflow-x-auto rounded-md border border-line bg-surface">
+      <Card inset className="mt-4 overflow-x-auto">
         <Table density="compact">
           <THead>
             <Tr>
@@ -125,7 +125,7 @@ export default function HealthDeclarationsPage() {
             ))}
           </TBody>
         </Table>
-      </div>
+      </Card>
 
       {error && <p className="mt-2 text-xs text-danger-fg">{error.message}</p>}
 

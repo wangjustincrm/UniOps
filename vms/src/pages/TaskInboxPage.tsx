@@ -12,7 +12,7 @@ import { useMyVmsTasks } from '@/services/api'
 import { timeAgo } from '@/lib/utils'
 import { groupTasks } from '@/lib/groupTasks'
 
-import { Badge } from '@uniops/shell'
+import { Badge, Card } from '@uniops/shell'
 function taskHref(docType: string, docId: string): string {
   if (docType === 'vms_train' || docType === 'vms_ppe') {
     return `/visitor/${docId}/compliance`
@@ -62,18 +62,18 @@ export default function TaskInboxPage() {
 
       <div className="mt-6">
         {isLoading && (
-          <div className="overflow-hidden rounded-lg border border-line bg-surface">
+          <Card inset className="overflow-hidden">
             <p className="px-4 py-6 text-center text-sm text-fg-muted">Loading…</p>
-          </div>
+          </Card>
         )}
 
         {!isLoading && tasks.length === 0 && (
-          <div className="overflow-hidden rounded-lg border border-line bg-surface">
+          <Card inset className="overflow-hidden">
             <div className="flex flex-col items-center px-4 py-16 text-center text-sm text-fg-muted">
               <Inbox className="h-8 w-8" />
               <p className="mt-2">All caught up — no pending visit approvals.</p>
             </div>
-          </div>
+          </Card>
         )}
 
         {!isLoading && tasks.length > 0 && (

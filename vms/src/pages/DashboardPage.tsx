@@ -1,6 +1,6 @@
 /** VMS home dashboard (PRD §6.5.5 / §2.5.2 VMS-AU-016). */
 import { Link } from 'react-router-dom'
-import { SortTh, useSort, sortParams, TBody, THead, Table, Td, Tr } from '@uniops/shell'
+import { SortTh, useSort, sortParams, TBody, THead, Table, Td, Tr, Card as ShellCard } from '@uniops/shell'
 import {
   UserCheck, CalendarCheck, CalendarRange, AlertTriangle, ArrowRight,
   ShieldCheck, FileWarning, MoonStar, Inbox,
@@ -173,7 +173,7 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-line bg-surface">
+        <ShellCard inset className="overflow-hidden">
           <Table density="compact" className="min-w-full divide-y divide-line">
             <THead>
               <Tr>
@@ -227,7 +227,7 @@ export default function DashboardPage() {
               <Link to="/" className="text-primary-700 hover:underline">View all</Link>
             </div>
           )}
-        </div>
+        </ShellCard>
       </div>
     </div>
   )

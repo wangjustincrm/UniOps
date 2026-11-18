@@ -12,7 +12,7 @@ import { FileDown, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { downloadReport, type ReportKind } from '@/services/api'
 import { localToday } from '@/lib/utils'
 
-import { Input, Button } from '@uniops/shell'
+import { Input, Button, Card } from '@uniops/shell'
 interface ReportDef {
   kind: ReportKind
   label: string
@@ -70,7 +70,7 @@ export default function ReportsPage() {
       </p>
 
       {/* Date range */}
-      <div className="mt-5 rounded-lg border border-line bg-surface p-4">
+      <Card inset className="mt-5 p-4">
         <p className="text-xs font-semibold text-fg-muted">
           Report period
         </p>
@@ -99,7 +99,7 @@ export default function ReportsPage() {
             </p>
           )}
         </div>
-      </div>
+      </Card>
 
       {/* Feedback */}
       {error && (
@@ -118,10 +118,7 @@ export default function ReportsPage() {
       {/* Reports list */}
       <div className="mt-5 space-y-3">
         {REPORTS.map((r) => (
-          <div
-            key={r.kind}
-            className="flex items-start justify-between gap-4 rounded-lg border border-line bg-surface p-4"
-          >
+          <Card inset className="flex items-start justify-between gap-4 p-4" key={r.kind}>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-fg">{r.label}</p>
               <p className="mt-0.5 text-xs text-fg-muted">{r.description}</p>
@@ -137,7 +134,7 @@ export default function ReportsPage() {
                 : <FileDown className="h-4 w-4" />}
               Download CSV
             </Button>
-          </div>
+          </Card>
         ))}
       </div>
 

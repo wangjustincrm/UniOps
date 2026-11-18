@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2, UserCheck, Users } from 'lucide-react'
-import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Button, Badge } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Button, Badge, Card } from '@uniops/shell'
 import { useActiveVisits, useAreaRules, useBatchCheckOut } from '@/services/api'
 import { AccessAreaBadge, OverdueBadge, accessAreaLabel, isVisitOverdue } from '@/components/StatusBadge'
 import { formatDateTime, timeAgo } from '@/lib/utils'
@@ -81,7 +81,7 @@ export default function ActiveVisitsPage() {
         </p>
       )}
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-line bg-surface">
+      <Card inset className="mt-6 overflow-hidden">
         <Table density="compact" className="min-w-full divide-y divide-line">
           <THead>
             <Tr>
@@ -130,7 +130,7 @@ export default function ActiveVisitsPage() {
             ))}
           </TBody>
         </Table>
-      </div>
+      </Card>
     </div>
   )
 }

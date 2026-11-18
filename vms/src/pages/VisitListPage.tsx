@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus, AlertCircle } from 'lucide-react'
-import { Pagination, SortTh, useSort, sortParams, TBody, THead, Table, Td, Tr } from '@uniops/shell'
+import { Pagination, SortTh, useSort, sortParams, TBody, THead, Table, Td, Tr, Card } from '@uniops/shell'
 import { useVisits, type Visit } from '@/services/api'
 import { StatusBadge, AccessAreaBadge, OverdueBadge, isVisitOverdue } from '@/components/StatusBadge'
 import { displayTimeZone, formatDate, formatDateTime, localToday } from '@/lib/utils'
@@ -55,7 +55,7 @@ export default function VisitListPage({ scope }: { scope: 'today' | 'all' }) {
         </div>
       )}
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-line bg-surface">
+      <Card inset className="mt-6 overflow-hidden">
         <Table density="compact" className="min-w-full divide-y divide-line">
           <THead>
             <Tr>
@@ -112,7 +112,7 @@ export default function VisitListPage({ scope }: { scope: 'today' | 'all' }) {
             onPageSizeChange={(s) => { setPageSize(s); setPage(1) }}
           />
         )}
-      </div>
+      </Card>
     </div>
   )
 }

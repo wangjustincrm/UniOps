@@ -11,7 +11,7 @@
  */
 import { useState } from 'react'
 import { Loader2, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
-import { Button, Checkbox, Input, MenuItem, Modal, TBody, THead, Table, Td, Th, Tr, Badge } from '@uniops/shell'
+import { Button, Checkbox, Input, MenuItem, Modal, TBody, THead, Table, Td, Th, Tr, Badge, Card } from '@uniops/shell'
 import {
   useCreateZone, useDeleteZone, useUpdateZone, useUserDirectory, useZones,
   type UserBrief, type Zone,
@@ -50,7 +50,7 @@ export default function ZonesPage() {
         </p>
       )}
 
-      <div className="mt-4 overflow-x-auto rounded-md border border-line bg-surface">
+      <Card inset className="mt-4 overflow-x-auto">
         <Table density="compact">
           <THead>
             <Tr>
@@ -119,7 +119,7 @@ export default function ZonesPage() {
             ))}
           </TBody>
         </Table>
-      </div>
+      </Card>
 
       {editing && (
         <ZoneModal zone={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
@@ -217,7 +217,7 @@ function ZoneModal({ zone, onClose }: { zone: Zone | null; onClose: () => void }
           />
         </div>
         {query.length >= 2 && (
-          <div className="mt-1 max-h-48 overflow-y-auto rounded-md border border-line bg-surface">
+          <Card inset className="mt-1 max-h-48 overflow-y-auto">
             {dir.isLoading && <p className="px-3 py-2 text-xs text-fg-muted">Searching…</p>}
             {!dir.isLoading && (dir.data?.items.length ?? 0) === 0 && (
               <p className="px-3 py-2 text-xs text-fg-muted">No matches.</p>
@@ -230,7 +230,7 @@ function ZoneModal({ zone, onClose }: { zone: Zone | null; onClose: () => void }
                 <p className="text-xs text-fg-muted">{u.email}{u.department_name && ` · ${u.department_name}`}</p>
               </MenuItem>
             ))}
-          </div>
+          </Card>
         )}
 
         {save.error && <p className="mt-3 text-xs text-danger-fg">{save.error.message}</p>}

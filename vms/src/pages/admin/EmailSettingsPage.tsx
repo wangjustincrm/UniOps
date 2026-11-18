@@ -11,7 +11,7 @@
  * clears the credential.
  */
 import { useState } from 'react'
-import { Checkbox, Input, Button } from '@uniops/shell'
+import { Checkbox, Input, Button, Card } from '@uniops/shell'
 import {
   AlertCircle, CheckCircle2, Loader2, Send, Mail,
 } from 'lucide-react'
@@ -86,7 +86,7 @@ export default function EmailSettingsPage() {
         </p>
       )}
 
-      <div className="mt-5 grid grid-cols-1 gap-3 rounded-lg border border-line bg-surface p-4 md:grid-cols-2">
+      <Card inset className="mt-5 grid grid-cols-1 gap-3 p-4 md:grid-cols-2">
         <TextField
           label="SMTP host"
           value={eff.host ?? ''}
@@ -130,10 +130,10 @@ export default function EmailSettingsPage() {
           onChange={(v) => onPatch('use_tls', v)}
           loading={isLoading}
         />
-      </div>
+      </Card>
 
       {/* Send test email */}
-      <div className="mt-6 rounded-lg border border-line bg-surface p-4">
+      <Card inset className="mt-6 p-4">
         <p className="flex items-center gap-1.5 text-sm font-semibold text-fg">
           <Mail className="h-4 w-4" />
           Send a test email
@@ -175,7 +175,7 @@ export default function EmailSettingsPage() {
             {test.error.message}
           </p>
         )}
-      </div>
+      </Card>
     </div>
   )
 }
