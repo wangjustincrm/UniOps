@@ -5,9 +5,9 @@ import { ArrowLeft } from 'lucide-react'
 import { epmsApi, mdmApi } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 import { useConfirmDialog } from '@/components/ConfirmDialog'
+import { Checkbox, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Button } from '@uniops/shell'
 import {
-  INPUT, NcPill, PRIMARY_BTN, SECONDARY_BTN, SOURCE_LABEL, StaffShell, StatusPill, TD, TH, TODO_LABEL,
-  targetText, useStaffPerm, type Department, type NcTodoRow, type StaffRow,
+  NcPill, SOURCE_LABEL, StaffShell, StatusPill, TODO_LABEL, targetText, useStaffPerm, type Department, type NcTodoRow, type StaffRow,
 } from './shared'
 
 interface Difference { field: string; label: string; employee: string | null; user: string | null; value: unknown }
@@ -100,13 +100,13 @@ export default function StaffDetail() {
         <StatusPill status={e.status} />
         <div className="ml-auto flex gap-2">
           {admin && !e.user && e.status !== 'left' && (
-            <button className={PRIMARY_BTN} onClick={() => navigate(`/mdm/users?from_employee=${e.id}`)}>Create user</button>
+            <Button size="md" onClick={() => navigate(`/mdm/users?from_employee=${e.id}`)}>Create user</Button>
           )}
-          {editable && e.status !== 'left' && <button className={SECONDARY_BTN} onClick={() => setLeaving(true)}>Mark as Left</button>}
+          {editable && e.status !== 'left' && <Button variant="secondary" size="md" onClick={() => setLeaving(true)}>Mark as Left</Button>}
           {editable && e.status === 'left' && (
-            <button className={SECONDARY_BTN} disabled={busy} onClick={() => run(() => mdmApi.post(`/staff/${e.id}/reinstate`))}>Reinstate</button>
+            <Button variant="secondary" size="md" disabled={busy} onClick={() => run(() => mdmApi.post(`/staff/${e.id}/reinstate`))}>Reinstate</Button>
           )}
-          {admin && <button className={SECONDARY_BTN} onClick={() => setCorrecting(true)}>Correct number</button>}
+          {admin && <Button variant="secondary" size="md" onClick={() => setCorrecting(true)}>Correct number</Button>}
         </div>
       </div>
 
@@ -114,28 +114,28 @@ export default function StaffDetail() {
 
       {leaving && (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface p-3">
-          <label className="text-sm text-fg-secondary">Left on <input type="date" className={`${INPUT} ml-1`} value={leftOn} onChange={(ev) => setLeftOn(ev.target.value)} /></label>
+          <label className="text-sm text-fg-secondary">Left on <Input type="date" className="ml-1" value={leftOn} onChange={(ev) => setLeftOn(ev.target.value)} /></label>
           {e.user?.is_active && (
             <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
-              <input type="checkbox" checked={deactivate} onChange={(ev) => setDeactivate(ev.target.checked)} />
+              <Checkbox checked={deactivate} onChange={(ev) => setDeactivate(ev.target.checked)} />
               Also deactivate their user ({e.user.email})
             </label>
           )}
-          <button className={PRIMARY_BTN} disabled={!leftOn || busy} onClick={markLeft}>Confirm</button>
-          <button className={SECONDARY_BTN} onClick={() => setLeaving(false)}>Cancel</button>
+          <Button size="md" disabled={!leftOn || busy} onClick={markLeft}>Confirm</Button>
+          <Button variant="secondary" size="md" onClick={() => setLeaving(false)}>Cancel</Button>
         </div>
       )}
 
       {correcting && (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface p-3">
-          <input className={INPUT} placeholder="New number (six digits)" value={number} onChange={(ev) => setNumber(ev.target.value)} />
-          <input className={`${INPUT} min-w-64`} placeholder="Reason" value={reason} onChange={(ev) => setReason(ev.target.value)} />
-          <button className={PRIMARY_BTN} disabled={!/^\d{6}$/.test(number) || !reason.trim() || busy}
+          <Input placeholder="New number (six digits)" value={number} onChange={(ev) => setNumber(ev.target.value)} />
+          <Input className="min-w-64" placeholder="Reason" value={reason} onChange={(ev) => setReason(ev.target.value)} />
+          <Button size="md" disabled={!/^\d{6}$/.test(number) || !reason.trim() || busy}
             onClick={() => run(async () => {
               await mdmApi.post(`/staff/${e.id}/correct-number`, { new_number: number, reason })
               setCorrecting(false)
-            })}>Save</button>
-          <button className={SECONDARY_BTN} onClick={() => setCorrecting(false)}>Cancel</button>
+            })}>Save</Button>
+          <Button variant="secondary" size="md" onClick={() => setCorrecting(false)}>Cancel</Button>
         </div>
       )}
 
@@ -152,17 +152,17 @@ export default function StaffDetail() {
             <div className="col-span-2">
               <dt className="text-xs text-fg-muted">UniOps department</dt>
               {editable ? (
-                <select className={`${INPUT} mt-1 w-full`} value={departmentId ?? e.department_id ?? ''} disabled={busy}
+                <Select className="mt-1 w-full" value={departmentId ?? e.department_id ?? ''} disabled={busy}
                   onChange={(ev) => { setDepartmentId(ev.target.value); setSaved(false) }}>
                   <option value="">Not set</option>
                   {depts?.items.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
+                </Select>
               ) : <dd className="text-sm text-fg">{e.department_name ?? '—'}</dd>}
             </div>
             <div className="col-span-2">
               <dt className="text-xs text-fg-muted">Notes</dt>
               {editable ? (
-                <textarea className={`${INPUT} mt-1 w-full`} rows={2} value={notes ?? e.notes ?? ''}
+                <Textarea className="mt-1 w-full" rows={2} value={notes ?? e.notes ?? ''}
                   onChange={(ev) => { setNotes(ev.target.value); setSaved(false) }} />
               ) : <dd className="text-sm text-fg">{e.notes ?? '—'}</dd>}
             </div>
@@ -171,11 +171,11 @@ export default function StaffDetail() {
             <div className="mt-3 flex items-center gap-2">
               {changes ? (
                 <>
-                  <button className={PRIMARY_BTN} disabled={busy} onClick={() => run(async () => {
+                  <Button size="md" disabled={busy} onClick={() => run(async () => {
                     await mdmApi.patch(`/staff/${e.id}`, changes)
                     setDepartmentId(null); setNotes(null); setSaved(true)
-                  })}>{busy ? 'Saving…' : 'Save'}</button>
-                  <button className={SECONDARY_BTN} disabled={busy} onClick={() => { setDepartmentId(null); setNotes(null) }}>Cancel</button>
+                  })}>{busy ? 'Saving…' : 'Save'}</Button>
+                  <Button variant="secondary" size="md" disabled={busy} onClick={() => { setDepartmentId(null); setNotes(null) }}>Cancel</Button>
                   <span className="text-xs text-warning-fg">Not saved yet</span>
                 </>
               ) : <span className="text-sm text-primary-700">Saved</span>}
@@ -191,22 +191,22 @@ export default function StaffDetail() {
               <>
                 <p className="text-sm text-fg">{e.user.full_name} · {e.user.email} {!e.user.is_active && '(inactive)'}</p>
                 {e.differences.length > 0 && (
-                  <table className="mt-3 w-full text-sm">
-                    <thead><tr className="text-left text-xs text-fg-muted"><th className="py-1">Field</th><th>Employee</th><th>User</th><th /></tr></thead>
-                    <tbody>
+                  <Table density="compact" className="mt-3">
+                    <THead><Tr className="text-left text-xs text-fg-muted"><Th>Field</Th><Th>Employee</Th><Th>User</Th><Th /></Tr></THead>
+                    <TBody>
                       {e.differences.map((d) => (
-                        <tr key={d.field} className="border-t border-line-subtle">
-                          <td className="py-1.5">{d.label}</td>
-                          <td>{d.employee ?? '—'}</td>
-                          <td>{d.user ?? '—'}</td>
-                          <td className="text-right">
-                            {admin && <button className="text-xs font-medium text-primary-700 hover:underline" disabled={busy}
-                              onClick={() => applyDifference(d)}>Apply to user</button>}
-                          </td>
-                        </tr>
+                        <Tr key={d.field}>
+                          <Td>{d.label}</Td>
+                          <Td>{d.employee ?? '—'}</Td>
+                          <Td>{d.user ?? '—'}</Td>
+                          <Td align="right">
+                            {admin && <Button variant="link" className="text-xs" disabled={busy}
+                              onClick={() => applyDifference(d)}>Apply to user</Button>}
+                          </Td>
+                        </Tr>
                       ))}
-                    </tbody>
-                  </table>
+                    </TBody>
+                  </Table>
                 )}
               </>
             ) : <p className="text-sm text-fg-muted">No user account.</p>}
@@ -232,20 +232,20 @@ export default function StaffDetail() {
       <section className="mt-4 overflow-hidden rounded-xl border border-line bg-surface">
         <h2 className="px-4 pt-4 text-sm font-semibold text-fg">History</h2>
         <div className="mt-2 max-h-80 overflow-auto">
-          <table className="w-full">
-            <thead><tr><th className={TH}>When</th><th className={TH}>Field</th><th className={TH}>Old</th><th className={TH}>New</th><th className={TH}>By</th></tr></thead>
-            <tbody>
+          <Table>
+            <THead><Tr><Th>When</Th><Th>Field</Th><Th>Old</Th><Th>New</Th><Th>By</Th></Tr></THead>
+            <TBody>
               {e.history.map((h, i) => (
-                <tr key={i} className="border-t border-line-subtle">
-                  <td className={TD}>{formatDate(h.at)}</td>
-                  <td className={TD}>{h.field}{h.reason ? ` (${h.reason})` : ''}</td>
-                  <td className={TD}>{h.old_value ?? '—'}</td>
-                  <td className={TD}>{h.new_value ?? '—'}</td>
-                  <td className={TD}>{h.from_import ? 'ADP import' : h.by ?? '—'}</td>
-                </tr>
+                <Tr key={i}>
+                  <Td>{formatDate(h.at)}</Td>
+                  <Td>{h.field}{h.reason ? ` (${h.reason})` : ''}</Td>
+                  <Td>{h.old_value ?? '—'}</Td>
+                  <Td>{h.new_value ?? '—'}</Td>
+                  <Td>{h.from_import ? 'ADP import' : h.by ?? '—'}</Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
       </section>
       {dlg.dialog}

@@ -2,11 +2,10 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Plus, Search, UserPlus, X } from 'lucide-react'
-import { Pagination, SortTh, sortParams, useSort } from '@uniops/shell'
+import { Button, Checkbox, Input, Modal, Pagination, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, useSort } from '@uniops/shell'
 import { epmsApi, mdmApi, mdmDownload } from '@/lib/api'
 import {
-  INPUT, NC_STATE_LABEL, NcPill, PRIMARY_BTN, SECONDARY_BTN, SOURCE_LABEL, StaffShell, StatusPill, TD, TH,
-  useStaffPerm, type Department, type StaffRow,
+  NC_STATE_LABEL, NcPill, SOURCE_LABEL, StaffShell, StatusPill, useStaffPerm, type Department, type StaffRow,
 } from './shared'
 
 type SortKey = 'employee_number' | 'display_name' | 'work_email' | 'job_title' | 'adp_department' | 'department' | 'status' | 'source' | 'user' | 'nc_state'
@@ -93,41 +92,41 @@ export default function StaffList() {
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-fg-muted" />
-          <input className={`${INPUT} w-64 pl-9`} placeholder="Search number, name or email"
+          <Input className="w-64 pl-9" placeholder="Search number, name or email"
             value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
         </div>
         {(Object.keys(FILTERS) as FilterKey[]).map((key) => (
-          <select key={key} className={INPUT} value={filters[key] ?? ''}
+          <Select key={key} value={filters[key] ?? ''}
             onChange={(e) => { setFilters((f) => ({ ...f, [key]: e.target.value })); setPage(1) }}>
             <option value="">{FILTERS[key].label}</option>
             {FILTERS[key].options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
+          </Select>
         ))}
-        <select className={INPUT} value={departmentId} onChange={(e) => { setDepartmentId(e.target.value); setPage(1) }}>
+        <Select value={departmentId} onChange={(e) => { setDepartmentId(e.target.value); setPage(1) }}>
           <option value="">All departments</option>
           {depts?.items.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
+        </Select>
         <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
-          <input type="checkbox" checked={differs} onChange={(e) => { setDiffers(e.target.checked); setPage(1) }} />
+          <Checkbox checked={differs} onChange={(e) => { setDiffers(e.target.checked); setPage(1) }} />
           User differs
         </label>
         <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
-          <input type="checkbox" checked={needsDepartment} onChange={(e) => { setNeedsDepartment(e.target.checked); setPage(1) }} />
+          <Checkbox checked={needsDepartment} onChange={(e) => { setNeedsDepartment(e.target.checked); setPage(1) }} />
           Needs department
         </label>
         <div className="ml-auto flex gap-2">
           {admin && picked.length > 0 && (
-            <button className={PRIMARY_BTN} disabled={busy} onClick={bulkCreate}>
+            <Button size="md" disabled={busy} onClick={bulkCreate}>
               <UserPlus className="h-4 w-4" />Create {picked.length} user{picked.length > 1 ? 's' : ''}
-            </button>
+            </Button>
           )}
-          <button className={SECONDARY_BTN} onClick={() => mdmDownload(`/staff/export?${filterQs}`, 'staff.xlsx')}>
+          <Button variant="secondary" size="md" onClick={() => mdmDownload(`/staff/export?${filterQs}`, 'staff.xlsx')}>
             <Download className="h-4 w-4" />Export
-          </button>
+          </Button>
           {can('employee.edit') && (
-            <button className={PRIMARY_BTN} onClick={() => setAdding(true)}>
+            <Button size="md" onClick={() => setAdding(true)}>
               <Plus className="h-4 w-4" />Add Non-ADP
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -138,7 +137,7 @@ export default function StaffList() {
         <div className="mb-4 rounded-lg border border-warning-line bg-warning-soft px-4 py-3 text-sm text-warning-fg">
           <div className="flex items-center justify-between font-medium">
             <span>{bulk.created.length} user(s) created, {bulk.errors.length} failed. Temporary passwords are shown only once.</span>
-            <button onClick={() => setBulk(null)} aria-label="Dismiss"><X className="h-4 w-4" /></button>
+            <Button variant="subtle" size="icon-xs" onClick={() => setBulk(null)} aria-label="Dismiss"><X className="h-4 w-4" /></Button>
           </div>
           <ul className="mt-2 space-y-0.5 font-mono text-xs">
             {bulk.created.map((c) => <li key={c.email}>{c.email} — {c.temp_password}</li>)}
@@ -149,56 +148,56 @@ export default function StaffList() {
 
       <div className="rounded-xl border border-line bg-surface overflow-hidden">
         <div className="max-h-[calc(100vh-300px)] overflow-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr>
-                {admin && <th className={TH} />}
-                <SortTh label="No." sortKey="employee_number" sort={sort} onSort={onSort} className={TH} />
-                <SortTh label="Name" sortKey="display_name" sort={sort} onSort={onSort} className={TH} />
-                <SortTh label="Email" sortKey="work_email" sort={sort} onSort={onSort} className={TH} />
-                <SortTh label="Job Title" sortKey="job_title" sort={sort} onSort={onSort} className={TH} />
-                <SortTh label="ADP Department" sortKey="adp_department" sort={sort} onSort={onSort} className={TH} />
-                <SortTh label="Department" sortKey="department" sort={sort} onSort={onSort} className={TH} />
-                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={TH} />
-                <SortTh label="Source" sortKey="source" sort={sort} onSort={onSort} className={TH} />
-                <SortTh label="User" sortKey="user" sort={sort} onSort={onSort} className={TH} />
-                <SortTh label="NC" sortKey="nc_state" sort={sort} onSort={onSort} className={TH} />
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <THead>
+              <Tr>
+                {admin && <Th />}
+                <SortTh label="No." sortKey="employee_number" sort={sort} onSort={onSort} />
+                <SortTh label="Name" sortKey="display_name" sort={sort} onSort={onSort} />
+                <SortTh label="Email" sortKey="work_email" sort={sort} onSort={onSort} />
+                <SortTh label="Job Title" sortKey="job_title" sort={sort} onSort={onSort} />
+                <SortTh label="ADP Department" sortKey="adp_department" sort={sort} onSort={onSort} />
+                <SortTh label="Department" sortKey="department" sort={sort} onSort={onSort} />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} />
+                <SortTh label="Source" sortKey="source" sort={sort} onSort={onSort} />
+                <SortTh label="User" sortKey="user" sort={sort} onSort={onSort} />
+                <SortTh label="NC" sortKey="nc_state" sort={sort} onSort={onSort} />
+              </Tr>
+            </THead>
+            <TBody>
               {data?.items.map((r) => (
-                <tr key={r.id} className="border-t border-line-subtle hover:bg-surface-subtle">
+                <Tr key={r.id} className="hover:bg-surface-subtle">
                   {admin && (
-                    <td className="px-4">
-                      {canCreate(r) && <input type="checkbox" aria-label={`Select ${r.display_name}`}
+                    <Td>
+                      {canCreate(r) && <Checkbox aria-label={`Select ${r.display_name}`}
                         checked={!!selected[r.id]} onChange={() => toggle(r)} />}
-                    </td>
+                    </Td>
                   )}
-                  <td className={`${TD} font-mono text-xs`}>{r.employee_number}</td>
-                  <td className={TD}><Link className="text-primary-700 hover:underline" to={`/mdm/staff/${r.id}`}>{r.display_name}</Link></td>
-                  <td className={TD}>{r.work_email ?? '—'}</td>
-                  <td className={TD}>{r.job_title ?? '—'}</td>
-                  <td className={TD}>{r.adp_department ?? '—'}</td>
-                  <td className={TD}>
+                  <Td className="font-mono text-xs">{r.employee_number}</Td>
+                  <Td><Link className="text-primary-700 hover:underline" to={`/mdm/staff/${r.id}`}>{r.display_name}</Link></Td>
+                  <Td>{r.work_email ?? '—'}</Td>
+                  <Td>{r.job_title ?? '—'}</Td>
+                  <Td>{r.adp_department ?? '—'}</Td>
+                  <Td>
                     {r.department_name ?? (r.needs_department ? <span className="text-warning-fg">Needs department</span> : '—')}
-                  </td>
-                  <td className={TD}><StatusPill status={r.status} /></td>
-                  <td className={TD}>{SOURCE_LABEL[r.source]}</td>
-                  <td className={TD}>
+                  </Td>
+                  <Td><StatusPill status={r.status} /></Td>
+                  <Td>{SOURCE_LABEL[r.source]}</Td>
+                  <Td>
                     {r.user ? (r.user.is_active ? 'Yes' : 'Inactive')
                       : canCreate(r) ? (
-                        <button className="text-xs font-medium text-primary-700 hover:underline"
-                          onClick={() => navigate(`/mdm/users?from_employee=${r.id}`)}>Create user</button>
+                        <Button variant="link" className="text-xs"
+                          onClick={() => navigate(`/mdm/users?from_employee=${r.id}`)}>Create user</Button>
                       ) : '—'}
-                  </td>
-                  <td className={TD} title={NC_STATE_LABEL[r.nc_state]}>
+                  </Td>
+                  <Td title={NC_STATE_LABEL[r.nc_state]}>
                     <NcPill state={r.nc_state} />
                     {r.open_todos > 0 && <span className="ml-1 text-xs text-warning-fg">{r.open_todos} to-do</span>}
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
           {!isLoading && !data?.items.length && (
             <div className="py-10 text-center text-sm text-fg-muted">
               No employees found. Employees appear here after the first ADP import.
@@ -239,25 +238,26 @@ function AddEmployee({ departments, onClose, onSaved }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <form onSubmit={save} className="w-full max-w-md space-y-3 rounded-xl bg-surface p-5 shadow-xl">
-        <h3 className="font-semibold text-fg">Add Non-ADP Employee</h3>
-        <p className="text-xs text-fg-muted">For people paid outside ADP, such as head-office staff. Everyone else comes from the ADP import.</p>
-        <input className={`${INPUT} w-full`} placeholder="Employee number (six digits)" pattern="\d{6}" required
+    // Closes only by Cancel / the close button (no Escape, no backdrop), as before.
+    <Modal open onClose={onClose} closeOnEscape={false} size="full" className="max-w-md"
+      title="Add Non-ADP Employee"
+      description="For people paid outside ADP, such as head-office staff. Everyone else comes from the ADP import.">
+      <form onSubmit={save} className="space-y-3">
+        <Input className="w-full" placeholder="Employee number (six digits)" pattern="\d{6}" required
           value={form.employee_number} onChange={set('employee_number')} />
-        <input className={`${INPUT} w-full`} placeholder="Name" required value={form.display_name} onChange={set('display_name')} />
-        <input className={`${INPUT} w-full`} type="email" placeholder="Work email" value={form.work_email} onChange={set('work_email')} />
-        <input className={`${INPUT} w-full`} placeholder="Job title" value={form.job_title} onChange={set('job_title')} />
-        <select className={`${INPUT} w-full`} value={form.department_id} onChange={set('department_id')}>
+        <Input className="w-full" placeholder="Name" required value={form.display_name} onChange={set('display_name')} />
+        <Input className="w-full" type="email" placeholder="Work email" value={form.work_email} onChange={set('work_email')} />
+        <Input className="w-full" placeholder="Job title" value={form.job_title} onChange={set('job_title')} />
+        <Select className="w-full" value={form.department_id} onChange={set('department_id')}>
           <option value="">Department</option>
           {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
+        </Select>
         {error && <p className="text-sm text-danger-fg">{error}</p>}
         <div className="flex justify-end gap-2">
-          <button type="button" className={SECONDARY_BTN} onClick={onClose}>Cancel</button>
-          <button type="submit" className={PRIMARY_BTN} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+          <Button variant="secondary" size="md" type="button" onClick={onClose}>Cancel</Button>
+          <Button size="md" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
         </div>
       </form>
-    </div>
+    </Modal>
   )
 }

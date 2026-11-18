@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { adminApi, type RefHit } from '@/services/adminApi'
 
+import { Input, Button } from '@uniops/shell'
 interface Props {
   system: string
   source: string
@@ -43,15 +44,15 @@ export function ReferencePicker({ system, source, valueLabel, onPick }: Props) {
 
   return (
     <>
-      <button ref={triggerRef} type="button" onClick={toggle}
-        className="h-9 truncate rounded-lg border border-line-strong px-3 text-left text-sm hover:bg-surface-subtle">
+      <Button variant="secondary" size="md" ref={triggerRef} type="button" onClick={toggle}
+        className="truncate">
         {valueLabel || <span className="text-fg-muted">Select…</span>}
-      </button>
+      </Button>
       {open && rect && createPortal(
         <div ref={popRef} style={{ position: 'fixed', top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 260) }}
           className="z-[60] rounded-lg border border-line bg-surface shadow-lg">
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…"
-            className="m-2 h-8 w-[calc(100%-1rem)] rounded border border-line-strong px-2 text-sm" />
+          <Input inputSize="sm" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…"
+            className="m-2 w-[calc(100%-1rem)]" />
           <ul className="max-h-64 overflow-y-auto pb-1">
             {hits.map((h) => (
               <li key={h.id}>

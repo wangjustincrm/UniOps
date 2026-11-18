@@ -14,6 +14,7 @@ import { Clock, Loader2 } from 'lucide-react'
 import { epmsApi, financeApi, mdmApi } from '@/lib/api'
 import { cn, formatDateTime } from '@/lib/utils'
 
+import { Checkbox, Input, Select } from '@uniops/shell'
 export interface ScheduleState {
   interval_minutes: number
   next_due_at: string | null
@@ -141,21 +142,21 @@ export function ScheduleCard({ endpoint, title, maxMinutes = DEFAULT_MAX_MINUTES
 
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 text-sm text-fg-secondary">
-          <input type="checkbox" checked={enabled}
-                 onChange={(e) => setEnabled(e.target.checked)} className="h-4 w-4" />
+          <Checkbox checked={enabled}
+                 onChange={(e) => setEnabled(e.target.checked)} />
           Run automatically
         </label>
 
         <span className="text-sm text-fg-muted">every</span>
-        <input type="number" min={1} value={amount} disabled={!enabled}
+        <Input inputSize="sm" type="number" min={1} value={amount} disabled={!enabled}
                onChange={(e) => setAmount(e.target.value)}
-               className="h-9 w-20 rounded-lg border border-line-strong bg-surface px-2 text-sm disabled:bg-surface-subtle disabled:text-fg-muted" />
-        <select value={unit} disabled={!enabled}
+               className="w-20" />
+        <Select selectSize="sm" value={unit} disabled={!enabled}
                 onChange={(e) => setUnit(e.target.value as 'minutes' | 'hours')}
-                className="h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm disabled:bg-surface-subtle disabled:text-fg-muted">
+               >
           <option value="minutes">Minutes</option>
           <option value="hours">Hours</option>
-        </select>
+        </Select>
 
         <button type="button" disabled={save.isPending}
                 onClick={() => { if (!save.isPending) save.mutate() }}

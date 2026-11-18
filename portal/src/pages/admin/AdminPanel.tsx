@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef } from 'react'
-import { createPortal } from 'react-dom'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -9,7 +8,7 @@ import {
   Download, Upload, ChevronLeft, ChevronRight, FileText,
   Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail, DatabaseZap, Warehouse,
 } from 'lucide-react'
-import { SortTh, useSort, useSortableRows, sortParams, type Sort } from '@uniops/shell'
+import { SortTh, useSort, useSortableRows, sortParams, type Sort, Checkbox, FileInput, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { adminPageLinks } from '@/components/layout/navConfig'
@@ -124,7 +123,7 @@ const ROLE_LABELS: Record<string,string> = {
 // ── Shared UI helpers ─────────────────────────────────────────────────────────
 
 /** Header-cell classes shared by the admin list tables below. */
-const ADMIN_TH = 'px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted'
+const ADMIN_TH = 'px-4 py-3 text-left text-xs font-medium text-fg-muted'
 
 /** Copy `{ sort, dir }` (or nothing) onto a list's query string. */
 function setSortQs<K extends string>(qs: URLSearchParams, sort: Sort<K> | null) {
@@ -157,11 +156,11 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 }
 function SaveButton({ loading }: { loading: boolean }) {
   return (
-    <button type="submit" disabled={loading}
-      className="flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60 transition-colors">
+    <Button size="md" type="submit" disabled={loading}
+     >
       {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
       {loading ? 'Saving…' : 'Save Changes'}
-    </button>
+    </Button>
   )
 }
 function Toast({ ok, msg }: { ok: boolean; msg: string }) {
@@ -324,13 +323,13 @@ function CompanySettings() {
             <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-fg-secondary hover:bg-surface-subtle transition-colors">
               <Plus className="h-3.5 w-3.5" />
               {currentLogo ? 'Replace' : 'Upload'} Logo
-              <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleLogoChange} />
+              <FileInput accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleLogoChange} />
             </label>
             {currentLogo && (
-              <button type="button" onClick={handleRemoveLogo}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-danger-line px-3 py-1.5 text-xs font-medium text-danger-fg hover:bg-danger-soft transition-colors">
+              <Button variant="danger-outline" size="xs" type="button" onClick={handleRemoveLogo}
+               >
                 <X className="h-3.5 w-3.5" />Remove
-              </button>
+              </Button>
             )}
             {currentFileName && (
               <span className="text-2xs text-fg-muted truncate max-w-[140px]">{currentFileName}</span>
@@ -359,10 +358,10 @@ function CompanySettings() {
       </Field>
       <Field label="Time Zone"
         hint="The plant's time zone. Every module uses it for times on screen, in PDFs and emails, for today's date, accounting periods, document-number dates and the hour daily reminders run. Daylight saving is applied automatically.">
-        <select value={currentTimeZone} onChange={(e) => setTimeZone(e.target.value)}
-          className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
+        <Select value={currentTimeZone} onChange={(e) => setTimeZone(e.target.value)}
+          className="w-full">
           {zoneOptions.map((z) => <option key={z} value={z}>{zoneLabel(z)}</option>)}
-        </select>
+        </Select>
       </Field>
       <div className="flex items-center gap-3">
         <SaveButton loading={save.isPending} />
@@ -480,10 +479,10 @@ export function DepartmentManagement() {
     <div>
       <SectionHeader title="Department Management" description="Departments are shared across EPMS, OA, and all future modules." />
       <div className="mb-4 flex justify-end">
-        <button onClick={openCreate}
-          className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800">
+        <Button size="md" onClick={openCreate}
+         >
           <Plus className="h-4 w-4" />Add Department
-        </button>
+        </Button>
       </div>
       {listError && <div className="mb-4"><Toast ok={false} msg={listError} /></div>}
       {dlg.dialog}
@@ -493,60 +492,54 @@ export function DepartmentManagement() {
         ) : !data?.items.length ? (
           <div className="py-10 text-center text-sm text-fg-muted">No departments yet.</div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="border-b border-line-subtle bg-surface-subtle">
-              <tr>
+          <Table>
+            <THead>
+              <Tr>
                 <SortTh label="Code" sortKey="code" sort={depts.sort} onSort={depts.onSort} className={ADMIN_TH} />
                 <SortTh label="Name" sortKey="name" sort={depts.sort} onSort={depts.onSort} className={ADMIN_TH} />
                 <SortTh label="Status" sortKey="status" sort={depts.sort} onSort={depts.onSort} className={ADMIN_TH} />
-                <th className={ADMIN_TH} />
-              </tr>
-            </thead>
-            <tbody>
+                <Th className={ADMIN_TH} />
+              </Tr>
+            </THead>
+            <TBody>
               {depts.rows.map((d, i) => (
-                <tr key={d.id} className={cn('border-b border-line-subtle', i === depts.rows.length - 1 && 'border-b-0')}>
-                  <td className="px-4 py-3 font-mono text-xs text-fg-secondary">{d.code}</td>
-                  <td className="px-4 py-3 font-medium text-fg">{d.name}</td>
-                  <td className="px-4 py-3">
+                <Tr key={d.id} className={cn('border-b border-line-subtle', i === depts.rows.length - 1 && 'border-b-0')}>
+                  <Td className="font-mono text-xs text-fg-secondary">{d.code}</Td>
+                  <Td className="font-medium text-fg">{d.name}</Td>
+                  <Td>
                     <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium', d.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                       {d.is_active ? 'Active' : 'Inactive'}
                     </span>
-                  </td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td>
                     <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => openEdit(d)} className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary"><Pencil className="h-3.5 w-3.5" /></button>
-                      <button onClick={() => handleDelete(d.id)} className="rounded p-1.5 text-fg-muted hover:bg-danger-soft hover:text-danger-fg"><Trash2 className="h-3.5 w-3.5" /></button>
+                      <Button aria-label="Edit" variant="subtle" size="icon-sm" onClick={() => openEdit(d)}><Pencil className="h-3.5 w-3.5" /></Button>
+                      <Button variant="danger-ghost" size="icon-sm" aria-label="Remove" onClick={() => handleDelete(d.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                     </div>
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         )}
       </div>
 
       {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-xl border border-line bg-surface shadow-xl">
-            <div className="flex items-center justify-between border-b border-line-subtle px-5 py-4">
-              <h3 className="font-semibold text-fg">{modal.mode === 'create' ? 'Add Department' : 'Edit Department'}</h3>
-              <button onClick={() => setModal(null)} className="rounded p-1 text-fg-muted hover:bg-surface-sunken"><X className="h-4 w-4" /></button>
+        <ShellModal open onClose={() => setModal(null)} title={modal.mode === 'create' ? 'Add Department' : 'Edit Department'} closeOnEscape={false} size="full" className="max-w-sm">
+          <form onSubmit={handleSave} className="flex flex-col gap-4">
+            <Field label="Code"><Input value={form.code} onChange={(e) => setForm((p) => ({ ...p, code: e.target.value.toUpperCase() }))} placeholder="DEPT-001" required /></Field>
+            <Field label="Name"><Input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="Department name" required /></Field>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-fg-secondary">Active</span>
+              <Toggle checked={form.is_active} onChange={(v) => setForm((p) => ({ ...p, is_active: v }))} />
             </div>
-            <form onSubmit={handleSave} className="flex flex-col gap-4 p-5">
-              <Field label="Code"><Input value={form.code} onChange={(e) => setForm((p) => ({ ...p, code: e.target.value.toUpperCase() }))} placeholder="DEPT-001" required /></Field>
-              <Field label="Name"><Input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="Department name" required /></Field>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-fg-secondary">Active</span>
-                <Toggle checked={form.is_active} onChange={(v) => setForm((p) => ({ ...p, is_active: v }))} />
-              </div>
-              {error && <Toast ok={false} msg={error} />}
-              <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
-                <button type="button" onClick={() => setModal(null)} className="rounded-lg border border-line px-4 py-2 text-sm text-fg-secondary hover:bg-surface-subtle">Cancel</button>
-                <SaveButton loading={saving} />
-              </div>
-            </form>
-          </div>
-        </div>
+            {error && <Toast ok={false} msg={error} />}
+            <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
+              <Button variant="secondary" size="md" type="button" onClick={() => setModal(null)}>Cancel</Button>
+              <SaveButton loading={saving} />
+            </div>
+          </form>
+        </ShellModal>
       )}
     </div>
   )
@@ -706,23 +699,23 @@ export function UserManagement() {
           <Search className="h-4 w-4 text-fg-muted shrink-0" />
           <input className="flex-1 text-sm focus:outline-none" placeholder="Search name or email…"
             value={search} onChange={(e) => handleSearch(e.target.value)} />
-          {search && <button onClick={() => handleSearch('')} className="text-fg-faint hover:text-fg-muted"><X className="h-3.5 w-3.5" /></button>}
+          {search && <Button aria-label="Clear search" variant="subtle" size="icon-xs" onClick={() => handleSearch('')}><X className="h-3.5 w-3.5" /></Button>}
         </div>
 
         {/* Role filter */}
-        <select value={roleFilter} onChange={(e) => handleRole(e.target.value)}
-          className="rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none">
+        <Select value={roleFilter} onChange={(e) => handleRole(e.target.value)}
+         >
           <option value="">All roles</option>
           {ALL_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-        </select>
+        </Select>
 
         <div className="flex items-center gap-2 ml-auto">
           {/* Template */}
-          <button onClick={handleDownloadTemplate}
-            className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors"
+          <Button variant="secondary" size="md" onClick={handleDownloadTemplate}
+           
             title="Download CSV template">
             <FileText className="h-4 w-4" />Template
-          </button>
+          </Button>
 
           {/* Import */}
           <label className={cn(
@@ -731,27 +724,27 @@ export function UserManagement() {
           )}>
             {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
             Import
-            <input ref={importRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImport} disabled={importing} />
+            <FileInput ref={importRef} accept=".csv,text/csv" className="hidden" onChange={handleImport} disabled={importing} />
           </label>
 
           {/* Export */}
-          <button onClick={handleExport} disabled={exporting}
-            className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-60 transition-colors">
+          <Button variant="secondary" size="md" onClick={handleExport} disabled={exporting}
+           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Export
-          </button>
+          </Button>
 
           {/* From ERP */}
-          <button onClick={() => setShowErpImport(true)}
-            className="flex items-center gap-1.5 rounded-lg border border-primary-700 bg-surface px-3 py-2 text-sm font-medium text-primary-700 hover:bg-primary-700/5 transition-colors">
+          <Button variant="outline" size="md" onClick={() => setShowErpImport(true)}
+           >
             <Database className="h-4 w-4" />From ERP
-          </button>
+          </Button>
 
           {/* Add */}
-          <button onClick={openCreate}
-            className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors">
+          <Button size="md" onClick={openCreate}
+           >
             <Plus className="h-4 w-4" />Add User
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -769,7 +762,7 @@ export function UserManagement() {
               Import complete — {importResult.created} created, {importResult.updated} updated
               {importResult.errors.length > 0 && `, ${importResult.errors.length} error(s)`}
             </span>
-            <button onClick={() => setImportResult(null)} className="text-fg-muted hover:text-fg-secondary"><X className="h-4 w-4" /></button>
+            <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={() => setImportResult(null)}><X className="h-4 w-4" /></Button>
           </div>
           {importResult.errors.length > 0 && (
             <ul className="mt-2 space-y-0.5 text-xs text-warning-fg">
@@ -786,46 +779,46 @@ export function UserManagement() {
         ) : !data?.items.length ? (
           <div className="py-10 text-center text-sm text-fg-muted">No users found.</div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="border-b border-line-subtle bg-surface-subtle">
-              <tr>
+          <Table>
+            <THead>
+              <Tr>
                 <SortTh label="Name / Email" sortKey="full_name" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
                 <SortTh label="Role" sortKey="role" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
                 <SortTh label="Department" sortKey="department" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
                 <SortTh label="ERP Code" sortKey="erp_person_code" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
                 <SortTh label="Status" sortKey="status" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
-                <th className={ADMIN_TH} />
-              </tr>
-            </thead>
-            <tbody>
+                <Th className={ADMIN_TH} />
+              </Tr>
+            </THead>
+            <TBody>
               {data.items.map((u, i) => (
-                <tr key={u.id} className={cn('border-b border-line-subtle', i === data.items.length - 1 && 'border-b-0')}>
-                  <td className="px-4 py-3">
+                <Tr key={u.id} className={cn('border-b border-line-subtle', i === data.items.length - 1 && 'border-b-0')}>
+                  <Td>
                     <p className="font-medium text-fg">{u.full_name}</p>
                     <p className="text-2xs text-fg-muted">{u.email}</p>
-                  </td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td>
                     <span className="rounded bg-primary-50 px-1.5 py-0.5 text-2xs font-medium text-primary-700">
                       {ROLE_LABELS[u.role] ?? u.role}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-fg-muted">{u.department_name ?? '—'}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-fg-muted">{u.erp_person_code ?? '—'}</td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td className="text-xs text-fg-muted">{u.department_name ?? '—'}</Td>
+                  <Td className="font-mono text-xs text-fg-muted">{u.erp_person_code ?? '—'}</Td>
+                  <Td>
                     <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium', u.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                       {u.is_active ? 'Active' : 'Inactive'}
                     </span>
-                  </td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td>
                     <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => openEdit(u)} className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary"><Pencil className="h-3.5 w-3.5" /></button>
-                      <button onClick={() => handleDelete(u.id)} className="rounded p-1.5 text-fg-muted hover:bg-danger-soft hover:text-danger-fg"><Trash2 className="h-3.5 w-3.5" /></button>
+                      <Button aria-label="Edit" variant="subtle" size="icon-sm" onClick={() => openEdit(u)}><Pencil className="h-3.5 w-3.5" /></Button>
+                      <Button variant="danger-ghost" size="icon-sm" aria-label="Remove" onClick={() => handleDelete(u.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                     </div>
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         )}
 
         {/* Pagination footer */}
@@ -835,13 +828,13 @@ export function UserManagement() {
               {total === 0 ? 'No users' : `${rangeStart}–${rangeEnd} of ${total} users`}
             </span>
             <div className="flex items-center gap-1">
-              <button
+              <Button aria-label="Previous page" variant="secondary" size="icon-xs"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40 transition-colors"
+               
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
-              </button>
+              </Button>
               {Array.from({ length: totalPages }, (_, i) => i + 1)
                 .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
                 .reduce<(number | '…')[]>((acc, p, i, arr) => {
@@ -857,13 +850,13 @@ export function UserManagement() {
                         {p}
                       </button>
                 )}
-              <button
+              <Button aria-label="Next page" variant="secondary" size="icon-xs"
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40 transition-colors"
+               
               >
                 <ChevronRight className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -874,73 +867,67 @@ export function UserManagement() {
 
       {/* Edit / Create modal */}
       {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-xl border border-line bg-surface shadow-xl overflow-y-auto max-h-[90vh]">
-            <div className="flex items-center justify-between border-b border-line-subtle px-5 py-4">
-              <h3 className="font-semibold text-fg">{modal.mode === 'create' ? 'Add User' : 'Edit User'}</h3>
-              <button onClick={closeModal} className="rounded p-1 text-fg-muted hover:bg-surface-sunken"><X className="h-4 w-4" /></button>
+        <ShellModal open onClose={closeModal} title={modal.mode === 'create' ? 'Add User' : 'Edit User'} closeOnEscape={false} size="full" className="max-w-md">
+          <form onSubmit={handleSave} className="flex flex-col gap-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Full Name"><Input value={form.full_name} onChange={(e) => setForm((p) => ({ ...p, full_name: e.target.value }))} required /></Field>
+              <Field label="Email"><Input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} required /></Field>
+              <Field label="Role">
+                <Select value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))}
+                  className="w-full">
+                  {ALL_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                </Select>
+              </Field>
+              <Field label="Department">
+                <Select value={form.department_id} onChange={(e) => setForm((p) => ({ ...p, department_id: e.target.value, supervisor_id: '' }))}
+                  className="w-full">
+                  <option value="">— None —</option>
+                  {depts?.items.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </Select>
+              </Field>
+              <Field label="Supervisor">
+                <Select value={form.supervisor_id} onChange={(e) => setForm((p) => ({ ...p, supervisor_id: e.target.value }))}
+                  disabled={!form.department_id}
+                  className="w-full">
+                  <option value="">{form.department_id ? '— None —' : '— Select a department first —'}</option>
+                  {directory?.items
+                    .filter((u) => u.id !== modal.user?.id && !!form.department_id && u.department_id === form.department_id)
+                    .map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                </Select>
+              </Field>
+              <Field label={modal.mode === 'create' ? 'Password *' : 'New Password (leave blank to keep)'}>
+                <div className="relative">
+                  <Input type={showPwd ? 'text' : 'password'} value={form.password}
+                    onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+                    required={modal.mode === 'create'} />
+                  <Button variant="subtle" size="icon-xs" type="button" onClick={() => setShowPwd((v) => !v)}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2">
+                    {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </Field>
+              <Field label="Teams Account">
+                <Input value={form.teams_account} onChange={(e) => setForm((p) => ({ ...p, teams_account: e.target.value }))} placeholder="user@teams.example.com" />
+              </Field>
+              <Field label={modal.mode === 'create' ? 'ERP Code *' : 'ERP Code'}>
+                <Input value={form.erp_person_code}
+                  onChange={(e) => setForm((p) => ({ ...p, erp_person_code: e.target.value }))}
+                  readOnly={!!fromEmployee && modal.mode === 'create'}
+                  required={modal.mode === 'create'}
+                  placeholder="e.g. EMP00123" />
+              </Field>
             </div>
-            <form onSubmit={handleSave} className="flex flex-col gap-4 p-5">
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Full Name"><Input value={form.full_name} onChange={(e) => setForm((p) => ({ ...p, full_name: e.target.value }))} required /></Field>
-                <Field label="Email"><Input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} required /></Field>
-                <Field label="Role">
-                  <select value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))}
-                    className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
-                    {ALL_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-                  </select>
-                </Field>
-                <Field label="Department">
-                  <select value={form.department_id} onChange={(e) => setForm((p) => ({ ...p, department_id: e.target.value, supervisor_id: '' }))}
-                    className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
-                    <option value="">— None —</option>
-                    {depts?.items.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </select>
-                </Field>
-                <Field label="Supervisor">
-                  <select value={form.supervisor_id} onChange={(e) => setForm((p) => ({ ...p, supervisor_id: e.target.value }))}
-                    disabled={!form.department_id}
-                    className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400 disabled:bg-surface-subtle disabled:text-fg-muted">
-                    <option value="">{form.department_id ? '— None —' : '— Select a department first —'}</option>
-                    {directory?.items
-                      .filter((u) => u.id !== modal.user?.id && !!form.department_id && u.department_id === form.department_id)
-                      .map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-                  </select>
-                </Field>
-                <Field label={modal.mode === 'create' ? 'Password *' : 'New Password (leave blank to keep)'}>
-                  <div className="relative">
-                    <Input type={showPwd ? 'text' : 'password'} value={form.password}
-                      onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
-                      required={modal.mode === 'create'} />
-                    <button type="button" onClick={() => setShowPwd((v) => !v)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
-                      {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </Field>
-                <Field label="Teams Account">
-                  <Input value={form.teams_account} onChange={(e) => setForm((p) => ({ ...p, teams_account: e.target.value }))} placeholder="user@teams.example.com" />
-                </Field>
-                <Field label={modal.mode === 'create' ? 'ERP Code *' : 'ERP Code'}>
-                  <Input value={form.erp_person_code}
-                    onChange={(e) => setForm((p) => ({ ...p, erp_person_code: e.target.value }))}
-                    readOnly={!!fromEmployee && modal.mode === 'create'}
-                    required={modal.mode === 'create'}
-                    placeholder="e.g. EMP00123" />
-                </Field>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-fg-secondary">Active</span>
-                <Toggle checked={form.is_active} onChange={(v) => setForm((p) => ({ ...p, is_active: v }))} />
-              </div>
-              {error && <Toast ok={false} msg={error} />}
-              <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
-                <button type="button" onClick={closeModal} className="rounded-lg border border-line px-4 py-2 text-sm text-fg-secondary hover:bg-surface-subtle">Cancel</button>
-                <SaveButton loading={saving} />
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-fg-secondary">Active</span>
+              <Toggle checked={form.is_active} onChange={(v) => setForm((p) => ({ ...p, is_active: v }))} />
+            </div>
+            {error && <Toast ok={false} msg={error} />}
+            <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
+              <Button variant="secondary" size="md" type="button" onClick={closeModal}>Cancel</Button>
+              <SaveButton loading={saving} />
+            </div>
+          </form>
+        </ShellModal>
       )}
     </div>
   )
@@ -989,10 +976,10 @@ function CurrencySettings() {
     <form onSubmit={handleSubmit} className="flex flex-col gap-5 max-w-lg">
       <SectionHeader title="Currency Settings" description="Default currency and enabled currencies apply to all financial modules." />
       <Field label="Default Currency">
-        <select value={currDefault} onChange={(e) => setDefaultCurrency(e.target.value)}
-          className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
+        <Select value={currDefault} onChange={(e) => setDefaultCurrency(e.target.value)}
+          className="w-full">
           {allCurrencies.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
+        </Select>
       </Field>
       <Field label="Enabled Currencies" hint="Only enabled currencies appear in transaction forms.">
         <div className="grid grid-cols-4 gap-2 mt-1">
@@ -1159,10 +1146,10 @@ function NotificationSettings() {
             <div className="relative">
               <Input type={showPwd ? 'text' : 'password'} value={smtpVal.password}
                 onChange={(e) => setSmtp((p) => ({ ...p, password: e.target.value }))} />
-              <button type="button" onClick={() => setShowPwd((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
+              <Button variant="subtle" size="icon-xs" type="button" onClick={() => setShowPwd((v) => !v)}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2">
                 {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
+              </Button>
             </div>
           </Field>
           <Field label="From Address">
@@ -1297,11 +1284,11 @@ function NotificationSettings() {
       {/* Test notification */}
       <div className="flex items-center gap-2">
         <Input className="flex-1" value={testEmail} onChange={(e) => setTestEmail(e.target.value)} placeholder="Send test notification to…" type="email" />
-        <button type="button" onClick={handleTest} disabled={testing || !testEmail}
-          className="flex items-center gap-1.5 rounded-lg border border-line px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50 whitespace-nowrap">
+        <Button variant="secondary" size="md" type="button" onClick={handleTest} disabled={testing || !testEmail}
+         >
           {testing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Test
-        </button>
+        </Button>
       </div>
       {testResult && <Toast {...testResult} />}
 
@@ -1473,10 +1460,10 @@ function RemittanceSettings() {
             <div className="relative">
               <Input type={showPwd ? 'text' : 'password'} value={smtpPasswordVal}
                 onChange={(e) => setSmtpPassword(e.target.value)} />
-              <button type="button" onClick={() => setShowPwd((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
+              <Button variant="subtle" size="icon-xs" type="button" onClick={() => setShowPwd((v) => !v)}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2">
                 {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
+              </Button>
             </div>
           </Field>
         </div>
@@ -1830,7 +1817,7 @@ function ApprovalWorkflows() {
 
       {/* Step list */}
       <div className="flex flex-col gap-2">
-        <p className="text-xs text-fg-muted font-medium uppercase tracking-wide">
+        <p className="text-xs text-fg-muted font-medium">
           {ACTION_KEY_LABELS[activeKey]} — approval chain
         </p>
         {isFreight && (
@@ -1848,7 +1835,7 @@ function ApprovalWorkflows() {
 
         {steps.map((step, i) => (
           <div key={step.id} className="flex items-center gap-2 rounded-xl border border-line bg-surface-subtle px-3 py-2.5">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-700/10 text-xs font-bold text-primary-700">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-700/10 text-xs font-semibold text-primary-700">
               {i + 1}
             </span>
 
@@ -1859,10 +1846,10 @@ function ApprovalWorkflows() {
               className="flex-1 min-w-0 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary-700"
             />
 
-            <select
+            <Select selectSize="sm"
               value={step.role}
               onChange={e => updateStep(i, { role: e.target.value })}
-              className="h-8 rounded-lg border border-line bg-surface px-2 text-xs text-fg focus:outline-none focus:border-primary-700"
+             
             >
               {/* A role already saved but not offered here (e.g. a sign-off step
                   left on dept_manager) still needs an entry, or the select would
@@ -1873,44 +1860,44 @@ function ApprovalWorkflows() {
               {roleOptions.map(r => (
                 <option key={r.value} value={r.value}>{r.label}</option>
               ))}
-            </select>
+            </Select>
 
             {isSignoff && (
-              <select
+              <Select selectSize="sm"
                 value={step.sig_slot ?? ''}
                 onChange={e => updateStep(i, {
                   sig_slot: (e.target.value || null) as WorkflowNodeDef['sig_slot'],
                 })}
                 title="Where this step's signature is drawn on the PO PDF"
-                className="h-8 rounded-lg border border-line bg-surface px-2 text-xs text-fg focus:outline-none focus:border-primary-700"
+               
               >
                 {SIG_SLOTS.map(sl => (
                   <option key={sl.value} value={sl.value}>{sl.label}</option>
                 ))}
-              </select>
+              </Select>
             )}
 
             <div className="flex items-center gap-0.5">
-              <button onClick={() => moveUp(i)} disabled={i === 0}
-                className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-surface-strong disabled:opacity-30">
+              <Button aria-label="Move up" variant="subtle" size="icon-xs" onClick={() => moveUp(i)} disabled={i === 0}
+               >
                 <ChevronUp className="h-3.5 w-3.5" />
-              </button>
-              <button onClick={() => moveDown(i)} disabled={i === steps.length - 1}
-                className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-surface-strong disabled:opacity-30">
+              </Button>
+              <Button aria-label="Move down" variant="subtle" size="icon-xs" onClick={() => moveDown(i)} disabled={i === steps.length - 1}
+               >
                 <ChevronDown className="h-3.5 w-3.5" />
-              </button>
-              <button onClick={() => removeStep(i)} disabled={steps.length <= 1}
-                className="flex h-7 w-7 items-center justify-center rounded text-fg-faint hover:bg-danger-soft hover:text-danger-fg disabled:opacity-30">
+              </Button>
+              <Button variant="danger-ghost" size="icon-xs" aria-label="Remove" onClick={() => removeStep(i)} disabled={steps.length <= 1}
+               >
                 <X className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             </div>
           </div>
         ))}
 
-        <button onClick={addStep}
-          className="flex items-center gap-1.5 self-start text-sm font-medium text-primary-700 hover:text-primary-800 mt-1">
+        <Button variant="link" onClick={addStep}
+          className="self-start mt-1 text-sm">
           <Plus className="h-4 w-4" /> Add step
-        </button>
+        </Button>
 
         {isSignoff && (
           <div className="rounded-lg border border-line bg-surface-subtle px-4 py-3 text-xs text-fg-muted">
@@ -1935,14 +1922,14 @@ function ApprovalWorkflows() {
 
       {/* Save */}
       <div className="flex items-center gap-3 border-t border-line-subtle pt-4">
-        <button
+        <Button size="md"
           onClick={handleSave}
           disabled={saving || duplicateSlots.length > 0}
-          className="flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors"
+         
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
           Save Workflow
-        </button>
+        </Button>
         {saved && (
           <span className="flex items-center gap-1.5 text-sm text-success-fg">
             <CheckCircle2 className="h-4 w-4" /> Saved
@@ -1971,82 +1958,73 @@ function ApprovalWorkflows() {
         whose every step is already given is approved.
       </div>
 
-      {preview && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-line bg-surface shadow-xl">
-            <div className="flex items-center justify-between border-b border-line-subtle px-5 py-4">
-              <h3 className="font-semibold text-fg">Documents already in approval</h3>
-              <button onClick={() => setPreview(null)} className="rounded p-1 text-fg-muted hover:bg-surface-sunken">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="flex flex-col gap-3 overflow-y-auto px-5 py-4 text-sm">
-              {preview.unavailable ? (
-                <p className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-warning-fg">
-                  Could not check which documents this change moves ({preview.unavailable}).
-                  Saving will still move them; the result is shown after saving.
+      {preview && (
+        <ShellModal open onClose={() => setPreview(null)} title="Documents already in approval" closeOnEscape={false} size="full" className="max-w-2xl">
+          <div className="flex flex-col gap-3 text-sm">
+            {preview.unavailable ? (
+              <p className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-warning-fg">
+                Could not check which documents this change moves ({preview.unavailable}).
+                Saving will still move them; the result is shown after saving.
+              </p>
+            ) : (
+              <p className="text-fg-secondary">
+                Saving moves {preview.realigned.length} document{preview.realigned.length === 1 ? '' : 's'} onto
+                the new steps{preview.realigned.some(r => r.completed)
+                  ? `; ${preview.realigned.filter(r => r.completed).length} will be fully approved because every step is already given` : ''}.
+              </p>
+            )}
+            {preview.realigned.length > 0 && (
+              <div className="max-h-80 overflow-y-auto rounded-lg border border-line">
+                <Table density="compact">
+                  <THead className="sticky top-0">
+                    <Tr>
+                      <Th>Document</Th>
+                      <Th>Workflow</Th>
+                      <Th>Waiting on now</Th>
+                      <Th>After saving</Th>
+                    </Tr>
+                  </THead>
+                  <TBody>
+                    {preview.realigned.map((r, i) => (
+                      <Tr key={r.doc_id} className={i % 2 ? 'bg-surface-subtle/60' : ''}>
+                        <Td className="font-mono text-fg">
+                          {r.number}{r.status === 'returned' && <span className="ml-1 text-fg-muted">(returned)</span>}
+                        </Td>
+                        <Td className="text-fg-secondary">{workflowLabel(r.workflow_key)}</Td>
+                        <Td className="text-fg-secondary">{r.from}</Td>
+                        <Td className={cn('px-3 py-1.5', r.completed ? 'font-medium text-success-fg' : 'text-fg')}>
+                          {r.status === 'returned' ? `${r.to} (on resubmission)` : r.to}
+                        </Td>
+                      </Tr>
+                    ))}
+                  </TBody>
+                </Table>
+              </div>
+            )}
+            {preview.errors.length > 0 && (
+              <div className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-fg">
+                <p className="font-medium">
+                  {preview.errors.length} document{preview.errors.length === 1 ? '' : 's'} cannot be moved
+                  and will stay where they are (fix them in Data Maintenance → Edit approval state):
                 </p>
-              ) : (
-                <p className="text-fg-secondary">
-                  Saving moves {preview.realigned.length} document{preview.realigned.length === 1 ? '' : 's'} onto
-                  the new steps{preview.realigned.some(r => r.completed)
-                    ? `; ${preview.realigned.filter(r => r.completed).length} will be fully approved because every step is already given` : ''}.
-                </p>
-              )}
-              {preview.realigned.length > 0 && (
-                <div className="max-h-80 overflow-y-auto rounded-lg border border-line">
-                  <table className="w-full text-xs">
-                    <thead className="sticky top-0 bg-surface-subtle text-left text-fg-muted">
-                      <tr>
-                        <th className="px-3 py-2 font-medium">Document</th>
-                        <th className="px-3 py-2 font-medium">Workflow</th>
-                        <th className="px-3 py-2 font-medium">Waiting on now</th>
-                        <th className="px-3 py-2 font-medium">After saving</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {preview.realigned.map((r, i) => (
-                        <tr key={r.doc_id} className={i % 2 ? 'bg-surface-subtle/60' : ''}>
-                          <td className="px-3 py-1.5 font-mono text-fg">
-                            {r.number}{r.status === 'returned' && <span className="ml-1 text-fg-muted">(returned)</span>}
-                          </td>
-                          <td className="px-3 py-1.5 text-fg-secondary">{workflowLabel(r.workflow_key)}</td>
-                          <td className="px-3 py-1.5 text-fg-secondary">{r.from}</td>
-                          <td className={cn('px-3 py-1.5', r.completed ? 'font-medium text-success-fg' : 'text-fg')}>
-                            {r.status === 'returned' ? `${r.to} (on resubmission)` : r.to}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              {preview.errors.length > 0 && (
-                <div className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-fg">
-                  <p className="font-medium">
-                    {preview.errors.length} document{preview.errors.length === 1 ? '' : 's'} cannot be moved
-                    and will stay where they are (fix them in Data Maintenance → Edit approval state):
-                  </p>
-                  <ul className="mt-1 list-disc pl-5">
-                    {preview.errors.map(e => <li key={e.doc_id}>{e.doc_type.toUpperCase()} {e.doc_id}: {e.error}</li>)}
-                  </ul>
-                </div>
-              )}
-            </div>
-            <div className="flex justify-end gap-2 border-t border-line-subtle px-5 py-3">
-              <button onClick={() => setPreview(null)}
-                className="rounded-lg border border-line px-4 py-2 text-sm text-fg-secondary hover:bg-surface-subtle">
-                Cancel
-              </button>
-              <button onClick={save} disabled={saving}
-                className="flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                Save and move documents
-              </button>
-            </div>
+                <ul className="mt-1 list-disc pl-5">
+                  {preview.errors.map(e => <li key={e.doc_id}>{e.doc_type.toUpperCase()} {e.doc_id}: {e.error}</li>)}
+                </ul>
+              </div>
+            )}
           </div>
-        </div>,
-        document.body,
+          <div className="flex justify-end gap-2 border-t border-line-subtle px-5 py-3">
+            <Button variant="secondary" size="md" onClick={() => setPreview(null)}
+             >
+              Cancel
+            </Button>
+            <Button size="md" onClick={save} disabled={saving}
+             >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              Save and move documents
+            </Button>
+          </div>
+        </ShellModal>
       )}
     </div>
   )
@@ -2138,16 +2116,16 @@ function ErpSyncToolbar({ kind, onSearchChange, search, filters }: {
         </> : 'Never synced'}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <button onClick={() => trigger(false)} disabled={!!syncing}
-          className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60 transition-colors">
+        <Button size="md" onClick={() => trigger(false)} disabled={!!syncing}
+         >
           {syncing === 'inc' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           Sync Incremental
-        </button>
-        <button onClick={() => trigger(true)} disabled={!!syncing}
-          className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-60 transition-colors">
+        </Button>
+        <Button variant="secondary" size="md" onClick={() => trigger(true)} disabled={!!syncing}
+         >
           {syncing === 'full' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           Full Resync
-        </button>
+        </Button>
         <div className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 ml-auto flex-1 min-w-[180px] max-w-xs">
           <Search className="h-4 w-4 text-fg-muted shrink-0" />
           <input className="flex-1 text-sm focus:outline-none" placeholder="Search…"
@@ -2192,12 +2170,12 @@ function ErpMaterialsTab() {
         search={search}
         onSearchChange={(v) => { setSearch(v); setPage(1) }}
         filters={
-          <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value as 'A' | 'B' | ''); setPage(1) }}
-            className="rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none">
+          <Select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value as 'A' | 'B' | ''); setPage(1) }}
+           >
             <option value="A">Active (A)</option>
             <option value="B">Inactive (B)</option>
             <option value="">All</option>
-          </select>
+          </Select>
         }
       />
       <div className="rounded-xl border border-line bg-surface overflow-hidden">
@@ -2206,9 +2184,9 @@ function ErpMaterialsTab() {
         ) : !data?.items.length ? (
           <div className="py-10 text-center text-sm text-fg-muted">No materials. Click Sync Incremental to fetch from ERP.</div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="border-b border-line-subtle bg-surface-subtle">
-              <tr>
+          <Table>
+            <THead>
+              <Tr>
                 <SortTh label="Part No" sortKey="erp_part_no" sort={sort} onSort={onSort} className={ADMIN_TH} />
                 <SortTh label="Description" sortKey="description" sort={sort} onSort={onSort} className={ADMIN_TH} />
                 <SortTh label="Unit" sortKey="unit_meas" sort={sort} onSort={onSort} className={ADMIN_TH} />
@@ -2216,29 +2194,29 @@ function ErpMaterialsTab() {
                 <SortTh label="MES Type" sortKey="item_mes_type" sort={sort} onSort={onSort} className={ADMIN_TH} />
                 <SortTh label="Status" sortKey="part_status" sort={sort} onSort={onSort} className={ADMIN_TH} />
                 <SortTh label="ERP rowversion" sortKey="erp_rowversion" sort={sort} onSort={onSort} className={ADMIN_TH} />
-              </tr>
-            </thead>
-            <tbody>
+              </Tr>
+            </THead>
+            <TBody>
               {data.items.map(m => (
-                <tr key={m.erp_part_no} className="border-b border-line-subtle">
-                  <td className="px-4 py-3 font-mono text-xs">{m.erp_part_no}</td>
-                  <td className="px-4 py-3 text-fg">{m.description}</td>
-                  <td className="px-4 py-3 text-xs text-fg-muted">{m.unit_meas}</td>
-                  <td className="px-4 py-3 text-xs text-fg-muted">{m.dim_quality}</td>
-                  <td className="px-4 py-3 text-xs text-fg-muted">{m.item_mes_type}</td>
-                  <td className="px-4 py-3">
+                <Tr key={m.erp_part_no}>
+                  <Td className="font-mono text-xs">{m.erp_part_no}</Td>
+                  <Td className="text-fg">{m.description}</Td>
+                  <Td className="text-xs text-fg-muted">{m.unit_meas}</Td>
+                  <Td className="text-xs text-fg-muted">{m.dim_quality}</Td>
+                  <Td className="text-xs text-fg-muted">{m.item_mes_type}</Td>
+                  <Td>
                     <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium',
                       m.part_status === 'A' ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                       {m.part_status || '—'}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 text-2xs text-fg-muted">
+                  </Td>
+                  <Td className="text-2xs text-fg-muted">
                     {m.erp_rowversion ? formatDateTime(m.erp_rowversion) : '—'}
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         )}
         {total > 0 && (
           <div className="flex items-center justify-between border-t border-line-subtle px-4 py-3">
@@ -2246,15 +2224,15 @@ function ErpMaterialsTab() {
               {(page - 1) * 20 + 1}–{Math.min(page * 20, total)} of {total}
             </span>
             <div className="flex items-center gap-1">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40">
+              <Button aria-label="Previous page" variant="secondary" size="icon-xs" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+               >
                 <ChevronLeft className="h-3.5 w-3.5" />
-              </button>
+              </Button>
               <span className="px-2 text-xs text-fg-muted">{page} / {totalPages}</span>
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40">
+              <Button aria-label="Next page" variant="secondary" size="icon-xs" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+               >
                 <ChevronRight className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -2291,42 +2269,42 @@ function ErpSuppliersTab() {
       <div className="rounded-xl border border-line bg-surface overflow-hidden">
         {isLoading && !data ? <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
           : !data?.items.length ? <div className="py-10 text-center text-sm text-fg-muted">No suppliers. Click Sync.</div>
-          : <table className="w-full text-sm">
-              <thead className="border-b border-line-subtle bg-surface-subtle">
-                <tr>
+          : <Table>
+              <THead>
+                <Tr>
                   <SortTh label="Code" sortKey="erp_supplier_code" sort={sort} onSort={onSort} className={ADMIN_TH} />
                   <SortTh label="Name" sortKey="supplier_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
                   <SortTh label="Type" sortKey="supplier_type" sort={sort} onSort={onSort} className={ADMIN_TH} />
                   <SortTh label="Tel" sortKey="supplier_tel" sort={sort} onSort={onSort} className={ADMIN_TH} />
                   <SortTh label="Address" sortKey="supplier_address" sort={sort} onSort={onSort} className={ADMIN_TH} />
-                </tr>
-              </thead>
-              <tbody>
+                </Tr>
+              </THead>
+              <TBody>
                 {data.items.map(s => (
-                  <tr key={s.erp_supplier_code} className="border-b border-line-subtle">
-                    <td className="px-4 py-3 font-mono text-xs">{s.erp_supplier_code}</td>
-                    <td className="px-4 py-3">{s.supplier_name}</td>
-                    <td className="px-4 py-3 text-xs text-fg-muted">{s.supplier_type}</td>
-                    <td className="px-4 py-3 text-xs text-fg-muted">{s.supplier_tel}</td>
-                    <td className="px-4 py-3 text-xs text-fg-muted">{s.supplier_address}</td>
-                  </tr>
+                  <Tr key={s.erp_supplier_code}>
+                    <Td className="font-mono text-xs">{s.erp_supplier_code}</Td>
+                    <Td>{s.supplier_name}</Td>
+                    <Td className="text-xs text-fg-muted">{s.supplier_type}</Td>
+                    <Td className="text-xs text-fg-muted">{s.supplier_tel}</Td>
+                    <Td className="text-xs text-fg-muted">{s.supplier_address}</Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
         }
         {total > 0 && (
           <div className="flex items-center justify-between border-t border-line-subtle px-4 py-3">
             <span className="text-xs text-fg-muted">{(page - 1) * 20 + 1}–{Math.min(page * 20, total)} of {total}</span>
             <div className="flex items-center gap-1">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40">
+              <Button aria-label="Previous page" variant="secondary" size="icon-xs" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+               >
                 <ChevronLeft className="h-3.5 w-3.5" />
-              </button>
+              </Button>
               <span className="px-2 text-xs text-fg-muted">{page} / {totalPages}</span>
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40">
+              <Button aria-label="Next page" variant="secondary" size="icon-xs" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+               >
                 <ChevronRight className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -2365,47 +2343,47 @@ function ErpPersonsTab() {
       <div className="rounded-xl border border-line bg-surface overflow-hidden">
         {isLoading && !data ? <div className="py-10 text-center text-sm text-fg-muted">Loading…</div>
           : !data?.items.length ? <div className="py-10 text-center text-sm text-fg-muted">No persons. Click Sync.</div>
-          : <table className="w-full text-sm">
-              <thead className="border-b border-line-subtle bg-surface-subtle">
-                <tr>
+          : <Table>
+              <THead>
+                <Tr>
                   <SortTh label="Code" sortKey="erp_person_code" sort={sort} onSort={onSort} className={ADMIN_TH} />
                   <SortTh label="Name" sortKey="person_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
                   <SortTh label="Company" sortKey="company_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
                   <SortTh label="Department" sortKey="department_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
                   <SortTh label="Valid" sortKey="is_valid" sort={sort} onSort={onSort} className={ADMIN_TH} />
-                </tr>
-              </thead>
-              <tbody>
+                </Tr>
+              </THead>
+              <TBody>
                 {data.items.map(p => (
-                  <tr key={p.erp_person_code} className="border-b border-line-subtle">
-                    <td className="px-4 py-3 font-mono text-xs">{p.erp_person_code}</td>
-                    <td className="px-4 py-3">{p.person_name}</td>
-                    <td className="px-4 py-3 text-xs text-fg-muted">{p.company_name}</td>
-                    <td className="px-4 py-3 text-xs text-fg-muted">{p.department_name} ({p.department_code})</td>
-                    <td className="px-4 py-3">
+                  <Tr key={p.erp_person_code}>
+                    <Td className="font-mono text-xs">{p.erp_person_code}</Td>
+                    <Td>{p.person_name}</Td>
+                    <Td className="text-xs text-fg-muted">{p.company_name}</Td>
+                    <Td className="text-xs text-fg-muted">{p.department_name} ({p.department_code})</Td>
+                    <Td>
                       <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium',
                         p.is_valid ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
                         {p.is_valid ? 'Yes' : 'No'}
                       </span>
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
         }
         {total > 0 && (
           <div className="flex items-center justify-between border-t border-line-subtle px-4 py-3">
             <span className="text-xs text-fg-muted">{(page - 1) * 20 + 1}–{Math.min(page * 20, total)} of {total}</span>
             <div className="flex items-center gap-1">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40">
+              <Button aria-label="Previous page" variant="secondary" size="icon-xs" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+               >
                 <ChevronLeft className="h-3.5 w-3.5" />
-              </button>
+              </Button>
               <span className="px-2 text-xs text-fg-muted">{page} / {totalPages}</span>
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40">
+              <Button aria-label="Next page" variant="secondary" size="icon-xs" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+               >
                 <ChevronRight className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -2493,132 +2471,126 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex justify-end">
-      <div className="bg-surface w-full max-w-3xl h-full overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between border-b border-line px-4 py-3">
-          <h2 className="text-sm font-semibold">Import users from ERP</h2>
-          <button onClick={onClose}><X className="h-4 w-4 text-fg-muted" /></button>
-        </div>
-
-        {result ? (
-          <div className="flex-1 overflow-auto p-4 space-y-3">
-            <div className="rounded-lg border border-success-line bg-success-soft px-4 py-3 text-sm">
-              <strong>{result.created.length} created</strong>, {result.errors.length} errors.
-            </div>
-            {result.created.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-fg-secondary mb-1">Temporary passwords (copy now — not shown again):</p>
-                <table className="w-full text-xs border border-line">
-                  <thead><tr className="bg-surface-subtle">
-                    <th className="px-2 py-1 text-left">Email</th>
-                    <th className="px-2 py-1 text-left">Temp password</th>
-                  </tr></thead>
-                  <tbody>
-                    {result.created.map((c, i) => (
-                      <tr key={i} className="border-t border-line-subtle">
-                        <td className="px-2 py-1 font-mono">{c.email}</td>
-                        <td className="px-2 py-1 font-mono">{c.temp_password}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {result.errors.length > 0 && (
-              <ul className="text-xs text-warning-fg list-disc pl-5">
-                {result.errors.map((e, i) => <li key={i}>{e.erp_person_code}: {e.reason}</li>)}
-              </ul>
-            )}
-            <button onClick={onClose} className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white">Done</button>
+    <ShellModal open onClose={onClose} title="Import users from ERP" closeOnEscape={false} size="full" className="max-w-3xl"
+      bodyClassName="flex min-h-0 flex-col overflow-hidden p-0">
+      {result ? (
+        <div className="flex-1 overflow-auto p-4 space-y-3">
+          <div className="rounded-lg border border-success-line bg-success-soft px-4 py-3 text-sm">
+            <strong>{result.created.length} created</strong>, {result.errors.length} errors.
           </div>
-        ) : (
-          <>
-            <div className="border-b border-line px-4 py-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <input className="flex-1 rounded-lg border border-line px-3 py-2 text-sm"
-                  placeholder="Search code or name…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
-                <label className="flex items-center gap-1 text-xs text-fg-secondary">
-                  <input type="checkbox" checked={excludeImported} onChange={e => { setExcludeImported(e.target.checked); setPage(1) }} />
-                  Only show not-imported
-                </label>
-              </div>
-              <p className="text-xs text-fg-muted">Role defaults to <code>requester</code>. Department auto-maps from ERP department code. Edit later in User Management.</p>
+          {result.created.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-fg-secondary mb-1">Temporary passwords (copy now — not shown again):</p>
+              <Table density="compact" className="border border-line">
+                <THead><Tr className="bg-surface-subtle">
+                  <Th>Email</Th>
+                  <Th>Temp password</Th>
+                </Tr></THead>
+                <TBody>
+                  {result.created.map((c, i) => (
+                    <Tr key={i}>
+                      <Td className="font-mono">{c.email}</Td>
+                      <Td className="font-mono">{c.temp_password}</Td>
+                    </Tr>
+                  ))}
+                </TBody>
+              </Table>
             </div>
-
-            <div className="flex-1 overflow-auto p-4">
-              {isLoading ? <div className="text-sm text-fg-muted">Loading…</div>
-                : !data?.items.length ? <div className="text-sm text-fg-muted">No persons to import.</div>
-                : <table className="w-full text-sm">
-                    <thead className="border-b border-line">
-                      <tr>
-                        <th className="px-2 py-2"></th>
-                        <SortTh label="Code" sortKey="erp_person_code" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted" />
-                        <SortTh label="Name" sortKey="person_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted" />
-                        <SortTh label="Dept" sortKey="department_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted" />
-                        <th className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted">Email *</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.items.map(p => {
-                        const isSel = !!selected[p.erp_person_code]
-                        return (
-                          <tr key={p.erp_person_code} className="border-b border-line-subtle">
-                            <td className="px-2 py-2"><input type="checkbox" checked={isSel} onChange={() => toggle(p.erp_person_code)} /></td>
-                            <td className="px-2 py-2 font-mono text-xs">{p.erp_person_code}</td>
-                            <td className="px-2 py-2">{p.person_name}</td>
-                            <td className="px-2 py-2 text-xs text-fg-muted">{p.department_name}</td>
-                            <td className="px-2 py-2">
-                              <input
-                                disabled={!isSel}
-                                placeholder="email@royalmilk.com"
-                                value={selected[p.erp_person_code]?.email || ''}
-                                onChange={e => setSelected(prev => ({ ...prev, [p.erp_person_code]: { email: e.target.value } }))}
-                                className="w-full rounded border border-line px-2 py-1 text-xs disabled:bg-surface-subtle"
-                              />
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-              }
+          )}
+          {result.errors.length > 0 && (
+            <ul className="text-xs text-warning-fg list-disc pl-5">
+              {result.errors.map((e, i) => <li key={i}>{e.erp_person_code}: {e.reason}</li>)}
+            </ul>
+          )}
+          <Button size="md" onClick={onClose}>Done</Button>
+        </div>
+      ) : (
+        <>
+          <div className="border-b border-line px-4 py-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <input className="flex-1 rounded-lg border border-line px-3 py-2 text-sm"
+                placeholder="Search code or name…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
+              <label className="flex items-center gap-1 text-xs text-fg-secondary">
+                <Checkbox checked={excludeImported} onChange={e => { setExcludeImported(e.target.checked); setPage(1) }} />
+                Only show not-imported
+              </label>
             </div>
+            <p className="text-xs text-fg-muted">Role defaults to <code>requester</code>. Department auto-maps from ERP department code. Edit later in User Management.</p>
+          </div>
 
-            {total > 0 && (
-              <div className="flex items-center justify-between border-t border-line-subtle px-4 py-2">
-                <span className="text-xs text-fg-muted">{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}</span>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                    className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40">
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                  </button>
-                  <span className="px-2 text-xs text-fg-muted">{page} / {totalPages}</span>
-                  <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                    className="flex h-7 w-7 items-center justify-center rounded border border-line text-fg-muted hover:bg-surface-subtle disabled:opacity-40">
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
+          <div className="flex-1 overflow-auto p-4">
+            {isLoading ? <div className="text-sm text-fg-muted">Loading…</div>
+              : !data?.items.length ? <div className="text-sm text-fg-muted">No persons to import.</div>
+              : <Table density="compact">
+                  <THead>
+                    <Tr>
+                      <Th></Th>
+                      <SortTh label="Code" sortKey="erp_person_code" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted" />
+                      <SortTh label="Name" sortKey="person_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted" />
+                      <SortTh label="Dept" sortKey="department_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted" />
+                      <Th>Email *</Th>
+                    </Tr>
+                  </THead>
+                  <TBody>
+                    {data.items.map(p => {
+                      const isSel = !!selected[p.erp_person_code]
+                      return (
+                        <Tr key={p.erp_person_code}>
+                          <Td><Checkbox checked={isSel} onChange={() => toggle(p.erp_person_code)} /></Td>
+                          <Td className="font-mono text-xs">{p.erp_person_code}</Td>
+                          <Td>{p.person_name}</Td>
+                          <Td className="text-xs text-fg-muted">{p.department_name}</Td>
+                          <Td>
+                            <input
+                              disabled={!isSel}
+                              placeholder="email@royalmilk.com"
+                              value={selected[p.erp_person_code]?.email || ''}
+                              onChange={e => setSelected(prev => ({ ...prev, [p.erp_person_code]: { email: e.target.value } }))}
+                              className="w-full rounded border border-line px-2 py-1 text-xs disabled:bg-surface-subtle"
+                            />
+                          </Td>
+                        </Tr>
+                      )
+                    })}
+                  </TBody>
+                </Table>
+            }
+          </div>
 
-            <div className="border-t border-line px-4 py-3 flex items-center justify-between">
-              <span className="text-xs text-fg-muted">
-                {selectedCount} selected{selectedCount > 0 && !allEmailsFilled && ' · email required for each row'}
-              </span>
-              <div className="flex items-center gap-2">
-                {error && <span className="text-xs text-danger-fg">{error}</span>}
-                <button onClick={onClose} className="rounded-lg border border-line bg-surface px-3 py-2 text-sm">Cancel</button>
-                <button onClick={submit} disabled={!selectedCount || !allEmailsFilled || submitting}
-                  className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 flex items-center gap-1.5">
-                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Import {selectedCount} user{selectedCount === 1 ? '' : 's'}
-                </button>
+          {total > 0 && (
+            <div className="flex items-center justify-between border-t border-line-subtle px-4 py-2">
+              <span className="text-xs text-fg-muted">{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}</span>
+              <div className="flex items-center gap-1">
+                <Button aria-label="Previous page" variant="secondary" size="icon-xs" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                 >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <span className="px-2 text-xs text-fg-muted">{page} / {totalPages}</span>
+                <Button aria-label="Next page" variant="secondary" size="icon-xs" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                 >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
               </div>
             </div>
-          </>
-        )}
-      </div>
-    </div>
+          )}
+
+          <div className="border-t border-line px-4 py-3 flex items-center justify-between">
+            <span className="text-xs text-fg-muted">
+              {selectedCount} selected{selectedCount > 0 && !allEmailsFilled && ' · email required for each row'}
+            </span>
+            <div className="flex items-center gap-2">
+              {error && <span className="text-xs text-danger-fg">{error}</span>}
+              <Button variant="secondary" size="md" onClick={onClose}>Cancel</Button>
+              <Button size="md" onClick={submit} disabled={!selectedCount || !allEmailsFilled || submitting}
+               >
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Import {selectedCount} user{selectedCount === 1 ? '' : 's'}
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+    </ShellModal>
   )
 }
 
@@ -2674,12 +2646,12 @@ export default function AdminPanel() {
       <nav className="w-56 shrink-0 flex flex-col bg-primary-700 overflow-hidden">
         {/* Brand */}
         <div className="flex h-[60px] items-center gap-2.5 border-b border-white/10 px-4 shrink-0">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white font-bold text-sm select-none">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white font-semibold text-sm select-none">
             U
           </div>
           <div className="leading-tight min-w-0">
-            <p className="text-sm font-bold text-white tracking-tight">UniOps</p>
-            <p className="text-2xs font-semibold uppercase tracking-widest text-white/50">Admin Panel</p>
+            <p className="text-sm font-semibold text-white tracking-tight">UniOps</p>
+            <p className="text-2xs font-semibold text-white/50">Admin Panel</p>
           </div>
         </div>
 
@@ -2716,7 +2688,7 @@ export default function AdminPanel() {
 
           {otherPages.length > 0 && (
             <div className="mt-3 border-t border-white/10 pt-3 space-y-0.5">
-              <p className="px-3 pb-1 text-2xs font-semibold uppercase tracking-wider text-white/40">
+              <p className="px-3 pb-1 text-2xs font-semibold text-white/40">
                 More admin pages
               </p>
               {otherPages.map(({ label, icon: Icon, href }) => (

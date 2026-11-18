@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, Select, TBody, THead, Table, Td, Tr } from '@uniops/shell'
 import { mdmApi } from '@/lib/api'
-import { INPUT, StaffShell, TD, TH, useStaffPerm, type Department } from './shared'
+import { StaffShell, useStaffPerm, type Department } from './shared'
 
 interface MapRow {
   adp_department: string; employees: number; department_id: string | null
@@ -54,31 +54,31 @@ export default function StaffDepartmentMap() {
       {notice && <p className="mb-3 text-sm text-primary-700">{notice}</p>}
       <div className="overflow-hidden rounded-xl border border-line bg-surface">
         <div className="max-h-[calc(100vh-280px)] overflow-auto">
-          <table className="w-full">
-            <thead><tr>
-              <SortTh label="ADP Department" sortKey="adp_department" sort={sort} onSort={onSort} className={TH} />
-              <SortTh label="Employees" sortKey="employees" sort={sort} onSort={onSort} className={TH} />
-              <SortTh label="UniOps Department" sortKey="mapped" sort={sort} onSort={onSort} className={TH} />
-            </tr></thead>
-            <tbody>
+          <Table>
+            <THead><Tr>
+              <SortTh label="ADP Department" sortKey="adp_department" sort={sort} onSort={onSort} />
+              <SortTh label="Employees" sortKey="employees" sort={sort} onSort={onSort} />
+              <SortTh label="UniOps Department" sortKey="mapped" sort={sort} onSort={onSort} />
+            </Tr></THead>
+            <TBody>
               {rows.map((r) => (
-                <tr key={r.adp_department} className="border-t border-line-subtle">
-                  <td className={TD}>{r.adp_department || '(empty)'}</td>
-                  <td className={TD}>{r.employees}</td>
-                  <td className={TD}>
-                    <select className={INPUT} disabled={!can('employee.edit') || busy}
+                <Tr key={r.adp_department}>
+                  <Td>{r.adp_department || '(empty)'}</Td>
+                  <Td>{r.employees}</Td>
+                  <Td>
+                    <Select disabled={!can('employee.edit') || busy}
                       aria-label={`UniOps department for ${r.adp_department || 'empty'}`}
                       value={r.choose_per_employee ? CHOOSE : r.department_id ?? ''}
                       onChange={(e) => save(r, e.target.value)}>
                       <option value="">Unmapped</option>
                       <option value={CHOOSE}>Choose per employee</option>
                       {depts?.items.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                    </select>
-                  </td>
-                </tr>
+                    </Select>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
           {!data?.items.length && <p className="py-8 text-center text-sm text-fg-muted">ADP departments appear here once a roster has been uploaded.</p>}
         </div>
       </div>

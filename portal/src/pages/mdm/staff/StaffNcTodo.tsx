@@ -2,12 +2,11 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, RefreshCw } from 'lucide-react'
-import { Pagination, SortTh, sortParams, useSort } from '@uniops/shell'
+import { Pagination, SortTh, sortParams, useSort, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { mdmApi, mdmDownload } from '@/lib/api'
 import { formatDate, cn } from '@/lib/utils'
 import {
-  INPUT, NC_STATE_LABEL, PRIMARY_BTN, SECONDARY_BTN, STATUS_LABEL, StaffShell, TD, TH, TODO_LABEL,
-  targetText, useStaffPerm, type NcTodoRow,
+  NC_STATE_LABEL, STATUS_LABEL, StaffShell, TODO_LABEL, targetText, useStaffPerm, type NcTodoRow,
 } from './shared'
 
 type SortKey = 'employee_number' | 'display_name' | 'type' | 'status' | 'created_at' | 'closed_at'
@@ -92,14 +91,14 @@ export default function StaffNcTodo() {
         </span>
         <div className="ml-auto flex gap-2">
           {closeable && (
-            <button className={SECONDARY_BTN} disabled={busy} onClick={() => run(() => mdmApi.post('/staff/nc/check'))}>
+            <Button variant="secondary" size="md" disabled={busy} onClick={() => run(() => mdmApi.post('/staff/nc/check'))}>
               <RefreshCw className="h-4 w-4" />{busy ? 'Reading NC…' : 'Check NC now'}
-            </button>
+            </Button>
           )}
           {view === 'todos' && (
-            <button className={SECONDARY_BTN} onClick={() => mdmDownload(`/staff/nc-todos/export?${filterQs}`, 'nc-todo.xlsx')}>
+            <Button variant="secondary" size="md" onClick={() => mdmDownload(`/staff/nc-todos/export?${filterQs}`, 'nc-todo.xlsx')}>
               <Download className="h-4 w-4" />Export
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -111,59 +110,59 @@ export default function StaffNcTodo() {
           {!!report?.not_in_nc.length && (
             <p className="mb-3 rounded-lg border border-line bg-surface-subtle px-3 py-2 text-sm text-fg-secondary">
               {report.not_in_nc.length} employees are not in NC. For information only: add them in NC if they need to be there.{' '}
-              <button className="font-medium text-primary-700 hover:underline" onClick={() => setView('report')}>View list</button>
+              <Button variant="link" onClick={() => setView('report')}>View list</Button>
             </p>
           )}
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <input className={`${INPUT} w-64`} placeholder="Search number or name" value={search}
+            <Input className="w-64" placeholder="Search number or name" value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
-            <select className={INPUT} value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
+            <Select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
               <option value="open">Open</option><option value="closed">Closed</option><option value="">All</option>
-            </select>
-            <select className={INPUT} value={type} onChange={(e) => { setType(e.target.value); setPage(1) }}>
+            </Select>
+            <Select value={type} onChange={(e) => { setType(e.target.value); setPage(1) }}>
               <option value="">All types</option>
               {Object.entries(TODO_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-            </select>
+            </Select>
             {closeable && picked.size > 0 && (
               <div className="ml-auto flex items-center gap-2">
-                <input className={`${INPUT} min-w-64`} placeholder="Reason for closing by hand" value={reason} onChange={(e) => setReason(e.target.value)} />
-                <button className={PRIMARY_BTN} disabled={busy || !reason.trim()} onClick={() => run(async () => {
+                <Input className="min-w-64" placeholder="Reason for closing by hand" value={reason} onChange={(e) => setReason(e.target.value)} />
+                <Button size="md" disabled={busy || !reason.trim()} onClick={() => run(async () => {
                   await mdmApi.post('/staff/nc-todos/close', { ids: [...picked], reason })
                   setPicked(new Set()); setReason('')
-                })}>Close {picked.size}</button>
+                })}>Close {picked.size}</Button>
               </div>
             )}
           </div>
           <div className="overflow-hidden rounded-xl border border-line bg-surface">
             <div className="max-h-[calc(100vh-340px)] overflow-auto">
-              <table className="w-full">
-                <thead><tr>
-                  {closeable && <th className={TH} />}
-                  <SortTh label="No." sortKey="employee_number" sort={sort} onSort={onSort} className={TH} />
-                  <SortTh label="Name" sortKey="display_name" sort={sort} onSort={onSort} className={TH} />
-                  <SortTh label="To-do" sortKey="type" sort={sort} onSort={onSort} className={TH} />
-                  <th className={TH}>What to do in NC</th>
-                  <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className={TH} />
-                  <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={TH} />
-                  <SortTh label="Closed" sortKey="closed_at" sort={sort} onSort={onSort} className={TH} />
-                </tr></thead>
-                <tbody>
+              <Table>
+                <THead><Tr>
+                  {closeable && <Th />}
+                  <SortTh label="No." sortKey="employee_number" sort={sort} onSort={onSort} />
+                  <SortTh label="Name" sortKey="display_name" sort={sort} onSort={onSort} />
+                  <SortTh label="To-do" sortKey="type" sort={sort} onSort={onSort} />
+                  <Th>What to do in NC</Th>
+                  <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} />
+                  <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} />
+                  <SortTh label="Closed" sortKey="closed_at" sort={sort} onSort={onSort} />
+                </Tr></THead>
+                <TBody>
                   {data?.items.map((t) => (
-                    <tr key={t.id} className={cn('border-t border-line-subtle', t.overdue && 'bg-warning-soft')}>
-                      {closeable && <td className="px-4">
-                        {t.status === 'open' && <input type="checkbox" aria-label={`Select ${t.display_name}`} checked={picked.has(t.id)} onChange={() => toggle(t.id)} />}
-                      </td>}
-                      <td className={`${TD} font-mono text-xs`}>{t.employee_number}</td>
-                      <td className={TD}><Link className="text-primary-700 hover:underline" to={`/mdm/staff/${t.employee_id}`}>{t.display_name}</Link></td>
-                      <td className={`${TD} whitespace-nowrap`}>{TODO_LABEL[t.type] ?? t.type}</td>
-                      <td className={TD}>{targetText(t)}</td>
-                      <td className={`${TD} whitespace-nowrap`}>{formatDate(t.created_at)}{t.overdue && <span className="ml-1 text-xs font-medium text-warning-fg">overdue</span>}</td>
-                      <td className={TD}>{t.status === 'open' ? 'Open' : `Closed (${t.closed_how})`}</td>
-                      <td className={TD} title={t.close_reason ?? undefined}>{t.closed_at ? formatDate(t.closed_at) : '—'}{t.close_reason ? ` · ${t.close_reason}` : ''}</td>
-                    </tr>
+                    <Tr key={t.id} className={cn('border-t border-line-subtle', t.overdue && 'bg-warning-soft')}>
+                      {closeable && <Td>
+                        {t.status === 'open' && <Checkbox aria-label={`Select ${t.display_name}`} checked={picked.has(t.id)} onChange={() => toggle(t.id)} />}
+                      </Td>}
+                      <Td className="font-mono text-xs">{t.employee_number}</Td>
+                      <Td><Link className="text-primary-700 hover:underline" to={`/mdm/staff/${t.employee_id}`}>{t.display_name}</Link></Td>
+                      <Td className="whitespace-nowrap">{TODO_LABEL[t.type] ?? t.type}</Td>
+                      <Td>{targetText(t)}</Td>
+                      <Td className="whitespace-nowrap">{formatDate(t.created_at)}{t.overdue && <span className="ml-1 text-xs font-medium text-warning-fg">overdue</span>}</Td>
+                      <Td>{t.status === 'open' ? 'Open' : `Closed (${t.closed_how})`}</Td>
+                      <Td title={t.close_reason ?? undefined}>{t.closed_at ? formatDate(t.closed_at) : '—'}{t.close_reason ? ` · ${t.close_reason}` : ''}</Td>
+                    </Tr>
                   ))}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
               {!data?.items.length && <p className="py-8 text-center text-sm text-fg-muted">No to-dos.</p>}
             </div>
             <Pagination page={page} pageSize={pageSize} total={data?.total ?? 0}
@@ -208,12 +207,12 @@ function Section({ title, head, rows }: { title: string; head: string[]; rows: R
     <section className="overflow-hidden rounded-xl border border-line bg-surface">
       <h2 className="px-4 pt-4 text-sm font-semibold text-fg">{title}</h2>
       <div className="mt-2 max-h-96 overflow-auto">
-        <table className="w-full">
-          <thead><tr>{head.map((h) => <th key={h} className={TH}>{h}</th>)}</tr></thead>
-          <tbody>
-            {rows.map((r, i) => <tr key={i} className="border-t border-line-subtle">{r.map((c, j) => <td key={j} className={TD}>{c}</td>)}</tr>)}
-          </tbody>
-        </table>
+        <Table>
+          <THead><Tr>{head.map((h) => <Th key={h}>{h}</Th>)}</Tr></THead>
+          <TBody>
+            {rows.map((r, i) => <Tr key={i}>{r.map((c, j) => <Td key={j}>{c}</Td>)}</Tr>)}
+          </TBody>
+        </Table>
         {!rows.length && <p className="py-6 text-center text-sm text-fg-muted">Nothing here.</p>}
       </div>
     </section>

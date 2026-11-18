@@ -17,6 +17,7 @@ import { cn, formatDateTime } from '@/lib/utils'
 import { NcPurchaseSyncSection } from '../NcPurchaseSyncSection'
 import { ScheduleCard, type ScheduleEndpoint } from './ScheduleCard'
 
+import { Input, Radio } from '@uniops/shell'
 const FULL_CONFIRM = 'FULL RELOAD'
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
@@ -137,7 +138,7 @@ function JvManualSync() {
         <>
           <div className="space-y-2 text-sm">
             <label className="flex items-start gap-2">
-              <input type="radio" checked={mode === 'incremental'}
+              <Radio checked={mode === 'incremental'}
                      onChange={() => setMode('incremental')} className="mt-0.5" />
               <span>
                 <span className="font-medium">Incremental</span>
@@ -147,7 +148,7 @@ function JvManualSync() {
               </span>
             </label>
             <label className="flex items-start gap-2">
-              <input type="radio" checked={mode === 'full'}
+              <Radio checked={mode === 'full'}
                      onChange={() => setMode('full')} className="mt-0.5" />
               <span>
                 <span className="font-medium">Full reload</span>
@@ -161,7 +162,7 @@ function JvManualSync() {
                 <AlertTriangle className="h-3.5 w-3.5" />
                 Destructive: re-imports every NC voucher. Type {FULL_CONFIRM} to enable.
               </div>
-              <input value={confirm} onChange={(e) => setConfirm(e.target.value)}
+              <Input value={confirm} onChange={(e) => setConfirm(e.target.value)}
                      placeholder={FULL_CONFIRM} className={cn(inputCls, 'w-full font-mono')} />
             </div>
           )}

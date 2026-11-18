@@ -32,11 +32,9 @@
    "arbitrary-size": 1
   },
   "portal": {
-   "raw-control": 262,
-   "raw-overlay": 14,
-   "raw-color": 14,
-   "shouting-type": 58,
-   "raw-table": 290,
+   "raw-color": 12,
+   "raw-control": 39,
+   "shouting-type": 8,
    "emoji": 1
   },
   "vms": {
@@ -371,149 +369,65 @@
    "raw-control": 2,
    "raw-overlay": 1
   },
-  "portal/src/components/ConfirmDialog.tsx": {
-   "raw-control": 3,
-   "raw-overlay": 1
-  },
-  "portal/src/components/auth/ChangePasswordForm.tsx": {
-   "raw-control": 4
-  },
-  "portal/src/components/layout/PortalPageLayout.tsx": {
-   "raw-overlay": 1,
-   "raw-color": 1
-  },
-  "portal/src/components/layout/PortalSidebar.tsx": {
-   "raw-control": 2,
-   "shouting-type": 4
-  },
-  "portal/src/components/layout/TopHeader.tsx": {
-   "raw-control": 5,
-   "raw-overlay": 2
-  },
   "portal/src/pages/ForcePasswordChangePage.tsx": {
-   "raw-control": 1,
    "raw-color": 1
-  },
-  "portal/src/pages/PortalHome.tsx": {
-   "raw-control": 1,
-   "raw-overlay": 1,
-   "raw-color": 1,
-   "shouting-type": 10
   },
   "portal/src/pages/admin/AccessControl.tsx": {
-   "raw-control": 8,
-   "raw-table": 22,
-   "shouting-type": 7
+   "raw-control": 2
   },
   "portal/src/pages/admin/AdminPanel.tsx": {
-   "raw-control": 73,
-   "raw-table": 88,
-   "raw-overlay": 4,
+   "raw-control": 15,
    "raw-color": 3,
-   "shouting-type": 11
+   "shouting-type": 3
   },
   "portal/src/pages/admin/ApprovalDelegation.tsx": {
-   "raw-control": 3,
-   "raw-table": 15,
-   "shouting-type": 7
-  },
-  "portal/src/pages/admin/ApprovalRouting.tsx": {
-   "raw-control": 7,
-   "raw-table": 11,
-   "shouting-type": 6
+   "raw-control": 1
   },
   "portal/src/pages/admin/DataMaintenance.tsx": {
    "raw-control": 1,
    "shouting-type": 1
   },
   "portal/src/pages/admin/NcPurchaseSyncSection.tsx": {
-   "raw-control": 6
-  },
-  "portal/src/pages/admin/TaskNotificationPolicies.tsx": {
-   "raw-control": 4,
-   "raw-table": 12,
-   "shouting-type": 1
+   "raw-control": 1
   },
   "portal/src/pages/admin/UnitsOfMeasure.tsx": {
-   "raw-control": 10,
-   "raw-table": 11,
-   "raw-overlay": 1,
-   "shouting-type": 5
+   "raw-control": 1
   },
   "portal/src/pages/admin/WmsSyncSection.tsx": {
-   "raw-control": 3
-  },
-  "portal/src/pages/admin/data-maintenance/ApprovalStatePanel.tsx": {
-   "raw-control": 4
-  },
-  "portal/src/pages/admin/data-maintenance/BulkDeleteConfirm.tsx": {
-   "raw-control": 2,
-   "raw-overlay": 1
-  },
-  "portal/src/pages/admin/data-maintenance/DeleteConfirm.tsx": {
-   "raw-control": 2,
-   "raw-overlay": 1
+   "raw-control": 2
   },
   "portal/src/pages/admin/data-maintenance/EntityTable.tsx": {
-   "raw-control": 10,
-   "raw-table": 15,
-   "shouting-type": 2
+   "shouting-type": 1
   },
   "portal/src/pages/admin/data-maintenance/LineItemsEditor.tsx": {
-   "raw-control": 4,
-   "raw-table": 18
-  },
-  "portal/src/pages/admin/data-maintenance/RecordEditForm.tsx": {
-   "raw-control": 7,
-   "raw-overlay": 1
+   "raw-control": 1
   },
   "portal/src/pages/admin/data-maintenance/ReferenceListPicker.tsx": {
-   "raw-control": 4,
+   "raw-control": 1,
    "emoji": 1
   },
   "portal/src/pages/admin/data-maintenance/ReferencePicker.tsx": {
-   "raw-control": 3
+   "raw-control": 1
   },
   "portal/src/pages/admin/data-maintenance/cascadeDisplay.tsx": {
    "shouting-type": 3
   },
   "portal/src/pages/admin/nc-sync/NcSyncSection.tsx": {
-   "raw-control": 5
+   "raw-control": 2
   },
   "portal/src/pages/admin/nc-sync/ScheduleCard.tsx": {
-   "raw-control": 4
+   "raw-control": 1
   },
   "portal/src/pages/mdm/org/Combobox.tsx": {
-   "raw-control": 3,
+   "raw-control": 1,
    "raw-color": 1
   },
   "portal/src/pages/mdm/org/OrgChart.tsx": {
-   "raw-control": 23,
+   "raw-control": 8,
    "raw-color": 7
   },
-  "portal/src/pages/mdm/staff/StaffDepartmentMap.tsx": {
-   "raw-control": 1,
-   "raw-table": 8
-  },
-  "portal/src/pages/mdm/staff/StaffDetail.tsx": {
-   "raw-control": 17,
-   "raw-table": 28
-  },
-  "portal/src/pages/mdm/staff/StaffImport.tsx": {
-   "raw-control": 14,
-   "raw-table": 23
-  },
-  "portal/src/pages/mdm/staff/StaffList.tsx": {
-   "raw-control": 18,
-   "raw-table": 17,
-   "raw-overlay": 1
-  },
   "portal/src/pages/mdm/staff/StaffNcTodo.tsx": {
-   "raw-control": 10,
-   "raw-table": 22
-  },
-  "portal/src/pages/mdm/staff/shared.tsx": {
-   "shouting-type": 1
+   "raw-control": 1
   },
   "vms/src/components/BadgePreview.tsx": {
    "raw-color": 1,

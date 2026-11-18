@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, Download, Upload } from 'lucide-react'
+import { Download, Upload } from 'lucide-react'
 import { mdmApi, mdmDownload, mdmUpload } from '@/lib/api'
 import { formatDate, todayISO } from '@/lib/utils'
-import { INPUT, PRIMARY_BTN, SECONDARY_BTN, StaffShell, TD, TH } from './shared'
+import { StaffShell } from './shared'
 
+import { Button, DisclosureButton, FileInput, Input, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 interface Change { field: string; old: string | null; new: string | null }
 interface Item {
   row?: number; employee_number?: string | null; display_name?: string; work_email?: string | null
@@ -39,12 +40,11 @@ function Group({ title, count, tone, children }: { title: string; count: number;
   const [open, setOpen] = useState(false)
   return (
     <div className="border-t border-line-subtle">
-      <button type="button" className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm disabled:cursor-default"
+      <DisclosureButton open={open} className="w-full px-4 py-2.5 text-sm [&>svg]:text-fg-muted disabled:cursor-default disabled:opacity-100"
         disabled={!count} onClick={() => setOpen((o) => !o)}>
-        {open ? <ChevronDown className="h-4 w-4 text-fg-muted" /> : <ChevronRight className="h-4 w-4 text-fg-muted" />}
         <span className="font-medium text-fg">{title}</span>
         <span className={`rounded-full px-2 py-0.5 text-xs ${count ? tone ?? 'bg-surface-sunken text-fg-secondary' : 'bg-surface-sunken text-fg-muted'}`}>{count}</span>
-      </button>
+      </DisclosureButton>
       {open && <div className="max-h-72 overflow-auto px-4 pb-3 text-sm text-fg-secondary">{children}</div>}
     </div>
   )
@@ -76,7 +76,7 @@ function Groups({ view, onConvert }: { view: ImportView; onConvert?: (id: string
           {g('conflicts').map((i) => (
             <li key={i.row}>Row {i.row}: {person(i)} · {i.work_email} — {CONFLICT[i.kind ?? ''] ?? i.kind}{i.email_owner ? ` (${i.email_owner})` : ''}
               {i.kind === 'non_adp' && onConvert && i.employee_id && (
-                <button className="ml-2 text-xs font-medium text-primary-700 hover:underline" onClick={() => onConvert(i.employee_id!)}>Convert to ADP</button>
+                <Button variant="link" className="ml-2 text-xs" onClick={() => onConvert(i.employee_id!)}>Convert to ADP</Button>
               )}
             </li>
           ))}
@@ -121,14 +121,14 @@ function MissingReview({ view, onChanged }: { view: ImportView; onChanged: () =>
         {rows.map((m) => (
           <div key={m.employee_id} className="flex flex-wrap items-center gap-2 text-sm">
             <Link className="w-56 text-primary-700 hover:underline" to={`/mdm/staff/${m.employee_id}`}>{m.employee_number} {m.display_name}</Link>
-            <input type="date" className={INPUT} aria-label="Left on" value={draft(m.employee_id).left_on}
+            <Input type="date" aria-label="Left on" value={draft(m.employee_id).left_on}
               onChange={(e) => set(m.employee_id, { left_on: e.target.value })} />
-            <button className={SECONDARY_BTN} disabled={busy || !draft(m.employee_id).left_on}
-              onClick={() => decide(m.employee_id, { action: 'left', left_on: draft(m.employee_id).left_on })}>Mark Left</button>
-            <input className={`${INPUT} min-w-56`} placeholder="Reason to keep" value={draft(m.employee_id).reason}
+            <Button variant="secondary" size="md" disabled={busy || !draft(m.employee_id).left_on}
+              onClick={() => decide(m.employee_id, { action: 'left', left_on: draft(m.employee_id).left_on })}>Mark Left</Button>
+            <Input className="min-w-56" placeholder="Reason to keep" value={draft(m.employee_id).reason}
               onChange={(e) => set(m.employee_id, { reason: e.target.value })} />
-            <button className={SECONDARY_BTN} disabled={busy || !draft(m.employee_id).reason.trim()}
-              onClick={() => decide(m.employee_id, { action: 'keep', reason: draft(m.employee_id).reason })}>Keep</button>
+            <Button variant="secondary" size="md" disabled={busy || !draft(m.employee_id).reason.trim()}
+              onClick={() => decide(m.employee_id, { action: 'keep', reason: draft(m.employee_id).reason })}>Keep</Button>
           </div>
         ))}
       </div>
@@ -183,13 +183,13 @@ export default function StaffImport() {
             <h2 className="text-sm font-semibold text-fg">Preview: {current.file_name}, roster of {formatDate(current.roster_date)}</h2>
             <span className="text-xs text-fg-muted">Nothing is saved until you apply.</span>
             <div className="ml-auto flex gap-2">
-              <button className={SECONDARY_BTN} disabled={busy} onClick={() => run(async () => { await mdmApi.post(`/staff/imports/${current.id}/discard`) })}>Discard</button>
+              <Button variant="secondary" size="md" disabled={busy} onClick={() => run(async () => { await mdmApi.post(`/staff/imports/${current.id}/discard`) })}>Discard</Button>
               {current.expired
-                ? <button className={PRIMARY_BTN} disabled={busy} onClick={() => run(async () => { await mdmApi.post(`/staff/imports/${current.id}/regenerate`) })}>Regenerate preview</button>
-                : <button className={PRIMARY_BTN} disabled={busy} onClick={() => run(async () => {
+                ? <Button size="md" disabled={busy} onClick={() => run(async () => { await mdmApi.post(`/staff/imports/${current.id}/regenerate`) })}>Regenerate preview</Button>
+                : <Button size="md" disabled={busy} onClick={() => run(async () => {
                     const r = await mdmApi.post<ImportView>(`/staff/imports/${current.id}/apply`)
                     setResultId(r.id)
-                  })}>{busy ? 'Working…' : 'Apply'}</button>}
+                  })}>{busy ? 'Working…' : 'Apply'}</Button>}
             </div>
           </div>
           {current.expired && <p className="mb-2 text-sm text-warning-fg">This preview is over 24 hours old. Regenerate it before applying.</p>}
@@ -202,14 +202,14 @@ export default function StaffImport() {
       ) : (
         <section className="flex flex-wrap items-end gap-3 rounded-xl border border-line bg-surface p-4">
           <label className="text-sm text-fg-secondary">ADP roster (.xlsx)
-            <input type="file" accept=".xlsx" className={`${INPUT} mt-1 block`} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            <FileInput accept=".xlsx" className="mt-1 block" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           </label>
           <label className="text-sm text-fg-secondary">Roster date
-            <input type="date" className={`${INPUT} mt-1 block`} value={rosterDate} onChange={(e) => setRosterDate(e.target.value)} />
+            <Input type="date" className="mt-1 block" value={rosterDate} onChange={(e) => setRosterDate(e.target.value)} />
           </label>
-          <button className={PRIMARY_BTN} disabled={!file || !rosterDate || busy} onClick={upload}>
+          <Button size="md" disabled={!file || !rosterDate || busy} onClick={upload}>
             <Upload className="h-4 w-4" />{busy ? 'Reading…' : 'Upload and preview'}
-          </button>
+          </Button>
         </section>
       )}
 
@@ -227,32 +227,32 @@ export default function StaffImport() {
       <section className="mt-6 overflow-hidden rounded-xl border border-line bg-surface">
         <h2 className="px-4 pt-4 text-sm font-semibold text-fg">Import history</h2>
         <div className="mt-2 max-h-80 overflow-auto">
-          <table className="w-full">
-            <thead><tr>
-              <th className={TH}>Roster date</th><th className={TH}>Applied</th><th className={TH}>File</th>
-              <th className={TH}>New</th><th className={TH}>Changed</th><th className={TH}>Conflicts</th><th className={TH}>Errors</th>
-              <th className={TH}>To review</th><th className={TH} />
-            </tr></thead>
-            <tbody>
+          <Table>
+            <THead><Tr>
+              <Th>Roster date</Th><Th>Applied</Th><Th>File</Th>
+              <Th>New</Th><Th>Changed</Th><Th>Conflicts</Th><Th>Errors</Th>
+              <Th>To review</Th><Th />
+            </Tr></THead>
+            <TBody>
               {history?.items.map((h) => (
-                <tr key={h.id} className="border-t border-line-subtle">
-                  <td className={TD}>{formatDate(h.roster_date)}</td>
-                  <td className={TD}>{formatDate(h.applied_at)}</td>
-                  <td className={TD}>{h.file_name}</td>
-                  <td className={TD}>{h.counts.new ?? 0}</td>
-                  <td className={TD}>{h.counts.changed ?? 0}</td>
-                  <td className={TD}>{h.counts.conflicts ?? 0}</td>
-                  <td className={TD}>{h.counts.errors ?? 0}</td>
-                  <td className={TD}>{h.unresolved_missing}</td>
-                  <td className={`${TD} whitespace-nowrap text-right`}>
-                    <button className="mr-3 text-xs font-medium text-primary-700 hover:underline" onClick={() => { setResultId(null); setOpened(h.id) }}>View</button>
-                    <button className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 hover:underline"
-                      onClick={() => mdmDownload(`/staff/imports/${h.id}/file`, h.file_name)}><Download className="h-3 w-3" />File</button>
-                  </td>
-                </tr>
+                <Tr key={h.id}>
+                  <Td>{formatDate(h.roster_date)}</Td>
+                  <Td>{formatDate(h.applied_at)}</Td>
+                  <Td>{h.file_name}</Td>
+                  <Td>{h.counts.new ?? 0}</Td>
+                  <Td>{h.counts.changed ?? 0}</Td>
+                  <Td>{h.counts.conflicts ?? 0}</Td>
+                  <Td>{h.counts.errors ?? 0}</Td>
+                  <Td>{h.unresolved_missing}</Td>
+                  <Td className="whitespace-nowrap text-right">
+                    <Button variant="link" className="mr-3 text-xs" onClick={() => { setResultId(null); setOpened(h.id) }}>View</Button>
+                    <Button variant="link" className="text-xs"
+                      onClick={() => mdmDownload(`/staff/imports/${h.id}/file`, h.file_name)}><Download className="h-3 w-3" />File</Button>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
           {!history?.items.length && <p className="py-6 text-center text-sm text-fg-muted">No imports yet.</p>}
         </div>
       </section>

@@ -4,6 +4,7 @@ import { AlertCircle, Check, CheckCircle2, Loader2 } from 'lucide-react'
 import { epmsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
+import { Checkbox, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 // Per-task-type email policy — epms-api GET/PUT /config/task-notifications.
 // The list of task types comes from the server (derived from the task
 // registries, OA claim types and the tasks table), so a new task type shows up
@@ -85,77 +86,77 @@ export function TaskNotificationPolicies() {
 
       {groups.map(([module, rows]) => (
         <div key={module} className="mt-5">
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">{module}</h4>
+          <h4 className="mb-2 text-xs font-semibold text-fg-muted">{module}</h4>
           <div className="overflow-hidden rounded-lg border border-line">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-subtle text-left text-xs text-fg-muted">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Task</th>
-                  <th className="w-20 px-3 py-2 font-medium">Email</th>
-                  <th className="w-48 px-3 py-2 font-medium">When</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table density="compact">
+              <THead>
+                <Tr>
+                  <Th>Task</Th>
+                  <Th className="w-20">Email</Th>
+                  <Th className="w-48">When</Th>
+                </Tr>
+              </THead>
+              <TBody>
                 {rows.map((p) => {
                   const c = current(p)
                   const changed = !!draft[p.task_type]
                   return (
-                    <tr key={p.task_type} className={cn('border-t border-line-subtle', changed && 'bg-warning-soft/60')}>
-                      <td className="px-3 py-2">
+                    <Tr key={p.task_type} className={cn('border-t border-line-subtle', changed && 'bg-warning-soft/60')}>
+                      <Td>
                         <div className="text-fg">{p.label}</div>
                         <div className="font-mono text-2xs text-fg-muted">{p.task_type}</div>
-                      </td>
+                      </Td>
                       {p.note ? (
-                        <td colSpan={2} className="px-3 py-2 text-xs text-fg-muted">{p.note}</td>
+                        <Td colSpan={2} className="text-xs text-fg-muted">{p.note}</Td>
                       ) : (
                         <>
-                          <td className="px-3 py-2">
-                            <input
-                              type="checkbox"
+                          <Td>
+                            <Checkbox
+                             
                               aria-label={`Email for ${p.label}`}
                               checked={c.email}
                               onChange={(e) => set(p, { email: e.target.checked })}
-                              className="h-4 w-4 accent-[#085E5E]"
+                              className="accent-[#085E5E]"
                             />
-                          </td>
-                          <td className="px-3 py-2">
-                            <select
+                          </Td>
+                          <Td>
+                            <Select selectSize="sm"
                               aria-label={`When to email for ${p.label}`}
                               value={c.mode}
                               disabled={!c.email}
                               onChange={(e) => set(p, { mode: e.target.value as Mode })}
-                              className="w-full rounded-md border border-line bg-surface px-2 py-1 text-sm disabled:bg-surface-subtle disabled:text-fg-muted"
+                              className="w-full"
                             >
                               <option value="immediate">Immediately</option>
                               <option value="digest">Daily digest</option>
-                            </select>
-                          </td>
+                            </Select>
+                          </Td>
                         </>
                       )}
-                    </tr>
+                    </Tr>
                   )
                 })}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
         </div>
       ))}
 
       {policies.length > 0 && (
         <div className="mt-5 flex items-center gap-3">
-          <button
+          <Button size="md"
             type="button"
             onClick={() => save.mutate()}
             disabled={!dirty || save.isPending}
-            className="flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60 transition-colors"
+           
           >
             {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
             {save.isPending ? 'Saving…' : 'Save Task Notifications'}
-          </button>
+          </Button>
           {dirty && !save.isPending && (
-            <button type="button" onClick={() => setDraft({})} className="text-sm text-fg-muted hover:underline">
+            <Button variant="link" type="button" onClick={() => setDraft({})} className="text-sm text-fg-muted">
               Discard changes
-            </button>
+            </Button>
           )}
           {toast && (
             <div className={cn('flex items-center gap-2 rounded-lg px-3 py-2 text-sm', toast.ok ? 'bg-success-soft text-success-fg' : 'bg-danger-soft text-danger-fg')}>

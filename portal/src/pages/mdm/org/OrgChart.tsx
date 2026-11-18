@@ -5,9 +5,10 @@ import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
 import { PortalPageLayout } from '@/components/layout/PortalPageLayout'
 import { mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { INPUT, PRIMARY_BTN, SECONDARY_BTN, useStaffPerm } from '@/pages/mdm/staff/shared'
+import { useStaffPerm } from '@/pages/mdm/staff/shared'
 import { Combobox, type ComboOption } from './Combobox'
 
+import { Input, Select, Button } from '@uniops/shell'
 type Relation = 'child' | 'assistant'
 type Drop = 'before' | 'after' | 'inside'
 interface Box { id: string; parent_id: string | null; relation: Relation; tone: string | null }
@@ -114,10 +115,10 @@ function Tree<T extends Box>({ nodes, open, onToggle, card, onDropOn }: {
     return (
       <>
         {all.length > 0 && (
-          <button aria-label={shown ? 'Collapse' : 'Expand'} onClick={() => onToggle(node.id)}
-            className="z-[1] -mt-px flex items-center gap-0.5 rounded-b border border-t-0 border-line bg-surface px-1.5 text-2xs text-fg-muted hover:text-primary-700">
+          <Button variant="secondary" size="xs" aria-label={shown ? 'Collapse' : 'Expand'} onClick={() => onToggle(node.id)}
+            className="z-[1] -mt-px">
             {shown ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}{all.length}
-          </button>
+          </Button>
         )}
         {shown && assistants.length > 0 && (
           <div className="org-assist">
@@ -141,20 +142,20 @@ function BoxStyle({ box, disabled, onSet }: { box: Box; disabled: boolean; onSet
   return (
     <div className="grid grid-cols-2 gap-2">
       <label className="block text-xs text-fg-muted">Position
-        <select className={`${INPUT} mt-1 w-full`} disabled={disabled} value={box.relation}
+        <Select className="mt-1 w-full" disabled={disabled} value={box.relation}
           onChange={(e) => onSet({ relation: e.target.value })}>
           <option value="child">Below</option>
           <option value="assistant">On the line</option>
-        </select>
+        </Select>
       </label>
       <label className="block text-xs text-fg-muted">Style
-        <select className={`${INPUT} mt-1 w-full`} disabled={disabled} value={box.tone ?? ''}
+        <Select className="mt-1 w-full" disabled={disabled} value={box.tone ?? ''}
           onChange={(e) => onSet({ tone: e.target.value || null })}>
           <option value="">Plain</option>
           <option value="teal">Green</option>
           <option value="violet">Purple</option>
           <option value="outside">Dashed</option>
-        </select>
+        </Select>
       </label>
     </div>
   )
@@ -187,11 +188,11 @@ function AddBox({ withTitle, disabled, onAdd }: {
       </div>
       {where && (
         <div className="mt-2 space-y-2">
-          <input autoFocus className={`${INPUT} w-full`} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
-          {withTitle && <input className={`${INPUT} w-full`} placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />}
-          <button className={PRIMARY_BTN} disabled={disabled || !name.trim()} onClick={async () => {
+          <Input autoFocus className="w-full" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+          {withTitle && <Input className="w-full" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />}
+          <Button size="md" disabled={disabled || !name.trim()} onClick={async () => {
             await onAdd(where, name, title); setName(''); setTitle(''); setWhere(null)
-          }}>Add</button>
+          }}>Add</Button>
         </div>
       )}
     </div>
@@ -206,7 +207,7 @@ function SavedInput({ label, value, placeholder, disabled, onSave }: {
   useEffect(() => setText(value), [value])
   return (
     <label className="block text-xs text-fg-muted">{label}
-      <input className={`${INPUT} mt-1 w-full`} value={text} placeholder={placeholder} disabled={disabled}
+      <Input className="mt-1 w-full" value={text} placeholder={placeholder} disabled={disabled}
         onChange={(e) => setText(e.target.value)}
         onBlur={() => { if (text.trim() !== value) onSave(text.trim()) }} />
     </label>
@@ -334,7 +335,7 @@ export default function OrgChart() {
           </div>
           {view === 'people' && (
             <div className="relative">
-              <input className={`${INPUT} w-60`} placeholder="Find a person" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Input className="w-60" placeholder="Find a person" value={search} onChange={(e) => setSearch(e.target.value)} />
               {found.length > 0 && (
                 <div className="absolute z-20 mt-1 w-72 rounded-lg border border-line bg-surface py-1 shadow-lg">
                   {found.map((p) => (
@@ -355,15 +356,15 @@ export default function OrgChart() {
             </div>
             {view === 'people' && (
               <>
-                <button className={SECONDARY_BTN} onClick={() => setOpenPeople(new Set(people.map((p) => p.id)))}>Expand all</button>
-                <button className={SECONDARY_BTN} onClick={() => setOpenPeople(defaultPeople)}>Collapse</button>
+                <Button variant="secondary" size="md" onClick={() => setOpenPeople(new Set(people.map((p) => p.id)))}>Expand all</Button>
+                <Button variant="secondary" size="md" onClick={() => setOpenPeople(defaultPeople)}>Collapse</Button>
               </>
             )}
             {editable && (
-              <button className={hasChart ? SECONDARY_BTN : PRIMARY_BTN} disabled={busy} onClick={generate}
+              <Button variant={hasChart ? 'secondary' : 'primary'} size="md" disabled={busy} onClick={generate}
                 title="Works out what is missing from job titles, ADP departments and approval routing. Anything set by hand stays.">
                 <RefreshCw className="h-4 w-4" />{busy ? 'Working…' : hasChart ? 'Regenerate' : 'Generate first version'}
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -413,7 +414,7 @@ export default function OrgChart() {
                   <p className="mb-2 text-xs text-warning-fg">Several people could be the manager; the first was picked.</p>
                   <div className="max-h-96 space-y-0.5 overflow-auto">
                     {toCheck.map((p) => (
-                      <button key={p.id} className="block w-full truncate text-left text-sm text-warning-fg hover:underline" onClick={() => reveal(p.id)}>{p.name}</button>
+                      <Button variant="link" key={p.id} className="w-full truncate text-left text-sm" onClick={() => reveal(p.id)}>{p.name}</Button>
                     ))}
                   </div>
                 </div>
@@ -441,9 +442,9 @@ export default function OrgChart() {
                       <AddBox withTitle={false} disabled={busy}
                         onAdd={(where, name) => addBox('/org/units', unit, where, { name })} />
                       {!unit.department_id && (
-                        <button className="text-sm text-danger-fg hover:underline" disabled={busy} onClick={() => run(async () => {
+                        <Button variant="link" className="text-sm text-danger-fg" disabled={busy} onClick={() => run(async () => {
                           await mdmApi.delete(`/org/units/${unit.id}`); setPicked(null)
-                        })}>Remove this box</button>
+                        })}>Remove this box</Button>
                       )}
                     </>
                   ) : <p className="text-sm text-fg-secondary">{unit.head_name ?? 'No head'}</p>}
@@ -471,14 +472,14 @@ export default function OrgChart() {
                       </label>
                       <BoxStyle box={person} disabled={busy} onSet={(patch) => setNode(person.id, patch)} />
                       {person.source !== 'manual' && (
-                        <button className={PRIMARY_BTN} disabled={busy} onClick={() => setNode(person.id, { parent_id: person.parent_id })}>Confirm this line</button>
+                        <Button size="md" disabled={busy} onClick={() => setNode(person.id, { parent_id: person.parent_id })}>Confirm this line</Button>
                       )}
                       <AddBox withTitle disabled={busy}
                         onAdd={(where, name, title) => addBox('/org/nodes', person, where, { name, title })} />
                       {!person.employee_id && (
-                        <button className="text-sm text-danger-fg hover:underline" disabled={busy} onClick={() => run(async () => {
+                        <Button variant="link" className="text-sm text-danger-fg" disabled={busy} onClick={() => run(async () => {
                           await mdmApi.delete(`/org/nodes/${person.id}`); setPicked(null)
-                        })}>Remove this box</button>
+                        })}>Remove this box</Button>
                       )}
                     </>
                   ) : <p className="text-sm text-fg-secondary">{person.title ?? '—'} · reports to {byId.get(person.parent_id ?? '')?.name ?? 'no one'}</p>}

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateActio
 import { createPortal } from 'react-dom'
 import { AlertCircle, ChevronDown, Loader2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, FormField, Input, SortTh, useSortableRows } from '@uniops/shell'
+import { Badge, Button, FormField, Input, SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi } from '@/lib/api'
 import { adminApi, type DelegationCreate, type DelegationOut, type DelegationUpdate } from '@/services/adminApi'
@@ -157,24 +157,24 @@ function UserCombobox({ users, value, onChange, placeholder }: UserComboboxProps
 
   return (
     <>
-      <button
+      <Button variant="secondary" size="md"
         ref={triggerRef} type="button" onClick={toggle}
-        className="flex h-10 w-full items-center justify-between rounded-lg border border-line bg-surface-sunken px-3 text-left text-sm hover:bg-surface focus:outline-none focus:border-primary-600"
+        className="w-full justify-between"
       >
         <span className="truncate">
           {selected ? userLabel(selected) : <span className="text-fg-muted">{placeholder}</span>}
         </span>
         <ChevronDown className="h-4 w-4 shrink-0 text-fg-muted" />
-      </button>
+      </Button>
       {open && rect && createPortal(
         <div
           ref={popRef}
           style={{ position: 'fixed', top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 260) }}
           className="z-[60] rounded-lg border border-line bg-surface shadow-lg"
         >
-          <input
+          <Input inputSize="sm"
             autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or email…"
-            className="m-2 h-8 w-[calc(100%-1rem)] rounded border border-line-strong px-2 text-sm focus:outline-none focus:border-primary-400"
+            className="m-2 w-[calc(100%-1rem)]"
           />
           <ul className="max-h-64 overflow-y-auto pb-1">
             {filtered.map((u) => (
@@ -375,25 +375,25 @@ function ApprovalDelegationBody() {
       )}
 
       <div className="overflow-x-auto rounded-xl border border-line bg-surface">
-        <table className="w-full min-w-max text-sm">
-          <thead className="border-b border-line-subtle bg-surface-subtle">
-            <tr>
-              <SortTh label="Delegator" sortKey="delegator" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
-              <SortTh label="Delegate" sortKey="delegate" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
-              <SortTh label="From" sortKey="start_date" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
-              <SortTh label="To" sortKey="end_date" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
-              <SortTh label="Note" sortKey="note" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
-              <SortTh label="Status" sortKey="status" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted" />
-            </tr>
-          </thead>
-          <tbody>
+        <Table density="compact" className="min-w-max">
+          <THead>
+            <Tr>
+              <SortTh label="Delegator" sortKey="delegator" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium text-fg-muted" />
+              <SortTh label="Delegate" sortKey="delegate" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium text-fg-muted" />
+              <SortTh label="From" sortKey="start_date" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium text-fg-muted" />
+              <SortTh label="To" sortKey="end_date" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium text-fg-muted" />
+              <SortTh label="Note" sortKey="note" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium text-fg-muted" />
+              <SortTh label="Status" sortKey="status" sort={sorted.sort} onSort={sorted.onSort} className="px-4 py-3 text-left text-xs font-medium text-fg-muted" />
+              <Th />
+            </Tr>
+          </THead>
+          <TBody>
             {rows.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="py-10 text-center text-sm text-fg-muted">
+              <Tr>
+                <Td align="center" colSpan={7} className="text-sm text-fg-muted">
                   No delegations yet.
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ) : (
               rows.map((row, i) => {
                 const status = deriveStatus(row, today)
@@ -401,17 +401,17 @@ function ApprovalDelegationBody() {
                 const delegateName = delegateNameOf(row) ?? '—'
                 const isRevoked = status === 'Revoked'
                 return (
-                  <tr
+                  <Tr
                     key={row.id}
                     className={cn('border-b border-line-subtle', i === rows.length - 1 && 'border-b-0')}
                   >
-                    <td className="px-4 py-2.5 text-fg-secondary">{delegatorName}</td>
-                    <td className="px-4 py-2.5 text-fg-secondary">{delegateName}</td>
-                    <td className="px-4 py-2.5 text-fg-muted">{formatDate(row.start_date)}</td>
-                    <td className="px-4 py-2.5 text-fg-muted">{formatDate(row.end_date)}</td>
-                    <td className="max-w-xs truncate px-4 py-2.5 text-fg-muted">{row.note || '—'}</td>
-                    <td className="px-4 py-2.5"><Badge variant={STATUS_VARIANT[status]}>{status}</Badge></td>
-                    <td className="px-4 py-2.5">
+                    <Td className="text-fg-secondary">{delegatorName}</Td>
+                    <Td className="text-fg-secondary">{delegateName}</Td>
+                    <Td className="text-fg-muted">{formatDate(row.start_date)}</Td>
+                    <Td className="text-fg-muted">{formatDate(row.end_date)}</Td>
+                    <Td className="max-w-xs truncate text-fg-muted">{row.note || '—'}</Td>
+                    <Td><Badge variant={STATUS_VARIANT[status]}>{status}</Badge></Td>
+                    <Td>
                       {!isRevoked && (
                         <div className="flex items-center gap-1">
                           <Button variant="ghost" size="sm" onClick={() => openEdit(row)}>Edit</Button>
@@ -425,13 +425,13 @@ function ApprovalDelegationBody() {
                           </Button>
                         </div>
                       )}
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 )
               })
             )}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </div>
       {dlg.dialog}
     </div>

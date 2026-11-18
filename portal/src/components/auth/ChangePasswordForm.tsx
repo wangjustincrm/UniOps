@@ -17,6 +17,7 @@ import { Eye, EyeOff, KeyRound, CheckCircle2 } from 'lucide-react'
 import { epmsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
+import { Input, Button } from '@uniops/shell'
 export function PwdField({
   label, value, onChange, show, onToggle, error, placeholder, autoFocus = false,
 }: {
@@ -27,7 +28,7 @@ export function PwdField({
     <div className="flex flex-col gap-1.5">
       <label className="text-xs font-medium text-fg-secondary">{label} <span className="text-danger-fg">*</span></label>
       <div className="relative">
-        <input
+        <Input
           type={show ? 'text' : 'password'}
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -38,10 +39,10 @@ export function PwdField({
           placeholder={placeholder}
           autoFocus={autoFocus}
         />
-        <button type="button" onClick={onToggle}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
+        <Button variant="subtle" size="icon-xs" type="button" onClick={onToggle}
+          className="absolute right-1.5 top-1/2 -translate-y-1/2">
           {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-        </button>
+        </Button>
       </div>
       {error && <p className="text-xs text-danger-fg">{error}</p>}
     </div>
@@ -119,16 +120,16 @@ export function ChangePasswordForm({ onSuccess, onCancel }: {
         error={errors.confirmPwd} placeholder="Re-enter new password" />
       <div className="flex justify-end gap-2 pt-1">
         {onCancel && (
-          <button onClick={onCancel}
-            className="rounded-lg px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-sunken">
+          <Button variant="subtle" size="xs" onClick={onCancel}
+            className="text-sm">
             Cancel
-          </button>
+          </Button>
         )}
-        <button onClick={handleSubmit} disabled={submitting}
-          className="flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50">
+        <Button size="md" onClick={handleSubmit} disabled={submitting}
+         >
           <KeyRound className="h-3.5 w-3.5" />
           {submitting ? 'Saving…' : 'Change Password'}
-        </button>
+        </Button>
       </div>
     </>
   )

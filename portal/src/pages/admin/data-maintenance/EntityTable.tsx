@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { SortTh, useSort } from '@uniops/shell'
+import { SortTh, useSort, Checkbox, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import type { EntitySchema } from '@/services/adminApi'
 import { adminApi } from '@/services/adminApi'
 import { useAdminList } from '@/hooks/useAdmin'
@@ -87,21 +87,21 @@ export function EntityTable({ schema, onEdit, onDelete }: Props) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-3">
-        <input
+        <Input inputSize="sm"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1) }}
           placeholder={`Search ${schema.label}…`}
-          className="h-9 w-72 rounded-lg border border-line-strong px-3 text-sm"
+          className="w-72"
         />
         {canDelete && selected.size > 0 && (
           <div className="flex items-center gap-2">
-            <button
+            <Button variant="danger" size="sm"
               onClick={() => setBulkOpen(true)}
-              className="rounded-lg bg-danger-solid px-3 py-1.5 text-sm font-semibold text-white hover:bg-danger-700"
+             
             >
               Delete selected ({selected.size})
-            </button>
-            <button onClick={clearSelection} className="text-sm text-fg-muted hover:underline">Clear</button>
+            </Button>
+            <Button variant="link" onClick={clearSelection} className="text-sm text-fg-muted">Clear</Button>
           </div>
         )}
       </div>
@@ -113,72 +113,72 @@ export function EntityTable({ schema, onEdit, onDelete }: Props) {
           ) : (
             <>
               All {pageIds.length} on this page selected.{' '}
-              <button onClick={selectAllMatching} disabled={loadingAll} className="font-semibold underline hover:text-warning-fg">
+              <Button variant="link" onClick={selectAllMatching} disabled={loadingAll}>
                 {loadingAll ? 'Selecting…' : `Select all ${total} matching`}
-              </button>
+              </Button>
             </>
           )}
         </div>
       )}
 
       <div className="overflow-x-auto rounded-xl border border-line">
-        <table className="w-full text-sm">
-          <thead className="bg-surface-subtle">
-            <tr>
+        <Table density="compact">
+          <THead>
+            <Tr>
               {canDelete && (
-                <th className="w-10 px-3 py-2">
-                  <input type="checkbox" aria-label="Select all on page"
+                <Th className="w-10">
+                  <Checkbox aria-label="Select all on page"
                     checked={allPageSelected} onChange={togglePage}
-                    className="h-4 w-4 rounded border-line-strong" />
-                </th>
+                    />
+                </Th>
               )}
               {cols.map((c) => sortable.has(c) ? (
                 <SortTh key={c} label={columnLabel(c)} sortKey={c} sort={sort} onSort={onSort}
                   className="px-3 py-2 text-left text-xs font-semibold uppercase text-fg-muted" />
               ) : (
-                <th key={c} className="px-3 py-2 text-left text-xs font-semibold uppercase text-fg-muted">{columnLabel(c)}</th>
+                <Th key={c}>{columnLabel(c)}</Th>
               ))}
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && <tr><td colSpan={cols.length + (canDelete ? 2 : 1)} className="px-3 py-6 text-center text-fg-muted">Loading…</td></tr>}
+              <Th />
+            </Tr>
+          </THead>
+          <TBody>
+            {isLoading && <Tr><Td align="center" colSpan={cols.length + (canDelete ? 2 : 1)} className="text-fg-muted">Loading…</Td></Tr>}
             {data?.items.map((row) => {
               const id = String(row.id)
               return (
-                <tr key={id} className={`border-t border-line-subtle ${selected.has(id) ? 'bg-primary-50/40' : ''}`}>
+                <Tr key={id} className={`border-t border-line-subtle ${selected.has(id) ? 'bg-primary-50/40' : ''}`}>
                   {canDelete && (
-                    <td className="px-3 py-2">
-                      <input type="checkbox" aria-label="Select row"
+                    <Td>
+                      <Checkbox aria-label="Select row"
                         checked={selected.has(id)} onChange={() => toggleRow(id)}
-                        className="h-4 w-4 rounded border-line-strong" />
-                    </td>
+                        />
+                    </Td>
                   )}
                   {cols.map((c) => (
-                    <td key={c} className="px-3 py-2 text-fg">{cellText(row[c])}</td>
+                    <Td key={c} className="text-fg">{cellText(row[c])}</Td>
                   ))}
-                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                  <Td align="right" className="whitespace-nowrap">
                     {schema.allow_edit !== false && (
-                      <button onClick={() => onEdit(row)} className="text-xs text-primary-600 hover:underline mr-3">Edit</button>
+                      <Button variant="link" onClick={() => onEdit(row)} className="text-xs">Edit</Button>
                     )}
                     {canDelete && (
-                      <button onClick={() => onDelete(row)} className="text-xs text-danger-fg hover:underline">Delete</button>
+                      <Button variant="link" onClick={() => onDelete(row)} className="text-xs text-danger-fg">Delete</Button>
                     )}
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               )
             })}
             {data && data.items.length === 0 && (
-              <tr><td colSpan={cols.length + (canDelete ? 2 : 1)} className="px-3 py-6 text-center text-fg-muted">No records</td></tr>
+              <Tr><Td align="center" colSpan={cols.length + (canDelete ? 2 : 1)} className="text-fg-muted">No records</Td></Tr>
             )}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </div>
 
       <div className="flex items-center gap-3 text-sm">
-        <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="rounded border px-2 py-1 disabled:opacity-40">Prev</button>
+        <Button variant="secondary" size="xs" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</Button>
         <span>Page {page} / {totalPages} · {total} total</span>
-        <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} className="rounded border px-2 py-1 disabled:opacity-40">Next</button>
+        <Button variant="secondary" size="xs" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
       </div>
 
       {bulkOpen && (

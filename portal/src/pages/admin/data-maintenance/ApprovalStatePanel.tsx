@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { adminApi, type WorkflowStep } from '@/services/adminApi'
 
+import { Input, Select, Button } from '@uniops/shell'
 interface Props {
   system: string
   entity: string
@@ -81,29 +82,29 @@ export function ApprovalStatePanel({ system, entity, recordId, currentStep }: Pr
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-xs text-fg-secondary">Current step
           {steps.length > 0 ? (
-            <select value={step} onChange={(e) => setStep(e.target.value)}
-              className="h-8 rounded border border-line-strong px-2 text-sm">
+            <Select selectSize="sm" value={step} onChange={(e) => setStep(e.target.value)}
+             >
               <option value="">— leave unchanged —</option>
               {steps.map((s, i) => (
                 <option key={s.id} value={String(i)}>{i} — {s.label || s.role}</option>
               ))}
-            </select>
+            </Select>
           ) : (
-            <input value={step} onChange={(e) => setStep(e.target.value)}
-              className="h-8 w-20 rounded border border-line-strong px-2 text-sm" />
+            <Input inputSize="sm" value={step} onChange={(e) => setStep(e.target.value)}
+              className="w-20" />
           )}
         </label>
         <label className="flex flex-col gap-1 text-xs text-fg-secondary">Assign task to role
-          <select value={role} onChange={(e) => setRole(e.target.value)}
-            className="h-8 rounded border border-line-strong px-2 text-sm">
+          <Select selectSize="sm" value={role} onChange={(e) => setRole(e.target.value)}
+           >
             <option value="">— engine decides —</option>
             {roleOptions.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
+          </Select>
         </label>
-        <button type="button" onClick={apply} disabled={busy}
-          className="h-8 rounded bg-warning-solid px-3 text-sm font-semibold text-white hover:bg-warning-700 disabled:opacity-50">
+        <Button variant="warning" size="sm" type="button" onClick={apply} disabled={busy}
+         >
           {busy ? 'Applying…' : 'Apply'}
-        </button>
+        </Button>
       </div>
 
       {openTasks !== null && (

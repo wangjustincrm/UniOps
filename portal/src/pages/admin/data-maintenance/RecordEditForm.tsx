@@ -8,6 +8,7 @@ import { LineItemsEditor, type LineRow } from './LineItemsEditor'
 import { ApprovalStatePanel } from './ApprovalStatePanel'
 import { useConfirmDialog } from '@/components/ConfirmDialog'
 
+import { Checkbox, Input, Select, Button, Modal as ShellModal } from '@uniops/shell'
 interface Props { schema: EntitySchema; record: Record<string, unknown>; onClose: () => void }
 
 export function RecordEditForm({ schema, record, onClose }: Props) {
@@ -142,9 +143,16 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-surface p-5 shadow-xl">
-        <h3 className="mb-4 text-base font-semibold">Edit {schema.label} · {String(record[schema.number_field] ?? '')}</h3>
+    <>
+    {/* Closes only by Cancel / the close button (no Escape, no backdrop), as before. */}
+    <ShellModal open onClose={onClose} closeOnEscape={false} size="full" className="max-w-3xl"
+      title={`Edit ${schema.label} · ${String(record[schema.number_field] ?? '')}`}
+      footer={<>
+        <Button variant="subtle" size="xs" onClick={onClose} className="text-sm">Cancel</Button>
+        <Button size="sm" onClick={save} disabled={saving || (subtotalShift != null && !acceptLineTotal)}>
+          {saving ? 'Saving…' : 'Save'}
+        </Button>
+      </>}>
 
         <section className="mb-5 grid grid-cols-2 gap-3">
           {schema.fields.map((f) => (
@@ -162,20 +170,20 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
                     setRefListDirty((p) => ({ ...p, [f.name]: true }))
                   }} />
               ) : f.type === 'enum' && f.options ? (
-                <select value={form[f.name] ?? ''} disabled={!f.editable}
+                <Select selectSize="sm" value={form[f.name] ?? ''} disabled={!f.editable}
                   onChange={(e) => setForm((p) => ({ ...p, [f.name]: e.target.value }))}
-                  className="h-9 rounded-lg border border-line-strong px-3 text-sm disabled:bg-surface-sunken">
+                 >
                   {!f.options.includes(form[f.name]) && form[f.name] && <option value={form[f.name]}>{form[f.name]} (current)</option>}
                   {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
-                </select>
+                </Select>
               ) : f.type === 'bool' ? (
-                <input type="checkbox" checked={form[f.name] === 'true'} disabled={!f.editable}
+                <Checkbox checked={form[f.name] === 'true'} disabled={!f.editable}
                   onChange={(e) => setForm((p) => ({ ...p, [f.name]: String(e.target.checked) }))}
-                  className="h-4 w-4 self-start" />
+                  className="self-start" />
               ) : (
-                <input value={form[f.name] ?? ''} disabled={!f.editable}
+                <Input inputSize="sm" value={form[f.name] ?? ''} disabled={!f.editable}
                   onChange={(e) => setForm((p) => ({ ...p, [f.name]: e.target.value }))}
-                  className="h-9 rounded-lg border border-line-strong px-3 text-sm disabled:bg-surface-sunken" />
+                  />
               )}
             </div>
           ))}
@@ -183,7 +191,7 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
 
         {schema.key === 'po' && vendorChanged && (
           <label className="mb-4 flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={regenPo} onChange={(e) => setRegenPo(e.target.checked)} />
+            <Checkbox checked={regenPo} onChange={(e) => setRegenPo(e.target.checked)} />
             Regenerate PO number for the new vendor (cascades across linked records)
           </label>
         )}
@@ -203,7 +211,7 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
               Saving will change the pre-tax amount, tax and payment amount to follow the lines.
             </p>
             <label className="mt-2 flex items-center gap-2">
-              <input type="checkbox" checked={acceptLineTotal}
+              <Checkbox checked={acceptLineTotal}
                 onChange={(e) => setAcceptLineTotal(e.target.checked)} />
               Change the pre-tax amount from {subtotalShift.from} to {subtotalShift.to}
             </label>
@@ -219,15 +227,8 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
         )}
 
         {error && <p className="mt-1 text-xs text-danger-fg">{error}</p>}
-        <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-sunken">Cancel</button>
-          <button onClick={save} disabled={saving || (subtotalShift != null && !acceptLineTotal)}
-            className="rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50">
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      </div>
-      {dlg.dialog}
-    </div>
+    </ShellModal>
+    {dlg.dialog}
+    </>
   )
 }

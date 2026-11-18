@@ -11,6 +11,7 @@ import { AlertTriangle, DatabaseZap, Loader2 } from 'lucide-react'
 import { epmsApi } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
 
+import { Input, Radio, Button } from '@uniops/shell'
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
 
@@ -195,20 +196,20 @@ export function NcPurchaseSyncSection() {
                 {status.can_set_cutover && (
                   <>
                     <span className="mx-1 text-fg-faint">|</span>
-                    <input
+                    <Input inputSize="sm"
                       type="date"
-                      className="rounded border border-line-strong px-2 py-1 text-xs"
+                     
                       value={cutoverEdit ?? (status.cutover ?? '').slice(0, 10)}
                       onChange={(e) => setCutoverEdit(e.target.value)}
                     />
-                    <button
+                    <Button size="xs"
                       type="button"
                       onClick={saveCutover}
                       disabled={cutoverSaving || !cutoverEdit || cutoverEdit === (status.cutover ?? '').slice(0, 10)}
-                      className="rounded bg-primary-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
+                     
                     >
                       {cutoverSaving ? 'Saving…' : 'Save'}
-                    </button>
+                    </Button>
                   </>
                 )}
               </div>
@@ -231,7 +232,7 @@ export function NcPurchaseSyncSection() {
               <>
                 <div className="space-y-2 text-sm">
                   <label className="flex items-start gap-2">
-                    <input type="radio" checked={mode === 'incremental'}
+                    <Radio checked={mode === 'incremental'}
                            onChange={() => setMode('incremental')} className="mt-0.5" />
                     <span>
                       <span className="font-medium">Incremental</span>
@@ -242,7 +243,7 @@ export function NcPurchaseSyncSection() {
                     </span>
                   </label>
                   <label className="flex items-start gap-2">
-                    <input type="radio" checked={mode === 'full'}
+                    <Radio checked={mode === 'full'}
                            onChange={() => setMode('full')} className="mt-0.5" />
                     <span>
                       <span className="font-medium">Full reload</span>
@@ -260,7 +261,7 @@ export function NcPurchaseSyncSection() {
                       Destructive: re-imports every NC purchase order and goods receipt.
                       Type {FULL_CONFIRM} to enable.
                     </div>
-                    <input value={confirm} onChange={(e) => setConfirm(e.target.value)}
+                    <Input value={confirm} onChange={(e) => setConfirm(e.target.value)}
                            placeholder={FULL_CONFIRM} className={cn(inputCls, 'w-full font-mono')} />
                   </div>
                 )}

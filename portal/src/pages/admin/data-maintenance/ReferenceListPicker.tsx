@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { adminApi, type RefHit } from '@/services/adminApi'
 
+import { Input, Button } from '@uniops/shell'
 export interface RefListItem { id: string; label: string }
 
 interface Props {
@@ -73,26 +74,26 @@ export function ReferenceListPicker({ system, source, value, onChange }: Props) 
             <li key={v.id}
               className="flex items-center gap-2 rounded-lg border border-line bg-surface-subtle px-2.5 py-1.5">
               <span className="min-w-0 flex-1 truncate text-xs" title={v.label}>{v.label}</span>
-              <button type="button" onClick={() => remove(v.id)}
-                className="shrink-0 rounded px-1.5 text-xs text-fg-muted hover:bg-danger-soft hover:text-danger-fg"
-                aria-label={`Remove ${v.label}`}>✕</button>
+              <Button variant="danger-ghost" size="xs" type="button" onClick={() => remove(v.id)}
+                className="shrink-0"
+                aria-label={`Remove ${v.label}`}>✕</Button>
             </li>
           ))}
         </ul>
       )}
 
-      <button ref={triggerRef} type="button" onClick={toggle}
-        className="h-8 self-start rounded-lg border border-line-strong px-3 text-xs hover:bg-surface-subtle">
+      <Button variant="secondary" size="xs" ref={triggerRef} type="button" onClick={toggle}
+        className="self-start">
         + Link {source === 'invoices' ? 'invoice' : source === 'grs' ? 'goods receipt' : source}
-      </button>
+      </Button>
 
       {open && rect && createPortal(
         <div ref={popRef}
           style={{ position: 'fixed', top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 420) }}
           className="z-[60] rounded-lg border border-line bg-surface shadow-lg">
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)}
+          <Input inputSize="sm" autoFocus value={q} onChange={(e) => setQ(e.target.value)}
             placeholder="Search by number, vendor, PO…"
-            className="m-2 h-8 w-[calc(100%-1rem)] rounded border border-line-strong px-2 text-sm" />
+            className="m-2 w-[calc(100%-1rem)]" />
           <ul className="max-h-64 overflow-y-auto pb-1">
             {hits.map((h) => {
               const already = value.some((v) => v.id === h.id)

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { ChildSchema } from '@/services/adminApi'
 
+import { Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 export interface LineRow { id?: string; [k: string]: unknown }
 
 interface Props {
@@ -33,57 +34,57 @@ export function LineItemsEditor({ child, rows, onChange }: Props) {
       <div className="flex items-center justify-between border-b border-line-subtle px-3 py-2">
         <span className="text-sm font-medium">{child.table_label}</span>
         {allowAdd && (
-          <button type="button" onClick={addRow}
-            className="rounded bg-primary-600 px-2 py-1 text-xs font-semibold text-white hover:bg-primary-700">+ Add row</button>
+          <Button size="xs" type="button" onClick={addRow}
+           >+ Add row</Button>
         )}
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-fg-muted">
-              {editable.map((f) => <th key={f.name} className="px-2 py-1">{f.label}</th>)}
-              <th className="px-2 py-1">Line Total</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
+        <Table density="compact">
+          <THead>
+            <Tr className="text-left text-xs text-fg-muted">
+              {editable.map((f) => <Th key={f.name}>{f.label}</Th>)}
+              <Th>Line Total</Th>
+              <Th />
+            </Tr>
+          </THead>
+          <TBody>
             {rows.map((r, i) => (
-              <tr key={r.id ?? `new-${i}`} className="border-t border-line-subtle">
+              <Tr key={r.id ?? `new-${i}`}>
                 {editable.map((f) => (
-                  <td key={f.name} className="px-1 py-1">
+                  <Td key={f.name}>
                     {f.type === 'enum' && f.options ? (
-                      <select value={r[f.name] == null ? '' : String(r[f.name])}
+                      <Select selectSize="sm" value={r[f.name] == null ? '' : String(r[f.name])}
                         onChange={(e) => set(i, f.name, e.target.value)}
-                        className="h-8 w-full min-w-[6rem] rounded border border-line-strong px-1">
+                        className="w-full min-w-[6rem]">
                         {r[f.name] == null && <option value="" />}
                         {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
-                      </select>
+                      </Select>
                     ) : (
-                      <input value={r[f.name] == null ? '' : String(r[f.name])}
+                      <Input inputSize="sm" value={r[f.name] == null ? '' : String(r[f.name])}
                         onChange={(e) => set(i, f.name, e.target.value)}
-                        className="h-8 w-full min-w-[6rem] rounded border border-line-strong px-2" />
+                        className="w-full min-w-[6rem]" />
                     )}
-                  </td>
+                  </Td>
                 ))}
-                <td className="px-2 py-1 tabular-nums">{lineTotal(r).toFixed(2)}</td>
-                <td className="px-1 py-1">
+                <Td className="tabular-nums">{lineTotal(r).toFixed(2)}</Td>
+                <Td>
                   <button type="button" onClick={() => delRow(i)}
                     className="rounded px-2 py-1 text-xs text-danger-fg hover:bg-danger-soft">Delete</button>
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
             {rows.length === 0 && (
-              <tr><td colSpan={editable.length + 2} className="px-3 py-3 text-center text-xs text-fg-muted">No line items</td></tr>
+              <Tr><Td align="center" colSpan={editable.length + 2} className="text-xs text-fg-muted">No line items</Td></Tr>
             )}
-          </tbody>
-          <tfoot>
-            <tr className="border-t border-line font-medium">
-              <td colSpan={editable.length} className="px-2 py-2 text-right">Subtotal (preview)</td>
-              <td className="px-2 py-2 tabular-nums">{subtotal.toFixed(2)}</td>
-              <td />
-            </tr>
-          </tfoot>
-        </table>
+          </TBody>
+          <TFoot>
+            <Tr className="font-medium">
+              <Td align="right" colSpan={editable.length}>Subtotal (preview)</Td>
+              <Td className="tabular-nums">{subtotal.toFixed(2)}</Td>
+              <Td />
+            </Tr>
+          </TFoot>
+        </Table>
       </div>
       <p className="px-3 py-1 text-2xs text-fg-muted">{child.note ?? 'Server recomputes line totals, subtotal, tax and total on save.'}</p>
     </div>

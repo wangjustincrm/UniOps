@@ -17,6 +17,7 @@ import { useBranding } from '@/hooks/useBranding'
 import { globalSignOut } from '@/lib/signOut'
 import { ChangePasswordForm } from '@/components/auth/ChangePasswordForm'
 
+import { Button } from '@uniops/shell'
 export default function ForcePasswordChangePage() {
   const user = useAuthStore((s) => s.user)
   const clearMustChangePassword = useAuthStore((s) => s.clearMustChangePassword)
@@ -49,12 +50,12 @@ export default function ForcePasswordChangePage() {
 
           <ChangePasswordForm onSuccess={clearMustChangePassword} />
 
-          <button
+          <Button variant="subtle" size="xs"
             onClick={globalSignOut}
-            className="self-center text-xs text-fg-muted hover:text-fg-secondary transition-colors"
+            className="self-center"
           >
             Sign out instead
-          </button>
+          </Button>
         </div>
       </div>
     </div>

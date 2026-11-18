@@ -1,9 +1,11 @@
+import { AlertTriangle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { EntitySchema, CascadeSummary } from '@/services/adminApi'
 import { adminApi } from '@/services/adminApi'
 import { useAdminDelete } from '@/hooks/useAdmin'
 import { CascadeBreakdown, splitCascade } from './cascadeDisplay'
 
+import { Button, Modal as ShellModal } from '@uniops/shell'
 interface Props {
   schema: EntitySchema
   record: Record<string, unknown>
@@ -33,27 +35,21 @@ export function DeleteConfirm({ schema, record, onClose }: Props) {
   const isBlocked = !!parts && parts.blocked.length > 0
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-xl bg-surface p-5 shadow-xl">
-        <h3 className="text-base font-semibold text-danger-fg">
-          Delete {schema.label} · {String(record[schema.number_field] ?? '')}
-        </h3>
-        <p className="mt-2 text-sm text-fg-secondary">
-          This cascades across the shared database and cannot be undone.
-        </p>
-        <div className="mt-3 rounded-lg border border-line bg-surface-subtle p-3 text-sm">
+    <ShellModal open onClose={onClose} title={<>Delete {schema.label} · {String(record[schema.number_field] ?? '')}</>} description="This cascades across the shared database and cannot be undone."
+      icon={<AlertTriangle className="h-4 w-4 text-danger-fg" />} closeOnEscape={false} size="full" className="max-w-md"
+      footer={<>
+        <Button variant="subtle" size="xs" onClick={onClose} className="text-sm">Cancel</Button>
+        <Button variant="danger" size="sm" onClick={confirm} disabled={del.isPending || !cascade || isBlocked}>
+          {del.isPending ? 'Deleting…' : 'Delete permanently'}
+        </Button>
+      </>}>
+      <div className="flex flex-col gap-3">
+        <div className="rounded-lg border border-line bg-surface-subtle p-3 text-sm">
           {!cascade && !error && <p className="text-fg-muted">Computing impact…</p>}
           {parts && <CascadeBreakdown parts={parts} removedLabel="Will be deleted" />}
         </div>
-        {error && <p className="mt-3 text-xs text-danger-fg">{error}</p>}
-        <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-sunken">Cancel</button>
-          <button onClick={confirm} disabled={del.isPending || !cascade || isBlocked}
-            className="rounded-lg bg-danger-solid px-3 py-1.5 text-sm font-semibold text-white hover:bg-danger-700 disabled:opacity-50">
-            {del.isPending ? 'Deleting…' : 'Delete permanently'}
-          </button>
-        </div>
+        {error && <p className="text-xs text-danger-fg">{error}</p>}
       </div>
-    </div>
+    </ShellModal>
   )
 }

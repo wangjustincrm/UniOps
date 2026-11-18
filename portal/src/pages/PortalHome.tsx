@@ -15,6 +15,7 @@ import { PortalSidebar } from '@/components/layout/PortalSidebar'
 import { TopHeader } from '@/components/layout/TopHeader'
 import { FINANCE_ACCESS_PERMS, BOOKING_ACCESS_PERMS, MRP_URL } from '@/components/layout/navConfig'
 
+import { Button, useSidebarCollapsed } from '@uniops/shell'
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const EPMS_API = (import.meta.env.VITE_EPMS_API_URL as string | undefined) || 'http://localhost:8000'
@@ -251,11 +252,11 @@ function ModuleCard({ icon, iconBg, label, description, href, healthy, loading, 
         <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', iconBg)}>
           {icon}
         </div>
-        <span className={cn('rounded-full px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide', statusColor)}>
+        <span className={cn('rounded-full px-2 py-0.5 text-2xs font-semibold', statusColor)}>
           {statusLabel}
         </span>
       </div>
-      <p className="text-sm font-bold text-fg">{label}</p>
+      <p className="text-sm font-semibold text-fg">{label}</p>
       <p className="mt-1 text-xs text-fg-muted leading-relaxed">{description}</p>
       {!comingSoon && (
         <div className={cn(
@@ -395,12 +396,12 @@ function TaskRow({ task }: { task: UnifiedTask }) {
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5">
-          <span className={cn('text-2xs font-semibold uppercase tracking-wider', style.badge)}>
+          <span className={cn('text-2xs font-semibold', style.badge)}>
             {style.label}
           </span>
           <span className="text-2xs text-fg-muted">{timeAgo(task.createdAt)}</span>
           {task.urgent && (
-            <span className="rounded-full bg-danger-soft px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wide text-danger-fg">Urgent</span>
+            <span className="rounded-full bg-danger-soft px-1.5 py-0.5 text-2xs font-semibold text-danger-fg">Urgent</span>
           )}
         </div>
         <p className="text-sm font-medium text-fg truncate">{task.title}</p>
@@ -567,7 +568,7 @@ export default function PortalHome() {
   const hasInventoryAccess =
     role === 'system_admin' || !!perms?.['inventory.view']
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, toggleCollapsed] = useSidebarCollapsed('portal.sidebar.collapsed')
 
   const epmsHealth = useHealthCheck(EPMS_API, '/api/v1/health', 'epms')
   const oaHealth   = useHealthCheck(OA_API,   '/health',        'oa')
@@ -777,15 +778,8 @@ export default function PortalHome() {
   ]
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#F5F6FA]">
-      {/* Mobile overlay */}
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 z-20 bg-black/50 md:hidden"
-          onClick={() => setMobileOpen(false)}
-          aria-hidden="true"
-        />
-      )}
+    // The Shell Sidebar draws its own mobile backdrop.
+    <div className="flex h-screen overflow-hidden bg-canvas">
 
       {/* ── Sidebar ─────────────────────────────── */}
       <PortalSidebar
@@ -793,7 +787,7 @@ export default function PortalHome() {
         epmsHref={epmsHref} oaHref={oaHref} vmsHref={vmsHref} financeHref={financeHref} bookingHref={bookingHref} session={session}
         userRole={auth.user?.role ?? null} perms={perms}
         mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)}
-        collapsed={collapsed} onToggleCollapse={() => setCollapsed(v => !v)}
+        collapsed={collapsed} onToggleCollapse={toggleCollapsed}
       />
 
       {/* ── Main area ───────────────────────────── */}
@@ -810,7 +804,7 @@ export default function PortalHome() {
                 {/* Welcome + actions */}
                 <div className="flex items-start justify-between">
                   <div>
-                    <h1 className="text-2xl font-bold text-fg">
+                    <h1 className="text-2xl font-semibold text-fg">
                       Welcome back, {firstName}
                     </h1>
                     <p className="mt-1 text-sm text-fg-muted">
@@ -846,15 +840,15 @@ export default function PortalHome() {
                     <div className="flex items-center gap-2">
                       <h2 className="text-base font-semibold text-fg">My Task Inbox</h2>
                       {taskCount > 0 && (
-                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1.5 text-2xs font-bold text-white">
+                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1.5 text-2xs font-semibold text-white">
                           {taskCount > 99 ? '99+' : taskCount}
                         </span>
                       )}
                     </div>
                     {taskCount > 0 && (
-                      <button className="text-xs text-primary-600 hover:text-primary-700 font-medium transition-colors">
+                      <Button variant="link" className="text-xs">
                         Mark all as read
-                      </button>
+                      </Button>
                     )}
                   </div>
 
@@ -886,10 +880,10 @@ export default function PortalHome() {
                           <div key={mod} className="space-y-3">
                             {/* Module header */}
                             <div className="flex items-center gap-2 border-b border-line pb-1.5">
-                              <span className={cn('text-xs font-bold uppercase tracking-wider', style.badge)}>
+                              <span className={cn('text-xs font-semibold', style.badge)}>
                                 {MODULE_HEADING[mod]}
                               </span>
-                              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-surface-sunken px-1.5 text-2xs font-bold text-fg-muted">
+                              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-surface-sunken px-1.5 text-2xs font-semibold text-fg-muted">
                                 {modTasks.length}
                               </span>
                             </div>

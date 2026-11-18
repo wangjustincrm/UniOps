@@ -28,6 +28,7 @@ describe('ui-guard ratchet', () => {
     const re = guard.METRICS['select-chrome']
     expect('<Select className={inputCls} value={v}>'.match(re)?.length).toBe(1)
     expect('<Select className={fldCls(errors.x)}>'.match(re)?.length).toBe(1)
+    expect('<Select className={`${INPUT} w-full`} value={v}>'.match(re)?.length).toBe(1)
     expect('<Select value={v}\n  className="h-10 rounded-lg border px-3">'.match(re)?.length).toBe(1)
     expect('<Select className="w-full" error={!!e} onChange={(e) => f(e)}>'.match(re)).toBeNull()
     expect('<Select className="w-40"><option /></Select><div className="border">'.match(re)).toBeNull()

@@ -16,6 +16,7 @@
  * header), so each page renders its own heading in `children` instead.
  */
 import { useState, type ReactNode } from 'react'
+import { useSidebarCollapsed } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, encodeSession } from '@/lib/api'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
@@ -32,7 +33,7 @@ export function PortalPageLayout({ activeKey, children }: PortalPageLayoutProps)
   const auth = useAuthStore()
   const perms = useRolePermissions().data?.permissions
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, toggleCollapsed] = useSidebarCollapsed('portal.sidebar.collapsed')
 
   const session = auth.token && auth.user
     ? encodeSession(auth.token, auth.refreshToken ?? '', auth.user)
@@ -47,15 +48,8 @@ export function PortalPageLayout({ activeKey, children }: PortalPageLayoutProps)
   const bookingHref = session ? `${BOOKING_URL}/#__session=${session}` : BOOKING_URL
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#F5F6FA]">
-      {/* Mobile overlay */}
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 z-20 bg-black/50 md:hidden"
-          onClick={() => setMobileOpen(false)}
-          aria-hidden="true"
-        />
-      )}
+    // The Shell Sidebar draws its own mobile backdrop.
+    <div className="flex h-screen overflow-hidden bg-canvas">
 
       {/* ── Sidebar ─────────────────────────────── */}
       <PortalSidebar
@@ -63,7 +57,7 @@ export function PortalPageLayout({ activeKey, children }: PortalPageLayoutProps)
         epmsHref={epmsHref} oaHref={oaHref} vmsHref={vmsHref} financeHref={financeHref} bookingHref={bookingHref} session={session}
         userRole={auth.user?.role ?? null} perms={perms}
         mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)}
-        collapsed={collapsed} onToggleCollapse={() => setCollapsed(v => !v)}
+        collapsed={collapsed} onToggleCollapse={toggleCollapsed}
       />
 
       {/* ── Main area ───────────────────────────── */}

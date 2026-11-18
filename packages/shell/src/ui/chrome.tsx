@@ -6,7 +6,7 @@
  * look lives here. Re-skinning the sidebar for all modules = edit this file.
  */
 import React, { useEffect, useRef, useState } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, LogOut, Menu, User } from 'lucide-react'
 import { cn } from '../lib/cn'
 
@@ -22,12 +22,19 @@ export interface NavItem {
   badge?: number
   /** Extra paths that also mark this item active. */
   activePrefixes?: string[]
+  /** Set by apps that track the current item themselves (Portal's activeKey);
+   *  overrides route matching when defined. */
+  active?: boolean
 }
 
 export interface NavSection {
   /** Sentence case, e.g. "Master data". Omit for the first, untitled group. */
   title?: string
   items: NavItem[]
+  /** Render as one expandable row (label = title, this icon) instead of a heading
+   *  with the items always listed. Opens by itself when one of its items is active;
+   *  in the icon-only sidebar the items are listed directly. */
+  collapsible?: { icon: React.ReactNode }
 }
 
 export interface Branding {
@@ -64,6 +71,8 @@ export interface SidebarProps {
   portalUrl?: string
   /** Rows pinned above the footer (e.g. module switcher). */
   footer?: React.ReactNode
+  /** In-app route the brand links to (e.g. "/" for Portal home). */
+  brandHref?: string
 }
 
 function Count({ n, collapsed }: { n: number; collapsed?: boolean }) {
@@ -75,11 +84,49 @@ function Count({ n, collapsed }: { n: number; collapsed?: boolean }) {
   )
 }
 
-export function Sidebar({ brand, sections, collapsed, onToggleCollapse, mobileOpen, onMobileClose, portalUrl, footer }: SidebarProps) {
+export function Sidebar({ brand, sections, collapsed, onToggleCollapse, mobileOpen, onMobileClose, portalUrl, footer, brandHref }: SidebarProps) {
   const location = useLocation()
   const row = 'group relative flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors duration-150'
-  const isActive = (item: NavItem, linkActive: boolean) =>
-    linkActive || location.pathname.startsWith(item.href + '/') || !!item.activePrefixes?.some((p) => location.pathname.startsWith(p))
+  const isActive = (item: NavItem, linkActive: boolean) => item.active ?? (
+    linkActive || location.pathname.startsWith(item.href + '/') || !!item.activePrefixes?.some((p) => location.pathname.startsWith(p)))
+  // Collapsible groups: open when the current page is inside, else closed until clicked.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => Object.fromEntries(
+    sections.filter((s) => s.collapsible && s.title).map((s) => [s.title!, s.items.some((i) => isActive(i, location.pathname === i.href))])))
+
+  const renderItem = (item: NavItem, nested = false) => {
+    const content = (active: boolean) => (
+      <>
+        {item.icon && <span className="flex w-4 shrink-0 items-center justify-center [&>svg]:h-4 [&>svg]:w-4">{item.icon}</span>}
+        {!collapsed && <span className="truncate">{item.label}</span>}
+        {!collapsed && item.external && !item.sameTab && <ExternalLink aria-hidden className="ml-auto h-3.5 w-3.5 opacity-60" />}
+        {!!item.badge && <Count n={item.badge} collapsed={collapsed} />}
+        {active && <span aria-hidden className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-white/80" />}
+      </>
+    )
+    const cls = (active: boolean) => cn(
+      row,
+      nested && !collapsed && 'pl-9',
+      active ? 'bg-nav-item-active font-medium text-nav-fg-active' : 'text-nav-fg hover:bg-nav-item-hover hover:text-nav-fg-active',
+      collapsed && 'justify-center px-0',
+    )
+    if (item.external) {
+      const active = item.active ?? false
+      return (
+        <a key={item.href} href={item.href} title={collapsed ? item.label : undefined}
+          target={item.sameTab ? undefined : '_blank'} rel={item.sameTab ? undefined : 'noopener noreferrer'}
+          aria-current={active ? 'page' : undefined}
+          className={cls(active)} onClick={onMobileClose}>
+          {content(active)}
+        </a>
+      )
+    }
+    return (
+      <NavLink key={item.href} to={item.href} title={collapsed ? item.label : undefined} onClick={onMobileClose}
+        className={({ isActive: a }) => cls(isActive(item, a))}>
+        {({ isActive: a }) => content(isActive(item, a))}
+      </NavLink>
+    )
+  }
 
   return (
     <>
@@ -93,15 +140,22 @@ export function Sidebar({ brand, sections, collapsed, onToggleCollapse, mobileOp
         )}
       >
         <div className={cn('flex h-15 items-center gap-2 border-b border-nav-line px-3', collapsed ? 'justify-center' : 'justify-between')}>
-          <div className="flex min-w-0 items-center gap-2.5">
-            <BrandMark brand={brand} />
-            {!collapsed && (
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold leading-tight text-nav-fg-active">{brand.name}</p>
-                {brand.tagline && <p className="truncate text-2xs text-nav-fg">{brand.tagline}</p>}
-              </div>
-            )}
-          </div>
+          {(() => {
+            const inner = (
+              <>
+                <BrandMark brand={brand} />
+                {!collapsed && (
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold leading-tight text-nav-fg-active">{brand.name}</p>
+                    {brand.tagline && <p className="truncate text-2xs text-nav-fg">{brand.tagline}</p>}
+                  </div>
+                )}
+              </>
+            )
+            return brandHref
+              ? <Link to={brandHref} title={brand.name} className="flex min-w-0 items-center gap-2.5 rounded-md">{inner}</Link>
+              : <div className="flex min-w-0 items-center gap-2.5">{inner}</div>
+          })()}
           {!collapsed && onToggleCollapse && (
             <button type="button" onClick={onToggleCollapse} aria-label="Collapse sidebar"
               className="shrink-0 rounded p-1 text-nav-fg transition-colors hover:bg-nav-item-hover hover:text-nav-fg-active max-md:hidden">
@@ -111,44 +165,35 @@ export function Sidebar({ brand, sections, collapsed, onToggleCollapse, mobileOp
         </div>
 
         <nav className="flex-1 overflow-y-auto px-2 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Main">
-          {sections.filter((s) => s.items.length > 0).map((section, si) => (
-            <div key={section.title ?? si} className={cn(si > 0 && 'mt-5')}>
-              {section.title && !collapsed && (
-                <p className="mb-1.5 px-2.5 text-2xs font-medium text-nav-fg">{section.title}</p>
-              )}
-              {section.title && collapsed && si > 0 && <div className="mx-2 mb-2 border-t border-nav-line" />}
-              <div className="flex flex-col gap-0.5">
-                {section.items.map((item) => {
-                  const content = (active: boolean) => (
-                    <>
-                      {item.icon && <span className="flex w-4 shrink-0 items-center justify-center [&>svg]:h-4 [&>svg]:w-4">{item.icon}</span>}
-                      {!collapsed && <span className="truncate">{item.label}</span>}
-                      {!collapsed && item.external && !item.sameTab && <ExternalLink aria-hidden className="ml-auto h-3.5 w-3.5 opacity-60" />}
-                      {!!item.badge && <Count n={item.badge} collapsed={collapsed} />}
-                      {active && <span aria-hidden className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-white/80" />}
-                    </>
-                  )
-                  const cls = (active: boolean) => cn(
-                    row,
-                    active ? 'bg-nav-item-active font-medium text-nav-fg-active' : 'text-nav-fg hover:bg-nav-item-hover hover:text-nav-fg-active',
-                    collapsed && 'justify-center px-0',
-                  )
-                  return item.external ? (
-                    <a key={item.href} href={item.href} title={collapsed ? item.label : undefined}
-                      target={item.sameTab ? undefined : '_blank'} rel={item.sameTab ? undefined : 'noopener noreferrer'}
-                      className={cls(false)} onClick={onMobileClose}>
-                      {content(false)}
-                    </a>
-                  ) : (
-                    <NavLink key={item.href} to={item.href} title={collapsed ? item.label : undefined} onClick={onMobileClose}
-                      className={({ isActive: a }) => cls(isActive(item, a))}>
-                      {({ isActive: a }) => content(isActive(item, a))}
-                    </NavLink>
-                  )
-                })}
+          {sections.filter((s) => s.items.length > 0).map((section, si) => {
+            if (section.collapsible && section.title && !collapsed) {
+              const title = section.title
+              const open = !!openGroups[title]
+              return (
+                <div key={title} className={cn(si > 0 && 'mt-5', 'flex flex-col gap-0.5')}>
+                  <button type="button" aria-expanded={open}
+                    onClick={() => setOpenGroups((g) => ({ ...g, [title]: !g[title] }))}
+                    className={cn(row, 'w-full text-nav-fg hover:bg-nav-item-hover hover:text-nav-fg-active')}>
+                    <span className="flex w-4 shrink-0 items-center justify-center [&>svg]:h-4 [&>svg]:w-4">{section.collapsible.icon}</span>
+                    <span className="flex-1 truncate text-left">{title}</span>
+                    <ChevronDown aria-hidden className={cn('h-4 w-4 shrink-0 transition-transform', !open && '-rotate-90')} />
+                  </button>
+                  {open && section.items.map((item) => renderItem(item, true))}
+                </div>
+              )
+            }
+            return (
+              <div key={section.title ?? si} className={cn(si > 0 && 'mt-5')}>
+                {section.title && !collapsed && (
+                  <p className="mb-1.5 px-2.5 text-2xs font-medium text-nav-fg">{section.title}</p>
+                )}
+                {section.title && collapsed && si > 0 && <div className="mx-2 mb-2 border-t border-nav-line" />}
+                <div className="flex flex-col gap-0.5">
+                  {section.items.map((item) => renderItem(item))}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </nav>
 
         {footer && <div className="border-t border-nav-line p-2">{footer}</div>}

@@ -63,11 +63,6 @@ export const TODO_LABEL: Record<string, string> = {
   fix_mismatch: 'Fix mismatch',
 }
 
-export const TH = 'sticky top-0 z-10 bg-surface-subtle px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-fg-muted whitespace-nowrap'
-export const TD = 'px-4 py-2.5 text-sm text-fg-secondary'
-export const PRIMARY_BTN = 'inline-flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors disabled:opacity-50'
-export const SECONDARY_BTN = 'inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors disabled:opacity-50'
-export const INPUT = 'rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-200'
 
 /** Effective permission check. system_admin holds every key. */
 export function useStaffPerm() {
