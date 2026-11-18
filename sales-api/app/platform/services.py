@@ -100,7 +100,7 @@ class ReadOnlyService(Generic[T, R]):
             if page_no * EXPORT_PAGE >= page.total:
                 break
             page_no += 1
-        return out.getvalue().encode("utf-8")
+        return out.getvalue().encode("utf-8-sig")  # with a BOM: Excel on Windows reads it as UTF-8 (é, à), not ANSI
 
 
     async def _export_columns(self, spec: QuerySpec, columns: list[str]) -> bytes:
@@ -128,7 +128,7 @@ class ReadOnlyService(Generic[T, R]):
             if page_no * EXPORT_PAGE >= page.total:
                 break
             page_no += 1
-        return out.getvalue().encode("utf-8")
+        return out.getvalue().encode("utf-8-sig")  # with a BOM: Excel on Windows reads it as UTF-8 (é, à), not ANSI
 
     def to_read(self, entity: T) -> R:
         return self.read_schema.model_validate(entity, from_attributes=True)

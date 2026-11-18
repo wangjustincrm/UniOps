@@ -235,7 +235,7 @@ async def test_csv_round_trip(http, db_engine):
     await make(http, code="JC", name="=Jean Coutu", invoice_method="EMAIL", invoice_email="ap@jc.example")
     r = await http.get(f"{BASE}/export.csv", headers=READER)
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
-    rows = _rows(r.text)
+    rows = _rows(r.content.decode("utf-8-sig"))
     assert [x["code"] for x in rows] == ["JC", "WMT"] and rows[0]["version"] == "1"
     assert rows[0]["name"] == "'=Jean Coutu"  # a formula-looking cell is defused on export
     assert rows[1]["carrier_defaults"] == '{"carrier": "CHR"}'  # JSON, so it reads back
@@ -261,7 +261,7 @@ async def test_csv_round_trip(http, db_engine):
 
 async def test_csv_import_of_a_stale_export_is_refused(http):
     p = await make(http, code="WMT")
-    export = (await http.get(f"{BASE}/export.csv", headers=OP)).text
+    export = (await http.get(f"{BASE}/export.csv", headers=OP)).content.decode("utf-8-sig")
     await http.put(f"{BASE}/{p['id']}?version=1", json={"name": "Changed meanwhile"}, headers=OP)
     rows = _rows(export)
     rows[0]["name"] = "From the old file"

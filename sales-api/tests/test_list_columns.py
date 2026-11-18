@@ -58,8 +58,8 @@ async def test_the_csv_follows_the_view_columns_labels_currency_and_refuses_what
     await env.pull()
     async with env.factory(OP) as u:
         svc = OrderService(u)
-        text = (await svc.export_csv(QuerySpec(), ["source_reference", "subtotal", "connection_name", "tags"])).decode()
-        full = (await svc.export_csv(QuerySpec())).decode()  # no columns: the list's own full export, unchanged
+        text = (await svc.export_csv(QuerySpec(), ["source_reference", "subtotal", "connection_name", "tags"])).decode("utf-8-sig")
+        full = (await svc.export_csv(QuerySpec())).decode("utf-8-sig")  # no columns: the list's own full export, unchanged
         for bad in (["source_reference", "shadow"], ["connection_id"], ["nope"]):  # meta-hidden, hidden, unknown
             try:
                 await svc.export_csv(QuerySpec(), bad)
@@ -88,3 +88,11 @@ async def test_an_added_amount_has_its_total_per_currency(env):  # noqa: F811
         page = await OrderService(u).list(QuerySpec())
     [t] = page.totals
     assert (t.currency, t.sums["subtotal"], t.sums["tax"]) == ("CAD", "180.00", "20.00")
+
+
+async def test_a_csv_export_opens_in_excel_as_utf8(env):  # noqa: F811
+    env.shop.orders = [shopify_order(1, 9301)]
+    await env.pull()
+    async with env.factory(OP) as u:
+        for data in (await OrderService(u).export_csv(QuerySpec(), ["source_reference"]), await OrderService(u).export_csv(QuerySpec())):
+            assert data[:3] == b"\xef\xbb\xbf"  # the BOM; the import reads it (utf-8-sig)

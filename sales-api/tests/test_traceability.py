@@ -90,7 +90,7 @@ async def test_lots_give_every_order_and_customer_a_lot_went_to(p6):  # noqa: F8
     assert [(g.key, g.count, g.totals[0].sums["qty_shipped_ea"]) for g in by_lot.groups] == [(["LOT-A"], 2, "100"), (["LOT-B"], 1, "20")]
     async with p6.factory(OP) as u:
         data = await LotService(u).export_csv(QuerySpec(filters=[parse_filter("lot:in:LOT-A")], sort=parse_sort("order_ref")))
-    rows = list(csv.DictReader(io.StringIO(data.decode())))
+    rows = list(csv.DictReader(io.StringIO(data.decode("utf-8-sig"))))
     assert [(r["lot"], r["order_ref"], r["partner_name"], r["ship_to_postal"], r["tracking"]) for r in rows] == [
         ("LOT-A", "LBL-PO-1", "Loblaws", "L1Z 1X3", "1Z-TRACK"), ("LOT-A", "LBL-PO-2", "Loblaws", "L1Z 1X3", "1Z-TRACK")]
 

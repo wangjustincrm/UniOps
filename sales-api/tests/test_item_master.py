@@ -110,7 +110,7 @@ async def _import(http, path, rows, dry_run=False):
 
 async def test_items_csv_round_trip_with_units(http):
     await http.post(ITEMS, json=item(), headers=OP)
-    exported = (await http.get(f"{ITEMS}/export.csv", headers=READER)).text
+    exported = (await http.get(f"{ITEMS}/export.csv", headers=READER)).content.decode("utf-8-sig")
     rows = list(csv.DictReader(io.StringIO(exported)))
     assert rows[0]["units"] == "EA=1; CASE=6" and rows[0]["version"] == "1"
     rep = await _import(http, ITEMS, rows, dry_run=True)
@@ -131,7 +131,7 @@ async def test_units_carry_shopify_titles_in_the_api_and_the_csv(http):
     assert r.status_code == 201, r.text
     assert [(u["unit"], u["shopify_titles"]) for u in r.json()["units"]] == [
         ("EA", ["Single"]), ("CASE", ["Case (6 Cans)", "Case of 6"]), ("2PACK", ["2-Can"])]
-    rows = list(csv.DictReader(io.StringIO((await http.get(f"{ITEMS}/export.csv", headers=READER)).text)))
+    rows = list(csv.DictReader(io.StringIO((await http.get(f"{ITEMS}/export.csv", headers=READER)).content.decode("utf-8-sig"))))
     assert rows[0]["units"] == "EA=1 [Single]; CASE=6 [Case (6 Cans), Case of 6]; 2PACK=2 [2-Can]"
     assert (await _import(http, ITEMS, rows, dry_run=True))["counts"]["unchanged"] == 1
     rows[0]["units"] = "EA=1; CASE=6 [Case (6 Cans)]; 2PACK=2 [2-Can, 2-Pack]"  # only the titles change

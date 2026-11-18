@@ -114,6 +114,6 @@ async def test_the_secret_name_and_host_key_are_no_column_but_the_form_and_the_c
     assert not names & {"secret_name", "host_key"}
     row = (await api.get(f"{C}/{c['id']}", headers=OP)).json()
     assert row["secret_name"] == c["secret_name"] and row["host_key"]            # the form still gets them
-    header = (await api.get(f"{C}/export.csv", headers=OP)).text.splitlines()[0]
+    header = (await api.get(f"{C}/export.csv", headers=OP)).content.decode("utf-8-sig").splitlines()[0]
     assert {"secret_name", "host_key", "can_read", "can_write"} <= set(header.split(","))  # and the CSV
 

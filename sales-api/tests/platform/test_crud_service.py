@@ -127,7 +127,7 @@ async def test_export_round_trips(uow_factory, person):
         await uow.commit()
     async with uow_factory(person) as uow:
         data = await WidgetService(uow).export_csv(QuerySpec())
-    assert data.decode() == "code,name,email,price,active,version\nA,Alpha,,1.50,true,1\nB,Beta,b@x.com,2.00,true,1\n"
+    assert data.decode("utf-8-sig") == "code,name,email,price,active,version\nA,Alpha,,1.50,true,1\nB,Beta,b@x.com,2.00,true,1\n"
     async with uow_factory(person) as uow:
         rep = await WidgetService(uow).import_csv(data, dry_run=True)
     assert rep.ok and rep.counts == {"create": 0, "update": 0, "unchanged": 2}
@@ -196,7 +196,7 @@ async def test_export_escapes_formulas_and_import_restores_them(uow_factory, per
     await _create(uow_factory, person, code="F", name="=HYPERLINK(\"x\")", email="@evil", price=Decimal("-1.50"))
     async with uow_factory(person) as uow:
         data = await WidgetService(uow).export_csv(QuerySpec())
-    line = data.decode().splitlines()[1]
+    line = data.decode("utf-8-sig").splitlines()[1]
     assert line == "F,\"'=HYPERLINK(\"\"x\"\")\",'@evil,-1.50,true,1"  # numbers stay numbers
     async with uow_factory(person) as uow:
         rep = await WidgetService(uow).import_csv(data, dry_run=True)
