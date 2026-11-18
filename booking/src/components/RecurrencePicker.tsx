@@ -7,17 +7,13 @@
  */
 import { useState } from 'react'
 import type { SeriesSpec } from '@/lib/types'
-import { cn, todayISO } from '@/lib/utils'
+import { todayISO } from '@/lib/utils'
 
 import { Input, Radio, Button } from '@uniops/shell'
 interface Props {
   value: SeriesSpec | null
   onChange: (spec: SeriesSpec | null) => void
 }
-
-const inputCls =
-  'rounded-md border border-line-strong bg-surface px-2 py-1.5 text-sm outline-none ' +
-  'focus:border-primary-700/60 focus:ring-1 focus:ring-primary-700/30'
 
 export function RecurrencePicker({ value, onChange }: Props) {
   // endMode is local state so clicking "By date" before entering a date doesn't snap back.
@@ -95,7 +91,7 @@ export function RecurrencePicker({ value, onChange }: Props) {
               min={1}
               value={interval}
               onChange={(e) => setInterval(Number(e.target.value))}
-              className={cn(inputCls, 'w-16 text-center')}
+              className="w-16 text-center"
             />
             <span className="text-sm text-fg-secondary">
               {freq === 'daily' ? (interval === 1 ? 'day' : 'days') : (interval === 1 ? 'week' : 'weeks')}
@@ -122,7 +118,7 @@ export function RecurrencePicker({ value, onChange }: Props) {
                 value={count}
                 disabled={endMode !== 'count'}
                 onChange={(e) => setCount(Number(e.target.value))}
-                className={cn(inputCls, 'w-16 text-center disabled:opacity-50')}
+                className="w-16 text-center"
               />
               <span className="text-sm text-fg-secondary">occurrences</span>
             </label>
@@ -142,7 +138,6 @@ export function RecurrencePicker({ value, onChange }: Props) {
                 disabled={endMode !== 'until'}
                 min={todayISO()}
                 onChange={(e) => setUntil(e.target.value)}
-                className={cn(inputCls, 'disabled:opacity-50')}
               />
             </label>
           </div>

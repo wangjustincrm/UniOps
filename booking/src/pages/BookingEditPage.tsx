@@ -24,7 +24,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { ArrowLeft, CheckCircle2, AlertCircle, Loader2, Info } from 'lucide-react'
-import { cn, formatDate, todayISO } from '@/lib/utils'
+import { formatDate, todayISO } from '@/lib/utils'
 import { ApiError } from '@/lib/api'
 import {
   useBooking,
@@ -62,10 +62,6 @@ const isoToDate = (iso: string) => isoToDateInZone(iso)
 const toISO = (date: string, time: string) => zonedToISO(date, time)
 
 // ── Form UI helpers (mirrors BookingCreatePage style) ─────────────────────────
-
-const inputCls =
-  'w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm ' +
-  'outline-none focus:border-primary-700/60 focus:ring-1 focus:ring-primary-700/30'
 
 function Field({ label, required, children, hint }: {
   label: string
@@ -450,7 +446,6 @@ export default function BookingEditPage() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Meeting title…"
-                className={inputCls}
                 autoFocus
               />
             </Field>
@@ -461,7 +456,7 @@ export default function BookingEditPage() {
                 onChange={(e) => setDesc(e.target.value)}
                 rows={3}
                 placeholder="Optional agenda or notes…"
-                className={cn(inputCls, 'resize-y')}
+                className="resize-y"
               />
             </Field>
           </Section>
@@ -496,7 +491,6 @@ export default function BookingEditPage() {
                   value={date}
                   min={today}
                   onChange={(e) => setDate(e.target.value)}
-                  className={inputCls}
                 />
               </Field>
             )}

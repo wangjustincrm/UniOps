@@ -36,9 +36,6 @@ function Field({
   )
 }
 
-const inputCls =
-  'w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40'
-
 // ── Rules card ────────────────────────────────────────────────────────────────
 
 interface RulesCardProps {
@@ -109,7 +106,6 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
               type="number" min={5} max={60}
               value={form.slot_minutes ?? ''}
               onChange={(e) => setNum('slot_minutes', e.target.value)}
-              className={inputCls}
               placeholder="30"
             />
           </Field>
@@ -118,7 +114,6 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
               type="number" min={1}
               value={form.min_duration_minutes ?? ''}
               onChange={(e) => setNum('min_duration_minutes', e.target.value)}
-              className={inputCls}
               placeholder="30"
             />
           </Field>
@@ -127,7 +122,6 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
               type="number" min={1}
               value={form.max_duration_minutes ?? ''}
               onChange={(e) => setNum('max_duration_minutes', e.target.value)}
-              className={inputCls}
               placeholder="480"
             />
           </Field>
@@ -136,7 +130,6 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
               type="number" min={0}
               value={form.advance_days ?? ''}
               onChange={(e) => setNum('advance_days', e.target.value)}
-              className={inputCls}
               placeholder="30"
             />
           </Field>
@@ -145,7 +138,6 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
               type="time"
               value={form.default_open_start ?? ''}
               onChange={(e) => setStr('default_open_start', e.target.value)}
-              className={inputCls}
             />
           </Field>
           <Field label="Default Open End">
@@ -153,7 +145,6 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
               type="time"
               value={form.default_open_end ?? ''}
               onChange={(e) => setStr('default_open_end', e.target.value)}
-              className={inputCls}
             />
           </Field>
         </div>
@@ -180,7 +171,6 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
               type="text"
               value={emailsRaw}
               onChange={(e) => setEmailsRaw(e.target.value)}
-              className={inputCls}
               placeholder="admin@example.com, facilities@example.com"
             />
           </Field>
@@ -264,7 +254,6 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
                 type="text"
                 value={form.host ?? ''}
                 onChange={(e) => setStr('host', e.target.value)}
-                className={inputCls}
                 placeholder="smtp.example.com"
               />
             </Field>
@@ -274,7 +263,6 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
               type="number"
               value={form.port ?? ''}
               onChange={(e) => setForm((f) => ({ ...f, port: e.target.value ? Number(e.target.value) : null }))}
-              className={inputCls}
               placeholder="587"
             />
           </Field>
@@ -283,7 +271,6 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
               type="text"
               value={form.user ?? ''}
               onChange={(e) => setStr('user', e.target.value)}
-              className={inputCls}
               placeholder="user@example.com"
               autoComplete="off"
             />
@@ -294,7 +281,7 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
                 type={showPw ? 'text' : 'password'}
                 value={form.password ?? ''}
                 onChange={(e) => setStr('password', e.target.value)}
-                className={inputCls + ' pr-9'}
+                className="pr-9"
                 placeholder={form.password ? '••••••••' : 'Enter password'}
                 autoComplete="new-password"
               />
@@ -312,7 +299,6 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
               type="email"
               value={form.from_email ?? ''}
               onChange={(e) => setStr('from_email', e.target.value)}
-              className={inputCls}
               placeholder="booking@example.com"
             />
           </Field>

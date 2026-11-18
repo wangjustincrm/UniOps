@@ -12,7 +12,6 @@ import { createPortal } from 'react-dom'
 import { Search, X, Loader2 } from 'lucide-react'
 import { directoryService } from '@/services/api'
 import type { DirectoryUserOut } from '@/lib/types'
-import { cn } from '@/lib/utils'
 
 import { Button, Input, MenuItem } from '@uniops/shell'
 interface Props {
@@ -203,10 +202,7 @@ export function AttendeePicker({ value, onChange, excludeUserId }: Props) {
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => { if (debouncedQuery.length >= 2) { updatePos(); setOpen(true) } }}
           placeholder={value.length > 0 ? 'Add more attendees…' : 'Search by name or email…'}
-          className={cn(
-            'w-full rounded-md border border-line-strong bg-surface py-2 pl-8 pr-3 text-sm',
-            'outline-none focus:border-primary-700/60 focus:ring-1 focus:ring-primary-700/30',
-          )}
+          className="pl-8 pr-3"
         />
       </div>
 

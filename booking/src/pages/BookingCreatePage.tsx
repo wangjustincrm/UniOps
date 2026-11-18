@@ -65,10 +65,6 @@ interface FormState {
 
 // ── Form field helpers ────────────────────────────────────────────────────────
 
-const inputCls =
-  'w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm ' +
-  'outline-none focus:border-primary-700/60 focus:ring-1 focus:ring-primary-700/30'
-
 function Field({ label, required, children, hint }: {
   label: string
   required?: boolean
@@ -379,7 +375,6 @@ export default function BookingCreatePage() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Meeting title…"
-                className={inputCls}
                 autoFocus
               />
             </Field>
@@ -390,7 +385,7 @@ export default function BookingCreatePage() {
                 onChange={(e) => setDesc(e.target.value)}
                 rows={3}
                 placeholder="Optional agenda or notes…"
-                className={cn(inputCls, 'resize-y')}
+                className="resize-y"
               />
             </Field>
           </Section>
@@ -402,7 +397,6 @@ export default function BookingCreatePage() {
                 value={date}
                 min={today}
                 onChange={(e) => setDate(e.target.value)}
-                className={inputCls}
               />
             </Field>
 
