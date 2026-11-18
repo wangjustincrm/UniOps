@@ -141,6 +141,7 @@ function QueryTableView<T>({
   const [ownLayout, setOwnLayout] = useState<Layout>({ columns: [], hidden: [] })
   const layout = layoutProp ?? ownLayout
   const [panel, setPanel] = useState<{ open: boolean; focus: string | null }>({ open: false, focus: null })
+  const [dragging, setDragging] = useState<string | null>(null)  // a header's column being dragged (grouping by drop)
 
   // The page's columns, then every other field /meta describes (hidden at first).
   const pageIds = useMemo(() => new Set(columns.map(columnId)), [columns])
@@ -290,6 +291,7 @@ function QueryTableView<T>({
         sortable={sortableIds}
         onSortChange={(s) => change(specFromSorting(spec, [s]))}
         onColumnMove={meta ? (id, beforeId) => move(id, beforeId === null ? order.length : order.filter((x) => x !== id).indexOf(beforeId)) : undefined}
+        onColumnDrag={meta ? setDragging : undefined}
         leading={picker ? <TourMark help="list.views" slot="list.views" className="inline-flex"><ViewPicker model={picker} /></TourMark> : undefined}
         headerAddon={(id) => {
           const f = fields.get(id)
@@ -315,6 +317,18 @@ function QueryTableView<T>({
         ) : undefined}
         chips={meta ? (
           <FilterChips spec={spec} onSpecChange={change} fields={fields} locked={locked}
+            groupDrop={{
+              dragging,
+              // The same rules as the column menu's Group by (MAX_GROUP_KEYS, the field's own groupable).
+              refuse: (id) => {
+                const f = fields.get(id)
+                if (!f?.groupable) return `${f?.label ?? headerText(byId.get(id) ?? { id }, f)} cannot be grouped`
+                if ((spec.group ?? []).some((g) => g.field === id)) return `Already grouped by ${f.label}`
+                if ((spec.group ?? []).length >= MAX_GROUP_KEYS) return `At most ${MAX_GROUP_KEYS} groupings: remove one first`
+                return null
+              },
+              onGroup: (id) => { setDragging(null); change(groupBy(spec, id, false)) },
+            }}
             labelOf={(f) => { const c = columns.find((x) => columnId(x) === f); return c ? headerText(c) : f }} />
         ) : undefined}
         search={searchable ? {

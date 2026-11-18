@@ -168,6 +168,25 @@ async function run(name, viewport) {
     await shot('more-fields-added')
     check(await page.getByText(/110\.00/).count() > 0, `${name} column chooser: the field ticked shows (Subtotal 110.00)`)
   })
+  if (!phone) await step('drag to group', async () => {
+    // Grouping by drag and drop (user 2026-11-18): a header's grip onto the Grouping row groups by it.
+    // The browser's own drag events with one DataTransfer (a pointer-driven HTML5 drag does not run headless).
+    await open('/payments')
+    const dt = await page.evaluateHandle(() => new DataTransfer())
+    const grip = page.locator('[data-column-grip="method"]').first()
+    await grip.dispatchEvent('dragstart', { dataTransfer: dt })
+    const zone = page.locator('[data-group-drop]')
+    await zone.waitFor({ timeout: 5000 })
+    check(await zone.getAttribute('data-group-drop') === 'open', `${name} drag to group: the Grouping row opens for a groupable column`)
+    await zone.dispatchEvent('dragenter', { dataTransfer: dt })
+    await zone.dispatchEvent('dragover', { dataTransfer: dt })
+    await shot('drag-to-group')
+    await zone.dispatchEvent('drop', { dataTransfer: dt })
+    await grip.dispatchEvent('dragend', { dataTransfer: dt })
+    await page.waitForTimeout(600)
+    check(await page.locator('[data-group-chip="method"]').count() === 1, `${name} drag to group: dropping Method on Grouping groups by it`)
+    await shot('dragged-group')
+  })
   await step('page help', async () => {
     await open('/orders')
     await page.getByRole('button', { name: 'Help: Orders' }).click()

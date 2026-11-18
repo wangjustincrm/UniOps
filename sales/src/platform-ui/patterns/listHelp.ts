@@ -27,7 +27,7 @@ export const PLATFORM_HELP: Record<string, HelpEntry> = {
     buttons: ['Reset to the saved view'] },
   'list.rowOpen': { title: 'Open a row', body: 'Click a row (or press Enter) to open it. In the record, J / K (or Alt+↑ / Alt+↓) move to the next or previous one.' },
   'list.rowDetails': { title: 'Row details', body: "▸ opens a row's details under it (e.g. an item's lots) without leaving the list." },
-  'list.groups': { title: 'Groups', body: "Rows grouped by a field; a group's header folds it, its totals sit beside it." },
+  'list.groups': { title: 'Groups', body: "Rows grouped by a field; a group's header folds it, its totals sit beside it. To group, drag a header's grip onto the Grouping row that appears (or use the column menu); drag a Grouping chip onto another to change the order, or out of the row to stop grouping by it. At most 3." },
   'list.totals': { title: 'Totals', body: 'The totals of the whole result (every page), per currency.' },
   'list.pages': { title: 'Pages', body: 'The rows count and pages; Per page sets how many rows a page shows.' },
   'list.notices': { title: 'Notices', body: "What happened on this list (a refresh, an export, an error); the bell keeps the session's last 20." },

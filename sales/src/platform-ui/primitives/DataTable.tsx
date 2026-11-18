@@ -86,6 +86,9 @@ export interface DataTableProps<T> {
   /** Columns can be dragged to a new place: `id` goes before `beforeId` (null = last).
    *  The keyboard way is the column chooser's ↑ ↓. */
   onColumnMove?: (id: string, beforeId: string | null) => void
+  /** A header's grip is being dragged (its column id), or the drag ended (null): e.g. the Grouping row
+   *  becomes a drop target. A drop on a header moves the column; a drop elsewhere is that target's. */
+  onColumnDrag?: (id: string | null) => void
   /** A controlled search box, applied on Enter. */
   search?: { value: string; onSubmit: (value: string) => void }
   /** Controls placed after the search box (e.g. filters), and actions on the right. */
@@ -125,7 +128,7 @@ export type RowAttrs = { className?: string } & { [data: `data-${string}`]: stri
  *  query contract — QueryTable (patterns) adapts it to a QuerySpec. */
 export function DataTable<T>({
   columns, rows, rowKey, onRowClick, loading, fetching, stale, busyNow, highlight, fit, statusBar, errorMessage, onRetry, emptyTitle = 'Nothing here yet', emptyText, emptyAction,
-  sort, sortable = [], onSortChange, headerAddon, leadingHeader, chips, grouping, leading, afterSearch, onColumnMove, search, filters,
+  sort, sortable = [], onSortChange, headerAddon, leadingHeader, chips, grouping, leading, afterSearch, onColumnMove, onColumnDrag, search, filters,
   toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs, expand, cardsBelow = 640, cardLines = 6,
 }: DataTableProps<T>) {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -413,9 +416,9 @@ export function DataTable<T>({
                           e.preventDefault()
                           const id = e.dataTransfer.getData('text/x-column') || dragging
                           if (id && id !== h.column.id) onColumnMove(id, h.column.id)
-                          setDragging(null); setDropOn(null)
+                          setDragging(null); setDropOn(null); onColumnDrag?.(null)
                         } : undefined}
-                        onDragEnd={onColumnMove ? () => { setDragging(null); setDropOn(null) } : undefined}
+                        onDragEnd={onColumnMove ? () => { setDragging(null); setDropOn(null); onColumnDrag?.(null) } : undefined}
                       >
                         <span className="inline-flex items-center gap-1">
                           {onColumnMove && (
@@ -425,12 +428,13 @@ export function DataTable<T>({
                               draggable
                               aria-hidden
                               data-column-grip={h.column.id}
-                              title="Drag to move the column"
+                              title={onColumnDrag ? 'Drag to move the column, or onto Grouping to group by it' : 'Drag to move the column'}
                               className="-ml-1 cursor-grab text-neutral-300 hover:text-neutral-500 active:cursor-grabbing"
                               onDragStart={(e) => {
                                 e.dataTransfer.setData('text/x-column', h.column.id)
                                 e.dataTransfer.effectAllowed = 'move'
                                 setDragging(h.column.id)
+                                onColumnDrag?.(h.column.id)
                               }}
                             >
                               <GripVertical className="h-3 w-3" />

@@ -170,6 +170,16 @@ export function flipGroup(spec: QuerySpec, field: string): QuerySpec {
   return { ...spec, page: 1, group: (spec.group ?? []).map((g) => (g.field === field ? { field, desc: !g.desc } : g)) }
 }
 
+/** The grouping on `field` moved to level `to` (0 = outermost); the others keep their order. */
+export function moveGroup(spec: QuerySpec, field: string, to: number): QuerySpec {
+  const group = spec.group ?? []
+  const g = group.find((x) => x.field === field)
+  if (!g) return spec
+  const rest = group.filter((x) => x.field !== field)
+  rest.splice(Math.max(0, Math.min(to, rest.length)), 0, g)
+  return { ...spec, page: 1, group: rest }
+}
+
 export function removeGroup(spec: QuerySpec, field: string): QuerySpec {
   return { ...spec, page: 1, group: (spec.group ?? []).filter((g) => g.field !== field) }
 }
