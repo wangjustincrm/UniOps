@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useReplaceTab } from '@uniops/shell'
+import { useReplaceTab, Checkbox, FileInput, Select, Textarea, MenuItem } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { ArrowLeft, Upload, X, Calendar, Search } from 'lucide-react'
+import { ArrowLeft, Upload, X, Calendar, Search, Check, Paperclip } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
@@ -130,6 +130,8 @@ export default function PrCreatePage() {
   const [selectedL1Obj, setSelectedL1Obj] = useState<(typeof ccL1Groups)[number] | null>(null)
   const [vendorQuery, setVendorQuery] = useState('')
   const [vendorOpen, setVendorOpen] = useState(false)
+  const vendorAnchorRef = useRef<HTMLDivElement>(null)
+  const vendorRect = useAnchorRect(vendorOpen, vendorAnchorRef)
   const [selectedVendor, setSelectedVendor] = useState<ApiVendor | null>(null)
   const [vendorError, setVendorError] = useState<string | null>(null)
   // Service/Project Owner combo box — who confirms the service was delivered.
@@ -594,7 +596,7 @@ export default function PrCreatePage() {
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold text-fg">
+          <h1 className="text-2xl font-semibold text-fg">
             {sourcePr ? `New Purchase Requisition — Copy of ${sourcePr.number}` : 'New Purchase Requisition'}
           </h1>
         </div>
@@ -643,51 +645,50 @@ export default function PrCreatePage() {
                       Preferred Vendor <span className="text-danger-fg">*</span>
                     </label>
                     <div className="relative">
-                      <div className="relative">
+                      <div className="relative" ref={vendorAnchorRef}>
                         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
-                        <input
+                        <Input
                           type="text"
                           placeholder="Search vendor by name or POID…"
                           value={selectedVendor ? selectedVendor.name : vendorQuery}
                           onFocus={() => { setVendorOpen(true); if (selectedVendor) setVendorQuery('') }}
                           onChange={(e) => { setVendorQuery(e.target.value); setSelectedVendor(null); setCopyVendorId(null); setVendorOpen(true) }}
-                          className={`h-10 w-full rounded-md border bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 ${vendorError && !selectedVendor ? 'border-danger-solid' : 'border-line-strong'}`}
+                          error={!!(vendorError && !selectedVendor)}
+                          className="pl-9 pr-3"
                         />
                         {selectedVendor && (
-                          <button
+                          <Button variant="subtle" size="icon-xs" aria-label="Clear"
                             type="button"
                             onClick={() => { setSelectedVendor(null); setVendorQuery(''); setCopyVendorId(null) }}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
+                            className="absolute right-1.5 top-1/2 -translate-y-1/2"
                           >
                             <X className="h-3.5 w-3.5" />
-                          </button>
+                          </Button>
                         )}
                       </div>
-                      {vendorOpen && !selectedVendor && (
+                      {vendorOpen && !selectedVendor && vendorRect && (
                         <>
-                          <div className="fixed inset-0 z-10" onClick={() => setVendorOpen(false)} />
-                          <div className="absolute z-20 mt-1 w-full rounded-lg border border-line bg-surface py-1 shadow-lg">
+                          <DropdownPortal anchorRect={vendorRect} onClose={() => setVendorOpen(false)}>
                             {filteredVendors.map((v) => (
-                              <button
+                              <MenuItem
                                 key={v.id}
                                 type="button"
-                                className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-primary-50 text-left"
                                 onClick={() => { setSelectedVendor(v); setVendorOpen(false); setVendorQuery(''); setVendorError(null) }}
                               >
                                 <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
                                 {v.name}
-                              </button>
+                              </MenuItem>
                             ))}
                             {filteredVendors.length === 0 && (
                               <p className="px-3 py-2 text-sm text-fg-muted">No vendors found</p>
                             )}
                             {/* "+ Add new vendor" removed: it had no action at all (ISS-0242). */}
-                          </div>
+                          </DropdownPortal>
                         </>
                       )}
                     </div>
                     {selectedVendor && (
-                      <p className="text-xs text-success-fg">✓ {selectedVendor.name} ({selectedVendor.code})</p>
+                      <p className="text-xs text-success-fg"><Check aria-hidden className="mr-1 inline h-3 w-3 -mt-0.5" />{selectedVendor.name} ({selectedVendor.code})</p>
                     )}
                     {vendorError && !selectedVendor && (
                       <p className="text-xs text-danger-fg">{vendorError}</p>
@@ -699,7 +700,7 @@ export default function PrCreatePage() {
                     <label className="text-sm font-medium text-fg-secondary">
                       Department <span className="text-danger-fg">*</span>
                     </label>
-                    <select
+                    <Select
                       value={selectedDepartmentId ?? ''}
                       onChange={(e) => {
                         setSelectedDepartmentId(e.target.value || undefined)
@@ -710,13 +711,12 @@ export default function PrCreatePage() {
                         setSelectedL1(''); setSelectedL1Obj(null); setSelectedL2('')
                         setFactorCombo({}); setFactorComboError(null)
                       }}
-                      className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                     >
                       <option value="">Select Department…</option>
                       {departments.map((d) => (
                         <option key={d.id} value={d.id}>{d.name}</option>
                       ))}
-                    </select>
+                    </Select>
                     {departmentError && (
                       <p className="text-xs text-danger-fg">{departmentError}</p>
                     )}
@@ -732,7 +732,7 @@ export default function PrCreatePage() {
                         Budget Account <span className="text-danger-fg">*</span>
                       </label>
                       {/* Step 1: Cost Center */}
-                      <select
+                      <Select
                         value={selectedCostCenter}
                         onChange={(e) => {
                           const code = e.target.value
@@ -740,15 +740,14 @@ export default function PrCreatePage() {
                           setSelectedCostCenterId(costCenters.find((cc) => cc.code === code)?.id)
                           setSelectedL1(''); setSelectedL1Obj(null); setSelectedL2('')
                         }}
-                        className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                       >
                         <option value="">Select Cost Center…</option>
                         {costCenters.map((cc) => (
                           <option key={cc.id} value={cc.code}>{cc.name}</option>
                         ))}
-                      </select>
+                      </Select>
                       {/* Step 2: L1 Category (scoped to cost center) */}
-                      <select
+                      <Select
                         value={selectedL1}
                         onChange={(e) => {
                           const code = e.target.value
@@ -757,25 +756,23 @@ export default function PrCreatePage() {
                           setSelectedL2('')
                         }}
                         disabled={!selectedCostCenter}
-                        className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
                       >
                         <option value="">Select L1 Category…</option>
                         {ccL1Groups.map((l1) => (
                           <option key={l1.id} value={l1.code}>{l1.name}</option>
                         ))}
-                      </select>
+                      </Select>
                       {/* Step 3: L2 Account */}
-                      <select
+                      <Select
                         value={selectedL2}
                         onChange={(e) => { setSelectedL2(e.target.value); setBudgetError(null) }}
                         disabled={!selectedL1}
-                        className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
                       >
                         <option value="">Select L2 Sub-account…</option>
                         {ccL2Accounts.map((l2) => (
                           <option key={l2.id} value={l2.code}>{l2.code} — {l2.name}</option>
                         ))}
-                      </select>
+                      </Select>
                       {budgetError && (
                         <p className="text-xs text-danger-fg">{budgetError}</p>
                       )}
@@ -803,7 +800,7 @@ export default function PrCreatePage() {
                                 {f.factor_name}
                                 <span className="ml-1 font-mono text-fg-muted">({f.factor_code})</span>
                               </label>
-                              <select
+                              <Select selectSize="sm"
                                 value={current}
                                 onChange={(e) => {
                                   const v = e.target.value
@@ -815,7 +812,6 @@ export default function PrCreatePage() {
                                   })
                                   setFactorComboError(null)
                                 }}
-                                className="h-9 rounded-md border border-line-strong bg-surface px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                               >
                                 <option value="">Select…</option>
                                 {activeValues.map((v) => (
@@ -823,7 +819,7 @@ export default function PrCreatePage() {
                                     {v.value_code} — {v.value_name}
                                   </option>
                                 ))}
-                              </select>
+                              </Select>
                             </div>
                           )
                         })}
@@ -857,11 +853,11 @@ export default function PrCreatePage() {
                   {/* Justification — required when over-budget AND mode is not hard_block (fm_gm_opm / fm_only / allow) */}
                   {isOverBudget && !isHardBlock && (
                     <FormField label="Over-Budget Justification" required htmlFor="justification" error={errors.justification?.message}>
-                      <textarea
+                      <Textarea
                         id="justification"
                         {...register('justification')}
                         placeholder="Explain why this expenditure is necessary despite exceeding budget…"
-                        className="min-h-20 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                        className="min-h-20 w-full"
                       />
                     </FormField>
                   )}
@@ -899,28 +895,28 @@ export default function PrCreatePage() {
                       </label>
                       <div className="relative">
                         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
-                        <input
+                        <Input
                           id="serviceOwner"
                           type="text"
                           placeholder="Search people by name…"
                           value={ownerOpen ? ownerQuery : (selectedOwner?.full_name ?? '')}
                           onFocus={() => { setOwnerOpen(true); setOwnerQuery('') }}
                           onChange={(e) => { setOwnerQuery(e.target.value); setOwnerOpen(true) }}
-                          className="h-10 w-full rounded-md border border-line-strong bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                          className="w-full pl-9 pr-3"
                         />
                       </div>
                       {ownerOpen && ownerRect && (
                         <DropdownPortal anchorRect={ownerRect} onClose={() => { setOwnerOpen(false); setOwnerQuery('') }}>
                           {owners.map((u) => (
-                            <button
+                            <MenuItem
                               key={u.id}
                               type="button"
-                              className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-primary-50 text-left"
+                              className="justify-between"
                               onClick={() => { setSelectedOwner(u); setOwnerOpen(false); setOwnerQuery('') }}
                             >
                               <span>{u.full_name}</span>
                               {u.department_name && <span className="text-xs text-fg-muted">{u.department_name}</span>}
-                            </button>
+                            </MenuItem>
                           ))}
                           {owners.length === 0 && (
                             <p className="px-3 py-2 text-sm text-fg-muted">No people found</p>
@@ -935,10 +931,9 @@ export default function PrCreatePage() {
                   )}
 
                   <div className="flex items-center gap-2">
-                    <input
+                    <Checkbox
                       id="prepayment"
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-line-strong text-primary-600"
+                     
                       {...register('prepaymentRequired')}
                     />
                     <label htmlFor="prepayment" className="text-sm text-fg-secondary">Prepayment Required</label>
@@ -946,16 +941,16 @@ export default function PrCreatePage() {
 
                   {/* Currency */}
                   <FormField label="Currency" required htmlFor="currency">
-                    <select
+                    <Select
                       id="currency"
                       value={currency}
                       onChange={(e) => setCurrency(e.target.value as Currency)}
-                      className="h-10 w-full rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                      className="w-full"
                     >
                       {enabledCurrencyOptions(config, currency).map((c) => (
                         <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
                       ))}
-                    </select>
+                    </Select>
                   </FormField>
 
                   {/* Delivery address — optional */}
@@ -1008,31 +1003,30 @@ export default function PrCreatePage() {
                         <p className="text-sm font-medium text-fg-secondary">Drag &amp; drop or click to upload</p>
                         <p className="text-xs text-fg-muted mt-1">{ATTACHMENT_RULE.hint}</p>
                       </div>
-                      <input id="file-upload" type="file" multiple accept={ATTACHMENT_RULE.accept} className="sr-only" onChange={handleFileInput} />
+                      <FileInput id="file-upload" multiple accept={ATTACHMENT_RULE.accept} className="sr-only" onChange={handleFileInput} />
                     </label>
                     {attachmentError && <p role="alert" className="text-xs text-danger-fg">{attachmentError}</p>}
                     {attachments.map((f, i) => (
                       <div key={i} className="flex items-center gap-2 rounded-md border border-line bg-surface-subtle px-3 py-2 text-sm">
-                        <span className="flex-1 truncate text-fg-secondary">📎 {f.name}</span>
+                        <Paperclip aria-hidden className="h-3.5 w-3.5 shrink-0 text-fg-muted" /><span className="flex-1 truncate text-fg-secondary">{f.name}</span>
                         <span className="text-fg-muted text-xs">{formatBytes(f.size)}</span>
-                        <button
+                        <Button variant="danger-ghost" size="icon-xs"
                           type="button"
                           onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-                          className="text-fg-muted hover:text-danger-fg"
                           aria-label="Remove file"
                         >
                           <X className="h-3.5 w-3.5" />
-                        </button>
+                        </Button>
                       </div>
                     ))}
                   </div>
 
                   <FormField label="Requester Notes" htmlFor="notes">
-                    <textarea
+                    <Textarea
                       id="notes"
                       {...register('notes')}
                       placeholder="Any additional context for the approver…"
-                      className="min-h-20 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                      className="min-h-20 w-full"
                     />
                   </FormField>
                 </div>
@@ -1084,7 +1078,7 @@ export default function PrCreatePage() {
 
             {/* Tips card */}
             <div className="rounded-xl bg-surface shadow-sm p-4">
-              <h3 className="text-sm font-semibold text-fg-secondary mb-3">💡 Tips</h3>
+              <h3 className="text-sm font-semibold text-fg-secondary mb-3">Tips</h3>
               <ul className="space-y-2 text-xs text-fg-muted">
                 <li>• Select the procurement type that best matches your purchase</li>
                 <li>• Type 1 (Raw Materials) does not require a budget code</li>

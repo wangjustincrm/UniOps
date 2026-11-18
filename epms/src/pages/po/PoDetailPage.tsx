@@ -2,11 +2,8 @@ import { useState, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import {
-  ArrowLeft, CheckCircle2, XCircle, RotateCcw, Pencil, ChevronDown,
-  MessageSquare, X, Send, ExternalLink, FileText, Mail, ShoppingCart, Warehouse, Globe, Loader2,
-  CreditCard,
+  ArrowLeft, CheckCircle2, XCircle, RotateCcw, Pencil, ChevronDown, MessageSquare, Send, ExternalLink, FileText, Mail, ShoppingCart, Warehouse, Globe, Loader2, CreditCard, SearchX, Factory,
 } from 'lucide-react'
-import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
@@ -41,6 +38,7 @@ import { isImportedEditablePo } from '@/lib/importedPoEdit'
 import { canWithdrawDocument } from '@/lib/documentActions'
 import { formatPaymentTerms } from '@/lib/paymentTerms'
 
+import { Alert, ChoiceCard, FormField, Input, MenuItem, Modal, TBody, TFoot, THead, Table, Tabs, Td, Textarea, Th, Tr } from '@uniops/shell'
 const TYPE_LABELS: Record<number, string> = {
   1: 'Raw Mat./Pack.',
   2: 'Consumables',
@@ -177,31 +175,51 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
     )
   }
 
-  const inputCls = 'w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-2xl rounded-2xl bg-surface shadow-2xl flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-50">
-              <ShoppingCart className="h-5 w-5 text-primary-600" />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-fg">Place Order</h2>
-              <p className="text-xs text-fg-muted">{po.number} · {po.vendor_name}</p>
-            </div>
-          </div>
-          {step !== 'done' && (
-            <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken">
-              <X className="h-4 w-4" />
-            </button>
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      dismissible={step !== 'done'}
+      busy={placeOrder.isPending}
+      size="lg"
+      icon={<ShoppingCart />}
+      title="Place Order"
+      description={`${po.number} · ${po.vendor_name}`}
+      footer={<>
+          {step === 'choose' && (
+            <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
           )}
-        </div>
-
-        {/* Body */}
-        <div className="overflow-y-auto flex-1 px-6 py-5">
+          {step === 'email_compose' && (
+            <>
+              <Button variant="secondary" size="sm" onClick={() => setStep('choose')}>Back</Button>
+              <Button size="sm"
+                onClick={handleSendEmail}
+                disabled={placeOrder.isPending}
+               
+              >
+                {placeOrder.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                Send &amp; Issue PO
+              </Button>
+            </>
+          )}
+          {step === 'online_confirm' && (
+            <>
+              <Button variant="secondary" size="sm" onClick={() => setStep('choose')}>Back</Button>
+              <Button variant="success" size="sm"
+                onClick={handleOnlineConfirm}
+                disabled={placeOrder.isPending}
+               
+              >
+                {placeOrder.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                Confirm Order Placed
+              </Button>
+            </>
+          )}
+          {step === 'done' && (
+            <Button size="sm" onClick={onClose}>Done</Button>
+          )}
+      </>}
+    >
 
           {/* Step: Choose method */}
           {step === 'choose' && (
@@ -209,11 +227,11 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
               <p className="text-sm text-fg-secondary">How would you like to place this order?</p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {/* Option A — Email Supplier */}
-                <button
+                <ChoiceCard
                   onClick={initEmail}
-                  className="flex flex-col items-start gap-3 rounded-xl border-2 border-line bg-surface p-5 text-left transition-colors hover:border-primary-400 hover:bg-primary-50 group"
+                  className="group gap-3 p-5"
                 >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-50 group-hover:bg-primary-100">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-50 ">
                     <Mail className="h-5 w-5 text-primary-600" />
                   </div>
                   <div>
@@ -228,14 +246,14 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
                       <p className="mt-1.5 text-xs text-warning-fg">No vendor email on file — add one in Vendor Master first.</p>
                     )}
                   </div>
-                </button>
+                </ChoiceCard>
 
                 {/* Option B — Place Order Online */}
-                <button
+                <ChoiceCard
                   onClick={() => setStep('online_confirm')}
-                  className="flex flex-col items-start gap-3 rounded-xl border-2 border-line bg-surface p-5 text-left transition-colors hover:border-primary-400 hover:bg-primary-50 group"
+                  className="group gap-3 p-5"
                 >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success-soft group-hover:bg-success-100">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success-soft ">
                     <Globe className="h-5 w-5 text-success-fg" />
                   </div>
                   <div>
@@ -244,7 +262,7 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
                       You placed the order via the vendor's online portal. Confirm here to mark the PO as Issued.
                     </p>
                   </div>
-                </button>
+                </ChoiceCard>
               </div>
             </div>
           )}
@@ -255,44 +273,44 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
               <div className="rounded-lg border border-line bg-surface-subtle p-4 flex flex-col gap-3">
                 <div className="flex items-start gap-3 text-sm">
                   <span className="text-fg-muted w-16 shrink-0 pt-2">To:</span>
-                  <input
+                  <Input
                     value={emailTo}
                     onChange={(e) => setEmailTo(e.target.value)}
-                    className={inputCls}
+                   
                     placeholder="vendor@example.com"
                     type="email"
                   />
                 </div>
                 <div className="flex items-start gap-3 text-sm border-t border-line pt-3">
                   <span className="text-fg-muted w-16 shrink-0 pt-2">CC:</span>
-                  <input
+                  <Input
                     value={emailCc}
                     onChange={(e) => setEmailCc(e.target.value)}
-                    className={inputCls}
+                   
                     placeholder="cc@example.com"
                     type="email"
                   />
                 </div>
                 <div className="flex items-start gap-3 text-sm border-t border-line pt-3">
                   <span className="text-fg-muted w-16 shrink-0 pt-2">Subject:</span>
-                  <input
+                  <Input
                     value={emailSubject}
                     onChange={(e) => setEmailSubject(e.target.value)}
-                    className={inputCls}
+                   
                     placeholder="Purchase Order…"
                   />
                 </div>
               </div>
               <div className="rounded-lg border border-line bg-surface">
                 <div className="px-4 py-2.5 border-b border-line-subtle flex items-center justify-between">
-                  <span className="text-xs font-medium text-fg-muted uppercase tracking-wide">Email Body</span>
+                  <span className="text-xs font-medium text-fg-muted">Email Body</span>
                   <span className="text-xs text-fg-muted">Editable · plain text</span>
                 </div>
-                <textarea
+                <Textarea
                   rows={10}
                   value={emailBody}
                   onChange={(e) => setEmailBody(e.target.value)}
-                  className="w-full resize-none px-4 py-4 text-sm text-fg-secondary font-mono leading-relaxed focus:outline-none"
+                  className="w-full resize-none font-mono leading-relaxed"
                 />
               </div>
               {/* PDF attachment indicator */}
@@ -318,10 +336,10 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-medium text-fg-secondary">Portal Reference / Order ID <span className="font-normal text-fg-muted">(optional)</span></label>
-                <input
+                <Input
                   value={reference}
                   onChange={(e) => setReference(e.target.value)}
-                  className={inputCls}
+                 
                   placeholder="e.g. ORD-2026-00123"
                 />
               </div>
@@ -346,49 +364,8 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
             </div>
           )}
 
-          {error && (
-            <p className="mt-3 rounded-lg bg-danger-soft border border-danger-line px-3 py-2 text-xs text-danger-fg">{error}</p>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 border-t border-line-subtle px-6 py-4 shrink-0">
-          {step === 'choose' && (
-            <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-          )}
-          {step === 'email_compose' && (
-            <>
-              <Button variant="secondary" size="sm" onClick={() => setStep('choose')}>Back</Button>
-              <button
-                onClick={handleSendEmail}
-                disabled={placeOrder.isPending}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary-600 px-3 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-              >
-                {placeOrder.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                Send &amp; Issue PO
-              </button>
-            </>
-          )}
-          {step === 'online_confirm' && (
-            <>
-              <Button variant="secondary" size="sm" onClick={() => setStep('choose')}>Back</Button>
-              <button
-                onClick={handleOnlineConfirm}
-                disabled={placeOrder.isPending}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-success-solid px-3 text-sm font-medium text-white hover:bg-success-700 disabled:opacity-50"
-              >
-                {placeOrder.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                Confirm Order Placed
-              </button>
-            </>
-          )}
-          {step === 'done' && (
-            <Button size="sm" onClick={onClose}>Done</Button>
-          )}
-        </div>
-      </div>
-    </div>,
-    document.body
+          {error && <Alert tone="danger" className="mt-3">{error}</Alert>}
+    </Modal>
   )
 }
 
@@ -422,7 +399,7 @@ function ApprovalModal({ action, poNumber, onConfirm, onClose, isPending, error 
       label: 'Approve',
       icon: <CheckCircle2 className="h-5 w-5 text-success-fg" />,
       bgIcon: 'bg-success-soft',
-      btn: 'bg-success-solid hover:bg-success-700 text-white',
+      variant: 'success' as const,
       commentLabel: 'Comment (optional)',
       placeholder: 'Add an optional comment…',
     },
@@ -431,7 +408,7 @@ function ApprovalModal({ action, poNumber, onConfirm, onClose, isPending, error 
       label: 'Reject',
       icon: <XCircle className="h-5 w-5 text-danger-fg" />,
       bgIcon: 'bg-danger-soft',
-      btn: 'bg-danger-solid hover:bg-danger-700 text-white',
+      variant: 'danger' as const,
       commentLabel: 'Reason for rejection *',
       placeholder: 'Explain why this PO is being rejected…',
     },
@@ -440,63 +417,46 @@ function ApprovalModal({ action, poNumber, onConfirm, onClose, isPending, error 
       label: 'Return',
       icon: <RotateCcw className="h-5 w-5 text-warning-fg" />,
       bgIcon: 'bg-warning-soft',
-      btn: 'bg-warning-solid hover:bg-warning-700 text-white',
+      variant: 'warning' as const,
       commentLabel: 'Revision instructions *',
       placeholder: 'Describe what needs to be revised…',
     },
   }[action]
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl">
-        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', config.bgIcon)}>
-              {config.icon}
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-fg">{config.title}</h2>
-              <p className="text-xs text-fg-muted">{poNumber}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary">
-            <X className="h-4 w-4" />
-          </button>
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      busy={isPending}
+      size="sm"
+      icon={config.icon}
+      title={config.title}
+      description={poNumber}
+      bodyClassName="flex flex-col gap-4"
+      footer={<>
+        <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+        <Button variant={config.variant} size="sm" disabled={!canSubmit || isPending} onClick={() => onConfirm(comment)}>
+          {config.icon}
+          {isPending ? 'Working…' : config.label}
+        </Button>
+      </>}
+    >
+      <FormField label={config.commentLabel} htmlFor="po-action-comment">
+        <div className="relative">
+          <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-fg-muted" />
+          <Textarea
+            id="po-action-comment"
+            rows={3}
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder={config.placeholder}
+            autoFocus
+            className="resize-none pl-8"
+          />
         </div>
-        <div className="px-6 py-5 flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-fg-secondary">{config.commentLabel}</label>
-            <div className="relative">
-              <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-fg-muted" />
-              <textarea
-                rows={3}
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder={config.placeholder}
-                autoFocus
-                className="w-full resize-none rounded-lg border border-line-strong bg-surface pl-8 pr-3 pt-2 pb-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
-              />
-            </div>
-          </div>
-          {error && <p role="alert" className="text-xs text-danger-fg">{error}</p>}
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-            <button
-              disabled={!canSubmit || isPending}
-              onClick={() => onConfirm(comment)}
-              className={cn(
-                'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
-                config.btn
-              )}
-            >
-              {config.icon}
-              {isPending ? 'Working…' : config.label}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body
+      </FormField>
+      {error && <Alert tone="danger">{error}</Alert>}
+    </Modal>
   )
 }
 
@@ -653,7 +613,7 @@ export default function PoDetailPage() {
   if (!po) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <div className="text-5xl mb-4">🔍</div>
+        <SearchX aria-hidden className="mb-4 h-10 w-10 stroke-[1.5] text-fg-faint" />
         <h2 className="text-xl font-semibold text-fg-secondary">PO Not Found</h2>
         <p className="mt-2 text-sm text-fg-muted">The purchase order you're looking for doesn't exist.</p>
         <BackLink to="/po" className="mt-4">
@@ -703,7 +663,7 @@ export default function PoDetailPage() {
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-bold text-fg">{po.number}</h1>
+              <h1 className="text-xl font-semibold text-fg">{po.number}</h1>
               <StatusBadge status={po.status as DocumentStatus} />
               {po.source === 'nc' && (
                 <span title="This PO was mirrored from NC ERP — read-only origin context">
@@ -765,31 +725,31 @@ export default function PoDetailPage() {
               </span>
             )}
             {canPlaceOrder && (
-              <button
+              <Button size="sm"
                 onClick={() => setShowPlaceOrder(true)}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary-600 px-3 text-sm font-medium text-white transition-colors hover:bg-primary-700"
+               
               >
                 <ShoppingCart className="h-3.5 w-3.5" />
                 Place Order
-              </button>
+              </Button>
             )}
             {canCreateGr && (
-              <button
+              <Button variant="success" size="sm"
                 onClick={() => navigate(`/gr/new?poId=${po.id}`)}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-success-solid px-3 text-sm font-medium text-white transition-colors hover:bg-success-700"
+               
               >
                 <Warehouse className="h-3.5 w-3.5" />
                 {po.type === 4 ? 'Confirm Service' : po.type === 6 ? 'Confirm Completion' : 'Create GR'}
-              </button>
+              </Button>
             )}
             {canCreatePa && (
-              <button
+              <Button variant="outline" size="sm"
                 onClick={() => navigate(`/pa/new?poId=${po.id}`)}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-primary-600 px-3 text-sm font-medium text-primary-600 transition-colors hover:bg-primary-50"
+               
               >
                 <CreditCard className="h-3.5 w-3.5" />
                 Create PA
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -800,22 +760,7 @@ export default function PoDetailPage() {
         {/* Left: tabs */}
         <div className="lg:col-span-8 flex flex-col gap-4">
           {/* Tab bar */}
-          <div className="flex border-b border-line overflow-x-auto">
-            {TABS.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={[
-                  'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
-                  activeTab === tab
-                    ? 'border-primary-600 text-primary-700'
-                    : 'border-transparent text-fg-muted hover:text-fg-secondary',
-                ].join(' ')}
-              >
-                {tab === 'Attachments' ? 'Attachments' : tab}
-              </button>
-            ))}
-          </div>
+          <Tabs items={TABS.map((t) => ({ key: t, label: t }))} value={activeTab} onChange={setActiveTab} />
 
           {/* Sign-off — NC imports only; the panel renders nothing otherwise.
               Kept above the tabs rather than inside Details: while a sign-off
@@ -838,7 +783,7 @@ export default function PoDetailPage() {
           {activeTab === 'Details' && (
             <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-6">
               <section>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">Details</h2>
+                <h2 className="text-sm font-semibold text-fg-muted mb-3">Details</h2>
                 <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2 text-sm">
                   {([
                     ['Procurement Type', `Type ${po.type} — ${TYPE_LABELS[po.type]}`],
@@ -913,7 +858,7 @@ export default function PoDetailPage() {
 
               {/* Financial summary */}
               <section>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">Financial Summary</h2>
+                <h2 className="text-sm font-semibold text-fg-muted mb-3">Financial Summary</h2>
                 <div className="rounded-lg border border-line bg-surface-subtle px-5 py-4 flex flex-col gap-2 max-w-sm">
                   <div className="flex justify-between text-sm text-fg-secondary">
                     <span>Subtotal</span>
@@ -924,69 +869,69 @@ export default function PoDetailPage() {
                     <span className="amount">{formatAmount(po.tax_amount, po.currency)}</span>
                   </div>
                   <div className="border-t border-line-strong mt-1 pt-2 flex justify-between">
-                    <span className="text-sm font-bold text-fg">Total ({po.currency})</span>
-                    <span className="amount text-base font-bold text-fg">{formatAmount(po.total, po.currency)}</span>
+                    <span className="text-sm font-semibold text-fg">Total ({po.currency})</span>
+                    <span className="amount text-base font-semibold text-fg">{formatAmount(po.total, po.currency)}</span>
                   </div>
                 </div>
               </section>
 
               {/* Line Items */}
               <section>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">
+                <h2 className="text-sm font-semibold text-fg-muted mb-3">
                   Line Items <span className="normal-case font-normal text-fg-muted">({po.line_items.length})</span>
                 </h2>
                 <div className="rounded-lg border border-line overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-line bg-surface-subtle">
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-10">#</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted">Description</th>
+                    <Table>
+                      <THead>
+                        <Tr className="bg-surface-subtle">
+                          <Th className="w-10">#</Th>
+                          <Th>Description</Th>
                           {hasMaterial && (
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-32">Material ID</th>
+                            <Th className="w-32">Material ID</Th>
                           )}
                           {/* Always shown for consistency with the Create PO page, which always exposes this input. */}
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-36">Supplier Item ID</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-fg-muted w-20">Qty</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-20">Unit</th>
+                          <Th className="w-36">Supplier Item ID</Th>
+                          <Th align="right" className="w-20">Qty</Th>
+                          <Th className="w-20">Unit</Th>
                           {showSample && (
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-24">Sample</th>
+                            <Th className="w-24">Sample</Th>
                           )}
                           {showDeliveryDate && (
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-28">Delivery Date</th>
+                            <Th className="w-28">Delivery Date</Th>
                           )}
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-fg-muted w-32">Unit Price</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-fg-muted w-32">Line Total</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-fg-muted w-28">Received</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                          <Th align="right" className="w-32">Unit Price</Th>
+                          <Th align="right" className="w-32">Line Total</Th>
+                          <Th align="center" className="w-28">Received</Th>
+                        </Tr>
+                      </THead>
+                      <TBody>
                         {po.line_items.map((item, i) => {
                           const pct = item.qty > 0 ? Math.min((item.received_qty / item.qty) * 100, 100) : 0
                           return (
-                            <tr
+                            <Tr
                               key={item.id}
                               className={`border-b border-line-subtle last:border-0 ${i % 2 === 1 ? 'bg-surface-subtle/50' : 'bg-surface'}`}
                             >
-                              <td className="px-4 py-2.5 text-xs text-fg-muted">{i + 1}</td>
-                              <td className="px-4 py-2.5 text-fg">{item.description}</td>
+                              <Td className="text-xs text-fg-muted">{i + 1}</Td>
+                              <Td className="text-fg">{item.description}</Td>
                               {hasMaterial && (
-                                <td className="px-4 py-2.5 font-mono text-xs text-fg-secondary">{item.material_id || '—'}</td>
+                                <Td className="font-mono text-xs text-fg-secondary">{item.material_id || '—'}</Td>
                               )}
-                              <td className="px-4 py-2.5 font-mono text-xs text-fg-secondary">{item.supplier_item_id || '—'}</td>
-                              <td className="px-4 py-2.5 text-right font-mono text-fg">{formatQty(item.qty)}</td>
-                              <td className="px-4 py-2.5 text-fg-muted">{item.unit}</td>
+                              <Td className="font-mono text-xs text-fg-secondary">{item.supplier_item_id || '—'}</Td>
+                              <Td align="right" className="font-mono text-fg">{formatQty(item.qty)}</Td>
+                              <Td className="text-fg-muted">{item.unit}</Td>
                               {showSample && (
-                                <td className="px-4 py-2.5 text-fg-muted">{item.sample || '—'}</td>
+                                <Td className="text-fg-muted">{item.sample || '—'}</Td>
                               )}
                               {showDeliveryDate && (
-                                <td className="px-4 py-2.5 text-fg-muted">
+                                <Td className="text-fg-muted">
                                   {item.planned_arrival_date ? formatDate(item.planned_arrival_date) : '—'}
-                                </td>
+                                </Td>
                               )}
-                              <td className="px-4 py-2.5 amount text-right text-fg">{formatUnitPrice(item.unit_price, po.currency)}</td>
-                              <td className="px-4 py-2.5 amount text-right font-semibold text-fg">{formatAmount(item.line_total, po.currency)}</td>
-                              <td className="px-4 py-2.5">
+                              <Td align="right" className="amount text-fg">{formatUnitPrice(item.unit_price, po.currency)}</Td>
+                              <Td align="right" className="amount font-semibold text-fg">{formatAmount(item.line_total, po.currency)}</Td>
+                              <Td>
                                 <div className="flex flex-col items-center gap-1">
                                   <span className="text-xs text-fg-secondary">{formatQty(item.received_qty)} / {formatQty(item.qty)}</span>
                                   <div className="h-1.5 w-full rounded-full bg-surface-strong">
@@ -999,27 +944,27 @@ export default function PoDetailPage() {
                                     />
                                   </div>
                                 </div>
-                              </td>
-                            </tr>
+                              </Td>
+                            </Tr>
                           )
                         })}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t-2 border-line bg-surface-subtle">
-                          <td colSpan={6 + (hasMaterial ? 1 : 0) + (showSample ? 1 : 0) + (showDeliveryDate ? 1 : 0)} className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                      </TBody>
+                      <TFoot>
+                        <Tr className="border-t-2 bg-surface-subtle">
+                          <Td align="right" colSpan={6 + (hasMaterial ? 1 : 0) + (showSample ? 1 : 0) + (showDeliveryDate ? 1 : 0)} className="text-xs font-semibold text-fg-muted">
                             Subtotal
-                          </td>
-                          <td className="px-4 py-3 amount text-right text-base font-bold text-fg">
+                          </Td>
+                          <Td align="right" className="amount text-base font-semibold text-fg">
                             {formatAmount(po.subtotal, po.currency)}
-                          </td>
-                          <td />
-                        </tr>
-                      </tfoot>
-                    </table>
+                          </Td>
+                          <Td />
+                        </Tr>
+                      </TFoot>
+                    </Table>
                   </div>
                   <div className="border-t border-line px-4 py-3 flex justify-end gap-8 text-sm bg-surface-subtle">
                     <span className="text-fg-muted">{TAX_LABELS[Number(po.tax_rate)] ?? 'Tax'}: <span className="amount text-fg-secondary">{formatAmount(po.tax_amount, po.currency)}</span></span>
-                    <span className="font-bold text-fg">Total: <span className="amount">{formatAmount(po.total, po.currency)}</span></span>
+                    <span className="font-semibold text-fg">Total: <span className="amount">{formatAmount(po.total, po.currency)}</span></span>
                   </div>
                 </div>
               </section>
@@ -1029,7 +974,7 @@ export default function PoDetailPage() {
           {/* Linked GRs Tab */}
           {activeTab === 'Linked GRs' && (
             <div className="rounded-xl bg-surface shadow-sm p-6">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">Linked Goods Receipts</h2>
+              <h2 className="text-sm font-semibold text-fg-muted mb-4">Linked Goods Receipts</h2>
               {grsLoading ? (
                 <div className="flex items-center justify-center py-12 text-fg-muted">
                   <Loader2 className="h-5 w-5 animate-spin" />
@@ -1061,7 +1006,7 @@ export default function PoDetailPage() {
                 </ul>
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <span className="text-3xl mb-3">🏭</span>
+                  <Factory aria-hidden className="mb-3 h-8 w-8 stroke-[1.5] text-fg-faint" />
                   <p className="text-sm text-fg-muted">No goods receipts linked to this PO yet.</p>
                   <p className="text-xs text-fg-faint mt-1">They will appear here once received.</p>
                 </div>
@@ -1073,18 +1018,18 @@ export default function PoDetailPage() {
           {activeTab === 'Attachments' && (
             <div className="rounded-xl bg-surface shadow-sm p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">Attachments</h2>
+                <h2 className="text-sm font-semibold text-fg-muted">Attachments</h2>
                 {['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_pending', 'nc_milk'].includes(po.status) && (
-                  <button
+                  <Button variant="secondary" size="sm"
                     type="button"
                     onClick={() => regeneratePdf.mutate()}
                     disabled={regeneratePdf.isPending}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-100 disabled:opacity-50"
+                   
                     title="Generate the approved-PO PDF and attach it (replaces the existing one)"
                   >
                     <RotateCcw className={`h-3.5 w-3.5 ${regeneratePdf.isPending ? 'animate-spin' : ''}`} />
                     {regeneratePdf.isPending ? 'Generating…' : 'Regenerate PDF'}
-                  </button>
+                  </Button>
                 )}
               </div>
               <AttachmentsEditor
@@ -1102,9 +1047,9 @@ export default function PoDetailPage() {
                     {po.status === 'approved' ? 'PDF is being generated…' : 'No attachments yet'}
                   </p>
                   {po.status !== 'approved' && (
-                    <button onClick={handleDownloadPdf} className="mt-1 text-xs text-primary-600 hover:underline">
+                    <Button variant="link" onClick={handleDownloadPdf} className="mt-1 text-xs">
                       Generate preview PDF
-                    </button>
+                    </Button>
                   )}
                 </div>
               )}
@@ -1114,7 +1059,7 @@ export default function PoDetailPage() {
           {/* History Tab */}
           {activeTab === 'History' && (
             <div className="rounded-xl bg-surface shadow-sm p-6">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">Audit History</h2>
+              <h2 className="text-sm font-semibold text-fg-muted mb-4">Audit History</h2>
               {events && events.length > 0 ? (
                 <ul className="flex flex-col gap-3">
                   {events.map((e) => {
@@ -1142,7 +1087,7 @@ export default function PoDetailPage() {
         {/* Right: approval timeline */}
         <div className="lg:col-span-4">
           <div className="rounded-xl bg-surface shadow-sm p-5 sticky top-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">Approval Timeline</h2>
+            <h2 className="text-sm font-semibold text-fg-muted mb-4">Approval Timeline</h2>
             <ApprovalTimeline
               steps={approvalSteps}
               // See PrDetailPage: a draft's step 0 also renders as "current".
@@ -1154,13 +1099,13 @@ export default function PoDetailPage() {
             {canPlaceOrder && (
               <div className="mt-5 border-t border-line-subtle pt-4 flex flex-col gap-2">
                 <p className="text-xs font-medium text-fg-muted mb-1">Ready to Place Order</p>
-                <button
+                <Button
                   onClick={() => setShowPlaceOrder(true)}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary-600 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700"
+                  className="w-full"
                 >
                   <ShoppingCart className="h-4 w-4" />
                   Place Order
-                </button>
+                </Button>
               </div>
             )}
 
@@ -1188,27 +1133,27 @@ export default function PoDetailPage() {
               </Button>
               {moreOpen && (
                 <div className="absolute right-0 bottom-full mb-1 w-44 rounded-lg border border-line bg-surface py-1 shadow-lg z-20">
-                  <button
+                  <MenuItem tone="warning"
                     onClick={() => { setPendingAction('return'); setMoreOpen(false) }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-warning-fg hover:bg-warning-soft"
+                   
                   >
                     <RotateCcw className="h-4 w-4" /> Return for Revision
-                  </button>
-                  <button
+                  </MenuItem>
+                  <MenuItem tone="danger"
                     onClick={() => { setPendingAction('reject'); setMoreOpen(false) }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger-fg hover:bg-danger-soft"
+                   
                   >
                     <XCircle className="h-4 w-4" /> Reject
-                  </button>
+                  </MenuItem>
                 </div>
               )}
             </div>
-            <button
+            <Button variant="success"
               onClick={() => setPendingAction('approve')}
-              className="inline-flex items-center gap-2 h-9 px-5 rounded-lg bg-success-solid text-white text-sm font-semibold hover:bg-success-700 transition-colors"
+             
             >
               <CheckCircle2 className="h-4 w-4" /> Approve
-            </button>
+            </Button>
           </div>
         </div>
       )}

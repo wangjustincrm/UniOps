@@ -18,12 +18,18 @@ export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElem
   error?: boolean
   /** sm for filters / table cells, md (default) for forms. */
   inputSize?: keyof typeof controlSize
+  /** No border, fill or padding — for an input inside a composite control
+   *  (search box in a picker) whose container draws the frame. */
+  bare?: boolean
 }
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, error, inputSize = 'md', ...props }, ref) => (
+  ({ className, error, inputSize = 'md', bare, ...props }, ref) => (
     <input
-      className={cn(controlClass(error, inputSize), className)}
+      className={cn(
+        bare ? 'w-full bg-transparent text-sm text-fg placeholder:text-fg-faint focus:outline-none' : controlClass(error, inputSize),
+        className,
+      )}
       aria-invalid={error || undefined}
       ref={ref}
       {...props}

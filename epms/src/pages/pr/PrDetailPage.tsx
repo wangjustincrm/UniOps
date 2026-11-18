@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
-import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, MessageSquare, X, FileText, Pencil, ChevronDown } from 'lucide-react'
-import { createPortal } from 'react-dom'
+import {
+  ArrowLeft, CheckCircle2, XCircle, RotateCcw, MessageSquare, FileText, Pencil, ChevronDown, SearchX,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
@@ -28,6 +29,7 @@ import { generatePrHtml } from '@/lib/pr-document'
 import { downloadPdf } from '@/lib/pdf-utils'
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
+import { Alert, FormField, Modal, Tabs, TBody, TFoot, THead, Table, Td, Textarea, Th, Tr, MenuItem } from '@uniops/shell'
 const TYPE_LABELS: Record<number, string> = {
   1: 'Raw Mat./Pack.',
   2: 'Consumables',
@@ -116,7 +118,7 @@ function ApprovalModal({ action, prNumber, onConfirm, onClose, isPending, error 
       label: 'Approve',
       icon: <CheckCircle2 className="h-5 w-5 text-success-fg" />,
       bgIcon: 'bg-success-soft',
-      btn: 'bg-success-solid hover:bg-success-700 text-white',
+      variant: 'success' as const,
       commentLabel: 'Comment (optional)',
       placeholder: 'Add an optional comment…',
     },
@@ -125,7 +127,7 @@ function ApprovalModal({ action, prNumber, onConfirm, onClose, isPending, error 
       label: 'Reject',
       icon: <XCircle className="h-5 w-5 text-danger-fg" />,
       bgIcon: 'bg-danger-soft',
-      btn: 'bg-danger-solid hover:bg-danger-700 text-white',
+      variant: 'danger' as const,
       commentLabel: 'Reason for rejection *',
       placeholder: 'Explain why this PR is being rejected…',
     },
@@ -134,72 +136,46 @@ function ApprovalModal({ action, prNumber, onConfirm, onClose, isPending, error 
       label: 'Return',
       icon: <RotateCcw className="h-5 w-5 text-warning-fg" />,
       bgIcon: 'bg-warning-soft',
-      btn: 'bg-warning-solid hover:bg-warning-700 text-white',
+      variant: 'warning' as const,
       commentLabel: 'Revision instructions *',
       placeholder: 'Describe what needs to be revised…',
     },
   }[action]
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl">
-        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', config.bgIcon)}>
-              {config.icon}
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-fg">{config.title}</h2>
-              <p className="text-xs text-fg-muted">{prNumber}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary">
-            <X className="h-4 w-4" />
-          </button>
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      busy={isPending || sent}
+      size="sm"
+      icon={config.icon}
+      title={config.title}
+      description={prNumber}
+      bodyClassName="flex flex-col gap-4"
+      footer={<>
+        <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+        <Button variant={config.variant} size="sm" disabled={!canSubmit || isPending || sent} onClick={handleConfirmClick}>
+          {config.icon}
+          {isPending || sent ? 'Working…' : config.label}
+        </Button>
+      </>}
+    >
+      <FormField label={config.commentLabel} htmlFor="pr-action-comment">
+        <div className="relative">
+          <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-fg-muted" />
+          <Textarea
+            id="pr-action-comment"
+            rows={3}
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder={config.placeholder}
+            autoFocus
+            className="resize-none pl-8"
+          />
         </div>
-
-        <div className="px-6 py-5 flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-fg-secondary">
-              {config.commentLabel}
-            </label>
-            <div className="relative">
-              <MessageSquare className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-fg-muted" />
-              <textarea
-                rows={3}
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder={config.placeholder}
-                autoFocus
-                className="w-full resize-none rounded-lg border border-line-strong bg-surface pl-8 pr-3 pt-2 pb-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
-              />
-            </div>
-          </div>
-
-          {error && (
-            <p role="alert" className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">
-              {error}
-            </p>
-          )}
-
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-            <button
-              disabled={!canSubmit || isPending || sent}
-              onClick={handleConfirmClick}
-              className={cn(
-                'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
-                config.btn
-              )}
-            >
-              {config.icon}
-              {isPending || sent ? 'Working…' : config.label}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body
+      </FormField>
+      {error && <Alert tone="danger">{error}</Alert>}
+    </Modal>
   )
 }
 
@@ -304,7 +280,7 @@ export default function PrDetailPage() {
   if (!pr) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <div className="text-5xl mb-4">🔍</div>
+        <SearchX aria-hidden className="mb-4 h-10 w-10 stroke-[1.5] text-fg-faint" />
         <h2 className="text-xl font-semibold text-fg-secondary">PR Not Found</h2>
         <p className="mt-2 text-sm text-fg-muted">
           The purchase requisition you're looking for doesn't exist.
@@ -341,7 +317,7 @@ export default function PrDetailPage() {
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-bold text-fg">{pr.number}</h1>
+              <h1 className="text-xl font-semibold text-fg">{pr.number}</h1>
               <StatusBadge status={pr.status} />
             </div>
             <p className="mt-1 text-fg-secondary">{pr.title} — {pr.vendor_name || '—'}</p>
@@ -432,28 +408,13 @@ export default function PrDetailPage() {
         {/* Left: tabs */}
         <div className="lg:col-span-8 flex flex-col gap-4">
           {/* Tab bar */}
-          <div className="flex border-b border-line">
-            {TABS.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={[
-                  'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
-                  activeTab === tab
-                    ? 'border-primary-600 text-primary-700'
-                    : 'border-transparent text-fg-muted hover:text-fg-secondary',
-                ].join(' ')}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
+          <Tabs items={TABS.map((t) => ({ key: t, label: t }))} value={activeTab} onChange={setActiveTab} />
 
           {/* Details tab */}
           {activeTab === 'Details' && (
             <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-6">
               <section>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">Details</h2>
+                <h2 className="text-sm font-semibold text-fg-muted mb-3">Details</h2>
                 <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2 text-sm">
                   {([
                     ['Procurement Type', TYPE_LABELS[pr.type] ?? `Type ${pr.type}`],
@@ -493,7 +454,7 @@ export default function PrDetailPage() {
               {/* Decomposition Factors — only when the Budget Account had factors at PR time */}
               {pr.factor_combo && Object.keys(pr.factor_combo).length > 0 && (
                 <section>
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">
+                  <h2 className="text-sm font-semibold text-fg-muted mb-3">
                     Decomposition Factors
                   </h2>
                   <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-3 text-sm">
@@ -519,7 +480,7 @@ export default function PrDetailPage() {
               {pr.over_budget && (
                 <section>
                   <div className="rounded-md border border-warning-line bg-warning-soft px-4 py-3">
-                    <h2 className="text-xs font-semibold uppercase tracking-wide text-warning-fg mb-1">Over-Budget Justification</h2>
+                    <h2 className="text-xs font-semibold text-warning-fg mb-1">Over-Budget Justification</h2>
                     <p className="text-sm text-warning-fg whitespace-pre-wrap">
                       {pr.over_budget_justification || <span className="italic text-warning-fg">(no justification provided)</span>}
                     </p>
@@ -529,60 +490,60 @@ export default function PrDetailPage() {
 
               {/* Line Items */}
               <section>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-3">
+                <h2 className="text-sm font-semibold text-fg-muted mb-3">
                   Line Items <span className="normal-case font-normal text-fg-muted">({pr.line_items.length})</span>
                 </h2>
                 <div className="rounded-lg border border-line overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-line bg-surface-subtle">
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-10">#</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted">Description</th>
+                    <Table>
+                      <THead>
+                        <Tr className="bg-surface-subtle">
+                          <Th className="w-10">#</Th>
+                          <Th>Description</Th>
                           {hasMaterial && (
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-32">Material ID</th>
+                            <Th className="w-32">Material ID</Th>
                           )}
                           {/* Always shown for consistency with the Create PR page, which always exposes this input. */}
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-36">Supplier Item ID</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-fg-muted w-20">Qty</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted w-20">Unit</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-fg-muted w-32">Unit Price</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold text-fg-muted w-32">Line Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                          <Th className="w-36">Supplier Item ID</Th>
+                          <Th align="right" className="w-20">Qty</Th>
+                          <Th className="w-20">Unit</Th>
+                          <Th align="right" className="w-32">Unit Price</Th>
+                          <Th align="right" className="w-32">Line Total</Th>
+                        </Tr>
+                      </THead>
+                      <TBody>
                         {pr.line_items.map((item, i) => (
-                          <tr
+                          <Tr
                             key={item.id}
                             className={`border-b border-line-subtle last:border-0 ${i % 2 === 1 ? 'bg-surface-subtle/50' : 'bg-surface'}`}
                           >
-                            <td className="px-4 py-2.5 text-xs text-fg-muted">{i + 1}</td>
-                            <td className="px-4 py-2.5 text-fg">{item.description}</td>
+                            <Td className="text-xs text-fg-muted">{i + 1}</Td>
+                            <Td className="text-fg">{item.description}</Td>
                             {hasMaterial && (
-                              <td className="px-4 py-2.5 font-mono text-xs text-fg-secondary">{item.material_id || '—'}</td>
+                              <Td className="font-mono text-xs text-fg-secondary">{item.material_id || '—'}</Td>
                             )}
-                            <td className="px-4 py-2.5 font-mono text-xs text-fg-secondary">{item.supplier_item_id || '—'}</td>
-                            <td className="px-4 py-2.5 text-right font-mono text-fg">{formatQty(item.qty)}</td>
-                            <td className="px-4 py-2.5 text-fg-muted">{item.unit}</td>
-                            <td className="px-4 py-2.5 amount text-right text-fg">{formatAmount(item.unit_price, pr.currency ?? 'CAD')}</td>
-                            <td className="px-4 py-2.5 amount text-right font-semibold text-fg">{formatAmount(item.line_total, pr.currency ?? 'CAD')}</td>
-                          </tr>
+                            <Td className="font-mono text-xs text-fg-secondary">{item.supplier_item_id || '—'}</Td>
+                            <Td align="right" className="font-mono text-fg">{formatQty(item.qty)}</Td>
+                            <Td className="text-fg-muted">{item.unit}</Td>
+                            <Td align="right" className="amount text-fg">{formatAmount(item.unit_price, pr.currency ?? 'CAD')}</Td>
+                            <Td align="right" className="amount font-semibold text-fg">{formatAmount(item.line_total, pr.currency ?? 'CAD')}</Td>
+                          </Tr>
                         ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t-2 border-line bg-surface-subtle">
-                          <td
+                      </TBody>
+                      <TFoot>
+                        <Tr className="border-t-2 bg-surface-subtle">
+                          <Td align="right"
                             colSpan={6 + (hasMaterial ? 1 : 0)}
-                            className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted"
+                            className="text-xs font-semibold text-fg-muted"
                           >
                             Total ({pr.currency ?? 'CAD'})
-                          </td>
-                          <td className="px-4 py-3 amount text-right text-base font-bold text-fg">
+                          </Td>
+                          <Td align="right" className="amount text-base font-semibold text-fg">
                             {formatAmount(pr.amount, pr.currency ?? 'CAD')}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                          </Td>
+                        </Tr>
+                      </TFoot>
+                    </Table>
                   </div>
                 </div>
               </section>
@@ -593,20 +554,20 @@ export default function PrDetailPage() {
           {activeTab === 'Attachments' && (
             <div className="rounded-xl bg-surface shadow-sm p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+                <h2 className="text-sm font-semibold text-fg-muted">
                   Attachments
                 </h2>
                 {pr.status === 'approved' && (
-                  <button
+                  <Button variant="secondary" size="sm"
                     type="button"
                     onClick={() => regeneratePdf.mutate()}
                     disabled={regeneratePdf.isPending}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-100 disabled:opacity-50"
+                   
                     title="Generate the approved-PR PDF and attach it (replaces the existing one)"
                   >
                     <RotateCcw className={`h-3.5 w-3.5 ${regeneratePdf.isPending ? 'animate-spin' : ''}`} />
                     {regeneratePdf.isPending ? 'Generating…' : 'Regenerate PDF'}
-                  </button>
+                  </Button>
                 )}
               </div>
               {downloadError && (
@@ -634,7 +595,7 @@ export default function PrDetailPage() {
           {/* History tab */}
           {activeTab === 'History' && (
             <div className="rounded-xl bg-surface shadow-sm p-6">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">
+              <h2 className="text-sm font-semibold text-fg-muted mb-4">
                 Audit History
               </h2>
               {events && events.length > 0 ? (
@@ -664,7 +625,7 @@ export default function PrDetailPage() {
         {/* Right: approval timeline */}
         <div className="lg:col-span-4">
           <div className="rounded-xl bg-surface shadow-sm p-5 sticky top-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted mb-4">
+            <h2 className="text-sm font-semibold text-fg-muted mb-4">
               Approval Timeline
             </h2>
             <ApprovalTimeline
@@ -704,27 +665,27 @@ export default function PrDetailPage() {
               </Button>
               {moreOpen && (
                 <div className="absolute right-0 bottom-full mb-1 w-44 rounded-lg border border-line bg-surface py-1 shadow-lg z-20">
-                  <button
+                  <MenuItem tone="warning"
                     onClick={() => { setPendingAction('return'); setMoreOpen(false) }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-warning-fg hover:bg-warning-soft"
+                   
                   >
                     <RotateCcw className="h-4 w-4" /> Return for Revision
-                  </button>
-                  <button
+                  </MenuItem>
+                  <MenuItem tone="danger"
                     onClick={() => { setPendingAction('reject'); setMoreOpen(false) }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger-fg hover:bg-danger-soft"
+                   
                   >
                     <XCircle className="h-4 w-4" /> Reject
-                  </button>
+                  </MenuItem>
                 </div>
               )}
             </div>
-            <button
+            <Button variant="success"
               onClick={() => setPendingAction('approve')}
-              className="inline-flex items-center gap-2 h-9 px-5 rounded-lg bg-success-solid text-white text-sm font-semibold hover:bg-success-700 transition-colors"
+             
             >
               <CheckCircle2 className="h-4 w-4" /> Approve
-            </button>
+            </Button>
           </div>
         </div>
       )}

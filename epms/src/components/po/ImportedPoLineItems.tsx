@@ -2,6 +2,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { formatAmount, formatDate, formatUnitPrice } from '@/lib/utils'
 import { lineTotalOf } from '@/lib/importedPoEdit'
 
+import { Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 /** One line of an NC-imported PO as the buyer-detail form sees it.
  *
  *  Two kinds share this table. On an NC-sourced line everything except
@@ -77,29 +78,29 @@ export function ImportedPoLineItems({
   return (
     <div className="space-y-2">
       <div className="overflow-x-auto rounded-lg border border-line">
-        <table className="w-full min-w-[980px] text-sm">
-          <thead>
-            <tr className="border-b border-line bg-surface-subtle text-left text-xs text-fg-muted">
-              <th className="w-10 px-3 py-2 font-medium">#</th>
-              <th className="px-3 py-2 font-medium">Description</th>
-              <th className="w-32 px-3 py-2 font-medium">Material ID</th>
-              <th className="w-24 px-3 py-2 text-right font-medium">Qty</th>
-              <th className="w-20 px-3 py-2 font-medium">Unit</th>
-              <th className="w-28 px-3 py-2 text-right font-medium">Unit Price</th>
-              <th className="w-28 px-3 py-2 text-right font-medium">Line Total</th>
-              <th className="w-28 px-3 py-2 font-medium">Delivery Date</th>
-              <th className="w-40 px-3 py-2 font-medium">Supplier Item ID</th>
-              <th className="w-32 px-3 py-2 font-medium">Sample (g or ea)</th>
-              <th className="w-10 px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
+        <Table density="compact" className="min-w-[980px]">
+          <THead>
+            <Tr className="bg-surface-subtle text-left text-xs text-fg-muted">
+              <Th className="w-10">#</Th>
+              <Th>Description</Th>
+              <Th className="w-32">Material ID</Th>
+              <Th align="right" className="w-24 ">Qty</Th>
+              <Th className="w-20">Unit</Th>
+              <Th align="right" className="w-28 ">Unit Price</Th>
+              <Th align="right" className="w-28 ">Line Total</Th>
+              <Th className="w-28">Delivery Date</Th>
+              <Th className="w-40">Supplier Item ID</Th>
+              <Th className="w-32">Sample (g or ea)</Th>
+              <Th className="w-10" />
+            </Tr>
+          </THead>
+          <TBody>
             {items.map((item, i) => (
-              <tr key={item.id} className="border-b border-line-subtle last:border-0">
-                <td className="px-3 py-2 text-fg-muted">{i + 1}</td>
-                <td className="px-3 py-2 text-fg">
+              <Tr key={item.id}>
+                <Td className="text-fg-muted">{i + 1}</Td>
+                <Td className="text-fg">
                   {item.ncSourced ? item.description : (
-                    <input
+                    <Input
                       type="text"
                       value={item.description}
                       onChange={(e) => update(i, { description: e.target.value })}
@@ -110,8 +111,8 @@ export function ImportedPoLineItems({
                       className={CELL_INPUT}
                     />
                   )}
-                </td>
-                <td className="px-3 py-2 font-mono text-xs text-fg-muted">
+                </Td>
+                <Td className="font-mono text-xs text-fg-muted">
                   {item.ncSourced ? (item.materialId || '—') : (
                     // A buyer-added line has no material code by design — that
                     // is what keeps a one-off charge out of MRP's supply.
@@ -119,10 +120,10 @@ export function ImportedPoLineItems({
                       Added
                     </span>
                   )}
-                </td>
-                <td className="px-3 py-2 text-right font-mono text-fg-secondary">
+                </Td>
+                <Td align="right" className="font-mono text-fg-secondary">
                   {item.ncSourced ? item.qty : (
-                    <input
+                    <Input
                       type="number" step="any" min="0"
                       value={item.qty}
                       onChange={(e) => update(i, { qty: Number(e.target.value) })}
@@ -131,10 +132,10 @@ export function ImportedPoLineItems({
                       className={`${CELL_INPUT} text-right font-mono`}
                     />
                   )}
-                </td>
-                <td className="px-3 py-2 text-fg-secondary">
+                </Td>
+                <Td className="text-fg-secondary">
                   {item.ncSourced ? item.unit : (
-                    <input
+                    <Input
                       type="text"
                       value={item.unit}
                       onChange={(e) => update(i, { unit: e.target.value })}
@@ -144,10 +145,10 @@ export function ImportedPoLineItems({
                       className={CELL_INPUT}
                     />
                   )}
-                </td>
-                <td className="px-3 py-2 text-right font-mono text-fg-secondary">
+                </Td>
+                <Td align="right" className="font-mono text-fg-secondary">
                   {item.ncSourced ? formatUnitPrice(item.unitPrice, currency) : (
-                    <input
+                    <Input
                       type="number" step="any"
                       value={item.unitPrice}
                       onChange={(e) => update(i, { unitPrice: Number(e.target.value) })}
@@ -156,18 +157,18 @@ export function ImportedPoLineItems({
                       className={`${CELL_INPUT} text-right font-mono`}
                     />
                   )}
-                </td>
-                <td className="px-3 py-2 text-right font-mono text-fg">
+                </Td>
+                <Td align="right" className="font-mono text-fg">
                   {formatAmount(
                     item.ncSourced ? item.lineTotal : lineTotalOf(item),
                     currency,
                   )}
-                </td>
-                <td className="px-3 py-2 text-fg-muted">
+                </Td>
+                <Td className="text-fg-muted">
                   {item.plannedArrivalDate ? formatDate(item.plannedArrivalDate) : '—'}
-                </td>
-                <td className="px-3 py-2">
-                  <input
+                </Td>
+                <Td>
+                  <Input
                     type="text"
                     value={item.supplierItemId}
                     onChange={(e) => update(i, { supplierItemId: e.target.value })}
@@ -176,9 +177,9 @@ export function ImportedPoLineItems({
                     maxLength={100}
                     className={`${CELL_INPUT} font-mono`}
                   />
-                </td>
-                <td className="px-3 py-2">
-                  <input
+                </Td>
+                <Td>
+                  <Input
                     type="text"
                     value={item.sample}
                     onChange={(e) => update(i, { sample: e.target.value })}
@@ -187,34 +188,34 @@ export function ImportedPoLineItems({
                     maxLength={100}
                     className={CELL_INPUT}
                   />
-                </td>
-                <td className="px-3 py-2 text-right">
+                </Td>
+                <Td align="right">
                   {!item.ncSourced && editable && (
-                    <button
+                    <Button variant="danger-ghost" size="icon-xs"
                       type="button"
                       onClick={() => removeRow(i)}
                       aria-label={`Remove added line ${i + 1}`}
-                      className="text-fg-muted hover:text-danger-fg"
+                     
                     >
                       <Trash2 className="h-4 w-4" />
-                    </button>
+                    </Button>
                   )}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </div>
 
       {editable && (
-        <button
+        <Button variant="link"
           type="button"
           onClick={addRow}
-          className="inline-flex items-center gap-1 text-sm text-primary-600 hover:text-primary-700"
+          className="text-sm"
         >
           <Plus className="h-4 w-4" />
           Add Row
-        </button>
+        </Button>
       )}
       {canAddLines && locked && (
         <p className="text-xs text-fg-muted">

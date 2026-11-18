@@ -86,10 +86,13 @@ export interface TrProps extends React.HTMLAttributes<HTMLTableRowElement> {
   muted?: boolean
 }
 
-export function Tr({ selected, interactive, muted, className, children, ...props }: TrProps) {
+export const Tr = React.forwardRef<HTMLTableRowElement, TrProps>(function Tr(
+  { selected, interactive, muted, className, children, ...props }, ref,
+) {
   const clickable = interactive ?? !!props.onClick
   return (
     <tr
+      ref={ref}
       aria-selected={selected || undefined}
       className={cn(
         'transition-colors duration-100',
@@ -103,7 +106,7 @@ export function Tr({ selected, interactive, muted, className, children, ...props
       {children}
     </tr>
   )
-}
+})
 
 type Align = 'left' | 'right' | 'center'
 const alignClass = (a?: Align) => (a === 'right' ? 'text-right' : a === 'center' ? 'text-center' : 'text-left')
@@ -121,10 +124,10 @@ export interface ThProps extends React.ThHTMLAttributes<HTMLTableCellElement> {
   align?: Align
 }
 
-export function Th({ align, className, children, ...props }: ThProps) {
+export const Th = React.forwardRef<HTMLTableCellElement, ThProps>(function Th({ align, className, children, ...props }, ref) {
   const density = useContext(DensityCtx)
-  return <th scope="col" className={cn(thClass(density, align), className)} {...props}>{children}</th>
-}
+  return <th ref={ref} scope="col" className={cn(thClass(density, align), className)} {...props}>{children}</th>
+})
 
 export interface TdProps extends React.TdHTMLAttributes<HTMLTableCellElement> {
   align?: Align
@@ -134,10 +137,13 @@ export interface TdProps extends React.TdHTMLAttributes<HTMLTableCellElement> {
   muted?: boolean
 }
 
-export function Td({ align, numeric, muted, className, children, ...props }: TdProps) {
+export const Td = React.forwardRef<HTMLTableCellElement, TdProps>(function Td(
+  { align, numeric, muted, className, children, ...props }, ref,
+) {
   const density = useContext(DensityCtx)
   return (
     <td
+      ref={ref}
       className={cn(
         density === 'compact' ? 'px-3 py-2' : 'px-4 py-3',
         alignClass(numeric ? 'right' : align),
@@ -150,7 +156,7 @@ export function Td({ align, numeric, muted, className, children, ...props }: TdP
       {children}
     </td>
   )
-}
+})
 
 /** One full-width row for loading / empty / error states inside TBody. */
 export function TableMessage({ colSpan, children, className }: { colSpan: number; children: React.ReactNode; className?: string }) {

@@ -1,6 +1,6 @@
 import { cn, formatCAD } from '@/lib/utils'
 import { overBudgetFigures } from '@/lib/prBudget'
-import { TrendingUp, TrendingDown, Info } from 'lucide-react'
+import { TrendingUp, TrendingDown, Info, AlertTriangle } from 'lucide-react'
 
 interface BudgetData {
   accountCode: string
@@ -88,7 +88,7 @@ export function OverBudgetWarning({ accountCode, thisAmount, available, annualBu
   return (
     <div className="rounded-md border border-warning-solid bg-warning-soft p-3">
       <div className="flex gap-2">
-        <span className="text-warning-fg mt-0.5 shrink-0">⚠</span>
+        <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-warning-fg" />
         <div className="text-sm">
           <p className="font-medium text-warning-fg">
             This PR will exceed the budget for {accountCode}

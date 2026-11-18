@@ -21,6 +21,7 @@ import {
 } from '@/hooks/usePos'
 import type { PoSignoffState, PoSignoffStatus, PoSignoffStep } from '@/services/po'
 
+import { Textarea } from '@uniops/shell'
 export const STATUS_LABELS: Record<PoSignoffStatus, { label: string; className: string }> = {
   draft:      { label: 'Not started',       className: 'bg-surface-sunken text-fg-secondary' },
   submitted:  { label: 'Awaiting signature', className: 'bg-warning-soft text-warning-fg' },
@@ -63,7 +64,7 @@ function StepRow({ step, index, state }: {
       current ? 'border-warning-line bg-warning-soft' : 'border-line bg-surface',
     )}>
       <span className={cn(
-        'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold',
+        'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
         signed ? 'bg-success-soft text-success-fg'
                : current ? 'bg-warning-soft text-warning-fg'
                          : 'bg-surface-sunken text-fg-muted',
@@ -104,12 +105,12 @@ function Composer({ title, placeholder, required, confirmLabel, isPending, onCan
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface-subtle p-3">
       <p className="text-xs font-semibold text-fg-secondary">{title}</p>
-      <textarea
+      <Textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={4}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:border-primary-500 focus:outline-none"
+        className="w-full"
       />
       <div className="flex items-center gap-2">
         <Button
@@ -123,14 +124,14 @@ function Composer({ title, placeholder, required, confirmLabel, isPending, onCan
           {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
           {confirmLabel}
         </Button>
-        <button
+        <Button variant="subtle" size="xs"
           type="button"
           onClick={onCancel}
           disabled={isPending}
-          className="text-xs font-medium text-fg-muted hover:text-fg-secondary disabled:opacity-40"
+         
         >
           Cancel
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -215,7 +216,7 @@ export function PoSignoffPanel({ poId, source }: { poId: string; source: string 
 
         {state.thread.length > 0 && (
           <div className="flex flex-col gap-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            <p className="text-xs font-semibold text-fg-muted">
               Justification &amp; notes
             </p>
             <div className="flex flex-col gap-2">
@@ -311,14 +312,14 @@ export function PoSignoffPanel({ poId, source }: { poId: string; source: string 
               </>
             )}
             {state.can_note && isOpen && (
-              <button
+              <Button variant="subtle" size="xs"
                 type="button"
                 disabled={pending}
                 onClick={() => setComposer('note')}
-                className="flex items-center gap-1.5 text-xs font-medium text-fg-muted hover:text-primary-600 disabled:opacity-40"
+               
               >
                 <MessageSquarePlus className="h-3.5 w-3.5" /> Add note
-              </button>
+              </Button>
             )}
           </div>
         )}

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Search, Plus, Filter, Copy } from 'lucide-react'
-import { SortTh, sortParams, useSort } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Checkbox, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/ui/badge'
@@ -140,7 +140,7 @@ export default function PrListPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-fg">
+        <h1 className="text-2xl font-semibold text-fg">
           {isRequesterOnly ? 'My Purchase Requisitions' : 'Purchase Requisitions'}
         </h1>
         <div className="flex items-center gap-2">
@@ -171,125 +171,125 @@ export default function PrListPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Filter className="h-4 w-4 text-fg-muted" />
-          <select
+          <Select
             value={statusFilter}
             onChange={(e) => handleFilterChange(setStatusFilter)(e.target.value)}
-            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
+           
           >
             {STATUS_FILTER_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
-          </select>
+          </Select>
           {/* A pure requester's list is always their own PRs, so neither
               filter has anything to offer (PRD §3.2.3, ISS-0167). */}
           {!isRequesterOnly && (
             <>
-              <select
+              <Select
                 value={deptFilter}
                 onChange={(e) => handleFilterChange(setDeptFilter)(e.target.value)}
-                className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
+               
               >
                 <option value="all">All Departments</option>
                 {departments.map((d) => (
                   <option key={d.id} value={d.id}>{d.name}</option>
                 ))}
-              </select>
-              <select
+              </Select>
+              <Select
                 value={requesterFilter}
                 onChange={(e) => handleFilterChange(setRequesterFilter)(e.target.value)}
                 title="Filter by Requester"
-                className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
+               
               >
                 <option value="all">All Requesters</option>
                 {requesters.map((u) => (
                   <option key={u.id} value={u.id}>{u.full_name}</option>
                 ))}
-              </select>
+              </Select>
             </>
           )}
-          <select
+          <Select
             value={typeFilter}
             onChange={(e) => handleFilterChange(setTypeFilter)(e.target.value)}
-            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
+           
           >
             <option value="all">All Types</option>
             {Object.entries(TYPE_LABELS).map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
             value={prepaidFilter}
             onChange={(e) => handleFilterChange(setPrepaidFilter)(e.target.value)}
-            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
+           
           >
             <option value="all">All (Prepaid)</option>
             <option value="yes">Prepaid</option>
             <option value="no">Not Prepaid</option>
-          </select>
+          </Select>
         </div>
       </div>
 
       <div className="rounded-xl bg-surface shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line bg-surface-subtle">
-                <th className="w-10 px-4 py-3" />
+          <Table>
+            <THead>
+              <Tr className="bg-surface-subtle">
+                <Th className="w-10" />
                 {columns.map(([field, label]) => (
                   <SortTh key={field} label={label} sortKey={field} sort={sort} onSort={onSort}
                     align={field === 'amount' ? 'right' : 'left'}
-                    className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-fg-muted" />
+                    className="px-4 py-3 text-xs font-semibold text-fg-muted" />
                 ))}
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody>
+                <Th />
+              </Tr>
+            </THead>
+            <TBody>
               {isLoading && Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} cols={colCount} />)}
               {!isLoading && prs.length === 0 && (
-                <tr><td colSpan={colCount} className="py-16 text-center text-sm text-fg-muted">No purchase requisitions found</td></tr>
+                <Tr><Td align="center" colSpan={colCount} className="text-sm text-fg-muted">No purchase requisitions found</Td></Tr>
               )}
               {prs.map((pr) => (
-                <tr key={pr.id} className="border-b border-line-subtle bg-surface hover:bg-primary-50/60 transition-colors">
-                  <td className="px-4 py-3">
-                    <input
-                      type="checkbox"
+                <Tr key={pr.id} className="bg-surface hover:bg-primary-50/60 transition-colors">
+                  <Td>
+                    <Checkbox
+                     
                       checked={selectedPrId === pr.id}
                       onChange={() => setSelectedPrId(selectedPrId === pr.id ? null : pr.id)}
                       onClick={(e) => e.stopPropagation()}
-                      className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600 cursor-pointer"
+                     
                     />
-                  </td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td>
                     <Link to={`/pr/${pr.id}`} className="font-medium text-primary-600 hover:underline whitespace-nowrap">{pr.number}</Link>
-                  </td>
-                  <td className="px-4 py-3 text-fg">
+                  </Td>
+                  <Td className="text-fg">
                     <p className="line-clamp-2 max-w-52 break-words" title={pr.title}>{pr.title}</p>
-                  </td>
+                  </Td>
                   {!isRequesterOnly && (
-                    <td className="px-4 py-3 text-fg-secondary max-w-40 truncate" title={pr.created_by_name ?? undefined}>{pr.created_by_name ?? '—'}</td>
+                    <Td className="text-fg-secondary max-w-40 truncate" title={pr.created_by_name ?? undefined}>{pr.created_by_name ?? '—'}</Td>
                   )}
-                  <td className="px-4 py-3 text-fg-secondary max-w-40 truncate">{pr.vendor_name}</td>
-                  <td className="px-4 py-3 amount text-fg">{formatCAD(pr.amount)}</td>
-                  <td className="px-4 py-3 text-fg-muted whitespace-nowrap">{TYPE_LABELS[pr.type] ?? `Type ${pr.type}`}</td>
-                  <td className="px-4 py-3">
+                  <Td className="text-fg-secondary max-w-40 truncate">{pr.vendor_name}</Td>
+                  <Td className="amount text-fg">{formatCAD(pr.amount)}</Td>
+                  <Td className="text-fg-muted whitespace-nowrap">{TYPE_LABELS[pr.type] ?? `Type ${pr.type}`}</Td>
+                  <Td>
                     {pr.is_prepaid && (
                       <span className="inline-flex items-center rounded-full bg-warning-soft px-2 py-0.5 text-2xs font-semibold text-warning-fg border border-warning-line">
                         Prepaid
                       </span>
                     )}
-                  </td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td>
                     <StatusBadge status={pr.status} />
                     <CurrentStepHint current_step={pr.current_step} />
-                  </td>
-                  <td className="px-4 py-3 text-fg-muted whitespace-nowrap">{formatDate(pr.submitted_at ?? '')}</td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td className="text-fg-muted whitespace-nowrap">{formatDate(pr.submitted_at ?? '')}</Td>
+                  <Td>
                     <Link to={`/pr/${pr.id}`}><Button variant="ghost" size="sm">View</Button></Link>
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
         <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
       </div>

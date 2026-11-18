@@ -109,3 +109,25 @@ export const FileInput = React.forwardRef<HTMLInputElement, Omit<React.InputHTML
   )
 )
 FileInput.displayName = 'FileInput'
+
+export interface PickerTriggerProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  error?: boolean
+  pickerSize?: 'sm' | 'md'
+  /** Shown in the muted colour when there is no value. */
+  placeholder?: React.ReactNode
+}
+
+/** A button that looks like an input: opens a picker (ERP material, vendor …). */
+export const PickerTrigger = React.forwardRef<HTMLButtonElement, PickerTriggerProps>(
+  ({ className, error, pickerSize = 'md', placeholder, children, type = 'button', ...props }, ref) => (
+    <button
+      ref={ref}
+      type={type}
+      className={cn(controlClass(error, pickerSize), 'truncate text-left', className)}
+      {...props}
+    >
+      {children || <span className="text-fg-faint">{placeholder}</span>}
+    </button>
+  )
+)
+PickerTrigger.displayName = 'PickerTrigger'

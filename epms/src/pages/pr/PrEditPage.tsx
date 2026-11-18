@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
-import { useReplaceTab } from '@uniops/shell'
+import { useReplaceTab, Checkbox, Select, Textarea, MenuItem } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, X, Calendar, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -94,6 +94,8 @@ export default function PrEditPage() {
   // vendor
   const [vendorQuery, setVendorQuery] = useState('')
   const [vendorOpen, setVendorOpen] = useState(false)
+  const vendorAnchorRef = useRef<HTMLDivElement>(null)
+  const vendorRect = useAnchorRect(vendorOpen, vendorAnchorRef)
   const [selectedVendor, setSelectedVendor] = useState<ApiVendor | null>(null)
 
   // service/project owner — mirrors PrCreatePage's picker
@@ -381,7 +383,7 @@ export default function PrEditPage() {
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-fg">Edit PR</h1>
+          <h1 className="text-2xl font-semibold text-fg">Edit PR</h1>
           <p className="text-sm text-fg-muted">{pr.number} — Type {pr.type}: {TYPE_LABELS[pr.type]}</p>
         </div>
       </div>
@@ -407,42 +409,40 @@ export default function PrEditPage() {
             {/* Vendor */}
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-fg-secondary">Preferred Vendor</label>
-              <div className="relative">
+              <div className="relative" ref={vendorAnchorRef}>
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
-                <input
+                <Input
                   type="text"
                   placeholder="Search vendor by name…"
                   value={selectedVendor ? selectedVendor.name : vendorQuery}
                   onFocus={() => { setVendorOpen(true); if (selectedVendor) setVendorQuery('') }}
                   onChange={(e) => { setVendorQuery(e.target.value); setSelectedVendor(null); setVendorOpen(true) }}
-                  className="h-10 w-full rounded-md border border-line-strong bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="w-full pl-9 pr-3"
                 />
                 {selectedVendor && (
-                  <button
+                  <Button variant="subtle" size="icon-xs" aria-label="Clear"
                     type="button"
                     onClick={() => { setSelectedVendor(null); setVendorQuery('') }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2"
                   >
                     <X className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 )}
-                {vendorOpen && !selectedVendor && (
+                {vendorOpen && !selectedVendor && vendorRect && (
                   <>
-                    <div className="fixed inset-0 z-10" onClick={() => setVendorOpen(false)} />
-                    <div className="absolute z-20 mt-1 w-full rounded-lg border border-line bg-surface py-1 shadow-lg max-h-56 overflow-y-auto">
+                    <DropdownPortal anchorRect={vendorRect} onClose={() => setVendorOpen(false)} className="max-h-56 overflow-y-auto">
                       {vendors.map((v) => (
-                        <button
+                        <MenuItem
                           key={v.id}
                           type="button"
-                          className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-primary-50 text-left"
                           onClick={() => { setSelectedVendor(v); setVendorOpen(false); setVendorQuery('') }}
                         >
                           <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
                           {v.name}
-                        </button>
+                        </MenuItem>
                       ))}
                       {vendors.length === 0 && <p className="px-3 py-2 text-sm text-fg-muted">No vendors found</p>}
-                    </div>
+                    </DropdownPortal>
                   </>
                 )}
               </div>
@@ -453,7 +453,7 @@ export default function PrEditPage() {
               <label className="text-sm font-medium text-fg-secondary">
                 Department <span className="text-danger-fg">*</span>
               </label>
-              <select
+              <Select
                 value={selectedDepartmentId ?? ''}
                 onChange={(e) => {
                   setSelectedDepartmentId(e.target.value || undefined)
@@ -463,13 +463,12 @@ export default function PrEditPage() {
                   setSelectedL1(''); setSelectedL1Obj(null); setSelectedL2('')
                   setFactorCombo({}); setFactorComboError(null)
                 }}
-                className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               >
                 <option value="">Select Department…</option>
                 {departments.map((d) => (
                   <option key={d.id} value={d.id}>{d.name}</option>
                 ))}
-              </select>
+              </Select>
               {departmentError && (
                 <p className="text-xs text-danger-fg">{departmentError}</p>
               )}
@@ -478,7 +477,7 @@ export default function PrEditPage() {
             {/* Cost Center + Budget */}
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium text-fg-secondary">Budget Account</label>
-              <select
+              <Select
                 value={selectedCostCenter}
                 onChange={(e) => {
                   const code = e.target.value
@@ -487,14 +486,13 @@ export default function PrEditPage() {
                   setSelectedL1(''); setSelectedL1Obj(null); setSelectedL2('')
                   setFactorCombo({}); setFactorComboError(null)
                 }}
-                className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               >
                 <option value="">Select Cost Center…</option>
                 {costCenters.map((cc) => (
                   <option key={cc.id} value={cc.code}>{cc.name}</option>
                 ))}
-              </select>
-              <select
+              </Select>
+              <Select
                 value={selectedL1}
                 onChange={(e) => {
                   const code = e.target.value
@@ -504,24 +502,22 @@ export default function PrEditPage() {
                   setFactorCombo({}); setFactorComboError(null)
                 }}
                 disabled={ccL1Groups.length === 0}
-                className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
               >
                 <option value="">Select L1 Category…</option>
                 {ccL1Groups.map((l1) => (
                   <option key={l1.id} value={l1.code}>{l1.name}</option>
                 ))}
-              </select>
-              <select
+              </Select>
+              <Select
                 value={selectedL2}
                 onChange={(e) => { setSelectedL2(e.target.value); setFactorCombo({}); setFactorComboError(null); setBudgetError(null) }}
                 disabled={ccL2Accounts.length === 0}
-                className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
               >
                 <option value="">Select L2 Sub-account…</option>
                 {ccL2Accounts.map((l2) => (
                   <option key={l2.id} value={l2.code}>{l2.code} — {l2.name}</option>
                 ))}
-              </select>
+              </Select>
               {budgetError && (
                 <p className="text-xs text-danger-fg">{budgetError}</p>
               )}
@@ -548,7 +544,7 @@ export default function PrEditPage() {
                           {f.factor_name}
                           <span className="ml-1 font-mono text-fg-muted">({f.factor_code})</span>
                         </label>
-                        <select
+                        <Select selectSize="sm"
                           value={current}
                           onChange={(e) => {
                             const v = e.target.value
@@ -560,7 +556,6 @@ export default function PrEditPage() {
                             })
                             setFactorComboError(null)
                           }}
-                          className="h-9 rounded-md border border-line-strong bg-surface px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                         >
                           <option value="">Select…</option>
                           {activeValues.map((v) => (
@@ -568,7 +563,7 @@ export default function PrEditPage() {
                               {v.value_code} — {v.value_name}
                             </option>
                           ))}
-                        </select>
+                        </Select>
                       </div>
                     )
                   })}
@@ -602,28 +597,28 @@ export default function PrEditPage() {
             {/* Justification — required when over-budget AND mode is not hard_block (fm_gm_opm / fm_only / allow) */}
             {isOverBudget && !isHardBlock && (
               <FormField label="Over-Budget Justification" required htmlFor="justification-edit" error={justificationError ?? undefined}>
-                <textarea
+                <Textarea
                   id="justification-edit"
                   value={justification}
                   onChange={(e) => { setJustification(e.target.value); if (justificationError) setJustificationError(null) }}
                   placeholder="Explain why this expenditure is necessary despite exceeding budget…"
-                  className="min-h-20 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="min-h-20 w-full"
                 />
               </FormField>
             )}
 
             {/* Currency */}
             <FormField label="Currency" required htmlFor="currency">
-              <select
+              <Select
                 id="currency"
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value as Currency)}
-                className="h-10 w-full rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                className="w-full"
               >
                 {enabledCurrencyOptions(config, currency).map((c) => (
                   <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
                 ))}
-              </select>
+              </Select>
             </FormField>
 
             {/* Delivery address */}
@@ -675,13 +670,13 @@ export default function PrEditPage() {
             {procurementType === 5 && (
               <div id="fixed-asset-id">
                 <FormField label="Fixed Asset ID" required htmlFor="fixedAssetId">
-                  <input
+                  <Input inputSize="sm"
                     id="fixedAssetId"
                     type="text"
                     value={fixedAssetId}
                     onChange={(e) => setFixedAssetId(e.target.value)}
                     placeholder="e.g. FA-2026-0001"
-                    className="h-9 w-full rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="w-full"
                   />
                 </FormField>
               </div>
@@ -697,28 +692,28 @@ export default function PrEditPage() {
                 </label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
-                  <input
+                  <Input
                     id="serviceOwner"
                     type="text"
                     placeholder="Search people by name…"
                     value={ownerOpen ? ownerQuery : (selectedOwner?.full_name ?? '')}
                     onFocus={() => { setOwnerOpen(true); setOwnerQuery('') }}
                     onChange={(e) => { setOwnerQuery(e.target.value); setOwnerOpen(true) }}
-                    className="h-10 w-full rounded-md border border-line-strong bg-surface pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="w-full pl-9 pr-3"
                   />
                 </div>
                 {ownerOpen && ownerRect && (
                   <DropdownPortal anchorRect={ownerRect} onClose={() => { setOwnerOpen(false); setOwnerQuery('') }}>
                     {owners.map((u) => (
-                      <button
+                      <MenuItem
                         key={u.id}
                         type="button"
-                        className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-primary-50 text-left"
+                        className="justify-between"
                         onClick={() => { setSelectedOwner(u); setOwnerOpen(false); setOwnerQuery('') }}
                       >
                         <span>{u.full_name}</span>
                         {u.department_name && <span className="text-xs text-fg-muted">{u.department_name}</span>}
-                      </button>
+                      </MenuItem>
                     ))}
                     {owners.length === 0 && (
                       <p className="px-3 py-2 text-sm text-fg-muted">No people found</p>
@@ -735,13 +730,13 @@ export default function PrEditPage() {
             {procurementType === 6 && (
               <div id="project-code">
                 <FormField label="Project No." required htmlFor="projectCode">
-                  <input
+                  <Input inputSize="sm"
                     id="projectCode"
                     type="text"
                     value={projectCode}
                     onChange={(e) => setProjectCode(e.target.value)}
                     placeholder="e.g. PROJ-2026-001"
-                    className="h-9 w-full rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="w-full"
                   />
                 </FormField>
               </div>
@@ -749,23 +744,21 @@ export default function PrEditPage() {
 
             {/* Notes */}
             <FormField label="Requester Notes" htmlFor="notes">
-              <textarea
+              <Textarea
                 id="notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Any additional context for the approver…"
-                className="min-h-20 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                className="min-h-20 w-full"
               />
             </FormField>
 
             {/* Prepayment Required */}
             <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
+              <Checkbox
                 id="prepayment-edit"
                 checked={isPrepaid}
                 onChange={(e) => setIsPrepaid(e.target.checked)}
-                className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600"
               />
               <label htmlFor="prepayment-edit" className="text-sm text-fg-secondary cursor-pointer">
                 Prepayment Required

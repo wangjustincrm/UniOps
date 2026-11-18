@@ -2,6 +2,7 @@ import { cn, formatDateTime } from '@/lib/utils'
 import { Check, Clock, RotateCcw, SkipForward, X } from 'lucide-react'
 import type { ApprovalStep } from '@/types'
 
+import { Button } from '@uniops/shell'
 const CHANNEL_BADGES: Record<string, string> = {
   Web: 'bg-primary-50 text-primary-600',
   Email: 'bg-surface-sunken text-fg-secondary',
@@ -136,13 +137,13 @@ export function ApprovalTimeline({ steps, onSendReminder, reminder }: ApprovalTi
 
               {step.status === 'current' && onSendReminder && (
                 <div className="mt-1.5">
-                  <button
+                  <Button variant="link"
                     onClick={() => onSendReminder(step.id)}
                     disabled={reminderStatus === 'pending'}
-                    className="text-xs text-primary-600 hover:underline disabled:cursor-not-allowed disabled:text-fg-muted disabled:no-underline"
+                    className="text-xs"
                   >
                     {reminderStatus === 'pending' ? 'Sending reminder…' : 'Send reminder'}
-                  </button>
+                  </Button>
                   {reminder?.message && reminderStatus !== 'pending' && (
                     <p
                       className={cn(

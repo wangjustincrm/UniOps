@@ -60,7 +60,7 @@ export function PoSignoffSummary({ poId, source }: { poId: string; source: strin
 
       {state.thread.length > 0 && (
         <div className="flex flex-col gap-2 border-t border-line-subtle pt-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+          <p className="text-xs font-semibold text-fg-muted">
             Justification &amp; notes
           </p>
           {state.thread.map((entry, i) => (

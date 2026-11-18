@@ -11,6 +11,7 @@ import { PartThumbnail } from '@/pages/parts/PartsListPage'
 import { useQuery } from '@tanstack/react-query'
 import { mdmApi } from '@/lib/api'
 
+import { Input, MenuItem, PickerTrigger, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 function newLine(): PrLineItem {
   return {
     id: crypto.randomUUID(),
@@ -40,13 +41,15 @@ function UnitPriceInput({ value, onChange, ...rest }: {
   onChange: (value: number) => void
   className?: string
   'aria-invalid'?: boolean
+  error?: boolean
+  inputSize?: 'sm' | 'md'
 }) {
   const [text, setText] = useState(() => String(value))
   useEffect(() => {
     setText((t) => ((parseFloat(t) || 0) === value ? t : String(value)))
   }, [value])
   return (
-    <input
+    <Input
       type="number"
       step="0.01"
       value={text}
@@ -146,13 +149,13 @@ function PartsPicker({ value, onSelect, onClear, hasError }: PartsPickerProps) {
             {value || 'Search parts catalog…'}
           </span>
           {value && (
-            <button
+            <Button variant="danger-ghost" size="icon-xs" aria-label="Remove"
               type="button"
               onClick={(e) => { e.stopPropagation(); onClear() }}
-              className="text-fg-faint hover:text-danger-fg"
+             
             >
               <X className="h-3 w-3" />
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -167,18 +170,18 @@ function PartsPicker({ value, onSelect, onClear, hasError }: PartsPickerProps) {
           <div className="border-b border-line-subtle p-2">
             <div className="flex items-center gap-2 rounded-md border border-line-strong bg-surface-subtle px-2">
               <Search className="h-3.5 w-3.5 text-fg-muted" />
-              <input
+              <Input inputSize="sm"
                 autoFocus
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search by name, code, category, supplier…"
-                className="h-7 flex-1 bg-transparent text-sm focus:outline-none"
+                bare className="h-7 flex-1"
               />
               {query && (
-                <button type="button" onClick={() => setQuery('')}>
+                <Button variant="subtle" size="icon-xs" aria-label="Clear" type="button" onClick={() => setQuery('')}>
                   <X className="h-3 w-3 text-fg-muted hover:text-fg-secondary" />
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -192,11 +195,11 @@ function PartsPicker({ value, onSelect, onClear, hasError }: PartsPickerProps) {
               </div>
             ) : (
               filtered.map((part) => (
-                <button
+                <MenuItem
                   key={part.id}
                   type="button"
                   onClick={() => handleSelect(part)}
-                  className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-primary-50 transition-colors"
+                  className="gap-3"
                 >
                   <PartThumbnail src={part.image_data_url} size={32} />
                   <div className="flex min-w-0 flex-1 flex-col">
@@ -219,7 +222,7 @@ function PartsPicker({ value, onSelect, onClear, hasError }: PartsPickerProps) {
                   <span className="amount shrink-0 text-xs font-medium text-fg-secondary">
                     {formatCAD(part.unit_price)}/{part.unit}
                   </span>
-                </button>
+                </MenuItem>
               ))
             )}
           </div>
@@ -269,20 +272,13 @@ function MaterialsPicker({ value, onSelect, onClear, hasError }: MaterialsPicker
   return (
     <div className="relative w-full" ref={ref}>
       <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className={cn(
-            'h-8 flex-1 text-left rounded border bg-surface px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600',
-            hasError ? 'border-danger-solid' : 'border-line-strong'
-          )}
-        >
-          {value || <span className="text-fg-muted">Pick ERP material…</span>}
-        </button>
+        <PickerTrigger pickerSize="sm" error={hasError} className="flex-1" onClick={() => setOpen(true)} placeholder="Pick ERP material…">
+          {value}
+        </PickerTrigger>
         {value && (
-          <button type="button" onClick={onClear} className="text-fg-faint hover:text-danger-fg">
+          <Button variant="danger-ghost" size="icon-xs" aria-label="Remove" type="button" onClick={onClear}>
             <X className="h-3.5 w-3.5" />
-          </button>
+          </Button>
         )}
       </div>
       {open && (
@@ -290,12 +286,12 @@ function MaterialsPicker({ value, onSelect, onClear, hasError }: MaterialsPicker
           <div className="border-b border-line-subtle p-2">
             <div className="flex items-center gap-2 rounded border border-line px-2 py-1">
               <Search className="h-3.5 w-3.5 text-fg-muted" />
-              <input
+              <Input inputSize="sm"
                 autoFocus
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search part no or description…"
-                className="flex-1 text-xs focus:outline-none"
+                className="flex-1"
               />
             </div>
           </div>
@@ -306,16 +302,16 @@ function MaterialsPicker({ value, onSelect, onClear, hasError }: MaterialsPicker
               <div className="px-2 py-3 text-xs text-fg-muted">No materials. Sync in AdminPanel → ERP MDM first.</div>
             ) : (
               data.items.map((m) => (
-                <button
+                <MenuItem
                   key={m.erp_part_no}
                   type="button"
                   onClick={() => { onSelect(m); setOpen(false); setQ('') }}
-                  className="block w-full text-left px-3 py-2 hover:bg-surface-subtle border-b border-line-subtle"
+                  className="block border-b border-line-subtle"
                 >
                   <div className="font-mono text-xs">{m.erp_part_no}</div>
                   <div className="text-xs text-fg-secondary">{m.description}</div>
                   <div className="text-2xs text-fg-muted">{m.unit_meas} · {m.dim_quality}</div>
-                </button>
+                </MenuItem>
               ))
             )}
           </div>
@@ -411,45 +407,45 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
 
       {/* Desktop table */}
       <div className="hidden md:block overflow-x-auto rounded-lg border border-line">
-        <table className={cn('w-full text-sm', isType3 ? 'min-w-[740px]' : 'min-w-[860px]')}>
-          <thead>
-            <tr className="border-b border-line bg-surface-subtle">
-              <th className="w-8 px-2 py-2.5 text-left text-xs font-semibold text-fg-muted">#</th>
-              <th className={cn('px-3 py-2.5 text-left text-xs font-semibold text-fg-secondary', isType3 ? 'min-w-[220px]' : 'min-w-[180px]')}>
+        <Table density="compact" className={cn('w-full text-sm', isType3 ? 'min-w-[740px]' : 'min-w-[860px]')}>
+          <THead>
+            <Tr className="bg-surface-subtle">
+              <Th className="w-8">#</Th>
+              <Th className={cn('px-3 py-2.5 text-left text-xs font-semibold text-fg-secondary', isType3 ? 'min-w-[220px]' : 'min-w-[180px]')}>
                 Description <span className="text-danger-fg">*</span>
-              </th>
+              </Th>
               {hasMaterial && (
-                <th className="w-28 px-3 py-2.5 text-left text-xs font-semibold text-fg-secondary">
+                <Th className="w-28">
                   Material ID
-                </th>
+                </Th>
               )}
-              <th className={cn('px-3 py-2.5 text-left text-xs font-semibold text-fg-secondary', isType3 ? 'w-36' : 'w-44')}>
+              <Th className={cn('px-3 py-2.5 text-left text-xs font-semibold text-fg-secondary', isType3 ? 'w-36' : 'w-44')}>
                 Supplier Item ID
-              </th>
-              <th className="w-16 px-3 py-2.5 text-left text-xs font-semibold text-fg-secondary">
+              </Th>
+              <Th className="w-16">
                 Qty <span className="text-danger-fg">*</span>
-              </th>
+              </Th>
               {/* Wide enough to read the chosen unit: at w-16 the select showed
                   only its first letter beside the arrow (ISS-0225). */}
-              <th className="w-28 px-3 py-2.5 text-left text-xs font-semibold text-fg-secondary">Unit</th>
-              <th className="w-28 px-3 py-2.5 text-right text-xs font-semibold text-fg-secondary">
+              <Th className="w-28">Unit</Th>
+              <Th align="right" className="w-28 ">
                 Unit Price <span className="text-danger-fg">*</span>
-              </th>
-              <th className="w-24 px-3 py-2.5 text-right text-xs font-semibold text-fg-secondary">
+              </Th>
+              <Th align="right" className="w-24 ">
                 Line Total
-              </th>
+              </Th>
               {!isType3 && (
-                <th className="w-28 px-3 py-2.5 text-left text-xs font-semibold text-fg-muted">Notes</th>
+                <Th className="w-28">Notes</Th>
               )}
-              <th className="w-8 px-2 py-2.5" />
-            </tr>
-          </thead>
-          <tbody>
+              <Th className="w-8" />
+            </Tr>
+          </THead>
+          <TBody>
             {items.map((item, i) => {
               const isLast = i === items.length - 1
               const rowErrors = errors[String(i)] ?? {}
               return (
-                <tr
+                <Tr
                   key={item.id}
                   ref={isLast ? lastRowRef : undefined}
                   className={cn(
@@ -458,15 +454,15 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
                   )}
                 >
                   {/* Line number */}
-                  <td className="px-2 py-2 text-xs text-fg-muted select-none">
+                  <Td className="text-xs text-fg-muted select-none">
                     <div className="flex items-center gap-1">
                       <GripVertical className="h-3 w-3 text-fg-faint" />
                       {i + 1}
                     </div>
-                  </td>
+                  </Td>
 
                   {/* Description — Type 3: parts picker; Type 1: ERP materials picker; others: free text */}
-                  <td className="px-3 py-2">
+                  <Td>
                     {isType3 ? (
                       <>
                         <PartsPicker
@@ -493,7 +489,7 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
                       </>
                     ) : (
                       <>
-                        <input
+                        <Input
                           type="text"
                           data-field="description"
                           value={item.description}
@@ -510,12 +506,12 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
                         )}
                       </>
                     )}
-                  </td>
+                  </Td>
 
                   {/* Material ID */}
                   {hasMaterial && (
-                    <td className="px-3 py-2">
-                      <input
+                    <Td>
+                      <Input
                         type="text"
                         value={item.materialId ?? ''}
                         onChange={(e) => update(i, { materialId: e.target.value })}
@@ -526,23 +522,23 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
                           (isType3 || isType1) && 'bg-surface-subtle text-fg-muted cursor-default'
                         )}
                       />
-                    </td>
+                    </Td>
                   )}
 
                   {/* Supplier Item ID */}
-                  <td className="px-3 py-2">
-                    <input
+                  <Td>
+                    <Input inputSize="sm"
                       type="text"
                       value={item.supplierItemId ?? ''}
                       onChange={(e) => update(i, { supplierItemId: e.target.value })}
                       placeholder="ASIN / SKU…"
-                      className="h-8 w-full rounded border border-line-strong bg-surface px-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary-600"
+                      className="w-full font-mono"
                     />
-                  </td>
+                  </Td>
 
                   {/* Qty */}
-                  <td className="px-3 py-2">
-                    <input
+                  <Td>
+                    <Input
                       type="number"
                       min="0"
                       step="1"
@@ -554,74 +550,73 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
                       )}
                       aria-invalid={!!rowErrors.qty}
                     />
-                  </td>
+                  </Td>
 
                   {/* Unit */}
-                  <td className="px-3 py-2">
-                    <select
+                  <Td>
+                    <Select selectSize="sm"
                       value={item.unit}
                       onChange={(e) => update(i, { unit: e.target.value })}
-                      className="h-8 w-full min-w-[5rem] rounded border border-line-strong bg-surface px-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600"
+                      className="w-full min-w-[5rem]"
                     >
                       {unitOptions(item.unit).map((u) => (
                         <option key={u} value={u}>{u}</option>
                       ))}
-                    </select>
-                  </td>
+                    </Select>
+                  </Td>
 
                   {/* Unit Price */}
-                  <td className="px-3 py-2">
+                  <Td>
                     <div className="relative">
                       <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-fg-muted">$</span>
                       <UnitPriceInput
                         value={item.unitPrice}
                         onChange={(unitPrice) => update(i, { unitPrice })}
-                        className={cn(
-                          'h-8 w-full rounded border bg-surface pl-5 pr-2 text-sm text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-600',
-                          rowErrors.unitPrice ? 'border-danger-solid' : 'border-line-strong'
-                        )}
+                        inputSize="sm"
+                        error={!!rowErrors.unitPrice}
+                        className="pl-5 pr-2 text-right font-mono"
                         aria-invalid={!!rowErrors.unitPrice}
                       />
                     </div>
-                  </td>
+                  </Td>
 
                   {/* Line Total */}
-                  <td className="px-3 py-2 text-right">
+                  <Td align="right">
                     <span className={cn('amount text-sm', item.lineTotal > 0 ? 'text-fg' : 'text-fg-faint')}>
                       {formatCAD(item.lineTotal)}
                     </span>
-                  </td>
+                  </Td>
 
                   {/* Notes — hidden for Spare Parts; field still stored in state */}
                   {!isType3 && (
-                    <td className="px-3 py-2">
-                      <input
+                    <Td>
+                      <Input inputSize="sm"
                         type="text"
                         value={item.notes ?? ''}
                         onChange={(e) => update(i, { notes: e.target.value })}
                         placeholder="Optional"
-                        className="h-8 w-full rounded border border-line-strong bg-surface px-2 text-sm text-fg-muted focus:outline-none focus:ring-1 focus:ring-primary-600"
+                        className="w-full"
                       />
-                    </td>
+                    </Td>
                   )}
 
                   {/* Remove */}
-                  <td className="px-2 py-2">
-                    <button
+                  <Td>
+                    <Button variant="danger-ghost" size="icon-xs"
                       type="button"
                       onClick={() => removeLine(i)}
                       disabled={items.length === 1}
-                      className="flex h-7 w-7 items-center justify-center rounded text-fg-faint hover:bg-danger-soft hover:text-danger-fg disabled:cursor-not-allowed disabled:opacity-30"
+                     
                       aria-label={`Remove line ${i + 1}`}
                     >
                       <X className="h-3.5 w-3.5" />
-                    </button>
-                  </td>
-                </tr>
+                    </Button>
+                  </Td>
+                </Tr>
               )
             })}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
 
         {/* Footer: add line + total */}
         <div className="flex items-center justify-between border-t border-line bg-surface-subtle px-3 py-2.5">
@@ -631,7 +626,7 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
           </Button>
           <div className="flex items-center gap-3">
             <span className="text-xs font-medium text-fg-muted">Total (CAD)</span>
-            <span className={cn('amount text-base font-bold', total > 0 ? 'text-fg' : 'text-fg-faint')}>
+            <span className={cn('amount text-base font-semibold', total > 0 ? 'text-fg' : 'text-fg-faint')}>
               {formatCAD(total)}
             </span>
           </div>
@@ -649,15 +644,15 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-fg-muted">Line {i + 1}</span>
-                <button
+                <Button variant="danger-ghost" size="icon-xs"
                   type="button"
                   onClick={() => removeLine(i)}
                   disabled={items.length === 1}
-                  className="text-fg-faint hover:text-danger-fg disabled:opacity-30"
+                 
                   aria-label={`Remove line ${i + 1}`}
                 >
                   <X className="h-4 w-4" />
-                </button>
+                </Button>
               </div>
 
               <div className="flex flex-col gap-1">
@@ -677,7 +672,7 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
                     hasError={!!rowErrors.description}
                   />
                 ) : (
-                  <input
+                  <Input
                     type="text"
                     data-field="description"
                     value={item.description}
@@ -694,7 +689,7 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
               {hasMaterial && (
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-fg-muted">Material ID</label>
-                  <input
+                  <Input
                     type="text"
                     value={item.materialId ?? ''}
                     onChange={(e) => update(i, { materialId: e.target.value })}
@@ -710,37 +705,37 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
 
               <div className="flex flex-col gap-1">
                 <label className="text-xs text-fg-muted">Supplier Item ID</label>
-                <input
+                <Input inputSize="sm"
                   type="text"
                   value={item.supplierItemId ?? ''}
                   onChange={(e) => update(i, { supplierItemId: e.target.value })}
                   placeholder="ASIN / SKU…"
-                  className="h-9 w-full rounded border border-line-strong px-2 font-mono text-sm focus:outline-none focus:ring-1 focus:ring-primary-600"
+                  className="w-full font-mono"
                 />
               </div>
 
               <div className="grid grid-cols-3 gap-2">
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-fg-muted">Qty *</label>
-                  <input
+                  <Input inputSize="sm"
                     type="number"
                     min="0"
                     value={item.qty || ''}
                     onChange={(e) => update(i, { qty: parseFloat(e.target.value) || 0 })}
-                    className="h-9 w-full rounded border border-line-strong px-2 text-right font-mono text-sm focus:outline-none focus:ring-1 focus:ring-primary-600"
+                    className="w-full text-right font-mono"
                   />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-fg-muted">Unit</label>
-                  <select
+                  <Select selectSize="sm"
                     value={item.unit}
                     onChange={(e) => update(i, { unit: e.target.value })}
-                    className="h-9 w-full rounded border border-line-strong px-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600"
+                    className="w-full"
                   >
                     {unitOptions(item.unit).map((u) => (
                       <option key={u} value={u}>{u}</option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-fg-muted">Unit Price *</label>
@@ -749,7 +744,7 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
                     <UnitPriceInput
                       value={item.unitPrice}
                       onChange={(unitPrice) => update(i, { unitPrice })}
-                      className="h-9 w-full rounded border border-line-strong pl-5 pr-2 text-right font-mono text-sm focus:outline-none focus:ring-1 focus:ring-primary-600"
+                      className="pl-5 pr-2 text-right font-mono"
                     />
                   </div>
                 </div>
@@ -758,12 +753,12 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
               {!isType3 && (
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-fg-muted">Notes</label>
-                  <input
+                  <Input inputSize="sm"
                     type="text"
                     value={item.notes ?? ''}
                     onChange={(e) => update(i, { notes: e.target.value })}
                     placeholder="Optional"
-                    className="h-9 w-full rounded border border-line-strong px-2 text-sm text-fg-muted focus:outline-none focus:ring-1 focus:ring-primary-600"
+                    className="w-full"
                   />
                 </div>
               )}
@@ -783,7 +778,7 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
 
         <div className="flex items-center justify-between rounded-lg border border-line bg-surface px-4 py-3">
           <span className="text-sm font-semibold text-fg-secondary">Total (CAD)</span>
-          <span className={cn('amount text-lg font-bold', total > 0 ? 'text-fg' : 'text-fg-faint')}>
+          <span className={cn('amount text-lg font-semibold', total > 0 ? 'text-fg' : 'text-fg-faint')}>
             {formatCAD(total)}
           </span>
         </div>

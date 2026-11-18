@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Search, Plus, ExternalLink, RefreshCw } from 'lucide-react'
-import { SortTh, sortParams, useSort } from '@uniops/shell'
+import { Search, Plus, ExternalLink, RefreshCw, Package } from 'lucide-react'
+import { SortTh, sortParams, useSort, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -119,7 +119,7 @@ export default function PoListPage() {
     <div className="flex flex-col gap-6">
       {/* Page header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-fg">Purchase Orders</h1>
+        <h1 className="text-2xl font-semibold text-fg">Purchase Orders</h1>
         <div className="flex items-center gap-2">
           {ncMsg && <span className="text-xs text-fg-muted">{ncMsg}</span>}
           {canSyncNc && (
@@ -151,44 +151,44 @@ export default function PoListPage() {
               className="pl-9"
             />
           </div>
-          <select
+          <Select
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
-            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
+           
           >
             {STATUS_FILTER_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
             value={deptFilter}
             onChange={(e) => { setDeptFilter(e.target.value); setPage(1) }}
-            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
+           
           >
             <option value="all">All Departments</option>
             {departments.map((d) => (
               <option key={d.id} value={d.id}>{d.name}</option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
             value={typeFilter}
             onChange={(e) => { setTypeFilter(e.target.value); setPage(1) }}
-            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
+           
           >
             <option value="all">All Types</option>
             {Object.entries(TYPE_LABELS).map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
             value={prepaidFilter}
             onChange={(e) => { setPrepaidFilter(e.target.value); setPage(1) }}
-            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
+           
           >
             <option value="all">All (Prepaid)</option>
             <option value="yes">Prepaid</option>
             <option value="no">Not Prepaid</option>
-          </select>
+          </Select>
           <span className="text-sm text-fg-muted">{isLoading ? 'Loading…' : `${total} result${total !== 1 ? 's' : ''}`}</span>
         </div>
       </div>
@@ -196,9 +196,9 @@ export default function PoListPage() {
       {/* Table */}
       <div className="rounded-xl bg-surface shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line bg-surface-subtle">
+          <Table>
+            <THead>
+              <Tr className="bg-surface-subtle">
                 <SortTh label="PO Number" sortKey="number" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
                 <SortTh label="PR Ref." sortKey="pr_number" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
                 <SortTh label="Title / Vendor" sortKey="title" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
@@ -208,40 +208,40 @@ export default function PoListPage() {
                 <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
                 {/* Freight / customs invoices of an NC order against its Incoterms: every
                     raw-material order, a milk order once it has Incoterms; blank otherwise. */}
-                <th className="px-4 py-3 text-left text-xs font-semibold text-fg-muted"
+                <Th
                     title="Freight & customs invoices against what the PO's Incoterms expect (NC orders; milk orders only once they have Incoterms)">
                   Fees
-                </th>
+                </Th>
                 <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
                 <SortTh label="Prepaid" sortKey="is_prepaid" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
                 <SortTh label="Exp. Delivery" sortKey="expected_delivery" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-fg-muted" />
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody>
+                <Th />
+              </Tr>
+            </THead>
+            <TBody>
               {isLoading && Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} cols={11} />)}
               {!isLoading && pos.length === 0 && (
-                <tr>
-                  <td colSpan={11} className="px-4 py-16 text-center">
+                <Tr>
+                  <Td align="center" colSpan={11}>
                     <div className="flex flex-col items-center gap-2 text-fg-muted">
-                      <span className="text-3xl">📦</span>
+                      <Package aria-hidden className="h-8 w-8 stroke-[1.5] text-fg-faint" />
                       <p className="text-sm font-medium">No purchase orders found</p>
                       <p className="text-xs">Try adjusting your search or filters</p>
                     </div>
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               )}
               {pos.map((po) => (
-                <tr
+                <Tr
                   key={po.id}
-                  className="border-b border-line-subtle last:border-0 bg-surface hover:bg-primary-50/60 transition-colors"
+                  className="bg-surface hover:bg-primary-50/60 transition-colors"
                 >
-                  <td className="px-4 py-3">
+                  <Td>
                     <Link to={`/po/${po.id}`} className="font-mono text-sm font-medium text-primary-700 hover:text-primary-900">
                       {po.number}
                     </Link>
-                  </td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td>
                     {po.pr_id ? (
                       <Link
                         to={`/pr/${po.pr_id}`}
@@ -253,42 +253,42 @@ export default function PoListPage() {
                     ) : (
                       <span className="text-fg-faint">—</span>
                     )}
-                  </td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td>
                     <p className="font-medium text-fg">{po.title}</p>
                     <p className="text-xs text-fg-muted">{po.vendor_name}</p>
-                  </td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td>
                     <span className="text-xs text-fg-muted">{TYPE_LABELS[po.type]}</span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
+                  </Td>
+                  <Td align="right">
                     <span className="amount font-medium text-fg">{formatCAD(po.total)}</span>
-                  </td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td>
                     <StatusBadge status={po.status as DocumentStatus} />
                     <CurrentStepHint current_step={po.current_step} />
-                  </td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td>
                     {po.fee_status && <FeeStatusBadge status={po.fee_status} />}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-fg-muted">{formatDate(po.created_at)}</td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td className="text-xs text-fg-muted">{formatDate(po.created_at)}</Td>
+                  <Td>
                     {po.is_prepaid && (
                       <span className="inline-flex items-center rounded-full bg-warning-soft px-2 py-0.5 text-2xs font-semibold text-warning-fg border border-warning-line">
                         Prepaid
                       </span>
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-fg-muted">{formatDate(po.expected_delivery ?? '')}</td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td className="text-xs text-fg-muted">{formatDate(po.expected_delivery ?? '')}</Td>
+                  <Td>
                     <Link to={`/po/${po.id}`}>
                       <Button variant="ghost" size="sm">View</Button>
                     </Link>
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
 
         <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />

@@ -9,11 +9,11 @@
    "raw-table": 60
   },
   "epms": {
-   "raw-control": 768,
-   "raw-table": 1112,
-   "raw-overlay": 36,
-   "shouting-type": 362,
-   "emoji": 37,
+   "raw-control": 631,
+   "raw-table": 950,
+   "raw-overlay": 29,
+   "shouting-type": 320,
+   "emoji": 20,
    "arbitrary-size": 1
   },
   "finance": {
@@ -203,39 +203,6 @@
   },
   "epms/src/components/pa/DirectPaBudgetPanel.tsx": {
    "shouting-type": 1
-  },
-  "epms/src/components/po/ImportedPoLineItems.tsx": {
-   "raw-control": 8,
-   "raw-table": 27
-  },
-  "epms/src/components/po/PaymentTermsField.tsx": {
-   "raw-control": 2
-  },
-  "epms/src/components/po/PoFeePanel.tsx": {
-   "raw-table": 13,
-   "shouting-type": 2
-  },
-  "epms/src/components/po/PoSignoffPanel.tsx": {
-   "raw-control": 3,
-   "shouting-type": 2
-  },
-  "epms/src/components/po/PoSignoffSummary.tsx": {
-   "shouting-type": 1
-  },
-  "epms/src/components/pr/ApprovalTimeline.tsx": {
-   "raw-control": 1
-  },
-  "epms/src/components/pr/BudgetBalanceWidget.tsx": {
-   "emoji": 1
-  },
-  "epms/src/components/pr/PrLineItems.tsx": {
-   "raw-control": 23,
-   "raw-table": 25,
-   "shouting-type": 2
-  },
-  "epms/src/components/pr/ProcurementTypeSelector.tsx": {
-   "raw-control": 1,
-   "emoji": 6
   },
   "epms/src/pages/admin/AdminPanel.tsx": {
    "raw-control": 60,
@@ -504,57 +471,6 @@
   "epms/src/pages/parts/PartsListPage.tsx": {
    "raw-control": 27,
    "raw-table": 19,
-   "shouting-type": 2
-  },
-  "epms/src/pages/po/PoCreatePage.tsx": {
-   "raw-control": 12,
-   "raw-overlay": 1,
-   "shouting-type": 3,
-   "emoji": 2
-  },
-  "epms/src/pages/po/PoDetailPage.tsx": {
-   "raw-control": 23,
-   "raw-table": 32,
-   "raw-overlay": 2,
-   "shouting-type": 14,
-   "emoji": 2
-  },
-  "epms/src/pages/po/PoEditPage.tsx": {
-   "raw-control": 9,
-   "raw-overlay": 1,
-   "shouting-type": 3,
-   "emoji": 1
-  },
-  "epms/src/pages/po/PoImportedEditPage.tsx": {
-   "raw-control": 5
-  },
-  "epms/src/pages/po/PoListPage.tsx": {
-   "raw-control": 4,
-   "raw-table": 20,
-   "shouting-type": 1,
-   "emoji": 1
-  },
-  "epms/src/pages/pr/PrCreatePage.tsx": {
-   "raw-control": 16,
-   "raw-overlay": 1,
-   "shouting-type": 1,
-   "emoji": 3
-  },
-  "epms/src/pages/pr/PrDetailPage.tsx": {
-   "raw-control": 8,
-   "raw-table": 25,
-   "raw-overlay": 1,
-   "shouting-type": 10,
-   "emoji": 1
-  },
-  "epms/src/pages/pr/PrEditPage.tsx": {
-   "raw-control": 16,
-   "raw-overlay": 1,
-   "shouting-type": 1
-  },
-  "epms/src/pages/pr/PrListPage.tsx": {
-   "raw-control": 6,
-   "raw-table": 20,
    "shouting-type": 2
   },
   "epms/src/pages/profile/ProfilePage.tsx": {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
-import { useReplaceTab } from '@uniops/shell'
+import { useReplaceTab, Checkbox, Select, Textarea } from '@uniops/shell'
 import { ArrowLeft } from 'lucide-react'
 import { epmsRoutes } from '@/app/routes'
 import { Button } from '@/components/ui/button'
@@ -363,11 +363,11 @@ export default function PoImportedEditPage() {
               required={incotermsRequired}
               error={missingIncoterms ? 'Required' : undefined}
             >
-              <select
+              <Select selectSize="sm"
                 id="incotermsCode"
                 value={incotermsCode}
                 onChange={(e) => setIncotermsCode(e.target.value)}
-                className="h-9 w-full rounded border border-line-strong bg-surface px-2 text-sm"
+                className="w-full"
               >
                 <option value="">{incotermsRequired ? 'Select…' : '—'}</option>
                 {incotermOptions.map((t) => (
@@ -375,7 +375,7 @@ export default function PoImportedEditPage() {
                     {t.code}{t.label ? ` — ${t.label}` : ''}{t.active ? '' : ' (inactive)'}
                   </option>
                 ))}
-              </select>
+              </Select>
             </FormField>
             <FormField
               label="Named place"
@@ -393,9 +393,9 @@ export default function PoImportedEditPage() {
         </div>
 
         <FormField label="Delivery Address" htmlFor="deliveryAddress">
-          <textarea id="deliveryAddress" rows={2} value={deliveryAddress}
+          <Textarea id="deliveryAddress" rows={2} value={deliveryAddress}
                     onChange={(e) => { setDeliveryAddress(e.target.value); deliveryAddressTouched.current = true }}
-                    className="w-full rounded border border-line-strong bg-surface px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600" />
+                    className="w-full" />
         </FormField>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -406,7 +406,7 @@ export default function PoImportedEditPage() {
               ? 'Locked — an invoice has been raised against this PO.'
               : undefined}
           >
-            <select
+            <Select selectSize="sm"
               id="taxCode"
               value={taxCode ?? ''}
               disabled={po.currency !== 'CAD' || taxLocked}
@@ -415,7 +415,7 @@ export default function PoImportedEditPage() {
                 setTaxCode(chosen?.code ?? null)
                 setTaxRate(chosen ? Number(chosen.rate) : 0)
               }}
-              className="h-9 w-full rounded border border-line-strong bg-surface px-2 text-sm disabled:bg-surface-subtle disabled:text-fg-muted"
+              className="w-full"
             >
               <option value="">No tax</option>
               {/* keep a saved-but-now-inactive code selectable */}
@@ -425,10 +425,10 @@ export default function PoImportedEditPage() {
               {taxCodes.map((t) => (
                 <option key={t.code} value={t.code}>{t.code} — {(Number(t.rate) * 100).toFixed(2)}%</option>
               ))}
-            </select>
+            </Select>
           </FormField>
           <label className="flex items-end gap-2 pb-2 text-sm text-fg-secondary">
-            <input type="checkbox" checked={isPrepaid}
+            <Checkbox checked={isPrepaid}
                    onChange={(e) => setIsPrepaid(e.target.checked)} />
             Prepaid order
           </label>
@@ -454,10 +454,10 @@ export default function PoImportedEditPage() {
       <section className="space-y-3 rounded-lg border border-line p-4">
         <h2 className="text-base font-semibold text-fg">Buyer Notes</h2>
         <FormField label="Buyer Notes / Terms &amp; Conditions" htmlFor="buyerNotes">
-          <textarea id="buyerNotes" rows={4} value={buyerNotes}
+          <Textarea id="buyerNotes" rows={4} value={buyerNotes}
                     onChange={(e) => setBuyerNotes(e.target.value)}
                     placeholder="Printed on the PO sent to the vendor."
-                    className="w-full rounded border border-line-strong bg-surface px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600" />
+                    className="w-full" />
         </FormField>
       </section>
 

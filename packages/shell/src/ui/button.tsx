@@ -33,6 +33,14 @@ export const buttonVariants = cva(
         destructive: 'bg-danger-solid text-fg-on-accent hover:bg-danger-700',
         'danger-outline': 'border border-danger-line bg-surface text-danger-fg hover:bg-danger-soft',
         'success-outline': 'border border-success-line bg-surface text-success-fg hover:bg-success-soft',
+        // Positive final action (Approve). One per screen.
+        success: 'bg-success-solid text-fg-on-accent hover:bg-success-700',
+        // Return-for-revision style action.
+        warning: 'bg-warning-solid text-fg-on-accent hover:bg-warning-700',
+        // Accent outline: an important secondary action (Create PA).
+        outline: 'border border-accent bg-surface text-accent-fg hover:bg-accent-soft',
+        // Remove-row / delete icon: quiet until hovered.
+        'danger-ghost': 'text-fg-faint hover:bg-danger-soft hover:text-danger-fg',
       },
       size: {
         xs: 'h-7 px-2.5 text-xs',

@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { useParams, Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
-import { useReplaceTab } from '@uniops/shell'
+import { useReplaceTab, Checkbox, Select, Textarea, MenuItem } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
-import { ArrowLeft, X, Calendar, Search, Receipt } from 'lucide-react'
+import { ArrowLeft, X, Calendar, Search, Receipt, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
@@ -56,6 +57,8 @@ export default function PoEditPage() {
   const [paymentTerms, setPaymentTerms] = useState('')
   const [vendorQuery, setVendorQuery] = useState('')
   const [vendorOpen, setVendorOpen] = useState(false)
+  const vendorAnchorRef = useRef<HTMLDivElement>(null)
+  const vendorRect = useAnchorRect(vendorOpen, vendorAnchorRef)
   const [procurementType, setProcurementType] = useState<ProcurementType | null>(null)
   const [budgetCode, setBudgetCode] = useState('')
   const [currency, setCurrency] = useState<Currency>('CAD')
@@ -234,7 +237,7 @@ export default function PoEditPage() {
           <Button variant="ghost" size="icon-sm"><ArrowLeft className="h-4 w-4" /></Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-fg">Edit Purchase Order</h1>
+          <h1 className="text-2xl font-semibold text-fg">Edit Purchase Order</h1>
           <p className="text-sm text-fg-muted mt-0.5">{po.number}</p>
         </div>
       </div>
@@ -261,9 +264,9 @@ export default function PoEditPage() {
                 <label className="text-sm font-medium text-fg-secondary">
                   Vendor <span className="text-danger-fg">*</span>
                 </label>
-                <div className="relative">
+                <div className="relative" ref={vendorAnchorRef}>
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
-                  <input
+                  <Input
                     type="text"
                     placeholder="Search vendor…"
                     value={selectedVendor ? selectedVendor.name : vendorQuery}
@@ -275,29 +278,27 @@ export default function PoEditPage() {
                     )}
                   />
                   {selectedVendor && (
-                    <button type="button" onClick={() => { setSelectedVendor(null); setVendorQuery('') }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
+                    <Button variant="subtle" size="icon-xs" aria-label="Clear" type="button" onClick={() => { setSelectedVendor(null); setVendorQuery('') }}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2">
                       <X className="h-3.5 w-3.5" />
-                    </button>
+                    </Button>
                   )}
-                  {vendorOpen && !selectedVendor && (
+                  {vendorOpen && !selectedVendor && vendorRect && (
                     <>
-                      <div className="fixed inset-0 z-10" onClick={() => setVendorOpen(false)} />
-                      <div className="absolute z-20 mt-1 w-full rounded-lg border border-line bg-surface py-1 shadow-lg">
+                      <DropdownPortal anchorRect={vendorRect} onClose={() => setVendorOpen(false)}>
                         {vendors.map((v) => (
-                          <button key={v.id} type="button"
-                            className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-primary-50 text-left"
+                          <MenuItem key={v.id} type="button"
                             onClick={() => { setSelectedVendor(v); setVendorOpen(false); setVendorQuery(''); setErrors((p) => ({ ...p, vendor: '' })) }}>
                             <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
                             {v.name}
-                          </button>
+                          </MenuItem>
                         ))}
                         {vendors.length === 0 && <p className="px-3 py-2 text-sm text-fg-muted">No vendors found</p>}
-                      </div>
+                      </DropdownPortal>
                     </>
                   )}
                 </div>
-                {selectedVendor && !vendorInactive && <p className="text-xs text-success-fg">✓ {selectedVendor.name}{selectedVendor.code ? ` (${selectedVendor.code})` : ''}</p>}
+                {selectedVendor && !vendorInactive && <p className="text-xs text-success-fg"><Check aria-hidden className="mr-1 inline h-3 w-3 -mt-0.5" />{selectedVendor.name}{selectedVendor.code ? ` (${selectedVendor.code})` : ''}</p>}
                 {selectedVendor && vendorInactive && (
                   <p role="alert" className="text-xs text-danger-fg">
                     Vendor {selectedVendor.name} is inactive. Choose another vendor.
@@ -309,16 +310,15 @@ export default function PoEditPage() {
               {/* Procurement Type */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-fg-secondary">Procurement Type</label>
-                <select
+                <Select
                   value={procurementType ?? ''}
                   onChange={(e) => setProcurementType(e.target.value ? Number(e.target.value) as ProcurementType : null)}
-                  className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 >
                   <option value="">Select type…</option>
                   {[1, 2, 3, 4, 5, 6].map((t) => (
                     <option key={t} value={t}>{TYPE_LABELS[t]}</option>
                   ))}
-                </select>
+                </Select>
               </div>
             </div>
 
@@ -331,7 +331,7 @@ export default function PoEditPage() {
                 <label className="text-sm font-medium text-fg-secondary">Expected Delivery Date</label>
                 <div className="relative">
                   <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted pointer-events-none" />
-                  <input
+                  <Input
                     type="date"
                     value={expectedDelivery}
                     onChange={(e) => { setExpectedDelivery(e.target.value); setErrors((p) => ({ ...p, expectedDelivery: '' })) }}
@@ -384,25 +384,25 @@ export default function PoEditPage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-fg-secondary">Currency</label>
-                <select value={currency}
+                <Select value={currency}
                   onChange={(e) => { const c = e.target.value as Currency; setCurrency(c); if (c !== 'CAD') { setTaxRate(0); setTaxCode(null) } else setTaxRate(0.13) }}
-                  className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
+                 >
                   {enabledCurrencyOptions(config, currency).map((c) => (
                     <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
                   ))}
-                </select>
+                </Select>
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className={cn('text-sm font-medium', currency === 'CAD' ? 'text-fg-secondary' : 'text-fg-muted')}>Tax</label>
                 {currency === 'CAD' ? (
-                  <select
+                  <Select
                     value={taxCode ?? ''}
                     onChange={(e) => {
                       const c = taxCodes.find((tc) => tc.code === e.target.value)
                       setTaxCode(c?.code ?? null)
                       setTaxRate(c ? Number(c.rate) : 0)
                     }}
-                    className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
+                   >
                     {/* keep a saved-but-now-inactive code selectable */}
                     {taxCode && !taxCodes.some((c) => c.code === taxCode) && (
                       <option value={taxCode}>{+(effectiveTaxRate * 100).toFixed(3)}% — {taxCode} (inactive)</option>
@@ -413,7 +413,7 @@ export default function PoEditPage() {
                         {+(Number(c.rate) * 100).toFixed(3)}% — {c.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 ) : (
                   <div className="flex h-10 items-center rounded-md border border-line bg-surface-sunken px-3 text-sm text-fg-muted">
                     0% — Not applicable for {currency}
@@ -429,8 +429,8 @@ export default function PoEditPage() {
                 <span>Tax ({Math.round(effectiveTaxRate * 100)}%)</span><span>{formatAmount(taxAmount, currency)}</span>
               </div>
               <div className="border-t border-line mt-1 pt-2 flex justify-between">
-                <span className="text-sm font-bold text-fg">Total ({currency})</span>
-                <span className={cn('text-base font-bold', total > 0 ? 'text-fg' : 'text-fg-muted')}>
+                <span className="text-sm font-semibold text-fg">Total ({currency})</span>
+                <span className={cn('text-base font-semibold', total > 0 ? 'text-fg' : 'text-fg-muted')}>
                   {formatAmount(total, currency)}
                 </span>
               </div>
@@ -441,19 +441,17 @@ export default function PoEditPage() {
           <div className="rounded-xl bg-surface shadow-sm p-6 flex flex-col gap-4">
             <h2 className="text-base font-semibold text-fg">Notes</h2>
             <FormField label="Buyer Notes / Terms &amp; Conditions" htmlFor="notes">
-              <textarea id="notes" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)}
+              <Textarea id="notes" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)}
                 placeholder="Payment terms, delivery instructions, special conditions…"
-                className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+                className="w-full resize-none" />
             </FormField>
 
             {/* Prepayment Required */}
             <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
+              <Checkbox
                 id="prepayment-po-edit"
                 checked={isPrepaid}
                 onChange={(e) => setIsPrepaid(e.target.checked)}
-                className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-600"
               />
               <label htmlFor="prepayment-po-edit" className="text-sm text-fg-secondary cursor-pointer">
                 Prepayment Required

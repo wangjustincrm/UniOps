@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { BackLink } from '@/components/BackLink'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { usePoFeeStatus } from '@/hooks/usePoFee'
+import { TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import {
   FEE_STATUS_LABEL, FEE_TYPE_LABEL,
   type FeeStatus, type PoFeeInvoice,
@@ -97,7 +98,7 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
   return (
     <div className="flex flex-col gap-4 rounded-xl bg-surface p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-fg-muted">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-fg-muted">
           <Truck className="h-4 w-4" />
           Freight &amp; Customs
         </h2>
@@ -141,30 +142,30 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
         data.is_nc && <p className="text-sm text-fg-muted">No arrivals yet.</p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-line">
-          <table className="w-full text-sm">
-            <thead className="bg-surface-subtle text-xs uppercase tracking-wide text-fg-muted">
-              <tr>
-                <th className="px-3 py-2 text-left font-semibold">Arrival</th>
-                <th className="px-3 py-2 text-left font-semibold">Date</th>
-                <th className="px-3 py-2 text-left font-semibold">{FEE_TYPE_LABEL.freight}</th>
-                <th className="px-3 py-2 text-left font-semibold">{FEE_TYPE_LABEL.customs}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line-subtle">
+          <Table density="compact">
+            <THead>
+              <Tr>
+                <Th>Arrival</Th>
+                <Th>Date</Th>
+                <Th>{FEE_TYPE_LABEL.freight}</Th>
+                <Th>{FEE_TYPE_LABEL.customs}</Th>
+              </Tr>
+            </THead>
+            <TBody>
               {data.arrivals.map((a) => (
-                <tr key={a.gr_id}>
-                  <td className="px-3 py-2">
+                <Tr key={a.gr_id}>
+                  <Td>
                     <Link to={`/gr/${a.gr_id}`} className="font-mono text-xs font-semibold text-fg-secondary hover:text-primary-700">
                       {a.gr_number}
                     </Link>
-                  </td>
-                  <td className="px-3 py-2 text-fg-secondary">{formatDate(a.received_at)}</td>
-                  <td className="px-3 py-2"><FeeCell needed={!!term && needsFreight} invoices={a.freight} /></td>
-                  <td className="px-3 py-2"><FeeCell needed={!!term && needsCustoms} invoices={a.customs} /></td>
-                </tr>
+                  </Td>
+                  <Td className="text-fg-secondary">{formatDate(a.received_at)}</Td>
+                  <Td><FeeCell needed={!!term && needsFreight} invoices={a.freight} /></Td>
+                  <Td><FeeCell needed={!!term && needsCustoms} invoices={a.customs} /></Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
       )}
 
