@@ -247,7 +247,15 @@ function CreateDepositPaDialog({ agreement, onClose }: { agreement: ApiAgreement
         'It has been saved as a draft — use Submit to try again.',
       )
     }
-    await queryClient.invalidateQueries({ queryKey: ['pas'] })
+    // Fire-and-forget: awaiting it waits for every open ['pas'] query in every
+    // kept-alive tab (a full PA list pages through everything), which left the
+    // dialog on "Submitting…" after the PA was already created and submitted.
+    void queryClient.invalidateQueries({ queryKey: ['pas'] })
+    void queryClient.invalidateQueries({ queryKey: ['tasks'] })
+    // Tabs stay mounted: close the dialog before leaving, or this tab still
+    // shows it, busy, when the user comes back.
+    setBusy(false)
+    onClose()
     navigate(`/pa/${created.id}`)
   }
 
@@ -337,6 +345,8 @@ export function RecordRefundDialog({ deposit, onClose, onRecorded }: {
       },
       {
         onSuccess: (created) => {
+          // Close first — tabs stay mounted (see CreateDepositPaDialog).
+          onClose()
           if (onRecorded) onRecorded(created)
           else navigate(`/pa/${created.id}`)
         },
