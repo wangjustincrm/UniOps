@@ -8,11 +8,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { BudgetAccountCascade } from '@/components/budget/BudgetAccountCascade'
 import { DirectPaBudgetPanel } from '@/components/pa/DirectPaBudgetPanel'
-import { cn, formatAmount } from '@/lib/utils'
+import { formatAmount } from '@/lib/utils'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useUpdatePa } from '@/hooks/usePas'
 import { paService, type ApiPa } from '@/services/pa'
-import { SELECT_CLS } from '@/pages/freight/freightUi'
 
 /** Direct PA: amounts and invoices come from the invoices it pays (epms-api
  *  rejects them on PATCH); what it is charged to, the reason and the title are
@@ -105,7 +104,7 @@ export function DirectPaEditForm({ pa }: { pa: ApiPa }) {
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Department *</label>
-          <Select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} className={cn(SELECT_CLS, 'w-full')}>
+          <Select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} className="w-full">
             <option value="">Select department…</option>
             {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
           </Select>

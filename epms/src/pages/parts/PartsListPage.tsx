@@ -295,7 +295,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
           {/* Unit */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Unit (UOM)</label>
-            <Select className={inputCls()} value={form.unit}
+            <Select value={form.unit}
               onChange={(e) => set('unit', e.target.value)}>
               {unitOptions.map((u) => <option key={u} value={u}>{u}</option>)}
             </Select>

@@ -189,6 +189,11 @@ def convert(src):
                     new = f'<Input{body}'
                     used.add('Input')
             elif name == 'select':
+                if re.search(r'\sclassName=\{', tag):
+                    # Shell Select puts className on its wrapper: a style constant
+                    # (inputCls, SELECT_CLS…) there draws a second border. Keep only
+                    # layout classes by hand.
+                    print(f'    CHECK select className expression at line {src.count(chr(10), 0, m.start()) + 1}: keep only layout classes')
                 if 'Select' not in taken:
                     body, orig = strip_classes(tag[len(name) + 1:], CHROME_CONTROL)
                     if is_small(orig):

@@ -504,7 +504,7 @@ function SecuritySettings() {
           </div>
           <div className="flex items-center gap-3">
             <Select value={passwordExpiryDays ?? ''} onChange={(e) => { const val = e.target.value === '' ? null : Number(e.target.value); save({ password_expiry_days: val }) }}
-              className="w-auto" aria-label="Password expiry">
+              aria-label="Password expiry">
               {EXPIRY_OPTIONS.map((o) => (<option key={String(o.value)} value={o.value ?? ''}>{o.label}</option>))}
             </Select>
             {passwordExpiryDays

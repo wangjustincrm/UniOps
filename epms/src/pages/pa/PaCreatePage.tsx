@@ -1420,10 +1420,7 @@ function PoPaCreate() {
                         value={prepaymentPaId}
                         onChange={(e) => setPrepaymentPaId(e.target.value)}
                         disabled={lockedFromSettle}
-                        className={cn(
-                          'h-9 w-full rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted',
-                          submitted && !prepaymentPaId ? 'border-danger-400' : 'border-line-strong'
-                        )}
+                        className="w-full" error={submitted && !prepaymentPaId}
                       >
                         <option value="">Select a prepayment PA…</option>
                         {linkablePrepayments.map((p) => (

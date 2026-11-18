@@ -14,7 +14,7 @@ import { useDepartments } from '@/hooks/useDepartments'
 import { useCreateDirectPa, useDirectPaCandidates } from '@/hooks/usePas'
 import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 import type { LinkedPoDefaults } from '@/services/pa'
-import { SELECT_CLS, TH_CLS, cents, errorMessage, num } from '@/pages/freight/freightUi'
+import { TH_CLS, cents, errorMessage, num } from '@/pages/freight/freightUi'
 
 import { Checkbox, Select, TBody, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
 /** Payment Applications → Create Direct PA (/pa/new?source=direct[&invoice=<id>]).
@@ -244,7 +244,7 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
           <h3 className="text-xs font-semibold text-fg-muted">Charged To</h3>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Department *</label>
-            <Select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} className={cn(SELECT_CLS, 'w-full')}>
+            <Select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} className="w-full">
               <option value="">Select department…</option>
               {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </Select>

@@ -461,7 +461,7 @@ function LineRow({
             {l.charge_type === 'pickup' && followable.length > 0 && (
               <Select value={l.linked_line_id ?? ''} disabled={busy}
                 onChange={(e) => onPatch(l, e.target.value ? { linked_line_id: e.target.value } : { clear_link: true })}
-                className={cn(SELECT_SM_CLS, 'w-full')}>
+                className="w-full" selectSize="sm">
                 <option value="">Follow shipment… (none)</option>
                 {followable.map((a) => (
                   <option key={a.id} value={a.id}>
@@ -475,7 +475,7 @@ function LineRow({
                 <Link2 className="h-3 w-3 shrink-0" />
                 <Select value="" disabled={busy}
                   onChange={(e) => e.target.value && onPatch(l, { shipment_id: e.target.value })}
-                  className={cn(SELECT_SM_CLS, 'h-7 flex-1 text-2xs')}>
+                  className="flex-1" selectSize="sm">
                   <option value="">Registered under another number…</option>
                   {pending.map((s) => (
                     <option key={s.id} value={s.id}>{s.tracking_no}{s.is_project ? ' · Project' : s.cost_center_code ? ` · ${s.cost_center_code}` : ''}</option>

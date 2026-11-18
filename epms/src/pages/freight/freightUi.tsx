@@ -143,7 +143,7 @@ export function CostCenterSelect({
   const label = (c: ApiCostCenter) => `${c.code} — ${c.name}`
   if (departmentId) {
     return (
-      <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} className={className ?? SELECT_CLS}>
+      <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} className={className}>
         <option value="">{placeholder}</option>
         {active.filter((c) => c.department_id === departmentId).map((c) => (
           <option key={c.id} value={c.id}>{label(c)}</option>
@@ -159,7 +159,7 @@ export function CostCenterSelect({
   }
   const sorted = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]))
   return (
-    <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} className={className ?? SELECT_CLS}>
+    <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} className={className}>
       <option value="">{placeholder}</option>
       {sorted.map(([dept, ccs]) => (
         <optgroup key={dept} label={dept}>

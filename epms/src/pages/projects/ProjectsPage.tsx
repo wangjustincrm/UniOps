@@ -216,7 +216,6 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Status</label>
           <Select
-            className={inputCls()}
             value={form.status}
             onChange={(e) => set('status', e.target.value as ProjectStatus)}
           >

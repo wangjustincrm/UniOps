@@ -8,10 +8,7 @@ import {
   freightService, readFreightInvoice,
   type ChargeType, type FreightCarrier, type FreightOcrResult,
 } from '@/services/freight'
-import {
-  CHARGE_TYPE_LABEL, INPUT_SM_CLS, Modal, SELECT_SM_CLS, TH_CLS,
-  addDaysISO, cents, errorMessage, isDateOnly, num,
-} from '@/pages/freight/freightUi'
+import { CHARGE_TYPE_LABEL, INPUT_SM_CLS, Modal, TH_CLS, addDaysISO, cents, errorMessage, isDateOnly, num } from '@/pages/freight/freightUi'
 import { useNoticeDialog } from '@/components/ui/ConfirmDialog'
 
 import { Select, TBody, TFoot, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
@@ -351,7 +348,7 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
                 <div className="flex items-center gap-2">
                   <span className="w-5 text-xs text-fg-muted">{i + 1}</span>
                   <Select value={l.charge_type} onChange={(e) => updateLine(l.key, { charge_type: e.target.value as ChargeType })}
-                    className={cn(SELECT_SM_CLS, 'w-32')} aria-label={`Line ${i + 1} type`}>
+                    className="w-32" selectSize="sm" aria-label={`Line ${i + 1} type`}>
                     {Object.entries(CHARGE_TYPE_LABEL).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
                   </Select>
                   <Input type="date" value={l.ship_date} onChange={(e) => updateLine(l.key, { ship_date: e.target.value })}
@@ -410,7 +407,7 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
                   <Tr key={l.key} className="align-top">
                     <Td className="text-xs text-fg-muted">{i + 1}</Td>
                     <Td>
-                      <Select value={l.charge_type} onChange={(e) => updateLine(l.key, { charge_type: e.target.value as ChargeType })} className={SELECT_SM_CLS}>
+                      <Select value={l.charge_type} onChange={(e) => updateLine(l.key, { charge_type: e.target.value as ChargeType })} selectSize="sm">
                         {Object.entries(CHARGE_TYPE_LABEL).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
                       </Select>
                     </Td>

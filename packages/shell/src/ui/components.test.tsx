@@ -100,6 +100,12 @@ describe('Select', () => {
     expect(container.firstElementChild!.className).toContain('w-40')
     expect(container.querySelector('select')!.className).toContain('w-full')
   })
+  it('without a width it is content-sized like a native select, not full width', () => {
+    const { container } = render(<Select defaultValue="a"><option value="a">A</option></Select>)
+    const wrap = container.firstElementChild!.className
+    expect(wrap).toContain('inline-block')
+    expect(wrap).not.toMatch(/(^|\s)w-full(\s|$)/)
+  })
 })
 
 describe('Modal dismissible=false', () => {

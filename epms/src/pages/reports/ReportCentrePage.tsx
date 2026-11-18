@@ -74,7 +74,6 @@ const PO_TYPES = [
 
 // ─── Shared UI helpers ────────────────────────────────────────────────────────
 
-const selectCls = 'h-9 w-full rounded-lg border border-line bg-surface px-3 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-600'
 const inputCls  = 'h-9 w-full rounded-lg border border-line bg-surface px-3 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 function DateRangeRow({ value, onChange }: { value: DateRange; onChange: (v: DateRange) => void }) {
@@ -102,7 +101,7 @@ function StatusSelect({ options, value, onChange }: {
   return (
     <div className="flex flex-col gap-1">
       <label className="text-xs font-medium text-fg-muted">Status</label>
-      <Select className={selectCls} value={value} onChange={(e) => onChange(e.target.value)}>
+      <Select className="w-full" value={value} onChange={(e) => onChange(e.target.value)}>
         <option value="">All Statuses</option>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </Select>
@@ -193,7 +192,7 @@ function PrReport() {
         <StatusSelect options={PR_STATUSES} value={status} onChange={setStatus} />
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-fg-muted">Cost Center</label>
-          <Select className={selectCls} value={costCenterId} onChange={(e) => setCostCenterId(e.target.value)}>
+          <Select className="w-full" value={costCenterId} onChange={(e) => setCostCenterId(e.target.value)}>
             <option value="">All Cost Centers</option>
             {costCenters.map((cc) => <option key={cc.id} value={cc.id}>{cc.code} — {cc.name}</option>)}
           </Select>
@@ -229,7 +228,7 @@ function PoReport() {
         <StatusSelect options={PO_STATUSES} value={status} onChange={setStatus} />
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-fg-muted">PO Type</label>
-          <Select className={selectCls} value={poType} onChange={(e) => setPoType(e.target.value)}>
+          <Select className="w-full" value={poType} onChange={(e) => setPoType(e.target.value)}>
             <option value="">All Types</option>
             {PO_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </Select>
@@ -237,7 +236,7 @@ function PoReport() {
       </div>
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium text-fg-muted">Vendor</label>
-        <Select className={selectCls} value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
+        <Select className="w-full" value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
           <option value="">All Vendors</option>
           {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
         </Select>
@@ -269,7 +268,7 @@ function GrReport() {
         <StatusSelect options={GR_STATUSES} value={status} onChange={setStatus} />
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-fg-muted">GR Type</label>
-          <Select className={selectCls} value={grType} onChange={(e) => setGrType(e.target.value)}>
+          <Select className="w-full" value={grType} onChange={(e) => setGrType(e.target.value)}>
             <option value="">All Types</option>
             <option value="physical">Physical</option>
             <option value="service">Service</option>
@@ -304,7 +303,7 @@ function InvoiceReport() {
       <StatusSelect options={INVOICE_STATUSES} value={status} onChange={setStatus} />
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium text-fg-muted">Vendor</label>
-        <Select className={selectCls} value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
+        <Select className="w-full" value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
           <option value="">All Vendors</option>
           {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
         </Select>
@@ -339,7 +338,7 @@ function PaReport() {
         <StatusSelect options={PA_STATUSES} value={status} onChange={setStatus} />
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-fg-muted">PA Type</label>
-          <Select className={selectCls} value={paType} onChange={(e) => setPaType(e.target.value)}>
+          <Select className="w-full" value={paType} onChange={(e) => setPaType(e.target.value)}>
             <option value="">All Types</option>
             <option value="regular">Regular</option>
             <option value="prepayment">Prepayment</option>
@@ -348,7 +347,7 @@ function PaReport() {
       </div>
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium text-fg-muted">Vendor</label>
-        <Select className={selectCls} value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
+        <Select className="w-full" value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
           <option value="">All Vendors</option>
           {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
         </Select>
@@ -399,7 +398,7 @@ function VendorReport() {
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-fg-muted">Category</label>
-          <Select className={selectCls} value={category} onChange={(e) => setCategory(e.target.value)}>
+          <Select className="w-full" value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="">All Categories</option>
             {VENDOR_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </Select>

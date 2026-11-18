@@ -16,9 +16,7 @@ import {
   freightService, readWaybill, shipmentAttachmentService,
   type DefaultCostCenter, type Direction, type FreightShipment, type ShipmentStatus,
 } from '@/services/freight'
-import {
-  CostCenterSelect, Modal, ProjectBadge, SELECT_CLS, ShipmentStatusBadge, TH_CLS, daysSince, errorMessage,
-} from './freightUi'
+import { CostCenterSelect, Modal, ProjectBadge, ShipmentStatusBadge, TH_CLS, daysSince, errorMessage } from './freightUi'
 import { Checkbox, Chip, FileInput, Radio, Select, SortTh, TBody, THead, Table, Td, Textarea, Th, Tr, sortParams, useSort } from '@uniops/shell'
 import { ShipmentAttachmentsPanel, StagedShipmentAttachments } from './ShipmentAttachments'
 import { useConfirmDialog, useNoticeDialog } from '@/components/ui/ConfirmDialog'
@@ -81,13 +79,13 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
               className="pl-9"
             />
           </div>
-          <Select value={status} onChange={(e) => { setStatus(e.target.value as ShipmentStatus | 'all'); setPage(1) }} className={SELECT_CLS}>
+          <Select value={status} onChange={(e) => { setStatus(e.target.value as ShipmentStatus | 'all'); setPage(1) }}>
             <option value="pending">Pending</option>
             <option value="billed">Billed</option>
             <option value="void">Void</option>
             <option value="all">All Statuses</option>
           </Select>
-          <Select value={carrierId} onChange={(e) => { setCarrierId(e.target.value); setPage(1) }} className={SELECT_CLS}>
+          <Select value={carrierId} onChange={(e) => { setCarrierId(e.target.value); setPage(1) }}>
             <option value="">All Carriers</option>
             {carriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
@@ -454,7 +452,7 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
 
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Carrier *</label>
-          <Select value={carrierId} onChange={(e) => setCarrierId(e.target.value)} disabled={isEdit} className={SELECT_CLS}>
+          <Select value={carrierId} onChange={(e) => setCarrierId(e.target.value)} disabled={isEdit}>
             <option value="">Select carrier…</option>
             {activeCarriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
@@ -507,7 +505,7 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Department *</label>
-            <Select value={departmentId} onChange={(e) => changeDepartment(e.target.value)} className={SELECT_CLS}>
+            <Select value={departmentId} onChange={(e) => changeDepartment(e.target.value)}>
               <option value="">Select department…</option>
               {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </Select>

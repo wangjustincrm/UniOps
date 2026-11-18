@@ -28,8 +28,11 @@ export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectE
 /** Native select (keyboard, mobile pickers and form posts all keep working). */
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
   ({ className, error, selectSize = 'md', children, ...props }, ref) => (
-    // className sizes/positions the wrapper (e.g. "w-40"); the select fills it.
-    <div className={cn('relative w-full', className)}>
+    // className sizes/positions the wrapper (e.g. "w-40", "w-full"); the select
+    // fills it. Without a width it sizes to its options like a native <select>
+    // (and still stretches in a flex column), so a converted toolbar filter does
+    // not suddenly span the whole row.
+    <div className={cn('relative inline-block align-middle', className)}>
       <select
         ref={ref}
         aria-invalid={error || undefined}

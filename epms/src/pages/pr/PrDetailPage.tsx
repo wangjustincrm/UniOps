@@ -1,9 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
-import {
-  ArrowLeft, CheckCircle2, XCircle, RotateCcw, MessageSquare, FileText, Pencil, ChevronDown, SearchX,
-} from 'lucide-react'
+import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, MessageSquare, Pencil, ChevronDown, SearchX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'

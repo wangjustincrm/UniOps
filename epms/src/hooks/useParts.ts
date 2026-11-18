@@ -1,12 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  partService,
-  type ApiPart,
-  type PartFilters,
-  type PartListResponse,
-  type CreatePartBody,
-  type UpdatePartBody,
-} from '@/services/parts'
+import { partService, type PartFilters, type PartListResponse, type CreatePartBody, type UpdatePartBody } from '@/services/parts'
 
 // Without explicit page/page_size the caller wants the complete list, so we
 // page through the API (server defaults to 20 rows and silently truncates).

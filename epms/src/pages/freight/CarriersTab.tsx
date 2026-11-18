@@ -178,7 +178,7 @@ function CarrierDialog({ carrier, costCenters, departments, onClose }: {
             <label className="text-xs font-medium text-fg-secondary">Vendor *</label>
             <Input value={vendorSearch} placeholder="Search vendor name…"
               onChange={(e: ChangeEvent<HTMLInputElement>) => setVendorSearch(e.target.value)} />
-            <Select value={vendorId} onChange={(e) => setVendorId(e.target.value)} className={SELECT_CLS}>
+            <Select value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
               <option value="">Select vendor…</option>
               {(vendors?.items ?? []).slice(0, 200).map((v) => <option key={v.id} value={v.id}>{v.name} ({v.code})</option>)}
             </Select>

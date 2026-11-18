@@ -6,7 +6,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { formatDate } from '@/lib/utils'
 import { downloadCsv } from '@/lib/api'
 import { normalizeEmailList } from '@/lib/emailList'
 import { useVendors, useCreateVendor, useUpdateVendor, useImportVendors } from '@/hooks/useVendors'

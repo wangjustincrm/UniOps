@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
-import { formatAmount, formatDate } from '@/lib/utils'
+import { formatAmount } from '@/lib/utils'
 import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr } from '@uniops/shell'
 
 const PO_STATUS_STYLES: Record<string, string> = {

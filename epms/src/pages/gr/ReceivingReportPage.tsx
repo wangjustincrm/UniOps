@@ -186,7 +186,7 @@ export default function ReceivingReportPage() {
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-fg-muted">Department</label>
-            <Select className={inputCls} value={departmentId}
+            <Select className="w-full" value={departmentId}
               onChange={(e) => setDepartmentId(e.target.value)}>
               <option value="">All Departments</option>
               {(departments?.items ?? []).map((d) => (
@@ -196,7 +196,7 @@ export default function ReceivingReportPage() {
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-fg-muted">Vendor</label>
-            <Select className={inputCls} value={vendorId}
+            <Select className="w-full" value={vendorId}
               onChange={(e) => setVendorId(e.target.value)}>
               <option value="">All Vendors</option>
               {(vendors?.items ?? []).map((v) => (

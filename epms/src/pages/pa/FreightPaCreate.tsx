@@ -10,7 +10,7 @@ import {
   useCreateFreightPa, useFreightAccess, useFreightCarriers, useFreightInvoice, useFreightInvoiceDetails,
   useFreightInvoices,
 } from '@/hooks/useFreight'
-import { SELECT_CLS, TH_CLS, cents, errorMessage, num } from '@/pages/freight/freightUi'
+import { TH_CLS, cents, errorMessage, num } from '@/pages/freight/freightUi'
 
 import { Checkbox, Select, TBody, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
 /** New PA → Freight payment (/pa/new?source=freight[&invoice=<id>]): matched
@@ -116,7 +116,7 @@ function FreightPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nu
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
       <div className="lg:col-span-2 rounded-xl border border-line bg-surface shadow-sm overflow-hidden">
         <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
-          <Select value={carrierId} onChange={(e) => { setCarrierId(e.target.value); setSelected(new Set()) }} className={SELECT_CLS}>
+          <Select value={carrierId} onChange={(e) => { setCarrierId(e.target.value); setSelected(new Set()) }}>
             <option value="">Select carrier…</option>
             {carriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>

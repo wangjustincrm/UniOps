@@ -35,7 +35,7 @@ export function PaymentTermsField({ value, onChange, hint, invalid }: {
       <div className="flex gap-2">
         <Select
           aria-label="Payment terms"
-          className={cn(inputCls, invalid || error ? 'border-danger-400' : 'border-line-strong')}
+          className="w-full" error={!!(invalid || error)}
           value={mode}
           onChange={(e) => {
             const v = e.target.value

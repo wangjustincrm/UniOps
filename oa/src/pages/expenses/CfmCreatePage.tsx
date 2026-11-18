@@ -43,7 +43,7 @@ function DynamicField({
     return (
       <Select value={value} onChange={e => onChange(e.target.value)}
         required={field.required}
-        className={`${base} bg-surface`}>
+        className="w-full">
         <option value="">— Select —</option>
         {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
       </Select>
