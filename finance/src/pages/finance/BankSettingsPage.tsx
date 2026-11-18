@@ -24,7 +24,6 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 // refuses to shrink below its content's min-content width — so that one select
 // widened the whole column and every field in the dialog overflowed the
 // max-w-md panel. Invisible until a full NC sync put real rows in the picker.
-const inputCls = 'h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 interface Account {
   id: string; name: string; bank_name: string; kind: string
@@ -229,17 +228,17 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
         <label className="flex min-w-0 flex-col gap-1 text-sm">
           <span className="text-fg-secondary">{isCard ? 'Card name' : 'Account name'}</span>
           <Input value={f.name ?? ''} onChange={(e) => set({ name: e.target.value })}
-                 placeholder={isCard ? 'e.g. Amex Corporate' : 'e.g. RBC Operating'} className={inputCls} />
+                 placeholder={isCard ? 'e.g. Amex Corporate' : 'e.g. RBC Operating'} />
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="flex min-w-0 flex-col gap-1 text-sm">
             <span className="text-fg-secondary">{isCard ? 'Card issuer' : 'Bank'}</span>
             <Input value={f.bank_name ?? ''} onChange={(e) => set({ bank_name: e.target.value })}
-                   placeholder={isCard ? 'Visa / MC / Amex' : 'Royal Bank of Canada'} className={inputCls} />
+                   placeholder={isCard ? 'Visa / MC / Amex' : 'Royal Bank of Canada'} />
           </label>
           <label className="flex min-w-0 flex-col gap-1 text-sm">
             <span className="text-fg-secondary">{isCard ? 'Card last 4' : 'Account last 4'}</span>
-            <Input value={f.account_masked ?? ''} onChange={(e) => set({ account_masked: e.target.value })} className={inputCls} />
+            <Input value={f.account_masked ?? ''} onChange={(e) => set({ account_masked: e.target.value })} />
           </label>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -252,7 +251,7 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
           <label className="flex min-w-0 flex-col gap-1 text-sm">
             <span className="text-fg-secondary">GL account code</span>
             <Input value={f.ledger_account_code ?? ''} onChange={(e) => set({ ledger_account_code: e.target.value })}
-                   placeholder={isCard ? '2050 (liability)' : '1010 (cash)'} className={cn(inputCls, 'font-mono')} />
+                   placeholder={isCard ? '2050 (liability)' : '1010 (cash)'} className="font-mono" />
           </label>
         </div>
         {!isCard && (

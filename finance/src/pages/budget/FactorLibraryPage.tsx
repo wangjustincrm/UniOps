@@ -326,11 +326,6 @@ function TemplateForm({
     setErrors(e)
     return Object.keys(e).length === 0
   }
-  const fldCls = (err?: string) =>
-    cn(
-      'h-10 w-full rounded-md border bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700',
-      err ? 'border-danger-solid' : 'border-line-strong',
-    )
 
   return (
     <div className="mb-4 rounded-lg border border-primary-200 bg-primary-50 p-4">
@@ -348,7 +343,7 @@ function TemplateForm({
             value={form.factor_code}
             onChange={(e) => set('factor_code', e.target.value)}
             placeholder="e.g. brand, channel"
-            className={fldCls(errors.factor_code)}
+            error={!!errors.factor_code}
             disabled={!codeEditable}
           />
           {errors.factor_code && <p className="text-xs text-danger-fg">{errors.factor_code}</p>}
@@ -359,7 +354,7 @@ function TemplateForm({
             value={form.factor_name}
             onChange={(e) => set('factor_name', e.target.value)}
             placeholder="e.g. Brand"
-            className={fldCls(errors.factor_name)}
+            error={!!errors.factor_name}
           />
           {errors.factor_name && <p className="text-xs text-danger-fg">{errors.factor_name}</p>}
         </div>
@@ -369,7 +364,6 @@ function TemplateForm({
             value={form.description}
             onChange={(e) => set('description', e.target.value)}
             placeholder="What does this factor break a budget down by?"
-            className={fldCls()}
           />
         </div>
         {!codeEditable && onToggleActive && (

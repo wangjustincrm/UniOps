@@ -15,7 +15,6 @@ import { financeDownload } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const PAGE_SIZE = 50
 // After a sync trigger, keep polling for this long even if `current_run` is
 // still null in the response we already have in cache — the QboSyncRun row is
@@ -194,7 +193,7 @@ function QboTabs() {
             value={qInput}
             onChange={(e) => setQInput(e.target.value)}
             placeholder="Search name / doc #"
-            className={cn(inputCls, 'w-56')}
+            className="w-56"
           />
           <Button variant="secondary" size="md" type="submit">
             Search

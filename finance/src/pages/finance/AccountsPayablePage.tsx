@@ -25,7 +25,6 @@ import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const PAGE_SIZE = 50
 
 interface ApInvoice {
@@ -301,7 +300,7 @@ export default function AccountsPayablePage() {
               <form className="flex items-center gap-1"
                     onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); resetPage() }}>
                 <Input value={qInput} onChange={(e) => setQInput(e.target.value)}
-                       placeholder="Vendor / vendor inv #…" className={cn(inputCls, 'w-52')} />
+                       placeholder="Vendor / vendor inv #…" className="w-52" />
                 <Button variant="secondary" size="md" type="submit">Search</Button>
               </form>
               <label className="flex items-center gap-1.5 text-sm text-fg-secondary">

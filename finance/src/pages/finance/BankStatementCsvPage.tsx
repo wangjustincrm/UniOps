@@ -29,8 +29,6 @@ import { financeApi, financeUploadFields } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-
 interface Account {
   id: string; name: string; bank_name: string; account_masked: string | null
   currency: string; ledger_account_code: string | null; is_active: boolean
@@ -488,8 +486,7 @@ function ImportMappingModal({ account, file, onClose, onDone, onError }: {
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-fg-secondary">Statement year (date has no year)</span>
             <Input type="number" value={m.default_year ?? ''} placeholder="2026"
-                   onChange={(e) => set({ default_year: e.target.value ? Number(e.target.value) : undefined })}
-                   className={inputCls} />
+                   onChange={(e) => set({ default_year: e.target.value ? Number(e.target.value) : undefined })} />
           </label>
         )}
       </div>
@@ -554,16 +551,16 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
       <div className="grid gap-3">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Name</span>
-          <Input value={f.name ?? ''} onChange={(e) => set({ name: e.target.value })} className={inputCls} />
+          <Input value={f.name ?? ''} onChange={(e) => set({ name: e.target.value })} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Bank</span>
-          <Input value={f.bank_name ?? ''} onChange={(e) => set({ bank_name: e.target.value })} className={inputCls} />
+          <Input value={f.bank_name ?? ''} onChange={(e) => set({ bank_name: e.target.value })} />
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-fg-secondary">Account (last 4)</span>
-            <Input value={f.account_masked ?? ''} onChange={(e) => set({ account_masked: e.target.value })} className={inputCls} />
+            <Input value={f.account_masked ?? ''} onChange={(e) => set({ account_masked: e.target.value })} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-fg-secondary">Currency</span>
@@ -575,7 +572,7 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">GL account code (COA bank account)</span>
           <Input value={f.ledger_account_code ?? ''} onChange={(e) => set({ ledger_account_code: e.target.value })}
-                 placeholder="e.g. 1010" className={inputCls} />
+                 placeholder="e.g. 1010" />
         </label>
         <label className="flex items-center gap-1.5 text-sm text-fg-secondary">
           <Checkbox checked={f.is_active ?? true} onChange={(e) => set({ is_active: e.target.checked })} />

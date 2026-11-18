@@ -20,8 +20,6 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { ListPager } from '@/components/ListPager'
 import { JvDetailModal } from './JvDetailModal'
 
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-
 const PAGE_SIZE = 50
 const SUBSYSTEMS = [
   ['GL', 'General Ledger'], ['AP', 'Accounts Payable'], ['AR', 'Accounts Receivable'],
@@ -145,11 +143,11 @@ export default function JvLinesPage() {
           <div className="flex items-center gap-1">
             <Input type="month" value={periodFrom} aria-label="Period from"
                    onChange={(e) => { setPeriodFrom(e.target.value); reset() }}
-                   className={cn(inputCls, 'w-36')} />
+                   className="w-36" />
             <span className="text-sm text-fg-muted">–</span>
             <Input type="month" value={periodTo} aria-label="Period to"
                    onChange={(e) => { setPeriodTo(e.target.value); reset() }}
-                   className={cn(inputCls, 'w-36')} />
+                   className="w-36" />
           </div>
           <Select value={subsystem} onChange={(e) => { setSubsystem(e.target.value); reset() }}>
             <option value="">All systems</option>
@@ -157,10 +155,10 @@ export default function JvLinesPage() {
           </Select>
           <Input value={account} placeholder="Account code" aria-label="Account code"
                  onChange={(e) => { setAccount(e.target.value.trim()); reset() }}
-                 className={cn(inputCls, 'w-36')} />
+                 className="w-36" />
           <Input value={currency} placeholder="Currency" aria-label="Currency"
                  onChange={(e) => { setCurrency(e.target.value.trim().toUpperCase()); reset() }}
-                 className={cn(inputCls, 'w-24')} />
+                 className="w-24" />
           <Select value={auxCode} aria-label="Auxiliary"
                   onChange={(e) => { setAuxCode(e.target.value); setAuxValue(''); reset() }}
                  >
@@ -170,13 +168,13 @@ export default function JvLinesPage() {
           <Input list="jv-lines-aux-values" value={auxValue} disabled={!auxCode}
                  placeholder="Auxiliary code" aria-label="Auxiliary code"
                  onChange={(e) => { setAuxValue(e.target.value); reset() }}
-                 className={cn(inputCls, 'w-40 disabled:bg-surface-sunken')} />
+                 className="w-40" />
           <datalist id="jv-lines-aux-values">
             {(auxValues?.items ?? []).map((v) => <option key={v} value={v} />)}
           </datalist>
           <form className="flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); reset() }}>
             <Input value={qInput} onChange={(e) => setQInput(e.target.value)}
-                   placeholder="Voucher no. / line summary…" className={cn(inputCls, 'w-60')} />
+                   placeholder="Voucher no. / line summary…" className="w-60" />
             <Button variant="secondary" size="md" type="submit"><Search className="h-4 w-4" /></Button>
           </form>
           {(subsystem || account || currency || auxCode || q) && (

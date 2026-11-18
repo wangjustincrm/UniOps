@@ -19,7 +19,6 @@ import { cn, currentMonthISO, formatDate, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 import { Checkbox, Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Button , Modal as ShellModal } from '@uniops/shell'
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 interface TBRow {
   account_code: string; account_name: string; account_type: string | null
@@ -117,7 +116,7 @@ export default function GeneralLedgerPage() {
           ))}
           <div className="ml-auto flex items-center gap-2">
             <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)}
-                   className={cn(inputCls, 'w-40')} />
+                   className="w-40" />
             {canManage && (
               <>
                 <Button variant="secondary" size="md" onClick={() => setShowOpening(true)}>
@@ -427,7 +426,7 @@ function OpeningModal({ onClose, onSaved, onError }: {
       </p>
       <label className="mb-3 flex w-48 flex-col gap-1 text-sm">
         <span className="text-fg-secondary">As-of date</span>
-        <Input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} className={inputCls} />
+        <Input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} />
       </label>
       <div className="space-y-2">
         {lines.map((l, i) => (
@@ -442,7 +441,7 @@ function OpeningModal({ onClose, onSaved, onError }: {
             </Select>
             <Input type="number" step="0.01" value={l.amount} placeholder="0.00"
                    onChange={(e) => setLine(i, { amount: e.target.value })}
-                   className={cn(inputCls, 'text-right font-mono')} />
+                   className="text-right font-mono" />
             <Button variant="danger-ghost" size="icon-sm" aria-label="Remove" onClick={() => setLines((p) => p.filter((_, idx) => idx !== i))}
                    ><Trash2 className="h-4 w-4" /></Button>
           </div>
@@ -494,7 +493,7 @@ function CloseYearModal({ onClose, onDone, onError }: {
       <label className="flex w-40 flex-col gap-1 text-sm">
         <span className="text-fg-secondary">Fiscal year</span>
         <Input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))}
-               className={cn(inputCls, 'font-mono')} />
+               className="font-mono" />
       </label>
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="secondary" size="md" onClick={onClose}>Cancel</Button>

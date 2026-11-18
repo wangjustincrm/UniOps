@@ -24,7 +24,6 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { cn, formatDateTime } from '@/lib/utils'
 
 const STORAGE_KEY = 'qbo-credit-import-decisions'
-const inputCls = 'h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 /** chosen vendor id per QBO vendor, plus rows the operator marked skip. */
 interface Decisions {
@@ -453,7 +452,7 @@ function VendorPicker({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search EPMS vendors"
-              className={cn(inputCls, 'pl-8')}
+              className="pl-8"
             />
           </div>
           <div className="max-h-40 overflow-auto rounded-lg border border-line">

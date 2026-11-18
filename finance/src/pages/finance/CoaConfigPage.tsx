@@ -71,8 +71,6 @@ const EMPTY_FORM: AccountForm = {
   mnemonic: null, is_off_balance: false,
 }
 
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-
 // ── Account edit/create modal ──────────────────────────────────────────────────
 
 function AccountModal({ initial, isNew, auxTypes, onClose }: {
@@ -105,19 +103,16 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
         <label className="text-sm">
           <span className="mb-1 block text-fg-secondary">Code</span>
           <Input value={form.code} disabled={!isNew}
-                 onChange={(e) => set({ code: e.target.value.trim() })}
-                 className={cn(inputCls, 'w-full disabled:bg-surface-sunken')} />
+                 onChange={(e) => set({ code: e.target.value.trim() })} />
         </label>
         <label className="text-sm">
           <span className="mb-1 block text-fg-secondary">Parent</span>
           <Input value={form.parent_code ?? ''} placeholder="(top level)"
-                 onChange={(e) => set({ parent_code: e.target.value.trim() || null })}
-                 className={cn(inputCls, 'w-full')} />
+                 onChange={(e) => set({ parent_code: e.target.value.trim() || null })} />
         </label>
         <label className="col-span-2 text-sm">
           <span className="mb-1 block text-fg-secondary">Name</span>
-          <Input value={form.name} onChange={(e) => set({ name: e.target.value })}
-                 className={cn(inputCls, 'w-full')} />
+          <Input value={form.name} onChange={(e) => set({ name: e.target.value })} />
         </label>
         <label className="text-sm">
           <span className="mb-1 block text-fg-secondary">Type</span>
@@ -156,32 +151,27 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
         <label className="text-sm">
           <span className="mb-1 block text-fg-secondary">Default UoM</span>
           <Input value={form.default_uom ?? ''} placeholder="e.g. kg"
-                 onChange={(e) => set({ default_uom: e.target.value.trim() || null })}
-                 className={cn(inputCls, 'w-full')} />
+                 onChange={(e) => set({ default_uom: e.target.value.trim() || null })} />
         </label>
         <label className="text-sm">
           <span className="mb-1 block text-fg-secondary">Default Currency</span>
           <Input value={form.default_currency ?? ''} placeholder="(entity default)"
-                 onChange={(e) => set({ default_currency: e.target.value.trim().toUpperCase() || null })}
-                 className={cn(inputCls, 'w-full')} />
+                 onChange={(e) => set({ default_currency: e.target.value.trim().toUpperCase() || null })} />
         </label>
         <label className="text-sm">
           <span className="mb-1 block text-fg-secondary">Mnemonic</span>
           <Input value={form.mnemonic ?? ''}
-                 onChange={(e) => set({ mnemonic: e.target.value.trim() || null })}
-                 className={cn(inputCls, 'w-full')} />
+                 onChange={(e) => set({ mnemonic: e.target.value.trim() || null })} />
         </label>
         <label className="text-sm">
           <span className="mb-1 block text-fg-secondary">Effective From</span>
           <Input type="date" value={form.effective_from ?? ''}
-                 onChange={(e) => set({ effective_from: e.target.value || null })}
-                 className={cn(inputCls, 'w-full')} />
+                 onChange={(e) => set({ effective_from: e.target.value || null })} />
         </label>
         <label className="text-sm">
           <span className="mb-1 block text-fg-secondary">Cash Flow Category</span>
           <Input value={form.cash_flow_category ?? ''} placeholder="operating / investing / financing"
-                 onChange={(e) => set({ cash_flow_category: e.target.value.trim() || null })}
-                 className={cn(inputCls, 'w-full')} />
+                 onChange={(e) => set({ cash_flow_category: e.target.value.trim() || null })} />
         </label>
         <label className="flex items-center gap-2 text-sm text-fg-secondary">
           <Checkbox checked={form.is_off_balance}
@@ -303,7 +293,7 @@ function MappingsTab({ accounts, canManage }: { accounts: Account[]; canManage: 
               <div className="mt-2 flex items-center gap-3 border-t border-line-subtle pt-3 text-sm">
                 <Input value={newSrc} onChange={(e) => setNewSrc(e.target.value)}
                        placeholder="Budget account code"
-                       className={cn(inputCls, 'h-8 w-48 py-0')} />
+                       inputSize="sm" className="w-48" />
                 <span className="text-fg-muted">→</span>
                 {acctSelect(newAcct, setNewAcct)}
                 <Button size="md" disabled={!newSrc || !newAcct || upsert.isPending}
@@ -448,7 +438,7 @@ export default function CoaConfigPage() {
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-fg-muted" />
                 <Input value={search} onChange={(e) => setSearch(e.target.value)}
                        placeholder="Search code or name"
-                       className={cn(inputCls, 'w-56 pl-8')} />
+                       className="w-56 pl-8" />
               </div>
               <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
                       className="w-36">
@@ -626,9 +616,9 @@ function AuxTypesTab({ auxTypes, canManage }: { auxTypes: AuxType[]; canManage: 
       {canManage && (
         <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-subtle p-3">
           <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="code (e.g. grant_program)"
-                 className={cn(inputCls, 'w-56')} />
+                 className="w-56" />
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Display name"
-                 className={cn(inputCls, 'w-64')} />
+                 className="w-64" />
           <Button size="md" disabled={!code.trim() || !name.trim() || create.isPending}
                   onClick={() => create.mutate()} >
             <Plus className="h-4 w-4" /> Add Dimension

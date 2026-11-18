@@ -27,8 +27,6 @@ const PAGE_SIZE = 50
 type ArSortKey = 'invoice_number' | 'customer_name' | 'invoice_date' | 'due_date'
   | 'total_amount' | 'outstanding' | 'status'
 
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-
 interface Invoice {
   id: string; invoice_number: string; customer_id: string; customer_name: string
   amount: string; tax_amount: string; total_amount: string; paid_amount: string
@@ -349,11 +347,11 @@ function InvoiceModal({ onClose, onSaved, onError }: {
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Invoice date</span>
-          <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className={inputCls} />
+          <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Due date</span>
-          <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputCls} />
+          <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Currency</span>
@@ -364,11 +362,11 @@ function InvoiceModal({ onClose, onSaved, onError }: {
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Pre-tax amount</span>
           <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
-                 placeholder="0.00" className={cn(inputCls, 'text-right font-mono')} />
+                 placeholder="0.00" className="text-right font-mono" />
         </label>
         <label className="col-span-2 flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Description</span>
-          <Input value={description} onChange={(e) => setDescription(e.target.value)} className={inputCls} />
+          <Input value={description} onChange={(e) => setDescription(e.target.value)} />
         </label>
       </div>
 
@@ -393,12 +391,12 @@ function InvoiceModal({ onClose, onSaved, onError }: {
                 <label className="flex flex-col gap-1 text-xs">
                   <span className="text-fg-muted">Taxable base</span>
                   <Input type="number" step="0.01" value={t.taxable_base}
-                         onChange={(e) => onBaseChange(i, e.target.value)} className={cn(inputCls, 'text-right font-mono')} />
+                         onChange={(e) => onBaseChange(i, e.target.value)} className="text-right font-mono" />
                 </label>
                 <label className="flex flex-col gap-1 text-xs">
                   <span className="text-fg-muted">Tax amount</span>
                   <Input type="number" step="0.01" value={t.tax_amount}
-                         onChange={(e) => setLine(i, { tax_amount: e.target.value })} className={cn(inputCls, 'text-right font-mono')} />
+                         onChange={(e) => setLine(i, { tax_amount: e.target.value })} className="text-right font-mono" />
                 </label>
                 <Button variant="danger-ghost" size="icon-sm" aria-label="Remove" onClick={() => setTaxLines((p) => p.filter((_, idx) => idx !== i))}
                         className="mb-1"><X className="h-4 w-4" /></Button>
@@ -463,12 +461,12 @@ function ReceiptModal({ invoice, onClose, onSaved, onError }: {
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Amount received</span>
           <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
-                 className={cn(inputCls, 'text-right font-mono')} />
+                 className="text-right font-mono" />
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-fg-secondary">Receipt date</span>
-            <Input type="date" value={receiptDate} onChange={(e) => setReceiptDate(e.target.value)} className={inputCls} />
+            <Input type="date" value={receiptDate} onChange={(e) => setReceiptDate(e.target.value)} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-fg-secondary">Method</span>
@@ -486,7 +484,7 @@ function ReceiptModal({ invoice, onClose, onSaved, onError }: {
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Reference (optional)</span>
-          <Input value={reference} onChange={(e) => setReference(e.target.value)} className={inputCls} />
+          <Input value={reference} onChange={(e) => setReference(e.target.value)} />
         </label>
       </div>
       <div className="mt-5 flex justify-end gap-2">

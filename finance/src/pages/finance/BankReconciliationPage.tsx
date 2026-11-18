@@ -38,7 +38,6 @@ import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 import { Button, Checkbox, ChoiceCard, FileInput, Input, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 interface Account {
   id: string; name: string; bank_name: string; account_masked: string | null
@@ -517,10 +516,10 @@ export default function BankReconciliationPage() {
             <label className="mb-1 block text-2xs text-fg-muted">Period</label>
             <div className="flex items-center gap-2">
               <Input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)}
-                     className={cn(inputCls, 'w-40')} />
+                     className="w-40" />
               <span className="text-fg-muted">to</span>
               <Input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)}
-                     className={cn(inputCls, 'w-40')} />
+                     className="w-40" />
             </div>
           </div>
           <Button size="md" onClick={() => openPeriod.mutate()}

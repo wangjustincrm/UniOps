@@ -33,8 +33,6 @@ import { fetchPreview, scopeKey } from '@/services/remittance'
 import { planApplications, plannedTotal, suggestCredits,
          type CreditSuggestResponse } from '@/services/vendorCredits'
 
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-
 interface Due {
   doc_kind: string; doc_id: string; doc_number: string | null
   payee: string; vendor_inv_no?: string; currency: string
@@ -362,7 +360,7 @@ export default function PaymentBatchPage() {
             )}
             <Input type="search" value={search} onChange={(e) => setSearch(e.target.value)}
                    placeholder="Search PA or invoice no" aria-label="Search PA or invoice number"
-                   className={cn(inputCls, 'w-56')} />
+                   className="w-56" />
             {canPay && (
               <Button size="md" onClick={() => {
                 const held = heldInDrafts()

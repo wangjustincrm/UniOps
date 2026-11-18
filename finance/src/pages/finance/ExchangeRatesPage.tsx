@@ -33,7 +33,6 @@ interface Status {
   fetch_currencies: string[]
 }
 
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const PAGE_SIZE = 100
 
 /** Today at the plant (company time zone), YYYY-MM-DD. */
@@ -163,7 +162,7 @@ export default function ExchangeRatesPage() {
                 {currencies.map((c) => <option key={c}>{c}</option>)}
               </Select>
               <Input type="date" value={probe.on} onChange={(e) => setProbe({ ...probe, on: e.target.value })}
-                     className={cn(inputCls, 'h-8 w-40')} />
+                     inputSize="sm" className="w-40" />
             </div>
             <div className="mt-1 font-mono text-fg">
               {probing ? '…' : probeHit?.rate
@@ -178,12 +177,12 @@ export default function ExchangeRatesPage() {
             <option value="">All currencies</option>
             {currencies.map((c) => <option key={c}>{c}</option>)}
           </Select>
-          <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0) }} className={cn(inputCls, 'w-40')} />
+          <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0) }} className="w-40" />
           <span className="text-fg-muted">→</span>
-          <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0) }} className={cn(inputCls, 'w-40')} />
+          <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0) }} className="w-40" />
           <div className="ml-auto flex items-center gap-2">
             <span className="text-sm text-fg-secondary">Fetch from</span>
-            <Input type="date" value={fetchFrom} onChange={(e) => setFetchFrom(e.target.value)} className={cn(inputCls, 'w-40')} />
+            <Input type="date" value={fetchFrom} onChange={(e) => setFetchFrom(e.target.value)} className="w-40" />
             <Button variant="secondary" size="md" onClick={runFetch} disabled={fetching || !fetchFrom}
                     title="Bring in Bank of Canada rates from this date to today"
                    >
@@ -213,16 +212,16 @@ export default function ExchangeRatesPage() {
             <div className="flex flex-wrap items-end gap-3">
               <label className="text-xs text-fg-muted">Currency
                 <Input value={edit.from_currency} onChange={(e) => setEdit({ ...edit, from_currency: e.target.value.toUpperCase() })}
-                       className={cn(inputCls, 'mt-1 block w-24')} /></label>
+                       className="mt-1 block w-24" /></label>
               <label className="text-xs text-fg-muted">Date
                 <Input type="date" value={edit.effective_date} onChange={(e) => setEdit({ ...edit, effective_date: e.target.value })}
-                       className={cn(inputCls, 'mt-1 block w-40')} /></label>
+                       className="mt-1 block w-40" /></label>
               <label className="text-xs text-fg-muted">CAD per 1 unit
                 <Input value={edit.rate} onChange={(e) => setEdit({ ...edit, rate: e.target.value })} inputMode="decimal"
-                       className={cn(inputCls, 'mt-1 block w-32 font-mono')} /></label>
+                       className="mt-1 block w-32 font-mono" /></label>
               <label className="flex-1 text-xs text-fg-muted">Note (required)
                 <Input value={edit.note} onChange={(e) => setEdit({ ...edit, note: e.target.value })}
-                       placeholder="Why this rate" className={cn(inputCls, 'mt-1 block w-full')} /></label>
+                       placeholder="Why this rate" className="mt-1 block" /></label>
               <Button size="md" onClick={saveOverride}
                       disabled={saving || !edit.rate || !(Number(edit.rate) > 0) || !edit.note.trim() || !edit.effective_date}
                      >

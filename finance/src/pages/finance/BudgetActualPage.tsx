@@ -20,8 +20,6 @@ import { BudgetActualRollup, type Scope } from './BudgetActualRollup'
 import { BudgetActualBreakdown } from './BudgetActualBreakdown'
 import { JvDetailModal } from './JvDetailModal'
 
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-
 const CATEGORY_LABEL: Record<string, string> = {
   MOH: 'Manufacturing Overhead', RD: 'R&D', SELL: 'Selling', GA: 'G&A', FN: 'Financial',
 }
@@ -158,7 +156,7 @@ export default function BudgetActualPage() {
           <div className="px-3 py-3">
         <div className="mb-3 flex items-center gap-2">
           <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)}
-                 className={cn(inputCls, 'w-40')} />
+                 className="w-40" />
           <span className="text-xs text-fg-muted">
             Per cost centre × budget account, with a Vouchers drill on every row
           </span>

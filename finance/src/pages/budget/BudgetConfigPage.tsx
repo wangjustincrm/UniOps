@@ -956,11 +956,6 @@ function CcForm({
     setErrors(e)
     return Object.keys(e).length === 0
   }
-  const fldCls = (err?: string) =>
-    cn(
-      'h-10 w-full rounded-md border bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700',
-      err ? 'border-danger-solid' : 'border-line-strong',
-    )
 
   return (
     <div className="mb-4 rounded-lg border border-primary-200 bg-primary-50 p-4">
@@ -971,12 +966,12 @@ function CcForm({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Code <span className="text-danger-fg">*</span></label>
-          <Input value={form.code} onChange={(e) => set('code', e.target.value)} placeholder="e.g. CC-MKT-03" className={fldCls(errors.code)} />
+          <Input value={form.code} onChange={(e) => set('code', e.target.value)} placeholder="e.g. CC-MKT-03" error={!!errors.code} />
           {errors.code && <p className="text-xs text-danger-fg">{errors.code}</p>}
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Name <span className="text-danger-fg">*</span></label>
-          <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Brand & Campaigns" className={fldCls(errors.name)} />
+          <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Brand & Campaigns" error={!!errors.name} />
           {errors.name && <p className="text-xs text-danger-fg">{errors.name}</p>}
         </div>
         <div className="flex flex-col gap-1.5">

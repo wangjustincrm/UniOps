@@ -16,8 +16,6 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { JvDetailModal, JvStatusBadge, type JvHeader } from './JvDetailModal'
 import { NcSyncModal, type NcSyncStatus } from './NcSyncModal'
 
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-
 const PAGE_SIZE = 50
 const STATUSES = ['', 'draft', 'reviewed', 'posted', 'reversed'] as const
 // NC's 凭证状态: 正常 / 错误 / 作废 / 暂存. Only `normal` ever reaches posted —
@@ -215,11 +213,11 @@ export default function JournalVouchersPage() {
           <div className="flex items-center gap-1">
             <Input type="month" value={periodFrom} aria-label="Period from"
                    onChange={(e) => { setPeriodFrom(e.target.value); resetPage() }}
-                   className={cn(inputCls, 'w-36')} />
+                   className="w-36" />
             <span className="text-sm text-fg-muted">–</span>
             <Input type="month" value={periodTo} aria-label="Period to"
                    onChange={(e) => { setPeriodTo(e.target.value); resetPage() }}
-                   className={cn(inputCls, 'w-36')} />
+                   className="w-36" />
           </div>
           <Select value={status} onChange={(e) => { setStatus(e.target.value); resetPage() }}>
             {STATUSES.map((s) => <option key={s} value={s}>{s ? s[0].toUpperCase() + s.slice(1) : 'All statuses'}</option>)}
@@ -231,7 +229,7 @@ export default function JournalVouchersPage() {
           </Select>
           <form className="flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); resetPage() }}>
             <Input value={qInput} onChange={(e) => setQInput(e.target.value)}
-                   placeholder="Voucher no. / summary…" className={cn(inputCls, 'w-56')} />
+                   placeholder="Voucher no. / summary…" className="w-56" />
             <Button variant="secondary" size="md" type="submit"><Search className="h-4 w-4" /></Button>
           </form>
           <Button variant="secondary" size="md" type="button" onClick={() => setShowAdvanced((v) => !v)}
@@ -265,19 +263,19 @@ export default function JournalVouchersPage() {
         {showAdvanced && (
           <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-line bg-surface-subtle/60 p-3 sm:grid-cols-2 lg:grid-cols-4">
             <AdvField label="Date from">
-              <Input type="date" value={adv.date_from ?? ''} className={cn(inputCls, 'w-full')}
+              <Input type="date" value={adv.date_from ?? ''}
                      onChange={(e) => { setAdvField('date_from', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Date to">
-              <Input type="date" value={adv.date_to ?? ''} className={cn(inputCls, 'w-full')}
+              <Input type="date" value={adv.date_to ?? ''}
                      onChange={(e) => { setAdvField('date_to', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Voucher no. from">
-              <Input type="number" value={adv.num_from ?? ''} className={cn(inputCls, 'w-full')}
+              <Input type="number" value={adv.num_from ?? ''}
                      onChange={(e) => { setAdvField('num_from', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Voucher no. to">
-              <Input type="number" value={adv.num_to ?? ''} className={cn(inputCls, 'w-full')}
+              <Input type="number" value={adv.num_to ?? ''}
                      onChange={(e) => { setAdvField('num_to', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Voucher state">
@@ -308,23 +306,23 @@ export default function JournalVouchersPage() {
                           onChange={(v) => { setAdvField('manager', v); resetPage() }} />
             </AdvField>
             <AdvField label="Account code">
-              <Input value={adv.account_code ?? ''} placeholder="e.g. 5101" className={cn(inputCls, 'w-full')}
+              <Input value={adv.account_code ?? ''} placeholder="e.g. 5101"
                      onChange={(e) => { setAdvField('account_code', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Contra account">
-              <Input value={adv.opposite_subject ?? ''} className={cn(inputCls, 'w-full')}
+              <Input value={adv.opposite_subject ?? ''}
                      onChange={(e) => { setAdvField('opposite_subject', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Currency">
-              <Input value={adv.currency ?? ''} placeholder="CAD / USD" className={cn(inputCls, 'w-full')}
+              <Input value={adv.currency ?? ''} placeholder="CAD / USD"
                      onChange={(e) => { setAdvField('currency', e.target.value.toUpperCase()); resetPage() }} />
             </AdvField>
             <AdvField label="Amount min (CAD)">
-              <Input type="number" value={adv.amount_min ?? ''} className={cn(inputCls, 'w-full')}
+              <Input type="number" value={adv.amount_min ?? ''}
                      onChange={(e) => { setAdvField('amount_min', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Amount max (CAD)">
-              <Input type="number" value={adv.amount_max ?? ''} className={cn(inputCls, 'w-full')}
+              <Input type="number" value={adv.amount_max ?? ''}
                      onChange={(e) => { setAdvField('amount_max', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Auxiliary">
@@ -340,7 +338,6 @@ export default function JournalVouchersPage() {
             </AdvField>
             <AdvField label="Auxiliary value">
               <Input list="jv-aux-values" value={adv.aux_value ?? ''} disabled={!adv.aux_code}
-                     className={cn(inputCls, 'w-full disabled:bg-surface-sunken')}
                      onChange={(e) => { setAdvField('aux_value', e.target.value); resetPage() }} />
               <datalist id="jv-aux-values">
                 {(auxValues?.items ?? []).map((v) => <option key={v} value={v} />)}

@@ -16,7 +16,6 @@ import { AccountVouchersModal } from './AccountVouchersModal'
 import { JvDetailModal } from './JvDetailModal'
 
 import { Checkbox, Input, TBody, TFoot, THead, Table, Td, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 interface AbRow {
   account_code: string; account_name: string; account_type: string | null
@@ -96,7 +95,7 @@ export default function AccountBalancePage() {
         <div className="mb-4 flex items-center gap-2">
           <Input type="month" value={period}
                  onChange={(e) => { setPeriod(e.target.value); setExpanded({}) }}
-                 className={cn(inputCls, 'w-40')} />
+                 className="w-40" />
           <label className="flex items-center gap-1.5 text-sm text-fg-secondary"
                  title="Fold in vouchers NC has not tallied yet, and UniOps JVs not yet posted">
             <Checkbox checked={includeUnposted}

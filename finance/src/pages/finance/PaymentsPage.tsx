@@ -28,8 +28,6 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { RemittanceStatusBadge, type RemittanceStatus } from '@/components/remittance/RemittancePanel'
 import { RemittanceDialog } from '@/components/remittance/RemittanceDialog'
 
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-
 /** GET /payments sort keys (finance-api crud/payment.PAYMENT_SORT). */
 type PaymentSortKey = 'payment_date' | 'doc_number' | 'payee' | 'amount' | 'credit_applied'
   | 'bank_account' | 'source' | 'status' | 'remittance'
@@ -241,7 +239,7 @@ function VendorFilter({ vendorId, vendorName, onChange }: {
       <Input
         value={query}
         placeholder="All vendors"
-        className={cn(inputCls, 'block w-48 pr-6')}
+        className="block w-48 pr-6"
         onFocus={openDropdown}
         onChange={(e) => {
           setQuery(e.target.value)
@@ -449,17 +447,17 @@ export default function PaymentsPage() {
         <div className="mb-3 flex flex-wrap items-end gap-3">
           <label className="text-xs text-fg-secondary">
             From
-            <Input type="date" value={filters.date_from} className={cn(inputCls, 'block')}
+            <Input type="date" value={filters.date_from} className="block"
                    onChange={(e) => setFilter({ date_from: e.target.value })} />
           </label>
           <label className="text-xs text-fg-secondary">
             To
-            <Input type="date" value={filters.date_to} className={cn(inputCls, 'block')}
+            <Input type="date" value={filters.date_to} className="block"
                    onChange={(e) => setFilter({ date_to: e.target.value })} />
           </label>
           <label className="text-xs text-fg-secondary">
             Search
-            <Input value={filters.q} placeholder="Document, payee, reference" className={cn(inputCls, 'block w-56')}
+            <Input value={filters.q} placeholder="Document, payee, reference" className="block w-56"
                    onChange={(e) => setFilter({ q: e.target.value })} />
           </label>
           <label className="text-xs text-fg-secondary">

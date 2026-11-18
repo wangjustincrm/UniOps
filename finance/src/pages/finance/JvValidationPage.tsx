@@ -26,8 +26,6 @@ import { cn, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { JvDetailModal } from './JvDetailModal'
 
-const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-
 interface RuleSummary {
   rule: string; label: string
   drops_from_dashboard: boolean; needs_decision: boolean
@@ -166,10 +164,10 @@ export default function JvValidationPage() {
       <div className="mx-auto max-w-7xl">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <Input type="month" value={from} onChange={(e) => { setFrom(e.target.value); setOffset(0) }}
-                 className={cn(inputCls, 'w-40')} />
+                 className="w-40" />
           <span className="text-sm text-fg-muted">to</span>
           <Input type="month" value={to} onChange={(e) => { setTo(e.target.value); setOffset(0) }}
-                 className={cn(inputCls, 'w-40')} />
+                 className="w-40" />
           <Button variant="secondary" size="sm" onClick={exportCsv}
                   className="ml-auto">
             <Download className="h-4 w-4" /> Export CSV
