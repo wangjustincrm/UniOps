@@ -1,10 +1,10 @@
-import { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react'
-import { createPortal } from 'react-dom'
+import { useState, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, ChevronLeft } from 'lucide-react'
 import { cn, currentYearLocal, formatAmount } from '@/lib/utils'
 import { budgetApi } from '@/lib/api'
 
+import { Button, DropdownPortal, Input, MenuItem, PickerTrigger, useAnchorRect } from '@uniops/shell'
 // Shared by the General Expense (EXP) and Travel (TRV) claim forms so both pick
 // budget accounts the same way: L1 category first, then an account within it.
 
@@ -100,42 +100,16 @@ export function AccountPicker({
   // The popover renders in a portal on <body> with fixed positioning so it can
   // escape the Line Items card (overflow-hidden) and the table's overflow-x-auto.
   const triggerRef = useRef<HTMLButtonElement>(null)
-  const [pos, setPos] = useState<{ left: number; width: number; top?: number; bottom?: number } | null>(null)
-
-  const reposition = () => {
-    const el = triggerRef.current
-    if (!el) return
-    const r = el.getBoundingClientRect()
-    const width = 320
-    const estH = 300
-    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8))
-    // Flip above the trigger when there isn't room below.
-    const openUp = r.bottom + 4 + estH > window.innerHeight && r.top > estH
-    setPos(openUp
-      ? { left, width, bottom: window.innerHeight - r.top + 4 }
-      : { left, width, top: r.bottom + 4 })
-  }
+  const triggerRect = useAnchorRect(open, triggerRef)
 
   const openPicker = () => {
     // Jump straight into the selected account's category when re-opening.
     setActiveL1(selected ? selected.l1_id : null)
     setSearch('')
-    reposition()
     setOpen(true)
   }
   const close = () => { setOpen(false); setSearch('') }
 
-  useLayoutEffect(() => { if (open) reposition() }, [open, activeL1])
-  useEffect(() => {
-    if (!open) return
-    const handler = () => reposition()
-    window.addEventListener('resize', handler)
-    window.addEventListener('scroll', handler, true)
-    return () => {
-      window.removeEventListener('resize', handler)
-      window.removeEventListener('scroll', handler, true)
-    }
-  }, [open])
 
   const q = search.toLowerCase()
   const filteredL1 = l1Groups.filter((g) => `${g.l1_code} ${g.l1_name}`.toLowerCase().includes(q))
@@ -161,11 +135,11 @@ export function AccountPicker({
       : 0
     const isLow = a.available < 0
     return (
-      <button
+      <MenuItem
         key={a.id}
-        type="button"
+        active={selected?.id === a.id}
         onClick={() => { onChange(a); close() }}
-        className="flex w-full flex-col px-3 py-2 text-left hover:bg-surface-subtle border-b border-line-subtle"
+        className="flex-col items-stretch gap-0 border-b border-line-subtle"
       >
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-medium text-fg">
@@ -178,69 +152,63 @@ export function AccountPicker({
         </div>
         <div className="mt-1 h-1 w-full rounded-full bg-surface-sunken">
           <div
-            className={cn('h-1 rounded-full', pct >= 90 ? 'bg-danger-400' : pct >= 70 ? 'bg-warning-400' : 'bg-primary-400')}
+            className={cn('h-1 rounded-full', pct >= 90 ? 'bg-danger-solid' : pct >= 70 ? 'bg-warning-solid' : 'bg-accent')}
             style={{ width: `${pct}%` }}
           />
         </div>
         <p className="mt-0.5 text-2xs text-fg-muted">
           Budget: {formatAmount(a.annual_budget)} · Used: {pct}%
         </p>
-      </button>
+      </MenuItem>
     )
   }
 
   return (
     <div className="relative">
-      <button
+      <PickerTrigger
         ref={triggerRef}
-        type="button"
+        pickerSize="sm"
+        error={invalid}
         aria-invalid={invalid || undefined}
+        aria-haspopup="listbox"
+        aria-expanded={open}
         onClick={() => (open ? close() : openPicker())}
-        className={cn(
-          'w-full rounded border bg-surface px-2 py-1.5 text-left text-xs truncate',
-          selected ? 'border-line text-fg' : 'border-line text-fg-muted',
-          invalid && 'border-danger-400 bg-danger-50/40',
-          className,
-        )}
+        className={cn('text-xs', className)}
+        placeholder="Select account…"
       >
-        {selected ? `${selected.l1_code} › ${selected.code} — ${selected.name}` : 'Select account…'}
-      </button>
-      {open && pos && createPortal(
-        <>
-          <div className="fixed inset-0 z-40" onClick={close} />
-          <div
-            className="fixed z-50 rounded-lg border border-line bg-surface shadow-lg overflow-hidden"
-            style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width }}
-          >
+        {selected ? `${selected.l1_code} › ${selected.code} — ${selected.name}` : null}
+      </PickerTrigger>
+      {open && triggerRect && (
+        <DropdownPortal anchorRect={triggerRect} onClose={close} width={320} flipHeight={300}
+          className="max-h-none overflow-hidden py-0">
             {/* Header: breadcrumb / back when inside an L1 */}
             <div className="border-b border-line-subtle p-2">
               {activeGroup && (
-                <button
+                <Button variant="link"
                   type="button"
                   onClick={() => { setActiveL1(null); setSearch('') }}
-                  className="mb-2 flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700"
+                  className="mb-2 text-xs"
                 >
                   <ChevronLeft className="h-3.5 w-3.5" />
                   <span className="truncate">{activeGroup.l1_name && activeGroup.l1_name !== activeGroup.l1_code ? `${activeGroup.l1_code} — ${activeGroup.l1_name}` : activeGroup.l1_code}</span>
-                </button>
+                </Button>
               )}
-              <input
+              <Input inputSize="sm"
                 autoFocus
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={activeGroup ? 'Search accounts…' : 'Search categories or accounts…'}
-                className="w-full rounded border border-line px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
+                className="w-full"
               />
             </div>
 
             <div className="max-h-48 overflow-y-auto">
               {/* Level 1: L1 categories */}
               {!activeGroup && filteredL1.map((g) => (
-                <button
+                <MenuItem
                   key={g.l1_id}
-                  type="button"
                   onClick={() => { setActiveL1(g.l1_id); setSearch('') }}
-                  className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-surface-subtle border-b border-line-subtle"
+                  className="justify-between border-b border-line-subtle"
                 >
                   <span className="text-xs font-medium text-fg truncate">
                     <span className="font-mono text-fg-muted">{g.l1_code}</span>{g.l1_name && g.l1_name !== g.l1_code ? <span className="ml-1">{g.l1_name}</span> : null}
@@ -249,11 +217,11 @@ export function AccountPicker({
                     {g.accounts.length}
                     <ChevronRight className="h-3.5 w-3.5" />
                   </span>
-                </button>
+                </MenuItem>
               ))}
               {/* Search hits among all L2 accounts, shown with their category */}
               {matchedAccts.length > 0 && (
-                <p className="bg-surface-subtle px-3 py-1 text-2xs font-medium uppercase tracking-wide text-fg-muted">
+                <p className="bg-surface-subtle px-3 py-1 text-2xs font-medium text-fg-muted">
                   Accounts
                 </p>
               )}
@@ -270,9 +238,7 @@ export function AccountPicker({
                 <p className="py-4 text-center text-xs text-fg-muted">No accounts found</p>
               )}
             </div>
-          </div>
-        </>,
-        document.body,
+        </DropdownPortal>
       )}
     </div>
   )

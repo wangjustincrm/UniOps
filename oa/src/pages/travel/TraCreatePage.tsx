@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BackLink } from '@/components/BackLink'
-import { useReplaceTab, Button } from '@uniops/shell'
+import { useReplaceTab, Button, Checkbox, Input, Textarea } from '@uniops/shell'
 import { ArrowLeft } from 'lucide-react'
 import { oaRoutes } from '@/app/routes'
 import { todayLocal } from '@/lib/utils'
@@ -84,7 +84,7 @@ export default function TraCreatePage({ editClaimId }: EditableFormProps = {}) {
         <BackLink to="/travel" className="inline-flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg-secondary mb-4">
           <ArrowLeft className="h-4 w-4" />Back to Travel Applications
         </BackLink>
-        <h1 className="text-2xl font-bold text-fg">
+        <h1 className="text-2xl font-semibold text-fg">
           {editing ? `Edit ${editing.claim_number}` : 'Travel Application'}
         </h1>
         <p className="mt-0.5 text-sm text-fg-muted">Apply for a business trip before claiming expenses</p>
@@ -94,13 +94,13 @@ export default function TraCreatePage({ editClaimId }: EditableFormProps = {}) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">Application Date *</label>
-            <input type="date" required value={appDate} onChange={e => setAppDate(e.target.value)}
-              className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+            <Input type="date" required value={appDate} onChange={e => setAppDate(e.target.value)}
+              className="w-full" />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">Number of Persons</label>
-            <input readOnly value={travelers.length}
-              className="w-full rounded-lg border border-line bg-surface-subtle px-3 py-2 text-sm text-fg-muted" />
+            <Input readOnly value={travelers.length}
+              className="w-full" />
           </div>
         </div>
         <div>
@@ -110,31 +110,31 @@ export default function TraCreatePage({ editClaimId }: EditableFormProps = {}) {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="sm:col-span-1">
             <label className="mb-1 block text-xs font-medium text-fg-secondary">Destination *</label>
-            <input required value={destination} onChange={e => setDestination(e.target.value)}
-              placeholder="e.g. Toronto, ON" className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+            <Input required value={destination} onChange={e => setDestination(e.target.value)}
+              placeholder="e.g. Toronto, ON" className="w-full" />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">From *</label>
-            <input type="date" required value={fromDate} onChange={e => setFromDate(e.target.value)}
-              className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+            <Input type="date" required value={fromDate} onChange={e => setFromDate(e.target.value)}
+              className="w-full" />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">To *</label>
-            <input type="date" required value={toDate} min={fromDate} onChange={e => setToDate(e.target.value)}
-              className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+            <Input type="date" required value={toDate} min={fromDate} onChange={e => setToDate(e.target.value)}
+              className="w-full" />
           </div>
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-fg-secondary">Reasons and Explanation *</label>
-          <textarea required value={reason} onChange={e => setReason(e.target.value)} rows={3}
-            className="w-full rounded-lg border border-line px-3 py-2 text-sm resize-none" />
+          <Textarea required value={reason} onChange={e => setReason(e.target.value)} rows={3}
+            className="w-full resize-none" />
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-fg-secondary">Transportation & Accommodation</label>
           <div className="flex flex-wrap gap-3">
             {TRANSPORT.map(([k, lbl]) => (
               <label key={k} className="inline-flex items-center gap-1.5 text-sm text-fg-secondary">
-                <input type="checkbox" checked={modes.includes(k)} onChange={() => toggleMode(k)} />{lbl}
+                <Checkbox checked={modes.includes(k)} onChange={() => toggleMode(k)} />{lbl}
               </label>
             ))}
           </div>
@@ -142,19 +142,19 @@ export default function TraCreatePage({ editClaimId }: EditableFormProps = {}) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">Leave From (optional)</label>
-            <input type="date" value={leaveFrom} onChange={e => setLeaveFrom(e.target.value)}
-              className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+            <Input type="date" value={leaveFrom} onChange={e => setLeaveFrom(e.target.value)}
+              className="w-full" />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">Leave To (optional)</label>
-            <input type="date" value={leaveTo} onChange={e => setLeaveTo(e.target.value)}
-              className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+            <Input type="date" value={leaveTo} onChange={e => setLeaveTo(e.target.value)}
+              className="w-full" />
           </div>
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-fg-secondary">Remarks (external companions, notes)</label>
-          <textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2}
-            className="w-full rounded-lg border border-line px-3 py-2 text-sm resize-none" />
+          <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2}
+            className="w-full resize-none" />
         </div>
       </div>
 

@@ -10,7 +10,7 @@ export function CardField({ label, className, children }: {
 }) {
   return (
     <div className={cn('flex min-w-0 flex-col gap-0.5', className)}>
-      <span className="text-2xs font-medium uppercase tracking-wide text-fg-muted">{label}</span>
+      <span className="text-2xs font-medium text-fg-muted">{label}</span>
       {children}
     </div>
   )

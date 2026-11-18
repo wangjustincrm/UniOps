@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { BackLink } from '@/components/BackLink'
-import { useReplaceTab, Button } from '@uniops/shell'
+import { Button, DisclosureButton, FileInput, Input, Segmented, Select, Textarea, useReplaceTab } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Plus, Trash2, AlertTriangle, ChevronDown, ChevronRight, ArrowLeft, Paperclip, Upload, X } from 'lucide-react'
+import { Plus, Trash2, AlertTriangle, ArrowLeft, Paperclip, Upload, X } from 'lucide-react'
 import { cn, formatAmount, todayLocal } from '@/lib/utils'
 import { useEditableClaim, useSaveClaim, type EditableClaim, type EditableFormProps } from '@/lib/editableClaim'
 import { api, mdmApi } from '@/lib/api'
@@ -172,16 +172,15 @@ function CategorySection({
 
   return (
     <div className="rounded-xl border border-line bg-surface overflow-hidden">
-      <button
-        type="button"
+      <DisclosureButton
+        open={open}
         onClick={() => setOpen(v => !v)}
-        className="flex w-full items-center justify-between px-4 py-3 bg-surface-subtle border-b border-line-subtle text-sm font-semibold text-fg-secondary hover:bg-surface-sunken transition-colors"
+        className="w-full px-4 py-3 bg-surface-subtle border-b border-line-subtle text-sm font-semibold text-fg-secondary hover:bg-surface-sunken"
       >
-        <span className="flex items-center gap-2">
-          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        <span className="flex flex-1 items-center gap-2">
           {label}
           {lines.length > 0 && (
-            <span className="ml-1 rounded-full bg-primary-100 px-2 py-0.5 text-xs font-bold text-primary-700">
+            <span className="ml-1 rounded-full bg-primary-100 px-2 py-0.5 text-xs font-semibold text-primary-700">
               {lines.length}
             </span>
           )}
@@ -191,7 +190,7 @@ function CategorySection({
             Limit ${limit.toFixed(2)} {category === 'Incidental' ? 'per line' : 'per meal'}
           </span>
         )}
-      </button>
+      </DisclosureButton>
 
       {open && (
         <div className="p-4 flex flex-col gap-3">
@@ -222,55 +221,50 @@ function CategorySection({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-semibold text-fg-secondary">Line {k + 1}</span>
                   {/* Single day vs. date range (long trips: N days × a daily rate) */}
-                  <div className="inline-flex rounded border border-line text-2xs font-medium overflow-hidden">
-                    {(['day', 'range'] as const).map(m => (
-                      <button key={m} type="button"
-                        onClick={() => {
-                          if (m === li.mode) return
-                          if (m === 'range') {
-                            const from = tripFrom || li.expense_date
-                            const to = tripTo || from
-                            const days = String(Math.max(daysInRange(from, to), 1))
-                            const rate = li.net_amount
-                            onUpdate(li.line_number, {
-                              mode: 'range', period_from: from, period_to: to,
-                              period_days: days, daily_rate: rate, expense_date: from,
-                              ...amountsFromNet((parseFloat(rate) || 0) * Number(days), taxRate),
-                            })
-                          } else {
-                            onUpdate(li.line_number, {
-                              mode: 'day', period_from: '', period_to: '', period_days: '',
-                              daily_rate: '', invoice_amount: '',
-                            })
-                          }
-                        }}
-                        className={cn('px-2 py-1 transition-colors',
-                          li.mode === m ? 'bg-primary-600 text-white' : 'bg-surface text-fg-muted hover:bg-surface-subtle')}>
-                        {m === 'day' ? 'Single day' : 'Date range'}
-                      </button>
-                    ))}
-                  </div>
+                  <Segmented
+                    items={[{ key: 'day', label: 'Single day' }, { key: 'range', label: 'Date range' }]}
+                    value={li.mode}
+                    onChange={(m) => {
+                      if (m === li.mode) return
+                      if (m === 'range') {
+                        const from = tripFrom || li.expense_date
+                        const to = tripTo || from
+                        const days = String(Math.max(daysInRange(from, to), 1))
+                        const rate = li.net_amount
+                        onUpdate(li.line_number, {
+                          mode: 'range', period_from: from, period_to: to,
+                          period_days: days, daily_rate: rate, expense_date: from,
+                          ...amountsFromNet((parseFloat(rate) || 0) * Number(days), taxRate),
+                        })
+                      } else {
+                        onUpdate(li.line_number, {
+                          mode: 'day', period_from: '', period_to: '', period_days: '',
+                          daily_rate: '', invoice_amount: '',
+                        })
+                      }
+                    }}
+                  />
                   {isOver && <OverLimitBadge amount={perDay} limit={limit!} />}
-                  <button type="button" onClick={() => onRemove(li.line_number)}
+                  <Button variant="danger-ghost" size="icon-xs" type="button" onClick={() => onRemove(li.line_number)}
                     aria-label={`Remove ${label} line ${k + 1}`}
-                    className="ml-auto text-fg-faint hover:text-danger-fg transition-colors">
+                    className="ml-auto">
                     <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 </div>
 
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   {!isRange && (
                   <div>
-                    <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">Date</label>
-                    <input type="date" value={li.expense_date}
+                    <label className="text-2xs font-medium text-fg-muted">Date</label>
+                    <Input type="date" value={li.expense_date}
                       onChange={e => onUpdate(li.line_number, { expense_date: e.target.value })}
-                      className="mt-0.5 w-full rounded border border-line px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                      className="mt-0.5 w-full"
                     />
                   </div>
                   )}
                   <div className={isRange ? 'sm:col-span-2 lg:col-span-3' : 'sm:col-span-2'}>
                     <div className="flex items-center justify-between">
-                      <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">Description</label>
+                      <label className="text-2xs font-medium text-fg-muted">Description</label>
                       <ReceiptScanButton
                         // Same rule as the general expense page: a scan becomes the
                         // row's receipt and a re-scan replaces an earlier scan, but a
@@ -312,16 +306,16 @@ function CategorySection({
                         }}
                       />
                     </div>
-                    <input value={li.description}
+                    <Input value={li.description}
                       onChange={e => onUpdate(li.line_number, { description: e.target.value })}
                       placeholder="e.g. Taxi to airport"
-                      className="mt-0.5 w-full rounded border border-line px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                      className="mt-0.5 w-full"
                     />
                   </div>
                   {!isRange && (
                   <div>
-                    <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">Amount (net)</label>
-                    <input type="number" min="0" step="0.01" value={li.net_amount}
+                    <label className="text-2xs font-medium text-fg-muted">Amount (net)</label>
+                    <Input type="number" min="0" step="0.01" value={li.net_amount}
                       onChange={e => {
                         const net = e.target.value
                         const tax = (parseFloat(net || '0') * taxRate).toFixed(2)
@@ -340,26 +334,26 @@ function CategorySection({
                 {isRange && (
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                     <div>
-                      <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">From</label>
-                      <input type="date" value={li.period_from} min={tripFrom || undefined} max={li.period_to || tripTo || undefined}
+                      <label className="text-2xs font-medium text-fg-muted">From</label>
+                      <Input type="date" value={li.period_from} min={tripFrom || undefined} max={li.period_to || tripTo || undefined}
                         onChange={e => setRange({ period_from: e.target.value,
                           period_days: String(Math.max(daysInRange(e.target.value, li.period_to), 0)) })}
-                        className="mt-0.5 w-full rounded border border-line px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                        className="mt-0.5 w-full"
                       />
                     </div>
                     <div>
-                      <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">To</label>
-                      <input type="date" value={li.period_to} min={li.period_from || tripFrom || undefined} max={tripTo || undefined}
+                      <label className="text-2xs font-medium text-fg-muted">To</label>
+                      <Input type="date" value={li.period_to} min={li.period_from || tripFrom || undefined} max={tripTo || undefined}
                         onChange={e => setRange({ period_to: e.target.value,
                           period_days: String(Math.max(daysInRange(li.period_from, e.target.value), 0)) })}
-                        className="mt-0.5 w-full rounded border border-line px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                        className="mt-0.5 w-full"
                       />
                     </div>
                     <div>
-                      <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">
+                      <label className="text-2xs font-medium text-fg-muted">
                         Days claimed {span > 0 && <span className="normal-case text-fg-muted">(max {span})</span>}
                       </label>
-                      <input type="number" min="1" max={span || undefined} step="1" value={li.period_days}
+                      <Input type="number" min="1" max={span || undefined} step="1" value={li.period_days}
                         onChange={e => setRange({ period_days: e.target.value })}
                         className={cn(
                           'mt-0.5 w-full rounded border px-2 py-1.5 text-sm text-right focus:outline-none focus:border-primary-400',
@@ -368,10 +362,10 @@ function CategorySection({
                       />
                     </div>
                     <div>
-                      <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">
+                      <label className="text-2xs font-medium text-fg-muted">
                         Daily rate (net) {limit && <span className="normal-case text-fg-muted">(max {limit.toFixed(2)})</span>}
                       </label>
-                      <input type="number" min="0" max={limit ?? undefined} step="0.01" value={li.daily_rate}
+                      <Input type="number" min="0" max={limit ?? undefined} step="0.01" value={li.daily_rate}
                         onChange={e => setRange({ daily_rate: e.target.value })}
                         className={cn(
                           'mt-0.5 w-full rounded border px-2 py-1.5 text-sm text-right focus:outline-none focus:border-primary-400',
@@ -390,7 +384,7 @@ function CategorySection({
 
                 {/* Budget account */}
                 <div>
-                  <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">Budget Account</label>
+                  <label className="text-2xs font-medium text-fg-muted">Budget Account</label>
                   <div className="mt-0.5">
                     <AccountPicker
                       value={li.budget_account_id}
@@ -410,21 +404,21 @@ function CategorySection({
                 {!abroad && (
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="sm:col-span-2">
-                      <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">Tax</label>
-                      <select value={li.tax_code ?? ''}
+                      <label className="text-2xs font-medium text-fg-muted">Tax</label>
+                      <Select value={li.tax_code ?? ''}
                         onChange={e => {
                           const code = e.target.value || null
                           onUpdate(li.line_number, {
                             tax_code: code, ...amountsFromNet(parseFloat(li.net_amount) || 0, rateOf(code)),
                           })
                         }}
-                        className="mt-0.5 w-full rounded border border-line bg-surface px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                        className="mt-0.5 w-full"
                       >
                         <option value="">No tax</option>
                         {taxCodes.map(tc => (
                           <option key={`${tc.code}-${tc.rate}`} value={tc.code}>{tc.name}</option>
                         ))}
-                      </select>
+                      </Select>
                     </div>
                     <div className="sm:col-span-2 lg:self-end lg:pb-1.5 text-right text-xs text-fg-muted">
                       Tax <span className="font-mono">{formatAmount(parseFloat(li.tax_amount) || 0)}</span>
@@ -436,23 +430,23 @@ function CategorySection({
                 {/* Receipt / invoice attachment for this row */}
                 <div className={cn(isRange && 'grid grid-cols-1 gap-2 sm:grid-cols-2')}>
                 <div>
-                  <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">
+                  <label className="text-2xs font-medium text-fg-muted">
                     Receipt / Invoice{isRange && <span className="normal-case text-fg-muted"> (optional)</span>}
                   </label>
                   {li._file ? (
                     <div className="mt-0.5 flex items-center gap-2 rounded border border-line bg-surface-subtle px-2 py-1.5 text-sm">
                       <Paperclip className="h-3.5 w-3.5 text-fg-muted shrink-0" />
                       <span className="flex-1 truncate text-fg-secondary">{li._file.name}</span>
-                      <button type="button" onClick={() => onUpdate(li.line_number, { _file: null })}
-                        className="text-fg-faint hover:text-danger-fg transition-colors" title="Remove attachment">
+                      <Button variant="danger-ghost" size="icon-xs" aria-label="Remove" type="button" onClick={() => onUpdate(li.line_number, { _file: null })}
+                        title="Remove attachment">
                         <X className="h-3.5 w-3.5" />
-                      </button>
+                      </Button>
                     </div>
                   ) : (
                     <label className="mt-0.5 flex cursor-pointer items-center gap-1.5 self-start rounded border border-dashed border-line-strong px-2 py-1.5 text-xs font-medium text-fg-muted hover:border-primary-400 hover:text-primary-700 transition-colors w-fit">
                       <Upload className="h-3.5 w-3.5" />
                       Attach receipt
-                      <input type="file" accept="image/*,.pdf" className="hidden"
+                      <FileInput accept="image/*,.pdf" className="hidden"
                         onChange={(e) => {
                           const f = e.target.files?.[0]
                           if (f) onUpdate(li.line_number, { _file: f, _fileScanned: false })
@@ -463,14 +457,11 @@ function CategorySection({
                 </div>
                 {isRange && (li._file || li.invoice_amount) && (
                   <div>
-                    <label className="text-2xs font-medium text-fg-muted uppercase tracking-wide">Invoice amount *</label>
-                    <input type="number" min="0" step="0.01" value={li.invoice_amount}
+                    <label className="text-2xs font-medium text-fg-muted">Invoice amount *</label>
+                    <Input type="number" min="0" step="0.01" value={li.invoice_amount} inputSize="sm"
                       onChange={e => onUpdate(li.line_number, { invoice_amount: e.target.value })}
-                      className={cn(
-                        'mt-0.5 w-full rounded border px-2 py-1.5 text-sm text-right focus:outline-none focus:border-primary-400',
-                        li.invoice_amount && (parseFloat(li.total_amount) || 0) > parseFloat(li.invoice_amount)
-                          ? 'border-danger-line bg-danger-soft' : 'border-line',
-                      )}
+                      error={!!li.invoice_amount && (parseFloat(li.total_amount) || 0) > parseFloat(li.invoice_amount)}
+                      className="mt-0.5 text-right"
                     />
                     <p className="mt-0.5 text-2xs text-fg-muted">The line total may not exceed the invoice.</p>
                   </div>
@@ -480,10 +471,9 @@ function CategorySection({
             )
           })}
 
-          <button type="button" onClick={onAdd}
-            className="flex items-center gap-1.5 self-start text-sm font-medium text-primary-700 hover:text-primary-900">
+          <Button variant="link" onClick={onAdd} className="self-start">
             <Plus className="h-4 w-4" /> Add {label} row
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -793,7 +783,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
         <BackLink to="/expenses" className="inline-flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg-secondary mb-4">
           <ArrowLeft className="h-4 w-4" />Back to Expenses
         </BackLink>
-        <h1 className="text-2xl font-bold text-fg">
+        <h1 className="text-2xl font-semibold text-fg">
           {editing ? `Edit ${editing.claim_number}` : 'Travel Expense Claim'}
         </h1>
         <p className="mt-0.5 text-sm text-fg-muted">TRV — reimbursement for business travel</p>
@@ -813,7 +803,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
       {/* Travel Application selector */}
       <div className="rounded-xl border border-line bg-surface p-5">
         <label className="mb-1 block text-xs font-medium text-fg-secondary">Travel Application *</label>
-        <select required value={travelApplicationId}
+        <Select required value={travelApplicationId}
           onChange={e => {
             const id = e.target.value; setTravelApplicationId(id)
             const app = eligibleApps.find(a => a.id === id)
@@ -828,14 +818,14 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
               if (app.purpose) setPurpose(app.purpose)
             }
           }}
-          className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm">
+          className="w-full">
           <option value="">— Select an approved travel application —</option>
           {eligibleApps.map(a => (
             <option key={a.id} value={a.id}>
               {a.claim_number}{a.travel_destination ? ` — ${a.travel_destination}` : ''}
             </option>
           ))}
-        </select>
+        </Select>
         {eligibleApps.length === 0 && (
           <p className="mt-1 text-xs text-warning-fg">
             No approved travel applications available. Submit and get a Travel Application approved first.
@@ -844,14 +834,14 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
         {!editClaimId && selectedApp && (
           <div className="mt-4">
             <label className="mb-1 block text-xs font-medium text-fg-secondary">Claim for *</label>
-            <select required value={claimantId} onChange={e => setClaimantId(e.target.value)}
+            <Select required value={claimantId} onChange={e => setClaimantId(e.target.value)}
               disabled={selectedApp.claimants.length === 1}
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm disabled:bg-surface-subtle">
+              className="w-full">
               <option value="">— Select a traveler —</option>
               {selectedApp.claimants.map(c => (
                 <option key={c.id} value={c.id}>{c.name}{c.is_self ? ' (me)' : ''}</option>
               ))}
-            </select>
+            </Select>
             <p className="mt-1 text-xs text-fg-muted">The reimbursement is paid to this traveler.</p>
           </div>
         )}
@@ -863,27 +853,27 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">From Date *</label>
-            <input type="date" required value={fromDate} onChange={e => setFromDate(e.target.value)}
-              className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400" />
+            <Input type="date" required value={fromDate} onChange={e => setFromDate(e.target.value)}
+              className="w-full" />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">To Date *</label>
-            <input type="date" required value={toDate} onChange={e => setToDate(e.target.value)}
+            <Input type="date" required value={toDate} onChange={e => setToDate(e.target.value)}
               min={fromDate}
-              className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400" />
+              className="w-full" />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">Destination *</label>
-            <input required value={destination} onChange={e => setDestination(e.target.value)}
+            <Input required value={destination} onChange={e => setDestination(e.target.value)}
               placeholder="e.g. Toronto, ON"
-              className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400" />
+              className="w-full" />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">Country *</label>
-            <select value={country} onChange={e => changeCountry(e.target.value)}
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
+            <Select value={country} onChange={e => changeCountry(e.target.value)}
+              className="w-full">
               {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
-            </select>
+            </Select>
             {abroad && <p className="mt-1 text-xs text-fg-muted">Outside Canada — no sales tax is added to the lines.</p>}
           </div>
           <div>
@@ -893,9 +883,9 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
           </div>
           <div className="sm:col-span-2">
             <label className="mb-1 block text-xs font-medium text-fg-secondary">Business Purpose *</label>
-            <input required value={purpose} onChange={e => setPurpose(e.target.value)}
+            <Input required value={purpose} onChange={e => setPurpose(e.target.value)}
               placeholder="e.g. Client meeting, conference attendance…"
-              className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400" />
+              className="w-full" />
           </div>
         </div>
       </div>
@@ -923,8 +913,8 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
       {/* Notes */}
       <div>
         <label className="mb-1 block text-xs font-medium text-fg-secondary">Additional Notes</label>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
-          className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400 resize-none" />
+        <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+          className="w-full resize-none" />
       </div>
 
       {/* Summary */}

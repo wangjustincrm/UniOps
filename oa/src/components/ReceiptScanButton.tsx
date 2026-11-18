@@ -3,6 +3,7 @@ import { ScanLine, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api, ApiError } from '@/lib/api'
 
+import { Button, FileInput } from '@uniops/shell'
 // Receipt OCR result — matches expense-api ocr_service.extract_receipt output.
 export interface ReceiptFields {
   vendor_name:  string | null
@@ -64,25 +65,20 @@ export function ReceiptScanButton({
 
   return (
     <span className={cn('inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5', className)}>
-      <button
-        type="button"
+      <Button
+        variant={err ? 'danger-outline' : 'secondary'}
+        size="xs"
         disabled={loading}
         title={err || 'Scan a receipt image/PDF to auto-fill this line'}
         onClick={() => ref.current?.click()}
-        className={cn(
-          'inline-flex items-center gap-1 rounded border px-1.5 py-1 text-2xs font-medium transition-colors',
-          err
-            ? 'border-danger-line text-danger-fg hover:bg-danger-soft'
-            : 'border-line text-fg-muted hover:text-primary-700 hover:border-primary-300',
-          loading && 'opacity-60',
-        )}
+        className="h-6 gap-1 px-1.5 text-2xs"
       >
         {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ScanLine className="h-3 w-3" />}
         {loading ? 'Scanning…' : 'Scan'}
-      </button>
-      <input
+      </Button>
+      <FileInput
         ref={ref}
-        type="file"
+       
         accept="image/*,.pdf"
         className="hidden"
         onChange={handle}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { BackLink } from '@/components/BackLink'
-import { useReplaceTab, Button } from '@uniops/shell'
+import { useReplaceTab, Button, Input, Select, Textarea } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2 } from 'lucide-react'
@@ -33,7 +33,7 @@ function DynamicField({
 
   if (field.field_type === 'textarea') {
     return (
-      <textarea value={value} onChange={e => onChange(e.target.value)}
+      <Textarea value={value} onChange={e => onChange(e.target.value)}
         placeholder={field.placeholder ?? ''}
         required={field.required} rows={3}
         className={`${base} resize-none`} />
@@ -41,16 +41,16 @@ function DynamicField({
   }
   if (field.field_type === 'select') {
     return (
-      <select value={value} onChange={e => onChange(e.target.value)}
+      <Select value={value} onChange={e => onChange(e.target.value)}
         required={field.required}
         className={`${base} bg-surface`}>
         <option value="">— Select —</option>
         {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-      </select>
+      </Select>
     )
   }
   return (
-    <input
+    <Input
       type={field.field_type === 'number' ? 'number' : field.field_type === 'date' ? 'date' : 'text'}
       value={value} onChange={e => onChange(e.target.value)}
       placeholder={field.placeholder ?? ''}
@@ -163,7 +163,7 @@ export default function CfmCreatePage({ editClaimId }: EditableFormProps = {}) {
         <BackLink to="/expenses" className="inline-flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg-secondary mb-4">
           <ArrowLeft className="h-4 w-4" />Back to Expenses
         </BackLink>
-        <h1 className="text-2xl font-bold text-fg">
+        <h1 className="text-2xl font-semibold text-fg">
           {editing ? `Edit ${editing.claim_number}` : form.name}
         </h1>
         <p className="mt-0.5 text-sm text-fg-muted font-mono">CFM_{form.code}</p>
@@ -193,8 +193,8 @@ export default function CfmCreatePage({ editClaimId }: EditableFormProps = {}) {
 
         <div>
           <label className="mb-1 block text-xs font-medium text-fg-secondary">Additional Notes</label>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
-            className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400 resize-none" />
+          <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
+            className="w-full resize-none" />
         </div>
       </div>
 

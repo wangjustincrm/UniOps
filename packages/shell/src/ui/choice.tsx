@@ -1,5 +1,6 @@
 /** MenuItem (rows in dropdowns, listboxes and action menus) and ChoiceCard. */
 import React from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '../lib/cn'
 
 export interface MenuItemProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -53,6 +54,35 @@ export const ChoiceCard = React.forwardRef<HTMLButtonElement, ChoiceCardProps>(f
       )}
       {...props}
     >
+      {children}
+    </button>
+  )
+})
+
+export interface DisclosureButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  open: boolean
+  /** Chevron size; match the label's text size. */
+  iconSize?: 'sm' | 'md'
+}
+
+/** Header that expands / collapses a section. Chevron first, aria-expanded, always type="button". */
+export const DisclosureButton = React.forwardRef<HTMLButtonElement, DisclosureButtonProps>(function DisclosureButton(
+  { open, iconSize = 'md', className, children, type = 'button', ...props }, ref,
+) {
+  const Icon = open ? ChevronDown : ChevronRight
+  return (
+    <button
+      ref={ref}
+      type={type}
+      aria-expanded={open}
+      className={cn(
+        'flex items-center gap-2 text-left transition-colors duration-100',
+        'focus-visible:outline-none focus-visible:shadow-focus disabled:cursor-not-allowed disabled:opacity-50',
+        className,
+      )}
+      {...props}
+    >
+      <Icon className={cn('shrink-0', iconSize === 'sm' ? 'h-3.5 w-3.5' : 'h-4 w-4')} aria-hidden />
       {children}
     </button>
   )

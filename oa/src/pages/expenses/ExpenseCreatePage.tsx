@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useReplaceTab, Button } from '@uniops/shell'
+import { useReplaceTab, Button, Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2, AlertTriangle, Paperclip, X } from 'lucide-react'
@@ -294,7 +294,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
     return {
       isOverBudget,
       date: (
-        <input
+        <Input
           type="date"
           value={line.expense_date}
           onChange={(e) => updateLine(idx, { expense_date: e.target.value })}
@@ -303,7 +303,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
       ),
       description: (
         <div className="flex flex-col gap-1">
-          <input
+          <Input
             type="text"
             value={line.description}
             onChange={(e) => updateLine(idx, { description: e.target.value })}
@@ -323,14 +323,14 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
             >
               <Paperclip className="h-3 w-3 shrink-0" />
               <span className="truncate max-w-[160px]">{line._file.name}</span>
-              <button
+              <Button variant="danger-ghost" size="icon-xs"
                 type="button"
                 aria-label="Don't attach this receipt"
                 onClick={() => updateLine(idx, { _file: null })}
-                className="text-fg-faint hover:text-danger-fg"
+               
               >
                 <X className="h-3 w-3" />
-              </button>
+              </Button>
             </div>
           )}
         </div>
@@ -344,7 +344,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
         />
       ),
       net: (
-        <input
+        <Input
           type="number"
           step="0.01"
           min="0"
@@ -356,22 +356,22 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
         />
       ),
       tax: (
-        <input
+        <Input inputSize="sm"
           type="number"
           step="0.01"
           min="0"
           value={line.tax_amount}
           onChange={(e) => handleTaxChange(idx, e.target.value)}
           placeholder="0.00"
-          className="w-full rounded border border-line px-2 py-1.5 text-xs text-right font-mono focus:outline-none focus:border-primary-400"
+          className="w-full text-right font-mono"
         />
       ),
       taxCode: (
-        <select
+        <Select selectSize="sm"
           value={line.tax_code ?? ''}
           onChange={(e) => handleTaxCodeChange(idx, e.target.value || null)}
           title="Tax code — drives the line's tax rate (Finance Tax Settings)"
-          className="w-full rounded border border-line px-1.5 py-1.5 text-xs focus:outline-none focus:border-primary-400"
+          className="w-full"
         >
           <option value="">— none —</option>
           {taxCodes.map((tc) => (
@@ -379,7 +379,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
               {tc.code}{tc.recoverable ? '' : ' (NR)'}
             </option>
           ))}
-        </select>
+        </Select>
       ),
       total: (
         <div className="rounded bg-surface-subtle px-2 py-1.5 text-xs text-right font-mono text-fg-secondary">
@@ -387,14 +387,14 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
         </div>
       ),
       remove: lines.length > 1 ? (
-        <button
+        <Button variant="danger-ghost" size="icon-xs"
           type="button"
           aria-label={`Remove line ${idx + 1}`}
           onClick={() => setLines((prev) => prev.filter((_, i) => i !== idx).map((l, i) => ({ ...l, line_number: i + 1 })))}
-          className="rounded p-1 text-fg-faint hover:text-danger-400 transition-colors"
+         
         >
           <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       ) : null,
     }
   }
@@ -411,7 +411,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
       {/* Page header — wraps on a phone instead of squeezing the buttons (ISS-0224) */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-fg">
+          <h1 className="text-2xl font-semibold text-fg">
             {editing ? `Edit ${editing.claim_number}` : 'New General Expense Claim'}
           </h1>
           <p className="mt-0.5 text-sm text-fg-muted">Receipt-based employee reimbursement</p>
@@ -433,33 +433,33 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">Submission Date</label>
-            <input
+            <Input
               type="date"
               value={submissionDate}
               onChange={(e) => setSubmissionDate(e.target.value)}
               required
-              className="w-full rounded border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
+              className="w-full"
             />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">Currency</label>
-            <select
+            <Select
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
-              className="w-full rounded border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
+              className="w-full"
             >
               <option>CAD</option>
               <option>USD</option>
-            </select>
+            </Select>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-fg-secondary">Notes / Purpose</label>
-            <input
+            <Input
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Optional"
-              className="w-full rounded border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400"
+              className="w-full"
             />
           </div>
         </div>
@@ -487,57 +487,57 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
 
         {wide && (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-surface-subtle border-b border-line-subtle">
-              <tr>
-                <th className="px-3 py-2 text-left text-xs font-medium text-fg-muted w-8">#</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-fg-muted w-32">Date</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-fg-muted">Description</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-fg-muted w-64">Budget Account</th>
-                <th className="px-3 py-2 text-right text-xs font-medium text-fg-muted w-28">Net (C)</th>
-                <th className="px-3 py-2 text-right text-xs font-medium text-fg-muted w-28">Tax (B)</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-fg-muted w-32">Tax Code</th>
-                <th className="px-3 py-2 text-right text-xs font-medium text-fg-muted w-28">Total (A)</th>
-                <th className="w-8" />
-              </tr>
-            </thead>
-            <tbody>
+          <Table density="compact">
+            <THead>
+              <Tr>
+                <Th className="w-8">#</Th>
+                <Th className="w-32">Date</Th>
+                <Th>Description</Th>
+                <Th className="w-64">Budget Account</Th>
+                <Th align="right" className="w-28">Net (C)</Th>
+                <Th align="right" className="w-28">Tax (B)</Th>
+                <Th className="w-32">Tax Code</Th>
+                <Th align="right" className="w-28">Total (A)</Th>
+                <Th className="w-8" />
+              </Tr>
+            </THead>
+            <TBody>
               {lines.map((line, idx) => {
                 const f = renderLine(line, idx)
                 return (
-                  <tr
+                  <Tr
                     key={idx}
                     className={cn(
                       'border-b border-line-subtle',
                       f.isOverBudget && 'bg-warning-50/50',
                     )}
                   >
-                    <td className="px-3 py-2 text-xs text-fg-muted font-mono">{idx + 1}</td>
-                    <td className="px-3 py-2">{f.date}</td>
-                    <td className="px-3 py-2">{f.description}</td>
-                    <td className="px-3 py-2">{f.account}</td>
-                    <td className="px-3 py-2">{f.net}</td>
-                    <td className="px-3 py-2">{f.tax}</td>
-                    <td className="px-3 py-2">{f.taxCode}</td>
-                    <td className="px-3 py-2">{f.total}</td>
-                    <td className="px-3 py-2">{f.remove}</td>
-                  </tr>
+                    <Td className="text-xs text-fg-muted font-mono">{idx + 1}</Td>
+                    <Td>{f.date}</Td>
+                    <Td>{f.description}</Td>
+                    <Td>{f.account}</Td>
+                    <Td>{f.net}</Td>
+                    <Td>{f.tax}</Td>
+                    <Td>{f.taxCode}</Td>
+                    <Td>{f.total}</Td>
+                    <Td>{f.remove}</Td>
+                  </Tr>
                 )
               })}
-            </tbody>
+            </TBody>
 
             {/* Sub-total row */}
-            <tfoot>
-              <tr className="border-t-2 border-line bg-surface-subtle">
-                <td colSpan={4} className="px-3 py-2 text-xs font-semibold text-fg-secondary">Sub-total</td>
-                <td className="px-3 py-2 text-right text-xs font-mono font-semibold text-primary-700">{grandNet.toFixed(2)}</td>
-                <td className="px-3 py-2 text-right text-xs font-mono text-fg-muted">{grandTax.toFixed(2)}</td>
-                <td />
-                <td className="px-3 py-2 text-right text-xs font-mono font-semibold">{grandTotal.toFixed(2)}</td>
-                <td />
-              </tr>
-            </tfoot>
-          </table>
+            <TFoot>
+              <Tr className="border-t-2 bg-surface-subtle">
+                <Td colSpan={4} className="text-xs font-semibold text-fg-secondary">Sub-total</Td>
+                <Td align="right" className="text-xs font-mono font-semibold text-primary-700">{grandNet.toFixed(2)}</Td>
+                <Td align="right" className="text-xs font-mono text-fg-muted">{grandTax.toFixed(2)}</Td>
+                <Td />
+                <Td align="right" className="text-xs font-mono font-semibold">{grandTotal.toFixed(2)}</Td>
+                <Td />
+              </Tr>
+            </TFoot>
+          </Table>
         </div>
         )}
 
@@ -590,14 +590,14 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
         {/* Add row button */}
         {lines.length < 20 && (
           <div className="border-t border-line-subtle p-3">
-            <button
+            <Button variant="link"
               type="button"
               onClick={() => setLines((prev) => [...prev, emptyLine(prev.length + 1)])}
-              className="flex items-center gap-2 text-xs text-primary-600 hover:text-primary-700 font-medium"
+              className="text-xs"
             >
               <Plus className="h-3.5 w-3.5" />
               Add line item ({lines.length}/20)
-            </button>
+            </Button>
           </div>
         )}
       </div>

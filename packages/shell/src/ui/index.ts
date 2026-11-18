@@ -25,4 +25,4 @@ export {
 } from './sortable'
 export { AuthLayout, AuthHeading, type AuthLayoutProps, type AuthModule } from './auth'
 export { DropdownPortal, useAnchorRect, ContextMenu } from './popover'
-export { MenuItem, ChoiceCard, type MenuItemProps, type ChoiceCardProps } from './choice'
+export { MenuItem, ChoiceCard, DisclosureButton, type MenuItemProps, type ChoiceCardProps, type DisclosureButtonProps } from './choice'

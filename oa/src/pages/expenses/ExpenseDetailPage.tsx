@@ -12,6 +12,7 @@ import { ActionModal } from '@/components/ui/ActionModal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
+import { FileInput, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ApprovalEvent {
@@ -251,29 +252,29 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
         </h2>
         <div className="flex items-center gap-4">
         {canRegeneratePdf && (
-          <button
+          <Button variant="link"
             type="button"
             disabled={regenPdf.isPending}
             onClick={() => regenPdf.mutate()}
-            className="flex items-center gap-1.5 text-xs font-medium text-primary-700 hover:text-primary-900 disabled:opacity-50"
+            className="text-xs"
           >
             <FileText className="h-3.5 w-3.5" />
             {regenPdf.isPending ? 'Generating…' : 'Regenerate PDF'}
-          </button>
+          </Button>
         )}
         {canUpload && (
-          <button
+          <Button variant="link"
             type="button"
             disabled={uploading}
             onClick={() => fileRef.current?.click()}
-            className="flex items-center gap-1.5 text-xs font-medium text-primary-700 hover:text-primary-900 disabled:opacity-50"
+            className="text-xs"
           >
             <Upload className="h-3.5 w-3.5" />
             {uploading ? 'Uploading…' : 'Upload file'}
-          </button>
+          </Button>
         )}
         </div>
-        <input ref={fileRef} type="file" className="hidden" onChange={handleFileChange}
+        <FileInput ref={fileRef} className="hidden" onChange={handleFileChange}
           accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.csv,.doc,.docx" />
       </div>
 
@@ -310,16 +311,16 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {att.download_url && (
-                  <button type="button" onClick={() => download(att)}
-                    className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-800">
+                  <Button variant="link" type="button" onClick={() => download(att)}
+                    className="text-xs">
                     <Download className="h-3.5 w-3.5" />Download
-                  </button>
+                  </Button>
                 )}
                 {canUpload && (
-                  <button onClick={() => deleteMutation.mutate(att.id)}
-                    className="text-fg-faint hover:text-danger-fg transition-colors">
+                  <Button variant="danger-ghost" size="icon-xs" aria-label="Remove" onClick={() => deleteMutation.mutate(att.id)}
+                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
@@ -428,14 +429,14 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
                   <p className="mt-0.5 text-xs text-fg-muted">
                     {s.approver_name ? `Awaiting ${s.approver_name}` : 'Awaiting this approver'}
                   </p>
-                  <button
+                  <Button variant="link"
                     type="button"
                     onClick={() => remindMutation.mutate()}
                     disabled={remindMutation.isPending}
-                    className="mt-1 text-xs text-primary-700 hover:underline disabled:cursor-not-allowed disabled:text-fg-muted disabled:no-underline"
+                    className="mt-1 text-xs"
                   >
                     {remindMutation.isPending ? 'Sending reminder…' : 'Send reminder'}
-                  </button>
+                  </Button>
                   {reminderMsg && !remindMutation.isPending && (
                     <p className={cn('mt-1 text-xs', reminderMsg.ok ? 'text-success-fg' : 'text-warning-fg')}>
                       {reminderMsg.text}
@@ -574,17 +575,17 @@ export default function ExpenseDetailPage() {
     <div className="flex flex-col gap-6 max-w-6xl">
       {/* Back + header */}
       <div>
-        <button
+        <Button variant="subtle" size="xs"
           onClick={() => navigate(backHref)}
-          className="mb-4 flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg-secondary"
+          className="mb-4 text-sm"
         >
           <ArrowLeft className="h-4 w-4" />
           {backLabel}
-        </button>
+        </Button>
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-fg">{claim.claim_number}</h1>
+              <h1 className="text-2xl font-semibold text-fg">{claim.claim_number}</h1>
               <StatusBadge status={claim.status} />
               {claim.is_over_budget && (
                 <span className="flex items-center gap-1 rounded-full bg-warning-soft border border-warning-line px-2 py-0.5 text-xs text-warning-fg">
@@ -605,61 +606,61 @@ export default function ExpenseDetailPage() {
                 returned), and with only Edit here a returned claim could be
                 changed but never sent back into approval. */}
             {isEditable(claim.status) && canSubmit && (
-              <button
+              <Button size="md"
                 onClick={() => setActiveAction(ACTION.SUBMIT)}
                 disabled={missingAttachment}
                 title={missingAttachment ? 'Attach at least one receipt before submitting' : undefined}
-                className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 disabled:cursor-not-allowed"
+               
               >
                 Submit
-              </button>
+              </Button>
             )}
             {isEditable(claim.status) && canEdit && (
-              <button
+              <Button variant="secondary" size="md"
                 onClick={() => navigate(`/expenses/${claim.id}/edit`)}
-                className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle"
+               
               >
                 Edit
-              </button>
+              </Button>
             )}
             {isInApproval(claim.status) && canApprove && (
               <>
-                <button
+                <Button variant="warning-outline" size="md"
                   onClick={() => setActiveAction(ACTION.RETURN)}
-                  className="rounded-lg border border-warning-line px-4 py-2 text-sm font-medium text-warning-fg hover:bg-warning-soft"
+                 
                 >
                   Return
-                </button>
-                <button
+                </Button>
+                <Button variant="danger-outline" size="md"
                   onClick={() => setActiveAction(ACTION.REJECT)}
-                  className="rounded-lg border border-danger-line px-4 py-2 text-sm font-medium text-danger-fg hover:bg-danger-soft"
+                 
                 >
                   Reject
-                </button>
-                <button
+                </Button>
+                <Button variant="success" size="md"
                   onClick={() => setActiveAction(ACTION.APPROVE)}
-                  className="rounded-lg bg-success-solid px-4 py-2 text-sm font-medium text-white hover:bg-success-700"
+                 
                 >
                   Approve
-                </button>
+                </Button>
               </>
             )}
             {claim.status === STATUS.APPROVED && canPay && (
-              <button
+              <Button variant="success" size="md"
                 onClick={() => setActiveAction(ACTION.PAY)}
-                className="rounded-lg bg-success-solid px-4 py-2 text-sm font-medium text-white hover:bg-success-700"
+               
               >
                 Mark as Processed
-              </button>
+              </Button>
             )}
             {canDelete && (
-              <button
+              <Button variant="danger-outline" size="md"
                 onClick={() => { setDeleteError(''); setConfirmingDelete(true) }}
-                className="inline-flex items-center gap-2 rounded-lg border border-danger-line px-4 py-2 text-sm font-medium text-danger-fg hover:bg-danger-soft"
+               
               >
                 <Trash2 className="h-4 w-4" />
                 Delete
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -743,10 +744,10 @@ export default function ExpenseDetailPage() {
         <div className="rounded-xl border border-line bg-surface p-5 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-fg-secondary">Travel Application</h2>
-            <button onClick={() => regenPdf.mutate()} disabled={regenPdf.isPending}
-              className="text-xs font-medium text-primary-700 hover:text-primary-900 disabled:opacity-50">
+            <Button variant="link" onClick={() => regenPdf.mutate()} disabled={regenPdf.isPending}
+              className="text-xs">
               {regenPdf.isPending ? 'Generating…' : 'Regenerate PDF'}
-            </button>
+            </Button>
           </div>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
             <div><dt className="text-fg-muted">Travelers</dt>
@@ -775,28 +776,28 @@ export default function ExpenseDetailPage() {
               <span className="text-xs text-fg-muted">Outside Canada ({claim.travel_country}) — no sales tax</span>
             )}
           </div>
-          <table className="w-full text-sm">
-            <thead className="bg-surface-subtle border-b border-line-subtle">
-              <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium text-fg-muted w-8">#</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-fg-muted w-28">Date</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-fg-muted">Description</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-fg-muted">Budget Account</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-fg-muted">Total</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-fg-muted">Tax</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-fg-muted">Net</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table density="compact">
+            <THead>
+              <Tr>
+                <Th className="w-8">#</Th>
+                <Th className="w-28">Date</Th>
+                <Th>Description</Th>
+                <Th>Budget Account</Th>
+                <Th align="right">Total</Th>
+                <Th align="right">Tax</Th>
+                <Th align="right">Net</Th>
+              </Tr>
+            </THead>
+            <TBody>
               {claim.line_items.map((li) => (
-                <tr key={li.id} className="border-b border-line-subtle">
-                  <td className="px-4 py-2 text-xs text-fg-muted font-mono">{li.line_number}</td>
-                  <td className="px-4 py-2 text-xs text-fg-secondary">
+                <Tr key={li.id}>
+                  <Td className="text-xs text-fg-muted font-mono">{li.line_number}</Td>
+                  <Td className="text-xs text-fg-secondary">
                     {li.period_from
                       ? <>{formatDate(li.period_from)} –<br />{formatDate(li.period_to!)}</>
                       : formatDate(li.expense_date)}
-                  </td>
-                  <td className="px-4 py-2 text-xs text-fg">
+                  </Td>
+                  <Td className="text-xs text-fg">
                     {li.description}
                     {li.period_from && (
                       <div className="text-fg-muted">{li.period_days} days × {formatAmount(li.daily_rate ?? 0, claim.currency)}</div>
@@ -807,15 +808,15 @@ export default function ExpenseDetailPage() {
                     {li.invoice_amount != null && (
                       <div className="text-fg-muted">Invoice {formatAmount(li.invoice_amount, claim.currency)}</div>
                     )}
-                  </td>
-                  <td className="px-4 py-2 text-xs text-fg-secondary">{li.budget_account_code} — {li.budget_account_name}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono">{formatAmount(li.total_amount, claim.currency)}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono text-fg-muted">{formatAmount(li.tax_amount, claim.currency)}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono font-medium text-primary-700">{formatAmount(li.net_amount, claim.currency)}</td>
-                </tr>
+                  </Td>
+                  <Td className="text-xs text-fg-secondary">{li.budget_account_code} — {li.budget_account_name}</Td>
+                  <Td align="right" className="text-xs font-mono">{formatAmount(li.total_amount, claim.currency)}</Td>
+                  <Td align="right" className="text-xs font-mono text-fg-muted">{formatAmount(li.tax_amount, claim.currency)}</Td>
+                  <Td align="right" className="text-xs font-mono font-medium text-primary-700">{formatAmount(li.net_amount, claim.currency)}</Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
       )}
 
@@ -825,35 +826,35 @@ export default function ExpenseDetailPage() {
           <div className="border-b border-line-subtle px-5 py-3">
             <h2 className="text-sm font-semibold text-fg-secondary">Trip Log</h2>
           </div>
-          <table className="w-full text-sm">
-            <thead className="bg-surface-subtle border-b border-line-subtle">
-              <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium text-fg-muted w-8">#</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-fg-muted w-28">Date</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-fg-muted">Route</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-fg-muted">Purpose</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-fg-muted">km</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-fg-muted">Rate</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-fg-muted">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table density="compact">
+            <THead>
+              <Tr>
+                <Th className="w-8">#</Th>
+                <Th className="w-28">Date</Th>
+                <Th>Route</Th>
+                <Th>Purpose</Th>
+                <Th align="right">km</Th>
+                <Th align="right">Rate</Th>
+                <Th align="right">Amount</Th>
+              </Tr>
+            </THead>
+            <TBody>
               {claim.trip_items.map((ti) => (
-                <tr key={ti.id} className="border-b border-line-subtle">
-                  <td className="px-4 py-2 text-xs text-fg-muted font-mono">{ti.trip_number}</td>
-                  <td className="px-4 py-2 text-xs text-fg-secondary">{formatDate(ti.trip_date)}</td>
-                  <td className="px-4 py-2 text-xs text-fg">
+                <Tr key={ti.id}>
+                  <Td className="text-xs text-fg-muted font-mono">{ti.trip_number}</Td>
+                  <Td className="text-xs text-fg-secondary">{formatDate(ti.trip_date)}</Td>
+                  <Td className="text-xs text-fg">
                     {ti.from_location} → {ti.to_location}
                     {ti.is_round_trip && <span className="ml-1.5 text-2xs text-fg-muted bg-surface-sunken rounded px-1 py-0.5">Round trip</span>}
-                  </td>
-                  <td className="px-4 py-2 text-xs text-fg-secondary">{ti.purpose}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono">{Number(ti.distance_km).toFixed(1)}{ti.is_round_trip ? ' ×2' : ''}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono text-fg-muted">${Number(ti.rate_per_km).toFixed(4)}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono font-medium text-primary-700">{formatAmount(ti.amount, claim.currency)}</td>
-                </tr>
+                  </Td>
+                  <Td className="text-xs text-fg-secondary">{ti.purpose}</Td>
+                  <Td align="right" className="text-xs font-mono">{Number(ti.distance_km).toFixed(1)}{ti.is_round_trip ? ' ×2' : ''}</Td>
+                  <Td align="right" className="text-xs font-mono text-fg-muted">${Number(ti.rate_per_km).toFixed(4)}</Td>
+                  <Td align="right" className="text-xs font-mono font-medium text-primary-700">{formatAmount(ti.amount, claim.currency)}</Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
       )}
 

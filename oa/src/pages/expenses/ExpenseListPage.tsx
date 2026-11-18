@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Plus, ChevronDown, Receipt, Car, Plane, FileText } from 'lucide-react'
@@ -7,7 +7,7 @@ import { api } from '@/lib/api'
 import { STATUS } from '@/lib/status'
 import { Pagination } from '@/components/ui/Pagination'
 import { StatusBadge } from '@/components/ui/badge'
-import { SortTh, useSort } from '@uniops/shell'
+import { Button, DropdownPortal, MenuItem, SortTh, TBody, THead, Table, Tabs, Td, Tr, useAnchorRect, useSort } from '@uniops/shell'
 
 type ExpenseSortKey = 'claim_number' | 'claim_type' | 'employee_name' | 'net_amount' | 'status' | 'date'
 
@@ -44,7 +44,7 @@ const TYPE_CONFIG: Record<string, { label: string; class: string }> = {
 function TypeBadge({ type }: { type: string }) {
   const cfg = TYPE_CONFIG[type] ?? { label: type, class: 'bg-surface-sunken text-fg-muted' }
   return (
-    <span className={cn('inline-flex rounded px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide', cfg.class)}>
+    <span className={cn('inline-flex rounded px-1.5 py-0.5 text-2xs font-semibold', cfg.class)}>
       {cfg.label}
     </span>
   )
@@ -63,6 +63,8 @@ export default function ExpenseListPage() {
   const activeStatus = params.get('status') ?? 'all'
   const activeType = params.get('type') ?? ''
   const [newMenuOpen, setNewMenuOpen] = useState(false)
+  const newMenuAnchorRef = useRef<HTMLDivElement>(null)
+  const newMenuRect = useAnchorRect(newMenuOpen, newMenuAnchorRef)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   // Paged by expense-api, so the API sorts (null = its default, newest first).
@@ -96,83 +98,71 @@ export default function ExpenseListPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-fg">Expense Claims</h1>
+          <h1 className="text-2xl font-semibold text-fg">Expense Claims</h1>
           <p className="mt-0.5 text-sm text-fg-muted">Expense, mileage, travel and custom-form reimbursements</p>
         </div>
 
         {/* New claim dropdown */}
-        <div className="relative">
-          <button
+        <div className="relative" ref={newMenuAnchorRef}>
+          <Button size="md"
+            aria-haspopup="menu"
+            aria-expanded={newMenuOpen}
             onClick={() => setNewMenuOpen((v) => !v)}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors"
+           
           >
             <Plus className="h-4 w-4" />
             New Claim
             <ChevronDown className="h-3.5 w-3.5" />
-          </button>
-          {newMenuOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setNewMenuOpen(false)} />
-              <div className="absolute right-0 top-full mt-1 z-20 w-52 rounded-lg border border-line bg-surface py-1 shadow-lg">
-                <button
+          </Button>
+          {newMenuOpen && newMenuRect && (
+            <DropdownPortal anchorRect={newMenuRect} onClose={() => setNewMenuOpen(false)} align="end" width={208} className="py-1">
+                <MenuItem
                   onClick={() => { setNewMenuOpen(false); navigate('/expenses/new/exp') }}
-                  className="flex w-full items-center gap-3 px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
+                 
                 >
                   <Receipt className="h-4 w-4 text-primary-600" />
                   <span>General Expense (EXP)</span>
-                </button>
-                <button
+                </MenuItem>
+                <MenuItem
                   onClick={() => { setNewMenuOpen(false); navigate('/expenses/new/mil') }}
-                  className="flex w-full items-center gap-3 px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
+                 
                 >
                   <Car className="h-4 w-4 text-warning-fg" />
                   <span>Mileage Claim (MIL)</span>
-                </button>
-                <button
+                </MenuItem>
+                <MenuItem
                   onClick={() => { setNewMenuOpen(false); navigate('/expenses/new/trv') }}
-                  className="flex w-full items-center gap-3 px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
+                 
                 >
                   <Plane className="h-4 w-4 text-info-fg" />
                   <span>Travel Expense (TRV)</span>
-                </button>
+                </MenuItem>
                 {(customForms?.length ?? 0) > 0 && (
                   <>
                     <div className="my-1 border-t border-line-subtle" />
                     {customForms!.map((cf) => (
-                      <button
+                      <MenuItem
                         key={cf.code}
                         onClick={() => { setNewMenuOpen(false); navigate(`/expenses/new/cfm/${cf.code}`) }}
-                        className="flex w-full items-center gap-3 px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
+                       
                       >
                         <FileText className="h-4 w-4 text-fg-muted" />
                         <span>{cf.name} (CFM)</span>
-                      </button>
+                      </MenuItem>
                     ))}
                   </>
                 )}
-              </div>
-            </>
+            </DropdownPortal>
           )}
         </div>
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-1 border-b border-line">
-        {TABS.map((s) => (
-          <button
-            key={s}
-            onClick={() => { setParams(s === 'all' ? {} : { status: s }); setPage(1) }}
-            className={cn(
-              'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
-              activeStatus === s
-                ? 'border-primary-700 text-primary-700'
-                : 'border-transparent text-fg-muted hover:text-fg-secondary',
-            )}
-          >
-            {s === 'all' ? 'All' : s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        items={TABS.map((s) => ({ key: s, label: s === 'all' ? 'All' : s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) }))}
+        value={activeStatus}
+        onChange={(s) => { setParams(s === 'all' ? {} : { status: s }); setPage(1) }}
+      />
 
       {/* Table */}
       <div className="rounded-xl border border-line bg-surface overflow-hidden">
@@ -187,41 +177,41 @@ export default function ExpenseListPage() {
             <p className="mt-1 text-sm text-fg-muted">Click "New Claim" to submit a reimbursement.</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="border-b border-line-subtle bg-surface-subtle">
-              <tr>
-                <SortTh label="Claim #" sortKey="claim_number" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs uppercase tracking-wide" />
-                <SortTh label="Type" sortKey="claim_type" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs uppercase tracking-wide" />
-                <SortTh label="Employee" sortKey="employee_name" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs uppercase tracking-wide" />
-                <SortTh label="Net Amount" sortKey="net_amount" sort={sort} onSort={onSort} align="right" className="px-4 py-3 font-medium text-fg-muted text-xs uppercase tracking-wide" />
-                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs uppercase tracking-wide" />
-                <SortTh label="Date" sortKey="date" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs uppercase tracking-wide" />
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <THead>
+              <Tr>
+                <SortTh label="Claim #" sortKey="claim_number" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs" />
+                <SortTh label="Type" sortKey="claim_type" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs" />
+                <SortTh label="Employee" sortKey="employee_name" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs" />
+                <SortTh label="Net Amount" sortKey="net_amount" sort={sort} onSort={onSort} align="right" className="px-4 py-3 font-medium text-fg-muted text-xs" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs" />
+                <SortTh label="Date" sortKey="date" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-fg-muted text-xs" />
+              </Tr>
+            </THead>
+            <TBody>
               {data.items.map((c, i) => (
-                <tr
+                <Tr
                   key={c.id}
                   className={cn('border-b border-line-subtle hover:bg-surface-subtle cursor-pointer', i === data.items.length - 1 && 'border-b-0')}
                   onClick={() => navigate(`/expenses/${c.id}`)}
                 >
-                  <td className="px-4 py-3 font-mono text-xs text-primary-600 font-medium">{c.claim_number}</td>
-                  <td className="px-4 py-3"><TypeBadge type={c.claim_type} /></td>
-                  <td className="px-4 py-3 text-fg-secondary">{c.employee_name}</td>
-                  <td className="px-4 py-3 text-right font-mono text-fg">{formatAmount(c.net_amount, c.currency)}</td>
-                  <td className="px-4 py-3">
+                  <Td className="font-mono text-xs text-primary-600 font-medium">{c.claim_number}</Td>
+                  <Td><TypeBadge type={c.claim_type} /></Td>
+                  <Td className="text-fg-secondary">{c.employee_name}</Td>
+                  <Td align="right" className="font-mono text-fg">{formatAmount(c.net_amount, c.currency)}</Td>
+                  <Td>
                     <div className="flex items-center gap-1.5">
                       <StatusBadge status={c.status} />
                       {c.is_over_budget && (
                         <span className="text-2xs font-medium text-warning-fg bg-warning-soft rounded px-1 py-0.5">Over Budget</span>
                       )}
                     </div>
-                  </td>
-                  <td className="px-4 py-3 text-fg-muted">{formatDate(c.submitted_at ?? c.created_at)}</td>
-                </tr>
+                  </Td>
+                  <Td className="text-fg-muted">{formatDate(c.submitted_at ?? c.created_at)}</Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         )}
         {(data?.total ?? 0) > 0 && (
           <Pagination

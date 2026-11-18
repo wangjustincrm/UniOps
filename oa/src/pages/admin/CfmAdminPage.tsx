@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Check, Loader2, ToggleLeft, ToggleRight, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, Check, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
+import { Button, DisclosureButton, Input, Select, Switch, Textarea } from '@uniops/shell'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface CfmField {
@@ -68,54 +69,51 @@ function FieldEditor({ field, onChange, onRemove }: {
   const [open, setOpen] = useState(true)
   return (
     <div className="rounded-lg border border-line bg-surface-subtle">
-      <button type="button" onClick={() => setOpen(v => !v)}
-        className="flex w-full items-center justify-between px-3 py-2 text-xs font-semibold text-fg-secondary">
-        <span className="flex items-center gap-1.5">
-          {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+      {/* Header row: toggle and remove are siblings (a button inside a button is invalid HTML). */}
+      <div className="flex items-center pr-1">
+        <DisclosureButton open={open} iconSize="sm" onClick={() => setOpen(v => !v)}
+          className="flex-1 gap-1.5 px-3 py-2 text-xs font-semibold text-fg-secondary">
           {field.label || 'New field'}
-        </span>
-        <button type="button" onClick={e => { e.stopPropagation(); onRemove() }}
-          className="text-fg-faint hover:text-danger-fg transition-colors">
+        </DisclosureButton>
+        <Button variant="danger-ghost" size="icon-xs" aria-label="Remove" type="button" onClick={onRemove}>
           <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </button>
+        </Button>
+      </div>
 
       {open && (
         <div className="px-3 pb-3 grid grid-cols-2 gap-2">
           <div>
             <label className="text-2xs font-medium text-fg-muted">Label</label>
-            <input value={field.label}
+            <Input inputSize="sm" value={field.label}
               onChange={e => onChange({ ...field, label: e.target.value,
                 name: e.target.value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') })}
-              className="mt-0.5 w-full rounded border border-line px-2 py-1 text-xs focus:outline-none" />
+              className="mt-0.5 w-full" />
           </div>
           <div>
             <label className="text-2xs font-medium text-fg-muted">Field Name (auto)</label>
-            <input value={field.name} readOnly
-              className="mt-0.5 w-full rounded border border-line-subtle bg-surface-sunken px-2 py-1 text-xs text-fg-muted" />
+            <Input inputSize="sm" value={field.name} readOnly
+              className="mt-0.5 w-full" />
           </div>
           <div>
             <label className="text-2xs font-medium text-fg-muted">Type</label>
-            <select value={field.field_type}
+            <Select selectSize="sm" value={field.field_type}
               onChange={e => onChange({ ...field, field_type: e.target.value as CfmField['field_type'] })}
-              className="mt-0.5 w-full rounded border border-line bg-surface px-2 py-1 text-xs focus:outline-none">
+              className="mt-0.5 w-full">
               {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-            </select>
+            </Select>
           </div>
           <div className="flex items-end gap-2">
             <label className="text-2xs font-medium text-fg-muted mb-1">Required</label>
-            <button type="button" onClick={() => onChange({ ...field, required: !field.required })}
-              className={cn('mb-1', field.required ? 'text-primary-600' : 'text-fg-faint')}>
-              {field.required ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}
-            </button>
+            <Switch size="sm" className="mb-1" aria-label="Required" checked={field.required}
+              onCheckedChange={(required) => onChange({ ...field, required })} />
           </div>
           {field.field_type === 'select' && (
             <div className="col-span-2">
               <label className="text-2xs font-medium text-fg-muted">Options (one per line)</label>
-              <textarea rows={3}
+              <Textarea rows={3}
                 value={field.options_text ?? field.options.join('\n')}
                 onChange={e => onChange({ ...field, options_text: e.target.value })}
-                className="mt-0.5 w-full rounded border border-line px-2 py-1 text-xs focus:outline-none resize-none" />
+                className="mt-0.5 w-full resize-none" />
             </div>
           )}
         </div>
@@ -142,23 +140,20 @@ function FormEditor({ form, onChange, onRemove }: {
   return (
     <div className="rounded-xl border border-line bg-surface">
       <div className="flex items-center justify-between px-4 py-3 border-b border-line-subtle">
-        <button type="button" onClick={() => setOpen(v => !v)}
-          className="flex items-center gap-2 text-sm font-semibold text-fg">
-          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        <DisclosureButton open={open} onClick={() => setOpen(v => !v)}
+          className="text-sm font-semibold text-fg">
           {form.name || 'New Form'}
           <span className="text-xs font-mono text-fg-muted">{form.code ? `CFM_${form.code}` : ''}</span>
-        </button>
+        </DisclosureButton>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => onChange({ ...form, is_active: !form.is_active })}
-            className={cn('flex items-center gap-1 text-xs font-medium',
-              form.is_active ? 'text-success-fg' : 'text-fg-muted')}>
-            {form.is_active ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}
+          <label className={cn('flex items-center gap-2 text-xs font-medium', form.is_active ? 'text-success-fg' : 'text-fg-muted')}>
+            <Switch size="sm" checked={form.is_active} onCheckedChange={(is_active) => onChange({ ...form, is_active })} />
             {form.is_active ? 'Active' : 'Inactive'}
-          </button>
-          <button type="button" onClick={onRemove}
-            className="text-fg-faint hover:text-danger-fg transition-colors">
+          </label>
+          <Button variant="danger-ghost" size="icon-xs" aria-label="Remove" type="button" onClick={onRemove}
+           >
             <Trash2 className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -167,18 +162,18 @@ function FormEditor({ form, onChange, onRemove }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block text-xs font-medium text-fg-secondary">Form Name</label>
-              <input value={form.name} onChange={e => onChange({ ...form, name: e.target.value })}
+              <Input value={form.name} onChange={e => onChange({ ...form, name: e.target.value })}
                 placeholder="e.g. Conference & Training"
-                className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400" />
+                className="w-full" />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-fg-secondary">
                 Code <span className="text-fg-muted font-normal">(UPPERCASE, no spaces)</span>
               </label>
-              <input value={form.code}
+              <Input value={form.code}
                 onChange={e => onChange({ ...form, code: e.target.value.toUpperCase().replace(/\s+/g, '_') })}
                 placeholder="e.g. CONF"
-                className="w-full rounded-lg border border-line px-3 py-2 text-sm font-mono focus:outline-none focus:border-primary-400" />
+                className="w-full font-mono" />
               {form.code && (
                 <p className="mt-1 text-2xs text-fg-muted">
                   Action key: <span className="font-mono">cfm_{form.code.toLowerCase()}</span>
@@ -189,17 +184,17 @@ function FormEditor({ form, onChange, onRemove }: {
               <label className="mb-1 block text-xs font-medium text-fg-secondary">
                 Description <span className="text-fg-muted font-normal">(shown to employees)</span>
               </label>
-              <textarea rows={2} value={form.description ?? ''}
+              <Textarea rows={2} value={form.description ?? ''}
                 onChange={e => onChange({ ...form, description: e.target.value })}
-                className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400 resize-none" />
+                className="w-full resize-none" />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-fg-secondary">Default Currency</label>
-              <select value={form.default_currency}
+              <Select value={form.default_currency}
                 onChange={e => onChange({ ...form, default_currency: e.target.value })}
-                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
+                className="w-full">
                 {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              </Select>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-fg-secondary">Workflow</label>
@@ -222,11 +217,11 @@ function FormEditor({ form, onChange, onRemove }: {
                 onChange={nf => updateField(i, nf)}
                 onRemove={() => removeField(i)} />
             ))}
-            <button type="button"
+            <Button variant="link" type="button"
               onClick={() => onChange({ ...form, fields: [...form.fields, emptyField()] })}
-              className="flex items-center gap-1.5 self-start text-xs font-medium text-primary-700 hover:text-primary-900 mt-1">
+              className="self-start mt-1 text-xs">
               <Plus className="h-3.5 w-3.5" /> Add field
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -299,7 +294,7 @@ export default function CfmAdminPage() {
   return (
     <div className="flex flex-col gap-6 max-w-2xl">
       <div>
-        <h1 className="text-2xl font-bold text-fg">Custom Forms (CFM)</h1>
+        <h1 className="text-2xl font-semibold text-fg">Custom Forms (CFM)</h1>
         <p className="mt-0.5 text-sm text-fg-muted">
           Define custom expense form types. Each form gets its own action key for approval workflow binding.
         </p>
@@ -316,21 +311,21 @@ export default function CfmAdminPage() {
             onChange={nf => setForms(prev => prev.map((f, idx) => idx === i ? nf : f))}
             onRemove={() => setForms(prev => prev.filter((_, idx) => idx !== i))} />
         ))}
-        <button type="button" onClick={() => setForms(prev => [...prev, emptyForm()])}
-          className="flex items-center gap-2 self-start rounded-lg border border-line px-4 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors">
+        <Button variant="secondary" size="md" type="button" onClick={() => setForms(prev => [...prev, emptyForm()])}
+          className="self-start">
           <Plus className="h-4 w-4" /> Add Form
-        </button>
+        </Button>
       </div>
 
       {error && <ErrorBanner message={error} />}
 
       <div className="flex items-center gap-3 border-t border-line-subtle pt-4">
-        <button onClick={() => { setError(''); mutation.mutate() }}
+        <Button size="md" onClick={() => { setError(''); mutation.mutate() }}
           disabled={mutation.isPending}
-          className="flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors">
+         >
           {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
           Save Forms
-        </button>
+        </Button>
         {saved && <span className="flex items-center gap-1.5 text-sm text-success-fg"><Check className="h-4 w-4" /> Saved</span>}
       </div>
     </div>

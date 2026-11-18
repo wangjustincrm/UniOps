@@ -36,15 +36,6 @@
    "raw-color": 2,
    "arbitrary-size": 1
   },
-  "oa": {
-   "raw-control": 134,
-   "raw-overlay": 6,
-   "shouting-type": 57,
-   "emoji": 2,
-   "raw-color": 2,
-   "raw-table": 122,
-   "arbitrary-size": 1
-  },
   "portal": {
    "raw-control": 262,
    "raw-overlay": 14,
@@ -592,93 +583,6 @@
   "mrp/src/pages/supply/SupplyRowDrawer.tsx": {
    "raw-control": 2,
    "raw-overlay": 1
-  },
-  "oa/src/components/BudgetAccountPicker.tsx": {
-   "raw-control": 5,
-   "raw-overlay": 1,
-   "shouting-type": 1
-  },
-  "oa/src/components/LineCardField.tsx": {
-   "shouting-type": 1
-  },
-  "oa/src/components/ProcessPaymentModal.tsx": {
-   "raw-control": 4,
-   "raw-overlay": 1,
-   "emoji": 2
-  },
-  "oa/src/components/ReceiptScanButton.tsx": {
-   "raw-control": 2
-  },
-  "oa/src/components/TravelerPicker.tsx": {
-   "raw-control": 3
-  },
-  "oa/src/components/layout/AppLayout.tsx": {
-   "raw-control": 4,
-   "raw-overlay": 1,
-   "raw-color": 2,
-   "shouting-type": 7
-  },
-  "oa/src/components/ui/ActionModal.tsx": {
-   "raw-control": 4,
-   "raw-overlay": 1
-  },
-  "oa/src/components/ui/ConfirmDialog.tsx": {
-   "raw-control": 3,
-   "raw-overlay": 1
-  },
-  "oa/src/components/ui/Pagination.tsx": {
-   "raw-control": 3
-  },
-  "oa/src/pages/admin/CfmAdminPage.tsx": {
-   "raw-control": 17,
-   "shouting-type": 1
-  },
-  "oa/src/pages/admin/ExpenseConfigPage.tsx": {
-   "raw-control": 2,
-   "shouting-type": 4
-  },
-  "oa/src/pages/expenses/CfmCreatePage.tsx": {
-   "raw-control": 4,
-   "shouting-type": 1
-  },
-  "oa/src/pages/expenses/ExpenseCreatePage.tsx": {
-   "raw-control": 11,
-   "raw-table": 31,
-   "shouting-type": 1
-  },
-  "oa/src/pages/expenses/ExpenseDetailPage.tsx": {
-   "raw-control": 15,
-   "raw-table": 38,
-   "shouting-type": 1
-  },
-  "oa/src/pages/expenses/ExpenseListPage.tsx": {
-   "raw-control": 6,
-   "raw-table": 11,
-   "raw-overlay": 1,
-   "shouting-type": 8
-  },
-  "oa/src/pages/expenses/MilCreatePage.tsx": {
-   "raw-control": 12,
-   "raw-table": 29,
-   "shouting-type": 1
-  },
-  "oa/src/pages/expenses/TrvCreatePage.tsx": {
-   "raw-control": 23,
-   "shouting-type": 13
-  },
-  "oa/src/pages/tasks/TaskListPage.tsx": {
-   "raw-control": 3,
-   "arbitrary-size": 1,
-   "shouting-type": 9
-  },
-  "oa/src/pages/travel/TraCreatePage.tsx": {
-   "raw-control": 10,
-   "shouting-type": 1
-  },
-  "oa/src/pages/travel/TravelApplicationsListPage.tsx": {
-   "raw-control": 3,
-   "raw-table": 13,
-   "shouting-type": 8
   },
   "portal/src/components/ConfirmDialog.tsx": {
    "raw-control": 3,

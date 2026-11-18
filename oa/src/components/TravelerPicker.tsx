@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom'
 import { X, Search } from 'lucide-react'
 import { api } from '@/lib/api'
 
+import { Input, Button, MenuItem } from '@uniops/shell'
 export interface Traveler { user_id: string; user_name: string }
 interface DirectoryUser { id: string; full_name: string; email?: string }
 
@@ -78,11 +79,11 @@ export function TravelerPicker({ value, onChange }: {
     <div ref={overlayRef} className="z-[9999] rounded-lg border border-line bg-surface shadow-lg"
       style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, maxHeight: 240, overflowY: 'auto' }}>
       {results.map(u => (
-        <button type="button" key={u.id} onMouseDown={e => e.preventDefault()} onClick={() => add(u)}
-          className="flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-primary-50">
+        <MenuItem type="button" key={u.id} onMouseDown={e => e.preventDefault()} onClick={() => add(u)}
+         >
           <span className="font-medium text-fg">{u.full_name}</span>
           {u.email && <span className="text-xs text-fg-muted">{u.email}</span>}
-        </button>
+        </MenuItem>
       ))}
     </div>, document.body) : null
 
@@ -92,17 +93,17 @@ export function TravelerPicker({ value, onChange }: {
         {value.map(t => (
           <span key={t.user_id} className="inline-flex items-center gap-1 rounded-full bg-primary-100 px-2.5 py-1 text-xs font-medium text-primary-700">
             {t.user_name}
-            <button type="button" onClick={() => remove(t.user_id)} aria-label={`Remove ${t.user_name}`} className="text-primary-400 hover:text-danger-fg">
+            <Button variant="ghost" size="icon-xs" type="button" onClick={() => remove(t.user_id)} aria-label={`Remove ${t.user_name}`}>
               <X className="h-3 w-3" />
-            </button>
+            </Button>
           </span>
         ))}
       </div>
       <div ref={triggerRef} className="relative">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-fg-muted" />
-        <input value={q} onFocus={() => setOpen(true)} onChange={e => { setQ(e.target.value); setOpen(true) }}
+        <Input value={q} onFocus={() => setOpen(true)} onChange={e => { setQ(e.target.value); setOpen(true) }}
           placeholder="Search employees by name or email…"
-          className="w-full rounded-lg border border-line py-2 pl-9 pr-3 text-sm focus:outline-none focus:border-primary-400" />
+          className="w-full pl-9 pr-3" />
       </div>
       {dropdown}
     </div>

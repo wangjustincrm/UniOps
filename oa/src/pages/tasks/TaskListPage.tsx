@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button } from '@uniops/shell'
+import { Button, Segmented, Select } from '@uniops/shell'
 import {
   CheckCircle2, Clock, AlertTriangle, ArrowRight,
   Inbox, Receipt, RotateCcw, Banknote, RefreshCw,
@@ -133,7 +133,7 @@ function TaskCard({ task }: { task: OaTaskItem }) {
   return (
     <div
       className={cn(
-        'rounded-xl border p-4 transition-shadow hover:shadow-[0_2px_8px_rgba(8,94,94,0.08)] cursor-pointer',
+        'rounded-xl border p-4 transition-shadow hover:shadow-sm cursor-pointer',
         meta.border, meta.bg,
       )}
       onClick={() => navigate(href)}
@@ -189,13 +189,13 @@ function TaskCard({ task }: { task: OaTaskItem }) {
           </div>
         </div>
 
-        <button
-          className="shrink-0 rounded-lg p-1.5 text-fg-muted hover:bg-white/80 hover:text-primary-600 transition-colors"
+        <Button variant="subtle" size="icon-sm"
+          className="shrink-0"
           aria-label="Open document"
           onClick={(e) => { e.stopPropagation(); navigate(href) }}
         >
           <ArrowRight className="h-4 w-4" />
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -280,7 +280,7 @@ export default function TaskListPage() {
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-fg">Task Inbox</h1>
+          <h1 className="text-2xl font-semibold text-fg">Task Inbox</h1>
           <p className="mt-1 text-sm text-fg-muted">All pending OA actions</p>
         </div>
         <Button
@@ -301,27 +301,27 @@ export default function TaskListPage() {
         <div className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-3">
           <div className="flex items-center gap-1.5 mb-1">
             <CheckCircle2 className="h-4 w-4 text-primary-600" />
-            <p className="text-xs font-semibold uppercase tracking-wide text-primary-600">Approve</p>
+            <p className="text-xs font-semibold text-primary-600">Approve</p>
           </div>
-          <p className="text-2xl font-bold text-primary-700">{approveCount}</p>
+          <p className="text-2xl font-semibold text-primary-700">{approveCount}</p>
           <p className="text-xs text-primary-500 mt-0.5">pending approval</p>
         </div>
 
         <div className="rounded-xl border border-warning-line bg-warning-soft px-4 py-3">
           <div className="flex items-center gap-1.5 mb-1">
             <AlertTriangle className="h-4 w-4 text-warning-fg" />
-            <p className="text-xs font-semibold uppercase tracking-wide text-warning-fg">Revise</p>
+            <p className="text-xs font-semibold text-warning-fg">Revise</p>
           </div>
-          <p className="text-2xl font-bold text-warning-fg">{reviseCount}</p>
+          <p className="text-2xl font-semibold text-warning-fg">{reviseCount}</p>
           <p className="text-xs text-warning-fg mt-0.5">returned to you</p>
         </div>
 
         <div className="rounded-xl border border-info-line bg-info-soft px-4 py-3">
           <div className="flex items-center gap-1.5 mb-1">
             <Banknote className="h-4 w-4 text-info-fg" />
-            <p className="text-xs font-semibold uppercase tracking-wide text-info-fg">Pay</p>
+            <p className="text-xs font-semibold text-info-fg">Pay</p>
           </div>
-          <p className="text-2xl font-bold text-info-fg">{payCount}</p>
+          <p className="text-2xl font-semibold text-info-fg">{payCount}</p>
           <p className="text-xs text-info-fg mt-0.5">awaiting payment</p>
         </div>
       </div>
@@ -329,44 +329,38 @@ export default function TaskListPage() {
       {/* Filters */}
       <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
         {/* Tab strip */}
-        <div className="flex items-center gap-1 rounded-lg bg-surface-sunken p-1">
-          {TABS.map(t => (
-            <button
-              key={t.value}
-              onClick={() => setTab(t.value)}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                tab === t.value
-                  ? 'bg-surface text-fg shadow-sm'
-                  : 'text-fg-muted hover:text-fg-secondary',
-              )}
-            >
-              {t.label}
+        <Segmented<Tab>
+          size="md"
+          items={TABS.map(t => ({
+            key: t.value,
+            label: <>{t.label}
               {t.value === 'action' && actionCount > 0 && (
-                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-600 px-1 text-2xs font-bold text-white">
+                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-2xs font-semibold text-fg-on-accent">
                   {actionCount}
                 </span>
               )}
               {t.value === 'mine' && mineCount > 0 && (
-                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-fg-muted px-1 text-2xs font-bold text-white">
+                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-fg-muted px-1 text-2xs font-semibold text-fg-on-accent">
                   {mineCount}
                 </span>
               )}
-            </button>
-          ))}
-        </div>
+            </>,
+          }))}
+          value={tab}
+          onChange={setTab}
+        />
 
         {/* Doc type filter */}
-        <select
+        <Select selectSize="sm"
           value={docTypeFilter}
           onChange={e => setDocTypeFilter(e.target.value)}
-          className="h-9 rounded-lg border border-line bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-500/30"
+         
         >
           <option value="all">All Types</option>
           {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
             <option key={k} value={k}>{v}</option>
           ))}
-        </select>
+        </Select>
       </div>
 
       {/* List (grouped by task type) */}

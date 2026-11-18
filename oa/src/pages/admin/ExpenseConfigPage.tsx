@@ -4,6 +4,7 @@ import { Check, Loader2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
+import { Input, Button } from '@uniops/shell'
 interface Policy {
   id: string
   hst_rate: number
@@ -33,10 +34,10 @@ function NumberInput({
   value: string; onChange: (v: string) => void; step?: string; min?: string
 }) {
   return (
-    <input
+    <Input
       type="number" min={min} step={step} value={value}
       onChange={e => onChange(e.target.value)}
-      className="w-full rounded-lg border border-line px-3 py-2 text-sm text-right focus:outline-none focus:border-primary-400"
+      className="w-full text-right"
     />
   )
 }
@@ -104,7 +105,7 @@ export default function ExpenseConfigPage() {
   return (
     <form onSubmit={handleSave} className="flex flex-col gap-8 max-w-lg">
       <div>
-        <h1 className="text-2xl font-bold text-fg">Expense Configuration</h1>
+        <h1 className="text-2xl font-semibold text-fg">Expense Configuration</h1>
         <p className="mt-0.5 text-sm text-fg-muted">
           Rates and limits applied to all expense claims. Changes take effect immediately on new submissions.
         </p>
@@ -112,7 +113,7 @@ export default function ExpenseConfigPage() {
 
       {/* Tax */}
       <section className="flex flex-col gap-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted border-b border-line-subtle pb-2">
+        <h2 className="text-xs font-semibold text-fg-muted border-b border-line-subtle pb-2">
           Tax
         </h2>
         <Field label="HST / GST Rate" hint="Enter as decimal — e.g. 0.13 for 13%">
@@ -122,7 +123,7 @@ export default function ExpenseConfigPage() {
 
       {/* Mileage */}
       <section className="flex flex-col gap-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted border-b border-line-subtle pb-2">
+        <h2 className="text-xs font-semibold text-fg-muted border-b border-line-subtle pb-2">
           Mileage (MIL)
         </h2>
         <Field label="Rate per km (CAD)" hint="CRA prescribed rate; applied to all mileage claims">
@@ -135,7 +136,7 @@ export default function ExpenseConfigPage() {
 
       {/* Travel meal limits */}
       <section className="flex flex-col gap-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted border-b border-line-subtle pb-2">
+        <h2 className="text-xs font-semibold text-fg-muted border-b border-line-subtle pb-2">
           Travel Meal Limits per Meal (TRV) — CAD
         </h2>
         <p className="text-xs text-fg-muted">
@@ -160,11 +161,11 @@ export default function ExpenseConfigPage() {
       {error && <ErrorBanner message={error} />}
 
       <div className="flex items-center gap-3">
-        <button type="submit" disabled={mutation.isPending}
-          className="flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors">
+        <Button size="md" type="submit" disabled={mutation.isPending}
+         >
           {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
           Save Configuration
-        </button>
+        </Button>
         {saved && (
           <span className="flex items-center gap-1.5 text-sm text-success-fg">
             <Check className="h-4 w-4" /> Saved

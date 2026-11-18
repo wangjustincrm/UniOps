@@ -25,7 +25,7 @@ export function useAnchorRect<T extends HTMLElement>(open: boolean, anchorRef: R
   return rect
 }
 
-export function DropdownPortal({ anchorRect, onClose, children, className, align = 'start', width }: {
+export function DropdownPortal({ anchorRect, onClose, children, className, align = 'start', width, flipHeight }: {
   anchorRect: DOMRect
   onClose: () => void
   children: React.ReactNode
@@ -34,9 +34,17 @@ export function DropdownPortal({ anchorRect, onClose, children, className, align
   align?: 'start' | 'end'
   /** Fixed width in px; default = the anchor's width. */
   width?: number
+  /** Expected panel height in px. When set, the panel opens upward if that much
+      does not fit below the anchor but does fit above it. */
+  flipHeight?: number
 }) {
   const w = width ?? anchorRect.width
-  const left = align === 'end' ? anchorRect.right - w : anchorRect.left
+  const rawLeft = align === 'end' ? anchorRect.right - w : anchorRect.left
+  // Keep the panel inside the viewport (a wide panel under a narrow trigger near the edge).
+  const left = Math.max(8, Math.min(rawLeft, window.innerWidth - w - 8))
+  const up = flipHeight !== undefined
+    && anchorRect.bottom + 4 + flipHeight > window.innerHeight && anchorRect.top > flipHeight
+  const vertical = up ? { bottom: window.innerHeight - anchorRect.top + 4 } : { top: anchorRect.bottom + 4 }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
@@ -49,7 +57,7 @@ export function DropdownPortal({ anchorRect, onClose, children, className, align
           its dialog is inserted before it), so the layer is explicitly higher. */}
       <div className="fixed inset-0 z-[60]" data-testid="dropdown-dismiss" onClick={onClose} />
       <div
-        style={{ position: 'fixed', top: anchorRect.bottom + 4, left, width: w }}
+        style={{ position: 'fixed', ...vertical, left, width: w }}
         className={cn('z-[60] max-h-64 overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-md', className)}
       >
         {children}
