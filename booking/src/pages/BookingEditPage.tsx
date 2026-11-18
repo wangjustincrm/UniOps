@@ -40,7 +40,8 @@ import { SuggestionPanel } from '@/components/SuggestionPanel'
 import { useBookingAuth } from '@/store/auth'
 import { isoToHMInZone, isoToDateInZone, zonedToISO } from '@/lib/tz'
 
-import { Button, Input, Select, Textarea } from '@uniops/shell'
+import { Button, Input, Select, Textarea, cardClass } from '@uniops/shell'
+import { cn } from '@/lib/utils'
 // ── Time helpers ──────────────────────────────────────────────────────────────
 
 function buildTimeOptions(startHour: number, endHour: number): string[] {
@@ -438,7 +439,7 @@ export default function BookingEditPage() {
         )}
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="rounded-xl border border-line bg-surface p-6 shadow-sm space-y-6">
+        <form onSubmit={handleSubmit} className={cn(cardClass(), 'p-6 space-y-6')}>
           <Section title="Details">
             <Field label="Title" required>
               <Input

@@ -15,6 +15,8 @@ import { ExternalLink } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { EPMS_URL, encodeSession } from '@/lib/api'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
+import { cardClass } from '@uniops/shell'
+import { cn } from '@/lib/utils'
 
 interface EpmsEmbedProps {
   /** EPMS-relative path to load in the iframe (e.g. "/budget", "/budget/plans"). */
@@ -60,7 +62,7 @@ export default function EpmsEmbed({ epmsPath, title, subtitle, activeKey }: Epms
         <a
           href={openInEpmsHref}
           target="_blank" rel="noopener noreferrer"
-          className="hidden md:inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs text-fg-secondary hover:bg-surface-subtle"
+          className={cn(cardClass({ inset: true }), 'hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-fg-secondary hover:bg-surface-subtle')}
           title="Open this page in a new tab (with EPMS chrome)"
         >
           <ExternalLink className="h-3.5 w-3.5" />

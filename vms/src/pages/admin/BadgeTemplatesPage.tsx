@@ -16,7 +16,8 @@ import { localToday } from '@/lib/utils'
 import { badgeAreaStyle, zoneOptions } from '@/lib/visitOptions'
 
 
-import { Checkbox, Input, Select, Button } from '@uniops/shell'
+import { Checkbox, Input, Select, Button, cardClass } from '@uniops/shell'
+import { cn } from '@/lib/utils'
 // Sample data so the preview shows a realistic badge while editing.
 const SAMPLE_VISIT = {
   id: '00000000-0000-0000-0000-000000000000',
@@ -32,7 +33,7 @@ const SAMPLE_VISITOR = {
 } as unknown as Visitor
 const SAMPLE_HOST = { id: 'h', full_name: 'Pat Morgan' } as unknown as UserBrief
 
-const sectionCls = 'rounded-md border border-line bg-surface p-3 space-y-2'
+const sectionCls = cn(cardClass({ inset: true }), 'p-3 space-y-2')
 const headCls = 'text-xs font-semibold text-fg-muted'
 
 export default function BadgeTemplatesPage() {

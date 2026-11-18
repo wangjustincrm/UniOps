@@ -15,7 +15,7 @@ import { PortalSidebar } from '@/components/layout/PortalSidebar'
 import { TopHeader } from '@/components/layout/TopHeader'
 import { FINANCE_ACCESS_PERMS, BOOKING_ACCESS_PERMS, MRP_URL } from '@/components/layout/navConfig'
 
-import { Button, useSidebarCollapsed, Badge, Card } from '@uniops/shell'
+import { Button, useSidebarCollapsed, Badge, Card, cardClass } from '@uniops/shell'
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const EPMS_API = (import.meta.env.VITE_EPMS_API_URL as string | undefined) || 'http://localhost:8000'
@@ -237,7 +237,7 @@ function ModuleCard({ icon, iconBg, label, description, href, healthy, loading, 
 
   const inner = (
     <div className={cn(
-      'flex h-full flex-col rounded-xl border bg-surface p-5 transition-all duration-150',
+      cn(cardClass(), 'flex h-full flex-col p-5 transition-all duration-150'),
       comingSoon
         ? 'opacity-50 cursor-not-allowed border-line'
         : isDown
@@ -378,7 +378,7 @@ function TaskRow({ task }: { task: UnifiedTask }) {
     <a
       href={task.href}
       className={cn(
-        'flex items-center gap-4 rounded-xl border border-line border-l-4 bg-surface px-4 py-3.5 hover:shadow-teal-sm hover:border-l-primary-600 transition-all group',
+        cn(cardClass(), 'flex items-center gap-4 border-l-4 px-4 py-3.5 hover:shadow-teal-sm hover:border-l-primary-600 transition-all group'),
         style.border,
       )}
     >

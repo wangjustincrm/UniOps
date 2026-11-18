@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import { useStaffPerm } from '@/pages/mdm/staff/shared'
 import { Combobox, type ComboOption } from './Combobox'
 
-import { Button, ChoiceCard, Input, MenuItem, Segmented, Select, Card, Badge } from '@uniops/shell'
+import { Button, ChoiceCard, Input, MenuItem, Segmented, Select, Card, Badge, cardClass } from '@uniops/shell'
 type Relation = 'child' | 'assistant'
 type Drop = 'before' | 'after' | 'inside'
 interface Box { id: string; parent_id: string | null; relation: Relation; tone: string | null }
@@ -371,7 +371,7 @@ export default function OrgChart() {
         {notice && <p className="mb-3 text-sm text-primary-700">{notice}</p>}
 
         {!hasChart ? (
-          <p className="rounded-xl border border-line bg-surface py-12 text-center text-sm text-fg-muted">
+          <p className={cn(cardClass(), 'py-12 text-center text-sm text-fg-muted')}>
             No chart yet.{editable ? ' Generate the first version, then adjust it.' : ''}
           </p>
         ) : (

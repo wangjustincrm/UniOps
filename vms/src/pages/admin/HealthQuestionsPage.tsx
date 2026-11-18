@@ -10,12 +10,13 @@
  * handlers (not during render) for new question ids.
  */
 import { useMemo, useState } from 'react'
-import { Input, Select, Button } from '@uniops/shell'
+import { Input, Select, Button, cardClass } from '@uniops/shell'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Loader2, Plus, RotateCcw, X } from 'lucide-react'
 import {
   useHealthQuestionsAdmin, useSetHealthQuestions,
   type HealthQuestionEntry, type HealthQuestionsTemplateFull,
 } from '@/services/api'
+import { cn } from '@/lib/utils'
 
 const EMPTY: HealthQuestionsTemplateFull = { version: 1, questions: [] }
 
@@ -165,8 +166,7 @@ export default function HealthQuestionsPage() {
           <div
             key={idx}
             className={
-              'rounded-md border bg-surface p-3 ' +
-              (dupSet.has(q.id) ? 'border-danger-line' : 'border-line')
+              cn(cardClass({ inset: true }), 'p-3', dupSet.has(q.id) ? 'border-danger-line' : 'border-line')
             }
           >
             <div className="grid grid-cols-1 gap-2 md:grid-cols-[180px_1fr_120px_auto]">

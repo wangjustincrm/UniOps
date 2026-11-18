@@ -14,7 +14,7 @@ import { BUDGET_BASE } from '@/lib/api'
 import { FactorConfigPanel } from './FactorConfigPanel'
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
-import { Checkbox, FileInput, MenuItem, Modal, Textarea, Badge, Card } from '@uniops/shell'
+import { Checkbox, FileInput, MenuItem, Modal, Textarea, Badge, Card, cardClass } from '@uniops/shell'
 const WRITE_ROLES = new Set(['system_admin', 'finance_manager', 'finance_bp'])
 
 export default function BudgetCatalogPage() {
@@ -188,7 +188,7 @@ export default function BudgetCatalogPage() {
         </Card>
 
         {/* ─ Right: Account list for selected L1 ─ */}
-        <main className="md:col-span-8 lg:col-span-9 rounded-xl border border-line bg-surface overflow-hidden flex flex-col">
+        <main className={cn(cardClass(), 'md:col-span-8 lg:col-span-9 overflow-hidden flex flex-col')}>
           {selectedL1 ? (
             <>
               {/* L1 header */}

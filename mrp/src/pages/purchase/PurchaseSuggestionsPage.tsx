@@ -12,7 +12,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CalendarClock, Download, Loader2, RefreshCw } from 'lucide-react'
-import { Badge, Button, SortTh, useSortableRows, Checkbox, Select, TBody, THead, Table, Td, Tr, Card } from '@uniops/shell'
+import { Badge, Button, SortTh, useSortableRows, Checkbox, Select, TBody, THead, Table, Td, Tr, Card, cardClass } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { saveBlob } from '@/pages/forecast/forecastApi'
 import { cn, formatDate, formatDateTime, todayISO, toLocalDate } from '@/lib/utils'
@@ -166,7 +166,7 @@ export default function PurchaseSuggestionsPage() {
 
       {stats && (
         <div className="flex flex-wrap gap-2 text-xs">
-          <span className="rounded-md border border-line bg-surface px-2 py-1">
+          <span className={cn(cardClass({ inset: true }), 'px-2 py-1')}>
             {stats.components} component(s) · {stats.lines} line(s)
           </span>
           {stats.products_without_bom > 0 && (

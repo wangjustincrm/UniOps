@@ -16,7 +16,7 @@
 import { useState, type FormEvent } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2, Save, CheckCircle2, HelpCircle } from 'lucide-react'
-import { Button, Input, FormField, Badge, Pagination, SortTh, sortParams, useSort, type Sort, TBody, THead, Table, Td, Tr } from '@uniops/shell'
+import { Button, Input, FormField, Badge, Pagination, SortTh, sortParams, useSort, type Sort, TBody, THead, Table, Td, Tr, cardClass } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn, formatDate, todayISO, toLocalDate } from '@/lib/utils'
 import { ToastStack } from '@/components/Toast'
@@ -219,7 +219,7 @@ export default function ConsignmentStockPage() {
       <h1 className="text-lg font-semibold text-fg">Consignment Stock</h1>
 
       {/* ── Entry form ─────────────────────────────────────────────────── */}
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-lg border border-line bg-surface p-4">
+      <form onSubmit={handleSubmit} className={cn(cardClass({ inset: true }), 'flex flex-col gap-4 p-4')}>
         <h2 className="text-sm font-semibold text-fg">New Count Entry</h2>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

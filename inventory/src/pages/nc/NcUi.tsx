@@ -1,8 +1,9 @@
 // Small pieces the three NC tabs share: error box, loading rows, pager,
 // material cell. (Sortable headers: SortTh from @uniops/shell.)
 import { AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
-import { Skeleton, Td, Tr, Button } from '@uniops/shell'
+import { Skeleton, Td, Tr, Button, cardClass } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
+import { cn } from '@/lib/utils'
 
 export function ErrorBox({ error, fallback }: { error: unknown; fallback: string }) {
   // An empty table and a failed request must never look the same.
@@ -91,4 +92,4 @@ export function Uom({ uom }: { uom: string | null }) {
 }
 
 export const thCls = 'bg-surface-subtle text-xs text-fg-muted'
-export const tableWrapCls = 'overflow-x-auto rounded-lg border border-line bg-surface'
+export const tableWrapCls = cn(cardClass({ inset: true }), 'overflow-x-auto')

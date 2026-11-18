@@ -2,7 +2,8 @@ import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { displayTimeZone, formatAmount, formatDate } from '@/lib/utils'
-import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Badge, type BadgeTone } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Badge, type BadgeTone, cardClass } from '@uniops/shell'
+import { cn } from '@/lib/utils'
 
 const INV_STATUS_TONE: Record<string, BadgeTone> = {
   unmatched: 'warning',
@@ -124,10 +125,10 @@ export default function ApClerkDashboard() {
               <Link to="/invoices" className="flex items-center justify-between rounded-lg bg-primary-600 px-4 py-3 text-sm font-semibold text-white hover:bg-primary-700 transition-colors">
                 <span>Upload Invoice</span><span>→</span>
               </Link>
-              <Link to="/invoices" className="flex items-center justify-between rounded-lg border border-line bg-surface px-4 py-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors">
+              <Link to="/invoices" className={cn(cardClass({ inset: true }), 'flex items-center justify-between px-4 py-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors')}>
                 <span>View Invoices</span><span className="text-fg-muted">→</span>
               </Link>
-              <Link to="/pa" className="flex items-center justify-between rounded-lg border border-line bg-surface px-4 py-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors">
+              <Link to="/pa" className={cn(cardClass({ inset: true }), 'flex items-center justify-between px-4 py-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors')}>
                 <span>Payment Applications</span><span className="text-fg-muted">→</span>
               </Link>
             </div>

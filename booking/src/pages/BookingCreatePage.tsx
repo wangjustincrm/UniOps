@@ -21,7 +21,7 @@ import type { RoomWithStatusOut } from '@/lib/types'
 import { useBookingAuth } from '@/store/auth'
 import { isoToHMInZone, isoToDateInZone, zonedToISO } from '@/lib/tz'
 
-import { Button, Checkbox, Input, Select, Textarea } from '@uniops/shell'
+import { Button, Checkbox, Input, Select, Textarea, cardClass } from '@uniops/shell'
 // ── Time options (15-min steps, 06:00–23:00) ──────────────────────────────────
 
 function buildTimeOptions(startHour: number, endHour: number): string[] {
@@ -367,7 +367,7 @@ export default function BookingCreatePage() {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="rounded-xl border border-line bg-surface p-6 shadow-sm space-y-6">
+        <form onSubmit={handleSubmit} className={cn(cardClass(), 'p-6 space-y-6')}>
           <Section title="Details">
             <Field label="Title" required>
               <Input

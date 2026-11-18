@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
-import { SortTh, useSortableRows, Input, TBody, TFoot, THead, Table, Td, Th, Tr, Button, Badge } from '@uniops/shell'
+import { SortTh, useSortableRows, Input, TBody, TFoot, THead, Table, Td, Th, Tr, Button, Badge, cardClass } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, currentMonthISO } from '@/lib/utils'
@@ -146,7 +146,7 @@ export default function BudgetActualPage() {
             do: open the vouchers behind a figure. It is a different question
             ("which documents") at a different grain (one month), so it is
             collapsed rather than removed. */}
-        <details className="mb-4 rounded-lg border border-line bg-surface [&[open]>summary]:border-b [&[open]>summary]:border-line-subtle">
+        <details className={cn(cardClass({ inset: true }), 'mb-4 [&[open]>summary]:border-b [&[open]>summary]:border-line-subtle')}>
           <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-fg transition-colors hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
             Monthly detail with vouchers
             <span className="ml-2 text-xs font-normal text-fg-muted">

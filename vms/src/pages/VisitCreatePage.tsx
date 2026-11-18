@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useReplaceTab, Input, Select, Textarea, Button, Card } from '@uniops/shell'
+import { useReplaceTab, Input, Select, Textarea, Button, Card, cardClass } from '@uniops/shell'
 import { vmsRoutes } from '@/app/routes'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { VisitorSearch } from '@/components/VisitorSearch'
@@ -19,6 +19,7 @@ import {
 } from '@/services/api'
 import { localToday } from '@/lib/utils'
 import { plantWallClockToISO } from '@/lib/plantTime'
+import { cn } from '@/lib/utils'
 
 /** Build a UserBrief for the currently logged-in user from the persisted
  * auth store (vms-auth) or the SSO handoff blob (portal-auth). Returns
@@ -202,7 +203,7 @@ export default function VisitCreatePage() {
         Pre-register a visitor — you'll print the badge (and check them in) when they arrive.
       </p>
 
-      <form onSubmit={submit} className="mt-6 space-y-6 rounded-lg border border-line bg-surface p-5">
+      <form onSubmit={submit} className={cn(cardClass({ inset: true }), 'mt-6 space-y-6 p-5')}>
         {/* Visitor — primary + companions (each gets their own badge at print time) */}
         <Section title={additionalVisitors.length > 0 ? `Visitors (${additionalVisitors.length + 1})` : 'Visitor'}>
           {showNewVisitor

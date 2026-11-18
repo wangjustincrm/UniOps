@@ -14,7 +14,7 @@ import type { ApiAgreement, ApiScheduleRow } from '@/services/agreement'
 import type { DocumentStatus } from '@/types'
 import { InvoiceAllocationPanel } from './InvoiceAllocationPanel'
 
-import { Input, Radio, Tabs, Textarea, Card } from '@uniops/shell'
+import { Input, Radio, Tabs, Textarea, Card, cardClass } from '@uniops/shell'
 // 'direct' = no PO and no agreement: the invoice is paid by a Direct PA.
 type Route = 'po' | 'agreement' | 'direct'
 
@@ -93,7 +93,7 @@ function RecurringPeriodPreview({
 }) {
   if (loading) {
     return (
-      <p className="rounded-lg border border-line bg-surface px-3 py-2.5 text-xs text-fg-muted">
+      <p className={cn(cardClass({ inset: true }), 'px-3 py-2.5 text-xs text-fg-muted')}>
         Loading the payment schedule…
       </p>
     )
@@ -501,11 +501,11 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
           </div>
 
           {candLoading ? (
-            <p className="rounded-lg border border-line bg-surface px-3 py-4 text-center text-xs text-fg-muted">
+            <p className={cn(cardClass({ inset: true }), 'px-3 py-4 text-center text-xs text-fg-muted')}>
               Loading candidate purchase orders…
             </p>
           ) : matchablePOs.length === 0 ? (
-            <p className="rounded-lg border border-line bg-surface px-3 py-4 text-center text-xs text-fg-muted">
+            <p className={cn(cardClass({ inset: true }), 'px-3 py-4 text-center text-xs text-fg-muted')}>
               No open purchase orders found for this vendor.
             </p>
           ) : (
@@ -520,11 +520,11 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
       ) : (
         <div className="flex flex-col gap-3">
           {agrCandLoading ? (
-            <p className="rounded-lg border border-line bg-surface px-3 py-4 text-center text-xs text-fg-muted">
+            <p className={cn(cardClass({ inset: true }), 'px-3 py-4 text-center text-xs text-fg-muted')}>
               Loading candidate agreements…
             </p>
           ) : agreementCandidates.length === 0 ? (
-            <p className="rounded-lg border border-line bg-surface px-3 py-4 text-center text-xs text-fg-muted">
+            <p className={cn(cardClass({ inset: true }), 'px-3 py-4 text-center text-xs text-fg-muted')}>
               No agreements found for this vendor within their admission window.
             </p>
           ) : (
@@ -587,7 +587,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
                   </div>
                   {claimablePeriodRows.length === 0 ? (
                     !scheduleErrored && (
-                      <p className="rounded-lg border border-line bg-surface px-3 py-4 text-center text-xs text-fg-muted">
+                      <p className={cn(cardClass({ inset: true }), 'px-3 py-4 text-center text-xs text-fg-muted')}>
                         No periods on this agreement can take an invoice.
                       </p>
                     )
@@ -618,7 +618,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
                 Which stage does this invoice pay for? <span className="text-danger-fg">*</span>
               </label>
               {scheduleLoading ? (
-                <p className="rounded-lg border border-line bg-surface px-3 py-4 text-center text-xs text-fg-muted">
+                <p className={cn(cardClass({ inset: true }), 'px-3 py-4 text-center text-xs text-fg-muted')}>
                   Loading stages…
                 </p>
               ) : scheduleErrored ? (
@@ -632,7 +632,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
                   <p>Couldn't load the stages for this agreement — you may not have permission to view them.</p>
                 </div>
               ) : milestoneRows.length === 0 ? (
-                <p className="rounded-lg border border-line bg-surface px-3 py-4 text-center text-xs text-fg-muted">
+                <p className={cn(cardClass({ inset: true }), 'px-3 py-4 text-center text-xs text-fg-muted')}>
                   No unclaimed stages on this agreement.
                 </p>
               ) : (

@@ -15,6 +15,7 @@
 //   </ScrollTable>
 import type { HTMLAttributes } from 'react'
 import { cn } from '@/lib/utils'
+import { cardClass } from '@uniops/shell'
 
 /** Height cap: the viewport minus the app header, tab bar, page padding and
  *  pager — erring small so the whole box fits once the page is scrolled to it. */
@@ -23,7 +24,7 @@ export const scrollTableMaxH = 'max-h-[calc(100vh-12rem)]'
 export function ScrollTable({ className, children, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div {...rest}
-      className={cn('overflow-auto rounded-lg border border-line bg-surface', scrollTableMaxH, className)}>
+      className={cn(cn(cardClass({ inset: true }), 'overflow-auto'), scrollTableMaxH, className)}>
       {children}
     </div>
   )

@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Building2, ShieldCheck, CreditCard, Bell, Plus, Pencil, Trash2, X, Check, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, Download, Upload, ChevronLeft, ChevronRight, FileText, Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail, DatabaseZap, Warehouse } from 'lucide-react'
-import { Button, Checkbox, ChoiceCard, FileInput, Input, Modal as ShellModal, SearchInput, Segmented, Select, Sidebar, SortTh, Switch, TBody, THead, Table, Tabs, Td, Textarea as ShellTextarea, Th, Topbar, Tr, sortParams, type Sort, useSort, useSortableRows, Badge, Card } from '@uniops/shell'
+import { Button, Checkbox, ChoiceCard, FileInput, Input, Modal as ShellModal, SearchInput, Segmented, Select, Sidebar, SortTh, Switch, TBody, THead, Table, Tabs, Td, Textarea as ShellTextarea, Th, Topbar, Tr, sortParams, type Sort, useSort, useSortableRows, Badge, Card, cardClass } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { adminPageLinks } from '@/components/layout/navConfig'
@@ -705,7 +705,7 @@ export function UserManagement() {
 
           {/* Import */}
           <label className={cn(
-            'flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors',
+            cn(cardClass({ inset: true }), 'flex cursor-pointer items-center gap-1.5 px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors'),
             importing && 'opacity-60 cursor-not-allowed',
           )}>
             {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}

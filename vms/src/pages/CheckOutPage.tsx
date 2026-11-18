@@ -20,7 +20,8 @@ import { useCheckOutVisit, useVisitor, useUserBrief, type Visit } from '@/servic
 import { QrScanner } from '@/components/QrScanner'
 import { CheckOutConfirm } from '@/components/CheckOutConfirm'
 
-import { Button, Input, Segmented } from '@uniops/shell'
+import { Button, Input, Segmented, cardClass } from '@uniops/shell'
+import { cn } from '@/lib/utils'
 type Mode = 'scan' | 'input'
 
 // UUID v4-ish — the API returns the proper format, but we want to accept any
@@ -130,7 +131,7 @@ export default function CheckOutPage() {
         ) : (
           <form
             onSubmit={(e) => { e.preventDefault(); void lookupVisit(input) }}
-            className="rounded-md border border-line bg-surface p-4"
+            className={cn(cardClass({ inset: true }), 'p-4')}
           >
             <label className="block text-sm font-medium text-fg-secondary">
               Visit ID (paste / scan into this field)

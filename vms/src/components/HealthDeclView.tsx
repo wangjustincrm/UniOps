@@ -6,7 +6,8 @@ import { CheckCircle2, AlertCircle } from 'lucide-react'
 import type { HealthDeclarationAnswer, HealthDeclStatus } from '@/services/api'
 import { formatDateTime } from '@/lib/utils'
 
-import { Button, Modal } from '@uniops/shell'
+import { Button, Modal, cardClass } from '@uniops/shell'
+import { cn } from '@/lib/utils'
 interface Props {
   visitorName: string
   result: HealthDeclStatus
@@ -67,7 +68,7 @@ export function HealthDeclView({
               <img
                 src={signature}
                 alt="Visitor signature"
-                className="mt-1 max-h-40 rounded-md border border-line bg-surface"
+                className={cn(cardClass({ inset: true }), 'mt-1 max-h-40')}
               />
             ) : (
               <p className="mt-1 text-xs text-fg-muted">No signature captured.</p>

@@ -18,7 +18,8 @@ import { VisitAttachments } from '@/components/VisitAttachments'
 import { EditVisitModal } from '@/components/EditVisitModal'
 import { formatDateTime } from '@/lib/utils'
 
-import { Button, Checkbox, Modal, Textarea, Badge } from '@uniops/shell'
+import { Button, Checkbox, Modal, Textarea, Badge, cardClass } from '@uniops/shell'
+import { cn } from '@/lib/utils'
 function getRole(): string | null {
   try {
     for (const key of ['vms-auth', 'portal-auth']) {
@@ -725,7 +726,7 @@ function Card({
   title, icon, children, className,
 }: { title?: string; icon?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <div className={'rounded-lg border border-line bg-surface p-4 ' + (className ?? '')}>
+    <div className={cn(cardClass({ inset: true }), 'p-4', className)}>
       {title && (
         <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-fg-muted">
           {icon}

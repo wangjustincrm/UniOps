@@ -5,13 +5,14 @@
  * unauthorized users see a clean message instead of a stack of 403s.
  */
 import { useState } from 'react'
-import { Button, Input, Select, SortTh, TBody, THead, Table, TableMessage, TableScroll, Td, Tr, sortParams, useSort, Badge } from '@uniops/shell'
+import { Button, Input, Select, SortTh, TBody, THead, Table, TableMessage, TableScroll, Td, Tr, sortParams, useSort, Badge, cardClass } from '@uniops/shell'
 import {
   Download, FileSearch, Filter, Loader2, AlertCircle, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { useAuditLogs, useAuditFacets, buildAuditCsvPath, type AuditLogFilters } from '@/services/api'
 import { formatDateTime, localToday } from '@/lib/utils'
 import { plantWallClockToISO } from '@/lib/plantTime'
+import { cn } from '@/lib/utils'
 
 const ALLOWED_ROLES = new Set(['auditor', 'system_admin'])
 
@@ -129,7 +130,7 @@ export default function AuditLogPage() {
       {/* Filters */}
       <form
         onSubmit={(e) => { e.preventDefault(); apply() }}
-        className="mt-5 grid grid-cols-1 gap-3 rounded-lg border border-line bg-surface p-4 md:grid-cols-3"
+        className={cn(cardClass({ inset: true }), 'mt-5 grid grid-cols-1 gap-3 p-4 md:grid-cols-3')}
       >
         <Field label="Action type">
           <Select

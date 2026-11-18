@@ -15,7 +15,7 @@ import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Load
 import { financeApi } from '@/lib/api'
 import { cn, currentMonthISO, formatDateTime } from '@/lib/utils'
 
-import { TBody, Table, Td, Tr, Button, Badge, Card } from '@uniops/shell'
+import { TBody, Table, Td, Tr, Button, Badge, Card, cardClass } from '@uniops/shell'
 export interface SyncRun {
   id: string; status: string; started_at: string | null; finished_at: string | null
   counts: Record<string, number> | null; tie_out_ok: boolean | null
@@ -209,7 +209,7 @@ function EvidenceTable({ rows }: { rows: Evidence[] }) {
 export function FindingCard({ f, prefix }: { f: Finding; prefix?: string }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className={cn('rounded-lg border bg-surface p-3',
+    <div className={cn(cn(cardClass({ inset: true }), 'p-3'),
       f.severity === 'high' ? 'border-danger-line'
         : f.severity === 'info' ? 'border-line' : 'border-warning-line')}>
       <div className="flex items-start gap-2">

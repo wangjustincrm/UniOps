@@ -13,7 +13,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Send } from 'lucide-reac
 import { cn } from '@/lib/utils'
 import type { RenderedEmail } from '@/services/remittance'
 
-import { Select, Button } from '@uniops/shell'
+import { Select, Button, cardClass } from '@uniops/shell'
 /**
  * The email body in a sandboxed iframe: its styles cannot leak into the page
  * and vice versa, and with no `allow-scripts` nothing in it can run.
@@ -28,7 +28,7 @@ function EmailBody({ html }: { html: string }) {
       sandbox="allow-same-origin"
       srcDoc={html}
       style={{ height }}
-      className="w-full rounded-md border border-line bg-surface"
+      className={cn(cardClass({ inset: true }), 'w-full')}
       onLoad={(e) => {
         const doc = e.currentTarget.contentDocument
         if (doc) setHeight(Math.min(Math.max(doc.documentElement.scrollHeight + 16, 200), 800))

@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Download, Loader2, Route } from 'lucide-react'
-import { Badge, Button, Checkbox, Input, Skeleton, Card } from '@uniops/shell'
+import { Badge, Button, Checkbox, Input, Skeleton, Card, cardClass } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
 import { formatQty, isZero } from '@/lib/number'
@@ -59,7 +59,7 @@ function TraceStart() {
         </p>
       </header>
       <form onSubmit={submit}
-        className="flex flex-wrap items-end gap-3 rounded-lg border border-line bg-surface px-3 py-3">
+        className={cn(cardClass({ inset: true }), 'flex flex-wrap items-end gap-3 px-3 py-3')}>
         <div className="flex flex-col gap-1 text-xs text-fg-secondary">
           <label htmlFor="trace-material">Material</label>
           <MaterialPicker id="trace-material" value={material?.code ?? ''} autoFocus className="w-64"
@@ -94,7 +94,7 @@ function TraceStart() {
 
 function Tile({ label, children, tone }: { label: string; children: React.ReactNode; tone?: 'bad' }) {
   return (
-    <div className={cn('min-w-[8rem] rounded-lg border bg-surface px-3 py-2',
+    <div className={cn(cn(cardClass({ inset: true }), 'min-w-[8rem] px-3 py-2'),
       tone === 'bad' ? 'border-danger-line' : 'border-line')}>
       <p className="text-2xs font-medium text-fg-muted">{label}</p>
       <div className="mt-0.5 font-mono text-sm text-fg">{children}</div>

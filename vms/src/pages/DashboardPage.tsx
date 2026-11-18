@@ -1,6 +1,6 @@
 /** VMS home dashboard (PRD §6.5.5 / §2.5.2 VMS-AU-016). */
 import { Link } from 'react-router-dom'
-import { SortTh, useSort, sortParams, TBody, THead, Table, Td, Tr, Card as ShellCard } from '@uniops/shell'
+import { SortTh, useSort, sortParams, TBody, THead, Table, Td, Tr, Card as ShellCard, cardClass } from '@uniops/shell'
 import {
   UserCheck, CalendarCheck, CalendarRange, AlertTriangle, ArrowRight,
   ShieldCheck, FileWarning, MoonStar, Inbox,
@@ -12,6 +12,7 @@ import {
 import { StatusBadge, AccessAreaBadge } from '@/components/StatusBadge'
 import { displayTimeZone, formatDate, formatDateTime, localToday } from '@/lib/utils'
 import type { VisitSortKey } from './VisitListPage'
+import { cn } from '@/lib/utils'
 
 export default function DashboardPage() {
   const overview = useDashboardOverview()
@@ -250,11 +251,9 @@ function Card({
 }) {
   const inner = (
     <div className={
-      'rounded-lg border bg-surface p-4 transition-shadow ' +
-      (link ? 'cursor-pointer hover:shadow-md ' : '') +
-      (highlight
-        ? 'border-warning-line ring-1 ring-warning-line'
-        : 'border-line')
+      cn(cardClass({ inset: true }), 'p-4 transition-shadow',
+        link && 'cursor-pointer hover:shadow-md',
+        highlight ? 'border-warning-line ring-1 ring-warning-line' : 'border-line')
     }>
       <div className="flex items-center justify-between">
         <span className={'inline-flex h-8 w-8 items-center justify-center rounded-md ' + accent}>

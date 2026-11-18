@@ -2,7 +2,8 @@ import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { formatAmount } from '@/lib/utils'
-import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Badge, type BadgeTone } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Badge, type BadgeTone, cardClass } from '@uniops/shell'
+import { cn } from '@/lib/utils'
 
 const PO_STATUS_TONE: Record<string, BadgeTone> = {
   draft:      'neutral',
@@ -106,13 +107,13 @@ export default function ProcurementDashboard() {
               <Link to="/po/new" className="flex items-center justify-between rounded-lg bg-primary-600 px-4 py-3 text-sm font-semibold text-white hover:bg-primary-700 transition-colors">
                 <span>New Purchase Order</span><span>→</span>
               </Link>
-              <Link to="/po" className="flex items-center justify-between rounded-lg border border-line bg-surface px-4 py-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors">
+              <Link to="/po" className={cn(cardClass({ inset: true }), 'flex items-center justify-between px-4 py-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors')}>
                 <span>View All POs</span><span className="text-fg-muted">→</span>
               </Link>
-              <Link to="/gr" className="flex items-center justify-between rounded-lg border border-line bg-surface px-4 py-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors">
+              <Link to="/gr" className={cn(cardClass({ inset: true }), 'flex items-center justify-between px-4 py-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors')}>
                 <span>Goods Receipts</span><span className="text-fg-muted">→</span>
               </Link>
-              <Link to="/invoices" className="flex items-center justify-between rounded-lg border border-line bg-surface px-4 py-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors">
+              <Link to="/invoices" className={cn(cardClass({ inset: true }), 'flex items-center justify-between px-4 py-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors')}>
                 <span>Invoices</span><span className="text-fg-muted">→</span>
               </Link>
             </div>

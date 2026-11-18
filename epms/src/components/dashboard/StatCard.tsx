@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { cardClass } from '@uniops/shell'
 
 interface StatCardProps {
   title: string
@@ -13,7 +14,7 @@ export function StatCard({ title, value, subtitle, alert, className }: StatCardP
   return (
     <div
       className={cn(
-        'rounded-lg border bg-surface px-5 py-4',
+        cn(cardClass({ inset: true }), 'px-5 py-4'),
         alert ? 'border-danger-line bg-danger-soft' : 'border-line',
         className
       )}

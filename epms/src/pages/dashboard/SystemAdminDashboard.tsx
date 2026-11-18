@@ -3,7 +3,8 @@ import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { ROLE_LABELS } from '@/stores/user.store'
 import type { UserRole } from '@/types'
-import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, cardClass } from '@uniops/shell'
+import { cn } from '@/lib/utils'
 
 const QUICK_LINKS: { label: string; href: string; description: string }[] = [
   { label: 'User Management',       href: '/admin',    description: 'Manage users, roles and access' },
@@ -80,7 +81,7 @@ export default function SystemAdminDashboard() {
                 <Link
                   key={item.label}
                   to={item.href}
-                  className="rounded-lg border border-line bg-surface p-3 flex items-center justify-between hover:bg-primary-50 transition-colors"
+                  className={cn(cardClass({ inset: true }), 'p-3 flex items-center justify-between hover:bg-primary-50 transition-colors')}
                 >
                   <div>
                     <p className="text-sm font-medium text-fg">{item.label}</p>

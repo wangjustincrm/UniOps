@@ -12,7 +12,8 @@ import { useMyVmsTasks } from '@/services/api'
 import { timeAgo } from '@/lib/utils'
 import { groupTasks } from '@/lib/groupTasks'
 
-import { Badge, Card } from '@uniops/shell'
+import { Badge, Card, cardClass } from '@uniops/shell'
+import { cn } from '@/lib/utils'
 function taskHref(docType: string, docId: string): string {
   if (docType === 'vms_train' || docType === 'vms_ppe') {
     return `/visitor/${docId}/compliance`
@@ -86,7 +87,7 @@ export default function TaskInboxPage() {
                     {group.items.length}
                   </span>
                 </div>
-                <ul className="divide-y divide-line-subtle overflow-hidden rounded-lg border border-line bg-surface">
+                <ul className={cn(cardClass({ inset: true }), 'divide-y divide-line-subtle overflow-hidden')}>
                   {group.items.map((t) => (
                     <li key={t.id}>
                       <Link
