@@ -18,14 +18,19 @@ rules:
       - which agreements are still valid
       - has this agreement expired
     answer: >
-      Status Active means the agreement was approved; it does not mean it is
-      still in force. Nothing moves an agreement to Expired when its Valid To
-      date passes, so whether it is in force is read from Valid From / Valid To
-      (plus its grace days for invoices — see grace_window).
-    enforced_in: "epms-api app/crud/agreement.py (no write of expired/closed anywhere)"
+      Once a day (at the daily follow-up time, and when the system restarts)
+      an Active agreement whose Valid To date has passed is moved to Expired;
+      if its Valid To is later extended it goes back to Active. So on the day
+      after Valid To it can still read Active for a few hours — Valid To is the
+      exact answer. Expired is a label only: invoices can still be matched and
+      payment applications raised until Valid To plus the grace days (see
+      grace_window). Nothing sets Closed automatically.
+    enforced_in: "epms-api app/tasks/agreement_overdue.py expire_lapsed_agreements (run_agreement_overdue + agreement_overdue_loop startup)"
     provenance: pinned
     test:
-      - "tests/test_rule_registry.py::test_nothing_moves_an_agreement_to_expired_or_closed"
+      - "tests/test_rule_registry.py::test_only_the_daily_sweep_moves_an_agreement_to_expired"
+      - "tests/test_agreement_overdue_sweep.py::test_an_active_agreement_past_valid_to_becomes_expired"
+      - "tests/test_agreement_overdue_sweep.py::test_expiring_does_not_close_the_grace_window"
   - id: grace_window
     asked_as:
       - can an invoice still be matched to an expired agreement

@@ -762,13 +762,15 @@ entities:
           deposit: "OneTime (Deposit) — a one-time deposit, refunded when the agreement ends"
       vendor_name: {kind: text, label: "Vendor name"}
       contract_no: {kind: text, label: "Vendor's contract number"}
-      # Nothing in the system ever moves an agreement to `expired` or `closed`
-      # (crud/agreement.py): one past its end date still reads `active`.
+      # A daily sweep (tasks/agreement_overdue.py expire_lapsed_agreements)
+      # moves `active` to `expired` after valid_to; nothing sets `closed`.
       status:
         kind: enum
-        label: "Status. `active` means approved, NOT that it is still in force —
-          an agreement past valid_to keeps status active. Whether it is in force
-          is valid_from/valid_to (or days_until_expiry)"
+        label: "Status. `active` means approved and not yet past valid_to;
+          `expired` means valid_to has passed (set by a once-a-day sweep, so on
+          the day after valid_to it may still read active). Whether it is in
+          force is valid_from/valid_to (or days_until_expiry); an expired
+          agreement still accepts invoices until valid_to + grace_days"
         values: [draft, submitted, in_review, returned, rejected, active,
                  expired, closed, cancelled]
         # The names the agreement pages show; "in_review" was copied into a

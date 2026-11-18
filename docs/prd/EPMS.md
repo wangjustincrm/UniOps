@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.61
-**Date:** 2026-11-17
+**Version:** 2.62
+**Date:** 2026-11-18
 **Status:** In Production
+
+> **v2.62 (2026-11-18)** — An agreement past its valid-to date now shows **Expired** instead of staying Active forever (AGR-011): a daily sweep (and one on service start) moves it, and moves it back to Active if its valid-to is extended. Expired is a label only — invoices can still be matched and PAs raised until valid-to + grace days (AGR-012). Reported on AGR-202608-0009.
 
 > **v2.61 (2026-11-17)** — A OneTime (Deposit) agreement needs an attachment to be **submitted**, not only to raise its deposit PA, and its last attachment cannot be removed once submitted (AGR-090). Found in DEV1 testing: an agreement with no attachment was approved through every step and stopped only at Create Deposit PA.
 
@@ -2421,7 +2423,7 @@ A Purchase Agreement is a standing authorisation with one vendor for spend that 
 | FR ID | Requirement |
 |---|---|
 | **AGR-010** | Approval uses the workflow engine, document type `agr` (default chain: Department Manager → Procurement Manager → Finance Manager; configurable). Department-scoped steps route on the **agreement's own department**, not the submitter's. |
-| **AGR-011** | Statuses: `draft` → `submitted` → `in_review` → **`active`** (final approval); `returned`; `rejected`; `cancelled`. The statuses `expired` and `closed` exist but are never set automatically — **Not implemented**, see §11; expiry is enforced only by the date test in AGR-012. |
+| **AGR-011** | Statuses: `draft` → `submitted` → `in_review` → **`active`** (final approval); `returned`; `rejected`; `cancelled`. Once a day (at the daily follow-up time, and on service start) an `active` agreement whose valid-to is before today (plant time) becomes **`expired`**, and an `expired` one whose valid-to has been extended to today or later goes back to `active`. `expired` is a display/filter status only — admission is the date test in AGR-012. `closed` exists but is never set automatically (§11). |
 | **AGR-012** | An agreement accepts new invoice matches and new PAs only while `active` (or `expired`) **and** today ≤ valid-to + grace days. Valid-from is not checked (back-dated agreements may clear older invoices). |
 | **AGR-013** | On activation of a recurring agreement, the full set of billing periods for the validity window is generated (from the schedule start date if set). If generation fails, the agreement stays active and administrators are alerted. Changing the expected amount or tolerance after activation does not update periods already generated — see §11. |
 
@@ -2533,7 +2535,7 @@ Every EPMS page carries an **Assistant** panel (floating button, available to an
 | **AST-008** | The assistant uses the Claude Haiku model only; usage (tokens) is logged per call. |
 | **AST-009** | **Reply language.** Every reply is in the language of the user's *current* question, whatever earlier turns used. The server decides it from the question (Chinese script → Chinese; an explicit "answer in English/中文/español" → that language) and tells every answering step; for other Latin-script questions the model is told to use the question's language. A message that only asks for another language ("用中文回答") repeats the previous answer in that language. System-written replies (refusals, "which document do you mean?") are rendered in the user's language too. |
 | **AST-010** | **Fixed Chinese terms.** In Chinese replies, role, approval-level and document names use one fixed translation each, followed by the English name the first time (e.g. 总监 (Director), 主管 (Supervisor), 应付审核 (AP Review), 里程报销单 (MIL)). Names without a fixed translation stay in English. |
-| **AST-011** | **Agreements.** Purchase Agreements are queryable (needs `epms.agreement.read`; same row scope as the Agreements page): number, kind, vendor, status, valid from/to, days until expiry, grace days, Not to Exceed, consumed and remaining. An empty Not to Exceed means *no ceiling*. Status `active` means approved, not "still in force" — the system never moves an agreement to `expired`. |
+| **AST-011** | **Agreements.** Purchase Agreements are queryable (needs `epms.agreement.read`; same row scope as the Agreements page): number, kind, vendor, status, valid from/to, days until expiry, grace days, Not to Exceed, consumed and remaining. An empty Not to Exceed means *no ceiling*. Status `expired` means valid-to has passed (set by the daily sweep, AGR-011); `active` means approved and not yet past valid-to as of the last sweep. |
 | **AST-012** | **Rules.** Questions about how the system behaves are answered from fixed rules, each tied to the code that enforces it, never from a data query or a guess. They cover: a rejected PA gets status Cancelled (PRs and POs get Rejected); Type 1 cannot be chosen when creating a PR; the number formats (PR/PA/GR-YYYYMMDD-NNNN, PO-<vendor code>-YYMM-NN, AGR-YYYYMM-NNNN, invoice reference INV-YYYY-NNNN; the date is the plant's date, UI-DATE-003); invoice matching compares amounts per PO line (over-invoicing beyond tolerance → Exception) and never received quantities, so an invoice can be Matched with nothing received (INV-3WM-006) — receipt evidence is checked only when a PA is created (PA-013), and only for existence; an Active agreement is not necessarily in force; approvals are given only in UniOps (Teams cards and emails only notify). |
 | **AST-013** | **Task counts.** "What do I have to do?" reports the total, the urgent count, the count per task type under the same labels as the Task Inbox group headers, and how many tasks reached the user personally vs through a role. All of these are counted by the server; the model does not count. Only the first 12 tasks (urgent first, then oldest) are named as examples. |
 | **AST-014** | PR answers can include the Service/Project expected completion date, the Service/Project Owner (the owner set on a service or project PR, otherwise the requester, as for receipt tasks) and the requester's name. Replies never show internal tool markup. |
@@ -3000,7 +3002,7 @@ Status values: **Open** (decision or data needed), **Not implemented** (requirem
 | OI-Y | Prepayment SLA and balance-after-settlement checks (PP-006, PP-007, PP-010) | PA (§3.15.4) | Not implemented |
 | OI-Z | Invoice match tolerance (default 5%) is not editable in any admin screen | Invoice (§3.14.3) | Not implemented |
 | OI-AA | Changing an agreement's expected amount per period or tolerance after activation (e.g. via Data Maintenance) does not update billing-period rows already generated | Agreements (§3.17) | Defect |
-| OI-AB | Agreement statuses `expired` and `closed` are never set; expiry is enforced only by the date check | Agreements (§3.17) | Not implemented |
+| OI-AB | Agreement status `closed` is never set automatically (`expired` is set by the daily sweep since 2026-11-18, AGR-011) | Agreements (§3.17) | Not implemented |
 | OI-AC | Dashboard items not built: System Health card is a static label; User Activity panel and Dashboard Config page do not exist | Dashboard (§3.7) | Not implemented |
 | OI-AD | Server-side permission gaps: GR actions (acknowledge / collect / confirm / reject / cancel) and PO "Regenerate PDF" do not check the user's permission or document visibility | Security (§4.4) | Defect |
 | OI-AE | WCAG 2.1 AA accessibility pass | UI (§4.1) | Not implemented |

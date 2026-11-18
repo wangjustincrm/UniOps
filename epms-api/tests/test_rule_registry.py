@@ -909,10 +909,13 @@ def test_non_po_fee_lines_are_paid_but_not_matched():
 
 # ── Agreements ───────────────────────────────────────────────────────────────
 
-def test_nothing_moves_an_agreement_to_expired_or_closed():
-    writes = [f"{p.name}" for p in (EPMS_API / "app").rglob("*.py")
-              if re.search(r"status\s*=\s*['\"]expired['\"]", p.read_text(encoding="utf-8"))]
-    assert not writes, writes
+def test_only_the_daily_sweep_moves_an_agreement_to_expired():
+    """agreement.yaml active_is_not_in_force: the status flips once a day in
+    tasks/agreement_overdue.py and nowhere else — if another writer appears,
+    the guide's account of when Expired shows up is no longer the whole story."""
+    writes = sorted(p.name for p in (EPMS_API / "app").rglob("*.py")
+                    if re.search(r"status\s*=\s*['\"]expired['\"]", p.read_text(encoding="utf-8")))
+    assert writes == ["agreement_overdue.py"], writes
 
 
 async def test_agreement_periods_are_queryable(test_engine, admin_client):

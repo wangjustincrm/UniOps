@@ -12,7 +12,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.core.plant_time import fmt_date, plant_today
 from app.crud.config import get_or_create as get_config
@@ -30,6 +30,57 @@ logger = logging.getLogger(__name__)
 # 催票任务类型。与 confirm_period 一样挂在 document_type="agr" 上,
 # notification._task_link 已把 agr 深链到 EPMS 的 /agreements/{id}。
 CHASE_TASK_TYPE = "chase_agreement_invoice"
+
+
+async def expire_lapsed_agreements(db) -> tuple[list[str], list[str]]:
+    """让 active/expired 跟着 valid_to 走,返回(被置 expired 的协议号,
+    被改回 active 的协议号)。
+
+    2026-11-18 用户报 AGR-202608-0009(valid_to 2026-10-27)一直显示 Active:
+    此前系统里没有任何地方写 expired,状态停在审批终态,列表的 Expired 筛选
+    永远为空。这里只改**展示/筛选用的状态**——准入(发票匹配、建 PA)始终由
+    crud/agreement.py::_admissible_predicate 按 valid_to + grace_days 判定,
+    active 与 expired 一视同仁,所以宽限期内的尾票照样能匹配、能付。
+
+    valid_to 是协议的最后一天(含当天),故过期条件是 valid_to < 今天(工厂
+    时区)。反向也做:DM 数据维护能改 valid_to,把一张已过期的协议延期后它
+    应当回到 active,不能让人还得记着另去改状态。只在 active/expired 之间
+    互转;draft/在审/returned/closed/cancelled 一概不碰——要人为终止协议用
+    closed/cancelled,不是 expired。
+    """
+    today = plant_today()
+    expired = (await db.execute(
+        update(PurchaseAgreement)
+        .where(PurchaseAgreement.status == "active",
+               PurchaseAgreement.valid_to < today)
+        .values(status="expired")
+        .returning(PurchaseAgreement.number)
+    )).scalars().all()
+    revived = (await db.execute(
+        update(PurchaseAgreement)
+        .where(PurchaseAgreement.status == "expired",
+               PurchaseAgreement.valid_to >= today)
+        .values(status="active")
+        .returning(PurchaseAgreement.number)
+    )).scalars().all()
+    await db.flush()
+    return list(expired), list(revived)
+
+
+async def run_agreement_expiry() -> None:
+    """独立事务跑一次到期翻转。失败只记日志,不连累缺票扫描。"""
+    try:
+        async with session_module.AsyncSessionLocal() as db:
+            expired, revived = await expire_lapsed_agreements(db)
+            await db.commit()
+        if expired:
+            logger.info("Agreement expiry: %d agreement(s) moved to expired: %s",
+                        len(expired), ", ".join(expired))
+        if revived:
+            logger.info("Agreement expiry: %d agreement(s) back to active (valid_to extended): %s",
+                        len(revived), ", ".join(revived))
+    except Exception as exc:  # noqa: BLE001 — 一次失败不能杀掉循环
+        logger.error("Agreement expiry: sweep failed: %s", exc)
 
 
 async def sweep_overdue_periods(db) -> list[AgreementPaymentSchedule]:
@@ -191,6 +242,7 @@ async def _notify_owners(db, cfg, flipped: list[AgreementPaymentSchedule]) -> No
 
 async def run_agreement_overdue() -> None:
     logger.info("Agreement overdue: starting sweep")
+    await run_agreement_expiry()
     try:
         async with session_module.AsyncSessionLocal() as db:
             flipped = await sweep_overdue_periods(db)
@@ -222,7 +274,12 @@ async def agreement_overdue_loop() -> None:
     """镜像 daily_followup_loop 的形状:睡到目标时间就直接跑,睡醒后不再拿
     时钟已经走过去的"现在"去重新算一遍还剩多少秒 —— 那样算出来的必然是"已经
     过了,顺延到明天",从而把刚睡完这一觉等到的这次运行跳过去。
+
+    启动时先补跑一次到期翻转:每日扫描只在 followup_time 跑,发布后到第一次
+    扫描之间(以及停机期间)到期的协议不该一直挂着 Active。这一步是幂等的
+    两条 UPDATE,不发信、不建任务,重启多少次都无副作用。
     """
+    await run_agreement_expiry()
     while True:
         hour, minute = await _load_schedule()
         wait = _seconds_until_next_run(hour, minute)

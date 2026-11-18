@@ -203,10 +203,12 @@ def _admissible_predicate(today: date):
     so `(today - valid_to) <= grace_days` needs no interval construction.
 
     ⚠️ 有效期是在这里生效的,不靠任何后台任务。 The date test deliberately
-    applies to "active" too, not just "expired". Nothing in this codebase ever
-    writes "expired" or "closed" — the only status write anywhere is
-    approval-api engine._post_approve_agr setting "active", AgreementUpdate
-    has no status field, and there is no scheduler. An earlier form of this
+    applies to "active" too, not just "expired". Since 2026-11-18 the daily
+    sweep tasks/agreement_overdue.py::expire_lapsed_agreements moves "active"
+    to "expired" once valid_to has passed (and back if valid_to is extended),
+    but that status is for display and list filters only: it runs once a day,
+    so between valid_to and the next sweep an agreement past its end still
+    reads "active" — admission must not depend on it. An earlier form of this
     predicate admitted `status == "active"` unconditionally, which meant
     valid_to and grace_days had no effect on anything: approving an agreement
     produced a permanently open authorisation. With the NTE ceiling being
@@ -216,10 +218,9 @@ def _admissible_predicate(today: date):
     (§5.1, §7 control #3). Folding the comparison in here enforces the window
     on every read path with no background job to deploy, monitor or backfill.
 
-    The "expired" arm is retained rather than collapsed into a status-blind
-    date test so that a future sweeper CAN still mark agreements expired (for
-    reporting / list filters) without changing admission semantics — but
-    admissibility never *depends* on a status nothing writes. Statuses that
+    The "expired" arm is what lets that sweeper mark agreements expired
+    without changing admission semantics — an expired agreement still takes
+    its trailing invoices until valid_to + grace_days. Statuses that
     are not approvals of spend (draft / in_review / closed / cancelled) stay
     out regardless of dates.
 

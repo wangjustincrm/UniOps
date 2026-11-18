@@ -374,3 +374,105 @@ async def test_toggle_on_falls_back_to_admin_alert_when_agreement_has_no_owner(m
     mine = [a for a in sent_alerts if agr_number in a["body"]]
     assert len(mine) == 1
     assert period_label in mine[0]["body"]
+
+
+# ── expire_lapsed_agreements() — status follows valid_to (2026-11-18) ────────
+#
+# AGR-202608-0009 (valid_to 2026-10-27) still read "Active" three weeks later:
+# nothing ever wrote "expired". The sweep is global over the shared test DB, so
+# every assertion below is scoped to the agreements this test created.
+
+from app.crud import agreement as agr_crud  # noqa: E402
+from app.tasks.agreement_overdue import expire_lapsed_agreements  # noqa: E402
+
+
+async def _status(agr_id) -> str:
+    async with session_module.AsyncSessionLocal() as db:
+        return (await db.get(PurchaseAgreement, agr_id)).status
+
+
+async def test_an_active_agreement_past_valid_to_becomes_expired(test_engine):
+    async with _factory(test_engine)() as db:
+        agr, _, _ = await _seed(db, valid_from=date.today() - timedelta(days=120),
+                                valid_to=date.today() - timedelta(days=1))
+        expired, revived = await expire_lapsed_agreements(db)
+        await db.commit()
+        assert agr.number in expired and agr.number not in revived
+    # Re-read through a fresh session: proves the UPDATE persisted.
+    assert await _status(agr.id) == "expired"
+
+
+async def test_valid_to_today_is_still_active(test_engine):
+    # valid_to is the agreement's last day, inclusive.
+    async with _factory(test_engine)() as db:
+        agr, _, _ = await _seed(db, valid_from=date.today() - timedelta(days=120),
+                                valid_to=date.today())
+        expired, _ = await expire_lapsed_agreements(db)
+        await db.commit()
+        assert agr.number not in expired
+    assert await _status(agr.id) == "active"
+
+
+@pytest.mark.parametrize("status", ["draft", "in_review", "returned", "closed", "cancelled"])
+async def test_non_active_statuses_are_never_expired(test_engine, status):
+    async with _factory(test_engine)() as db:
+        agr, _, _ = await _seed(db, status=status)   # valid_to 2026-03-31, long past
+        expired, revived = await expire_lapsed_agreements(db)
+        await db.commit()
+        assert agr.number not in expired and agr.number not in revived
+    assert await _status(agr.id) == status
+
+
+async def test_an_expired_agreement_whose_valid_to_is_extended_goes_back_to_active(test_engine):
+    # Data Maintenance can push valid_to out on a live agreement; the status
+    # must follow rather than leave someone to remember to edit it too.
+    async with _factory(test_engine)() as db:
+        agr, _, _ = await _seed(db, status="expired",
+                                valid_from=date.today() - timedelta(days=120),
+                                valid_to=date.today() + timedelta(days=30))
+        expired, revived = await expire_lapsed_agreements(db)
+        await db.commit()
+        assert agr.number in revived and agr.number not in expired
+    assert await _status(agr.id) == "active"
+
+
+async def test_expiring_does_not_close_the_grace_window(test_engine):
+    # The status is display-only: an agreement 5 days past valid_to with the
+    # default 30 grace days must still admit invoices / PAs after the flip.
+    async with _factory(test_engine)() as db:
+        agr, _, _ = await _seed(db, valid_from=date.today() - timedelta(days=120),
+                                valid_to=date.today() - timedelta(days=5), grace_days=30)
+        await expire_lapsed_agreements(db)
+        await db.commit()
+        assert await agr_crud.is_admissible(db, agr) is True
+    assert await _status(agr.id) == "expired"
+
+
+async def test_run_agreement_overdue_also_expires_agreements(monkeypatch):
+    async def _quiet(*a, **k):
+        return None
+    monkeypatch.setattr(agreement_overdue_module, "send_email", _quiet)
+    monkeypatch.setattr(agreement_overdue_module, "send_admin_alert", _quiet)
+    async with session_module.AsyncSessionLocal() as db:
+        agr, _, _ = await _seed(db, valid_from=date.today() - timedelta(days=120),
+                                valid_to=date.today() - timedelta(days=1))
+        await db.commit()
+    await agreement_overdue_module.run_agreement_overdue()
+    assert await _status(agr.id) == "expired"
+
+
+async def test_loop_runs_the_expiry_once_on_startup_before_waiting(monkeypatch):
+    order: list[str] = []
+
+    async def _fake_expiry():
+        order.append("expiry")
+
+    async def _fake_load_schedule():
+        order.append("schedule")
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(agreement_overdue_module, "run_agreement_expiry", _fake_expiry)
+    monkeypatch.setattr(agreement_overdue_module, "_load_schedule", _fake_load_schedule)
+    with pytest.raises(asyncio.CancelledError):
+        await agreement_overdue_module.agreement_overdue_loop()
+    assert order == ["expiry", "schedule"]
