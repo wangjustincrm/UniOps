@@ -127,9 +127,9 @@ export default function RoomDetailPage() {
             <div className="min-w-0">
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-2xl font-semibold text-fg">{room.name}</h1>
-                <span className="font-mono text-sm text-fg-muted bg-surface-subtle border border-line rounded px-2 py-0.5">
+                <Badge variant="outline" className="font-mono">
                   {room.code}
-                </span>
+                </Badge>
               </div>
               {locationParts.length > 0 && (
                 <p className="mt-1 text-sm text-fg-muted">{locationParts.join(' · ')}</p>

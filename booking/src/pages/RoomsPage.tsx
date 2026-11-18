@@ -116,14 +116,10 @@ function RoomCard({
             const label = EQUIPMENT_LABELS[eq as EquipmentOption] ?? eq
             if (!Icon) return null
             return (
-              <span
-                key={eq}
-                title={label}
-                className="inline-flex items-center gap-1 rounded-md bg-surface-subtle px-1.5 py-0.5 text-xs text-fg-muted ring-1 ring-line"
-              >
+              <Badge variant="outline" key={eq} title={label}>
                 <Icon className="h-3 w-3" />
                 {label}
-              </span>
+              </Badge>
             )
           })}
         </div>

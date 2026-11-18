@@ -8,7 +8,7 @@ import { useState, useRef } from 'react'
 import { Upload, Loader2, AlertCircle, CheckCircle2, FileSpreadsheet } from 'lucide-react'
 import { useAdminImportRooms } from '@/services/api'
 
-import { Button, ChoiceCard, FileInput, Modal } from '@uniops/shell'
+import { Button, ChoiceCard, FileInput, Modal, Badge } from '@uniops/shell'
 interface Props {
   onClose: () => void
 }
@@ -66,9 +66,9 @@ export function RoomImportModal({ onClose }: Props) {
             <p className="text-xs font-semibold text-fg-secondary mb-1.5">Expected columns (in any order):</p>
             <div className="flex flex-wrap gap-1.5">
               {EXPECTED_COLUMNS.map((col) => (
-                <span key={col} className="inline-flex items-center rounded-md bg-surface border border-line px-2 py-0.5 text-xs text-fg-secondary font-mono">
+                <Badge variant="outline" key={col} className="bg-surface font-mono">
                   {col}
-                </span>
+                </Badge>
               ))}
             </div>
             <p className="mt-2 text-xs text-fg-muted">
