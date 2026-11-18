@@ -14,7 +14,7 @@ import { Button } from './button'
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
-function useOverlay(open: boolean, onClose: () => void, panel: React.RefObject<HTMLElement | null>) {
+function useOverlay(open: boolean, onClose: () => void, panel: React.RefObject<HTMLElement | null>, closeOnEscape = true) {
   const close = useRef(onClose)
   close.current = onClose
   useEffect(() => {
@@ -25,7 +25,7 @@ function useOverlay(open: boolean, onClose: () => void, panel: React.RefObject<H
     const target = el?.querySelector<HTMLElement>('[autofocus],[data-autofocus]') ?? el?.querySelector<HTMLElement>(FOCUSABLE) ?? el
     target?.focus()
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); close.current() }
+      if (e.key === 'Escape' && closeOnEscape) { e.stopPropagation(); close.current() }
       if (e.key === 'Tab' && el) {
         const items = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE))
         if (items.length === 0) return
@@ -42,7 +42,7 @@ function useOverlay(open: boolean, onClose: () => void, panel: React.RefObject<H
       document.body.style.overflow = overflow
       before?.focus?.()
     }
-  }, [open, panel])
+  }, [open, panel, closeOnEscape])
 }
 
 const modalWidth = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl', full: 'max-w-[min(96vw,1400px)]' } as const
@@ -60,8 +60,11 @@ export interface ModalProps {
   footer?: React.ReactNode
   /** While true, Escape / backdrop / close button do nothing. */
   busy?: boolean
-  /** Backdrop click closes (default true). Turn off for long forms. */
+  /** Backdrop click closes. Default false for Modal (a stray click must not
+   *  throw away what was typed), true for Drawer. */
   closeOnBackdrop?: boolean
+  /** Escape closes (default true). Off for forms that only close by a button. */
+  closeOnEscape?: boolean
   /** false: no close button, Escape and backdrop do nothing (a step the user
    *  must finish, e.g. a forced password change). */
   dismissible?: boolean
@@ -71,13 +74,13 @@ export interface ModalProps {
 }
 
 export function Modal({
-  open, onClose, title, description, icon, size = 'md', footer, busy, closeOnBackdrop = true, dismissible = true,
-  className, bodyClassName, children,
+  open, onClose, title, description, icon, size = 'md', footer, busy, closeOnBackdrop = false, closeOnEscape = true,
+  dismissible = true, className, bodyClassName, children,
 }: ModalProps) {
   const panel = useRef<HTMLDivElement>(null)
   const titleId = useId()
   const safeClose = useCallback(() => { if (!busy && dismissible) onClose() }, [busy, dismissible, onClose])
-  useOverlay(open, safeClose, panel)
+  useOverlay(open, safeClose, panel, closeOnEscape)
   if (!open) return null
   return createPortal(
     <div
@@ -132,12 +135,13 @@ const drawerWidth = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-
 
 /** Side panel for detail / edit without leaving the list. */
 export function Drawer({
-  open, onClose, title, description, icon, side = 'right', width = 'md', footer, busy, closeOnBackdrop = true, className, bodyClassName, children,
+  open, onClose, title, description, icon, side = 'right', width = 'md', footer, busy, closeOnBackdrop = true,
+  closeOnEscape = true, className, bodyClassName, children,
 }: DrawerProps) {
   const panel = useRef<HTMLDivElement>(null)
   const titleId = useId()
   const safeClose = useCallback(() => { if (!busy) onClose() }, [busy, onClose])
-  useOverlay(open, safeClose, panel)
+  useOverlay(open, safeClose, panel, closeOnEscape)
   if (!open) return null
   return createPortal(
     <div

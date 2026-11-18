@@ -154,6 +154,8 @@ function ChangePasswordModal({ forced = false, forceReason, onClose }: Omit<Chan
       onClose={onClose}
       dismissible={!forced}
       busy={submitting}
+      // Closed only by its buttons, as before: Escape must not drop what was typed.
+      closeOnEscape={false}
       size="sm"
       icon={<KeyRound />}
       title="Change Password"

@@ -111,3 +111,19 @@ describe('Modal dismissible=false', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 })
+
+describe('Modal closing rules', () => {
+  it('does not close on a backdrop click by default', () => {
+    const onClose = vi.fn()
+    render(<Modal open onClose={onClose} title="Reject">x</Modal>)
+    const backdrop = screen.getByRole('dialog').parentElement!
+    fireEvent.mouseDown(backdrop)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+  it('closeOnEscape={false} keeps it open on Escape', () => {
+    const onClose = vi.fn()
+    render(<Modal open closeOnEscape={false} onClose={onClose} title="Reject">x</Modal>)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+})

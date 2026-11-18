@@ -181,6 +181,8 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
       onClose={onClose}
       dismissible={step !== 'done'}
       busy={placeOrder.isPending}
+      // Closed only by its buttons, as before: Escape must not drop what was typed.
+      closeOnEscape={false}
       size="lg"
       icon={<ShoppingCart />}
       title="Place Order"
@@ -428,6 +430,8 @@ function ApprovalModal({ action, poNumber, onConfirm, onClose, isPending, error 
       open
       onClose={onClose}
       busy={isPending}
+      // Closed only by its buttons, as before: Escape must not drop what was typed.
+      closeOnEscape={false}
       size="sm"
       icon={config.icon}
       title={config.title}

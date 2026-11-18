@@ -147,6 +147,8 @@ function ApprovalModal({ action, prNumber, onConfirm, onClose, isPending, error 
       open
       onClose={onClose}
       busy={isPending || sent}
+      // Closed only by its buttons, as before: Escape must not drop what was typed.
+      closeOnEscape={false}
       size="sm"
       icon={config.icon}
       title={config.title}
