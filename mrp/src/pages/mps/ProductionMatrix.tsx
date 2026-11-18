@@ -546,12 +546,9 @@ export function ProductionMatrix({
                       // The count, not just a dot: "12 cells moved" and "one
                       // cell moved" are different situations and a planner
                       // decides which month to open on exactly that.
-                      <span
-                        aria-label={`${changed} changed cell(s)`}
-                        className="rounded-full bg-primary-600 px-1.5 text-2xs font-semibold leading-4 text-white"
-                      >
+                      <Badge variant="solid" size="sm" aria-label={`${changed} changed cell(s)`}>
                         {changed}
-                      </span>
+                      </Badge>
                     )}
                   </CellButton>
                 </Th>

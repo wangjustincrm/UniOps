@@ -11,7 +11,7 @@ import {
 } from './traceApi'
 import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 
-import { TBody, THead, Table, Td, Th, Tr, Button, Card } from '@uniops/shell'
+import { TBody, THead, Table, Td, Th, Tr, Button, Card, Badge } from '@uniops/shell'
 const numCls = 'text-right font-mono text-xs tabular-nums whitespace-nowrap'
 
 function qtyTone(v: string | null | undefined): string {
@@ -108,14 +108,12 @@ function LineBadges({ ln, kind }: { ln: TraceLine; kind: TraceRow['kind'] }) {
   return (
     <>
       {ln.side === 'nc' && ln.unsigned && (
-        <span className="ml-1 rounded-full bg-warning-soft px-1.5 text-2xs font-medium text-warning-fg"
-          title="NC document not signed yet">unsigned</span>
+        <Badge variant="warning" size="sm" className="ml-1" title="NC document not signed yet">unsigned</Badge>
       )}
       {ln.side === 'wms' && ln.category === 'manual_opening' && (
-        <span className="ml-1 rounded-full bg-surface-sunken px-1.5 text-2xs font-medium text-fg-muted"
-          title="WMS's own opening stock, imported by hand at go-live">
+        <Badge size="sm" className="ml-1" title="WMS's own opening stock, imported by hand at go-live">
           {kind === 'wms_only' ? 'manual opening (not matched to NC)' : 'manual opening'}
-        </span>
+        </Badge>
       )}
     </>
   )
@@ -177,17 +175,15 @@ function DetailList({ lines, side }: { lines: TraceLine[]; side: 'NC' | 'WMS' })
 }
 
 function MatchCell({ r }: { r: TraceRow }) {
-  if (r.kind === 'nc_only') return <span className="rounded-full bg-danger-soft px-1.5 text-2xs font-medium text-danger-fg">NC only</span>
-  if (r.kind === 'wms_only') return <span className="rounded-full bg-danger-soft px-1.5 text-2xs font-medium text-danger-fg">WMS only</span>
+  if (r.kind === 'nc_only') return <Badge variant="danger" size="sm">NC only</Badge>
+  if (r.kind === 'wms_only') return <Badge variant="danger" size="sm">WMS only</Badge>
   if (r.tier === 1) {
     return (
-      <span className="rounded-full bg-success-soft px-1.5 font-mono text-2xs font-medium text-success-fg"
-        title="Tier 1 — paired by a document number both sides carry">doc {r.key}</span>
+      <Badge variant="success" size="sm" className="font-mono" title="Tier 1 — paired by a document number both sides carry">doc {r.key}</Badge>
     )
   }
   return (
-    <span className="rounded-full bg-primary-50 px-1.5 text-2xs font-medium text-primary-700"
-      title="Tier 2 — same category, same quantity, close in time">qty+time</span>
+    <Badge variant="accent" size="sm" title="Tier 2 — same category, same quantity, close in time">qty+time</Badge>
   )
 }
 
