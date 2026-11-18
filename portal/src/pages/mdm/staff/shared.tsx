@@ -3,7 +3,7 @@ import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { PortalPageLayout } from '@/components/layout/PortalPageLayout'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 
 export interface StaffRow {
   id: string
@@ -22,7 +22,15 @@ export interface StaffRow {
   user: { id: string; email: string; full_name: string; is_active: boolean } | null
   nc_state: string
   open_todos: number
+  hire_date: string | null
+  pay_type: 'hourly' | 'salaried' | null
+  is_manager: boolean
+  /** IMP-016: where the latest ADP roster differs, waiting for Follow ADP / Keep Current. */
+  adp_pending: AdpDifference[] | null
+  adp_pending_since: string | null
 }
+
+export interface AdpDifference { field: string; current: string | null; adp: string | null }
 
 export interface NcTodoRow {
   id: string
@@ -47,6 +55,20 @@ export interface Department { id: string; code: string; name: string; is_active:
 
 export const STATUS_LABEL: Record<string, string> = { active: 'Active', on_leave: 'On Leave', left: 'Left' }
 export const SOURCE_LABEL: Record<string, string> = { adp: 'ADP', non_adp: 'Non-ADP' }
+export const PAY_TYPE_LABEL: Record<string, string> = { hourly: 'Hourly', salaried: 'Salaried' }
+export const FIELD_LABEL: Record<string, string> = {
+  payroll_name: 'Payroll name', display_name: 'Name', work_email: 'Email', job_title: 'Job title',
+  adp_department: 'ADP department', status: 'Status', hire_date: 'Hire date', pay_type: 'Pay type',
+}
+
+/** A field value as people read it: labels for codes, the site's date format for dates. */
+export function fieldValue(field: string, value: string | null): string {
+  if (value === null || value === '') return '—'
+  if (field === 'status') return STATUS_LABEL[value] ?? value
+  if (field === 'pay_type') return PAY_TYPE_LABEL[value] ?? value
+  if (field === 'hire_date') return formatDate(value)
+  return value
+}
 export const NC_STATE_LABEL: Record<string, string> = {
   unknown: 'Not checked',
   in_step: 'In step',
