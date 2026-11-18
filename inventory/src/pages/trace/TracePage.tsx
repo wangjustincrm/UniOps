@@ -214,7 +214,7 @@ function TraceView({ material }: { material: string }) {
             Trace <span className="font-mono">{material}</span>
             {t?.material.name && <span className="text-base font-normal text-fg-secondary">{t.material.name}</span>}
             {t?.material.uom && <span className="text-xs font-normal text-fg-muted">{t.material.uom}</span>}
-            {t && !t.material.in_nc && <Badge variant="warning" className="text-2xs">Not in NC</Badge>}
+            {t && !t.material.in_nc && <Badge variant="warning" size="sm">Not in NC</Badge>}
           </h1>
           {t && (
             <p className="text-xs text-fg-muted">

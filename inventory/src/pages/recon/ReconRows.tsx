@@ -36,12 +36,9 @@ function CauseBadge({ c, showAmt }: { c: ReconCause; showAmt: boolean }) {
   const title = `${c.label} (${SIDE_LABELS[c.side]}) — qty ${formatQty(c.qty)}`
     + (showAmt && c.amount != null ? `, amount ${formatMoney(c.amount)}` : '')
   return (
-    <span title={title} className={cn(
-      'inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-2xs font-medium',
-      c.code === 'batch_label' ? 'bg-cat4-soft text-cat4-fg' : 'bg-surface-sunken text-fg-secondary',
-    )}>
+    <Badge size="sm" title={title} variant={c.code === 'batch_label' ? 'cat4' : 'neutral'}>
       {shortLabel(c.code, c.label)}
-    </span>
+    </Badge>
   )
 }
 
@@ -72,9 +69,9 @@ function Num({ v, money = false, uom }: { v: string | null; money?: boolean; uom
 }
 
 export function MatchBadge({ match }: { match: ReconBatchGroup['match'] }) {
-  if (match === 'both') return <Badge variant="success" className="text-2xs">Both</Badge>
-  if (match === 'wms_only') return <Badge variant="warning" className="text-2xs">WMS only</Badge>
-  return <Badge variant="warning" className="text-2xs">NC only</Badge>
+  if (match === 'both') return <Badge variant="success" size="sm">Both</Badge>
+  if (match === 'wms_only') return <Badge variant="warning" size="sm">WMS only</Badge>
+  return <Badge variant="warning" size="sm">NC only</Badge>
 }
 
 /** The batch number to trace a batch group by: its first NC batch, else the
@@ -252,13 +249,12 @@ export function ReconRowView({ r, showAmt, tol, date, open, onToggle, onShowBatc
               {r.uom && <span className="ml-1.5 text-2xs text-fg-muted">{r.uom}</span>}
             </span>
             <span className="flex flex-wrap gap-1">
-              {!r.in_nc && <Badge variant="warning" className="text-2xs">Not in NC</Badge>}
-              {r.no_batch_since && <Badge variant="neutral" className="text-2xs">NC stopped {formatDate(r.no_batch_since)}</Badge>}
+              {!r.in_nc && <Badge variant="warning" size="sm">Not in NC</Badge>}
+              {r.no_batch_since && <Badge size="sm">NC stopped {formatDate(r.no_batch_since)}</Badge>}
               {r.unit_check === 'mismatch' && (
-                <span title="Information only — quantities are still compared as recorded"
-                  className="inline-flex rounded-full bg-surface-sunken px-2 py-0.5 text-2xs font-medium text-fg-muted">
+                <Badge size="sm" title="Information only — quantities are still compared as recorded">
                   units differ: NC {r.uom ?? '—'} / WMS {r.wms_uom ?? '—'}
-                </span>
+                </Badge>
               )}
             </span>
           </div>

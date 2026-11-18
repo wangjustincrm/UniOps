@@ -18,7 +18,7 @@ import {
   AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MapPin,
   Search, X,
 } from 'lucide-react'
-import { SortTh, sortParams, useSort, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Badge, type BadgeTone } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import {
@@ -41,30 +41,30 @@ const thR = 'px-3 py-2'
 /** Tint per shelf-life band. Expired and under-30 are the two that need an
  *  action today, so only those two carry colour — if everything is coloured,
  *  nothing is. */
-const BUCKET_STYLE: Record<AgingBucketKey, string> = {
-  expired: 'bg-danger-soft text-danger-fg border-danger-line',
-  under_30: 'bg-warning-soft text-warning-fg border-warning-line',
-  '30_to_60': 'bg-surface-subtle text-fg-secondary border-line',
-  '60_to_90': 'bg-surface-subtle text-fg-secondary border-line',
-  '90_to_180': 'bg-surface-subtle text-fg-secondary border-line',
-  over_180: 'bg-surface-subtle text-fg-muted border-line',
+const BUCKET_TONE: Record<AgingBucketKey, BadgeTone> = {
+  expired: 'danger',
+  under_30: 'warning',
+  '30_to_60': 'outline',
+  '60_to_90': 'outline',
+  '90_to_180': 'outline',
+  over_180: 'outline',
 }
 
-const STATUS_STYLE: Record<string, string> = {
-  available: 'bg-success-soft text-success-fg border-success-line',
-  hold: 'bg-warning-soft text-warning-fg border-warning-line',
-  expired: 'bg-danger-soft text-danger-fg border-danger-line',
-  mixed: 'bg-surface-sunken text-fg-secondary border-line-strong',
+const STATUS_TONE: Record<string, BadgeTone> = {
+  available: 'success',
+  hold: 'warning',
+  expired: 'danger',
+  mixed: 'neutral',
 }
 
 /** The WAREHOUSE's own quality status (Flux QLT_STS), shown ALONGSIDE the
  *  derived one rather than instead of it: 278 lots are "Release" in the
  *  warehouse and expired by date, and one column cannot say which is which. */
-const QUALITY_STYLE: Record<string, string> = {
-  Release: 'bg-success-soft text-success-fg border-success-line',
-  Block: 'bg-danger-soft text-danger-fg border-danger-line',
-  'Under Inspection': 'bg-warning-soft text-warning-fg border-warning-line',
-  Mixed: 'bg-surface-sunken text-fg-secondary border-line-strong',
+const QUALITY_TONE: Record<string, BadgeTone> = {
+  Release: 'success',
+  Block: 'danger',
+  'Under Inspection': 'warning',
+  Mixed: 'neutral',
 }
 
 function errMsg(err: unknown, fallback: string): string {
@@ -375,40 +375,28 @@ export function BatchesTab({
                       no expiry
                     </span>
                   ) : (
-                    <span className={cn(
-                      'rounded-full border px-2 py-0.5 text-2xs font-medium',
-                      BUCKET_STYLE[lot.aging_bucket],
-                    )}>
+                    <Badge size="sm" variant={BUCKET_TONE[lot.aging_bucket]}>
                       {lot.days_to_expiry !== null && lot.days_to_expiry < 0
                         ? `${Math.abs(lot.days_to_expiry)} d past`
                         : `${lot.days_to_expiry} d left`}
-                    </span>
+                    </Badge>
                   )}
                 </Td>
                 <Td>
                   {lot.quality_status_label && (
-                    <span
-                      className={cn(
-                        'rounded-full border px-2 py-0.5 text-2xs font-medium',
-                        QUALITY_STYLE[lot.quality_status_label]
-                          ?? 'bg-surface-subtle text-fg-secondary border-line',
-                      )}
+                    <Badge size="sm" variant={QUALITY_TONE[lot.quality_status_label] ?? 'outline'}
                       title={`Warehouse quality status — Flux QLT_STS ${lot.quality_status}`}
                     >
                       {lot.quality_status_label}
-                    </span>
+                    </Badge>
                   )}
                 </Td>
                 <Td>
-                  <span
-                    className={cn(
-                      'rounded-full border px-2 py-0.5 text-2xs font-medium',
-                      STATUS_STYLE[lot.mapped_status] ?? 'bg-surface-subtle text-fg-secondary border-line',
-                    )}
+                  <Badge size="sm" variant={STATUS_TONE[lot.mapped_status] ?? 'outline'}
                     title="Warehouse status with shelf life applied — what planning uses"
                   >
                     {lot.mapped_status}
-                  </span>
+                  </Badge>
                 </Td>
               </Tr>,
               isOpen && (

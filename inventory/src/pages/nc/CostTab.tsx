@@ -114,7 +114,7 @@ function Lines({ code, date }: { code: string; date: string }) {
                     <Td className="font-mono">{l.batch ?? '—'}</Td>
                     <Td className="font-mono">{l.warehouse_code ?? '—'}</Td>
                     <Td>
-                      {l.estimate && <Badge variant="warning" className="text-2xs">Estimate</Badge>}
+                      {l.estimate && <Badge variant="warning" size="sm">Estimate</Badge>}
                       {l.uncosted && !showAmt && <span className="ml-1 font-medium text-danger-fg">not costed</span>}
                     </Td>
                   </Tr>

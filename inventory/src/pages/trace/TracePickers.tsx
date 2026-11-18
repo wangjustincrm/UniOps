@@ -103,9 +103,9 @@ export function MaterialPicker({ id, value, onChange, onDeselect, autoFocus, cla
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="font-mono text-xs text-fg">{o.code}</span>
-              {!o.in_nc && <Badge variant="warning" className="text-2xs">Not in NC</Badge>}
+              {!o.in_nc && <Badge variant="warning" size="sm">Not in NC</Badge>}
               {o.no_batch_since && (
-                <Badge variant="neutral" className="text-2xs">NC stopped by batch</Badge>
+                <Badge size="sm">NC stopped by batch</Badge>
               )}
             </div>
             {o.name && <div className="truncate text-xs text-fg-muted">{o.name}</div>}

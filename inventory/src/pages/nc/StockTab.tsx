@@ -107,10 +107,10 @@ function BatchTable({ items, stateAvailable, sort, onSort, loading, emptyText }:
             <Td>
               <span className="font-mono text-xs" title={r.warehouse_name ?? undefined}>{r.warehouse_code ?? '—'}</span>
               <span className="ml-1.5 inline-flex flex-wrap gap-1">
-                <Badge variant={CLASS_BADGE[r.warehouse_class] ?? 'neutral'} className="text-2xs">
+                <Badge variant={CLASS_BADGE[r.warehouse_class] ?? 'neutral'} size="sm">
                   {CLASS_LABEL[r.warehouse_class] ?? r.warehouse_class}
                 </Badge>
-                {r.costed === false && <Badge variant="warning" className="text-2xs">Not costed</Badge>}
+                {r.costed === false && <Badge variant="warning" size="sm">Not costed</Badge>}
               </span>
             </Td>
             <Td><MaterialCell code={r.material_code} name={r.material_name} /></Td>
