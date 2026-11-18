@@ -981,7 +981,7 @@ function CcForm({
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Department <span className="text-danger-fg">*</span></label>
-          <Select value={form.department_id} onChange={(e) => set('department_id', e.target.value)} className={fldCls(errors.department_id)}>
+          <Select value={form.department_id} onChange={(e) => set('department_id', e.target.value)} className="w-full" error={!!errors.department_id}>
             <option value="">Select department…</option>
             {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
           </Select>

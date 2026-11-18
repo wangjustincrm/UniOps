@@ -1069,7 +1069,7 @@ function UserForm({ initial, onSave, onCancel, title, saveError }: { initial: Us
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-fg-secondary">Department <span className="text-danger-fg">*</span></label>
-          <Select className={fldCls(errors.department_id)} value={form.department_id} onChange={(e) => set('department_id', e.target.value)}>
+          <Select className="w-full" error={!!errors.department_id} value={form.department_id} onChange={(e) => set('department_id', e.target.value)}>
             <option value="">— Select department —</option>
             {activeDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
           </Select>
@@ -1077,7 +1077,7 @@ function UserForm({ initial, onSave, onCancel, title, saveError }: { initial: Us
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-fg-secondary">Role <span className="text-danger-fg">*</span></label>
-          <Select className={fldCls()} value={form.role} onChange={(e) => set('role', e.target.value)}>
+          <Select className="w-full" value={form.role} onChange={(e) => set('role', e.target.value)}>
             {(Object.entries(primaryRoleLabels(rolesQ.data)) as [UserRole, string][]).map(([val, lbl]) => <option key={val} value={val}>{lbl}</option>)}
           </Select>
         </div>
@@ -1095,7 +1095,7 @@ function UserForm({ initial, onSave, onCancel, title, saveError }: { initial: Us
         </div>
         <div className="flex flex-col gap-1 sm:col-span-2">
           <label className="text-xs font-medium text-fg-secondary">Supervisor <span className="text-fg-muted font-normal">(optional — required when dept supervisor step is enabled)</span></label>
-          <Select className={fldCls()} value={form.supervisor_id} onChange={(e) => set('supervisor_id', e.target.value)}>
+          <Select className="w-full" value={form.supervisor_id} onChange={(e) => set('supervisor_id', e.target.value)}>
             <option value="">— No supervisor —</option>
             {activeUsers.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.department_name})</option>)}
           </Select>

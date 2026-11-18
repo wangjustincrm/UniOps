@@ -53,8 +53,6 @@ const MONTHS = [
 
 const ANCHORED_TYPES: RecurringType[] = ['quarterly', 'yearly']
 
-const selectClass =
-  'h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted'
 
 /**
  * Cycle / expected-invoice-day / anchor-month / amount-per-period /
@@ -118,7 +116,7 @@ export function RecurringFields(props: {
             value={value.recurringType}
             disabled={disabled}
             onChange={(e) => handleCycleChange(e.target.value as RecurringType | '')}
-            className={selectClass}
+           
           >
             <option value="">Select cycle…</option>
             <option value="weekly">Weekly</option>
@@ -138,7 +136,7 @@ export function RecurringFields(props: {
               value={value.expectedInvoiceDay}
               disabled={disabled}
               onChange={(e) => set({ expectedInvoiceDay: e.target.value })}
-              className={selectClass}
+             
             >
               <option value="">Select weekday…</option>
               {WEEKDAYS.map((d) => (
@@ -249,7 +247,7 @@ export function RecurringFields(props: {
             value={value.anchorMonth}
             disabled={disabled}
             onChange={(e) => set({ anchorMonth: e.target.value })}
-            className={selectClass}
+           
           >
             <option value="">Select month…</option>
             {MONTHS.map((m, i) => (

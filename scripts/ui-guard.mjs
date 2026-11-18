@@ -45,6 +45,11 @@ export const METRICS = {
   'arbitrary-size': /\b(?:text-\[\d+(?:\.\d+)?(?:px|rem)\]|shadow-\[[^\]]+\])/g,
   // UPPERCASE tracked labels and 700+ weights
   'shouting-type': /\b(?:uppercase|font-(?:bold|extrabold|black))\b/g,
+  // Shell <Select> puts className on its wrapper: control chrome there (a border,
+  // radius or height, or a style constant like inputCls / selectClass / fldCls())
+  // draws a second box around the select. Only layout classes belong there.
+  'select-chrome': new RegExp(
+    String.raw`<Select\b(?:(?!</?[A-Za-z])[\s\S])*?className=(?:"[^"]*(?<![\w-])(?:border(?:-[\w-]+)?|rounded(?:-\w+)?|h-(?:9|10|11))(?![\w-])[^"]*"|\{[^}]*(?:[Cc]ls|Class|CLS)\b)`, 'g'),
   // emoji as icons / decoration
   'emoji': /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}\u{2705}\u{274C}\u{2B06}\u{27A1}]/gu,
 }

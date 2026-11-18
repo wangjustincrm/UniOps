@@ -23,6 +23,15 @@ describe('ui-guard ratchet', () => {
     expect(src.match(guard.METRICS['raw-control'])?.length).toBe(1)
     expect(src.match(guard.METRICS['raw-color'])?.length).toBe(2)
   })
+  it('flags control chrome on a Shell Select (it lands on the wrapper)', async () => {
+    const guard = await import(/* @vite-ignore */ guardPath)
+    const re = guard.METRICS['select-chrome']
+    expect('<Select className={inputCls} value={v}>'.match(re)?.length).toBe(1)
+    expect('<Select className={fldCls(errors.x)}>'.match(re)?.length).toBe(1)
+    expect('<Select value={v}\n  className="h-10 rounded-lg border px-3">'.match(re)?.length).toBe(1)
+    expect('<Select className="w-full" error={!!e} onChange={(e) => f(e)}>'.match(re)).toBeNull()
+    expect('<Select className="w-40"><option /></Select><div className="border">'.match(re)).toBeNull()
+  })
   it('a "/*" inside a string is not a comment (accept="image/*")', async () => {
     const guard = await import(/* @vite-ignore */ guardPath)
     const src = '<FileInput accept="image/*" />\n<button>x</button>\n/* gone */<input />'
