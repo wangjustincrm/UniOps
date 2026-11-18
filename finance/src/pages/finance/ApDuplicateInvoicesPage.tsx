@@ -23,7 +23,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Download, Loader2, Undo2 } from 'lucide-react'
-import { Button, ChoiceCard, Input, Modal as ShellModal, Select, SortTh, TBody, THead, Table, Td, Textarea, Th, Tr, sortParams, useSort } from '@uniops/shell'
+import { Button, ChoiceCard, Input, Modal as ShellModal, Select, SortTh, TBody, THead, Table, Td, Textarea, Th, Tr, sortParams, useSort, Badge, type BadgeTone } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
@@ -71,14 +71,14 @@ const KIND_TAB: Record<Kind, string> = {
   amount_differs: 'Same vendor + invoice, different amounts',
   pending: 'Unapproved drafts',
 }
-const STATUS: Record<Status, { label: string; cls: string; hint: string }> = {
-  stop_approval: { label: 'Stop approval', cls: 'bg-danger-soft text-danger-fg border-danger-line',
+const STATUS: Record<Status, { label: string; tone: BadgeTone; hint: string }> = {
+  stop_approval: { label: 'Stop approval', tone: 'danger',
                    hint: 'A draft repeats an invoice already entered — do not approve it' },
-  stop_payment: { label: 'Stop payment', cls: 'bg-danger-soft text-danger-fg border-danger-line',
+  stop_payment: { label: 'Stop payment', tone: 'danger',
                   hint: 'An extra copy still has a balance in NC — hold it back from payment' },
-  recover: { label: 'Recover', cls: 'bg-warning-soft text-warning-fg border-warning-line',
+  recover: { label: 'Recover', tone: 'warning',
              hint: 'Every copy is settled — the supplier was paid more than once' },
-  review: { label: 'Review', cls: 'bg-surface-subtle text-fg-secondary border-line',
+  review: { label: 'Review', tone: 'outline',
             hint: 'Same vendor and invoice number, different amounts — check it; mark a deliberate split as reviewed' },
 }
 
@@ -401,10 +401,9 @@ export default function ApDuplicateInvoicesPage() {
                           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         </Td>
                         <Td>
-                          <span title={st.hint}
-                                className={cn('inline-block rounded border px-1.5 py-0.5 text-2xs font-medium', st.cls)}>
+                          <Badge size="sm" variant={st.tone} title={st.hint}>
                             {st.label}
-                          </span>
+                          </Badge>
                           {f.reopened && (
                             <span className="ml-1 text-2xs text-warning-fg" title="Reviewed before, but a bill has been added since">
                               new copy

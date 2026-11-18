@@ -576,12 +576,12 @@ function PartnerRows({ account, fiscalYear, costCenterId, includeUnposted }: {
                     off the line the money is on. Say so — a vendor that is not
                     on the line in NC must not look like one that is. */}
                 {(p.source === 'voucher' || p.source === 'mixed') && p.partner_name && (
-                  <span className="ml-1.5 rounded bg-success-soft px-1 py-0.5 text-2xs text-success-fg"
+                  <Badge variant="success" size="sm" className="ml-1.5"
                         title={p.source === 'voucher'
                           ? 'Vendor taken from the voucher (the expense line itself names none)'
                           : `Partly from the voucher: ${p.inferred_total} of ${p.year_total}`}>
                     {p.source === 'voucher' ? 'from voucher' : 'partly from voucher'}
-                  </span>
+                  </Badge>
                 )}
               </Td>
               {Array.from({ length: 12 }, (_, k) => k + 1).map((m) => {
