@@ -3,7 +3,7 @@ import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { formatDate } from '@/lib/utils'
 import { formatPaymentTerms } from '@/lib/paymentTerms'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 
 export default function VendorManagerDashboard() {
   const { data } = useDashboard()
@@ -22,7 +22,7 @@ export default function VendorManagerDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-fg">Vendor Manager Dashboard</h1>
+      <h1 className="text-2xl font-semibold text-fg">Vendor Manager Dashboard</h1>
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -48,9 +48,9 @@ export default function VendorManagerDashboard() {
           <p className="py-8 text-center text-sm text-fg-muted">No vendors registered yet.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-line-subtle text-left">
+            <Table density="compact">
+              <THead>
+                <Tr className="text-left">
                   <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                   <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                   <SortTh label="Category" sortKey="category" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
@@ -58,34 +58,34 @@ export default function VendorManagerDashboard() {
                   <SortTh label="Payment Terms" sortKey="payment_terms" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                   <SortTh label="Added" sortKey="created_at" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                   <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
-                  <th className="pb-2 font-medium text-fg-muted"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line-subtle">
+                  <Th></Th>
+                </Tr>
+              </THead>
+              <TBody>
                 {recentVendors.map((vendor) => (
-                  <tr key={vendor.id} className="hover:bg-surface-subtle">
-                    <td className="py-2 pr-3">
+                  <Tr key={vendor.id} className="hover:bg-surface-subtle">
+                    <Td className="pr-3">
                       <span className="font-mono text-xs font-semibold text-fg-secondary">{vendor.code}</span>
-                    </td>
-                    <td className="py-2 pr-3 max-w-[160px] truncate font-medium text-fg">{vendor.name}</td>
-                    <td className="py-2 pr-3 text-fg-muted">{vendor.category}</td>
-                    <td className="py-2 pr-3 text-fg-muted">{vendor.contact_name}</td>
-                    <td className="py-2 pr-3 text-fg-muted">{formatPaymentTerms(vendor.payment_terms)}</td>
-                    <td className="py-2 pr-3 text-fg-muted">{formatDate(vendor.created_at)}</td>
-                    <td className="py-2 pr-3">
+                    </Td>
+                    <Td className="pr-3 max-w-[160px] truncate font-medium text-fg">{vendor.name}</Td>
+                    <Td className="pr-3 text-fg-muted">{vendor.category}</Td>
+                    <Td className="pr-3 text-fg-muted">{vendor.contact_name}</Td>
+                    <Td className="pr-3 text-fg-muted">{formatPaymentTerms(vendor.payment_terms)}</Td>
+                    <Td className="pr-3 text-fg-muted">{formatDate(vendor.created_at)}</Td>
+                    <Td className="pr-3">
                       {vendor.is_active ? (
                         <span className="inline-flex items-center rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success-fg">Active</span>
                       ) : (
                         <span className="inline-flex items-center rounded-full bg-surface-sunken px-2 py-0.5 text-xs font-medium text-fg-muted">Inactive</span>
                       )}
-                    </td>
-                    <td className="py-2">
+                    </Td>
+                    <Td>
                       <Link to="/vendors" className="text-xs text-primary-600 hover:underline whitespace-nowrap">View Details →</Link>
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
         )}
 

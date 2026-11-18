@@ -13,7 +13,7 @@ import { ShipmentDialog } from './ShipmentsTab'
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <dt className="text-xs font-medium uppercase tracking-wide text-fg-muted">{label}</dt>
+      <dt className="text-xs font-medium text-fg-muted">{label}</dt>
       <dd className="text-sm text-fg">{children}</dd>
     </div>
   )
@@ -52,7 +52,7 @@ export default function ShipmentDetailPage() {
             <ArrowLeft className="h-4 w-4" /> Back to Freight
           </BackLink>
           <div className="flex items-center gap-3">
-            <h1 className="font-mono text-2xl font-bold text-fg">{s.tracking_no}</h1>
+            <h1 className="font-mono text-2xl font-semibold text-fg">{s.tracking_no}</h1>
             <ShipmentStatusBadge status={s.status} />
           </div>
           <p className="mt-0.5 text-sm text-fg-muted">

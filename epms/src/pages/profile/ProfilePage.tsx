@@ -13,6 +13,7 @@ import { authService, type ApiUser } from '@/services/auth'
 import { api } from '@/lib/api'
 import { SignaturePad, type SignaturePadHandle } from '@/components/shared/SignaturePad'
 
+import { FileInput, Input } from '@uniops/shell'
 const ROLE_LABELS: Record<string, string> = {
   system_admin: 'System Admin',
   dept_manager: 'Department Manager',
@@ -89,7 +90,7 @@ function PersonalInfoSection({ profile }: { profile: ApiUser }) {
         {/* Full name */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Display Name</label>
-          <input
+          <Input
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
             className={inputCls}
@@ -123,7 +124,7 @@ function PersonalInfoSection({ profile }: { profile: ApiUser }) {
           </label>
           <div className="relative">
             <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-fg-muted" />
-            <input
+            <Input
               value={teamsAccount}
               onChange={(e) => setTeamsAccount(e.target.value)}
               className={cn(inputCls, 'pl-8')}
@@ -272,14 +273,14 @@ function SignatureSection({ profile }: { profile: ApiUser }) {
             <p className="text-xs font-medium text-fg-secondary">Current signature</p>
             <p className="text-xs text-fg-muted">Draw or upload a new one below to replace it.</p>
           </div>
-          <button
+          <Button variant="danger-ghost" size="xs"
             type="button"
             onClick={() => mutation.mutate('')}
             disabled={mutation.isPending}
-            className="flex items-center gap-1.5 text-xs font-medium text-fg-muted hover:text-danger-fg disabled:opacity-40"
+           
           >
             <Trash2 className="h-3.5 w-3.5" /> Remove
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="flex items-start gap-2 rounded-xl border border-warning-line bg-warning-soft px-4 py-3">
@@ -313,9 +314,9 @@ function SignatureSection({ profile }: { profile: ApiUser }) {
         <SignaturePad ref={padRef} onChange={setPadEmpty} />
       ) : (
         <div className="flex flex-col gap-3">
-          <input
+          <FileInput
             ref={fileRef}
-            type="file"
+           
             accept="image/png,image/jpeg"
             onChange={(e) => onPickFile(e.target.files?.[0])}
             className="block w-full text-xs text-fg-muted file:mr-3 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-2 file:text-xs file:font-medium file:text-primary-700 hover:file:bg-primary-100"
@@ -323,13 +324,13 @@ function SignatureSection({ profile }: { profile: ApiUser }) {
           {uploaded && (
             <div className="flex items-center gap-4 rounded-lg border border-dashed border-line-strong bg-surface p-3">
               <img src={uploaded} alt="Signature to be saved" className="h-14 max-w-[240px] object-contain" />
-              <button
+              <Button variant="subtle" size="xs"
                 type="button"
                 onClick={() => { setUploaded(null); if (fileRef.current) fileRef.current.value = '' }}
-                className="text-xs font-medium text-fg-muted hover:text-fg-secondary"
+               
               >
                 Choose another
-              </button>
+              </Button>
             </div>
           )}
           <p className="text-xs text-fg-muted">
@@ -400,10 +401,10 @@ function ChangePasswordSection() {
   )
 
   const ToggleBtn = ({ show, onToggle }: { show: boolean; onToggle: () => void }) => (
-    <button type="button" onClick={onToggle}
-      className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
+    <Button variant="subtle" size="icon-xs" type="button" onClick={onToggle}
+      className="absolute right-1.5 top-1/2 -translate-y-1/2">
       {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-    </button>
+    </Button>
   )
 
   return (
@@ -420,7 +421,7 @@ function ChangePasswordSection() {
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Current Password *</label>
           <div className="relative">
-            <input type={showCurrent ? 'text' : 'password'} value={currentPwd}
+            <Input type={showCurrent ? 'text' : 'password'} value={currentPwd}
               onChange={(e) => { setCurrentPwd(e.target.value); setErrors((p) => ({ ...p, currentPwd: '' })) }}
               className={inputCls(errors.currentPwd)} placeholder="Current password" />
             <ToggleBtn show={showCurrent} onToggle={() => setShowCurrent((v) => !v)} />
@@ -432,7 +433,7 @@ function ChangePasswordSection() {
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">New Password *</label>
           <div className="relative">
-            <input type={showNew ? 'text' : 'password'} value={newPwd}
+            <Input type={showNew ? 'text' : 'password'} value={newPwd}
               onChange={(e) => { setNewPwd(e.target.value); setErrors((p) => ({ ...p, newPwd: '' })) }}
               className={inputCls(errors.newPwd)} placeholder="Min. 8 characters" />
             <ToggleBtn show={showNew} onToggle={() => setShowNew((v) => !v)} />
@@ -444,7 +445,7 @@ function ChangePasswordSection() {
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Confirm New Password *</label>
           <div className="relative">
-            <input type={showConfirm ? 'text' : 'password'} value={confirmPwd}
+            <Input type={showConfirm ? 'text' : 'password'} value={confirmPwd}
               onChange={(e) => { setConfirmPwd(e.target.value); setErrors((p) => ({ ...p, confirmPwd: '' })) }}
               className={inputCls(errors.confirmPwd)} placeholder="Re-enter password" />
             <ToggleBtn show={showConfirm} onToggle={() => setShowConfirm((v) => !v)} />
@@ -564,17 +565,17 @@ export default function ProfilePage() {
     <div className="flex flex-col gap-6">
       {/* Page header */}
       <div className="rounded-lg border border-line bg-surface px-6 py-4">
-        <button onClick={() => navigate(-1)} className="mb-3 flex items-center gap-1.5 text-sm text-fg-muted hover:text-primary-600">
+        <Button variant="subtle" size="xs" onClick={() => navigate(-1)} className="mb-3 text-sm">
           <ArrowLeft className="h-4 w-4" />
           Back
-        </button>
+        </Button>
         <div className="flex items-center gap-4">
           {/* Avatar */}
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary-100 text-xl font-bold text-primary-700 shrink-0">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary-100 text-xl font-semibold text-primary-700 shrink-0">
             {initials}
           </div>
           <div>
-            <h1 className="text-xl font-bold text-fg">{profile.full_name}</h1>
+            <h1 className="text-xl font-semibold text-fg">{profile.full_name}</h1>
             <p className="text-sm text-fg-muted">{ROLE_LABELS[profile.role] ?? profile.role} · {profile.email}</p>
           </div>
         </div>

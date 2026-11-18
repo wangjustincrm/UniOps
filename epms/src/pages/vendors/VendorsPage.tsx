@@ -20,12 +20,12 @@ import {
   PRESET_PAYMENT_TERMS, MAX_NET_DAYS, customDaysToTerms, formatPaymentTerms, isPresetTerms, netDays,
 } from '@/lib/paymentTerms'
 import { ErpVendorImportDrawer } from './ErpVendorImportDrawer'
-import { SortTh, useSort, sortParams } from '@uniops/shell'
+import { SortTh, useSort, sortParams, FileInput, Radio, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 
 type VendorSortKey =
   | 'code' | 'erp_id' | 'name' | 'category' | 'contact'
   | 'payment_terms' | 'currency' | 'status'
-const VENDOR_TH = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap'
+const VENDOR_TH = 'px-4 py-3 text-left text-xs font-semibold text-fg-muted whitespace-nowrap'
 
 // Select value for "Custom (Net N days)"; the day count lives in customDays.
 const CUSTOM_TERMS = '__custom'
@@ -137,9 +137,9 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
       <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-primary-200 bg-surface shadow-xl p-5">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-fg">{title}</h3>
-        <button onClick={onCancel} className="text-fg-muted hover:text-fg-secondary">
+        <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onCancel}>
           <X className="h-4 w-4" />
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -148,7 +148,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
           <label className="text-xs font-medium text-fg-secondary">
             POID <span className="text-danger-fg">*</span>
           </label>
-          <input
+          <Input
             className={inputCls(errors.code)}
             value={form.code}
             onChange={(e) => set('code', e.target.value.toUpperCase())}
@@ -161,7 +161,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         {/* ERP ID */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">ERP ID</label>
-          <input
+          <Input
             className={inputCls()}
             value={form.erpId}
             onChange={(e) => set('erpId', e.target.value)}
@@ -175,7 +175,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
           <label className="text-xs font-medium text-fg-secondary">
             Vendor Name <span className="text-danger-fg">*</span>
           </label>
-          <input
+          <Input
             className={inputCls(errors.name)}
             value={form.name}
             onChange={(e) => set('name', e.target.value)}
@@ -189,7 +189,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
           <label className="text-xs font-medium text-fg-secondary">
             Category <span className="text-danger-fg">*</span>
           </label>
-          <select
+          <Select
             className={inputCls(errors.category)}
             value={form.category}
             onChange={(e) => set('category', e.target.value)}
@@ -198,14 +198,14 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
             {categories.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
-          </select>
+          </Select>
           {errors.category && <p className="text-xs text-danger-fg">{errors.category}</p>}
         </div>
 
         {/* Contact Name */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Contact Name</label>
-          <input
+          <Input
             className={inputCls()}
             value={form.contactName}
             onChange={(e) => set('contactName', e.target.value)}
@@ -216,7 +216,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         {/* Contact Email */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Contact Email</label>
-          <input
+          <Input
             type="text"
             className={inputCls(errors.contactEmail)}
             value={form.contactEmail}
@@ -229,7 +229,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         {/* Remittance Email */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Remittance Email</label>
-          <input
+          <Input
             type="text"
             className={inputCls(errors.remittanceEmail)}
             value={form.remittanceEmail}
@@ -247,7 +247,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         {/* Phone */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Phone</label>
-          <input
+          <Input
             className={inputCls()}
             value={form.phone}
             onChange={(e) => set('phone', e.target.value)}
@@ -258,7 +258,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         {/* Address */}
         <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-3">
           <label className="text-xs font-medium text-fg-secondary">Address</label>
-          <input
+          <Input
             className={inputCls()}
             value={form.address}
             onChange={(e) => set('address', e.target.value)}
@@ -270,7 +270,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Payment Terms</label>
           <div className="flex gap-2">
-            <select
+            <Select
               className={inputCls()}
               value={form.paymentTerms}
               onChange={(e) => set('paymentTerms', e.target.value)}
@@ -281,10 +281,10 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
                 </option>
               ))}
               <option value={CUSTOM_TERMS}>Custom (Net N days)…</option>
-            </select>
+            </Select>
             {form.paymentTerms === CUSTOM_TERMS && (
               <div className="relative w-32 shrink-0">
-                <input
+                <Input
                   type="number"
                   min={1}
                   max={MAX_NET_DAYS}
@@ -316,7 +316,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
             <label className="text-xs font-medium text-fg-secondary">
               Max Prepayment % <span className="text-fg-muted font-normal">(1–100, overrides system cap)</span>
             </label>
-            <input
+            <Input
               type="number"
               min={1}
               max={100}
@@ -332,7 +332,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         {/* Currency */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Currency</label>
-          <select
+          <Select
             className={inputCls()}
             value={form.currency}
             onChange={(e) => set('currency', e.target.value)}
@@ -340,7 +340,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
             {currencies.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
-          </select>
+          </Select>
         </div>
 
         {/* Status */}
@@ -349,11 +349,11 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
           <div className="flex items-center gap-4 h-10">
             {([true, false] as boolean[]).map((val) => (
               <label key={String(val)} className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
+                <Radio
+                 
                   checked={form.active === val}
                   onChange={() => set('active', val)}
-                  className="accent-primary-600"
+                 
                 />
                 <span className="text-sm text-fg-secondary">{val ? 'Active' : 'Inactive'}</span>
               </label>
@@ -364,7 +364,7 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         {/* Notes */}
         <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-3">
           <label className="text-xs font-medium text-fg-secondary">Notes</label>
-          <input
+          <Input
             className={inputCls()}
             value={form.notes}
             onChange={(e) => set('notes', e.target.value)}
@@ -623,7 +623,7 @@ export default function VendorsPage() {
       {/* Page header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-fg">Vendors</h1>
+          <h1 className="text-2xl font-semibold text-fg">Vendors</h1>
           <p className="mt-0.5 text-sm text-fg-muted">
             Manage your supplier and vendor directory
           </p>
@@ -643,9 +643,9 @@ export default function VendorsPage() {
                 <Upload className="h-4 w-4" />
                 {importVendors.isPending ? 'Importing…' : 'Import CSV'}
               </Button>
-              <input
+              <FileInput
                 ref={importInputRef}
-                type="file"
+               
                 accept=".csv"
                 className="sr-only"
                 onChange={handleImportFile}
@@ -666,16 +666,16 @@ export default function VendorsPage() {
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div className="rounded-xl bg-surface shadow-sm px-4 py-3">
-          <p className="text-xs text-fg-muted font-medium uppercase tracking-wide">Total</p>
-          <p className="mt-1 text-2xl font-bold text-fg">{totalVendors}</p>
+          <p className="text-xs text-fg-muted font-medium">Total</p>
+          <p className="mt-1 text-2xl font-semibold text-fg">{totalVendors}</p>
         </div>
         <div className="rounded-xl bg-surface shadow-sm px-4 py-3">
-          <p className="text-xs text-fg-muted font-medium uppercase tracking-wide">Showing</p>
-          <p className="mt-1 text-2xl font-bold text-primary-700">{total}</p>
+          <p className="text-xs text-fg-muted font-medium">Showing</p>
+          <p className="mt-1 text-2xl font-semibold text-primary-700">{total}</p>
         </div>
         <div className="rounded-xl bg-surface shadow-sm px-4 py-3">
-          <p className="text-xs text-fg-muted font-medium uppercase tracking-wide">Page</p>
-          <p className="mt-1 text-2xl font-bold text-fg-secondary">{page} / {totalPages}</p>
+          <p className="text-xs text-fg-muted font-medium">Page</p>
+          <p className="mt-1 text-2xl font-semibold text-fg-secondary">{page} / {totalPages}</p>
         </div>
       </div>
 
@@ -692,17 +692,17 @@ export default function VendorsPage() {
               </ul>
             )}
           </div>
-          <button onClick={() => setImportResult(null)} className="text-fg-muted hover:text-fg-secondary shrink-0">
+          <Button aria-label="Dismiss" variant="subtle" size="icon-xs" onClick={() => setImportResult(null)} className="shrink-0">
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       )}
       {importError && (
         <div className="rounded-lg border border-danger-line bg-danger-soft px-4 py-3 text-sm flex items-start justify-between gap-3">
           <p className="text-danger-fg">{importError}</p>
-          <button onClick={() => setImportError(null)} className="text-fg-muted hover:text-fg-secondary shrink-0">
+          <Button aria-label="Dismiss" variant="subtle" size="icon-xs" onClick={() => setImportError(null)} className="shrink-0">
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       )}
 
@@ -719,16 +719,16 @@ export default function VendorsPage() {
         </div>
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-fg-muted" />
-          <select
+          <Select
             value={catFilter}
             onChange={(e) => setCatFilterAndReset(e.target.value)}
-            className="h-10 rounded-lg border border-line bg-surface-sunken px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
+           
           >
             <option value="all">All Categories</option>
             {vendorCategories.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
-          </select>
+          </Select>
         </div>
         {/* Active/All/Inactive tabs */}
         <div className="flex rounded-lg border border-line overflow-hidden">
@@ -774,9 +774,9 @@ export default function VendorsPage() {
       {/* Table */}
       <div className="rounded-xl bg-surface shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line bg-surface-subtle">
+          <Table>
+            <THead>
+              <Tr className="bg-surface-subtle">
                 <SortTh label="POID" sortKey="code" sort={sort} onSort={onSort} className={VENDOR_TH} />
                 <SortTh label="ERP ID" sortKey="erp_id" sort={sort} onSort={onSort} className={VENDOR_TH} />
                 <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className={VENDOR_TH} />
@@ -785,13 +785,13 @@ export default function VendorsPage() {
                 <SortTh label="Payment Terms" sortKey="payment_terms" sort={sort} onSort={onSort} className={VENDOR_TH} />
                 <SortTh label="Currency" sortKey="currency" sort={sort} onSort={onSort} className={VENDOR_TH} />
                 <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={VENDOR_TH} />
-                {canWrite && <th className={VENDOR_TH} />}
-              </tr>
-            </thead>
-            <tbody>
+                {canWrite && <Th className={VENDOR_TH} />}
+              </Tr>
+            </THead>
+            <TBody>
               {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={canWrite ? 9 : 8} className="py-16 text-center">
+                <Tr>
+                  <Td align="center" colSpan={canWrite ? 9 : 8}>
                     <Building2 className="h-8 w-8 text-fg-faint mx-auto mb-3" />
                     <p className="text-sm font-medium text-fg-muted">No vendors found</p>
                     <p className="text-xs text-fg-muted mt-1">
@@ -799,11 +799,11 @@ export default function VendorsPage() {
                         ? 'Try adjusting your filters'
                         : 'Add your first vendor to get started'}
                     </p>
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               )}
               {filtered.map((vendor, i) => (
-                <tr
+                <Tr
                   key={vendor.id}
                   className={cn(
                     'border-b border-line-subtle hover:bg-primary-50/40 transition-colors',
@@ -812,32 +812,32 @@ export default function VendorsPage() {
                   )}
                 >
                   {/* POID */}
-                  <td className="px-4 py-3">
+                  <Td>
                     <span className="font-mono text-xs font-semibold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded">
                       {vendor.code}
                     </span>
-                  </td>
+                  </Td>
 
                   {/* ERP ID */}
-                  <td className="px-4 py-3 font-mono text-xs text-fg-muted">
+                  <Td className="font-mono text-xs text-fg-muted">
                     {vendor.erp_id || <span className="text-fg-faint">—</span>}
-                  </td>
+                  </Td>
 
                   {/* Name */}
-                  <td className="px-4 py-3 text-fg font-medium max-w-52">
+                  <Td className="text-fg font-medium max-w-52">
                     <p className="truncate">{vendor.name}</p>
                     {vendor.notes && (
                       <p className="text-xs text-fg-muted truncate">{vendor.notes}</p>
                     )}
-                  </td>
+                  </Td>
 
                   {/* Category */}
-                  <td className="px-4 py-3 text-fg-muted whitespace-nowrap">
+                  <Td className="text-fg-muted whitespace-nowrap">
                     {vendor.category}
-                  </td>
+                  </Td>
 
                   {/* Contact */}
-                  <td className="px-4 py-3">
+                  <Td>
                     {vendor.contact_name && (
                       <p className="text-fg-secondary font-medium text-xs">{vendor.contact_name}</p>
                     )}
@@ -851,20 +851,20 @@ export default function VendorsPage() {
                         ↳ {vendor.remittance_email}
                       </p>
                     )}
-                  </td>
+                  </Td>
 
                   {/* Payment Terms */}
-                  <td className="px-4 py-3 text-fg-secondary whitespace-nowrap">
+                  <Td className="text-fg-secondary whitespace-nowrap">
                     {formatPaymentTerms(vendor.payment_terms)}
-                  </td>
+                  </Td>
 
                   {/* Currency */}
-                  <td className="px-4 py-3 font-mono text-xs text-fg-muted">
+                  <Td className="font-mono text-xs text-fg-muted">
                     {vendor.currency}
-                  </td>
+                  </Td>
 
                   {/* Status */}
-                  <td className="px-4 py-3">
+                  <Td>
                     <span
                       className={cn(
                         'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
@@ -875,22 +875,22 @@ export default function VendorsPage() {
                     >
                       {vendor.is_active ? '● Active' : '○ Inactive'}
                     </span>
-                  </td>
+                  </Td>
 
                   {/* Actions */}
                   {canWrite && (
-                    <td className="px-4 py-3">
+                    <Td>
                       <div className="flex items-center justify-end gap-1">
                         {/* No delete (ISS-0268): vendors have no delete in the PRD
                             (EPMS §3.10, Portal "There is no delete"); deactivate
                             retires a vendor. */}
-                        <button
+                        <Button aria-label="Edit vendor" variant="subtle" size="icon-xs"
                           onClick={() => openEdit(vendor)}
-                          className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-primary-50 hover:text-primary-600"
+                         
                           title="Edit vendor"
                         >
                           <Pencil className="h-3.5 w-3.5" />
-                        </button>
+                        </Button>
                         <button
                           onClick={() => {
                             updateVendor.mutate({
@@ -913,41 +913,41 @@ export default function VendorsPage() {
                           )}
                         </button>
                       </div>
-                    </td>
+                    </Td>
                   )}
-                </tr>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
         {/* Pagination footer */}
         <div className="border-t border-line bg-surface-subtle px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm text-fg-muted">
             <span>Rows per page:</span>
-            <select
+            <Select selectSize="sm"
               value={pageSize}
               onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}
-              className="h-8 rounded-md border border-line bg-surface px-2 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
+             
             >
               {PAGE_SIZE_OPTIONS.map((n) => (
                 <option key={n} value={n}>{n}</option>
               ))}
-            </select>
+            </Select>
             <span className="text-fg-muted">
               {total === 0 ? '0' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)}`} of {total}
             </span>
           </div>
           <div className="flex items-center gap-1">
-            <button
+            <Button variant="secondary" size="icon-sm"
               onClick={() => setPage(1)}
               disabled={page === 1}
-              className="h-8 w-8 rounded-md border border-line bg-surface text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-40 disabled:cursor-not-allowed"
-            >«</button>
-            <button
+              className="text-sm"
+            >«</Button>
+            <Button variant="secondary" size="icon-sm"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="h-8 w-8 rounded-md border border-line bg-surface text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-40 disabled:cursor-not-allowed"
-            >‹</button>
+              className="text-sm"
+            >‹</Button>
             {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
               const start = Math.max(1, Math.min(page - 2, totalPages - 4))
               const p = start + i
@@ -964,16 +964,16 @@ export default function VendorsPage() {
                 >{p}</button>
               )
             })}
-            <button
+            <Button variant="secondary" size="icon-sm"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
-              className="h-8 w-8 rounded-md border border-line bg-surface text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-40 disabled:cursor-not-allowed"
-            >›</button>
-            <button
+              className="text-sm"
+            >›</Button>
+            <Button variant="secondary" size="icon-sm"
               onClick={() => setPage(totalPages)}
               disabled={page === totalPages}
-              className="h-8 w-8 rounded-md border border-line bg-surface text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-40 disabled:cursor-not-allowed"
-            >»</button>
+              className="text-sm"
+            >»</Button>
           </div>
         </div>
       </div>

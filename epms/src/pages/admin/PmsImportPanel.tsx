@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Database, Download, RefreshCw, Paperclip, AlertTriangle, CheckCircle2, Loader2, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn, formatDateTime } from '@/lib/utils'
+import { Checkbox, MenuItem } from '@uniops/shell'
 import {
   pmsImportService as svc,
   type PmsConfig, type PmsRun, type PmsReport,
@@ -179,7 +180,7 @@ export function PmsImportPanel() {
       <div className="rounded-xl border border-line bg-surface p-4 flex flex-col gap-3">
         <div className="flex items-center gap-4">
           <label className="flex items-center gap-2 text-sm text-fg-secondary select-none">
-            <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} disabled={running} />
+            <Checkbox checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} disabled={running} />
             Dry-run (preview only, write nothing)
           </label>
           <span className="text-xs text-fg-muted">Last incremental watermark: {fmt(config?.last_sync)}</span>
@@ -226,15 +227,15 @@ export function PmsImportPanel() {
       <div>
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-semibold text-fg-secondary">Run history</h3>
-          <button onClick={() => refresh()} className="text-xs text-primary-600 hover:underline flex items-center gap-1">
+          <Button variant="link" onClick={() => refresh()} className="text-xs">
             <RefreshCw className="h-3 w-3" /> Refresh
-          </button>
+          </Button>
         </div>
         <div className="rounded-xl border border-line bg-surface divide-y divide-line-subtle">
           {runs.length === 0 && <div className="p-4 text-sm text-fg-muted">No runs yet.</div>}
           {runs.map((run) => (
             <div key={run.id}>
-              <button
+              <MenuItem
                 onClick={async () => {
                   const next = expanded === run.id ? null : run.id
                   setExpanded(next)
@@ -245,14 +246,14 @@ export function PmsImportPanel() {
                     } catch { /* fall back to the summary row */ }
                   }
                 }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-surface-subtle text-sm">
+               >
                 <StatusBadge s={run.status} />
                 <span className="font-medium w-28">{phaseLabel(run.phase)}</span>
                 {run.dry_run && <span className="text-xs text-fg-muted">dry-run</span>}
                 <span className="text-fg-muted flex-1">{fmt(run.started_at)}</span>
                 <span className="text-xs text-fg-muted">{run.triggered_by}</span>
                 <ChevronDown className={cn('h-4 w-4 text-fg-muted transition-transform', expanded === run.id && 'rotate-180')} />
-              </button>
+              </MenuItem>
               {expanded === run.id && (() => {
                 const full = details[run.id] ?? run
                 return (

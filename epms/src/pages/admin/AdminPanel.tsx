@@ -32,6 +32,7 @@ import { TEMPLATE_VARIABLE_DOCS } from '@/lib/email-template'
 import type { UserRole, Currency, CurrencyDef } from '@/types'
 import { CURRENCIES } from '@/types'
 
+import { Checkbox, FileInput, Radio, Select, TBody, THead, Table, Td, Textarea, Th, Tr, MenuItem } from '@uniops/shell'
 // Roles that may only ever be held as ADDITIONAL roles (granted per-user via
 // identity's user_roles), never as a user's primary/base login role. Keep in
 // step with ApiUserRole in services/users.ts, which deliberately excludes them.
@@ -145,11 +146,11 @@ function SlaRow({ label, description, value, onChange, min = 1 }: {
         <p className="text-xs text-fg-muted mt-0.5">{description}</p>
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        <input
+        <Input inputSize="sm"
           type="number" min={min} max={30}
           value={value}
           onChange={(e) => onChange(Math.max(min, Number(e.target.value)))}
-          className="h-9 w-16 rounded-lg border border-line-strong bg-surface px-2 text-center text-sm font-semibold text-fg focus:outline-none focus:ring-2 focus:ring-primary-600"
+          className="w-16 text-center font-semibold"
         />
         <span className="text-xs text-fg-muted whitespace-nowrap">business days</span>
       </div>
@@ -193,25 +194,25 @@ function CompanySettings() {
   return (
     <div className="flex flex-col gap-6 max-w-lg">
       <section className="flex flex-col gap-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Company Information</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">Company Information</h3>
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-fg-secondary">Company Name <span className="text-danger-fg">*</span></label>
-          <input className={inputCls()} value={name} onChange={(e) => setName(e.target.value)} placeholder="Canada Royal Milk" />
+          <Input className={inputCls()} value={name} onChange={(e) => setName(e.target.value)} placeholder="Canada Royal Milk" />
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-fg-secondary">Tagline / Subtitle</label>
-          <input className={inputCls()} value={tagline} onChange={(e) => setTagline(e.target.value)} placeholder="Enterprise Procurement Management" />
+          <Input className={inputCls()} value={tagline} onChange={(e) => setTagline(e.target.value)} placeholder="Enterprise Procurement Management" />
           <p className="text-xs text-fg-muted">Shown below the company name in the sidebar</p>
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-fg-secondary">Default Delivery Address</label>
-          <textarea rows={3} className={inputCls() + ' py-2 resize-none'} value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder="123 Warehouse Rd, Toronto, ON M5V 1A1" />
+          <Textarea rows={3} className={inputCls() + ' py-2 resize-none'} value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder="123 Warehouse Rd, Toronto, ON M5V 1A1" />
           <p className="text-xs text-fg-muted">Pre-filled in PR and PO forms. Users can override per order.</p>
         </div>
       </section>
 
       <section className="flex flex-col gap-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Company Logo</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">Company Logo</h3>
         {previewUrl && (
           <div className="flex items-center gap-4 rounded-xl border border-line bg-surface-subtle p-4">
             <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-surface shadow overflow-hidden">
@@ -220,9 +221,9 @@ function CompanySettings() {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-fg truncate">{previewFileName ?? 'Uploaded logo'}</p>
               <div className="mt-2 flex items-center gap-2">
-                <button onClick={() => fileRef.current?.click()} className="text-xs font-medium text-primary-600 hover:underline">Replace</button>
+                <Button variant="link" onClick={() => fileRef.current?.click()} className="text-xs">Replace</Button>
                 <span className="text-fg-faint">·</span>
-                <button onClick={() => { setPreviewUrl(null); setPreviewFileName(null); if (fileRef.current) fileRef.current.value = '' }} className="text-xs font-medium text-danger-fg hover:underline">Remove</button>
+                <Button variant="link" onClick={() => { setPreviewUrl(null); setPreviewFileName(null); if (fileRef.current) fileRef.current.value = '' }} className="text-xs text-danger-fg">Remove</Button>
               </div>
             </div>
           </div>
@@ -236,11 +237,11 @@ function CompanySettings() {
           <p className="text-sm font-medium text-fg-secondary">{previewUrl ? 'Upload a different logo' : 'Upload company logo'}</p>
           <p className="text-xs text-fg-muted">PNG, JPG, SVG · Transparent or white background recommended</p>
         </div>
-        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) loadFile(f) }} />
+        <FileInput ref={fileRef} accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) loadFile(f) }} />
       </section>
 
       <section className="flex flex-col gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Sidebar Preview</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">Sidebar Preview</h3>
         <div className="inline-flex items-center gap-2.5 rounded-xl bg-primary-700 px-3 py-2.5 w-fit">
           {previewUrl ? (
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface overflow-hidden">
@@ -248,11 +249,11 @@ function CompanySettings() {
             </div>
           ) : (
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/15">
-              <span className="text-xs font-bold text-white">{(name || 'EP').split(/\s+/).map((w) => w[0]).join('').toUpperCase().slice(0, 2)}</span>
+              <span className="text-xs font-semibold text-white">{(name || 'EP').split(/\s+/).map((w) => w[0]).join('').toUpperCase().slice(0, 2)}</span>
             </div>
           )}
           <div>
-            <p className="text-sm font-bold text-white/95 leading-tight">{name || 'Company Name'}</p>
+            <p className="text-sm font-semibold text-white/95 leading-tight">{name || 'Company Name'}</p>
             {tagline && <p className="text-2xs text-white/45 leading-tight">{tagline}</p>}
           </div>
         </div>
@@ -412,7 +413,7 @@ function SecuritySettings() {
   return (
     <div className="flex flex-col gap-8 max-w-lg">
       <section className="flex flex-col gap-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Multi-Factor Authentication</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">Multi-Factor Authentication</h3>
         <ToggleRow label="Require MFA for all users" description="Every user must verify a 6-digit code sent to their registered email address after login." checked={mfaEnabled} onToggle={() => save({ mfa_enabled: !mfaEnabled })} />
         {!mfaEnabled && (
           <div className="rounded-lg bg-primary-50 border border-primary-100 px-4 py-3 text-xs text-primary-700">
@@ -424,7 +425,7 @@ function SecuritySettings() {
       </section>
 
       <section className="flex flex-col gap-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">SMTP Configuration</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">SMTP Configuration</h3>
         <p className="text-xs text-fg-muted -mt-2">
           Override the server's default SMTP settings. Leave fields blank to use the server defaults (.env).
         </p>
@@ -506,7 +507,7 @@ function SecuritySettings() {
       </section>
 
       <section className="flex flex-col gap-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Password Policy</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">Password Policy</h3>
         <div className="rounded-xl border border-line bg-surface-subtle px-5 py-4 flex flex-col gap-3">
           <div className="flex flex-col gap-1">
             <span className="text-sm font-medium text-fg">Password Expiry</span>
@@ -683,7 +684,7 @@ function CurrencySettings() {
     <div className="flex flex-col gap-6 max-w-lg">
       {/* Built-in */}
       <section className="flex flex-col gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Built-in Currencies</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">Built-in Currencies</h3>
         <div className="flex flex-col gap-2">
           {CURRENCIES.map((c) => (
             <CurrencyRow key={c.value} c={c}
@@ -700,12 +701,12 @@ function CurrencySettings() {
       {/* Custom */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Custom Currencies</h3>
+          <h3 className="text-xs font-semibold text-fg-muted">Custom Currencies</h3>
           {editingKey !== 'new' && (
-            <button type="button" onClick={startAdd}
-              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-primary-600 hover:bg-primary-50 border border-primary-200 transition-colors">
+            <Button variant="outline" size="xs" type="button" onClick={startAdd}
+             >
               <Plus className="h-3.5 w-3.5" /> Add Currency
-            </button>
+            </Button>
           )}
         </div>
 
@@ -837,13 +838,13 @@ function PoSmtpSettings() {
               value={form.password}
               onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
             />
-            <button
+            <Button variant="subtle" size="icon-xs"
               type="button"
               onClick={() => setShowPwd((v) => !v)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2"
             >
               {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
+            </Button>
           </div>
         </div>
         <div className="flex flex-col gap-1">
@@ -853,11 +854,11 @@ function PoSmtpSettings() {
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-fg-secondary">TLS</label>
           <label className="flex items-center gap-2 mt-1">
-            <input
-              type="checkbox"
+            <Checkbox
+             
               checked={form.use_tls}
               onChange={(e) => setForm((p) => ({ ...p, use_tls: e.target.checked }))}
-              className="h-4 w-4 rounded border-line-strong"
+             
             />
             <span className="text-xs text-fg-muted">Use TLS/STARTTLS</span>
           </label>
@@ -877,14 +878,14 @@ function PoSmtpSettings() {
             onChange={(e) => setTestTo(e.target.value)}
             placeholder="Send test PO email to…"
           />
-          <button
+          <Button variant="secondary" size="md"
             type="button"
             onClick={handleTest}
             disabled={testing || !testTo}
-            className="flex items-center gap-1.5 rounded-lg border border-line px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50 whitespace-nowrap"
+           
           >
             {testing ? 'Sending…' : 'Test'}
-          </button>
+          </Button>
         </div>
       </div>
       {testResult && (
@@ -917,35 +918,35 @@ function EmailTemplates() {
     <div className="flex flex-col gap-6 max-w-2xl">
       <PoSmtpSettings />
       <section className="flex flex-col gap-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">PO Email Template</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">PO Email Template</h3>
         <p className="text-sm text-fg-muted">Used when a Procurement Officer selects "Email Supplier" while placing an order. Sent via the SMTP server configured above.</p>
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-fg-secondary">Email Subject <span className="text-danger-fg">*</span></label>
-          <input className={cn(inputCls(), 'bg-surface-sunken')} value={subject} onChange={(e) => setSubject(e.target.value)} />
+          <Input className={cn(inputCls(), 'bg-surface-sunken')} value={subject} onChange={(e) => setSubject(e.target.value)} />
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-fg-secondary">Email Body <span className="text-danger-fg">*</span></label>
-          <textarea className={cn(inputCls(), 'min-h-[200px] h-auto py-2.5 resize-y font-mono text-xs leading-relaxed')} value={body} onChange={(e) => setBody(e.target.value)} />
+          <Textarea className={cn(inputCls(), 'min-h-[200px] h-auto py-2.5 resize-y font-mono text-xs leading-relaxed')} value={body} onChange={(e) => setBody(e.target.value)} />
         </div>
       </section>
       <section className="flex flex-col gap-3">
-        <button type="button" onClick={() => setShowVars((v) => !v)} className="flex items-center gap-2 text-sm font-medium text-primary-600 hover:underline w-fit">
+        <Button variant="link" type="button" onClick={() => setShowVars((v) => !v)} className="text-sm">
           {showVars ? '▾' : '▸'} Available template variables
-        </button>
+        </Button>
         {showVars && (
           <div className="rounded-xl border border-line overflow-hidden">
-            <table className="w-full text-sm">
-              <thead><tr className="bg-surface-subtle border-b border-line">
-                <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted w-52">Variable</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Description</th>
-              </tr></thead>
-              <tbody>{TEMPLATE_VARIABLE_DOCS.map((v, i) => (
-                <tr key={v.variable} className={cn('border-b border-line-subtle last:border-0', i % 2 === 1 ? 'bg-surface-subtle' : 'bg-surface')}>
-                  <td className="px-4 py-2 font-mono text-xs text-primary-700">{v.variable}</td>
-                  <td className="px-4 py-2 text-xs text-fg-secondary">{v.description}</td>
-                </tr>
-              ))}</tbody>
-            </table>
+            <Table density="compact">
+              <THead><Tr className="bg-surface-subtle">
+                <Th className="w-52">Variable</Th>
+                <Th>Description</Th>
+              </Tr></THead>
+              <TBody>{TEMPLATE_VARIABLE_DOCS.map((v, i) => (
+                <Tr key={v.variable} className={cn('border-b border-line-subtle last:border-0', i % 2 === 1 ? 'bg-surface-subtle' : 'bg-surface')}>
+                  <Td className="font-mono text-xs text-primary-700">{v.variable}</Td>
+                  <Td className="text-xs text-fg-secondary">{v.description}</Td>
+                </Tr>
+              ))}</TBody>
+            </Table>
           </div>
         )}
       </section>
@@ -1005,20 +1006,20 @@ function PdfTemplates() {
           <div key={key} className="rounded-lg border border-line p-4 flex flex-col gap-4">
             <div><p className="text-sm font-semibold text-fg">{label}</p><p className="text-xs text-fg-muted mt-0.5">{trigger}</p></div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" checked={v.show_logo} onChange={(e) => onChange({ ...v, show_logo: e.target.checked })} className="h-4 w-4 rounded border-line-strong text-primary-600" /><span className="text-sm text-fg-secondary">Show company logo</span></label>
-              <label className="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" checked={v.show_terms} onChange={(e) => onChange({ ...v, show_terms: e.target.checked })} className="h-4 w-4 rounded border-line-strong text-primary-600" /><span className="text-sm text-fg-secondary">Show Terms &amp; Conditions</span></label>
+              <label className="flex items-center gap-2 cursor-pointer select-none"><Checkbox checked={v.show_logo} onChange={(e) => onChange({ ...v, show_logo: e.target.checked })} /><span className="text-sm text-fg-secondary">Show company logo</span></label>
+              <label className="flex items-center gap-2 cursor-pointer select-none"><Checkbox checked={v.show_terms} onChange={(e) => onChange({ ...v, show_terms: e.target.checked })} /><span className="text-sm text-fg-secondary">Show Terms &amp; Conditions</span></label>
             </div>
             {(['header_note', 'footer_note'] as const).map((field) => (
               <div key={field} className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-fg-secondary">{field === 'header_note' ? 'Header Note' : 'Footer Note'}</label>
-                <input type="text" value={v[field]} onChange={(e) => onChange({ ...v, [field]: e.target.value })} placeholder={field === 'header_note' ? '"CONFIDENTIAL — Internal Use Only"' : '"For questions contact procurement@company.com"'}
-                  className="h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+                <Input inputSize="sm" type="text" value={v[field]} onChange={(e) => onChange({ ...v, [field]: e.target.value })} placeholder={field === 'header_note' ? '"CONFIDENTIAL — Internal Use Only"' : '"For questions contact procurement@company.com"'}
+                  />
               </div>
             ))}
             {v.show_terms && (
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-fg-secondary">Terms &amp; Conditions Text</label>
-                <textarea value={v.terms_text} onChange={(e) => onChange({ ...v, terms_text: e.target.value })} rows={4} className="rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-y" />
+                <Textarea value={v.terms_text} onChange={(e) => onChange({ ...v, terms_text: e.target.value })} rows={4} className="resize-y" />
               </div>
             )}
           </div>
@@ -1066,53 +1067,53 @@ function UserForm({ initial, onSave, onCancel, title, saveError }: { initial: Us
     <div className="rounded-lg border border-primary-200 bg-primary-50 p-5 mb-4">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-fg">{title}</h3>
-        <button onClick={onCancel} className="text-fg-muted hover:text-fg-secondary"><X className="h-4 w-4" /></button>
+        <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onCancel}><X className="h-4 w-4" /></Button>
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {[{ k: 'full_name' as const, label: 'Full Name', placeholder: 'Jane Smith', type: 'text' }, { k: 'email' as const, label: 'Email Address', placeholder: 'jane@company.ca', type: 'email' }].map(({ k, label, placeholder, type }) => (
           <div key={k} className="flex flex-col gap-1">
             <label className="text-xs font-medium text-fg-secondary">{label}<span className="text-danger-fg"> *</span></label>
-            <input type={type} className={fldCls(errors[k])} value={form[k]} onChange={(e) => set(k, e.target.value)} placeholder={placeholder} />
+            <Input type={type} className={fldCls(errors[k])} value={form[k]} onChange={(e) => set(k, e.target.value)} placeholder={placeholder} />
             {errors[k] && <p className="text-xs text-danger-fg">{errors[k]}</p>}
           </div>
         ))}
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-fg-secondary">ERP Person Code<span className="text-danger-fg"> *</span></label>
-          <input type="text" className={fldCls(errors.erp_person_code)} value={form.erp_person_code} onChange={(e) => set('erp_person_code', e.target.value)} placeholder="ERP employee / person code" />
+          <Input type="text" className={fldCls(errors.erp_person_code)} value={form.erp_person_code} onChange={(e) => set('erp_person_code', e.target.value)} placeholder="ERP employee / person code" />
           {errors.erp_person_code && <p className="text-xs text-danger-fg">{errors.erp_person_code}</p>}
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-fg-secondary">Department <span className="text-danger-fg">*</span></label>
-          <select className={fldCls(errors.department_id)} value={form.department_id} onChange={(e) => set('department_id', e.target.value)}>
+          <Select className={fldCls(errors.department_id)} value={form.department_id} onChange={(e) => set('department_id', e.target.value)}>
             <option value="">— Select department —</option>
             {activeDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
+          </Select>
           {errors.department_id && <p className="text-xs text-danger-fg">{errors.department_id}</p>}
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-fg-secondary">Role <span className="text-danger-fg">*</span></label>
-          <select className={fldCls()} value={form.role} onChange={(e) => set('role', e.target.value)}>
+          <Select className={fldCls()} value={form.role} onChange={(e) => set('role', e.target.value)}>
             {(Object.entries(primaryRoleLabels(rolesQ.data)) as [UserRole, string][]).map(([val, lbl]) => <option key={val} value={val}>{lbl}</option>)}
-          </select>
+          </Select>
         </div>
         <div className="flex items-center gap-4 h-10">
           {[{ v: true, label: 'Active' }, { v: false, label: 'Inactive' }].map(({ v, label }) => (
             <label key={String(v)} className="flex items-center gap-2 cursor-pointer">
-              <input type="radio" checked={form.is_active === v} onChange={() => set('is_active', v)} className="accent-primary-600" />
+              <Radio checked={form.is_active === v} onChange={() => set('is_active', v)} />
               <span className="text-sm text-fg-secondary">{label}</span>
             </label>
           ))}
         </div>
         <div className="flex flex-col gap-1 sm:col-span-2">
           <label className="text-xs font-medium text-fg-secondary">Teams Account <span className="text-fg-muted font-normal">(UPN / email for Teams approval)</span></label>
-          <input type="email" className={fldCls()} value={form.teams_account} onChange={(e) => set('teams_account', e.target.value)} placeholder="user@company.onmicrosoft.com" />
+          <Input type="email" className={fldCls()} value={form.teams_account} onChange={(e) => set('teams_account', e.target.value)} placeholder="user@company.onmicrosoft.com" />
         </div>
         <div className="flex flex-col gap-1 sm:col-span-2">
           <label className="text-xs font-medium text-fg-secondary">Supervisor <span className="text-fg-muted font-normal">(optional — required when dept supervisor step is enabled)</span></label>
-          <select className={fldCls()} value={form.supervisor_id} onChange={(e) => set('supervisor_id', e.target.value)}>
+          <Select className={fldCls()} value={form.supervisor_id} onChange={(e) => set('supervisor_id', e.target.value)}>
             <option value="">— No supervisor —</option>
             {activeUsers.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.department_name})</option>)}
-          </select>
+          </Select>
         </div>
       </div>
       {saveError && (
@@ -1225,7 +1226,7 @@ function ImportPanel({ rows, existingEmails, onConfirm, onCancel }: {
     <div className="rounded-xl border border-primary-200 bg-primary-50 p-5 flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-fg">Import Preview</h3>
-        <button onClick={onCancel} className="text-fg-muted hover:text-fg-secondary"><X className="h-4 w-4" /></button>
+        <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onCancel}><X className="h-4 w-4" /></Button>
       </div>
 
       {/* Summary chips */}
@@ -1238,42 +1239,42 @@ function ImportPanel({ rows, existingEmails, onConfirm, onCancel }: {
 
       {/* Row table */}
       <div className="max-h-72 overflow-y-auto rounded-lg border border-line bg-surface">
-        <table className="w-full text-xs">
-          <thead><tr className="border-b border-line bg-surface-subtle sticky top-0">
-            <th className="px-3 py-2 text-left text-fg-muted font-semibold w-10">#</th>
-            <th className="px-3 py-2 text-left text-fg-muted font-semibold">Name</th>
-            <th className="px-3 py-2 text-left text-fg-muted font-semibold">Email</th>
-            <th className="px-3 py-2 text-left text-fg-muted font-semibold">Role</th>
-            <th className="px-3 py-2 text-left text-fg-muted font-semibold">ERP Code</th>
-            <th className="px-3 py-2 text-left text-fg-muted font-semibold">Department</th>
-            <th className="px-3 py-2 text-left text-fg-muted font-semibold">Teams Account</th>
-            <th className="px-3 py-2 text-left text-fg-muted font-semibold w-28">Status</th>
-          </tr></thead>
-          <tbody>
+        <Table density="compact">
+          <THead><Tr className="bg-surface-subtle sticky top-0">
+            <Th className="w-10">#</Th>
+            <Th>Name</Th>
+            <Th>Email</Th>
+            <Th>Role</Th>
+            <Th>ERP Code</Th>
+            <Th>Department</Th>
+            <Th>Teams Account</Th>
+            <Th className="w-28">Status</Th>
+          </Tr></THead>
+          <TBody>
             {rows.map((row) => {
               const isDup = row.errors.length === 0 && existingEmails.has(row.email.toLowerCase())
               const isErr = row.errors.length > 0
               return (
-                <tr key={row.line} className={cn('border-b border-line-subtle last:border-0', isErr ? 'bg-danger-50/50' : isDup ? 'bg-warning-50/50' : '')}>
-                  <td className="px-3 py-2 text-fg-muted">{row.line}</td>
-                  <td className="px-3 py-2 text-fg-secondary">{row.full_name || <span className="text-fg-faint italic">—</span>}</td>
-                  <td className="px-3 py-2 text-fg-secondary font-mono">{row.email || <span className="text-fg-faint italic">—</span>}</td>
-                  <td className="px-3 py-2 text-fg-secondary">{row.role || <span className="text-fg-faint italic">—</span>}</td>
-                  <td className="px-3 py-2 text-fg-secondary font-mono">{row.erp_person_code || <span className="text-fg-faint italic">—</span>}</td>
-                  <td className="px-3 py-2 text-fg-secondary">{row.department || <span className="text-fg-faint italic">—</span>}</td>
-                  <td className="px-3 py-2 text-fg-secondary font-mono">{row.teams_account || <span className="text-fg-faint italic">—</span>}</td>
-                  <td className="px-3 py-2">
+                <Tr key={row.line} className={cn('border-b border-line-subtle last:border-0', isErr ? 'bg-danger-50/50' : isDup ? 'bg-warning-50/50' : '')}>
+                  <Td className="text-fg-muted">{row.line}</Td>
+                  <Td className="text-fg-secondary">{row.full_name || <span className="text-fg-faint italic">—</span>}</Td>
+                  <Td className="text-fg-secondary font-mono">{row.email || <span className="text-fg-faint italic">—</span>}</Td>
+                  <Td className="text-fg-secondary">{row.role || <span className="text-fg-faint italic">—</span>}</Td>
+                  <Td className="text-fg-secondary font-mono">{row.erp_person_code || <span className="text-fg-faint italic">—</span>}</Td>
+                  <Td className="text-fg-secondary">{row.department || <span className="text-fg-faint italic">—</span>}</Td>
+                  <Td className="text-fg-secondary font-mono">{row.teams_account || <span className="text-fg-faint italic">—</span>}</Td>
+                  <Td>
                     {isErr
                       ? <span className="text-danger-fg font-medium">{row.errors.join('; ')}</span>
                       : isDup
                         ? <span className="text-warning-fg">Duplicate</span>
                         : <span className="text-success-fg font-medium flex items-center gap-1"><Check className="h-3 w-3" />Ready</span>}
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               )
             })}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </div>
 
       <div className="flex items-center gap-2">
@@ -1375,38 +1376,38 @@ function UserManagement() {
         <div className="flex items-center gap-2">
           {/* Export dropdown */}
           <div className="relative">
-            <button
+            <Button variant="secondary" size="md"
               onClick={() => setShowExportMenu((v) => !v)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors"
+             
             >
               <Download className="h-4 w-4" />Export<ChevronDown className="h-3.5 w-3.5 text-fg-muted" />
-            </button>
+            </Button>
             {showExportMenu && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)} />
                 <div className="absolute right-0 top-full mt-1 z-20 w-52 rounded-xl border border-line bg-surface shadow-lg overflow-hidden">
-                  <button className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-fg-secondary hover:bg-surface-subtle transition-colors"
+                  <MenuItem
                     onClick={() => { exportUsersCsv(users as ApiUser[]); setShowExportMenu(false) }}>
                     <Download className="h-4 w-4 text-fg-muted" />
                     Export all users (.csv)
-                  </button>
-                  <button className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-fg-secondary hover:bg-surface-subtle transition-colors"
+                  </MenuItem>
+                  <MenuItem
                     onClick={() => { downloadTemplate(primaryRoleCodes); setShowExportMenu(false) }}>
                     <FileText className="h-4 w-4 text-fg-muted" />
                     Download import template
-                  </button>
+                  </MenuItem>
                 </div>
               </>
             )}
           </div>
           {/* Import */}
-          <button
+          <Button variant="secondary" size="md"
             onClick={() => importRef.current?.click()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle transition-colors"
+           
           >
             <Upload className="h-4 w-4" />Import CSV
-          </button>
-          <input ref={importRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportFile} />
+          </Button>
+          <FileInput ref={importRef} accept=".csv,text/csv" className="hidden" onChange={handleImportFile} />
           <Button onClick={() => { setMode('add'); setSaveError(null) }} disabled={mode !== 'none'}><Plus className="h-4 w-4" />Add User</Button>
         </div>
       </div>
@@ -1451,35 +1452,35 @@ function UserManagement() {
 
       <div className="rounded-xl bg-surface shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b border-line bg-surface-subtle">
+          <Table>
+            <THead><Tr className="bg-surface-subtle">
               {['Name', 'Email', 'Role', 'Department', 'Teams Account', 'Status', ''].map((h, i) => (
-                <th key={i} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">{h}</th>
+                <Th key={i}>{h}</Th>
               ))}
-            </tr></thead>
-            <tbody>
-              {filtered.length === 0 && <tr><td colSpan={7} className="py-16 text-center text-sm text-fg-muted">No users found</td></tr>}
+            </Tr></THead>
+            <TBody>
+              {filtered.length === 0 && <Tr><Td align="center" colSpan={7} className="text-sm text-fg-muted">No users found</Td></Tr>}
               {filtered.map((user, i) => (
-                <tr key={user.id} className={cn('border-b border-line-subtle hover:bg-primary-50 transition-colors', i % 2 === 1 ? 'bg-surface-subtle' : 'bg-surface')}>
-                  <td className="px-4 py-3 font-medium text-fg">
+                <Tr key={user.id} className={cn('border-b border-line-subtle hover:bg-primary-50 transition-colors', i % 2 === 1 ? 'bg-surface-subtle' : 'bg-surface')}>
+                  <Td className="font-medium text-fg">
                     <div className="flex items-center gap-2.5">
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-100 text-xs font-semibold text-primary-700">{user.full_name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}</div>
                       {user.full_name}
                     </div>
-                  </td>
-                  <td className="px-4 py-3 text-fg-secondary">{user.email}</td>
-                  <td className="px-4 py-3 text-fg-secondary">{ROLE_LABELS[user.role as UserRole]}</td>
-                  <td className="px-4 py-3 text-fg-secondary">{user.department_name || <span className="text-fg-faint">—</span>}</td>
-                  <td className="px-4 py-3 text-fg-secondary text-xs">{user.teams_account || <span className="text-fg-faint">—</span>}</td>
-                  <td className="px-4 py-3"><span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', user.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>{user.is_active ? '● Active' : '○ Inactive'}</span></td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td className="text-fg-secondary">{user.email}</Td>
+                  <Td className="text-fg-secondary">{ROLE_LABELS[user.role as UserRole]}</Td>
+                  <Td className="text-fg-secondary">{user.department_name || <span className="text-fg-faint">—</span>}</Td>
+                  <Td className="text-fg-secondary text-xs">{user.teams_account || <span className="text-fg-faint">—</span>}</Td>
+                  <Td><span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', user.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>{user.is_active ? '● Active' : '○ Inactive'}</span></Td>
+                  <Td>
                     <div className="flex items-center justify-end gap-1">
                       {deleteConfirm === user.id ? (
                         <div className="flex items-center gap-1.5">
                           <span className="text-xs text-danger-fg font-medium whitespace-nowrap">
                             {user.is_active ? 'Deactivate?' : 'Reactivate?'}
                           </span>
-                          <button onClick={() => {
+                          <Button aria-label="Confirm" variant="subtle" size="icon-xs" onClick={() => {
                             if (user.is_active) {
                               deleteUserMutation.mutate(user.id)
                             } else {
@@ -1487,24 +1488,24 @@ function UserManagement() {
                               updateUserMutation.mutate({ id: user.id, body: { is_active: true } })
                             }
                             setDeleteConfirm(null)
-                          }} className="flex h-7 w-7 items-center justify-center rounded text-danger-fg hover:bg-danger-soft"><Check className="h-3.5 w-3.5" /></button>
-                          <button onClick={() => setDeleteConfirm(null)} className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-surface-sunken"><X className="h-3.5 w-3.5" /></button>
+                          }} className="text-danger-fg hover:bg-danger-soft"><Check className="h-3.5 w-3.5" /></Button>
+                          <Button aria-label="Dismiss" variant="subtle" size="icon-xs" onClick={() => setDeleteConfirm(null)}><X className="h-3.5 w-3.5" /></Button>
                         </div>
                       ) : (
-                        <><button type="button" onClick={() => { setResetTarget(user.id); setTempPwd(INITIAL_PASSWORD); setShowTempPwd(false); setResetDone(null) }} className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-warning-soft hover:text-warning-fg" title="Reset password"><KeyRound className="h-3.5 w-3.5" /></button>
-                          <button type="button" onClick={() => { setMode({ edit: user.id }); setDeleteConfirm(null); setResetTarget(null) }} className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-primary-50 hover:text-primary-600"><Pencil className="h-3.5 w-3.5" /></button>
-                          <button type="button" onClick={() => { setDeleteConfirm(user.id); setMode('none'); setResetTarget(null) }}
-                            className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-danger-soft hover:text-danger-fg"
+                        <><Button aria-label="Reset password" variant="subtle" size="icon-xs" type="button" onClick={() => { setResetTarget(user.id); setTempPwd(INITIAL_PASSWORD); setShowTempPwd(false); setResetDone(null) }} title="Reset password"><KeyRound className="h-3.5 w-3.5" /></Button>
+                          <Button aria-label="Edit" variant="subtle" size="icon-xs" type="button" onClick={() => { setMode({ edit: user.id }); setDeleteConfirm(null); setResetTarget(null) }}><Pencil className="h-3.5 w-3.5" /></Button>
+                          <Button variant="danger-ghost" size="icon-xs" aria-label="Remove" type="button" onClick={() => { setDeleteConfirm(user.id); setMode('none'); setResetTarget(null) }}
+                           
                             title={user.is_active ? 'Deactivate user' : 'Reactivate user'}>
                             <Trash2 className="h-3.5 w-3.5" />
-                          </button></>
+                          </Button></>
                       )}
                     </div>
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
         <div className="border-t border-line bg-surface-subtle px-4 py-2.5 text-xs text-fg-muted">{filtered.length} of {users.length} user{users.length !== 1 ? 's' : ''}</div>
       </div>
@@ -1524,9 +1525,9 @@ function UserManagement() {
                 <p className="text-xs text-fg-muted">{resetTargetUser.full_name} · {resetTargetUser.email}</p>
               </div>
             </div>
-            <button type="button" onClick={() => { setResetTarget(null); setTempPwd(''); setShowTempPwd(false); setResetDone(null) }} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary">
+            <Button variant="subtle" size="icon-sm" aria-label="Close" type="button" onClick={() => { setResetTarget(null); setTempPwd(''); setShowTempPwd(false); setResetDone(null) }}>
               <X className="h-4 w-4" />
-            </button>
+            </Button>
           </div>
           <div className="px-6 py-5 flex flex-col gap-4">
             {resetDone ? (
@@ -1538,7 +1539,7 @@ function UserManagement() {
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-medium text-fg-secondary">New Temporary Password</label>
                   <div className="relative">
-                    <input
+                    <Input
                       type={showTempPwd ? 'text' : 'password'}
                       value={tempPwd}
                       onChange={(e) => setTempPwd(e.target.value)}
@@ -1546,24 +1547,24 @@ function UserManagement() {
                       placeholder="Min. 8 characters"
                       autoComplete="new-password"
                       autoFocus
-                      className="h-10 w-full rounded-lg border border-line-strong bg-surface px-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                      className="w-full pr-10"
                     />
-                    <button type="button" onClick={() => setShowTempPwd((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary">
+                    <Button variant="subtle" size="icon-xs" type="button" onClick={() => setShowTempPwd((v) => !v)} className="absolute right-1.5 top-1/2 -translate-y-1/2">
                       {showTempPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
+                    </Button>
                   </div>
                   <p className="text-xs text-fg-muted">User will be required to change password on next login.</p>
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="secondary" size="sm" onClick={() => { setResetTarget(null); setTempPwd(''); setShowTempPwd(false) }}>Cancel</Button>
-                  <button
+                  <Button variant="warning" size="sm"
                     type="button"
                     disabled={tempPwd.length < 8}
                     onClick={handleReset}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-warning-solid px-3 text-sm font-medium text-white hover:bg-warning-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                   
                   >
                     <KeyRound className="h-3.5 w-3.5" />Reset Password
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
@@ -1694,7 +1695,7 @@ function VendorSettingsSection() {
   return (
     <div className="flex flex-col gap-6 max-w-lg">
       <section className="flex flex-col gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Vendor Categories</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">Vendor Categories</h3>
         <p className="text-sm text-fg-muted">These categories appear in the dropdown when adding or editing a vendor.</p>
 
         {/* Existing categories */}
@@ -1705,20 +1706,20 @@ function VendorSettingsSection() {
           {categories.map((cat) => (
             <div key={cat} className="flex items-center justify-between rounded-lg border border-line bg-surface-subtle px-4 py-2.5">
               <span className="text-sm text-fg">{cat}</span>
-              <button
+              <Button variant="danger-ghost" size="icon-xs" aria-label="Remove"
                 type="button"
                 onClick={() => removeCategory(cat)}
-                className="text-fg-muted hover:text-danger-fg transition-colors"
+               
               >
                 <X className="h-4 w-4" />
-              </button>
+              </Button>
             </div>
           ))}
         </div>
 
         {/* Add new */}
         <div className="flex gap-2">
-          <input
+          <Input
             className={inputCls()}
             placeholder="New category name…"
             value={newCat}
@@ -1790,7 +1791,7 @@ function IncotermsSettingsSection() {
   return (
     <div className="flex flex-col gap-6 max-w-3xl">
       <section className="flex flex-col gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Incoterms</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">Incoterms</h3>
         <p className="text-sm text-fg-muted">
           These codes are offered in PO Edit Details, where an Incoterms code is required on NC raw-material /
           packaging orders. Tick what each term leaves to us: a raw-material PO then expects a freight and/or
@@ -1800,51 +1801,51 @@ function IncotermsSettingsSection() {
         </p>
 
         <div className="overflow-x-auto rounded-lg border border-line">
-          <table className="w-full text-sm">
-            <thead className="bg-surface-subtle text-xs uppercase tracking-wide text-fg-muted">
-              <tr>
-                <th className="px-3 py-2 text-left font-semibold">Code</th>
-                <th className="px-3 py-2 text-left font-semibold">Name</th>
-                <th className="px-3 py-2 text-center font-semibold">Freight invoice</th>
-                <th className="px-3 py-2 text-center font-semibold">Customs invoice</th>
-                <th className="px-3 py-2 text-center font-semibold">Active</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line-subtle">
+          <Table density="compact">
+            <THead>
+              <Tr>
+                <Th>Code</Th>
+                <Th>Name</Th>
+                <Th align="center">Freight invoice</Th>
+                <Th align="center">Customs invoice</Th>
+                <Th align="center">Active</Th>
+              </Tr>
+            </THead>
+            <TBody>
               {terms.map((t) => (
-                <tr key={t.code} className={cn(!t.active && 'text-fg-muted')}>
-                  <td className="px-3 py-2 font-mono font-medium">{t.code}</td>
-                  <td className="px-3 py-2">
-                    <input
-                      className="h-8 w-full rounded border border-line bg-surface px-2 text-sm focus:outline-none focus:border-primary-600"
+                <Tr key={t.code} className={cn(!t.active && 'text-fg-muted')}>
+                  <Td className="font-mono font-medium">{t.code}</Td>
+                  <Td>
+                    <Input inputSize="sm"
+                      className="w-full"
                       value={t.label}
                       maxLength={100}
                       onChange={(e) => setTerm(t.code, { label: e.target.value })}
                     />
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <input type="checkbox" className={check} checked={t.needs_freight}
+                  </Td>
+                  <Td align="center">
+                    <Checkbox className={check} checked={t.needs_freight}
                            aria-label={`${t.code} needs a freight invoice`}
                            onChange={(e) => setTerm(t.code, { needs_freight: e.target.checked })} />
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <input type="checkbox" className={check} checked={t.needs_customs}
+                  </Td>
+                  <Td align="center">
+                    <Checkbox className={check} checked={t.needs_customs}
                            aria-label={`${t.code} needs a customs invoice`}
                            onChange={(e) => setTerm(t.code, { needs_customs: e.target.checked })} />
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <input type="checkbox" className={check} checked={t.active}
+                  </Td>
+                  <Td align="center">
+                    <Checkbox className={check} checked={t.active}
                            aria-label={`${t.code} active`}
                            onChange={(e) => setTerm(t.code, { active: e.target.checked })} />
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <input
+          <Input
             className={cn(inputCls(!!code && !canAdd), 'w-28 font-mono uppercase')}
             placeholder="Code"
             value={newCode}
@@ -1852,7 +1853,7 @@ function IncotermsSettingsSection() {
             onChange={(e) => setNewCode(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTerm() } }}
           />
-          <input
+          <Input
             className={cn(inputCls(), 'flex-1 min-w-[12rem]')}
             placeholder="Name (e.g. Free On Board)"
             value={newLabel}
@@ -1888,21 +1889,21 @@ function PrepaymentConfigSection() {
   return (
     <div className="flex flex-col gap-8 max-w-lg">
       <section className="flex flex-col gap-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Prepayment Limits</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">Prepayment Limits</h3>
         <div className="rounded-xl border border-line bg-surface-subtle px-5 py-4 flex items-center justify-between gap-4">
           <div>
             <p className="text-sm font-medium text-fg">Maximum Prepayment Percentage</p>
             <p className="text-xs text-fg-muted mt-0.5">Global cap. Requester cannot request a prepayment above this % of the PO value. Can be overridden per vendor category.</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <input type="number" min={1} max={100} value={cfg.max_prepayment_pct} onChange={(e) => set('max_prepayment_pct', Math.min(100, Math.max(1, Number(e.target.value))))} className={numCls} />
+            <Input type="number" min={1} max={100} value={cfg.max_prepayment_pct} onChange={(e) => set('max_prepayment_pct', Math.min(100, Math.max(1, Number(e.target.value))))} className={numCls} />
             <span className="text-sm text-fg-muted">%</span>
           </div>
         </div>
       </section>
 
       <section className="flex flex-col gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Settlement SLA</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">Settlement SLA</h3>
         <p className="text-sm text-fg-muted">After GR is confirmed for a prepayment PO, the Requester must settle the prepayment within this window.</p>
         <SlaRow label="Settlement deadline" description="Days after GR confirmation before settlement is overdue." value={cfg.settlement_sla_days} onChange={(v) => set('settlement_sla_days', v)} />
         <SlaRow label="Dept. Manager escalation (after breach)" description="Days after SLA breach before Dept. Manager is escalated." value={cfg.settlement_manager_escalation_days} onChange={(v) => set('settlement_manager_escalation_days', v)} />
@@ -1910,7 +1911,7 @@ function PrepaymentConfigSection() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">PO Closure</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">PO Closure</h3>
         <ToggleRow label="Block PO closure when prepayment is unsettled" description="Prevents Procurement Officers from closing a PO that has an outstanding prepayment not yet settled. Finance Manager can override per-instance." checked={cfg.block_po_closure_on_unsettled} onToggle={() => set('block_po_closure_on_unsettled', !cfg.block_po_closure_on_unsettled)} />
       </section>
 
@@ -1957,7 +1958,7 @@ function CollectionConfigSection() {
 
       {cfg.collection_gate_enabled ? (
         <div className="flex flex-col gap-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Collection SLA Escalation</h3>
+          <h3 className="text-xs font-semibold text-fg-muted">Collection SLA Escalation</h3>
           <p className="rounded-lg bg-surface-subtle border border-line px-3 py-2 text-xs text-fg-secondary">
             Checked once a day (at the daily digest time) while collection is required; counted from the day the GR was saved. The Dept. Manager and Finance Manager are each told once, after the requester has been reminded.
           </p>
@@ -2055,7 +2056,7 @@ function NotificationSettingsSection() {
 
       {/* Default channel */}
       <section className="flex flex-col gap-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Default Notification Channel</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">Default Notification Channel</h3>
         <p className="text-sm text-fg-muted">Applied to all users who have not set a personal preference.</p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {NOTIF_CHANNEL_OPTIONS.map(({ value, label }) => (
@@ -2073,34 +2074,34 @@ function NotificationSettingsSection() {
 
       {/* Teams webhook */}
       <section className="flex flex-col gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Microsoft Teams Webhook URL</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">Microsoft Teams Webhook URL</h3>
         <p className="text-sm text-fg-muted">Company-level Incoming Webhook URL. Used when channel is "Teams only" or "Both".</p>
-        <input className={inCls} placeholder="https://outlook.office.com/webhook/…"
+        <Input className={inCls} placeholder="https://outlook.office.com/webhook/…"
           value={settings.teams_webhook_url ?? ''}
           onChange={(e) => setSettings((p) => ({ ...p, teams_webhook_url: e.target.value || null }))} />
       </section>
 
       {/* Follow-up time */}
       <section className="flex flex-col gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Daily Follow-up Time</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">Daily Follow-up Time</h3>
         <p className="text-sm text-fg-muted">Time at which the daily pending-task reminder is dispatched, on plant time (Company Settings → Time Zone).</p>
-        <input type="time" className={cn(inCls, 'w-36')}
+        <Input type="time" className={cn(inCls, 'w-36')}
           value={settings.followup_time ?? '08:00'}
           onChange={(e) => setSettings((p) => ({ ...p, followup_time: e.target.value }))} />
       </section>
 
       {/* Test SMTP */}
       <section className="flex flex-col gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Test Notification</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">Test Notification</h3>
         <p className="text-sm text-fg-muted">Send a test email using the current SMTP configuration.</p>
         <div className="flex gap-2">
-          <input className={cn(inCls, 'flex-1')} type="email" placeholder="recipient@example.com"
+          <Input className={cn(inCls, 'flex-1')} type="email" placeholder="recipient@example.com"
             value={testEmail} onChange={(e) => setTestEmail(e.target.value)} />
-          <button onClick={handleTestSmtp} disabled={testStatus === 'sending' || !testEmail}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50 shrink-0">
+          <Button size="md" onClick={handleTestSmtp} disabled={testStatus === 'sending' || !testEmail}
+            className="shrink-0">
             <Send className="h-4 w-4" />
             {testStatus === 'sending' ? 'Sending…' : 'Send Test'}
-          </button>
+          </Button>
         </div>
         {testStatus === 'ok' && <p className="text-xs text-success-fg">Test email sent successfully.</p>}
         {testStatus === 'error' && <p className="text-xs text-danger-fg">Failed to send. Check SMTP settings.</p>}
@@ -2111,7 +2112,7 @@ function NotificationSettingsSection() {
       {/* Email template editor */}
       <section className="flex flex-col gap-3 pt-6 border-t border-line">
         <div>
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Email Templates</h3>
+          <h3 className="text-xs font-semibold text-fg-muted">Email Templates</h3>
           <p className="text-sm text-fg-muted mt-1">Customise the subject and body for each notification event. Use <code className="text-xs bg-surface-sunken px-1 rounded">{'{variable}'}</code> placeholders.</p>
         </div>
         <div className="flex flex-col gap-2">
@@ -2120,23 +2121,23 @@ function NotificationSettingsSection() {
             const isOpen = expandedTpl === key
             return (
               <div key={key} className="rounded-xl border border-line overflow-hidden">
-                <button type="button" onClick={() => setExpandedTpl(isOpen ? null : key)}
-                  className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-fg hover:bg-surface-subtle text-left">
+                <MenuItem type="button" onClick={() => setExpandedTpl(isOpen ? null : key)}
+                  className="justify-between">
                   <span>{label}</span>
                   <ChevronDown className={cn('h-4 w-4 text-fg-muted transition-transform', isOpen && 'rotate-180')} />
-                </button>
+                </MenuItem>
                 {isOpen && (
                   <div className="border-t border-line-subtle px-4 pb-4 pt-3 flex flex-col gap-3 bg-surface-subtle">
                     <div className="flex flex-col gap-1">
                       <label className="text-xs font-medium text-fg-secondary">Subject</label>
-                      <input className={inCls} value={tpl.subject}
+                      <Input className={inCls} value={tpl.subject}
                         onChange={(e) => updateTemplate(key, 'subject', e.target.value)}
                         placeholder="Email subject…" />
                     </div>
                     <div className="flex flex-col gap-1">
                       <label className="text-xs font-medium text-fg-secondary">Body</label>
-                      <textarea rows={6}
-                        className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:border-primary-600 focus:shadow-focus transition-colors resize-y"
+                      <Textarea rows={6}
+                        className="w-full resize-y"
                         value={tpl.body}
                         onChange={(e) => updateTemplate(key, 'body', e.target.value)}
                         placeholder="Email body (HTML or plain text)…" />
@@ -2236,7 +2237,7 @@ export default function AdminPanel() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold text-fg">Admin Panel</h1>
+        <h1 className="text-2xl font-semibold text-fg">Admin Panel</h1>
         <p className="mt-1 text-sm text-fg-muted">System configuration and user management</p>
       </div>
       <div className="flex gap-6 items-start">

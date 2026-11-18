@@ -8,7 +8,7 @@ import { useVendors } from '@/hooks/useVendors'
 import { useFreightCarriersAll, useFreightSettings, useSaveCarrier, useSaveFreightSettings } from '@/hooks/useFreight'
 import type { FreightCarrier } from '@/services/freight'
 import { CostCenterSelect, Modal, SELECT_CLS, TH_CLS, errorMessage } from './freightUi'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 
 /** Couriers paid through Freight. Doubles as the whitelist: only a vendor set
  *  up here can be paid by a Freight PA (design §1.1). epms.freight.admin only. */
@@ -50,38 +50,38 @@ export function CarriersTab() {
         <p className="py-12 text-center text-sm text-fg-muted">No carriers yet. Add UPS, FedEx, Purolator…</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-surface-subtle">
-              <tr>
+          <Table density="compact">
+            <THead>
+              <Tr>
                 <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className={TH_CLS} />
                 <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className={TH_CLS} />
                 <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className={TH_CLS} />
                 <SortTh label="Tracking pattern" sortKey="tracking_pattern" sort={sort} onSort={onSort} className={TH_CLS} />
                 <SortTh label="Default cost center" sortKey="default_cost_center" sort={sort} onSort={onSort} className={TH_CLS} />
                 <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={TH_CLS} />
-                <th className={TH_CLS} />
-              </tr>
-            </thead>
-            <tbody>
+                <Th className={TH_CLS} />
+              </Tr>
+            </THead>
+            <TBody>
               {carriers.map((c) => (
-                <tr key={c.id} className="border-t border-line-subtle">
-                  <td className="px-3 py-2.5 font-medium text-fg">{c.code}</td>
-                  <td className="px-3 py-2.5">{c.name}</td>
-                  <td className="px-3 py-2.5 text-fg-secondary">{c.vendor_name ?? '—'}</td>
-                  <td className="px-3 py-2.5 font-mono text-xs text-fg-secondary">{c.tracking_pattern ?? '—'}</td>
-                  <td className="px-3 py-2.5 text-fg-secondary">{ccLabel(c.default_cost_center_id)}</td>
-                  <td className="px-3 py-2.5">
+                <Tr key={c.id}>
+                  <Td className="font-medium text-fg">{c.code}</Td>
+                  <Td>{c.name}</Td>
+                  <Td className="text-fg-secondary">{c.vendor_name ?? '—'}</Td>
+                  <Td className="font-mono text-xs text-fg-secondary">{c.tracking_pattern ?? '—'}</Td>
+                  <Td className="text-fg-secondary">{ccLabel(c.default_cost_center_id)}</Td>
+                  <Td>
                     <span className={c.is_active ? 'text-success-fg' : 'text-fg-muted'}>{c.is_active ? 'Active' : 'Inactive'}</span>
-                  </td>
-                  <td className="px-3 py-2.5 text-right">
-                    <button onClick={() => setEditing(c)} className="inline-flex items-center gap-1 text-xs text-primary-600 hover:text-primary-800">
+                  </Td>
+                  <Td align="right">
+                    <Button variant="link" onClick={() => setEditing(c)} className="text-xs">
                       <Pencil className="h-3.5 w-3.5" /> Edit
-                    </button>
-                  </td>
-                </tr>
+                    </Button>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
       )}
       {editing && (
@@ -178,10 +178,10 @@ function CarrierDialog({ carrier, costCenters, departments, onClose }: {
             <label className="text-xs font-medium text-fg-secondary">Vendor *</label>
             <Input value={vendorSearch} placeholder="Search vendor name…"
               onChange={(e: ChangeEvent<HTMLInputElement>) => setVendorSearch(e.target.value)} />
-            <select value={vendorId} onChange={(e) => setVendorId(e.target.value)} className={SELECT_CLS}>
+            <Select value={vendorId} onChange={(e) => setVendorId(e.target.value)} className={SELECT_CLS}>
               <option value="">Select vendor…</option>
               {(vendors?.items ?? []).slice(0, 200).map((v) => <option key={v.id} value={v.id}>{v.name} ({v.code})</option>)}
-            </select>
+            </Select>
           </div>
         )}
         <div className="grid grid-cols-2 gap-3">
@@ -210,7 +210,7 @@ function CarrierDialog({ carrier, costCenters, departments, onClose }: {
         </div>
         {isEdit && (
           <label className="flex items-center gap-2 text-sm text-fg-secondary">
-            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Active
+            <Checkbox checked={active} onChange={(e) => setActive(e.target.checked)} /> Active
           </label>
         )}
         {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-fg">{error}</p>}

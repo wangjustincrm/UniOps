@@ -3,7 +3,7 @@ import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { ROLE_LABELS } from '@/stores/user.store'
 import type { UserRole } from '@/types'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr } from '@uniops/shell'
 
 const QUICK_LINKS: { label: string; href: string; description: string }[] = [
   { label: 'User Management',       href: '/admin',    description: 'Manage users, roles and access' },
@@ -25,7 +25,7 @@ export default function SystemAdminDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-fg">System Admin Dashboard</h1>
+      <h1 className="text-2xl font-semibold text-fg">System Admin Dashboard</h1>
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -48,24 +48,24 @@ export default function SystemAdminDashboard() {
               <p className="py-8 text-center text-sm text-fg-muted">No users found.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-line-subtle text-left">
+                <Table density="compact">
+                  <THead>
+                    <Tr className="text-left">
                       <SortTh label="Role" sortKey="role" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                       <SortTh label="Users" sortKey="count" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line-subtle">
+                    </Tr>
+                  </THead>
+                  <TBody>
                     {roleRows.map(({ role, count }) => (
-                      <tr key={role} className="hover:bg-surface-subtle">
-                        <td className="py-2 pr-3 text-fg-secondary">
+                      <Tr key={role} className="hover:bg-surface-subtle">
+                        <Td className="pr-3 text-fg-secondary">
                           {ROLE_LABELS[role as UserRole] ?? role}
-                        </td>
-                        <td className="py-2 text-right font-mono font-semibold text-fg">{count}</td>
-                      </tr>
+                        </Td>
+                        <Td align="right" className="font-mono font-semibold text-fg">{count}</Td>
+                      </Tr>
                     ))}
-                  </tbody>
-                </table>
+                  </TBody>
+                </Table>
               </div>
             )}
           </div>

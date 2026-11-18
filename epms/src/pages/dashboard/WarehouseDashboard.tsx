@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { displayTimeZone, formatDate } from '@/lib/utils'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 
 const GR_STATUS_STYLES: Record<string, string> = {
   pending_ack:        'bg-warning-soft text-warning-fg',
@@ -49,7 +49,7 @@ export default function WarehouseDashboard() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-fg">Warehouse Dashboard</h1>
+        <h1 className="text-2xl font-semibold text-fg">Warehouse Dashboard</h1>
         <Link to="/gr/new" className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 transition-colors">
           + New GR
         </Link>
@@ -101,44 +101,44 @@ export default function WarehouseDashboard() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-line-subtle text-left">
+            <Table density="compact">
+              <THead>
+                <Tr className="text-left">
                   <SortTh label="GR #" sortKey="number" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                   <SortTh label="Type" sortKey="gr_type" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                   <SortTh label="PO #" sortKey="po_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                   <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                   <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                   <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
-                  <th className="pb-2 font-medium text-fg-muted"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line-subtle">
+                  <Th></Th>
+                </Tr>
+              </THead>
+              <TBody>
                 {recentGrs.map((gr) => (
-                  <tr key={gr.id} className="hover:bg-surface-subtle">
-                    <td className="py-2 pr-3">
+                  <Tr key={gr.id} className="hover:bg-surface-subtle">
+                    <Td className="pr-3">
                       <span className="font-mono text-xs text-fg-secondary">{gr.number}</span>
-                    </td>
-                    <td className="py-2 pr-3">
+                    </Td>
+                    <Td className="pr-3">
                       {gr.gr_type === 'physical' ? (
                         <span className="inline-flex items-center rounded-full bg-info-soft px-2 py-0.5 text-xs font-medium text-info-fg">Physical</span>
                       ) : (
                         <span className="inline-flex items-center rounded-full bg-cat4-soft px-2 py-0.5 text-xs font-medium text-cat4-fg">Service</span>
                       )}
-                    </td>
-                    <td className="py-2 pr-3">
+                    </Td>
+                    <Td className="pr-3">
                       <span className="font-mono text-xs text-fg-secondary">{gr.po_number}</span>
-                    </td>
-                    <td className="py-2 pr-3 max-w-[140px] truncate text-fg-muted">{gr.vendor_name}</td>
-                    <td className="py-2 pr-3"><GrStatusBadge status={gr.status} /></td>
-                    <td className="py-2 pr-3 text-fg-muted">{formatDate(gr.created_at)}</td>
-                    <td className="py-2">
+                    </Td>
+                    <Td className="pr-3 max-w-[140px] truncate text-fg-muted">{gr.vendor_name}</Td>
+                    <Td className="pr-3"><GrStatusBadge status={gr.status} /></Td>
+                    <Td className="pr-3 text-fg-muted">{formatDate(gr.created_at)}</Td>
+                    <Td>
                       <Link to={`/gr/${gr.id}`} className="text-xs text-primary-600 hover:underline whitespace-nowrap">View →</Link>
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
         )}
       </div>

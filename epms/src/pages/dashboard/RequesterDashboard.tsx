@@ -75,7 +75,7 @@ export default function RequesterDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-fg">Dashboard</h1>
+      <h1 className="text-2xl font-semibold text-fg">Dashboard</h1>
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

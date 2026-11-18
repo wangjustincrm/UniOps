@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { displayTimeZone, formatAmount, formatDate, todayISO } from '@/lib/utils'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 
 function PaTypeBadge({ type }: { type: string }) {
   return type === 'prepayment' ? (
@@ -36,7 +36,7 @@ export default function FinanceBpDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-fg">Finance BP Dashboard</h1>
+      <h1 className="text-2xl font-semibold text-fg">Finance BP Dashboard</h1>
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -61,7 +61,7 @@ export default function FinanceBpDashboard() {
           <h2 className="text-base font-semibold text-fg">
             Payment Applications In Review
             {inReviewCount > 0 && (
-              <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning-solid px-1 text-2xs font-bold text-white">
+              <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning-solid px-1 text-2xs font-semibold text-white">
                 {inReviewCount}
               </span>
             )}
@@ -76,28 +76,28 @@ export default function FinanceBpDashboard() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-line-subtle text-left">
+            <Table density="compact">
+              <THead>
+                <Tr className="text-left">
                   <SortTh label="PA #" sortKey="pa_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                   <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                   <SortTh label="PO #" sortKey="po_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                   <SortTh label="Type" sortKey="pa_type" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                   <SortTh label="Amount" sortKey="payment_amount" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
                   <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
-                  <th className="pb-2 font-medium text-fg-muted"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line-subtle">
+                  <Th></Th>
+                </Tr>
+              </THead>
+              <TBody>
                 {inReview.map((pa) => (
-                  <tr key={pa.id} className="hover:bg-surface-subtle">
-                    <td className="py-2 pr-3">
+                  <Tr key={pa.id} className="hover:bg-surface-subtle">
+                    <Td className="pr-3">
                       <Link to={`/pa/${pa.id}`} className="font-mono text-xs text-primary-600 hover:underline">
                         {pa.pa_number}
                       </Link>
-                    </td>
-                    <td className="py-2 pr-3 max-w-[150px] truncate text-fg-secondary">{pa.vendor_name}</td>
-                    <td className="py-2 pr-3">
+                    </Td>
+                    <Td className="pr-3 max-w-[150px] truncate text-fg-secondary">{pa.vendor_name}</Td>
+                    <Td className="pr-3">
                       {/* A payment may settle several POs. The row has space for
                           one, so it names the primary and counts the rest —
                           showing the primary alone reads as the whole payment. */}
@@ -107,21 +107,21 @@ export default function FinanceBpDashboard() {
                           <span className="ml-1 text-fg-muted">+{(pa.po_numbers?.length ?? 1) - 1}</span>
                         )}
                       </span>
-                    </td>
-                    <td className="py-2 pr-3"><PaTypeBadge type={pa.pa_type} /></td>
-                    <td className="py-2 pr-3 text-right font-mono text-fg">
+                    </Td>
+                    <Td className="pr-3"><PaTypeBadge type={pa.pa_type} /></Td>
+                    <Td align="right" className="pr-3 font-mono text-fg">
                       {formatAmount(Number(pa.payment_amount), pa.currency)}
-                    </td>
-                    <td className="py-2 pr-3 text-fg-muted">{formatDate(pa.created_at)}</td>
-                    <td className="py-2">
+                    </Td>
+                    <Td className="pr-3 text-fg-muted">{formatDate(pa.created_at)}</Td>
+                    <Td>
                       <Link to={`/pa/${pa.id}`} className="text-xs text-primary-600 hover:underline whitespace-nowrap">
                         Review →
                       </Link>
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
         )}
       </div>

@@ -1,6 +1,7 @@
 import { type JSX } from 'react'
 import { useBudgetOverview } from '@/hooks/useBudget'
 
+import { Select } from '@uniops/shell'
 /**
  * A flat budget-account picker: one select over the whole L2 catalog, grouped
  * by L1 category.
@@ -53,12 +54,12 @@ export function BudgetAccountSelect(props: {
 
   return (
     <div className="flex flex-col gap-1.5">
-      <select
+      <Select
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
+       
       >
         <option value="">Select budget account…</option>
         {unrecognized && (
@@ -81,7 +82,7 @@ export function BudgetAccountSelect(props: {
               </optgroup>
             )
           })}
-      </select>
+      </Select>
       {isError && (
         <p className="text-xs text-danger-fg">
           Couldn't load the budget accounts — the budget service is unreachable. This is not

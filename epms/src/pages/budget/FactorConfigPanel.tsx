@@ -49,7 +49,7 @@ export function FactorConfigPanel({ accountId, canEdit }: Props) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+        <h3 className="text-xs font-semibold text-fg-muted">
           Decomposition Factors ({activeCount} / {MAX_FACTORS})
         </h3>
         {canEdit && !showAdd && !showPicker && (
@@ -207,7 +207,7 @@ function FactorCard({
             <Button size="sm" variant="ghost" onClick={handleToggleActive}>
               {factor.is_active ? 'Deactivate' : 'Activate'}
             </Button>
-            <Button size="icon-sm" variant="ghost" onClick={handleDeleteFactor} title="Delete factor">
+            <Button aria-label="Delete factor" size="icon-sm" variant="ghost" onClick={handleDeleteFactor} title="Delete factor">
               <Trash2 className="h-3.5 w-3.5 text-danger-fg" />
             </Button>
           </div>
@@ -228,17 +228,17 @@ function FactorCard({
       {canEdit && (
         <div className="flex items-end gap-2">
           <div className="flex-1 grid grid-cols-2 gap-2">
-            <input
+            <Input inputSize="sm"
               value={newValueCode}
               onChange={(e) => setNewValueCode(e.target.value)}
               placeholder="VALUE_CODE"
-              className="h-8 text-xs rounded border border-line-strong px-2 font-mono"
+              className="font-mono"
             />
-            <input
+            <Input inputSize="sm"
               value={newValueName}
               onChange={(e) => setNewValueName(e.target.value)}
               placeholder="Value name"
-              className="h-8 text-xs rounded border border-line-strong px-2"
+             
             />
           </div>
           <Button size="sm" variant="secondary" onClick={handleAddValue} disabled={createValMut.isPending}>
@@ -344,7 +344,7 @@ function FactorValueChip({ value, canEdit }: { value: ApiFactorValue; canEdit: b
     return (
       <div className="inline-flex items-center gap-1.5 rounded-md border border-primary-300 bg-primary-50 pl-2 pr-1 py-0.5 text-xs">
         <span className="font-mono text-fg-muted">{value.value_code}</span>
-        <input
+        <Input inputSize="sm"
           autoFocus
           value={draftName}
           onChange={(e) => setDraftName(e.target.value)}
@@ -352,25 +352,25 @@ function FactorValueChip({ value, canEdit }: { value: ApiFactorValue; canEdit: b
             if (e.key === 'Enter') { e.preventDefault(); saveEdit() }
             else if (e.key === 'Escape') { e.preventDefault(); cancelEdit() }
           }}
-          className="h-5 text-xs rounded border border-line-strong bg-surface px-1.5 min-w-32"
+          className="min-w-32"
           disabled={updateMut.isPending}
         />
-        <button
+        <Button aria-label="Save (Enter)" variant="ghost" size="icon-xs"
           onClick={saveEdit}
           disabled={updateMut.isPending}
-          className="rounded p-0.5 hover:bg-primary-100 text-primary-700 disabled:opacity-50"
+         
           title="Save (Enter)"
         >
           <Check className="h-3 w-3" />
-        </button>
-        <button
+        </Button>
+        <Button aria-label="Cancel (Esc)" variant="subtle" size="icon-xs"
           onClick={cancelEdit}
           disabled={updateMut.isPending}
-          className="rounded p-0.5 hover:bg-surface-strong text-fg-muted"
+         
           title="Cancel (Esc)"
         >
           <X className="h-3 w-3" />
-        </button>
+        </Button>
       </div>
     )
   }
@@ -382,33 +382,33 @@ function FactorValueChip({ value, canEdit }: { value: ApiFactorValue; canEdit: b
         {value.value_name}
       </span>
       {canEdit && value.is_active && (
-        <button
+        <Button aria-label="Rename value" variant="subtle" size="icon-xs"
           onClick={startEdit}
-          className="rounded p-0.5 hover:bg-surface-strong text-fg-muted"
+         
           title="Rename value"
         >
           <Pencil className="h-3 w-3" />
-        </button>
+        </Button>
       )}
       {canEdit && !value.is_active && (
-        <button
+        <Button aria-label="Reactivate value" variant="ghost" size="icon-xs"
           onClick={reactivate}
           disabled={updateMut.isPending}
-          className="rounded p-0.5 hover:bg-primary-100 text-primary-600"
+         
           title="Reactivate value"
         >
           <RotateCcw className="h-3 w-3" />
-        </button>
+        </Button>
       )}
       {canEdit && value.is_active && (
-        <button
+        <Button aria-label="Deactivate value" variant="subtle" size="icon-xs"
           onClick={() => deleteMut.mutate(value.id)}
           disabled={deleteMut.isPending}
-          className="rounded p-0.5 hover:bg-surface-strong text-fg-muted"
+         
           title="Deactivate value"
         >
           <X className="h-3 w-3" />
-        </button>
+        </Button>
       )}
     </div>
   )
@@ -461,9 +461,9 @@ function FactorLibraryPicker({
     <div className="rounded-lg border border-primary-300 bg-primary-50/30 p-3">
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs font-semibold text-primary-700">Pick from Factor Library</p>
-        <button onClick={onClose} className="text-fg-muted hover:text-fg-secondary">
+        <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
           <X className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </div>
 
       {isLoading ? (

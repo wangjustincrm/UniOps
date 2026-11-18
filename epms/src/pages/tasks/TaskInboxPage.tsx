@@ -11,6 +11,7 @@ import type { TaskType } from '@/lib/taskTypes'
 import type { ApiTask } from '@/services/tasks'
 import { groupTasks } from '@/lib/groupTasks'
 
+import { Select } from '@uniops/shell'
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 type TabValue = 'all' | 'urgent' | 'normal' | 'completed'
@@ -319,7 +320,7 @@ export default function TaskInboxPage() {
       {/* ── Header ── */}
       <div className="mb-6 flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-fg">Task Inbox</h1>
+          <h1 className="text-2xl font-semibold text-fg">Task Inbox</h1>
           <p className="mt-1 text-sm text-fg-muted">Your pending actions</p>
         </div>
         <Button
@@ -341,9 +342,9 @@ export default function TaskInboxPage() {
         <div className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3">
           <div className="flex items-center gap-1.5 mb-1">
             <AlertCircle className="h-4 w-4 text-danger-fg" />
-            <p className="text-xs font-semibold uppercase tracking-wide text-danger-fg">Urgent</p>
+            <p className="text-xs font-semibold text-danger-fg">Urgent</p>
           </div>
-          <p className="text-2xl font-bold text-danger-fg">{urgentCount}</p>
+          <p className="text-2xl font-semibold text-danger-fg">{urgentCount}</p>
           <p className="text-xs text-danger-fg mt-0.5">
             {urgentCount === 1 ? 'task' : 'tasks'} needing attention
           </p>
@@ -353,9 +354,9 @@ export default function TaskInboxPage() {
         <div className="rounded-xl border border-line bg-surface px-4 py-3">
           <div className="flex items-center gap-1.5 mb-1">
             <Clock className="h-4 w-4 text-fg-muted" />
-            <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Normal</p>
+            <p className="text-xs font-semibold text-fg-muted">Normal</p>
           </div>
-          <p className="text-2xl font-bold text-fg-secondary">{normalCount}</p>
+          <p className="text-2xl font-semibold text-fg-secondary">{normalCount}</p>
           <p className="text-xs text-fg-muted mt-0.5">
             {normalCount === 1 ? 'task' : 'tasks'} in queue
           </p>
@@ -365,11 +366,11 @@ export default function TaskInboxPage() {
         <div className="rounded-xl border border-success-line bg-success-soft px-4 py-3">
           <div className="flex items-center gap-1.5 mb-1">
             <Check className="h-4 w-4 text-success-fg" />
-            <p className="text-xs font-semibold uppercase tracking-wide text-success-fg">
+            <p className="text-xs font-semibold text-success-fg">
               Completed
             </p>
           </div>
-          <p className="text-2xl font-bold text-success-fg">{completedTodayCount}</p>
+          <p className="text-2xl font-semibold text-success-fg">{completedTodayCount}</p>
           <p className="text-xs text-success-fg mt-0.5">
             {completedTodayCount === 1 ? 'task' : 'tasks'} done today
           </p>
@@ -393,7 +394,7 @@ export default function TaskInboxPage() {
             >
               {tab.label}
               {tab.value === 'urgent' && urgentCount > 0 && (
-                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-solid px-1 text-2xs font-bold text-white">
+                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-solid px-1 text-2xs font-semibold text-white">
                   {urgentCount}
                 </span>
               )}
@@ -414,11 +415,11 @@ export default function TaskInboxPage() {
             aria-label="Search tasks"
           />
         </div>
-        <select
+        <Select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
           aria-label="Filter by task type"
-          className="h-10 max-w-full rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
+          className="max-w-full"
         >
           <option value="">All task types</option>
           {typeFilter && !typeOptions.some((o) => o.value === typeFilter) && (
@@ -427,7 +428,7 @@ export default function TaskInboxPage() {
           {typeOptions.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
-        </select>
+        </Select>
       </div>
 
       {/* ── Task list (grouped by type) ── */}
@@ -462,13 +463,13 @@ export default function TaskInboxPage() {
                     <FullTaskCard key={task.id} task={task} />
                   ))}
                   {group.items.length > items.length && (
-                    <button
+                    <Button variant="link"
                       type="button"
                       onClick={() => setShowAll((s) => toggleIn(s, group.key))}
-                      className="self-start text-sm font-medium text-primary-600 hover:text-primary-700 hover:underline"
+                      className="self-start text-sm"
                     >
                       Show all {group.items.length}
-                    </button>
+                    </Button>
                   )}
                 </div>
               )}

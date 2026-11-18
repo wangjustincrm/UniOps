@@ -112,7 +112,10 @@ def heuristic(cls, icon_only):
     has = lambda *xs: any(x in c for x in xs)
     pre = lambda p: any(x.startswith(p) for x in c)
     keep = ' '.join(x for x in c if LAYOUT.match(x))
-    if has('w-full') and has('text-left') and (has('px-3', 'px-4')) and not pre('border-l') and not has('rounded-lg') :
+    # Classes that change what the text looks like survive (mono figures, size).
+    looks = ' '.join(x for x in c if x in ('font-mono', 'tabular-nums', 'text-sm', 'text-xs', 'text-2xs', 'text-right', 'text-left'))
+    sq = next((x[2:] for x in c if re.fullmatch(r'w-\d+', x) and f'h-{x[2:]}' in c), None)  # square button
+    if has('w-full') and has('px-3', 'px-4') and has('py-2', 'py-2.5', 'py-3') and not has('border', 'rounded-lg') and not pre('bg-primary') and not pre('border-l'):
         tone = 'tone="danger"' if pre('text-danger') else 'tone="warning"' if pre('text-warning') else ''
         return 'MenuItem', tone, ' '.join(x for x in c if LAYOUT.match(x) and x != 'w-full'), None
     small = has('text-xs', 'text-2xs') or has('py-1', 'py-0.5', 'h-7')
@@ -120,6 +123,18 @@ def heuristic(cls, icon_only):
     size = 'xs' if small else 'md' if medium else 'sm'
     def solid(v):
         return v, f'size="{size}"'
+    if sq and not (pre('bg-primary-6') or has('bg-success-solid', 'bg-danger-solid', 'bg-warning-solid')):
+        isz = 'icon' if sq in ('9', '10') else 'icon-sm' if sq == '8' else 'icon-xs'
+        keep_sq = ' '.join(x for x in keep.split() if not re.fullmatch(r'w-\d+|justify-center', x))
+        if has('border'):
+            return 'Button', f'variant="secondary" size="{isz}"', (keep_sq + ' ' + looks).strip(), None
+        if pre('text-danger'):
+            return 'Button', f'variant="subtle" size="{isz}"', (keep_sq + ' text-danger-fg hover:bg-danger-soft').strip(), None
+        if pre('text-primary') or pre('text-accent'):
+            return 'Button', f'variant="ghost" size="{isz}"', keep_sq, None
+        if any(x.startswith('hover:text-danger') or x.startswith('hover:bg-danger') for x in c):
+            return 'Button', f'variant="danger-ghost" size="{isz}"', keep_sq, 'Remove'
+        return 'Button', f'variant="subtle" size="{isz}"', keep_sq, None
     if pre('bg-primary-6') or pre('bg-accent') and (has('text-white') or pre('text-fg-on')):
         v, sz = solid('primary')
     elif has('bg-success-solid'):
@@ -128,22 +143,38 @@ def heuristic(cls, icon_only):
         v, sz = solid('danger')
     elif has('bg-warning-solid'):
         v, sz = solid('warning')
+    elif has('border-warning-line'):
+        v, sz = 'warning-outline', f'size="{size}"'
+    elif (icon_only or sq) and False:
+        pass
     elif has('border-danger-line') or (has('border') and pre('text-danger')):
         v, sz = 'danger-outline', f'size="{size}"'
     elif has('border') and (pre('border-primary') or pre('border-accent')):
         v, sz = 'outline', f'size="{size}"'
     elif has('border') and (pre('border-line') or True) and has('border'):
         v, sz = 'secondary', f'size="{size}"'
-    elif icon_only:
-        isz = 'icon-sm' if has('p-1.5', 'p-2', 'h-8', 'w-8') else 'icon-xs'
-        v = 'danger-ghost' if any(x.startswith('hover:text-danger') for x in c) else 'subtle'
-        return 'Button', f'variant="{v}" size="{isz}"', keep, 'Remove' if v == 'danger-ghost' else None
+    elif icon_only or sq:
+        isz = 'icon' if sq in ('9', '10') else 'icon-sm' if (sq == '8' or has('p-1.5', 'p-2')) else 'icon-xs'
+        keep_sq = ' '.join(x for x in keep.split() if not re.fullmatch(r'w-\d+|justify-center', x))
+        if pre('text-danger'):            # always red (delete): keep the colour
+            return 'Button', f'variant="subtle" size="{isz}"', (keep_sq + ' text-danger-fg hover:bg-danger-soft').strip(), None
+        if pre('text-primary') or pre('text-accent'):
+            return 'Button', f'variant="ghost" size="{isz}"', keep_sq, None
+        if any(x.startswith('hover:text-danger') or x.startswith('hover:bg-danger') for x in c):
+            return 'Button', f'variant="danger-ghost" size="{isz}"', keep_sq, 'Remove'
+        if sq and has('border'):
+            return 'Button', f'variant="secondary" size="{isz}"', (keep_sq + ' ' + looks).strip(), None
+        return 'Button', f'variant="subtle" size="{isz}"', keep_sq, None
+    elif not has('border') and any(x.startswith('hover:text-danger') for x in c) and not pre('text-danger'):
+        return 'Button', 'variant="danger-ghost" size="xs"', keep, None
+    elif (pre('text-primary') or pre('text-accent')) and any(re.fullmatch(r'p[xy]-[\d.]+', x) for x in c) and pre('rounded'):
+        return 'Button', 'variant="ghost" size="xs"', keep, None
     elif pre('text-primary') or pre('text-accent') or any(x in ('underline', 'hover:underline') for x in c):
         tone = ' text-danger-fg' if pre('text-danger') else ' text-fg-muted' if pre('text-fg-muted') else ''
-        txt = ' '.join(x for x in c if x in ('text-xs', 'text-2xs', 'text-sm'))
+        txt = looks
         return 'Button', 'variant="link"', ' '.join(filter(None, [keep, txt + tone])), None
     elif pre('text-fg'):
-        return 'Button', 'variant="subtle" size="xs"', keep, None
+        return 'Button', 'variant="subtle" size="xs"', (keep + ' ' + ' '.join(x for x in looks.split() if x != 'text-xs')).strip(), None
     else:
         return None
     props = f'variant="{v}" {sz}' if v != 'primary' else sz

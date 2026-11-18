@@ -24,6 +24,7 @@ import { useCostCenters } from '@/hooks/useCostCenters'
 import type { ApiAccountSummary, ApiMonthlyAccountSummary } from '@/services/budget'
 import { downloadFinanceFile } from '@/lib/api'
 
+import { Checkbox, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 /** The plant's calendar year (company time zone), read when used. */
 const currentYear = () => Number(todayISO().slice(0, 4))
 
@@ -206,7 +207,7 @@ export default function BudgetDashboard() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-fg">Budget Dashboard</h1>
+          <h1 className="text-2xl font-semibold text-fg">Budget Dashboard</h1>
           <p className="text-sm text-fg-muted mt-0.5">
             Plan vs Actual · FY {fiscalYear}
             {scopeLabel && (
@@ -223,22 +224,22 @@ export default function BudgetDashboard() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <select value={fiscalYear} onChange={(e) => setFiscalYear(Number(e.target.value))}
-            className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600">
+          <Select value={fiscalYear} onChange={(e) => setFiscalYear(Number(e.target.value))}
+           >
             {yearOptions.map((y) => <option key={y} value={y}>FY {y}</option>)}
-          </select>
+          </Select>
           {(visibleCCs.length > 1 || (!isFullAccess && visibleCCs.length >= 1)) && (
-            <select value={ccId} onChange={(e) => setCcId(e.target.value)}
-              className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600">
+            <Select value={ccId} onChange={(e) => setCcId(e.target.value)}
+             >
               <option value="all">All Cost Centers</option>
               {visibleCCs.map((cc) => <option key={cc.id} value={cc.id}>{cc.code} — {cc.name}</option>)}
-            </select>
+            </Select>
           )}
           <label className="inline-flex cursor-pointer select-none items-center gap-1.5 text-sm text-fg-secondary"
                  title="Also count vouchers entered in NC but not yet tallied (记账). Discarded or deleted vouchers never count.">
-            <input type="checkbox" checked={includeUnposted}
+            <Checkbox checked={includeUnposted}
                    onChange={(e) => setIncludeUnposted(e.target.checked)}
-                   className="h-4 w-4 cursor-pointer rounded border-line-strong accent-primary-600" />
+                   />
             Include unposted vouchers
           </label>
           <Link to="/budget/plans" className="inline-flex items-center gap-1 text-sm text-primary-600 hover:underline">
@@ -264,7 +265,7 @@ export default function BudgetDashboard() {
           ].map((s) => (
             <Card key={s.label} className={cn('p-4', s.alert && 'ring-1 ring-danger-line')}>
               <p className="text-xs text-fg-muted">{s.label}</p>
-              <p className={cn('text-xl font-bold mt-1 font-mono', s.alert ? 'text-danger-fg' : 'text-fg')}><CompactAmount value={s.value} /></p>
+              <p className={cn('text-xl font-semibold mt-1 font-mono', s.alert ? 'text-danger-fg' : 'text-fg')}><CompactAmount value={s.value} /></p>
               <p className="text-xs text-fg-muted mt-0.5">{s.sub}</p>
             </Card>
           ))}
@@ -282,8 +283,8 @@ export default function BudgetDashboard() {
           </div>
           <div className="flex flex-wrap gap-2">
             {overBudget.map((a) => (
-              <button type="button" key={a.account_id} onClick={() => jumpToAccount(a.account_id)}
-                className="rounded-md border border-danger-line bg-surface px-3 py-2 text-xs text-left transition-colors hover:border-danger-400 hover:bg-danger-soft"
+              <Button variant="danger-outline" size="xs" type="button" key={a.account_id} onClick={() => jumpToAccount(a.account_id)}
+               
                 title="Jump to this account in the table">
                 <span className="font-mono font-semibold text-danger-fg">{a.account_code}</span>
                 <span className="text-fg-muted mx-1">·</span>
@@ -292,7 +293,7 @@ export default function BudgetDashboard() {
                 <div className="text-2xs text-danger-fg mt-0.5">
                   Over by {formatAmount(a.nc_over, 'CAD')}
                 </div>
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -309,14 +310,14 @@ export default function BudgetDashboard() {
           </div>
           <div className="flex flex-wrap gap-2">
             {nearBudget.map((a) => (
-              <button type="button" key={a.account_id} onClick={() => jumpToAccount(a.account_id)}
-                className="rounded-md border border-warning-line bg-surface px-3 py-2 text-xs text-left transition-colors hover:border-warning-400 hover:bg-warning-soft"
+              <Button variant="warning-outline" size="xs" type="button" key={a.account_id} onClick={() => jumpToAccount(a.account_id)}
+               
                 title="Jump to this account in the table">
                 <span className="font-mono font-semibold text-warning-fg">{a.account_code}</span>
                 <span className="text-fg-muted mx-1">·</span>
                 <span className="text-fg-secondary">{a.account_name}</span>
                 <span className="ml-2 font-semibold text-warning-fg">{a.nc_util}%</span>
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -330,19 +331,19 @@ export default function BudgetDashboard() {
             <div className="flex items-center gap-2 text-xs">
               <label className="inline-flex cursor-pointer select-none items-center gap-1 text-fg-secondary"
                      title="In the exported file, list each budget account's NC actual by vendor under the account row">
-                <input type="checkbox" checked={exportByVendor} disabled={exporting}
+                <Checkbox checked={exportByVendor} disabled={exporting}
                        onChange={(e) => setExportByVendor(e.target.checked)}
-                       className="h-3.5 w-3.5 cursor-pointer rounded border-line-strong accent-primary-600" />
+                       className="h-3.5 w-3.5" />
                 Expand vendor
               </label>
-              <button type="button" onClick={handleExport} disabled={exporting}
-                className="rounded-md border border-primary-300 bg-surface px-2.5 py-1 font-medium text-primary-700 hover:bg-primary-50 disabled:opacity-50">
+              <Button variant="outline" size="xs" type="button" onClick={handleExport} disabled={exporting}
+               >
                 {exporting ? 'Exporting…' : 'Export XLSX'}
-              </button>
+              </Button>
               <span className="text-fg-faint">·</span>
-              <button type="button" onClick={expandAll} className="text-primary-600 hover:underline">Expand all</button>
+              <Button variant="link" type="button" onClick={expandAll}>Expand all</Button>
               <span className="text-fg-faint">·</span>
-              <button type="button" onClick={collapseAll} className="text-primary-600 hover:underline">Collapse all</button>
+              <Button variant="link" type="button" onClick={collapseAll}>Collapse all</Button>
             </div>
           </div>
           <p className="text-xs text-fg-muted mt-0.5">
@@ -362,51 +363,51 @@ export default function BudgetDashboard() {
           </div>
         ) : (
           <div className="max-h-[70vh] overflow-auto">
-          <table className="text-sm w-full table-fixed border-collapse">
+          <Table density="compact" className="table-fixed">
             <colgroup>
               <col className="w-[15%] min-w-[160px]" />
               {MONTHS.map((m) => <col key={m} />)}
               <col className="w-[8%]" />
             </colgroup>
-            <thead>
-              <tr>
-                <th className="sticky top-0 z-20 border-b-2 border-line-strong bg-surface-strong py-2.5 px-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            <THead>
+              <Tr>
+                <Th className="sticky top-0 z-20 border-b-2 border-line-strong bg-surface-strong">
                   Account
-                </th>
+                </Th>
                 {MONTHS.map((m) => (
-                  <th key={m} className="sticky top-0 z-20 border-b-2 border-line-strong bg-surface-strong py-2.5 px-1.5 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                  <Th align="right" key={m} className="sticky top-0 z-20 border-b-2 border-line-strong bg-surface-strong ">
                     {m}
-                  </th>
+                  </Th>
                 ))}
-                <th className="sticky top-0 z-20 border-b-2 border-line-strong bg-surface-strong py-2.5 px-2 text-right text-xs font-semibold uppercase tracking-wide text-fg-secondary">
+                <Th align="right" className="sticky top-0 z-20 border-b-2 border-line-strong bg-surface-strong ">
                   Year
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+                </Th>
+              </Tr>
+            </THead>
+            <TBody>
               {monthlyByL1.map((g) => (
                 <MonthlyL1Group key={g.code} l1Code={g.code} accounts={g.accounts} ncByAccount={ncByAccount}
                   fiscalYear={fiscalYear} costCenterId={ccId !== 'all' ? ccId : undefined} highlightId={highlightId}
                   includeUnposted={includeUnposted}
                   expanded={!collapsedL1.has(g.code)} onToggle={() => toggleL1(g.code)} />
               ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td className="sticky bottom-0 z-20 border-t-2 border-fg-faint bg-surface-strong py-3 px-3 text-sm font-bold text-fg uppercase tracking-wide">
+            </TBody>
+            <TFoot>
+              <Tr>
+                <Td className="sticky bottom-0 z-20 border-t-2 border-fg-faint bg-surface-strong text-sm font-semibold text-fg">
                   Total
-                </td>
+                </Td>
                 {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                  <td key={m} className="sticky bottom-0 z-20 border-t-2 border-fg-faint bg-surface-strong py-3 px-1.5">
+                  <Td key={m} className="sticky bottom-0 z-20 border-t-2 border-fg-faint bg-surface-strong">
                     <PlanActualCell plan={monthlyGrandTotals.plan[m]} nc={monthlyGrandTotals.nc[m]} strong />
-                  </td>
+                  </Td>
                 ))}
-                <td className="sticky bottom-0 z-20 border-t-2 border-fg-faint bg-line-strong py-3 px-2">
+                <Td className="sticky bottom-0 z-20 border-t-2 border-fg-faint bg-line-strong">
                   <PlanActualCell plan={monthlyGrandTotals.planYear} nc={monthlyGrandTotals.ncYear} strong />
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+                </Td>
+              </Tr>
+            </TFoot>
+          </Table>
           </div>
         )}
       </Card>
@@ -435,7 +436,7 @@ function PlanActualCell({ plan, nc, strong }: { plan: number; nc?: number; stron
       {nc !== undefined && (
         <span className={cn(
           'text-2xs whitespace-nowrap',
-          over ? 'text-danger-fg font-bold' : 'text-success-fg',
+          over ? 'text-danger-fg font-semibold' : 'text-success-fg',
           strong && 'font-semibold',
         )}>
           {nc ? <CompactAmount value={nc} hint="NC actual (red = over budget)" /> : '–'}
@@ -477,49 +478,49 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterI
 
   return (
     <>
-      <tr className="border-t-2 border-line-strong bg-surface-sunken cursor-pointer hover:bg-surface-strong" onClick={onToggle}>
-        <td className="py-2.5 px-3 text-sm font-semibold text-fg">
+      <Tr className="border-t-2 bg-surface-sunken cursor-pointer hover:bg-surface-strong" onClick={onToggle}>
+        <Td className="text-sm font-semibold text-fg">
           <span className="mr-1 text-2xs text-fg-muted">{expanded ? '▾' : '▸'}</span>
           <span className="font-mono text-xs text-fg-muted">{l1Code}</span>
-        </td>
+        </Td>
         {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-          <td key={m} className="py-2.5 px-1.5">
+          <Td key={m}>
             <PlanActualCell plan={totals.plan[m]} nc={totals.nc[m]} strong />
-          </td>
+          </Td>
         ))}
-        <td className="py-2.5 px-2 bg-surface-strong">
+        <Td className="bg-surface-strong">
           <PlanActualCell plan={totals.planYear} nc={totals.ncYear} strong />
-        </td>
-      </tr>
+        </Td>
+      </Tr>
       {expanded && accounts.map((a) => {
         const isOpen = expandedAcct === a.account_id
         return (
           <Fragment key={a.account_id}>
-            <tr id={`ba-row-${a.account_id}`}
+            <Tr id={`ba-row-${a.account_id}`}
                 className={cn('border-b border-line-subtle transition-colors hover:bg-primary-50/60',
                   highlightId === a.account_id ? 'bg-warning-soft' : 'bg-surface')}>
-              <td className="py-2 px-3">
-                <button type="button"
+              <Td>
+                <Button variant="link" type="button"
                   onClick={() => setExpandedAcct((id) => (id === a.account_id ? null : a.account_id))}
-                  className="flex items-start gap-1 text-left hover:underline"
+                  className="text-left"
                   title="Break down NC actual by vendor/customer">
                   <span className="mt-0.5 w-3 shrink-0 text-2xs text-fg-muted">{isOpen ? '▾' : '▸'}</span>
                   <span>
                     <span className="font-mono text-xs text-fg-muted mr-2">{a.account_code}</span>
                     <span className="text-xs text-primary-700 break-words">{a.account_name}</span>
                   </span>
-                </button>
-              </td>
+                </Button>
+              </Td>
               {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                <td key={m} className="py-2 px-1.5">
+                <Td key={m}>
                   <PlanActualCell plan={Number(a.plan_by_month?.[m] ?? 0)}
                     nc={Number(ncByAccount[a.account_id]?.[m] ?? 0)} />
-                </td>
+                </Td>
               ))}
-              <td className="py-2 px-2 bg-surface-subtle">
+              <Td className="bg-surface-subtle">
                 <PlanActualCell plan={Number(a.plan_year)} nc={ncYearFor(a.account_id)} strong />
-              </td>
-            </tr>
+              </Td>
+            </Tr>
             {isOpen && <PartnerRows account={a} fiscalYear={fiscalYear} costCenterId={costCenterId}
                                     includeUnposted={includeUnposted} />}
           </Fragment>
@@ -556,10 +557,10 @@ function PartnerRows({ account, fiscalYear, costCenterId, includeUnposted }: {
   const [voucherKey, setVoucherKey] = useState<string | null>(null)  // `${partnerId}:${month}`
 
   if (isLoading) {
-    return <tr><td colSpan={14} className="bg-success-soft py-2 pl-10 pr-3 text-xs text-fg-muted">Loading vendor breakdown…</td></tr>
+    return <Tr><Td colSpan={14} className="bg-success-soft pl-10 pr-3 text-xs text-fg-muted">Loading vendor breakdown…</Td></Tr>
   }
   if (partners.length === 0) {
-    return <tr><td colSpan={14} className="bg-success-soft py-2 pl-10 pr-3 text-xs text-fg-muted">No NC actuals for this item in the current scope.</td></tr>
+    return <Tr><Td colSpan={14} className="bg-success-soft pl-10 pr-3 text-xs text-fg-muted">No NC actuals for this item in the current scope.</Td></Tr>
   }
   return (
     <>
@@ -567,8 +568,8 @@ function PartnerRows({ account, fiscalYear, costCenterId, includeUnposted }: {
         const pid = p.key
         return (
           <Fragment key={`${pid}-${i}`}>
-            <tr className="border-b border-line-subtle bg-success-soft">
-              <td className="py-1.5 pl-10 pr-3 text-xs text-fg-secondary break-words">
+            <Tr className="bg-success-soft">
+              <Td className="pl-10 pr-3 text-xs text-fg-secondary break-words">
                 {p.partner_name || <span className="text-fg-muted">{NO_VENDOR_LABEL[p.source]}</span>}
                 {/* NC hangs the vendor on the payable line, not the expense
                     line, so most of these are read off the voucher rather than
@@ -582,12 +583,12 @@ function PartnerRows({ account, fiscalYear, costCenterId, includeUnposted }: {
                     {p.source === 'voucher' ? 'from voucher' : 'partly from voucher'}
                   </span>
                 )}
-              </td>
+              </Td>
               {Array.from({ length: 12 }, (_, k) => k + 1).map((m) => {
                 const v = Number(p.by_month[m] ?? 0)
                 const key = `${pid}:${m}`
                 return (
-                  <td key={m} className="py-1.5 px-1.5 text-right">
+                  <Td align="right" key={m}>
                     {v ? (
                       <button className={cn('font-mono text-2xs hover:underline',
                         voucherKey === key ? 'font-semibold text-success-fg' : 'text-success-fg')}
@@ -595,11 +596,11 @@ function PartnerRows({ account, fiscalYear, costCenterId, includeUnposted }: {
                         <CompactAmount value={v} />
                       </button>
                     ) : <span className="text-2xs text-fg-faint">–</span>}
-                  </td>
+                  </Td>
                 )
               })}
-              <td className="py-1.5 px-2 text-right font-mono text-2xs font-semibold bg-success-soft"><CompactAmount value={Number(p.year_total)} /></td>
-            </tr>
+              <Td align="right" className="font-mono text-2xs font-semibold bg-success-soft"><CompactAmount value={Number(p.year_total)} /></Td>
+            </Tr>
             {voucherKey && voucherKey.startsWith(`${pid}:`) && (
               <VoucherRow account={account} fiscalYear={fiscalYear} costCenterId={costCenterId}
                 includeUnposted={includeUnposted}
@@ -628,8 +629,8 @@ function VoucherRow({ account, fiscalYear, costCenterId, includeUnposted, partne
   })
   const rows = data?.rows ?? []
   return (
-    <tr>
-      <td colSpan={14} className="border-l-4 border-success-400 bg-surface-sunken px-10 py-2">
+    <Tr>
+      <Td colSpan={14} className="border-l-4 border-success-400 bg-surface-sunken">
         <div className="mb-1 text-2xs font-semibold text-fg-secondary">
           Vouchers · {partnerName || '(no vendor)'} · {MONTHS[month - 1]} {fiscalYear}
         </div>
@@ -638,21 +639,21 @@ function VoucherRow({ account, fiscalYear, costCenterId, includeUnposted, partne
         ) : rows.length === 0 ? (
           <div className="text-xs text-fg-muted">No vouchers.</div>
         ) : (
-          <table className="w-full text-2xs">
-            <thead>
-              <tr className="text-fg-muted">
-                <th className="px-2 py-1 text-left font-medium">Date</th>
-                <th className="px-2 py-1 text-left font-medium">Voucher</th>
-                <th className="px-2 py-1 text-left font-medium">Account</th>
-                <th className="px-2 py-1 text-left font-medium">Summary</th>
-                <th className="px-2 py-1 text-right font-medium">Debit</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table density="compact" className="text-2xs">
+            <THead>
+              <Tr className="text-fg-muted">
+                <Th>Date</Th>
+                <Th>Voucher</Th>
+                <Th>Account</Th>
+                <Th>Summary</Th>
+                <Th align="right">Debit</Th>
+              </Tr>
+            </THead>
+            <TBody>
               {rows.map((r, i) => (
-                <tr key={`${r.jv_id}-${i}`} className="border-t border-line-subtle">
-                  <td className="px-2 py-1 font-mono text-fg-secondary">{formatDate(r.voucher_date)}</td>
-                  <td className="px-2 py-1 font-mono">
+                <Tr key={`${r.jv_id}-${i}`}>
+                  <Td className="font-mono text-fg-secondary">{formatDate(r.voucher_date)}</Td>
+                  <Td className="font-mono">
                     {r.jv_number}
                     {r.posted === false && (
                       <span className="ml-1.5 rounded bg-warning-soft px-1.5 py-0.5 font-sans text-2xs font-medium text-warning-fg"
@@ -660,16 +661,16 @@ function VoucherRow({ account, fiscalYear, costCenterId, includeUnposted, partne
                         Unposted
                       </span>
                     )}
-                  </td>
-                  <td className="px-2 py-1 font-mono text-fg-secondary">{r.account_code}</td>
-                  <td className="px-2 py-1 text-fg-secondary">{r.summary || '—'}</td>
-                  <td className="px-2 py-1 text-right font-mono"><CompactAmount value={Number(r.local_debit)} /></td>
-                </tr>
+                  </Td>
+                  <Td className="font-mono text-fg-secondary">{r.account_code}</Td>
+                  <Td className="text-fg-secondary">{r.summary || '—'}</Td>
+                  <Td align="right" className="font-mono"><CompactAmount value={Number(r.local_debit)} /></Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         )}
-      </td>
-    </tr>
+      </Td>
+    </Tr>
   )
 }

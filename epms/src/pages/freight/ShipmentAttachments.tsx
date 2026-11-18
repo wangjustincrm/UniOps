@@ -10,6 +10,7 @@ import { shipmentAttachmentService, type ShipmentAttachment } from '@/services/f
 import { errorMessage } from './freightUi'
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
+import { FileInput } from '@uniops/shell'
 export function ShippingLabelBadge() {
   return (
     <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary-50 px-2 py-0.5 text-2xs font-medium text-primary-700">
@@ -27,8 +28,8 @@ function AddFilesButton({ onFiles, disabled, busy, label = 'Add files' }: {
   const input = useRef<HTMLInputElement>(null)
   return (
     <>
-      <input
-        ref={input} type="file" multiple accept={ATTACHMENT_RULE.accept} className="sr-only"
+      <FileInput
+        ref={input} multiple accept={ATTACHMENT_RULE.accept} className="sr-only"
         onChange={(e: ChangeEvent<HTMLInputElement>) => {
           const files = Array.from(e.target.files ?? [])
           e.target.value = ''
@@ -109,19 +110,19 @@ export function ShipmentAttachmentsPanel({ shipmentId, editable }: { shipmentId:
               {formatBytes(a.file_size)} · {a.uploaded_by_name ?? '—'} · {formatDate(a.created_at)}
             </div>
           </div>
-          <button type="button" onClick={() => run(shipmentAttachmentService.open(shipmentId, a.id))}
-            className="inline-flex items-center gap-1 text-xs text-primary-600 hover:underline">
+          <Button variant="link" type="button" onClick={() => run(shipmentAttachmentService.open(shipmentId, a.id))}
+            className="text-xs">
             <Eye className="h-3.5 w-3.5" /> View
-          </button>
-          <button type="button" onClick={() => run(shipmentAttachmentService.download(shipmentId, a))}
-            className="inline-flex items-center gap-1 text-xs text-primary-600 hover:underline">
+          </Button>
+          <Button variant="link" type="button" onClick={() => run(shipmentAttachmentService.download(shipmentId, a))}
+            className="text-xs">
             <Download className="h-3.5 w-3.5" /> Download
-          </button>
+          </Button>
           {editable && (
-            <button type="button" disabled={remove.isPending} onClick={() => handleDelete(a)}
-              className="text-fg-muted hover:text-danger-fg disabled:opacity-50" aria-label={`Remove ${a.filename}`}>
+            <Button variant="danger-ghost" size="icon-xs" type="button" disabled={remove.isPending} onClick={() => handleDelete(a)}
+              aria-label={`Remove ${a.filename}`}>
               <X className="h-3.5 w-3.5" />
-            </button>
+            </Button>
           )}
         </div>
       ))}
@@ -166,10 +167,10 @@ export function StagedShipmentAttachments({ label, onRemoveLabel, files, onFiles
       <span className="min-w-0 flex-1 truncate text-fg-secondary">{name}</span>
       {isLabel && <ShippingLabelBadge />}
       <span className="text-xs text-fg-muted">{formatBytes(size)}</span>
-      <button type="button" disabled={disabled} onClick={onRemove}
-        className="text-fg-muted hover:text-danger-fg disabled:opacity-50" aria-label={`Remove ${name}`}>
+      <Button variant="danger-ghost" size="icon-xs" type="button" disabled={disabled} onClick={onRemove}
+        aria-label={`Remove ${name}`}>
         <X className="h-3.5 w-3.5" />
-      </button>
+      </Button>
     </div>
   )
 

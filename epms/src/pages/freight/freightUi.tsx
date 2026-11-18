@@ -7,13 +7,14 @@ import type { ApiCostCenter } from '@/services/cost_centers'
 import type { ApiDepartment } from '@/services/departments'
 import type { MatchStatus } from '@/services/freight'
 
+import { Select, Button } from '@uniops/shell'
 export const SELECT_CLS =
   'h-10 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-subtle disabled:text-fg-muted'
 export const SELECT_SM_CLS =
   'h-8 rounded-md border border-line-strong bg-surface px-2 text-xs text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-subtle disabled:text-fg-muted'
 export const INPUT_SM_CLS =
   'h-8 rounded-md border border-line-strong bg-surface px-2 text-xs text-fg focus:outline-none focus:ring-2 focus:ring-primary-600'
-export const TH_CLS = 'px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap'
+export const TH_CLS = 'px-3 py-2.5 text-left text-xs font-semibold text-fg-muted whitespace-nowrap'
 
 // ─── Badges ───────────────────────────────────────────────────────────────────
 
@@ -48,7 +49,7 @@ export function FreightInvoiceStatusBadge({ status }: { status: string }) {
 /** Marks a courier invoice (match_route='freight') in the general invoice lists. */
 export function FreightRouteBadge({ className }: { className?: string }) {
   return (
-    <span className={cn('inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-primary-700', className)}>
+    <span className={cn('inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-2xs font-semibold text-primary-700', className)}>
       Freight
     </span>
   )
@@ -57,7 +58,7 @@ export function FreightRouteBadge({ className }: { className?: string }) {
 /** Marks an invoice matched for a Direct PA (match_route='direct') in the lists. */
 export function DirectRouteBadge({ className }: { className?: string }) {
   return (
-    <span className={cn('inline-flex items-center rounded-full border border-warning-line bg-warning-soft px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-warning-fg', className)}>
+    <span className={cn('inline-flex items-center rounded-full border border-warning-line bg-warning-soft px-2 py-0.5 text-2xs font-semibold text-warning-fg', className)}>
       Direct
     </span>
   )
@@ -66,7 +67,7 @@ export function DirectRouteBadge({ className }: { className?: string }) {
 /** Marks a project-related shipment (FRT-019) wherever its department / cost center would show. */
 export function ProjectBadge({ className }: { className?: string }) {
   return (
-    <span className={cn('inline-flex items-center rounded-full border border-info-line bg-info-soft px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-info-fg', className)}>
+    <span className={cn('inline-flex items-center rounded-full border border-info-line bg-info-soft px-2 py-0.5 text-2xs font-semibold text-info-fg', className)}>
       Project
     </span>
   )
@@ -117,9 +118,9 @@ export function Modal({ title, subtitle, onClose, children, wide = false }: {
             <h2 className="text-sm font-semibold text-fg">{title}</h2>
             {subtitle && <p className="text-xs text-fg-muted">{subtitle}</p>}
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken" aria-label="Close">
+          <Button variant="subtle" size="icon-sm" onClick={onClose} aria-label="Close">
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
         <div className="overflow-y-auto px-6 py-5">{children}</div>
       </div>
@@ -147,12 +148,12 @@ export function CostCenterSelect({
   const label = (c: ApiCostCenter) => `${c.code} — ${c.name}`
   if (departmentId) {
     return (
-      <select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} className={className ?? SELECT_CLS}>
+      <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} className={className ?? SELECT_CLS}>
         <option value="">{placeholder}</option>
         {active.filter((c) => c.department_id === departmentId).map((c) => (
           <option key={c.id} value={c.id}>{label(c)}</option>
         ))}
-      </select>
+      </Select>
     )
   }
   const deptName = new Map(departments.map((d) => [d.id, d.name]))
@@ -163,14 +164,14 @@ export function CostCenterSelect({
   }
   const sorted = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]))
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} className={className ?? SELECT_CLS}>
+    <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} className={className ?? SELECT_CLS}>
       <option value="">{placeholder}</option>
       {sorted.map(([dept, ccs]) => (
         <optgroup key={dept} label={dept}>
           {ccs.map((c) => <option key={c.id} value={c.id}>{label(c)}</option>)}
         </optgroup>
       ))}
-    </select>
+    </Select>
   )
 }
 

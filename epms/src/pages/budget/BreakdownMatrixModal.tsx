@@ -25,6 +25,7 @@ import { useFactors, useReplaceBreakdowns, useBaseline } from '@/hooks/useBudget
 import type { ApiBreakdown, ApiFactor, ApiFactorValue } from '@/services/budget'
 import { spreadEvenly, spreadProportional, spreadFill } from './spreadUtils'
 
+import { Checkbox, Input, TBody, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
 const MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const MAX_FACTORS_IN_MATRIX = 3
 
@@ -573,15 +574,15 @@ export function BreakdownMatrixModal({
             {editable && (
               <>
                 <div className="relative">
-                  <button
+                  <Button variant="secondary" size="xs"
                     type="button"
                     onClick={() => setSpreadOpen((v) => !v)}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-2.5 py-1 text-xs font-medium text-fg-secondary hover:bg-surface-subtle"
+                   
                     title="Distribute a value across row, column, or all cells"
                   >
                     <Sparkles className="h-3.5 w-3.5" /> Spread
                     <ChevronDown className="h-3 w-3" />
-                  </button>
+                  </Button>
                   {spreadOpen && (
                     <SpreadMenu
                       onClose={() => setSpreadOpen(false)}
@@ -592,50 +593,50 @@ export function BreakdownMatrixModal({
                   )}
                 </div>
                 {baseline?.last_year_breakdowns?.length ? (
-                  <button
+                  <Button variant="secondary" size="xs"
                     type="button"
                     onClick={handleCopyFromLastYear}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-2.5 py-1 text-xs font-medium text-fg-secondary hover:bg-surface-subtle"
+                   
                     title="Replace matrix with last year same-month breakdowns"
                   >
                     <Copy className="h-3.5 w-3.5" /> Copy Last Year
-                  </button>
+                  </Button>
                 ) : null}
-                <button
+                <Button variant="secondary" size="xs"
                   type="button"
                   onClick={undo}
                   disabled={!canUndo}
-                  className="inline-flex items-center gap-1 rounded-md border border-line-strong bg-surface px-2 py-1 text-xs font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-40"
+                 
                   title={`Undo (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Z)`}
                 >
                   <Undo2 className="h-3.5 w-3.5" />
-                </button>
-                <button
+                </Button>
+                <Button variant="secondary" size="xs"
                   type="button"
                   onClick={redo}
                   disabled={!canRedo}
-                  className="inline-flex items-center gap-1 rounded-md border border-line-strong bg-surface px-2 py-1 text-xs font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-40"
+                 
                   title={`Redo (${navigator.platform.includes('Mac') ? '⌘⇧' : 'Ctrl+Shift'}+Z)`}
                 >
                   <Redo2 className="h-3.5 w-3.5" />
-                </button>
-                <button
+                </Button>
+                <Button variant="secondary" size="xs"
                   type="button"
                   onClick={handleReset}
                   disabled={netChange === 0}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-2.5 py-1 text-xs font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-40"
+                 
                   title="Discard unsaved edits"
                 >
                   <RotateCcw className="h-3.5 w-3.5" /> Reset
-                </button>
+                </Button>
               </>
             )}
             <label className="inline-flex items-center gap-1.5 text-2xs text-fg-secondary cursor-pointer select-none">
-              <input
-                type="checkbox"
+              <Checkbox
+               
                 checked={showInactive}
                 onChange={(e) => setShowInactive(e.target.checked)}
-                className="accent-primary-600 h-3 w-3"
+               
               />
               Show inactive
             </label>
@@ -755,9 +756,9 @@ function ModalShell({
             <h3 className="text-sm font-semibold text-fg">{title}</h3>
             <p className="text-xs text-fg-muted mt-0.5">{subtitle}</p>
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-surface-sunken">
+          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
         {children}
       </div>
@@ -799,44 +800,44 @@ function MatrixTable(props: MatrixTableProps) {
   } = props
 
   return (
-    <table className="min-w-full border-collapse text-xs">
-      <thead className="sticky top-0 bg-surface-subtle z-10">
+    <Table density="compact" className="min-w-full">
+      <THead className="sticky top-0 z-10">
         {/* Top header row (only when 3 factors → col group labels) */}
         {subColFactor && (
-          <tr>
-            <th className="sticky left-0 bg-surface-subtle border-b border-r border-line px-3 py-2 text-left text-2xs font-semibold text-fg-secondary" />
+          <Tr>
+            <Th className="sticky left-0 bg-surface-subtle border-b border-r border-line" />
             {colValues.map((cv) => (
-              <th
+              <Th align="center"
                 key={cv.id}
                 colSpan={subColValues.length + 1}
-                className="border-b border-r border-line px-2 py-2 text-center text-2xs font-semibold text-fg-secondary bg-surface-sunken"
+                className="border-b border-r border-line bg-surface-sunken"
               >
                 {colFactor!.factor_name}: {cv.value_name}
                 {!cv.is_active && <span className="ml-1 text-fg-muted line-through">·</span>}
-              </th>
+              </Th>
             ))}
-            <th rowSpan={2} className="border-b border-line px-2 py-2 text-right text-2xs font-semibold text-primary-700 bg-primary-50 align-bottom">
+            <Th align="right" rowSpan={2} className="border-b border-line text-primary-700 bg-primary-50">
               Row Total
-            </th>
-          </tr>
+            </Th>
+          </Tr>
         )}
 
         {/* Leaf header row */}
-        <tr>
-          <th className="sticky left-0 bg-surface-subtle border-b border-r border-line px-3 py-2 text-left text-2xs font-semibold text-fg-secondary min-w-32">
+        <Tr>
+          <Th className="sticky left-0 bg-surface-subtle border-b border-r border-line min-w-32">
             {rowFactor.factor_name}
-          </th>
+          </Th>
           {leafCols.map((lc, i) => {
             if (lc.kind === 'amount') {
               return (
-                <th key={i} className="border-b border-r border-line px-2 py-2 text-right text-2xs font-semibold text-fg-secondary min-w-24">
+                <Th align="right" key={i} className="border-b border-r border-line min-w-24">
                   Amount
-                </th>
+                </Th>
               )
             }
             if (lc.kind === 'col') {
               return (
-                <th
+                <Th
                   key={i}
                   className={cn(
                     'border-b border-r border-line px-2 py-2 text-right text-2xs font-semibold text-fg-secondary min-w-24',
@@ -844,12 +845,12 @@ function MatrixTable(props: MatrixTableProps) {
                   )}
                 >
                   {colFactor!.factor_name}: {lc.col.value_name}
-                </th>
+                </Th>
               )
             }
             if (lc.kind === 'sub') {
               return (
-                <th
+                <Th
                   key={i}
                   className={cn(
                     'border-b border-r border-line px-2 py-2 text-right text-2xs font-semibold text-fg-secondary min-w-20',
@@ -857,32 +858,32 @@ function MatrixTable(props: MatrixTableProps) {
                   )}
                 >
                   {lc.sub.value_name}
-                </th>
+                </Th>
               )
             }
             return (
-              <th key={i} className="border-b border-r border-line px-2 py-2 text-right text-2xs font-semibold text-fg-secondary bg-surface-sunken">
+              <Th align="right" key={i} className="border-b border-r border-line bg-surface-sunken">
                 Sum
-              </th>
+              </Th>
             )
           })}
           {!subColFactor && (
-            <th className="border-b border-line px-2 py-2 text-right text-2xs font-semibold text-primary-700 bg-primary-50">
+            <Th align="right" className="border-b border-line text-primary-700 bg-primary-50">
               Row Total
-            </th>
+            </Th>
           )}
-        </tr>
-      </thead>
+        </Tr>
+      </THead>
 
-      <tbody>
+      <TBody>
         {rowValues.map((rv) => (
-          <tr key={rv.id} className={cn(!rv.is_active && 'opacity-50')}>
-            <td className={cn(
+          <Tr key={rv.id} className={cn(!rv.is_active && 'opacity-50')}>
+            <Td className={cn(
               'sticky left-0 bg-surface border-b border-r border-line px-3 py-1.5 text-left font-medium text-fg',
               !rv.is_active && 'line-through text-fg-muted',
             )}>
               {rv.value_name}
-            </td>
+            </Td>
             {leafCols.map((lc, i) => {
               if (lc.kind === 'amount') {
                 const combo = comboFor(rv, null, null)
@@ -935,64 +936,64 @@ function MatrixTable(props: MatrixTableProps) {
                 return c ? s + cellValue(c) : s
               }, 0)
               return (
-                <td key={i} className="border-b border-r border-line px-2 py-1.5 text-right font-mono text-xs bg-surface-subtle text-fg-secondary">
+                <Td align="right" key={i} className="border-b border-r border-line font-mono text-xs bg-surface-subtle text-fg-secondary">
                   {formatAmount(rowColSum, 'CAD')}
-                </td>
+                </Td>
               )
             })}
             {!subColFactor && (
-              <td className="border-b border-line px-2 py-1.5 text-right font-mono text-xs bg-primary-50 text-primary-800 font-semibold">
+              <Td align="right" className="border-b border-line font-mono text-xs bg-primary-50 text-primary-800 font-semibold">
                 {formatAmount(rowTotal(rv), 'CAD')}
-              </td>
+              </Td>
             )}
             {subColFactor && (
-              <td className="border-b border-line px-2 py-1.5 text-right font-mono text-xs bg-primary-50 text-primary-800 font-semibold">
+              <Td align="right" className="border-b border-line font-mono text-xs bg-primary-50 text-primary-800 font-semibold">
                 {formatAmount(rowTotal(rv), 'CAD')}
-              </td>
+              </Td>
             )}
-          </tr>
+          </Tr>
         ))}
 
         {/* Column total footer */}
-        <tr className="bg-surface-subtle">
-          <td className="sticky left-0 bg-surface-subtle border-t border-r border-line px-3 py-2 text-left text-2xs font-semibold uppercase tracking-wide text-fg-secondary">
+        <Tr className="bg-surface-subtle">
+          <Td className="sticky left-0 bg-surface-subtle border-t border-r border-line text-left text-2xs font-semibold text-fg-secondary">
             Total
-          </td>
+          </Td>
           {leafCols.map((lc, i) => {
             if (lc.kind === 'amount') {
               const total = rowValues.reduce((s, rv) => s + rowTotal(rv), 0)
               return (
-                <td key={i} className="border-t border-r border-line px-2 py-1.5 text-right font-mono text-xs bg-surface-sunken text-fg font-semibold">
+                <Td align="right" key={i} className="border-t border-r border-line font-mono text-xs bg-surface-sunken text-fg font-semibold">
                   {formatAmount(total, 'CAD')}
-                </td>
+                </Td>
               )
             }
             if (lc.kind === 'col') {
               return (
-                <td key={i} className="border-t border-r border-line px-2 py-1.5 text-right font-mono text-xs bg-surface-sunken text-fg font-semibold">
+                <Td align="right" key={i} className="border-t border-r border-line font-mono text-xs bg-surface-sunken text-fg font-semibold">
                   {formatAmount(colTotal(lc.col), 'CAD')}
-                </td>
+                </Td>
               )
             }
             if (lc.kind === 'sub') {
               return (
-                <td key={i} className="border-t border-r border-line px-2 py-1.5 text-right font-mono text-xs bg-surface-sunken text-fg font-semibold">
+                <Td align="right" key={i} className="border-t border-r border-line font-mono text-xs bg-surface-sunken text-fg font-semibold">
                   {formatAmount(subColTotal(lc.col, lc.sub), 'CAD')}
-                </td>
+                </Td>
               )
             }
             return (
-              <td key={i} className="border-t border-r border-line px-2 py-1.5 text-right font-mono text-xs bg-surface-strong text-fg font-semibold">
+              <Td align="right" key={i} className="border-t border-r border-line font-mono text-xs bg-surface-strong text-fg font-semibold">
                 {formatAmount(colTotal(lc.col), 'CAD')}
-              </td>
+              </Td>
             )
           })}
-          <td className="border-t border-line px-2 py-1.5 text-right font-mono text-xs bg-primary-100 text-primary-900 font-bold">
+          <Td align="right" className="border-t border-line font-mono text-xs bg-primary-100 text-primary-900 font-semibold">
             {formatAmount(grandTotal, 'CAD')}
-          </td>
-        </tr>
-      </tbody>
-    </table>
+          </Td>
+        </Tr>
+      </TBody>
+    </Table>
   )
 }
 
@@ -1027,22 +1028,22 @@ function EditableCell({
 
   if (!editable) {
     return (
-      <td className="relative border-b border-r border-line px-2 py-1.5 text-right font-mono text-xs text-fg-muted bg-surface-subtle">
+      <Td align="right" className="relative border-b border-r border-line font-mono text-xs text-fg-muted bg-surface-subtle">
         {noteIndicator}
         {value > 0 ? formatAmount(value, 'CAD') : '—'}
-      </td>
+      </Td>
     )
   }
 
   return (
-    <td
+    <Td
       className={cn(
         'relative border-b border-r border-line p-0',
         modified ? 'bg-warning-soft' : 'bg-surface',
       )}
     >
       {noteIndicator}
-      <input
+      <Input bare
         type="number"
         step="0.01"
         min="0"
@@ -1054,9 +1055,9 @@ function EditableCell({
           onChange(Number.isFinite(n) && n >= 0 ? n : 0)
         }}
         placeholder="0"
-        className="w-full text-right font-mono text-xs px-2 py-1.5 bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:bg-surface"
+        className="w-full text-right font-mono text-xs px-2 py-1.5 border-0 focus:ring-1 focus:ring-primary-500 focus:bg-surface"
       />
-    </td>
+    </Td>
   )
 }
 
@@ -1085,7 +1086,7 @@ function SpreadMenu({
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div className="absolute right-0 top-full mt-1 w-72 rounded-lg border border-line bg-surface shadow-lg z-50 p-3 flex flex-col gap-2.5">
         <div className="flex flex-col gap-1">
-          <label className="text-2xs uppercase tracking-wide text-fg-muted font-semibold">Scope</label>
+          <label className="text-2xs text-fg-muted font-semibold">Scope</label>
           <div className="grid grid-cols-3 gap-1">
             <ScopeBtn active={scope === 'row'} disabled={!hasFocus} onClick={() => setScope('row')}>Row</ScopeBtn>
             <ScopeBtn active={scope === 'col'} disabled={!hasFocus || !hasColAxis} onClick={() => setScope('col')}>Column</ScopeBtn>
@@ -1097,7 +1098,7 @@ function SpreadMenu({
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-2xs uppercase tracking-wide text-fg-muted font-semibold">Method</label>
+          <label className="text-2xs text-fg-muted font-semibold">Method</label>
           <div className="grid grid-cols-3 gap-1">
             <ScopeBtn active={method === 'evenly'} onClick={() => setMethod('evenly')}>Evenly</ScopeBtn>
             <ScopeBtn active={method === 'proportional'} onClick={() => setMethod('proportional')}>Proportional</ScopeBtn>
@@ -1111,15 +1112,15 @@ function SpreadMenu({
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-2xs uppercase tracking-wide text-fg-muted font-semibold">
+          <label className="text-2xs text-fg-muted font-semibold">
             {method === 'fill' ? 'Value per cell' : 'Target total'}
           </label>
-          <input
+          <Input inputSize="sm"
             type="number" step="0.01" min="0"
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="0.00"
-            className="h-8 text-xs rounded border border-line-strong px-2 font-mono"
+            className="font-mono"
             autoFocus
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit() } }}
           />
@@ -1204,7 +1205,7 @@ function BaselineSidebar({
     <aside className="w-64 shrink-0 border-l border-line bg-surface-subtle/60 overflow-y-auto">
       <div className="p-4 flex flex-col gap-4 text-xs">
         <div>
-          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-fg-muted mb-2">
+          <div className="flex items-center gap-1.5 text-2xs font-semibold text-fg-muted mb-2">
             <Info className="h-3 w-3" /> Reference
           </div>
         </div>
@@ -1247,11 +1248,11 @@ function BaselineSidebar({
                 {formatAmount(selectedValue, 'CAD')}
               </p>
               <div className="mt-2">
-                <label className="text-2xs uppercase tracking-wide text-fg-muted font-medium flex items-center gap-1 mb-1">
+                <label className="text-2xs text-fg-muted font-medium flex items-center gap-1 mb-1">
                   <MessageSquare className="h-3 w-3" /> Note
                 </label>
                 {editable ? (
-                  <textarea
+                  <Textarea
                     value={noteDraft}
                     onChange={(e) => setNoteDraft(e.target.value)}
                     onBlur={() => {
@@ -1261,7 +1262,7 @@ function BaselineSidebar({
                     }}
                     placeholder="Add a note for this cell…"
                     rows={3}
-                    className="w-full text-2xs rounded border border-line-strong bg-surface px-1.5 py-1 resize-y focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    className="w-full resize-y"
                   />
                 ) : (
                   <p className="text-2xs text-fg-secondary whitespace-pre-wrap">
@@ -1274,7 +1275,7 @@ function BaselineSidebar({
         </Section>
 
         <Section label="Matrix total">
-          <p className="font-mono text-sm font-bold text-primary-800">
+          <p className="font-mono text-sm font-semibold text-primary-800">
             {formatAmount(grandTotal, 'CAD')}
           </p>
           <p className="text-2xs text-fg-muted mt-0.5">
@@ -1289,7 +1290,7 @@ function BaselineSidebar({
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="text-2xs uppercase tracking-wide text-fg-muted font-medium mb-1">{label}</p>
+      <p className="text-2xs text-fg-muted font-medium mb-1">{label}</p>
       {children}
     </div>
   )

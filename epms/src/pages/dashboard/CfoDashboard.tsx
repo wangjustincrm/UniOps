@@ -4,7 +4,7 @@ import { useDashboard } from '@/hooks/useDashboard'
 import { formatAmount } from '@/lib/utils'
 import { useConfig } from '@/hooks/useConfig'
 import { cn } from '@/lib/utils'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr } from '@uniops/shell'
 
 export default function CfoDashboard() {
   const { data } = useDashboard()
@@ -26,7 +26,7 @@ export default function CfoDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-fg">CFO Dashboard</h1>
+      <h1 className="text-2xl font-semibold text-fg">CFO Dashboard</h1>
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -51,45 +51,45 @@ export default function CfoDashboard() {
               <Link to="/budget" className="text-xs text-primary-600 hover:underline">Full Dashboard →</Link>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-line-subtle text-left">
+              <Table density="compact">
+                <THead>
+                  <Tr className="text-left">
                     <SortTh label="Group" sortKey="l1_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                     <SortTh label="Budget" sortKey="annual_budget" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
                     <SortTh label="Committed" sortKey="committed" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
                     <SortTh label="Spent" sortKey="actual_spent" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
                     <SortTh label="Available" sortKey="available" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
                     <SortTh label="Utilisation" sortKey="utilisation_pct" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted w-24" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line-subtle">
+                  </Tr>
+                </THead>
+                <TBody>
                   {groupRows.map((row) => {
                     const pct = row.utilisation_pct
                     const barColor = pct >= redThresholdPct ? 'bg-danger-solid' : pct >= yellowThresholdPct ? 'bg-warning-solid' : 'bg-success-solid'
                     const pctColor = pct >= redThresholdPct ? 'text-danger-fg' : pct >= yellowThresholdPct ? 'text-warning-fg' : 'text-success-fg'
                     const available = Number(row.available)
                     return (
-                      <tr key={row.l1_code} className="hover:bg-surface-subtle">
-                        <td className="py-2.5 pr-3 font-medium text-fg">{row.l1_name}</td>
-                        <td className="py-2.5 pr-3 text-right font-mono text-fg-secondary">{formatAmount(Number(row.annual_budget), 'CAD')}</td>
-                        <td className="py-2.5 pr-3 text-right font-mono text-fg-secondary">{formatAmount(Number(row.committed), 'CAD')}</td>
-                        <td className="py-2.5 pr-3 text-right font-mono text-fg-secondary">{formatAmount(Number(row.actual_spent), 'CAD')}</td>
-                        <td className={cn('py-2.5 pr-3 text-right font-mono', available < 0 ? 'text-danger-fg' : 'text-fg-secondary')}>
+                      <Tr key={row.l1_code} className="hover:bg-surface-subtle">
+                        <Td className="pr-3 font-medium text-fg">{row.l1_name}</Td>
+                        <Td align="right" className="pr-3 font-mono text-fg-secondary">{formatAmount(Number(row.annual_budget), 'CAD')}</Td>
+                        <Td align="right" className="pr-3 font-mono text-fg-secondary">{formatAmount(Number(row.committed), 'CAD')}</Td>
+                        <Td align="right" className="pr-3 font-mono text-fg-secondary">{formatAmount(Number(row.actual_spent), 'CAD')}</Td>
+                        <Td className={cn('py-2.5 pr-3 text-right font-mono', available < 0 ? 'text-danger-fg' : 'text-fg-secondary')}>
                           {formatAmount(available, 'CAD')}
-                        </td>
-                        <td className="py-2.5">
+                        </Td>
+                        <Td>
                           <div className="flex items-center gap-2">
                             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-strong">
                               <div className={cn('h-full rounded-full transition-all', barColor)} style={{ width: `${Math.min(pct, 100)}%` }} />
                             </div>
                             <span className={cn('w-8 text-right text-xs font-semibold', pctColor)}>{pct}%</span>
                           </div>
-                        </td>
-                      </tr>
+                        </Td>
+                      </Tr>
                     )
                   })}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
           </div>
         </div>

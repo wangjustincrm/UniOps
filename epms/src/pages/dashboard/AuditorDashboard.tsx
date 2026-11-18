@@ -31,7 +31,7 @@ export default function AuditorDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-fg">Auditor Dashboard</h1>
+      <h1 className="text-2xl font-semibold text-fg">Auditor Dashboard</h1>
       <p className="text-sm text-fg-muted">Read-only overview of all procurement documents and statuses.</p>
 
       {/* Stats bar */}

@@ -3,6 +3,7 @@ import { useBudgetOverview } from '@/hooks/useBudget'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import type { ApiBudgetL1 } from '@/services/budget'
 
+import { Select } from '@uniops/shell'
 /**
  * The same Cost Center → L1 Category → L2 Sub-account cascade PrCreatePage
  * uses (see epms/src/pages/pr/PrCreatePage.tsx), lifted into a props-driven
@@ -96,7 +97,7 @@ export function BudgetAccountCascade(props: {
   return (
     <div className="flex flex-col gap-2">
       {/* Step 1: Cost Center */}
-      <select
+      <Select
         value={selectedCostCenterCode}
         onChange={(e) => {
           const code = e.target.value
@@ -106,15 +107,15 @@ export function BudgetAccountCascade(props: {
           onChange({ costCenterId: cc?.id, budgetCode: '' })
         }}
         disabled={disabled || !departmentId}
-        className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
+       
       >
         <option value="">Select Cost Center…</option>
         {costCenters.map((cc) => (
           <option key={cc.id} value={cc.code}>{cc.name}</option>
         ))}
-      </select>
+      </Select>
       {/* Step 2: L1 Category (scoped to cost center) */}
-      <select
+      <Select
         value={selectedL1}
         onChange={(e) => {
           const code = e.target.value
@@ -123,13 +124,13 @@ export function BudgetAccountCascade(props: {
           onChange({ costCenterId, budgetCode: '' })
         }}
         disabled={disabled || !selectedCostCenterCode}
-        className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
+       
       >
         <option value="">Select L1 Category…</option>
         {ccL1Groups.map((l1) => (
           <option key={l1.id} value={l1.code}>{l1.name}</option>
         ))}
-      </select>
+      </Select>
       {budgetError && (
         <p className="text-xs text-danger-fg">
           Couldn't load the budget categories — the budget service is unreachable. This is not
@@ -137,17 +138,17 @@ export function BudgetAccountCascade(props: {
         </p>
       )}
       {/* Step 3: L2 Account */}
-      <select
+      <Select
         value={budgetCode}
         onChange={(e) => onChange({ costCenterId, budgetCode: e.target.value })}
         disabled={disabled || !selectedL1}
-        className="h-10 rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
+       
       >
         <option value="">Select L2 Sub-account…</option>
         {ccL2Accounts.map((l2) => (
           <option key={l2.id} value={l2.code}>{l2.code} — {l2.name}</option>
         ))}
-      </select>
+      </Select>
     </div>
   )
 }

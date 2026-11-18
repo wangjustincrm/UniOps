@@ -49,7 +49,7 @@ export default function FreightPage() {
   return (
     <div className="flex flex-col gap-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold text-fg">Freight</h1>
+        <h1 className="text-2xl font-semibold text-fg">Freight</h1>
         <p className="text-sm text-fg-muted mt-0.5">
           Register courier shipments and maintain carriers — courier invoices are uploaded and matched on the Invoices page, and paid from the PA page
         </p>

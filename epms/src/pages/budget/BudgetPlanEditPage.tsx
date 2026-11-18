@@ -29,6 +29,7 @@ import type { DocumentStatus } from '@/types'
 import { BreakdownMatrixModal } from './BreakdownMatrixModal'
 import { ActionMessage, useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
+import { FileInput, Input, Textarea } from '@uniops/shell'
 const MONTHS = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
@@ -245,18 +246,18 @@ export default function BudgetPlanEditPage() {
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-bold text-fg">Budget Plan FY {plan.fiscal_year}</h1>
+              <h1 className="text-xl font-semibold text-fg">Budget Plan FY {plan.fiscal_year}</h1>
               <StatusBadge status={plan.status as DocumentStatus} />
               <span className="inline-flex items-center gap-1 rounded-md border border-line bg-surface-subtle px-2 py-0.5 text-2xs font-mono text-fg-secondary">
                 <GitBranch className="h-3 w-3" />
                 v{plan.version}
               </span>
               {plan.is_current ? (
-                <span className="rounded-full bg-primary-50 text-primary-700 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide">
+                <span className="rounded-full bg-primary-50 text-primary-700 px-2 py-0.5 text-2xs font-semibold">
                   Current
                 </span>
               ) : plan.status === 'approved' ? (
-                <span className="rounded-full bg-surface-sunken text-fg-muted px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide">
+                <span className="rounded-full bg-surface-sunken text-fg-muted px-2 py-0.5 text-2xs font-semibold">
                   Superseded
                 </span>
               ) : null}
@@ -313,8 +314,8 @@ export default function BudgetPlanEditPage() {
                   <Upload className="h-3.5 w-3.5" />
                   {importMut.isPending ? 'Importing…' : 'Import CSV'}
                 </Button>
-                <input
-                  ref={importInputRef} type="file" accept=".csv,text/csv"
+                <FileInput
+                  ref={importInputRef} accept=".csv,text/csv"
                   className="hidden" onChange={handleImportFile}
                 />
               </>
@@ -420,7 +421,7 @@ export default function BudgetPlanEditPage() {
 
             {/* Sticky header */}
             <div
-              className="sticky top-0 z-20 grid items-center text-xs font-semibold text-fg-muted uppercase tracking-wide border-b border-line bg-surface-subtle"
+              className="sticky top-0 z-20 grid items-center text-xs font-semibold text-fg-muted border-b border-line bg-surface-subtle"
               style={{ gridTemplateColumns: GRID_COLS, height: HEADER_HEIGHT }}
             >
               <div className="px-3 text-left sticky left-0 bg-surface-subtle z-10">Account</div>
@@ -521,7 +522,7 @@ function TotalsRow({
       className="sticky bottom-0 z-20 grid items-center border-t-2 border-line-strong bg-surface-sunken font-semibold text-fg"
       style={{ gridTemplateColumns: GRID_COLS, height: ROW_HEIGHT }}
     >
-      <div className="sticky left-0 bg-surface-sunken px-3 z-10 text-sm uppercase tracking-wide text-fg-secondary">
+      <div className="sticky left-0 bg-surface-sunken px-3 z-10 text-sm text-fg-secondary">
         Total
       </div>
       {Array.from({ length: 12 }, (_, idx) => {
@@ -568,14 +569,14 @@ function AccountRow({ planId, row, editable, onOpenBreakdown }: AccountRowProps)
       {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
         <div key={m} className="text-right h-full flex items-center justify-end">
           {row.decomposition_enabled ? (
-            <button
+            <Button variant="subtle" size="xs"
               onClick={() => onOpenBreakdown(m)}
-              className="w-full text-right font-mono text-xs text-fg-secondary hover:bg-primary-50 rounded px-1.5 py-1 flex items-center justify-end gap-1"
+              className="w-full justify-end text-right font-mono"
               title="Edit factor breakdowns"
             >
               <Lock className="h-3 w-3 text-fg-faint shrink-0" />
               {formatAmount(row.months[m] ?? 0, 'CAD')}
-            </button>
+            </Button>
           ) : (
             <CellInput
               planId={planId}
@@ -651,13 +652,13 @@ function CellInput({
   }
 
   return (
-    <input
+    <Input inputSize="sm"
       type="number" step="0.01" min="0"
       value={local}
       onChange={(e) => setLocal(e.target.value)}
       onBlur={handleBlur}
       placeholder="0"
-      className="w-full text-right font-mono text-xs px-1.5 py-1 rounded border border-transparent hover:border-line focus:border-primary-600 focus:outline-none focus:bg-surface"
+      className="w-full text-right font-mono"
     />
   )
 }
@@ -682,7 +683,7 @@ function ReviseModal({
       <div className="bg-surface rounded-xl shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-line">
           <h3 className="text-sm font-semibold">Revise Approved Plan</h3>
-          <button onClick={onClose} className="p-1 rounded hover:bg-surface-sunken"><X className="h-4 w-4" /></button>
+          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}><X className="h-4 w-4" /></Button>
         </div>
         <div className="flex flex-col gap-4 p-5">
           <p className="text-sm text-fg-secondary">
@@ -692,12 +693,12 @@ function ReviseModal({
           </p>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Reason for revision</label>
-            <textarea
+            <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="e.g. Mid-year reallocation per CFO directive"
               rows={3}
-              className="rounded-md border border-line-strong px-3 py-2 text-sm"
+             
             />
             <p className="text-2xs text-fg-muted">
               Stored as <code>revision_notes</code> on the new draft. Visible on the version history.
@@ -740,7 +741,7 @@ function VersionHistoryDrawer({
             <History className="h-4 w-4 text-fg-muted" />
             <h3 className="text-sm font-semibold">Version History — FY {fiscalYear}</h3>
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-surface-sunken"><X className="h-4 w-4" /></button>
+          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}><X className="h-4 w-4" /></Button>
         </header>
         <div className="flex flex-col gap-2 p-4">
           {isLoading ? (
@@ -767,12 +768,12 @@ function VersionHistoryDrawer({
                       <span className="font-mono text-sm font-semibold">v{v.version}</span>
                       <StatusBadge status={v.status as DocumentStatus} />
                       {v.is_current && (
-                        <span className="rounded-full bg-primary-100 text-primary-700 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide">
+                        <span className="rounded-full bg-primary-100 text-primary-700 px-2 py-0.5 text-2xs font-semibold">
                           Current
                         </span>
                       )}
                       {isViewing && (
-                        <span className="rounded-full bg-warning-soft text-warning-fg px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide">
+                        <span className="rounded-full bg-warning-soft text-warning-fg px-2 py-0.5 text-2xs font-semibold">
                           Viewing
                         </span>
                       )}
@@ -835,9 +836,9 @@ function ImportResultBanner({
           </ul>
         )}
       </div>
-      <button onClick={onClose} className="p-1 rounded hover:bg-black/5">
+      <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
         <X className="h-4 w-4" />
-      </button>
+      </Button>
     </div>
   )
 }

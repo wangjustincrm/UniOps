@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Plus, X, Save, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, statusLabel } from '@/components/ui/badge'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, Select, TBody, THead, Table, Textarea, Tr } from '@uniops/shell'
 import { cn, formatDate, todayISO } from '@/lib/utils'
 import { usePlans, useCreatePlan, useDeletePlan, useAvailableFiscalYears } from '@/hooks/useBudget'
 import { useCostCenters } from '@/hooks/useCostCenters'
@@ -100,7 +100,7 @@ export default function BudgetPlanListPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-fg">Budget Plans</h1>
+          <h1 className="text-2xl font-semibold text-fg">Budget Plans</h1>
           <p className="text-sm text-fg-muted mt-0.5">
             Annual budget plans per Cost Center · Fiscal Year
           </p>
@@ -114,26 +114,26 @@ export default function BudgetPlanListPage() {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
-        <select value={filterYear} onChange={(e) => setFilterYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-          className="h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm">
+        <Select selectSize="sm" value={filterYear} onChange={(e) => setFilterYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+         >
           <option value="all">All Years</option>
           {yearOptions.map((y) => <option key={y} value={y}>FY {y}</option>)}
-        </select>
-        <select value={filterCcId} onChange={(e) => setFilterCcId(e.target.value)}
-          className="h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm">
+        </Select>
+        <Select selectSize="sm" value={filterCcId} onChange={(e) => setFilterCcId(e.target.value)}
+         >
           <option value="all">All Cost Centers</option>
           {costCenters.map((cc) => <option key={cc.id} value={cc.id}>{cc.code} — {cc.name}</option>)}
-        </select>
-        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
-          className="h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm">
+        </Select>
+        <Select selectSize="sm" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
+         >
           {STATUS_FILTER.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
+        </Select>
         <label className="ml-auto flex items-center gap-2 text-xs text-fg-secondary cursor-pointer select-none">
-          <input
-            type="checkbox"
+          <Checkbox
+           
             checked={includeHistory}
             onChange={(e) => setIncludeHistory(e.target.checked)}
-            className="accent-primary-600"
+           
           />
           Show superseded versions
         </label>
@@ -141,9 +141,9 @@ export default function BudgetPlanListPage() {
 
       {/* Plans table */}
       <div className="rounded-xl border border-line bg-surface overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-surface-subtle border-b border-line">
-            <tr>
+        <Table>
+          <THead>
+            <Tr>
               <SortTh label="Cost Center" sortKey="cost_center" sort={sort} onSort={onSort} className={TH_CLASS} />
               <SortTh label="Fiscal Year" sortKey="fiscal_year" sort={sort} onSort={onSort} className={TH_CLASS} />
               <SortTh label="Version" sortKey="version" sort={sort} onSort={onSort} className={TH_CLASS} />
@@ -152,19 +152,19 @@ export default function BudgetPlanListPage() {
               <SortTh label="Approved" sortKey="approved_at" sort={sort} onSort={onSort} className={TH_CLASS} />
               <SortTh label="Last Updated" sortKey="updated_at" sort={sort} onSort={onSort} className={TH_CLASS} />
               <Th className="w-24"></Th>
-            </tr>
-          </thead>
-          <tbody>
+            </Tr>
+          </THead>
+          <TBody>
             {isLoading ? (
-              <tr><td colSpan={8} className="py-12 text-center text-sm text-fg-muted">Loading…</td></tr>
+              <Tr><td colSpan={8} className="py-12 text-center text-sm text-fg-muted">Loading…</td></Tr>
             ) : shownPlans.length === 0 ? (
-              <tr><td colSpan={8} className="py-12 text-center text-sm text-fg-muted">No plans match the current filters</td></tr>
+              <Tr><td colSpan={8} className="py-12 text-center text-sm text-fg-muted">No plans match the current filters</td></Tr>
             ) : (
               shownPlans.map((p) => {
                 const cc = ccById.get(p.cost_center_id)
                 const isSuperseded = !p.is_current && p.status === 'approved'
                 return (
-                  <tr key={p.id}
+                  <Tr key={p.id}
                     className={cn(
                       'border-b border-line-subtle cursor-pointer',
                       isSuperseded ? 'bg-surface-subtle/60 text-fg-muted hover:bg-surface-sunken' : 'hover:bg-surface-subtle',
@@ -179,11 +179,11 @@ export default function BudgetPlanListPage() {
                     <Td>
                       <span className="font-mono text-xs">v{p.version}</span>
                       {p.is_current ? (
-                        <span className="ml-2 rounded-full bg-primary-50 text-primary-700 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide">
+                        <span className="ml-2 rounded-full bg-primary-50 text-primary-700 px-2 py-0.5 text-2xs font-semibold">
                           Current
                         </span>
                       ) : isSuperseded ? (
-                        <span className="ml-2 rounded-full bg-surface-sunken text-fg-muted px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide">
+                        <span className="ml-2 rounded-full bg-surface-sunken text-fg-muted px-2 py-0.5 text-2xs font-semibold">
                           Superseded
                         </span>
                       ) : null}
@@ -197,31 +197,31 @@ export default function BudgetPlanListPage() {
                     <Td className="text-right">
                       <div className="flex items-center justify-end gap-3">
                         {p.status === 'draft' && canCreate && (
-                          <button
+                          <Button variant="danger-ghost" size="icon-xs"
                             type="button"
                             onClick={(e) => handleDelete(
                               e, p.id,
                               `${cc?.code ?? p.cost_center_id} · FY ${p.fiscal_year} · v${p.version}`,
                             )}
                             disabled={deleteMut.isPending}
-                            className="text-fg-muted hover:text-danger-fg transition-colors disabled:opacity-40"
+                           
                             title="Delete draft"
                             aria-label="Delete draft plan"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          </Button>
                         )}
                         <Link to={`/budget/plans/${p.id}`} className="text-primary-600 hover:underline text-xs">
                           Open →
                         </Link>
                       </div>
                     </Td>
-                  </tr>
+                  </Tr>
                 )
               })
             )}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </div>
 
       {confirmDlg.dialog}
@@ -265,23 +265,23 @@ function CreatePlanModal({ onClose }: { onClose: () => void }) {
       <div className="bg-surface rounded-xl shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-line">
           <h3 className="text-sm font-semibold">New Budget Plan</h3>
-          <button onClick={onClose} className="p-1 rounded hover:bg-surface-sunken"><X className="h-4 w-4" /></button>
+          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}><X className="h-4 w-4" /></Button>
         </div>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 p-5">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Cost Center <span className="text-danger-fg">*</span></label>
-            <select value={ccId} onChange={(e) => setCcId(e.target.value)} required
-              className="h-10 rounded-md border border-line-strong px-3 text-sm">
+            <Select value={ccId} onChange={(e) => setCcId(e.target.value)} required
+             >
               <option value="">Select…</option>
               {costCenters.map((cc) => <option key={cc.id} value={cc.id}>{cc.code} — {cc.name}</option>)}
-            </select>
+            </Select>
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Fiscal Year <span className="text-danger-fg">*</span></label>
-            <select value={year} onChange={(e) => setYear(Number(e.target.value))}
-              className="h-10 rounded-md border border-line-strong px-3 text-sm">
+            <Select value={year} onChange={(e) => setYear(Number(e.target.value))}
+             >
               {yearOptions.map((y) => <option key={y} value={y}>FY {y}</option>)}
-            </select>
+            </Select>
             {yearOptions.length === 0 && (
               <p className="text-2xs text-warning-fg">
                 No fiscal years configured — ask an admin to add at least one year in Portal → Budget Config.
@@ -290,8 +290,8 @@ function CreatePlanModal({ onClose }: { onClose: () => void }) {
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Notes</label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
-              className="rounded-md border border-line-strong px-3 py-2 text-sm min-h-16" />
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+              className="min-h-16" />
           </div>
           {error && <p className="text-sm text-danger-fg">{error}</p>}
           <p className="text-xs text-fg-muted">
@@ -311,7 +311,7 @@ function CreatePlanModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-const TH_CLASS = 'text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-fg-muted'
+const TH_CLASS = 'text-left px-4 py-2.5 text-xs font-semibold text-fg-muted'
 
 function Th({ children, className }: { children?: React.ReactNode; className?: string }) {
   return <th className={cn(TH_CLASS, className)}>{children}</th>

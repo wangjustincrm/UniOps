@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { displayTimeZone, formatAmount, formatDate } from '@/lib/utils'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr } from '@uniops/shell'
 
 const INV_STATUS_STYLES: Record<string, string> = {
   unmatched: 'bg-warning-soft text-warning-fg',
@@ -38,7 +38,7 @@ export default function ApClerkDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-fg">AP Clerk Dashboard</h1>
+      <h1 className="text-2xl font-semibold text-fg">AP Clerk Dashboard</h1>
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -75,42 +75,42 @@ export default function ApClerkDashboard() {
               <p className="py-8 text-center text-sm text-fg-muted">No invoices yet.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-line-subtle text-left">
+                <Table density="compact">
+                  <THead>
+                    <Tr className="text-left">
                       <SortTh label="Invoice #" sortKey="internal_ref" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                       <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                       <SortTh label="PO #" sortKey="po_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                       <SortTh label="Amount" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
                       <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                       <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line-subtle">
+                    </Tr>
+                  </THead>
+                  <TBody>
                     {recentInvoices.map((inv) => (
-                      <tr key={inv.id} className="hover:bg-surface-subtle">
-                        <td className="py-2 pr-3">
+                      <Tr key={inv.id} className="hover:bg-surface-subtle">
+                        <Td className="pr-3">
                           <Link to={`/invoices/${inv.id}`} className="font-mono text-xs text-primary-600 hover:underline">
                             {inv.internal_ref}
                           </Link>
-                        </td>
-                        <td className="py-2 pr-3 max-w-[140px] truncate text-fg-secondary">{inv.vendor_name}</td>
-                        <td className="py-2 pr-3">
+                        </Td>
+                        <Td className="pr-3 max-w-[140px] truncate text-fg-secondary">{inv.vendor_name}</Td>
+                        <Td className="pr-3">
                           {inv.po_number ? (
                             <span className="font-mono text-xs text-fg-secondary">{inv.po_number}</span>
                           ) : (
                             <span className="text-xs text-fg-muted">—</span>
                           )}
-                        </td>
-                        <td className="py-2 pr-3 text-right font-mono text-fg">
+                        </Td>
+                        <Td align="right" className="pr-3 font-mono text-fg">
                           {formatAmount(Number(inv.total_amount), inv.currency)}
-                        </td>
-                        <td className="py-2 pr-3"><InvoiceStatusBadge status={inv.status} /></td>
-                        <td className="py-2 text-fg-muted">{formatDate(inv.created_at)}</td>
-                      </tr>
+                        </Td>
+                        <Td className="pr-3"><InvoiceStatusBadge status={inv.status} /></Td>
+                        <Td className="text-fg-muted">{formatDate(inv.created_at)}</Td>
+                      </Tr>
                     ))}
-                  </tbody>
-                </table>
+                  </TBody>
+                </Table>
               </div>
             )}
           </div>

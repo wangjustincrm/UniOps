@@ -17,6 +17,7 @@ import { BUDGET_BASE } from '@/lib/api'
 import { FactorConfigPanel } from './FactorConfigPanel'
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
+import { Checkbox, FileInput, Textarea } from '@uniops/shell'
 const WRITE_ROLES = new Set(['system_admin', 'finance_manager', 'finance_bp'])
 
 export default function BudgetCatalogPage() {
@@ -85,25 +86,25 @@ export default function BudgetCatalogPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-fg">Budget Account Catalog</h1>
+          <h1 className="text-2xl font-semibold text-fg">Budget Account Catalog</h1>
           <p className="text-sm text-fg-muted mt-0.5">
             Shared L1/L2 account template — applies to all Cost Centers
           </p>
         </div>
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-2 text-sm text-fg-secondary">
-            <input
-              type="checkbox"
+            <Checkbox
+             
               checked={showInactive}
               onChange={(e) => setShowInactive(e.target.checked)}
-              className="h-4 w-4 rounded border-line-strong text-primary-600"
+             
             />
             Show inactive
           </label>
           {canEdit && (
             <>
-              <input
-                ref={fileInputRef} type="file" accept=".csv"
+              <FileInput
+                ref={fileInputRef} accept=".csv"
                 className="hidden" onChange={handleImportFile}
               />
               <Button variant="secondary" size="sm" onClick={handleImportClick} disabled={importBudget.isPending}>
@@ -148,7 +149,7 @@ export default function BudgetCatalogPage() {
           <div className="flex items-center justify-between px-4 py-3 border-b border-line">
             <h2 className="text-sm font-semibold text-fg">L1 Categories</h2>
             {canEdit && (
-              <Button size="icon-sm" variant="ghost" onClick={() => { setEditingL1(null); setShowL1Form(true) }} title="New L1">
+              <Button aria-label="New L1" size="icon-sm" variant="ghost" onClick={() => { setEditingL1(null); setShowL1Form(true) }} title="New L1">
                 <Plus className="h-4 w-4" />
               </Button>
             )}
@@ -207,19 +208,19 @@ export default function BudgetCatalogPage() {
                 </div>
                 {canEdit && (
                   <div className="flex items-center gap-1">
-                    <Button size="icon-sm" variant="ghost"
+                    <Button aria-label="Edit L1" size="icon-sm" variant="ghost"
                       onClick={() => { setEditingL1(selectedL1); setShowL1Form(true) }}
                       title="Edit L1"
                     >
                       <Edit2 className="h-4 w-4" />
                     </Button>
-                    <Button size="icon-sm" variant="ghost"
+                    <Button aria-label="New Account" size="icon-sm" variant="ghost"
                       onClick={() => { setEditingAccount(null); setShowAccountForm(true) }}
                       title="New Account"
                     >
                       <Plus className="h-4 w-4" />
                     </Button>
-                    <Button size="icon-sm" variant="ghost"
+                    <Button aria-label="Delete L1 (and all its accounts, if never referenced)" size="icon-sm" variant="ghost"
                       onClick={() => handleDeleteL1(selectedL1)} disabled={deleteL1Mut.isPending}
                       title="Delete L1 (and all its accounts, if never referenced)"
                     >
@@ -336,16 +337,16 @@ function AccountListRow({
         </div>
         {canEdit && (
           <div className="flex items-center gap-1 shrink-0 ml-2">
-            <Button size="icon-sm" variant="ghost" onClick={onEdit} title="Edit">
+            <Button aria-label="Edit" size="icon-sm" variant="ghost" onClick={onEdit} title="Edit">
               <Edit2 className="h-3.5 w-3.5" />
             </Button>
-            <Button
+            <Button aria-label={account.is_active ? 'Deactivate' : 'Activate'}
               size="icon-sm" variant="ghost" onClick={toggleActive} disabled={updateMut.isPending}
               title={account.is_active ? 'Deactivate' : 'Activate'}
             >
               <Power className={cn('h-3.5 w-3.5', !account.is_active && 'text-fg-muted')} />
             </Button>
-            <Button
+            <Button aria-label="Delete (only if never referenced)"
               size="icon-sm" variant="ghost" onClick={handleDelete} disabled={deleteMut.isPending}
               title="Delete (only if never referenced)"
             >
@@ -403,8 +404,8 @@ function L1FormModal({ existing, onClose }: { existing: ApiBudgetL1 | null; onCl
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Marketing" required />
         </Field>
         <Field label="Description">
-          <textarea value={description ?? ''} onChange={(e) => setDescription(e.target.value)}
-            className="w-full rounded-md border border-line-strong px-3 py-2 text-sm min-h-16 focus:outline-none focus:ring-2 focus:ring-primary-600" />
+          <Textarea value={description ?? ''} onChange={(e) => setDescription(e.target.value)}
+            className="w-full min-h-16" />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Sort order">
@@ -413,8 +414,8 @@ function L1FormModal({ existing, onClose }: { existing: ApiBudgetL1 | null; onCl
           {existing && (
             <Field label="Status">
               <label className="flex items-center gap-2 h-10">
-                <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)}
-                  className="h-4 w-4 rounded border-line-strong text-primary-600" />
+                <Checkbox checked={isActive} onChange={(e) => setIsActive(e.target.checked)}
+                  />
                 <span className="text-sm">Active</span>
               </label>
             </Field>
@@ -474,8 +475,8 @@ function AccountFormModal({
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Digital Advertising" required />
         </Field>
         <Field label="Description">
-          <textarea value={description ?? ''} onChange={(e) => setDescription(e.target.value)}
-            className="w-full rounded-md border border-line-strong px-3 py-2 text-sm min-h-16 focus:outline-none focus:ring-2 focus:ring-primary-600" />
+          <Textarea value={description ?? ''} onChange={(e) => setDescription(e.target.value)}
+            className="w-full min-h-16" />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Sort order">
@@ -483,8 +484,8 @@ function AccountFormModal({
           </Field>
           <Field label="Decomposition">
             <label className="flex items-center gap-2 h-10">
-              <input type="checkbox" checked={decomp} onChange={(e) => setDecomp(e.target.checked)}
-                className="h-4 w-4 rounded border-line-strong text-primary-600" />
+              <Checkbox checked={decomp} onChange={(e) => setDecomp(e.target.checked)}
+                />
               <span className="text-sm">Enable factor breakdown</span>
             </label>
           </Field>
@@ -492,8 +493,8 @@ function AccountFormModal({
         {existing && (
           <Field label="Status">
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)}
-                className="h-4 w-4 rounded border-line-strong text-primary-600" />
+              <Checkbox checked={isActive} onChange={(e) => setIsActive(e.target.checked)}
+                />
               <span className="text-sm">Active</span>
             </label>
           </Field>
@@ -513,9 +514,9 @@ function ModalShell({ title, onClose, children }: { title: string; onClose: () =
       <div className="bg-surface rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-line">
           <h3 className="text-sm font-semibold text-fg">{title}</h3>
-          <button onClick={onClose} className="p-1 rounded hover:bg-surface-sunken">
+          <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onClose}>
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
         {children}
       </div>

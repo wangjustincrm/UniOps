@@ -15,12 +15,12 @@ import type { ApiPart, CreatePartBody, UpdatePartBody } from '@/services/parts'
 import { useUomCodes } from '@/hooks/useUoms'
 import { useAuthStore } from '@/stores/auth.store'
 import { useRolePermissions } from '@/hooks/useConfig'
-import { SortTh, useSort, sortParams } from '@uniops/shell'
+import { SortTh, useSort, sortParams, FileInput, Radio, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 
 type PartSortKey =
   | 'code' | 'category' | 'name' | 'supplier' | 'supplier_part_no'
   | 'unit_price' | 'unit' | 'status'
-const PART_TH = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap'
+const PART_TH = 'px-4 py-3 text-left text-xs font-semibold text-fg-muted whitespace-nowrap'
 
 // ─── Part form ────────────────────────────────────────────────────────────────
 
@@ -99,22 +99,22 @@ function ImageUpload({ value, onChange }: ImageUploadProps) {
             <img src={value} alt="Part" className="h-full w-full object-contain p-1" />
           </div>
           <div className="flex flex-col gap-1.5">
-            <button
+            <Button variant="secondary" size="xs"
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-xs text-fg-secondary hover:bg-surface-subtle"
+             
             >
               <ImagePlus className="h-3.5 w-3.5" />
               Replace
-            </button>
-            <button
+            </Button>
+            <Button variant="danger-outline" size="xs"
               type="button"
               onClick={() => onChange(null)}
-              className="flex items-center gap-1.5 rounded-lg border border-danger-line bg-danger-soft px-3 py-1.5 text-xs text-danger-fg hover:bg-danger-100"
+             
             >
               <X className="h-3.5 w-3.5" />
               Remove
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
@@ -141,9 +141,9 @@ function ImageUpload({ value, onChange }: ImageUploadProps) {
         </div>
       )}
 
-      <input
+      <FileInput
         ref={fileRef}
-        type="file"
+       
         accept="image/*"
         className="hidden"
         onChange={(e) => {
@@ -208,7 +208,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
             <label className="text-xs font-medium text-fg-secondary">
               Part Code <span className="text-danger-fg">*</span>
             </label>
-            <input className={inputCls(errors.code)} value={form.code}
+            <Input className={inputCls(errors.code)} value={form.code}
               onChange={(e) => set('code', e.target.value)} placeholder="PART-0001" />
             {errors.code && <p className="text-xs text-danger-fg">{errors.code}</p>}
           </div>
@@ -218,7 +218,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
             <label className="text-xs font-medium text-fg-secondary">
               Category <span className="text-danger-fg">*</span>
             </label>
-            <input
+            <Input
               className={inputCls(errors.category)} list="cat-list"
               value={form.category} onChange={(e) => set('category', e.target.value)}
               placeholder="Bearings, Seals & Gaskets…"
@@ -234,7 +234,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
             <label className="text-xs font-medium text-fg-secondary">
               Part Name <span className="text-danger-fg">*</span>
             </label>
-            <input className={inputCls(errors.name)} value={form.name}
+            <Input className={inputCls(errors.name)} value={form.name}
               onChange={(e) => set('name', e.target.value)} placeholder="Ball Bearing 6205-2RS" />
             {errors.name && <p className="text-xs text-danger-fg">{errors.name}</p>}
           </div>
@@ -242,7 +242,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
           {/* Description */}
           <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-3">
             <label className="text-xs font-medium text-fg-secondary">Description</label>
-            <input className={inputCls()} value={form.description}
+            <Input className={inputCls()} value={form.description}
               onChange={(e) => set('description', e.target.value)}
               placeholder="Optional technical description" />
           </div>
@@ -252,7 +252,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
             <label className="text-xs font-medium text-fg-secondary">
               Supplier <span className="text-danger-fg">*</span>
             </label>
-            <input className={inputCls(errors.supplier)} value={form.supplier}
+            <Input className={inputCls(errors.supplier)} value={form.supplier}
               onChange={(e) => set('supplier', e.target.value)} placeholder="SKF Canada" />
             {errors.supplier && <p className="text-xs text-danger-fg">{errors.supplier}</p>}
           </div>
@@ -260,7 +260,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
           {/* Supplier Part No */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Supplier Part No.</label>
-            <input className={inputCls()} value={form.supplierPartNo}
+            <Input className={inputCls()} value={form.supplierPartNo}
               onChange={(e) => set('supplierPartNo', e.target.value)}
               placeholder="6205-2RS/C3" />
           </div>
@@ -268,7 +268,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
           {/* Supplier Item ID */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Supplier Item ID</label>
-            <input className={inputCls()} value={form.supplierItemId}
+            <Input className={inputCls()} value={form.supplierItemId}
               onChange={(e) => set('supplierItemId', e.target.value)}
               placeholder="e.g. Amazon ASIN: B00004RFRN" />
             <p className="text-2xs text-fg-muted">ASIN, McMaster #, Grainger ID, etc.</p>
@@ -281,7 +281,7 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-fg-muted">$</span>
-              <input
+              <Input
                 type="number" min="0" step="0.01"
                 className={cn(inputCls(errors.unitPrice), 'pl-6')}
                 value={form.unitPrice}
@@ -295,10 +295,10 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
           {/* Unit */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Unit (UOM)</label>
-            <select className={inputCls()} value={form.unit}
+            <Select className={inputCls()} value={form.unit}
               onChange={(e) => set('unit', e.target.value)}>
               {unitOptions.map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
+            </Select>
           </div>
 
           {/* Status */}
@@ -307,9 +307,9 @@ function PartForm({ form, categories, onChanges, onSave, onCancel, title, errors
             <div className="flex items-center gap-4 h-10">
               {[true, false].map((val) => (
                 <label key={String(val)} className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" checked={form.isActive === val}
+                  <Radio checked={form.isActive === val}
                     onChange={() => set('isActive', val)}
-                    className="accent-primary-600" />
+                    />
                   <span className="text-sm text-fg-secondary">{val ? 'Active' : 'Inactive'}</span>
                 </label>
               ))}
@@ -502,7 +502,7 @@ export default function PartsListPage() {
       {/* Page header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-fg">Parts Catalog</h1>
+          <h1 className="text-2xl font-semibold text-fg">Parts Catalog</h1>
           <p className="mt-0.5 text-sm text-fg-muted">
             {totalAll} total parts
           </p>
@@ -518,7 +518,7 @@ export default function PartsListPage() {
                 <Upload className="h-4 w-4" />
                 Import CSV
               </Button>
-              <input ref={csvImportRef} type="file" accept=".csv,text/csv" className="hidden"
+              <FileInput ref={csvImportRef} accept=".csv,text/csv" className="hidden"
                 onChange={handleCsvFile} />
               <Button onClick={openAdd} disabled={mode !== 'none'}>
                 <Plus className="h-4 w-4" />
@@ -534,9 +534,9 @@ export default function PartsListPage() {
         <div className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm bg-danger-soft border border-danger-line text-danger-fg">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>Import failed: {importError}</span>
-          <button onClick={() => setImportError(null)} className="ml-auto">
+          <Button aria-label="Dismiss" variant="subtle" size="icon-xs" onClick={() => setImportError(null)} className="ml-auto">
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       )}
 
@@ -553,9 +553,9 @@ export default function PartsListPage() {
             Imported <strong>{importResult.imported}</strong> parts successfully.
             {importResult.errors > 0 && ` ${importResult.errors} rows skipped (missing required fields).`}
           </span>
-          <button onClick={() => setImportResult(null)} className="ml-auto">
+          <Button aria-label="Dismiss" variant="subtle" size="icon-xs" onClick={() => setImportResult(null)} className="ml-auto">
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       )}
 
@@ -575,14 +575,14 @@ export default function PartsListPage() {
         </div>
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-fg-muted" />
-          <select
+          <Select
             value={catFilter}
             onChange={(e) => setCatAndReset(e.target.value)}
-            className="h-10 rounded-lg border border-line bg-surface-sunken px-3 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-600"
+           
           >
             <option value="all">All Categories</option>
             {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          </Select>
         </div>
       </div>
 
@@ -602,10 +602,10 @@ export default function PartsListPage() {
       {/* Table */}
       <div className="rounded-xl bg-surface shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line bg-surface-subtle">
-                <th className="w-12 px-3 py-3" />
+          <Table>
+            <THead>
+              <Tr className="bg-surface-subtle">
+                <Th className="w-12" />
                 <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className={PART_TH} />
                 <SortTh label="Category" sortKey="category" sort={sort} onSort={onSort} className={PART_TH} />
                 <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className={PART_TH} />
@@ -614,23 +614,23 @@ export default function PartsListPage() {
                 <SortTh label="Unit Price" sortKey="unit_price" sort={sort} onSort={onSort} className={PART_TH} />
                 <SortTh label="UOM" sortKey="unit" sort={sort} onSort={onSort} className={PART_TH} />
                 <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={PART_TH} />
-                <th className={PART_TH} />
-              </tr>
-            </thead>
-            <tbody>
+                <Th className={PART_TH} />
+              </Tr>
+            </THead>
+            <TBody>
               {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={10} className="py-16 text-center">
+                <Tr>
+                  <Td align="center" colSpan={10}>
                     <Package className="h-8 w-8 text-fg-faint mx-auto mb-3" />
                     <p className="text-sm font-medium text-fg-muted">No parts found</p>
                     <p className="text-xs text-fg-muted mt-1">
                       {search || catFilter !== 'all' ? 'Try adjusting your filters' : 'Add your first part to the catalog'}
                     </p>
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               )}
               {filtered.map((part, i) => (
-                <tr
+                <Tr
                   key={part.id}
                   className={cn(
                     'border-b border-line-subtle hover:bg-primary-50/40 transition-colors',
@@ -639,93 +639,93 @@ export default function PartsListPage() {
                   )}
                 >
                   {/* Thumbnail */}
-                  <td className="px-3 py-2.5">
+                  <Td>
                     <PartThumbnail src={part.image_data_url} size={36} />
-                  </td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td>
                     <span className="font-mono text-xs font-semibold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded">
                       {part.code}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 text-fg-muted whitespace-nowrap">{part.category}</td>
-                  <td className="px-4 py-3 text-fg font-medium max-w-52">
+                  </Td>
+                  <Td className="text-fg-muted whitespace-nowrap">{part.category}</Td>
+                  <Td className="text-fg font-medium max-w-52">
                     <p className="truncate">{part.name}</p>
                     {part.description && (
                       <p className="text-xs text-fg-muted truncate">{part.description}</p>
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-fg-secondary whitespace-nowrap">{part.supplier}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-fg-muted">{part.supplier_part_no || '—'}</td>
-                  <td className="px-4 py-3 font-mono text-sm text-fg text-right">
+                  </Td>
+                  <Td className="text-fg-secondary whitespace-nowrap">{part.supplier}</Td>
+                  <Td className="font-mono text-xs text-fg-muted">{part.supplier_part_no || '—'}</Td>
+                  <Td align="right" className="font-mono text-sm text-fg ">
                     {formatCAD(part.unit_price)}
-                  </td>
-                  <td className="px-4 py-3 text-fg-muted">{part.unit}</td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td className="text-fg-muted">{part.unit}</Td>
+                  <Td>
                     <span className={cn(
                       'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
                       part.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted'
                     )}>
                       {part.is_active ? '● Active' : '○ Inactive'}
                     </span>
-                  </td>
+                  </Td>
                   {canWrite && (
-                  <td className="px-4 py-3">
+                  <Td>
                     <div className="flex items-center justify-end gap-1">
                       {deleteConfirm === part.id ? (
                         <>
-                          <button onClick={() => { deletePart.mutate(part.id); setDeleteConfirm(null) }}
-                            className="flex h-7 w-7 items-center justify-center rounded text-danger-fg hover:bg-danger-soft"
+                          <Button aria-label="Confirm delete" variant="subtle" size="icon-xs" onClick={() => { deletePart.mutate(part.id); setDeleteConfirm(null) }}
+                            className="text-danger-fg hover:bg-danger-soft"
                             title="Confirm delete">
                             <Check className="h-3.5 w-3.5" />
-                          </button>
-                          <button onClick={() => setDeleteConfirm(null)}
-                            className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-surface-sunken"
+                          </Button>
+                          <Button aria-label="Cancel" variant="subtle" size="icon-xs" onClick={() => setDeleteConfirm(null)}
+                           
                             title="Cancel">
                             <X className="h-3.5 w-3.5" />
-                          </button>
+                          </Button>
                         </>
                       ) : (
                         <>
-                          <button onClick={() => { openEdit(part); setDeleteConfirm(null) }}
-                            className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-primary-50 hover:text-primary-600"
+                          <Button aria-label="Edit part" variant="subtle" size="icon-xs" onClick={() => { openEdit(part); setDeleteConfirm(null) }}
+                           
                             title="Edit part">
                             <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button onClick={() => { setDeleteConfirm(part.id); setMode('none') }}
-                            className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-danger-soft hover:text-danger-fg"
+                          </Button>
+                          <Button variant="danger-ghost" size="icon-xs" aria-label="Remove" onClick={() => { setDeleteConfirm(part.id); setMode('none') }}
+                           
                             title="Delete part">
                             <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          </Button>
                         </>
                       )}
                     </div>
-                  </td>
+                  </Td>
                   )}
-                </tr>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
         {/* Pagination footer */}
         <div className="flex items-center justify-between border-t border-line bg-surface-subtle px-4 py-2.5 text-xs text-fg-muted gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <span>Rows per page:</span>
-            <select
+            <Select selectSize="sm"
               value={pageSize}
               onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}
-              className="h-7 rounded border border-line bg-surface px-2 text-xs"
+             
             >
               {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
+            </Select>
             <span>
               {total === 0 ? '0' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)}`} of {total}
             </span>
           </div>
           <div className="flex items-center gap-1">
-            <button onClick={() => setPage(1)} disabled={page === 1}
-              className="flex h-7 w-7 items-center justify-center rounded hover:bg-surface-strong disabled:opacity-40">«</button>
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
-              className="flex h-7 w-7 items-center justify-center rounded hover:bg-surface-strong disabled:opacity-40">‹</button>
+            <Button variant="subtle" size="icon-xs" onClick={() => setPage(1)} disabled={page === 1}
+             >«</Button>
+            <Button variant="subtle" size="icon-xs" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
+             >‹</Button>
             {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
               const start = Math.max(1, Math.min(page - 2, totalPages - 4))
               const p = start + i
@@ -738,10 +738,10 @@ export default function PartsListPage() {
                 </button>
               )
             })}
-            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-              className="flex h-7 w-7 items-center justify-center rounded hover:bg-surface-strong disabled:opacity-40">›</button>
-            <button onClick={() => setPage(totalPages)} disabled={page === totalPages}
-              className="flex h-7 w-7 items-center justify-center rounded hover:bg-surface-strong disabled:opacity-40">»</button>
+            <Button variant="subtle" size="icon-xs" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+             >›</Button>
+            <Button variant="subtle" size="icon-xs" onClick={() => setPage(totalPages)} disabled={page === totalPages}
+             >»</Button>
           </div>
         </div>
       </div>

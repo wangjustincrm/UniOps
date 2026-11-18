@@ -19,7 +19,7 @@ import {
 import {
   CostCenterSelect, Modal, ProjectBadge, SELECT_CLS, ShipmentStatusBadge, TH_CLS, daysSince, errorMessage,
 } from './freightUi'
-import { SortTh, useSort, sortParams } from '@uniops/shell'
+import { SortTh, useSort, sortParams, Checkbox, FileInput, Radio, Select, TBody, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
 import { ShipmentAttachmentsPanel, StagedShipmentAttachments } from './ShipmentAttachments'
 import { useConfirmDialog, useNoticeDialog } from '@/components/ui/ConfirmDialog'
 
@@ -81,19 +81,19 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
               className="pl-9"
             />
           </div>
-          <select value={status} onChange={(e) => { setStatus(e.target.value as ShipmentStatus | 'all'); setPage(1) }} className={SELECT_CLS}>
+          <Select value={status} onChange={(e) => { setStatus(e.target.value as ShipmentStatus | 'all'); setPage(1) }} className={SELECT_CLS}>
             <option value="pending">Pending</option>
             <option value="billed">Billed</option>
             <option value="void">Void</option>
             <option value="all">All Statuses</option>
-          </select>
-          <select value={carrierId} onChange={(e) => { setCarrierId(e.target.value); setPage(1) }} className={SELECT_CLS}>
+          </Select>
+          <Select value={carrierId} onChange={(e) => { setCarrierId(e.target.value); setPage(1) }} className={SELECT_CLS}>
             <option value="">All Carriers</option>
             {carriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          </Select>
           {canManage && (
             <label className="flex items-center gap-2 text-sm text-fg-secondary">
-              <input type="checkbox" checked={mineOnly} onChange={(e) => { setMineOnly(e.target.checked); setPage(1) }} />
+              <Checkbox checked={mineOnly} onChange={(e) => { setMineOnly(e.target.checked); setPage(1) }} />
               Mine only
             </label>
           )}
@@ -118,9 +118,9 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-line-subtle bg-surface-subtle">
+            <Table density="compact">
+              <THead>
+                <Tr className="bg-surface-subtle">
                   <SortTh label="Carrier" sortKey="carrier" sort={sort} onSort={onSort} className={TH_CLS} />
                   <SortTh label="Tracking No" sortKey="tracking_no" sort={sort} onSort={onSort} className={TH_CLS} />
                   <SortTh label="Direction" sortKey="direction" sort={sort} onSort={onSort} className={TH_CLS} />
@@ -129,17 +129,17 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
                   <SortTh label="Registered" sortKey="created_at" sort={sort} onSort={onSort} className={TH_CLS} />
                   <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={TH_CLS} />
                   <SortTh label="Invoice" sortKey="invoice_number" sort={sort} onSort={onSort} className={TH_CLS} />
-                  <th className={TH_CLS} />
-                </tr>
-              </thead>
-              <tbody>
+                  <Th className={TH_CLS} />
+                </Tr>
+              </THead>
+              <TBody>
                 {rows.map((s) => {
                   const age = daysSince(s.created_at)
                   const stale = s.status === 'pending' && age > AGEING_DAYS
                   return (
-                    <tr key={s.id} className={cn('border-b border-line-subtle', stale ? 'bg-danger-50/60' : 'bg-surface')}>
-                      <td className="px-3 py-2.5 font-medium text-fg">{s.carrier_code ?? '—'}</td>
-                      <td className="px-3 py-2.5">
+                    <Tr key={s.id} className={cn('border-b border-line-subtle', stale ? 'bg-danger-50/60' : 'bg-surface')}>
+                      <Td className="font-medium text-fg">{s.carrier_code ?? '—'}</Td>
+                      <Td>
                         <span className="font-mono text-xs text-fg">{s.tracking_no}</span>
                         {s.attachment_count > 0 && (
                           <span className="ml-1.5 inline-flex items-center gap-0.5 text-2xs text-fg-muted"
@@ -150,9 +150,9 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
                         {s.source === 'from_invoice' && (
                           <div className="text-2xs text-fg-muted">Added from invoice</div>
                         )}
-                      </td>
-                      <td className="px-3 py-2.5 text-xs text-fg-secondary capitalize">{s.direction}</td>
-                      <td className="px-3 py-2.5 text-xs">
+                      </Td>
+                      <Td className="text-xs text-fg-secondary capitalize">{s.direction}</Td>
+                      <Td className="text-xs">
                         {s.is_project ? (
                           <>
                             <ProjectBadge />
@@ -168,21 +168,21 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
                             </div>
                           </>
                         )}
-                      </td>
-                      <td className="px-3 py-2.5 text-xs text-fg-secondary">{s.created_by_name ?? '—'}</td>
-                      <td className="px-3 py-2.5 text-xs text-fg-muted whitespace-nowrap">
+                      </Td>
+                      <Td className="text-xs text-fg-secondary">{s.created_by_name ?? '—'}</Td>
+                      <Td className="text-xs text-fg-muted whitespace-nowrap">
                         {formatDate(s.created_at)}
                         {stale && <div className="text-2xs font-medium text-danger-fg">{age} days, not billed yet</div>}
-                      </td>
-                      <td className="px-3 py-2.5"><ShipmentStatusBadge status={s.status} /></td>
-                      <td className="px-3 py-2.5 text-xs">
+                      </Td>
+                      <Td><ShipmentStatusBadge status={s.status} /></Td>
+                      <Td className="text-xs">
                         {s.invoice_id ? (
                           <Link to={`/invoices/${s.invoice_id}`} className="font-mono text-primary-700 hover:underline">
                             {s.invoice_number ?? 'Invoice'}
                           </Link>
                         ) : <span className="text-fg-faint">—</span>}
-                      </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap text-right">
+                      </Td>
+                      <Td align="right" className="whitespace-nowrap ">
                         <div className="inline-flex gap-1">
                           <Link
                             to={`/freight/shipments/${s.id}`}
@@ -191,12 +191,12 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
                             <Eye className="h-3.5 w-3.5" /> View
                           </Link>
                           {s.status === 'pending' && (<>
-                            <button
+                            <Button variant="ghost" size="xs"
                               onClick={() => setDialog({ mode: 'edit', shipment: s })}
-                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-primary-700 hover:bg-primary-50"
+                             
                             >
                               <Pencil className="h-3.5 w-3.5" /> Edit
-                            </button>
+                            </Button>
                             <button
                               onClick={() => handleVoid(s)}
                               disabled={voidShipment.isPending}
@@ -206,12 +206,12 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
                             </button>
                           </>)}
                         </div>
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                   )
                 })}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
         )}
 
@@ -453,10 +453,10 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
 
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Carrier *</label>
-          <select value={carrierId} onChange={(e) => setCarrierId(e.target.value)} disabled={isEdit} className={SELECT_CLS}>
+          <Select value={carrierId} onChange={(e) => setCarrierId(e.target.value)} disabled={isEdit} className={SELECT_CLS}>
             <option value="">Select carrier…</option>
             {activeCarriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          </Select>
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -464,7 +464,7 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
           <div className="flex gap-2">
             <Input ref={trackingInput} value={tracking} onChange={(e: ChangeEvent<HTMLInputElement>) => setTracking(e.target.value)}
               placeholder="e.g. 1Z999AA10123456784" className="font-mono flex-1" autoFocus />
-            <input ref={scanInput} type="file" accept="image/*,application/pdf" className="sr-only" onChange={handleScan} />
+            <FileInput ref={scanInput} accept="image/*,application/pdf" className="sr-only" onChange={handleScan} />
             <Button type="button" variant="secondary" onClick={() => scanInput.current?.click()} disabled={scanning} className="gap-1.5 shrink-0">
               {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />}
               {scanning ? 'Reading…' : 'Scan waybill'}
@@ -486,7 +486,7 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
         </div>
 
         <label className="flex items-start gap-2 text-sm text-fg-secondary">
-          <input type="checkbox" className="mt-0.5" checked={isProject}
+          <Checkbox className="mt-0.5" checked={isProject}
             onChange={(e) => setIsProject(e.target.checked)} />
           <span>
             Project related
@@ -499,19 +499,19 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
         {isProject ? (
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Project *</label>
-            <textarea rows={2} value={projectInfo} onChange={(e) => setProjectInfo(e.target.value)}
+            <Textarea rows={2} value={projectInfo} onChange={(e) => setProjectInfo(e.target.value)}
               maxLength={1000}
               placeholder="Project name / number, and what was sent for it"
-              className="w-full resize-none rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+              className="w-full resize-none" />
           </div>
         ) : (<>
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Department *</label>
-            <select value={departmentId} onChange={(e) => changeDepartment(e.target.value)} className={SELECT_CLS}>
+            <Select value={departmentId} onChange={(e) => changeDepartment(e.target.value)} className={SELECT_CLS}>
               <option value="">Select department…</option>
               {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
+            </Select>
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-fg-secondary">Cost center *</label>
@@ -535,7 +535,7 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
           <div className="flex gap-4 text-sm text-fg-secondary">
             {(['outbound', 'inbound'] as const).map((d) => (
               <label key={d} className="flex items-center gap-1.5">
-                <input type="radio" name="freight-direction" checked={direction === d} onChange={() => setDirection(d)} />
+                <Radio name="freight-direction" checked={direction === d} onChange={() => setDirection(d)} />
                 {d === 'outbound' ? 'Outbound (we send)' : 'Inbound (sent to us, we pay)'}
               </label>
             ))}
@@ -544,9 +544,9 @@ export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipmen
 
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Note</label>
-          <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)}
+          <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)}
             placeholder="What was sent, to whom (optional)"
-            className="w-full resize-none rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+            className="w-full resize-none" />
         </div>
 
         <div className="flex flex-col gap-1.5">

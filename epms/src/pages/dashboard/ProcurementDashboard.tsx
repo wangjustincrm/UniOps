@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { formatAmount, formatDate } from '@/lib/utils'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr } from '@uniops/shell'
 
 const PO_STATUS_STYLES: Record<string, string> = {
   draft:      'bg-surface-sunken text-fg-secondary',
@@ -37,7 +37,7 @@ export default function ProcurementDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-fg">Procurement Dashboard</h1>
+      <h1 className="text-2xl font-semibold text-fg">Procurement Dashboard</h1>
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -65,34 +65,34 @@ export default function ProcurementDashboard() {
               <p className="py-8 text-center text-sm text-fg-muted">No purchase orders yet.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-line-subtle text-left">
+                <Table density="compact">
+                  <THead>
+                    <Tr className="text-left">
                       <SortTh label="PO #" sortKey="number" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                       <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                       <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
                       <SortTh label="Amount" sortKey="total" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-fg-muted" />
                       <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="pb-2 font-medium text-fg-muted" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line-subtle">
+                    </Tr>
+                  </THead>
+                  <TBody>
                     {recentPos.map((po) => (
-                      <tr key={po.id} className="group hover:bg-surface-subtle">
-                        <td className="py-2 pr-3">
+                      <Tr key={po.id} className="group hover:bg-surface-subtle">
+                        <Td className="pr-3">
                           <Link to={`/po/${po.id}`} className="font-mono text-xs text-primary-600 hover:underline">
                             {po.number}
                           </Link>
-                        </td>
-                        <td className="py-2 pr-3 text-fg-secondary max-w-[140px] truncate">{po.title}</td>
-                        <td className="py-2 pr-3 text-fg-muted max-w-[120px] truncate">{po.vendor_name}</td>
-                        <td className="py-2 pr-3 text-right font-mono text-fg">
+                        </Td>
+                        <Td className="pr-3 text-fg-secondary max-w-[140px] truncate">{po.title}</Td>
+                        <Td className="pr-3 text-fg-muted max-w-[120px] truncate">{po.vendor_name}</Td>
+                        <Td align="right" className="pr-3 font-mono text-fg">
                           {formatAmount(Number(po.total), po.currency)}
-                        </td>
-                        <td className="py-2"><PoStatusBadge status={po.status} /></td>
-                      </tr>
+                        </Td>
+                        <Td><PoStatusBadge status={po.status} /></Td>
+                      </Tr>
                     ))}
-                  </tbody>
-                </table>
+                  </TBody>
+                </Table>
               </div>
             )}
           </div>

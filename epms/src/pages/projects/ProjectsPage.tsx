@@ -10,9 +10,9 @@ import { useProjects, useCreateProject, useUpdateProject } from '@/hooks/useProj
 import type { ApiProject, CreateProjectBody, UpdateProjectBody, ProjectStatus } from '@/services/projects'
 import { useAuthStore } from '@/stores/auth.store'
 import type { UserRole } from '@/types'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 
-const PROJECT_TH = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap'
+const PROJECT_TH = 'px-4 py-3 text-left text-xs font-semibold text-fg-muted whitespace-nowrap'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -133,9 +133,9 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
     <div className="rounded-xl border border-primary-200 bg-primary-50/60 p-5 mb-4">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-fg">{title}</h3>
-        <button onClick={onCancel} className="text-fg-muted hover:text-fg-secondary">
+        <Button aria-label="Close" variant="subtle" size="icon-xs" onClick={onCancel}>
           <X className="h-4 w-4" />
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -144,7 +144,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
           <label className="text-xs font-medium text-fg-secondary">
             Project Code <span className="text-danger-fg">*</span>
           </label>
-          <input
+          <Input
             className={inputCls(errors.code)}
             value={form.code}
             onChange={(e) => set('code', e.target.value)}
@@ -158,7 +158,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
           <label className="text-xs font-medium text-fg-secondary">
             Project Name <span className="text-danger-fg">*</span>
           </label>
-          <input
+          <Input
             className={inputCls(errors.name)}
             value={form.name}
             onChange={(e) => set('name', e.target.value)}
@@ -170,7 +170,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
         {/* Description */}
         <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-3">
           <label className="text-xs font-medium text-fg-secondary">Description</label>
-          <input
+          <Input
             className={inputCls()}
             value={form.description}
             onChange={(e) => set('description', e.target.value)}
@@ -183,7 +183,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
           <label className="text-xs font-medium text-fg-secondary">
             Owner Department <span className="text-danger-fg">*</span>
           </label>
-          <input
+          <Input
             className={inputCls(errors.ownerDept)}
             list="proj-dept-list"
             value={form.ownerDept}
@@ -203,7 +203,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
           <label className="text-xs font-medium text-fg-secondary">
             Project Manager <span className="text-danger-fg">*</span>
           </label>
-          <input
+          <Input
             className={inputCls(errors.managerName)}
             value={form.managerName}
             onChange={(e) => set('managerName', e.target.value)}
@@ -215,7 +215,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
         {/* Status */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Status</label>
-          <select
+          <Select
             className={inputCls()}
             value={form.status}
             onChange={(e) => set('status', e.target.value as ProjectStatus)}
@@ -223,7 +223,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
             <option value="active">Active</option>
             <option value="on_hold">On Hold</option>
             <option value="closed">Closed</option>
-          </select>
+          </Select>
         </div>
 
         {/* Budget */}
@@ -233,7 +233,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
           </label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-fg-muted">$</span>
-            <input
+            <Input
               type="number"
               min="0"
               step="0.01"
@@ -249,7 +249,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
         {/* Currency */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Currency</label>
-          <input
+          <Input
             className={inputCls()}
             list="proj-currency-list"
             value={form.currency}
@@ -269,7 +269,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
           <label className="text-xs font-medium text-fg-secondary">
             Start Date <span className="text-danger-fg">*</span>
           </label>
-          <input
+          <Input
             type="date"
             className={inputCls(errors.startDate)}
             value={form.startDate}
@@ -283,7 +283,7 @@ function ProjectForm({ form, onChange, onSave, onCancel, title, errors }: Projec
           <label className="text-xs font-medium text-fg-secondary">
             End Date <span className="text-danger-fg">*</span>
           </label>
-          <input
+          <Input
             type="date"
             className={inputCls(errors.endDate)}
             value={form.endDate}
@@ -432,7 +432,7 @@ export default function ProjectsPage() {
       {/* Page header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-fg">Projects</h1>
+          <h1 className="text-2xl font-semibold text-fg">Projects</h1>
           <p className="mt-0.5 text-sm text-fg-muted">
             Track and manage procurement projects and budgets
           </p>
@@ -448,20 +448,20 @@ export default function ProjectsPage() {
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-xl bg-surface shadow-sm px-4 py-3">
-          <p className="text-xs text-fg-muted font-medium uppercase tracking-wide">Total</p>
-          <p className="mt-1 text-2xl font-bold text-fg">{totalProjects}</p>
+          <p className="text-xs text-fg-muted font-medium">Total</p>
+          <p className="mt-1 text-2xl font-semibold text-fg">{totalProjects}</p>
         </div>
         <div className="rounded-xl bg-surface shadow-sm px-4 py-3">
-          <p className="text-xs text-fg-muted font-medium uppercase tracking-wide">Active</p>
-          <p className="mt-1 text-2xl font-bold text-success-fg">{activeProjects}</p>
+          <p className="text-xs text-fg-muted font-medium">Active</p>
+          <p className="mt-1 text-2xl font-semibold text-success-fg">{activeProjects}</p>
         </div>
         <div className="rounded-xl bg-surface shadow-sm px-4 py-3">
-          <p className="text-xs text-fg-muted font-medium uppercase tracking-wide">On Hold</p>
-          <p className="mt-1 text-2xl font-bold text-warning-fg">{onHoldProjects}</p>
+          <p className="text-xs text-fg-muted font-medium">On Hold</p>
+          <p className="mt-1 text-2xl font-semibold text-warning-fg">{onHoldProjects}</p>
         </div>
         <div className="rounded-xl bg-surface shadow-sm px-4 py-3">
-          <p className="text-xs text-fg-muted font-medium uppercase tracking-wide">Closed</p>
-          <p className="mt-1 text-2xl font-bold text-fg-muted">{closedProjects}</p>
+          <p className="text-xs text-fg-muted font-medium">Closed</p>
+          <p className="mt-1 text-2xl font-semibold text-fg-muted">{closedProjects}</p>
         </div>
       </div>
 
@@ -527,9 +527,9 @@ export default function ProjectsPage() {
       {/* Table */}
       <div className="rounded-xl bg-surface shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line bg-surface-subtle">
+          <Table>
+            <THead>
+              <Tr className="bg-surface-subtle">
                 <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className={PROJECT_TH} />
                 <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className={PROJECT_TH} />
                 <SortTh label="Department" sortKey="owner_dept" sort={sort} onSort={onSort} className={PROJECT_TH} />
@@ -538,13 +538,13 @@ export default function ProjectsPage() {
                 <SortTh label="Start" sortKey="start_date" sort={sort} onSort={onSort} className={PROJECT_TH} />
                 <SortTh label="End" sortKey="end_date" sort={sort} onSort={onSort} className={PROJECT_TH} />
                 <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={PROJECT_TH} />
-                {canWrite && <th className={PROJECT_TH} />}
-              </tr>
-            </thead>
-            <tbody>
+                {canWrite && <Th className={PROJECT_TH} />}
+              </Tr>
+            </THead>
+            <TBody>
               {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={canWrite ? 9 : 8} className="py-16 text-center">
+                <Tr>
+                  <Td align="center" colSpan={canWrite ? 9 : 8}>
                     <FolderKanban className="h-8 w-8 text-fg-faint mx-auto mb-3" />
                     <p className="text-sm font-medium text-fg-muted">No projects found</p>
                     <p className="text-xs text-fg-muted mt-1">
@@ -552,11 +552,11 @@ export default function ProjectsPage() {
                         ? 'Try adjusting your filters'
                         : 'Add your first project to get started'}
                     </p>
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               )}
               {sortedProjects.map((project, i) => (
-                <tr
+                <Tr
                   key={project.id}
                   className={cn(
                     'border-b border-line-subtle hover:bg-primary-50/40 transition-colors',
@@ -565,47 +565,47 @@ export default function ProjectsPage() {
                   )}
                 >
                   {/* Code */}
-                  <td className="px-4 py-3">
+                  <Td>
                     <span className="font-mono text-xs font-semibold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded">
                       {project.code}
                     </span>
-                  </td>
+                  </Td>
 
                   {/* Name */}
-                  <td className="px-4 py-3 text-fg font-medium max-w-52">
+                  <Td className="text-fg font-medium max-w-52">
                     <p className="truncate">{project.name}</p>
                     {project.description && (
                       <p className="text-xs text-fg-muted truncate">{project.description}</p>
                     )}
-                  </td>
+                  </Td>
 
                   {/* Department */}
-                  <td className="px-4 py-3 text-fg-muted whitespace-nowrap">
+                  <Td className="text-fg-muted whitespace-nowrap">
                     {project.owner_dept}
-                  </td>
+                  </Td>
 
                   {/* Manager */}
-                  <td className="px-4 py-3 text-fg-secondary whitespace-nowrap">
+                  <Td className="text-fg-secondary whitespace-nowrap">
                     {project.manager_name}
-                  </td>
+                  </Td>
 
                   {/* Budget */}
-                  <td className="px-4 py-3 font-mono text-sm text-fg text-right whitespace-nowrap">
+                  <Td align="right" className="font-mono text-sm text-fg whitespace-nowrap">
                     {formatAmount(project.budget, project.currency)}
-                  </td>
+                  </Td>
 
                   {/* Start Date */}
-                  <td className="px-4 py-3 text-fg-muted whitespace-nowrap">
+                  <Td className="text-fg-muted whitespace-nowrap">
                     {project.start_date ? formatDate(project.start_date) : '—'}
-                  </td>
+                  </Td>
 
                   {/* End Date */}
-                  <td className="px-4 py-3 text-fg-muted whitespace-nowrap">
+                  <Td className="text-fg-muted whitespace-nowrap">
                     {project.end_date ? formatDate(project.end_date) : '—'}
-                  </td>
+                  </Td>
 
                   {/* Status */}
-                  <td className="px-4 py-3">
+                  <Td>
                     <span
                       className={cn(
                         'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
@@ -614,65 +614,65 @@ export default function ProjectsPage() {
                     >
                       {STATUS_LABELS[project.status]}
                     </span>
-                  </td>
+                  </Td>
 
                   {/* Actions */}
                   {canWrite && (
-                    <td className="px-4 py-3">
+                    <Td>
                       <div className="flex items-center justify-end gap-1">
                         {deleteConfirm === project.id ? (
                           <>
-                            <button
+                            <Button aria-label="Confirm delete" variant="subtle" size="icon-xs"
                               onClick={() => {
                                 // No delete endpoint on backend — dismiss confirmation
                                 setDeleteConfirm(null)
                               }}
-                              className="flex h-7 w-7 items-center justify-center rounded text-danger-fg hover:bg-danger-soft"
+                              className="text-danger-fg hover:bg-danger-soft"
                               title="Confirm delete"
                             >
                               <Check className="h-3.5 w-3.5" />
-                            </button>
-                            <button
+                            </Button>
+                            <Button aria-label="Cancel" variant="subtle" size="icon-xs"
                               onClick={() => setDeleteConfirm(null)}
-                              className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-surface-sunken"
+                             
                               title="Cancel"
                             >
                               <X className="h-3.5 w-3.5" />
-                            </button>
+                            </Button>
                           </>
                         ) : (
                           <>
-                            <button
+                            <Button aria-label="Edit project" variant="subtle" size="icon-xs"
                               onClick={() => {
                                 openEdit(project)
                                 setDeleteConfirm(null)
                               }}
-                              className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-primary-50 hover:text-primary-600"
+                             
                               title="Edit project"
                             >
                               <Pencil className="h-3.5 w-3.5" />
-                            </button>
+                            </Button>
                             {canDelete && (
-                              <button
+                              <Button variant="danger-ghost" size="icon-xs" aria-label="Remove"
                                 onClick={() => {
                                   setDeleteConfirm(project.id)
                                   setMode('none')
                                 }}
-                                className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-danger-soft hover:text-danger-fg"
+                               
                                 title="Delete project"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
-                              </button>
+                              </Button>
                             )}
                           </>
                         )}
                       </div>
-                    </td>
+                    </Td>
                   )}
-                </tr>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
         <div className="border-t border-line bg-surface-subtle px-4 py-2.5 text-xs text-fg-muted">
           Showing {filtered.length} of {projects.length} projects
