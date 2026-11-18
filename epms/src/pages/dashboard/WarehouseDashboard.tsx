@@ -10,7 +10,7 @@ const GR_STATUS_TONE: Record<string, BadgeTone> = {
   collected:          'success',
   confirmed:          'success',
   discrepancy:        'danger',
-  cancelled:          'dark',
+  cancelled:          'neutral',
 }
 
 const GR_STATUS_LABEL: Record<string, string> = {

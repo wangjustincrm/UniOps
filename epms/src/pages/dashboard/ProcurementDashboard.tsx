@@ -10,7 +10,7 @@ const PO_STATUS_TONE: Record<string, BadgeTone> = {
   in_review:  'blue',
   approved:   'success',
   issued:     'accent',
-  closed:     'dark',
+  closed:     'outline',
   cancelled:  'danger',
 }
 

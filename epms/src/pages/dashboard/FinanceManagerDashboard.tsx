@@ -11,7 +11,7 @@ const PA_STATUS_TONE: Record<string, BadgeTone> = {
   in_review:  'blue',
   approved:   'success',
   processed:  'success',
-  cancelled:  'dark',
+  cancelled:  'outline',
 }
 
 function PaStatusBadge({ status }: { status: string }) {
