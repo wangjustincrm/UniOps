@@ -23,7 +23,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Ban, Check, Landmark, Link2, Loader2, Plus, RefreshCw, Undo2, Upload } from 'lucide-react'
-import { SortTh, useSortableRows, Checkbox, FileInput, Input, Radio, Select, TBody, THead, Table, Td, Th, Tr, Button , Modal as ShellModal } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, FileInput, Input, Radio, Select, TBody, THead, Table, Td, Th, Tr, Button , Modal as ShellModal, Badge, type BadgeTone } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financeUploadFields } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
@@ -71,11 +71,11 @@ function fmtMoney(v: string, ccy?: string): string {
 }
 
 function StatusPill({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    matched: 'bg-success-soft text-success-fg', unmatched: 'bg-warning-soft text-warning-fg',
-    excluded: 'bg-surface-sunken text-fg-muted',
+  const tone: Record<string, BadgeTone> = {
+    matched: 'success', unmatched: 'warning',
+    excluded: 'neutral',
   }
-  return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-surface-sunken text-fg-secondary')}>{status}</span>
+  return <Badge variant={tone[status] ?? 'neutral'}>{status}</Badge>
 }
 
 // ── header-row parse (tolerant of quoted commas) ─────────────────────────────────

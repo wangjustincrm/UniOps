@@ -7,7 +7,7 @@ import {
   Calendar, Plus, X, Search, Pencil, Trash2, Building2,
   Wallet, Upload, Download,
 } from 'lucide-react'
-import { SortTh, useSortableRows, Checkbox, FileInput, Input, Radio, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, FileInput, Input, Radio, Select, TBody, THead, Table, Td, Th, Tr, Button, Badge } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, mdmApi, budgetApi, budgetUpload, EPMS_URL, encodeSession } from '@/lib/api'
 import { cn, todayISO } from '@/lib/utils'
@@ -300,20 +300,20 @@ function CompanyConfigSection() {
           {[
             {
               k: 'yellow_threshold_pct' as const, label: 'Warning threshold',
-              badge: 'bg-warning-soft text-warning-fg', badgeLabel: 'Yellow',
+              tone: 'warning' as const, badgeLabel: 'Yellow',
               desc: 'Budget row highlighted amber. When budget alert emails are on: a daily digest to the Dept. Manager (Finance Manager if the department has none).',
             },
             {
               k: 'red_threshold_pct' as const, label: 'Over-budget threshold',
-              badge: 'bg-danger-soft text-danger-fg', badgeLabel: 'Red',
+              tone: 'danger' as const, badgeLabel: 'Red',
               desc: 'Budget row highlighted red. When budget alerts are on: within the hour (NC actuals sync hourly), an email + Teams alert (for those who chose Teams) to the Dept. Manager, Finance Manager and GM/OPM.',
             },
-          ].map(({ k, label, badge, badgeLabel, desc }) => (
+          ].map(({ k, label, tone, badgeLabel, desc }) => (
             <div key={k} className="flex items-start justify-between gap-4 rounded-xl border border-line bg-surface-subtle px-4 py-3.5">
               <div className="flex-1 min-w-0">
                 <div className="mb-0.5 flex items-center gap-2">
                   <p className="text-sm font-medium text-fg">{label}</p>
-                  <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', badge)}>{badgeLabel}</span>
+                  <Badge variant={tone}>{badgeLabel}</Badge>
                 </div>
                 <p className="text-xs text-fg-muted">{desc}</p>
               </div>
@@ -900,9 +900,9 @@ function CostCentersSection() {
                     <Td><span className="inline-flex items-center rounded-md bg-surface-sunken px-2 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">{cc.code}</span></Td>
                     <Td className="text-xs text-fg-secondary">{dept ? dept.name : cc.department_name || <span className="text-fg-faint">—</span>}</Td>
                     <Td>
-                      <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium', cc.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
+                      <Badge size="sm" variant={cc.is_active ? 'success' : 'neutral'}>
                         {cc.is_active ? 'Active' : 'Inactive'}
-                      </span>
+                      </Badge>
                     </Td>
                     <Td>
                       <div className="flex items-center justify-end gap-1">

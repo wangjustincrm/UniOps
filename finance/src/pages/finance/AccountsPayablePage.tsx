@@ -19,7 +19,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Upload, AlertTriangle } from 'lucide-react'
-import { SortTh, sortParams, useSort, useSortableRows, useTabStoreApi, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { SortTh, sortParams, useSort, useSortableRows, useTabStoreApi, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Badge, type BadgeTone } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
@@ -82,25 +82,25 @@ function fmtMoney(v: string, ccy?: string): string {
   return ccy ? `${s} ${ccy}` : s
 }
 function StatusPill({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    draft: 'bg-surface-sunken text-fg-secondary', posted: 'bg-info-soft text-info-fg',
-    partially_paid: 'bg-warning-soft text-warning-fg', paid: 'bg-fg-secondary text-fg-on-accent',
-    void: 'bg-surface-sunken text-fg-muted',
+  // void is the lighter of two greys (draft is the other) → outline; paid was already the dark fill
+  const tone: Record<string, BadgeTone> = {
+    draft: 'neutral', posted: 'blue',
+    partially_paid: 'warning', paid: 'dark',
+    void: 'outline',
   }
-  return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-surface-sunken text-fg-secondary')}>{statusLabel(status)}</span>
+  return <Badge variant={tone[status] ?? 'neutral'}>{statusLabel(status)}</Badge>
 }
 
-const NC_STATE: Record<NcDoc['state'], { label: string; cls: string; tip: string }> = {
-  saved: { label: 'Saved', cls: 'bg-warning-soft text-warning-fg', tip: 'In NC, not yet approved' },
-  approved: { label: 'Approved', cls: 'bg-success-soft text-success-fg', tip: 'Approved in NC' },
-  pushed: { label: 'Pushed', cls: 'bg-info-soft text-info-fg', tip: 'Pushed by UniOps; NC state shows after the next NC sync (hourly)' },
+const NC_STATE: Record<NcDoc['state'], { label: string; tone: BadgeTone; tip: string }> = {
+  saved: { label: 'Saved', tone: 'warning', tip: 'In NC, not yet approved' },
+  approved: { label: 'Approved', tone: 'success', tip: 'Approved in NC' },
+  pushed: { label: 'Pushed', tone: 'blue', tip: 'Pushed by UniOps; NC state shows after the next NC sync (hourly)' },
 }
 
 const NcFlowTag = () => (
-  <span className="w-fit rounded-full bg-surface-sunken px-1.5 py-0.5 text-2xs font-medium text-fg-secondary"
-        title="PO imported from NC — NC creates this payable from its purchase invoice. Not pushed from UniOps.">
+  <Badge size="sm" className="w-fit" title="PO imported from NC — NC creates this payable from its purchase invoice. Not pushed from UniOps.">
     NC flow
-  </span>
+  </Badge>
 )
 
 function NcDocCell({ inv }: { inv: ApInvoice }) {
@@ -127,7 +127,7 @@ function NcDocCell({ inv }: { inv: ApInvoice }) {
           <span key={d.bill_no} className="flex flex-col">
             <span className="flex items-center gap-1" title={tip}>
               <span className="font-mono text-xs text-fg-secondary">{d.bill_no}</span>
-              <span className={cn('rounded-full px-1.5 py-0.5 text-2xs font-medium', st.cls)}>{st.label}</span>
+              <Badge size="sm" variant={st.tone}>{st.label}</Badge>
             </span>
             {d.hyphen_match && (
               <span className="flex items-center gap-1 text-2xs text-warning-fg" title={hyphenTip}>

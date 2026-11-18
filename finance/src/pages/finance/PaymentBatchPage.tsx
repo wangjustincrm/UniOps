@@ -21,7 +21,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Loader2, Play, Undo2, Wallet } from 'lucide-react'
-import { Button, Checkbox, Input, Modal as ShellModal, Select, SortTh, TBody, THead, Table, Tabs, Td, Th, Tr, sortParams, useOptionalTabStoreApi, useSort, useSortableRows } from '@uniops/shell'
+import { Button, Checkbox, Input, Modal as ShellModal, Select, SortTh, TBody, THead, Table, Tabs, Td, Th, Tr, sortParams, useOptionalTabStoreApi, useSort, useSortableRows, Badge, type BadgeTone } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
 import { cn, formatDate, todayISO } from '@/lib/utils'
@@ -140,13 +140,14 @@ function dueTypeLabel(d: Due): string {
 }
 
 function StatusPill({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    draft: 'bg-surface-sunken text-fg-secondary', executed: 'bg-success-soft text-success-fg',
-    cancelled: 'bg-surface-sunken text-fg-muted', reversed: 'bg-warning-soft text-warning-fg',
-    paid: 'bg-fg-secondary text-fg-on-accent', failed: 'bg-danger-soft text-danger-fg',
-    pending: 'bg-warning-soft text-warning-fg',
+  // cancelled is the lighter of two greys (draft is the other) → outline; paid was already the dark fill
+  const tone: Record<string, BadgeTone> = {
+    draft: 'neutral', executed: 'success',
+    cancelled: 'outline', reversed: 'warning',
+    paid: 'dark', failed: 'danger',
+    pending: 'warning',
   }
-  return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-surface-sunken text-fg-secondary')}>{status}</span>
+  return <Badge variant={tone[status] ?? 'neutral'}>{status}</Badge>
 }
 
 export default function PaymentBatchPage() {
@@ -780,7 +781,7 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
                   <Tr key={ln.id}>
                     <Td>
                       <span className="font-mono text-xs">{ln.doc_number || ln.doc_id.slice(0, 8)}</span>
-                      {ln.invoice_ids && <span className="ml-2 rounded-full bg-warning-soft px-2 py-0.5 text-2xs font-medium text-warning-fg">Part of PA</span>}
+                      {ln.invoice_ids && <Badge variant="warning" size="sm" className="ml-2">Part of PA</Badge>}
                       {ln.error && <div className="text-xs text-danger-fg">{ln.error}</div>}
                     </Td>
                     <Td className="font-mono text-xs text-fg-secondary">{ln.vendor_inv_no || <span className="text-fg-faint">—</span>}</Td>
@@ -941,9 +942,9 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
 const NC_LABEL: Record<NcStatus, string> = {
   paid: 'Paid', closed: 'Closed', partial: 'Part paid', open: 'Unpaid', not_in_nc: 'Not in NC',
 }
-const NC_CLS: Record<NcStatus, string> = {
-  paid: 'bg-fg-secondary text-fg-on-accent', closed: 'bg-primary-50 text-primary-800',
-  partial: 'bg-warning-soft text-warning-fg', open: 'text-fg-muted', not_in_nc: 'text-fg-muted',
+// open / not in NC stay plain muted text; the three NC outcomes are badges
+const NC_TONE: Partial<Record<NcStatus, BadgeTone>> = {
+  paid: 'dark', closed: 'accent', partial: 'warning',
 }
 const ncTitle = (nc: NcInvoice): string => {
   if (nc.status === 'not_in_nc') return 'No approved NC AP bill carries this invoice number for this vendor'
@@ -956,12 +957,11 @@ const ncTitle = (nc: NcInvoice): string => {
 }
 
 function NcPill({ status, label, title }: { status: NcStatus; label?: string; title?: string }) {
-  const pill = status === 'paid' || status === 'closed' || status === 'partial'
-  return (
-    <span title={title} className={cn(pill && 'rounded-full px-2 py-0.5 font-medium', NC_CLS[status])}>
-      {label ?? NC_LABEL[status]}
-    </span>
-  )
+  const tone = NC_TONE[status]
+  const text = label ?? NC_LABEL[status]
+  return tone
+    ? <Badge variant={tone} title={title}>{text}</Badge>
+    : <span title={title} className="text-fg-muted">{text}</span>
 }
 
 function NcInvoiceBadge({ nc }: { nc?: NcInvoice }) {

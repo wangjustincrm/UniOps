@@ -19,7 +19,7 @@ import {
   AlertCircle, BookOpenCheck, Check, Download, Loader2, Pencil, Plus,
   RefreshCw, Search, Trash2, Upload, X,
 } from 'lucide-react'
-import { SortTh, useSortableRows, Checkbox, FileInput, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, FileInput, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal as ShellModal, Badge } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financeDownload, financeUpload } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -514,20 +514,17 @@ export default function CoaConfigPage() {
                         <Td>
                           <div className="flex flex-wrap gap-1">
                             {a.aux_dimensions.map((d) => (
-                              <span key={d.code}
-                                    title={d.required ? 'Required on postings' : 'Optional'}
-                                    className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium',
-                                      d.required ? 'bg-primary-700 text-white' : 'bg-primary-50 text-primary-700')}>
+                              <Badge key={d.code} size="sm" variant={d.required ? 'solid' : 'accent'}
+                                    title={d.required ? 'Required on postings' : 'Optional'}>
                                 {auxLabel(d.code)}{d.required && '*'}
-                              </span>
+                              </Badge>
                             ))}
                           </div>
                         </Td>
                         <Td>
-                          <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium',
-                            a.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
+                          <Badge size="sm" variant={a.is_active ? 'success' : 'neutral'}>
                             {a.is_active ? 'Active' : 'Inactive'}
-                          </span>
+                          </Badge>
                         </Td>
                         <Td>
                           {canManage && (
@@ -649,10 +646,9 @@ function AuxTypesTab({ auxTypes, canManage }: { auxTypes: AuxType[]; canManage: 
               <Td className="text-xs text-fg-muted">{t.master_source ?? '—'}</Td>
               <Td className="text-xs text-fg-muted">{t.builtin ? 'yes' : ''}</Td>
               <Td>
-                <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium',
-                  t.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
+                <Badge size="sm" variant={t.is_active ? 'success' : 'neutral'}>
                   {t.is_active ? 'Active' : 'Inactive'}
-                </span>
+                </Badge>
               </Td>
               <Td align="right">
                 {canManage && !t.builtin && (

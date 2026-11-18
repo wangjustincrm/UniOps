@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Ban } from 'lucide-react'
-import { Button, Input, Modal as ShellModal, Select, SortTh, Switch, TBody, THead, Table, Td, Th, Tr, useSortableRows } from '@uniops/shell'
+import { Button, Input, Modal as ShellModal, Select, SortTh, Switch, TBody, THead, Table, Td, Th, Tr, useSortableRows, Badge } from '@uniops/shell'
 import { mdmApi } from '@/lib/api'
 import { cn, formatDate, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
@@ -178,9 +178,9 @@ export default function TaxSettingsPage() {
                     {formatDate(r.effective_from)}{r.effective_to ? ` → ${formatDate(r.effective_to)}` : ''}
                   </Td>
                   <Td>
-                    <span className={cn('rounded-full px-2 py-0.5 text-2xs font-medium', r.active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
+                    <Badge size="sm" variant={r.active ? 'success' : 'neutral'}>
                       {r.active ? 'Active' : 'Inactive'}
-                    </span>
+                    </Badge>
                   </Td>
                   <Td>
                     {isAdmin && <div className="flex items-center justify-end gap-1">

@@ -13,7 +13,7 @@ import {
   Layers, Plus, Pencil, Trash2, X, Check, Search,
   ChevronDown, ChevronRight, AlertCircle,
 } from 'lucide-react'
-import { Button, Checkbox, Input, SortTh, TBody, THead, Table, Td, Th, Tr, useSortableRows } from '@uniops/shell'
+import { Button, Checkbox, Input, SortTh, TBody, THead, Table, Td, Th, Tr, useSortableRows, Badge } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { budgetApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -258,9 +258,9 @@ function FactorLibrary() {
                         </span>
                       </Td>
                       <Td>
-                        <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium', t.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
+                        <Badge size="sm" variant={t.is_active ? 'success' : 'neutral'}>
                           {t.is_active ? 'Active' : 'Inactive'}
-                        </span>
+                        </Badge>
                       </Td>
                       <Td>
                         <div className="flex items-center justify-end gap-1">

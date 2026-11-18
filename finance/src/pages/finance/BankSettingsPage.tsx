@@ -13,7 +13,7 @@ import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, CreditCard, Landmark, Loader2, Pencil, Plus } from 'lucide-react'
-import { SortTh, useSortableRows, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
+import { SortTh, useSortableRows, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal as ShellModal, Badge } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -37,11 +37,10 @@ const KIND_LABEL: Record<string, string> = { bank: 'Bank Account', credit_card: 
 function KindBadge({ kind }: { kind: string }) {
   const card = kind === 'credit_card'
   return (
-    <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
-      card ? 'bg-cat4-soft text-cat4-fg' : 'bg-info-soft text-info-fg')}>
+    <Badge variant={card ? 'cat4' : 'blue'}>
       {card ? <CreditCard className="h-3 w-3" /> : <Landmark className="h-3 w-3" />}
       {KIND_LABEL[kind] ?? kind}
-    </span>
+    </Badge>
   )
 }
 
@@ -143,10 +142,9 @@ export default function BankSettingsPage() {
                       : <span className="text-warning-fg" title="Without this the account has no ledger side to reconcile against">not linked</span>}
                   </Td>
                   <Td>
-                    <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium',
-                      a.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}>
+                    <Badge variant={a.is_active ? 'success' : 'neutral'}>
                       {a.is_active ? 'active' : 'inactive'}
-                    </span>
+                    </Badge>
                   </Td>
                   <Td align="right">
                     {canManage && (

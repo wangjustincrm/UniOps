@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Button, Checkbox, Input, MenuItem, Select, SortTh, TBody, THead, Table, Td, Th, Tr, deriveTabMeta, sortParams, useOptionalTabStoreApi, useSort } from '@uniops/shell'
+import { Button, Checkbox, Input, MenuItem, Select, SortTh, TBody, THead, Table, Td, Th, Tr, deriveTabMeta, sortParams, useOptionalTabStoreApi, useSort, Badge, type BadgeTone } from '@uniops/shell'
 import { Download, Receipt, Send, X } from 'lucide-react'
 import { financeRoutes } from '@/app/routes'
 import { financeApi, financeDownload, mdmApi } from '@/lib/api'
@@ -138,10 +138,10 @@ function fmtMoney(v: string, ccy: string): string {
   return `${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${ccy}`
 }
 
-const PAYMENT_STATUS_STYLE: Record<string, string> = {
-  pending: 'bg-warning-soft text-warning-fg',
-  completed: 'bg-success-soft text-success-fg',
-  cancelled: 'bg-surface-sunken text-fg-muted',
+const PAYMENT_STATUS_STYLE: Record<string, BadgeTone> = {
+  pending: 'warning',
+  completed: 'success',
+  cancelled: 'neutral',
 }
 
 /** Local badge for the payment lifecycle (pending/completed/cancelled),
@@ -149,10 +149,9 @@ const PAYMENT_STATUS_STYLE: Record<string, string> = {
  * shared `StatusBadge` in `@uniops/shell`. */
 function PaymentStatusBadge({ status }: { status: string }) {
   return (
-    <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize',
-      PAYMENT_STATUS_STYLE[status] ?? 'bg-surface-sunken text-fg-secondary')}>
+    <Badge variant={PAYMENT_STATUS_STYLE[status] ?? 'neutral'} className="capitalize">
       {status}
-    </span>
+    </Badge>
   )
 }
 

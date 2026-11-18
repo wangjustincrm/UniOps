@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check, Loader2, Search } from 'lucide-react'
-import { Button, Input, MenuItem, SortTh, TBody, THead, Table, Td, Th, Tr, useSortableRows } from '@uniops/shell'
+import { Button, Input, MenuItem, SortTh, TBody, THead, Table, Td, Th, Tr, useSortableRows, Badge } from '@uniops/shell'
 import {
   qboCreditImportApi,
   type ImportRunResponse,
@@ -402,9 +402,9 @@ function VendorPicker({
   if (chosenId) {
     return (
       <div className="flex items-center gap-2">
-        <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-xs text-success-fg">
+        <Badge variant="success">
           <Check className="h-3 w-3" /> {chosenName ?? 'Selected'}
-        </span>
+        </Badge>
         <Button variant="link" type="button" className="text-xs text-fg-muted"
           onClick={() => { onChoose(null); setOpen(false) }}>
           Change

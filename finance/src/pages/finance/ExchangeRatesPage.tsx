@@ -5,7 +5,7 @@ import { financeApi } from '@/lib/api'
 import { cn, formatDate, formatDateTime, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-import { Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Badge } from '@uniops/shell'
 /**
  * Exchange Rates — Finance's one history of FX rates (finance-api /fx).
  *
@@ -137,9 +137,8 @@ export default function ExchangeRatesPage() {
             <div className="text-xs font-medium text-fg-muted">Last fetch</div>
             {last ? (
               <div className="mt-1">
-                <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium',
-                  last.ok ? 'bg-success-soft text-success-fg' : 'bg-danger-soft text-danger-fg')}>
-                  {last.ok ? 'OK' : 'Problem'}</span>
+                <Badge variant={last.ok ? 'success' : 'danger'}>
+                  {last.ok ? 'OK' : 'Problem'}</Badge>
                 <span className="ml-2 text-fg-secondary">{fmtTs(last.started_at)} · {last.trigger}</span>
                 {last.message && <div className="mt-1 text-xs text-danger-fg">{last.message}</div>}
               </div>
@@ -256,9 +255,8 @@ export default function ExchangeRatesPage() {
                   <Td>{r.from_currency} → {r.to_currency}</Td>
                   <Td align="right" className="font-mono">{Number(r.rate).toFixed(4)}</Td>
                   <Td>
-                    <span className={cn('whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium',
-                      r.source === 'manual' ? 'bg-warning-soft text-warning-fg' : 'bg-info-soft text-info-fg')}>
-                      {r.source === 'manual' ? 'Manual' : 'Bank of Canada'}</span>
+                    <Badge variant={r.source === 'manual' ? 'warning' : 'blue'}>
+                      {r.source === 'manual' ? 'Manual' : 'Bank of Canada'}</Badge>
                   </Td>
                   <Td className="text-xs text-fg-secondary">{r.note ?? ''}</Td>
                   <Td align="right">

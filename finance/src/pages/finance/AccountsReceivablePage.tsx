@@ -15,7 +15,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Check, FileText, HandCoins, Loader2, Plus, Send, Trash2, X,
 } from 'lucide-react'
-import { SortTh, sortParams, useSort, useSortableRows, Input, Select, TBody, THead, Table, Td, Th, Tr, Button , Modal as ShellModal } from '@uniops/shell'
+import { SortTh, sortParams, useSort, useSortableRows, Input, Select, TBody, THead, Table, Td, Th, Tr, Button , Modal as ShellModal, Badge, type BadgeTone } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, mdmApi } from '@/lib/api'
 import { cn, formatDate, todayISO } from '@/lib/utils'
@@ -47,12 +47,13 @@ function fmtMoney(v: string, ccy?: string): string {
   return ccy ? `${s} ${ccy}` : s
 }
 function StatusPill({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    draft: 'bg-surface-sunken text-fg-secondary', posted: 'bg-info-soft text-info-fg',
-    partially_paid: 'bg-warning-soft text-warning-fg', paid: 'bg-fg-secondary text-fg-on-accent',
-    void: 'bg-surface-sunken text-fg-muted',
+  // void is the lighter of two greys (draft is the other) → outline; paid was already the dark fill
+  const tone: Record<string, BadgeTone> = {
+    draft: 'neutral', posted: 'blue',
+    partially_paid: 'warning', paid: 'dark',
+    void: 'outline',
   }
-  return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-surface-sunken text-fg-secondary')}>{status.replace('_', ' ')}</span>
+  return <Badge variant={tone[status] ?? 'neutral'}>{status.replace('_', ' ')}</Badge>
 }
 
 export default function AccountsReceivablePage() {

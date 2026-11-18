@@ -27,7 +27,7 @@ import {
 } from '@/services/remittance'
 import { RemittanceEmailPreview } from './RemittanceEmailPreview'
 
-import { Checkbox, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Checkbox, Input, TBody, THead, Table, Td, Th, Tr, Button, Badge, type BadgeTone } from '@uniops/shell'
 type Recipient = { recipient_kind: string; party_id: string; resend: boolean }
 
 /** What the operator is looking at on the confirmation step, frozen at the
@@ -37,17 +37,18 @@ type PendingConfirm = { emails: RenderedEmail[]; recipients: Recipient[]; paymen
 
 export type RemittanceStatus = 'ready' | 'blocked' | 'sent' | 'failed' | 'skipped' | 'not_sent'
 
-const STATUS_STYLE: Record<RemittanceStatus, string> = {
-  ready: 'bg-surface-sunken text-fg-secondary',
-  blocked: 'bg-warning-soft text-warning-fg',
-  sent: 'bg-success-soft text-success-fg',
-  failed: 'bg-danger-soft text-danger-fg',
-  skipped: 'bg-surface-sunken text-fg-muted',
-  // Deliberately the same muted grey as 'ready' but a different label: this
+// skipped / not_sent are the lighter grey beside ready → outline (user rule 2026-11-18)
+const STATUS_TONE: Record<RemittanceStatus, BadgeTone> = {
+  ready: 'neutral',
+  blocked: 'warning',
+  sent: 'success',
+  failed: 'danger',
+  skipped: 'outline',
+  // Deliberately quieter than 'ready' and a different label: this
   // is the hub list's existence-check state (see `_remittance_status` in
   // finance-api/app/api/v1/payments.py) and must never read as "verified
   // sendable" the way 'ready' does in the live preview below.
-  not_sent: 'bg-surface-sunken text-fg-muted',
+  not_sent: 'outline',
 }
 
 const STATUS_LABEL: Record<RemittanceStatus, string> = {
@@ -60,9 +61,9 @@ const STATUS_LABEL: Record<RemittanceStatus, string> = {
  * `StatusBadge` from `@uniops/shell`, which does not exist. */
 export function RemittanceStatusBadge({ status }: { status: RemittanceStatus }) {
   return (
-    <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', STATUS_STYLE[status])}>
+    <Badge variant={STATUS_TONE[status]}>
       {STATUS_LABEL[status]}
-    </span>
+    </Badge>
   )
 }
 

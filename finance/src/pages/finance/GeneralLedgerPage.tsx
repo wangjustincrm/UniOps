@@ -18,7 +18,7 @@ import { financeApi } from '@/lib/api'
 import { cn, currentMonthISO, formatDate, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-import { Checkbox, Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Button , Modal as ShellModal } from '@uniops/shell'
+import { Checkbox, Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Button , Modal as ShellModal, Badge } from '@uniops/shell'
 
 interface TBRow {
   account_code: string; account_name: string; account_type: string | null
@@ -162,10 +162,9 @@ export default function GeneralLedgerPage() {
 
 function Balanced({ ok }: { ok: boolean }) {
   return (
-    <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
-      ok ? 'bg-success-soft text-success-fg' : 'bg-danger-soft text-danger-fg')}>
+    <Badge variant={ok ? 'success' : 'danger'}>
       <Scale className="h-3 w-3" /> {ok ? 'Balanced' : 'Out of balance'}
-    </span>
+    </Badge>
   )
 }
 
@@ -304,7 +303,7 @@ function JournalTab({ q }: { q: any }) {
         <div key={e.jv_id} className="overflow-hidden rounded-lg border border-line">
           <div className="flex items-center justify-between bg-surface-subtle px-3 py-2 text-sm">
             <span className="font-mono text-xs">{formatDate(e.date)} · {e.source}</span>
-            <span className="rounded-full bg-surface px-2 py-0.5 font-mono text-xs text-fg-secondary">{e.jv_number}</span>
+            <Badge variant="outline" className="bg-surface font-mono">{e.jv_number}</Badge>
           </div>
           <Table density="compact">
             <TBody>

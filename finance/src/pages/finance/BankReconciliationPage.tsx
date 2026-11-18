@@ -37,7 +37,7 @@ import {
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-import { Button, Checkbox, ChoiceCard, FileInput, Input, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { Button, Checkbox, ChoiceCard, FileInput, Input, Select, TBody, THead, Table, Td, Th, Tr, Badge, type BadgeTone } from '@uniops/shell'
 
 interface Account {
   id: string; name: string; bank_name: string; account_masked: string | null
@@ -137,10 +137,10 @@ const METHOD_TRUST: Record<string, 'evidence' | 'amounts' | 'manual'> = {
   bank_rollup: 'amounts',
   manual: 'manual',
 }
-const TRUST_CHIP: Record<string, string> = {
-  evidence: 'border-success-line bg-success-soft text-success-fg',
-  amounts: 'border-warning-line bg-warning-soft text-warning-fg',
-  manual: 'border-info-line bg-info-soft text-info-fg',
+const TRUST_CHIP: Record<string, BadgeTone> = {
+  evidence: 'success',
+  amounts: 'warning',
+  manual: 'blue',
 }
 const TRUST_WORD: Record<string, string> = {
   evidence: 'backed by a document',
@@ -159,23 +159,24 @@ const METHOD_LABEL: Record<string, string> = {
   manual: 'Matched by hand',
 }
 
-const KIND_TONE: Record<string, string> = {
-  ap: 'bg-surface-sunken text-fg-secondary',
-  bank_transfer: 'bg-info-soft text-info-fg',
-  payroll: 'bg-cat4-soft text-cat4-fg',
-  credit_card: 'bg-warning-soft text-warning-fg',
-  other_payable: 'bg-surface-sunken text-fg-secondary',
-  bank_fee: 'bg-surface-sunken text-fg-muted',
-  mixed: 'bg-warning-soft text-warning-fg',
+// bank_fee is the lighter of two greys (ap / other_payable) → outline
+const KIND_TONE: Record<string, BadgeTone> = {
+  ap: 'neutral',
+  bank_transfer: 'blue',
+  payroll: 'cat4',
+  credit_card: 'warning',
+  other_payable: 'neutral',
+  bank_fee: 'outline',
+  mixed: 'warning',
 }
 
 // The ledger rows get `contra_label` from the server; the candidates endpoint
 // returns only the kind, so the same words live here rather than being invented
 // per call site. Mirrors bank_book.KIND_LABELS.
-const DOC_TONE: Record<string, string> = {
-  statement: 'bg-info-soft text-info-fg',
-  advice: 'bg-success-soft text-success-fg',
-  report: 'bg-accent-soft text-primary-700',
+const DOC_TONE: Record<string, BadgeTone> = {
+  statement: 'blue',
+  advice: 'success',
+  report: 'accent',
 }
 
 const KIND_LABEL_UI: Record<string, string> = {
@@ -202,11 +203,8 @@ function shortDate(iso: string): string {
   return formatDate(iso)
 }
 
-function Pill({ children, tone }: { children: React.ReactNode; tone?: string }) {
-  return (
-    <span className={cn('whitespace-nowrap rounded-full px-2 py-0.5 text-2xs font-medium',
-      tone ?? 'bg-surface-sunken text-fg-secondary')}>{children}</span>
-  )
+function Pill({ children, tone }: { children: React.ReactNode; tone?: BadgeTone }) {
+  return <Badge size="sm" variant={tone ?? 'neutral'}>{children}</Badge>
 }
 
 function Stat({ label, value, tone, hint }: {
@@ -560,8 +558,8 @@ export default function BankReconciliationPage() {
                       </Td>
                       <Td className="w-28">
                         {h.status === 'finalized'
-                          ? <Pill tone="bg-success-soft text-success-fg">signed off</Pill>
-                          : <Pill tone="bg-warning-soft text-warning-fg">open</Pill>}
+                          ? <Pill tone="success">signed off</Pill>
+                          : <Pill tone="warning">open</Pill>}
                       </Td>
                       <Td align="right" className="w-36 font-mono text-sm tabular-nums">
                         {/* The number that decides whether it could be signed off */}
@@ -912,7 +910,7 @@ export default function BankReconciliationPage() {
                             className={cn('border-t border-line-subtle', i % 2 && 'bg-surface-subtle/40',
                               d.superseded && 'opacity-50')}>
                           <Td className="w-40">
-                            <Pill tone={DOC_TONE[d.kind] ?? 'bg-surface-sunken text-fg-secondary'}>
+                            <Pill tone={DOC_TONE[d.kind] ?? 'neutral'}>
                               {d.label}
                             </Pill>
                           </Td>
@@ -1193,8 +1191,8 @@ export default function BankReconciliationPage() {
                           <Td align="right" className="font-mono tabular-nums">{money(l.amount)}</Td>
                           <Td>
                             {l.matched_jv_line_id
-                              ? <Pill tone="bg-success-soft text-success-fg">matched</Pill>
-                              : <Pill tone="bg-warning-soft text-warning-fg">not found</Pill>}
+                              ? <Pill tone="success">matched</Pill>
+                              : <Pill tone="warning">not found</Pill>}
                           </Td>
                         </Tr>
                       ))}

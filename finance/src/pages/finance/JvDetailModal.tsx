@@ -10,7 +10,7 @@ import { BookOpen, Check, Loader2, RotateCcw, Send, Undo2 } from 'lucide-react'
 import { financeApi } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
 
-import { TBody, TFoot, THead, Table, Td, Th, Tr, Modal as ShellModal, Button } from '@uniops/shell'
+import { TBody, TFoot, THead, Table, Td, Th, Tr, Modal as ShellModal, Button, Badge, type BadgeTone } from '@uniops/shell'
 
 function money(v: string | null | undefined) {
   const n = Number(v ?? 0)
@@ -54,19 +54,18 @@ interface JvLine {
 }
 interface JvDetail { voucher: JvHeader; lines: JvLine[] }
 
-export const JV_STATUS_STYLE: Record<string, string> = {
-  draft: 'bg-surface-sunken text-fg-secondary',
-  reviewed: 'bg-info-soft text-info-fg',
-  posted: 'bg-success-soft text-success-fg',
-  reversed: 'bg-danger-soft text-danger-fg',
+export const JV_STATUS_STYLE: Record<string, BadgeTone> = {
+  draft: 'neutral',
+  reviewed: 'blue',
+  posted: 'success',
+  reversed: 'danger',
 }
 
 export function JvStatusBadge({ status }: { status: string }) {
   return (
-    <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize',
-      JV_STATUS_STYLE[status] ?? 'bg-surface-sunken text-fg-secondary')}>
+    <Badge variant={JV_STATUS_STYLE[status] ?? 'neutral'} className="capitalize">
       {status}
-    </span>
+    </Badge>
   )
 }
 

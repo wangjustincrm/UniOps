@@ -15,7 +15,7 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { AccountVouchersModal } from './AccountVouchersModal'
 import { JvDetailModal } from './JvDetailModal'
 
-import { Checkbox, Input, TBody, TFoot, THead, Table, Td, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
+import { Checkbox, Input, TBody, TFoot, THead, Table, Td, Th, Tr, Button, Modal as ShellModal, Badge } from '@uniops/shell'
 
 interface AbRow {
   account_code: string; account_name: string; account_type: string | null
@@ -103,10 +103,9 @@ export default function AccountBalancePage() {
             Include unposted
           </label>
           {data && (
-            <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
-              data.balanced ? 'bg-success-soft text-success-fg' : 'bg-danger-soft text-danger-fg')}>
+            <Badge variant={data.balanced ? 'success' : 'danger'}>
               <Scale className="h-3 w-3" /> {data.balanced ? 'Balanced' : 'Out of balance'}
-            </span>
+            </Badge>
           )}
         </div>
 
