@@ -6,8 +6,7 @@
   },
   "epms": {
    "badge-chrome-string": 3,
-   "shouting-type": 2,
-   "hand-card": 1
+   "shouting-type": 2
   },
   "finance": {
    "badge-chrome-string": 3,
@@ -37,8 +36,7 @@
    "badge-chrome-string": 1
   },
   "epms/src/pages/admin/AdminPanel.tsx": {
-   "shouting-type": 1,
-   "hand-card": 1
+   "shouting-type": 1
   },
   "epms/src/pages/invoices/CourierInvoiceReview.tsx": {
    "shouting-type": 1

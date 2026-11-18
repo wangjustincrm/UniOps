@@ -31,7 +31,7 @@ import { TEMPLATE_VARIABLE_DOCS } from '@/lib/email-template'
 import type { UserRole, Currency, CurrencyDef } from '@/types'
 import { CURRENCIES } from '@/types'
 
-import { Checkbox, ChoiceCard, DropdownPortal, FileInput, MenuItem, Modal, Radio, Select, Switch, TBody, THead, Table, Td, Textarea, Th, Tr, useAnchorRect, Badge, Card } from '@uniops/shell'
+import { Checkbox, ChoiceCard, DropdownPortal, FileInput, MenuItem, Modal, Radio, Select, Switch, TBody, THead, Table, Td, Textarea, Th, Tr, useAnchorRect, Badge, Card, cardClass } from '@uniops/shell'
 // Roles that may only ever be held as ADDITIONAL roles (granted per-user via
 // identity's user_roles), never as a user's primary/base login role. Keep in
 // step with ApiUserRole in services/users.ts, which deliberately excludes them.
@@ -519,7 +519,7 @@ function CurrencyRow({ c, isDefault, isEnabled, canToggle, onSetDefault, onToggl
   onSetDefault: () => void; onToggle: () => void; onEdit?: () => void; onDelete?: () => void
 }) {
   return (
-    <div className={cn('flex items-center justify-between rounded-xl border px-4 py-3 transition-colors', isEnabled ? 'border-line bg-surface' : 'border-line-subtle bg-surface-subtle opacity-60')}>
+    <div className={cn(cardClass({ inset: true }), 'flex items-center justify-between px-4 py-3 transition-colors', !isEnabled && 'border-line-subtle bg-surface-subtle opacity-60')}>
       <div className="flex items-center gap-3 min-w-0">
         <span className="w-10 shrink-0 text-center font-mono text-sm font-semibold text-fg-secondary">{c.symbol}</span>
         <div className="min-w-0">
