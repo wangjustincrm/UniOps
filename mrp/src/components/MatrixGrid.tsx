@@ -926,7 +926,7 @@ function MatrixCell({
       {invalidRaw && (
         <AlertTriangle aria-hidden className="pointer-events-none absolute top-0.5 right-0.5 h-3 w-3 text-danger-fg" />
       )}
-      <Input
+      <Input bare
         type="text"
         inputMode="decimal"
         value={local}
@@ -954,7 +954,7 @@ function MatrixCell({
           else if (e.key === 'ArrowRight' && (e.currentTarget.selectionStart === local.length)) { commit(); onNavigate('right') }
         }}
         placeholder="0"
-        className="w-full text-right font-mono text-xs px-2 py-1.5 bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
+        className="text-right font-mono text-xs px-2 py-1.5 focus:ring-1 focus:ring-primary-500 focus:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
       />
       {invalidRaw && <span className="sr-only">{`Pasted value "${invalidRaw}" was not a valid number and was not applied.`}</span>}
       {onHistoryClick && (

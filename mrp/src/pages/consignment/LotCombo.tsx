@@ -105,12 +105,7 @@ export function LotCombo({
           disabled={disabled}
           placeholder={materialCode ? 'Select or type a lot number…' : 'Select a product first'}
           aria-invalid={hasError || undefined}
-          className={cn(
-            'h-10 w-full min-w-0 rounded-lg border bg-surface px-3 pr-9 text-sm transition-colors',
-            'focus:outline-none focus:border-primary-600',
-            'disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:opacity-60',
-            hasError ? 'border-danger-solid bg-danger-soft' : 'border-line',
-          )}
+          error={!!hasError} className="min-w-0 pr-9"
         />
         <Button variant="subtle" size="icon-xs"
           type="button"

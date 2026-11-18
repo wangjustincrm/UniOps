@@ -179,7 +179,7 @@ export function MaterialPicker({
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search by code or name…"
-                className="h-8 flex-1"
+                inputSize="sm" className="flex-1"
               />
             </div>
           </div>
