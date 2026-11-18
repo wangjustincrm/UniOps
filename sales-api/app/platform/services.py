@@ -17,7 +17,7 @@ from __future__ import annotations
 import csv
 import io
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, ClassVar, Generic, TypeVar
@@ -88,19 +88,16 @@ class ReadOnlyService(Generic[T, R]):
         if columns is not None:
             return await self._export_columns(spec, columns)
         await self._authorize(self.read_permission)
-        out = io.StringIO()
-        w = csv.writer(out, lineterminator="\n")
         columns = self._csv_export_columns()
-        w.writerow(columns)
+        rows: list[list[Any]] = []
         page_no = 1
         while True:
             page = await self.repo.list(spec.model_copy(update={"page": page_no, "page_size": EXPORT_PAGE}))
-            for e in page.items:
-                w.writerow([_csv_cell(self.csv_value(e, c)) for c in columns])
+            rows.extend([self.csv_value(e, c) for c in columns] for e in page.items)
             if page_no * EXPORT_PAGE >= page.total:
                 break
             page_no += 1
-        return out.getvalue().encode("utf-8-sig")  # with a BOM: Excel on Windows reads it as UTF-8 (é, à), not ANSI
+        return csv_bytes(columns, rows)
 
 
     async def _export_columns(self, spec: QuerySpec, columns: list[str]) -> bytes:
@@ -117,18 +114,15 @@ class ReadOnlyService(Generic[T, R]):
             if fields[c].get("money") and cur and cur not in columns and cur not in cols:
                 cols.append(cur)
         labels = [fields[c]["label"] if c in fields else c.replace("_", " ").capitalize() for c in cols]
-        out = io.StringIO()
-        w = csv.writer(out, lineterminator="\n")
-        w.writerow([_csv_cell(x) for x in labels])
+        rows: list[list[Any]] = []
         page_no = 1
         while True:
             page = await self.repo.list(spec.model_copy(update={"page": page_no, "page_size": EXPORT_PAGE}))
-            for r in await self._read_all(list(page.items)):
-                w.writerow([_csv_cell(getattr(r, c, None)) for c in cols])
+            rows.extend([getattr(r, c, None) for c in cols] for r in await self._read_all(list(page.items)))
             if page_no * EXPORT_PAGE >= page.total:
                 break
             page_no += 1
-        return out.getvalue().encode("utf-8-sig")  # with a BOM: Excel on Windows reads it as UTF-8 (é, à), not ANSI
+        return csv_bytes(labels, rows)
 
     def to_read(self, entity: T) -> R:
         return self.read_schema.model_validate(entity, from_attributes=True)
@@ -466,6 +460,17 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
         if issubclass(self.model, Versioned) and "version" not in self.csv_columns:
             return (*self.csv_columns, "version")
         return self.csv_columns
+
+
+def csv_bytes(header: Sequence[Any], rows: Iterable[Sequence[Any]]) -> bytes:
+    """THE way a CSV export is written: every cell through the formula guard (_csv_cell), the header
+    too, and UTF-8 with a BOM, so Excel on Windows reads é and à (not ANSI); the import reads it back."""
+    out = io.StringIO()
+    w = csv.writer(out, lineterminator="\n")
+    w.writerow([_csv_cell(x) for x in header])
+    for r in rows:
+        w.writerow([_csv_cell(x) for x in r])
+    return out.getvalue().encode("utf-8-sig")
 
 
 def _csv_cell(v: Any) -> str:

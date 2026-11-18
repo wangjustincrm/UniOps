@@ -96,3 +96,22 @@ async def test_a_csv_export_opens_in_excel_as_utf8(env):  # noqa: F811
     async with env.factory(OP) as u:
         for data in (await OrderService(u).export_csv(QuerySpec(), ["source_reference"]), await OrderService(u).export_csv(QuerySpec())):
             assert data[:3] == b"\xef\xbb\xbf"  # the BOM; the import reads it (utf-8-sig)
+
+
+from tests.test_operations_api import READER  # noqa: E402
+from tests.test_operations_api import api as ops_api  # noqa: E402,F401 — a fixture
+
+
+async def test_every_csv_export_route_writes_the_bom(ops_api):  # noqa: F811
+    """One writer for every export (platform csv_bytes): the next export cannot forget the BOM or the guard."""
+    from app.main import app
+    paths = sorted({r.path for r in app.routes if getattr(r, "path", "").endswith("/export.csv") and "{" not in r.path})
+    assert len(paths) >= 10, paths
+    for p in paths:
+        r = await ops_api.get(p, headers=READER)
+        assert r.status_code == 200, (p, r.status_code, r.text[:200])
+        assert r.content[:3] == b"\xef\xbb\xbf", p
+        meta = (await ops_api.get(p.removesuffix("export.csv") + "meta", headers=READER)).json()
+        cols = [f["name"] for f in meta["fields"] if f["in_row"]][:3]  # the visible columns way, on every export
+        r = await ops_api.get(f"{p}?columns={','.join(cols)}", headers=READER)
+        assert r.status_code == 200 and r.content[:3] == b"\xef\xbb\xbf", (p, r.status_code, r.text[:200])

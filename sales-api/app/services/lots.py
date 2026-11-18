@@ -4,14 +4,11 @@ soon" and "By lot", and a recall: one lot or several (`lot:in:a|b`) gives
 every order and customer it went to, as a CSV too."""
 from __future__ import annotations
 
-import csv
-import io
 
 from app.models.lots import LotRow
-from app.platform.authorization import requires
-from app.platform.query import FilterRule, QuerySpec
+from app.platform.query import FilterRule
 from app.platform.repository import Repository
-from app.platform.services import EXPORT_PAGE, ReadOnlyService, _csv_cell
+from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.domain.carriers import tracking_url
 from app.schemas.lots import LotRead
@@ -62,19 +59,6 @@ class LotService(ReadOnlyService[LotRow, LotRead]):
             c = carriers.get((r.carrier or "").strip().upper())
             r.tracking_url = tracking_url(c.tracking_url if c else None, r.tracking)
 
-    @requires(READ)
-    async def export_csv(self, spec: QuerySpec) -> bytes:
-        """The filtered rows (a recall: every order and customer the lots went
-        to), all of them, in CSV."""
-        out = io.StringIO()
-        w = csv.writer(out, lineterminator="\n")
-        w.writerow(CSV_COLUMNS)
-        page_no = 1
-        while True:
-            page = await self.repo.list(spec.model_copy(update={"page": page_no, "page_size": EXPORT_PAGE}))
-            for e in page.items:
-                w.writerow([_csv_cell(getattr(e, c)) for c in CSV_COLUMNS])
-            if page_no * EXPORT_PAGE >= page.total:
-                break
-            page_no += 1
-        return out.getvalue().encode("utf-8")
+    def _csv_export_columns(self) -> tuple[str, ...]:
+        """All fields: the recall's columns (every order and customer the lots went to)."""
+        return CSV_COLUMNS
