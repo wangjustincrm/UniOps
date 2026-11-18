@@ -1,5 +1,5 @@
 import { Building2, Hammer, Package, Ruler, ShoppingCart, Wrench, type LucideIcon } from 'lucide-react'
-import { ChoiceCard } from '@uniops/shell'
+import { ChoiceCard, Badge } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import type { ProcurementType } from '@/types'
 
@@ -44,9 +44,9 @@ export function ProcurementTypeSelector({ value, onChange }: ProcurementTypeSele
             <span className="text-xs font-semibold text-fg">{label}</span>
             <span className="text-2xs leading-tight text-fg-muted">{sublabel}</span>
             {noBudget && !disabled && (
-              <span className="mt-0.5 rounded-md bg-success-soft px-1.5 py-0.5 text-2xs font-medium text-success-fg">
+              <Badge variant="success" size="sm" className="mt-0.5">
                 No Budget Check
-              </span>
+              </Badge>
             )}
           </ChoiceCard>
         )

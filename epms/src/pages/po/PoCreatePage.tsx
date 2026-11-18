@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { useSearchParams, useNavigate, Link } from 'react-router-dom'
-import { useReplaceTab, Checkbox, FileInput, Select, Textarea, MenuItem } from '@uniops/shell'
+import { useReplaceTab, Checkbox, FileInput, Select, Textarea, MenuItem, Badge } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Upload, X, Calendar, Search, Receipt, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -392,7 +392,7 @@ export default function PoCreatePage() {
                             type="button"
                             onClick={() => { setSelectedVendor(v); setVendorOpen(false); setVendorQuery(''); setErrors((p) => ({ ...p, vendor: '' })) }}
                           >
-                            <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
+                            <Badge className="font-mono">{v.code}</Badge>
                             {v.name}
                           </MenuItem>
                         ))}

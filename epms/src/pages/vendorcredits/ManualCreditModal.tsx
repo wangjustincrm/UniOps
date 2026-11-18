@@ -4,7 +4,7 @@ import { AlertTriangle, Mail, Paperclip, Search, X } from 'lucide-react'
 import { useCreateVendorCredit } from '@/hooks/useVendorCredits'
 import { useVendors } from '@/hooks/useVendors'
 import { cn, formatAmount, todayISO } from '@/lib/utils'
-import { Button, DropdownPortal, FileInput, Input, MenuItem, Modal, Select, Textarea, useAnchorRect } from '@uniops/shell'
+import { Button, DropdownPortal, FileInput, Input, MenuItem, Modal, Select, Textarea, useAnchorRect, Badge } from '@uniops/shell'
 import {
   CREDIT_EVIDENCE_ACCEPT, creditAttachmentService, type VendorCredit,
 } from '@/services/vendorCredits'
@@ -194,7 +194,7 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                           <MenuItem key={v.id} type="button"
                                   onClick={() => { setVendor({ id: v.id, name: v.name, code: v.code }); setVendorOpen(false); setVendorQuery('') }}
                                  >
-                            <span className="rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-xs text-fg-secondary">{v.code}</span>
+                            <Badge className="font-mono">{v.code}</Badge>
                             {v.name}
                           </MenuItem>
                         ))}

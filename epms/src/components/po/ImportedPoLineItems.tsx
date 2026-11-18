@@ -2,7 +2,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { formatAmount, formatDate, formatUnitPrice } from '@/lib/utils'
 import { lineTotalOf } from '@/lib/importedPoEdit'
 
-import { Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Input, TBody, THead, Table, Td, Th, Tr, Button, Badge } from '@uniops/shell'
 /** One line of an NC-imported PO as the buyer-detail form sees it.
  *
  *  Two kinds share this table. On an NC-sourced line everything except
@@ -111,9 +111,9 @@ export function ImportedPoLineItems({
                   {item.ncSourced ? (item.materialId || '—') : (
                     // A buyer-added line has no material code by design — that
                     // is what keeps a one-off charge out of MRP's supply.
-                    <span className="rounded bg-surface-sunken px-1.5 py-0.5 font-sans text-2xs text-fg-secondary">
+                    <Badge size="sm" className="font-sans">
                       Added
-                    </span>
+                    </Badge>
                   )}
                 </Td>
                 <Td align="right" className="font-mono text-fg-secondary">

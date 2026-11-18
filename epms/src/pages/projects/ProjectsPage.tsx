@@ -539,9 +539,9 @@ export default function ProjectsPage() {
                 >
                   {/* Code */}
                   <Td>
-                    <span className="font-mono text-xs font-semibold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded">
+                    <Badge variant="accent" className="font-mono">
                       {project.code}
-                    </span>
+                    </Badge>
                   </Td>
 
                   {/* Name */}

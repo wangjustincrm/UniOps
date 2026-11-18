@@ -881,9 +881,9 @@ export default function InvoiceDetailPage() {
                             <Td className="pr-4 text-fg">
                               <span>{item.description}</span>
                               {item.non_po_fee && (
-                                <span className="ml-2 inline-flex items-center rounded bg-surface-sunken px-1.5 py-0.5 text-2xs font-semibold text-fg-muted align-middle">
+                                <Badge size="sm" className="ml-2 align-middle">
                                   Non-PO fee
-                                </span>
+                                </Badge>
                               )}
                               {item.non_po_fee && item.non_po_note && (
                                 <span className="ml-2 text-2xs text-fg-muted">{item.non_po_note}</span>

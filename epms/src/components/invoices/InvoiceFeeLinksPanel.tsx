@@ -26,7 +26,7 @@ import { useFeeLinkCandidates, useInvoiceFeeLinks, useSaveInvoiceFeeLinks } from
 import { FEE_TYPE_LABEL, type FeeType } from '@/services/poFee'
 import type { InvoiceLineItem } from '@/services/invoices'
 
-import { Checkbox, Select } from '@uniops/shell'
+import { Checkbox, Select, Badge } from '@uniops/shell'
 interface DraftLink {
   fee_type: FeeType
   /** What an Other fee is; required for that type. */
@@ -186,9 +186,9 @@ export function InvoiceFeeLinksPanel({
         <ul className="mb-3 flex flex-col gap-1.5">
           {shown.map((l) => (
             <li key={keyOf(l)} className="flex flex-wrap items-center gap-2 rounded-lg border border-line-subtle bg-surface-subtle px-3 py-1.5 text-sm">
-              <span className="rounded bg-surface px-1.5 py-0.5 text-2xs font-semibold text-fg-secondary border border-line">
+              <Badge variant="outline" size="sm" className="bg-surface">
                 {FEE_TYPE_LABEL[l.fee_type]}
-              </span>
+              </Badge>
               <Link to={`/po/${l.po_id}`} className="font-mono text-xs font-semibold text-primary-700 hover:underline">
                 {l.po_number}
               </Link>
@@ -294,10 +294,10 @@ export function InvoiceFeeLinksPanel({
                           <span className="font-mono text-xs font-semibold text-fg">{po.number}</span>
                           <span className="text-fg-secondary">{po.vendor_name}</span>
                           {po.source === 'epms' && (
-                            <span className="rounded bg-surface-sunken px-1.5 py-0.5 text-2xs font-semibold text-fg-secondary">EPMS</span>
+                            <Badge size="sm">EPMS</Badge>
                           )}
                           {po.is_milk && (
-                            <span className="rounded bg-primary-50 px-1.5 py-0.5 text-2xs font-semibold text-primary-700">Milk</span>
+                            <Badge variant="accent" size="sm">Milk</Badge>
                           )}
                           {po.incoterms_code && <span className="text-xs text-fg-muted">{po.incoterms_code}</span>}
                         </div>

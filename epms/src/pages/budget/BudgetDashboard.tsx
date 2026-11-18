@@ -657,10 +657,9 @@ function VoucherRow({ account, fiscalYear, costCenterId, includeUnposted, partne
                   <Td className="font-mono">
                     {r.jv_number}
                     {r.posted === false && (
-                      <span className="ml-1.5 rounded bg-warning-soft px-1.5 py-0.5 font-sans text-2xs font-medium text-warning-fg"
-                            title="Entered in NC, not yet tallied">
+                      <Badge variant="warning" size="sm" className="ml-1.5 font-sans" title="Entered in NC, not yet tallied">
                         Unposted
-                      </span>
+                      </Badge>
                     )}
                   </Td>
                   <Td className="font-mono text-fg-secondary">{r.account_code}</Td>

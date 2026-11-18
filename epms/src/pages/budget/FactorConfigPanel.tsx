@@ -492,9 +492,9 @@ function FactorLibraryPicker({
                       }}
                       className="px-2.5 py-1.5 text-xs"
                     >
-                      <span className="inline-flex items-center rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">
+                      <Badge size="sm" className="font-mono">
                         {t.factor_code}
-                      </span>
+                      </Badge>
                       <span className="flex-1 font-medium text-fg">{t.factor_name}</span>
                       <span className="text-2xs text-fg-muted">
                         {t.values.filter((v) => v.is_active).length} values

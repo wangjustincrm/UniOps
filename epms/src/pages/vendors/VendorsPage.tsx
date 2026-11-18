@@ -780,9 +780,9 @@ export default function VendorsPage() {
                 >
                   {/* POID */}
                   <Td>
-                    <span className="font-mono text-xs font-semibold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded">
+                    <Badge variant="accent" className="font-mono">
                       {vendor.code}
-                    </span>
+                    </Badge>
                   </Td>
 
                   {/* ERP ID */}

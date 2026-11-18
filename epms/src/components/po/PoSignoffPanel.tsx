@@ -21,7 +21,7 @@ import {
 } from '@/hooks/usePos'
 import type { PoSignoffState, PoSignoffStatus, PoSignoffStep } from '@/services/po'
 
-import { Textarea } from '@uniops/shell'
+import { Textarea, Badge } from '@uniops/shell'
 export const STATUS_LABELS: Record<PoSignoffStatus, { label: string; className: string }> = {
   draft:      { label: 'Not started',       className: 'bg-surface-sunken text-fg-secondary' },
   submitted:  { label: 'Awaiting signature', className: 'bg-warning-soft text-warning-fg' },
@@ -83,9 +83,9 @@ function StepRow({ step, index, state }: {
         </p>
       </div>
 
-      <span className="shrink-0 rounded-md bg-surface-sunken px-2 py-0.5 text-2xs font-medium text-fg-muted">
+      <Badge size="sm" className="shrink-0">
         {step.sig_slot ? SLOT_LABELS[step.sig_slot] : 'Not on PDF'}
-      </span>
+      </Badge>
     </div>
   )
 }

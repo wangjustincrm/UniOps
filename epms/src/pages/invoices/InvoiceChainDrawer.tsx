@@ -15,7 +15,7 @@ import { cn, formatDate } from '@/lib/utils'
 import { dueInfo, type DueTone } from '@/lib/dueDate'
 import type { ChainStep, ChainStepKey, ChainStepRef, ChainStepState } from '@/services/invoices'
 
-import { Drawer } from '@uniops/shell'
+import { Drawer, Badge } from '@uniops/shell'
 const STEP_TITLES: Record<ChainStepKey, string> = {
   match_po: 'Match PO',
   link_gr: 'Link GR',
@@ -106,9 +106,9 @@ function StepRow({ step, last }: { step: ChainStep; last: boolean }) {
             {step.refs.map((r) => <RefLink key={r.id} refItem={r} />)}
             {/* For a PA this is its approval status; for Payment, when it was paid. */}
             {step.detail && (
-              <span className="rounded bg-surface-sunken px-1.5 py-0.5 text-2xs capitalize text-fg-secondary">
+              <Badge size="sm" className="capitalize">
                 {step.key === 'payment' ? formatDate(step.detail) : step.detail.replace(/_/g, ' ')}
-              </span>
+              </Badge>
             )}
           </div>
         )}

@@ -5,7 +5,7 @@ import type { ApiInvoice, InvoiceLineItem, AllocationInput, NonPoLineInput } fro
 import type { ApiPo } from '@/services/po'
 import { InvoiceTotalMatchPanel } from './InvoiceTotalMatchPanel'
 
-import { ContextMenu, Input, MenuItem, Segmented, Select } from '@uniops/shell'
+import { ContextMenu, Input, MenuItem, Segmented, Select, Badge } from '@uniops/shell'
 // invoiceLineId -> { poId, poLineId }
 export type AllocationAssignment = Record<string, { poId: string; poLineId: string }>
 
@@ -183,9 +183,9 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate text-fg-muted line-through">{l.description}</span>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="rounded bg-surface-strong px-1.5 py-0.5 text-2xs font-semibold text-fg-secondary">
+                        <Badge size="sm">
                           Non-PO fee
-                        </span>
+                        </Badge>
                         <span className="font-mono text-xs text-fg-muted">{formatAmount(Number(l.line_total), currency)}</span>
                       </div>
                     </div>

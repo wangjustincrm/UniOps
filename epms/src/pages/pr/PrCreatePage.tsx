@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useReplaceTab, Checkbox, FileInput, Select, Textarea, MenuItem } from '@uniops/shell'
+import { useReplaceTab, Checkbox, FileInput, Select, Textarea, MenuItem, Badge } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -675,7 +675,7 @@ export default function PrCreatePage() {
                                 type="button"
                                 onClick={() => { setSelectedVendor(v); setVendorOpen(false); setVendorQuery(''); setVendorError(null) }}
                               >
-                                <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
+                                <Badge className="font-mono">{v.code}</Badge>
                                 {v.name}
                               </MenuItem>
                             ))}

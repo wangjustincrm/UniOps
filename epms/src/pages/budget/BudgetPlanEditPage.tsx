@@ -248,10 +248,10 @@ export default function BudgetPlanEditPage() {
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-semibold text-fg">Budget Plan FY {plan.fiscal_year}</h1>
               <StatusBadge status={plan.status as DocumentStatus} />
-              <span className="inline-flex items-center gap-1 rounded-md border border-line bg-surface-subtle px-2 py-0.5 text-2xs font-mono text-fg-secondary">
+              <Badge variant="outline" size="sm" className="font-mono">
                 <GitBranch className="h-3 w-3" />
                 v{plan.version}
-              </span>
+              </Badge>
               {plan.is_current ? (
                 <Badge variant="accent" size="sm">
                   Current

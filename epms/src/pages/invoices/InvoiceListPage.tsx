@@ -1058,7 +1058,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                           type="button"
                           onClick={() => { setSelectedVendor({ id: v.id, name: v.name, code: v.code }); setVendorOpen(false); setVendorQuery(''); setVendorHint(null); setAiFields((prev) => { const n = new Set(prev); n.delete('vendorName'); return n }) }}
                         >
-                          <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
+                          <Badge className="font-mono">{v.code}</Badge>
                           {v.name}
                         </MenuItem>
                       ))}
@@ -1692,11 +1692,11 @@ function ExceptionsTab() {
 // Due-date colouring for the list cell. Kept beside the table rather than in
 // lib/dueDate.ts so the helper stays free of presentation and testable on its
 // own; dueInfo() decides WHICH tone, this decides what the tone looks like.
-const DUE_CELL: Record<DueTone, { date: string; badge: string }> = {
-  overdue: { date: 'text-danger-fg font-semibold', badge: 'bg-danger-soft text-danger-fg' },
-  soon:    { date: 'text-warning-fg font-semibold', badge: 'bg-warning-soft text-warning-fg' },
-  normal:  { date: 'text-fg-secondary', badge: '' },
-  settled: { date: 'text-fg-muted', badge: '' },
+const DUE_CELL: Record<DueTone, { date: string; badge: 'danger' | 'warning' | null }> = {
+  overdue: { date: 'text-danger-fg font-semibold', badge: 'danger' },
+  soon:    { date: 'text-warning-fg font-semibold', badge: 'warning' },
+  normal:  { date: 'text-fg-secondary', badge: null },
+  settled: { date: 'text-fg-muted', badge: null },
 }
 
 function DueDateCell({ invoice, onOpen }: { invoice: ApiInvoice; onOpen: () => void }) {
@@ -1710,11 +1710,9 @@ function DueDateCell({ invoice, onOpen }: { invoice: ApiInvoice; onOpen: () => v
       className="-mx-1.5 h-auto flex-col items-start gap-0 whitespace-normal rounded px-1.5 py-1 text-left font-normal"
     >
       <span className={cn('text-xs', style.date)}>{formatDate(invoice.due_date)}</span>
-      {info.label && (
-        <span className={cn('mt-0.5 rounded px-1 py-0.5 text-2xs font-semibold', style.badge)}>
-          {info.label}
-        </span>
-      )}
+      {info.label && (style.badge
+        ? <Badge variant={style.badge} size="sm" className="mt-0.5">{info.label}</Badge>
+        : <span className="mt-0.5 text-2xs font-semibold">{info.label}</span>)}
     </Button>
   )
 }

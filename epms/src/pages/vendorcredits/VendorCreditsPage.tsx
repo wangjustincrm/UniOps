@@ -6,7 +6,7 @@ import { useReviewVendorCredit, useVendorCredit, useVendorCredits } from '@/hook
 import type { VendorCredit } from '@/services/vendorCredits'
 import { useAuthStore } from '@/stores/auth.store'
 import { formatDate } from '@/lib/utils'
-import { Alert, Button, Modal, Pagination, SortTh, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr, sortParams, useSort } from '@uniops/shell'
+import { Alert, Button, Modal, Pagination, SortTh, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr, sortParams, useSort, Badge } from '@uniops/shell'
 
 type CreditSortKey =
   | 'credit_number' | 'vendor_name' | 'vendor_credit_number' | 'credit_date'
@@ -130,15 +130,14 @@ export function VendorCreditsPage() {
                 <Td className="font-mono text-xs">
                   {c.credit_number}
                   {c.opening_balance && (
-                    <span className="ml-2 rounded bg-surface-sunken px-1.5 py-0.5 text-2xs text-fg-secondary">
+                    <Badge size="sm" className="ml-2">
                       Opening balance
-                    </span>
+                    </Badge>
                   )}
                   {c.source === 'manual' && (
-                    <span className="ml-2 rounded bg-warning-soft px-1.5 py-0.5 text-2xs text-warning-fg"
-                          title="No credit note issued — recorded from the vendor's email">
+                    <Badge variant="warning" size="sm" className="ml-2" title="No credit note issued — recorded from the vendor's email">
                       Manual
-                    </span>
+                    </Badge>
                   )}
                 </Td>
                 <Td>{c.vendor_name}</Td>

@@ -6,7 +6,7 @@ import { AiBadge } from '@/components/ui/AiBadge'
 import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import type { ApiVendor } from '@/services/vendors'
 
-import { Input, MenuItem, Button } from '@uniops/shell'
+import { Input, MenuItem, Button, Badge } from '@uniops/shell'
 // The merchant on a receipt, as the two things it actually is: a row in the
 // vendor master (or not), and the text that gets stored either way.
 export interface ReceiptVendorValue {
@@ -279,7 +279,7 @@ export function ReceiptVendorPicker({
              
               onClick={() => pick(v)}
             >
-              <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
+              <Badge className="font-mono">{v.code}</Badge>
               {v.name}
             </MenuItem>
           ))}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useReplaceTab, FileInput, Select, Textarea, MenuItem } from '@uniops/shell'
+import { useReplaceTab, FileInput, Select, Textarea, MenuItem, Badge } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Search, Upload, X, Paperclip, Check } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -346,7 +346,7 @@ export default function AgreementCreatePage() {
                        
                         onClick={() => { setSelectedVendor(v); setVendorOpen(false); setVendorQuery(''); setErrors((p) => ({ ...p, vendor: '' })) }}
                       >
-                        <span className="font-mono text-xs rounded bg-surface-sunken px-1.5 py-0.5 text-fg-secondary">{v.code}</span>
+                        <Badge className="font-mono">{v.code}</Badge>
                         {v.name}
                       </MenuItem>
                     ))}

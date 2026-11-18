@@ -637,9 +637,9 @@ export default function PartsListPage() {
                     <PartThumbnail src={part.image_data_url} size={36} />
                   </Td>
                   <Td>
-                    <span className="font-mono text-xs font-semibold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded">
+                    <Badge variant="accent" className="font-mono">
                       {part.code}
-                    </span>
+                    </Badge>
                   </Td>
                   <Td className="text-fg-muted whitespace-nowrap">{part.category}</Td>
                   <Td className="text-fg font-medium max-w-52">
