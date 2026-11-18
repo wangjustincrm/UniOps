@@ -254,7 +254,7 @@ export default function ServiceGrConfirmPage() {
                 placeholder="Describe the quality issues observed..."
                 value={issueDetails}
                 onChange={(e) => setIssueDetails(e.target.value)}
-                error={!!issueError} className="resize-none"
+                error={!!issueError} warning className="resize-none"
               />
               {issueError && <p className="text-xs text-danger-fg">Required when issues are reported</p>}
             </div>
@@ -379,7 +379,7 @@ export default function ServiceGrConfirmPage() {
                   value={overReceiptReason}
                   onChange={(e) => setOverReceiptReason(e.target.value)}
                   placeholder="Why more than the PO line has open is being confirmed"
-                  error={!!(submitted && !overReceiptReason.trim())} className="resize-none"
+                  error={!!(submitted && !overReceiptReason.trim())} warning className="resize-none"
                 />
               </>
             )}

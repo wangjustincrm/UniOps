@@ -347,7 +347,7 @@ export default function CollectionConfirmPage() {
                   value={overReceiptReason}
                   onChange={(e) => setOverReceiptReason(e.target.value)}
                   placeholder="Why more than the PO line has open is being received"
-                  error={!!(submitted && !overReceiptReason.trim())} className="resize-none"
+                  error={!!(submitted && !overReceiptReason.trim())} warning className="resize-none"
                 />
               </>
             )}
