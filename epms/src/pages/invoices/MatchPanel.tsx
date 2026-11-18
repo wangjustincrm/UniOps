@@ -14,6 +14,7 @@ import type { ApiAgreement, ApiScheduleRow } from '@/services/agreement'
 import type { DocumentStatus } from '@/types'
 import { InvoiceAllocationPanel } from './InvoiceAllocationPanel'
 
+import { Input, Radio, Tabs, Textarea } from '@uniops/shell'
 // 'direct' = no PO and no agreement: the invoice is paid by a Direct PA.
 type Route = 'po' | 'agreement' | 'direct'
 
@@ -34,12 +35,12 @@ function AgreementCandidateRow({
         selected ? 'border-primary-400 bg-primary-50' : 'border-line bg-surface hover:bg-surface-subtle',
       )}
     >
-      <input
-        type="radio"
+      <Radio
+       
         name="agreement-candidate"
         checked={selected}
         onChange={onSelect}
-        className="mt-1 h-4 w-4 text-primary-600 focus:ring-primary-500"
+        className="mt-1"
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
@@ -176,12 +177,12 @@ function PeriodOverrideRow({
         selected ? 'border-primary-400 bg-primary-50' : 'border-line bg-surface hover:bg-surface-subtle',
       )}
     >
-      <input
-        type="radio"
+      <Radio
+       
         name="period-override"
         checked={selected}
         onChange={onSelect}
-        className="mt-1 h-4 w-4 text-primary-600 focus:ring-primary-500"
+        className="mt-1"
       />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-fg">
@@ -212,12 +213,12 @@ function MilestoneStageRow({
         selected ? 'border-primary-400 bg-primary-50' : 'border-line bg-surface hover:bg-surface-subtle',
       )}
     >
-      <input
-        type="radio"
+      <Radio
+       
         name="milestone-stage"
         checked={selected}
         onChange={onSelect}
-        className="mt-1 h-4 w-4 text-primary-600 focus:ring-primary-500"
+        className="mt-1"
       />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-fg">{row.milestone_name ?? `Stage #${row.sequence}`}</p>
@@ -437,45 +438,25 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
     <div className="mt-2 rounded-xl border border-primary-200 bg-primary-50 p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-primary-700">Match Invoice</p>
-        <button onClick={onClose} className="text-fg-muted hover:text-fg-secondary">
+        <Button variant="subtle" size="icon-xs" aria-label="Close" onClick={onClose}>
           <X className="h-4 w-4" />
-        </button>
+        </Button>
       </div>
 
       {/* Route switch — Phase 1A does no auto-resolution, the operator always
           picks the tab. See the default-tab effect above for the one case
           ('po' has zero candidates) where 'agreement' is pre-selected. */}
-      <div className="flex gap-4 border-b border-primary-200/60">
-        <button
-          type="button"
-          onClick={() => setRoute('po')}
-          className={cn(
-            'px-1 pb-2 text-xs font-medium border-b-2 -mb-px transition-colors',
-            route === 'po' ? 'border-primary-600 text-primary-700' : 'border-transparent text-fg-muted hover:text-fg-secondary',
-          )}
-        >
-          Purchase Orders ({rawPoCandidates.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setRoute('agreement')}
-          className={cn(
-            'px-1 pb-2 text-xs font-medium border-b-2 -mb-px transition-colors',
-            route === 'agreement' ? 'border-primary-600 text-primary-700' : 'border-transparent text-fg-muted hover:text-fg-secondary',
-          )}
-        >
-          Agreements ({agreementCandidates.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setRoute('direct')}
-          className={cn(
-            'px-1 pb-2 text-xs font-medium border-b-2 -mb-px transition-colors',
-            route === 'direct' ? 'border-primary-600 text-primary-700' : 'border-transparent text-fg-muted hover:text-fg-secondary',
-          )}
-        >
-          Direct PA
-        </button>
+      <div>
+        <Tabs
+            className="flex-1"
+            items={[
+              { key: 'po', label: `Purchase Orders (${rawPoCandidates.length})` },
+              { key: 'agreement', label: `Agreements (${agreementCandidates.length})` },
+              { key: 'direct', label: 'Direct PA' },
+            ]}
+            value={route}
+            onChange={(k) => setRoute(k as typeof route)}
+          />
       </div>
 
       {route === 'direct' && (
@@ -510,12 +491,12 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
           {/* PO search — narrows the candidate POs shown as drop targets */}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-fg-muted pointer-events-none" />
-            <input
+            <Input inputSize="sm"
               type="text"
               placeholder="Filter candidate POs by number or vendor..."
               value={poSearch}
               onChange={(e) => setPoSearch(e.target.value)}
-              className="w-full h-8 pl-7 pr-3 rounded-lg border border-line-strong bg-surface text-xs focus:outline-none focus:ring-1 focus:ring-primary-600"
+              className="w-full pl-7 pr-3"
             />
           </div>
 
@@ -595,13 +576,13 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
                       Assign a specific period instead (optional)
                     </label>
                     {selectedScheduleId && (
-                      <button
+                      <Button variant="link"
                         type="button"
                         onClick={() => setSelectedScheduleId('')}
-                        className="text-2xs text-primary-600 hover:underline"
+                        className="text-2xs"
                       >
                         Clear
-                      </button>
+                      </Button>
                     )}
                   </div>
                   {claimablePeriodRows.length === 0 ? (
@@ -692,11 +673,11 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
             <p className="text-xs font-medium text-warning-fg">
               Decline this assignment — it will go back to the person who assigned it, with your note.
             </p>
-            <textarea
+            <Textarea
               rows={2} autoFocus value={declineNote}
               onChange={(e) => setDeclineNote(e.target.value)}
               placeholder="Why can't you match this invoice? (required)"
-              className="px-3 py-2 rounded-lg border border-line-strong bg-surface text-xs resize-none focus:outline-none focus:ring-1 focus:ring-warning-solid"
+              className="resize-none"
             />
             {declineMutation.isError && (
               <p className="text-xs text-danger-fg">
@@ -711,12 +692,12 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
             </div>
           </div>
         ) : (
-          <button
+          <Button variant="link"
             onClick={() => setDeclining(true)}
-            className="self-start text-xs text-warning-fg underline-offset-2 hover:underline"
+            className="self-start text-xs text-warning-fg"
           >
             Can't match this invoice? Decline the assignment
-          </button>
+          </Button>
         )
       )}
 

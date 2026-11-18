@@ -8,6 +8,7 @@ import { useInvoiceAgreementReceipts, useSetInvoiceReceipts, useSettleWithoutRec
 import type { ApiInvoice } from '@/services/invoices'
 import { RECEIPT_TYPE_LABELS, receiptTotal, type ApiReceipt, type ReceiptStatus } from '@/services/agreementReceipts'
 
+import { Checkbox, Input, Textarea } from '@uniops/shell'
 // One selectable candidate row — multi-select checkbox, mirrors MatchPanel's
 // (now-removed) ReceiptCandidateRow. Shows the type badge (Task 5/6 receipts
 // are typed — counter slip / delivery note / service sign-off), the
@@ -23,12 +24,12 @@ function ReceiptCandidateRow({
         selected ? 'border-primary-400 bg-primary-50' : cn('border-line bg-surface', !disabled && 'hover:bg-surface-subtle'),
       )}
     >
-      <input
-        type="checkbox"
+      <Checkbox
+       
         checked={selected}
         onChange={onToggle}
         disabled={disabled}
-        className="mt-1 h-4 w-4 rounded text-primary-600 focus:ring-primary-500"
+        className="mt-1"
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
@@ -371,7 +372,7 @@ function InvoiceReceiptsPanelBody({
   if (receiptsForbidden) {
     return (
       <div className="rounded-lg border border-line bg-surface p-4 flex flex-col gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wider text-fg-muted">Receipt Evidence</p>
+        <p className="text-xs font-semibold text-fg-muted">Receipt Evidence</p>
         <p className="text-xs text-fg-secondary">
           You can view this invoice but not attach receipts to it. Receipts are attached by AP,
           the invoice's uploader, the agreement's owner, or whoever holds this invoice's
@@ -383,7 +384,7 @@ function InvoiceReceiptsPanelBody({
 
   return (
     <div className="rounded-lg border border-line bg-surface p-4 flex flex-col gap-3">
-      <p className="text-xs font-semibold uppercase tracking-wider text-fg-muted">Receipt Evidence</p>
+      <p className="text-xs font-semibold text-fg-muted">Receipt Evidence</p>
 
       {lockedByPa && (
         <div className="flex items-start gap-2 rounded-lg border border-line bg-surface-subtle px-3 py-2.5 text-xs text-fg-secondary">
@@ -401,7 +402,7 @@ function InvoiceReceiptsPanelBody({
         <label className="text-xs font-medium text-fg-secondary">
           Reference on the invoice (optional)
         </label>
-        <input
+        <Input inputSize="sm"
           type="text"
           value={receiptRefInput}
           onChange={(e) => setReceiptRefInput(e.target.value)}
@@ -413,7 +414,7 @@ function InvoiceReceiptsPanelBody({
             setReceiptRefCommitted(receiptRefInput)
           }}
           placeholder="e.g. the receipt or delivery note # printed on the invoice"
-          className="h-8 px-3 rounded-lg border border-line-strong bg-surface text-xs focus:outline-none focus:ring-1 focus:ring-primary-600"
+         
         />
       </div>
 
@@ -500,12 +501,12 @@ function InvoiceReceiptsPanelBody({
               <label className="text-xs font-medium text-fg-secondary">
                 Explain the difference <span className="text-danger-fg">*</span>
               </label>
-              <textarea
+              <Textarea
                 rows={2}
                 value={varianceReason}
                 onChange={(e) => setVarianceReason(e.target.value)}
                 placeholder="e.g. Invoice includes freight not itemized on the receipt."
-                className="px-3 py-2 rounded-lg border border-line-strong bg-surface text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary-600"
+                className="resize-none"
               />
             </div>
           )}
@@ -562,13 +563,13 @@ function InvoiceReceiptsPanelBody({
               The receipt list failed to load — settling now will record this invoice as having no receipt evidence, even if receipts actually exist. Consider retrying above first.
             </p>
           )}
-          <textarea
+          <Textarea
             rows={3}
             value={legacyReason}
             onChange={(e) => setLegacyReason(e.target.value)}
             disabled={!!lockedByPa}
             placeholder="e.g. Monthly house-account statement; the receipts it covers have not been digitized."
-            className="px-3 py-2 rounded-lg border border-line-strong bg-surface text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary-600"
+            className="resize-none"
           />
           <div className="flex justify-end">
             <Button size="sm" onClick={handleSettleWithoutReceipt} disabled={pending || !legacyReason.trim()}>

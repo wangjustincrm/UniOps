@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { NotFoundState } from '@/components/shared/NotFoundState'
-import { useReplaceTab } from '@uniops/shell'
+import { useReplaceTab, Input, Radio, Textarea } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Truck, CheckCircle2, AlertTriangle, Package } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -149,7 +149,7 @@ export default function CollectionConfirmPage() {
         <div>
           <div className="flex items-center gap-2">
             <Truck className="h-5 w-5 text-warning-fg" />
-            <h1 className="text-2xl font-bold text-fg">Collect Goods</h1>
+            <h1 className="text-2xl font-semibold text-fg">Collect Goods</h1>
           </div>
           <p className="mt-1 text-sm text-fg-muted">
             {gr.number} · {gr.po_number} · {gr.vendor_name}
@@ -184,7 +184,7 @@ export default function CollectionConfirmPage() {
             <label className="text-sm font-medium text-fg-secondary">
               Collection Date <span className="text-danger-fg">*</span>
             </label>
-            <input
+            <Input
               type="date"
               value={collectionDate}
               onChange={(e) => setCollectionDate(e.target.value)}
@@ -199,12 +199,12 @@ export default function CollectionConfirmPage() {
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium text-fg-secondary">General Notes</label>
-            <input
+            <Input
               type="text"
               placeholder="Any notes about the collection..."
               value={generalNotes}
               onChange={(e) => setGeneralNotes(e.target.value)}
-              className="h-10 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+             
             />
           </div>
         </div>
@@ -267,13 +267,13 @@ export default function CollectionConfirmPage() {
                           : 'border-line hover:border-line-strong'
                       )}
                     >
-                      <input
-                        type="radio"
+                      <Radio
+                       
                         name={`cond-${item.id}`}
                         value={opt.value}
                         checked={line.condition === opt.value}
                         onChange={() => updateLine(idx, { condition: opt.value })}
-                        className="h-3.5 w-3.5 accent-current"
+                        className="h-3.5 w-3.5"
                       />
                       <span className={cn('text-xs font-medium', line.condition === opt.value ? opt.color : 'text-fg-muted')}>
                         {opt.label}
@@ -289,7 +289,7 @@ export default function CollectionConfirmPage() {
                       {line.condition === 'damaged' ? 'Damage' : 'Discrepancy'} Details{' '}
                       <span className="text-danger-fg">*</span>
                     </label>
-                    <textarea
+                    <Textarea
                       rows={2}
                       placeholder="Describe what you found when collecting..."
                       value={line.collectionNotes}
@@ -348,7 +348,7 @@ export default function CollectionConfirmPage() {
                 <label className="text-xs font-medium text-warning-fg">
                   Over-receipt reason <span className="text-danger-fg">*</span>
                 </label>
-                <textarea
+                <Textarea
                   rows={2}
                   value={overReceiptReason}
                   onChange={(e) => setOverReceiptReason(e.target.value)}

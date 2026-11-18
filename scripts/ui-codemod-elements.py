@@ -97,7 +97,9 @@ def convert(src):
     used = set()
     taken = {n for n in ('Table', 'THead', 'TBody', 'TFoot', 'Tr', 'Th', 'Td', 'Input', 'Select', 'Textarea',
                          'Checkbox', 'Radio', 'FileInput')
-             if re.search(rf'(?:function|const|class|interface|type)\s+{n}\b', src)}
+             if re.search(rf'(?:function|const|class|interface|type)\s+{n}\b', src)
+             # imported under that name from somewhere else (lucide's FileInput icon …)
+             or re.search(rf"import\s*\{{[^}}]*\b{n}\b[^}}]*\}}\s*from\s*'(?!@uniops/shell'|@/components/ui/)", src)}
     out, i = [], 0
     tag_re = re.compile(r'<(/?)(table|thead|tbody|tfoot|tr|th|td|input|select|textarea)(?=[\s>/])')
     skipped = 0

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { useAssignMatch } from '@/hooks/useInvoices'
 import { userService } from '@/services/users'
 
+import { Input, MenuItem } from '@uniops/shell'
 export function AssignMatchDialog({ invoiceId, currentAssigneeName, courier = false, onClose, onAssigned }: {
   invoiceId: string
   currentAssigneeName?: string | null
@@ -46,9 +47,9 @@ export function AssignMatchDialog({ invoiceId, currentAssigneeName, courier = fa
               {`${currentAssigneeName ? 'Reassign' : 'Assign'} ${courier ? 'Shipment' : 'PO'} Matching`}
             </h2>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken">
+          <Button variant="subtle" size="icon-sm" aria-label="Close" onClick={onClose}>
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
         <div className="flex flex-col gap-3 px-5 py-4 min-h-0">
           {currentAssigneeName && (
@@ -59,9 +60,9 @@ export function AssignMatchDialog({ invoiceId, currentAssigneeName, courier = fa
           )}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-muted" />
-            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)}
+            <Input inputSize="sm" autoFocus value={query} onChange={(e) => setQuery(e.target.value)}
               placeholder="Search people by name..."
-              className="w-full h-9 pl-8 pr-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+              className="w-full pl-8 pr-3" />
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-line divide-y divide-line-subtle">
             {isLoading ? (
@@ -71,12 +72,12 @@ export function AssignMatchDialog({ invoiceId, currentAssigneeName, courier = fa
             ) : users.length === 0 ? (
               <p className="py-6 text-center text-xs text-fg-muted">No users found</p>
             ) : users.map((u) => (
-              <button key={u.id}
+              <MenuItem key={u.id} active={selected?.id === u.id}
                 onClick={() => setSelected({ id: u.id, name: u.full_name })}
-                className={`w-full px-3 py-2 text-left text-sm hover:bg-primary-100 ${selected?.id === u.id ? 'bg-primary-50 font-medium' : ''}`}>
+                className={selected?.id === u.id ? 'font-medium' : undefined}>
                 {u.full_name}
                 {u.department_name && <span className="ml-2 text-xs text-fg-muted">{u.department_name}</span>}
-              </button>
+              </MenuItem>
             ))}
           </div>
           {assign.isError && (

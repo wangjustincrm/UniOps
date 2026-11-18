@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { useResolveException } from '@/hooks/useInvoices'
 import type { ApiInvoice } from '@/services/invoices'
 
+import { Radio, Textarea } from '@uniops/shell'
 // Shared by InvoiceListPage's Exceptions tab and InvoiceDetailPage — lifted
 // out (whole-branch review finding 2) so the resolve_exception task's deep
 // link (/invoices/{id}, the detail page) lands somewhere that can actually
@@ -55,8 +56,8 @@ export function ResolveExceptionPanel({ inv, onClose }: { inv: ApiInvoice; onClo
               ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium'
               : 'border-line text-fg-muted hover:border-line-strong'
           )}>
-            <input type="radio" name="resolution" value={opt.value} checked={resolution === opt.value}
-              onChange={() => setResolution(opt.value)} className="h-3 w-3" />
+            <Radio name="resolution" value={opt.value} checked={resolution === opt.value}
+              onChange={() => setResolution(opt.value)} />
             {opt.label}
           </label>
         ))}
@@ -66,7 +67,7 @@ export function ResolveExceptionPanel({ inv, onClose }: { inv: ApiInvoice; onClo
         <label className="text-xs font-medium text-fg-secondary">
           {resolution === 'accepted' ? 'Justification' : 'Instructions'} <span className="text-danger-fg">*</span>
         </label>
-        <textarea rows={2} maxLength={4000} value={note} onChange={(e) => setNote(e.target.value)}
+        <Textarea rows={2} maxLength={4000} value={note} onChange={(e) => setNote(e.target.value)}
           placeholder={resolution === 'accepted'
             ? 'Explain why the excess amount is acceptable...'
             : 'Instructions for the vendor to issue a credit note...'}

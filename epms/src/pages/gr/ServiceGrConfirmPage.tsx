@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { NotFoundState } from '@/components/shared/NotFoundState'
-import { useReplaceTab } from '@uniops/shell'
+import { ChoiceCard, FileInput, Input, TBody, THead, Table, Td, Textarea, Th, Tr, useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, CheckCircle2, AlertTriangle, Upload, X, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -145,7 +145,7 @@ export default function ServiceGrConfirmPage() {
         <div>
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5 text-primary-600" />
-            <h1 className="text-2xl font-bold text-fg">Confirm Service Completion</h1>
+            <h1 className="text-2xl font-semibold text-fg">Confirm Service Completion</h1>
           </div>
           <p className="mt-1 text-sm text-fg-muted">
             {gr.number} · {gr.po_number} · {gr.vendor_name}
@@ -165,30 +165,30 @@ export default function ServiceGrConfirmPage() {
 
         {/* Service line items */}
         <div className="mt-4 rounded-lg border border-line overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line bg-surface-subtle">
-                <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">#</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Description</th>
-                <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Delivered</th>
-                <th className="px-4 py-2.5 text-left  text-xs font-semibold uppercase tracking-wide text-fg-muted w-16">Unit</th>
-                <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Value</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table density="compact">
+            <THead>
+              <Tr className="bg-surface-subtle">
+                <Th>#</Th>
+                <Th>Description</Th>
+                <Th align="right">Delivered</Th>
+                <Th className="w-16">Unit</Th>
+                <Th align="right">Value</Th>
+              </Tr>
+            </THead>
+            <TBody>
               {gr.line_items.map((item, idx) => (
-                <tr key={item.id} className={cn('border-b border-line-subtle', idx % 2 === 1 && 'bg-surface-subtle/50')}>
-                  <td className="px-4 py-3 text-fg-muted text-xs text-center">{idx + 1}</td>
-                  <td className="px-4 py-3 text-fg">{item.description}</td>
-                  <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-fg">{formatQty(item.qty_received)}</td>
-                  <td className="px-4 py-3 text-xs text-fg-muted">{item.unit}</td>
-                  <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-fg">
+                <Tr key={item.id} className={cn('border-b border-line-subtle', idx % 2 === 1 && 'bg-surface-subtle/50')}>
+                  <Td align="center" className="text-fg-muted text-xs ">{idx + 1}</Td>
+                  <Td className="text-fg">{item.description}</Td>
+                  <Td align="right" className="font-mono text-xs font-semibold text-fg">{formatQty(item.qty_received)}</Td>
+                  <Td className="text-xs text-fg-muted">{item.unit}</Td>
+                  <Td align="right" className="font-mono text-xs font-semibold text-fg">
                     {formatAmount(item.line_total, gr.currency)}
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
 
         {gr.notes && (
@@ -208,7 +208,7 @@ export default function ServiceGrConfirmPage() {
           <label className="text-sm font-medium text-fg-secondary">
             Service Completion Date <span className="text-danger-fg">*</span>
           </label>
-          <input
+          <Input
             type="date"
             value={completionDate}
             onChange={(e) => setCompletionDate(e.target.value)}
@@ -232,18 +232,16 @@ export default function ServiceGrConfirmPage() {
               const Icon = opt.icon
               const selected = qualityRating === opt.value
               return (
-                <button
+                <ChoiceCard
                   key={opt.value}
-                  type="button"
+                  selected={selected}
                   onClick={() => setQualityRating(opt.value)}
-                  className={cn(
-                    'flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 text-sm font-medium transition-colors',
-                    selected ? opt.on : 'border-line text-fg-muted hover:border-line-strong'
-                  )}
+                  // The tone of each option carries its meaning (good / issues / reject).
+                  className={cn('flex-row items-center gap-2 px-4 py-2.5 text-sm font-medium', selected && cn(opt.on, 'shadow-none'))}
                 >
                   <Icon className={cn('h-4 w-4', selected ? opt.iconCls : 'text-fg-muted')} />
                   {opt.label}
-                </button>
+                </ChoiceCard>
               )
             })}
           </div>
@@ -254,7 +252,7 @@ export default function ServiceGrConfirmPage() {
               <label className="text-xs font-medium text-fg-secondary">
                 Issue Details <span className="text-danger-fg">*</span>
               </label>
-              <textarea
+              <Textarea
                 rows={2}
                 placeholder="Describe the quality issues observed..."
                 value={issueDetails}
@@ -274,7 +272,7 @@ export default function ServiceGrConfirmPage() {
           <label className="text-sm font-medium text-fg-secondary">
             Acceptance Notes <span className="text-danger-fg">*</span>
           </label>
-          <textarea
+          <Textarea
             rows={3}
             placeholder="Confirm what was delivered, the quality of work, and any outstanding items (min 10 characters)..."
             value={acceptanceNotes}
@@ -315,9 +313,9 @@ export default function ServiceGrConfirmPage() {
               <span className="font-medium text-primary-600">Click to upload</span> or drag &amp; drop
             </p>
             <p className="text-xs text-fg-muted">Service completion certificate, photos, reports · Max 25 MB</p>
-            <input
+            <FileInput
               ref={fileRef}
-              type="file"
+             
               multiple
               className="hidden"
               onChange={(e) => addFiles(e.target.files)}
@@ -333,12 +331,12 @@ export default function ServiceGrConfirmPage() {
                     <span className="text-sm text-fg-secondary">{f.name}</span>
                     <span className="text-xs text-fg-muted">{f.size}</span>
                   </div>
-                  <button
+                  <Button variant="danger-ghost" size="icon-xs" aria-label="Remove"
                     onClick={(e) => { e.stopPropagation(); setFiles((p) => p.filter((_, j) => j !== i)) }}
-                    className="text-fg-faint hover:text-danger-fg transition-colors"
+                   
                   >
                     <X className="h-4 w-4" />
-                  </button>
+                  </Button>
                 </div>
               ))}
             </div>
@@ -385,7 +383,7 @@ export default function ServiceGrConfirmPage() {
                 <label className="text-xs font-medium text-warning-fg">
                   Over-receipt reason <span className="text-danger-fg">*</span>
                 </label>
-                <textarea
+                <Textarea
                   rows={2}
                   value={overReceiptReason}
                   onChange={(e) => setOverReceiptReason(e.target.value)}

@@ -14,6 +14,7 @@ import {
 } from '@/pages/freight/freightUi'
 import { useNoticeDialog } from '@/components/ui/ConfirmDialog'
 
+import { Select, TBody, TFoot, THead, Table, Td, Textarea, Th, Tr } from '@uniops/shell'
 interface LineDraft {
   key: number
   charge_type: ChargeType
@@ -260,10 +261,10 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
             courier invoice: check one line per shipment, pickup or fee below. After saving, each line is matched to a
             registered tracking number and cost center.
           </p>
-          <button type="button" onClick={onBack} disabled={saving}
-            className="inline-flex shrink-0 items-center gap-1 font-medium text-primary-700 hover:underline disabled:opacity-40">
+          <Button variant="link" type="button" onClick={onBack} disabled={saving}
+            className="shrink-0 gap-1">
             <ArrowLeft className="h-3.5 w-3.5" /> Different vendor
-          </button>
+          </Button>
         </div>
         {ocrError && (
           <div className={cn('rounded-lg border px-3 py-2.5 text-xs',
@@ -349,43 +350,43 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
               <div key={l.key} className="rounded-lg border border-line bg-surface p-3 flex flex-col gap-2">
                 <div className="flex items-center gap-2">
                   <span className="w-5 text-xs text-fg-muted">{i + 1}</span>
-                  <select value={l.charge_type} onChange={(e) => updateLine(l.key, { charge_type: e.target.value as ChargeType })}
+                  <Select value={l.charge_type} onChange={(e) => updateLine(l.key, { charge_type: e.target.value as ChargeType })}
                     className={cn(SELECT_SM_CLS, 'w-32')} aria-label={`Line ${i + 1} type`}>
                     {Object.entries(CHARGE_TYPE_LABEL).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-                  </select>
-                  <input type="date" value={l.ship_date} onChange={(e) => updateLine(l.key, { ship_date: e.target.value })}
+                  </Select>
+                  <Input type="date" value={l.ship_date} onChange={(e) => updateLine(l.key, { ship_date: e.target.value })}
                     className={cn(INPUT_SM_CLS, 'w-36')} aria-label={`Line ${i + 1} date`} />
                   <div className="ml-auto flex items-center gap-1.5">
-                    <input type="number" step="0.01" value={l.amount} placeholder="Amount"
+                    <Input type="number" step="0.01" value={l.amount} placeholder="Amount"
                       onChange={(e) => updateLine(l.key, { amount: e.target.value })}
                       className={cn(INPUT_SM_CLS, 'w-24 text-right font-mono')} aria-label={`Line ${i + 1} amount`} />
-                    <input type="number" step="0.01" value={l.tax_amount} placeholder="Tax"
+                    <Input type="number" step="0.01" value={l.tax_amount} placeholder="Tax"
                       onChange={(e) => updateLine(l.key, { tax_amount: e.target.value })}
                       className={cn(INPUT_SM_CLS, 'w-20 text-right font-mono')} aria-label={`Line ${i + 1} tax`} />
-                    <button type="button" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}
+                    <Button variant="danger-ghost" size="icon-sm" type="button" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}
                       disabled={lines.length === 1}
-                      className="rounded-md p-1.5 text-fg-muted hover:bg-danger-soft hover:text-danger-fg disabled:opacity-30" aria-label="Remove line">
+                      aria-label="Remove line">
                       <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    </Button>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 pl-7">
-                  <input value={l.tracking_no} placeholder="Tracking no" onChange={(e) => updateLine(l.key, { tracking_no: e.target.value })}
+                  <Input value={l.tracking_no} placeholder="Tracking no" onChange={(e) => updateLine(l.key, { tracking_no: e.target.value })}
                     className={cn(INPUT_SM_CLS, 'font-mono')} aria-label={`Line ${i + 1} tracking number`} />
-                  <input value={l.packages} placeholder="Other packages (comma separated)" onChange={(e) => updateLine(l.key, { packages: e.target.value })}
+                  <Input value={l.packages} placeholder="Other packages (comma separated)" onChange={(e) => updateLine(l.key, { packages: e.target.value })}
                     className={cn(INPUT_SM_CLS, 'font-mono')} aria-label={`Line ${i + 1} other packages`} />
-                  <input value={l.reference} placeholder="Reference" onChange={(e) => updateLine(l.key, { reference: e.target.value })}
+                  <Input value={l.reference} placeholder="Reference" onChange={(e) => updateLine(l.key, { reference: e.target.value })}
                     className={INPUT_SM_CLS} aria-label={`Line ${i + 1} reference`} />
-                  <input value={l.description} placeholder="Description" onChange={(e) => updateLine(l.key, { description: e.target.value })}
+                  <Input value={l.description} placeholder="Description" onChange={(e) => updateLine(l.key, { description: e.target.value })}
                     className={INPUT_SM_CLS} aria-label={`Line ${i + 1} description`} />
                 </div>
               </div>
             ))}
             <div className="flex items-center justify-between rounded-lg bg-surface-subtle px-3 py-2 text-xs font-semibold">
-              <button type="button" onClick={() => setLines((ls) => [...ls, emptyLine()])}
-                className="inline-flex items-center gap-1 text-primary-700 hover:underline">
+              <Button variant="link" type="button" onClick={() => setLines((ls) => [...ls, emptyLine()])}
+                className="gap-1">
                 <Plus className="h-3.5 w-3.5" /> Add line
-              </button>
+              </Button>
               <span className="font-mono">
                 <span className={amountOk ? 'text-fg' : 'text-danger-fg'}>{formatAmount(linesAmount, currency || 'CAD')}</span>
                 <span className="text-fg-muted"> · tax </span>
@@ -396,62 +397,62 @@ export function CourierInvoiceReview({ carrier, file, queueLabel, onBack, onClos
         ) : (
         <div className="rounded-xl border border-line overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-line-subtle bg-surface-subtle">
+            <Table density="compact">
+              <THead>
+                <Tr className="bg-surface-subtle">
                   {['#', 'Type', 'Tracking No', 'Other packages', 'Reference', 'Date', 'Description', 'Amount', 'Tax', ''].map((h) => (
-                    <th key={h} className={cn(TH_CLS, ['Amount', 'Tax'].includes(h) && 'text-right')}>{h}</th>
+                    <Th key={h} className={cn(TH_CLS, ['Amount', 'Tax'].includes(h) && 'text-right')}>{h}</Th>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
+                </Tr>
+              </THead>
+              <TBody>
                 {lines.map((l, i) => (
-                  <tr key={l.key} className="border-b border-line-subtle last:border-0 align-top">
-                    <td className="px-3 py-2 text-xs text-fg-muted">{i + 1}</td>
-                    <td className="px-2 py-1.5">
-                      <select value={l.charge_type} onChange={(e) => updateLine(l.key, { charge_type: e.target.value as ChargeType })} className={SELECT_SM_CLS}>
+                  <Tr key={l.key} className="align-top">
+                    <Td className="text-xs text-fg-muted">{i + 1}</Td>
+                    <Td>
+                      <Select value={l.charge_type} onChange={(e) => updateLine(l.key, { charge_type: e.target.value as ChargeType })} className={SELECT_SM_CLS}>
                         {Object.entries(CHARGE_TYPE_LABEL).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-2 py-1.5"><input value={l.tracking_no} onChange={(e) => updateLine(l.key, { tracking_no: e.target.value })} className={cn(INPUT_SM_CLS, 'w-40 font-mono')} /></td>
-                    <td className="px-2 py-1.5"><input value={l.packages} onChange={(e) => updateLine(l.key, { packages: e.target.value })} placeholder="comma separated" className={cn(INPUT_SM_CLS, 'w-40 font-mono')} /></td>
-                    <td className="px-2 py-1.5"><input value={l.reference} onChange={(e) => updateLine(l.key, { reference: e.target.value })} className={cn(INPUT_SM_CLS, 'w-28')} /></td>
-                    <td className="px-2 py-1.5"><input type="date" value={l.ship_date} onChange={(e) => updateLine(l.key, { ship_date: e.target.value })} className={cn(INPUT_SM_CLS, 'w-32')} /></td>
-                    <td className="px-2 py-1.5"><input value={l.description} onChange={(e) => updateLine(l.key, { description: e.target.value })} className={cn(INPUT_SM_CLS, 'w-56')} /></td>
-                    <td className="px-2 py-1.5"><input type="number" step="0.01" value={l.amount} onChange={(e) => updateLine(l.key, { amount: e.target.value })} className={cn(INPUT_SM_CLS, 'w-24 text-right font-mono')} /></td>
-                    <td className="px-2 py-1.5"><input type="number" step="0.01" value={l.tax_amount} onChange={(e) => updateLine(l.key, { tax_amount: e.target.value })} className={cn(INPUT_SM_CLS, 'w-20 text-right font-mono')} /></td>
-                    <td className="px-2 py-1.5">
-                      <button type="button" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}
+                      </Select>
+                    </Td>
+                    <Td><Input value={l.tracking_no} onChange={(e) => updateLine(l.key, { tracking_no: e.target.value })} className={cn(INPUT_SM_CLS, 'w-40 font-mono')} /></Td>
+                    <Td><Input value={l.packages} onChange={(e) => updateLine(l.key, { packages: e.target.value })} placeholder="comma separated" className={cn(INPUT_SM_CLS, 'w-40 font-mono')} /></Td>
+                    <Td><Input value={l.reference} onChange={(e) => updateLine(l.key, { reference: e.target.value })} className={cn(INPUT_SM_CLS, 'w-28')} /></Td>
+                    <Td><Input type="date" value={l.ship_date} onChange={(e) => updateLine(l.key, { ship_date: e.target.value })} className={cn(INPUT_SM_CLS, 'w-32')} /></Td>
+                    <Td><Input value={l.description} onChange={(e) => updateLine(l.key, { description: e.target.value })} className={cn(INPUT_SM_CLS, 'w-56')} /></Td>
+                    <Td><Input type="number" step="0.01" value={l.amount} onChange={(e) => updateLine(l.key, { amount: e.target.value })} className={cn(INPUT_SM_CLS, 'w-24 text-right font-mono')} /></Td>
+                    <Td><Input type="number" step="0.01" value={l.tax_amount} onChange={(e) => updateLine(l.key, { tax_amount: e.target.value })} className={cn(INPUT_SM_CLS, 'w-20 text-right font-mono')} /></Td>
+                    <Td>
+                      <Button variant="danger-ghost" size="icon-sm" type="button" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}
                         disabled={lines.length === 1}
-                        className="rounded-md p-1.5 text-fg-muted hover:bg-danger-soft hover:text-danger-fg disabled:opacity-30" aria-label="Remove line">
+                        aria-label="Remove line">
                         <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </td>
-                  </tr>
+                      </Button>
+                    </Td>
+                  </Tr>
                 ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t border-line bg-surface-subtle text-xs font-semibold">
-                  <td colSpan={7} className="px-3 py-2">
-                    <button type="button" onClick={() => setLines((ls) => [...ls, emptyLine()])}
-                      className="inline-flex items-center gap-1 text-primary-700 hover:underline">
+              </TBody>
+              <TFoot>
+                <Tr className="bg-surface-subtle text-xs font-semibold">
+                  <Td colSpan={7}>
+                    <Button variant="link" type="button" onClick={() => setLines((ls) => [...ls, emptyLine()])}
+                      className="gap-1">
                       <Plus className="h-3.5 w-3.5" /> Add line
-                    </button>
-                  </td>
-                  <td className={cn('px-3 py-2 text-right font-mono', amountOk ? 'text-fg' : 'text-danger-fg')}>{formatAmount(linesAmount, currency || 'CAD')}</td>
-                  <td className={cn('px-3 py-2 text-right font-mono', taxOk ? 'text-fg' : 'text-warning-fg')}>{formatAmount(linesTax, currency || 'CAD')}</td>
-                  <td />
-                </tr>
-              </tfoot>
-            </table>
+                    </Button>
+                  </Td>
+                  <Td className={cn('px-3 py-2 text-right font-mono', amountOk ? 'text-fg' : 'text-danger-fg')}>{formatAmount(linesAmount, currency || 'CAD')}</Td>
+                  <Td className={cn('px-3 py-2 text-right font-mono', taxOk ? 'text-fg' : 'text-warning-fg')}>{formatAmount(linesTax, currency || 'CAD')}</Td>
+                  <Td />
+                </Tr>
+              </TFoot>
+            </Table>
           </div>
         </div>
         )}
 
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-fg-secondary">Notes</label>
-          <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
-            className="w-full resize-none rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
+          <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
+            className="w-full resize-none" />
         </div>
 
         {saveError && <p className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-xs text-danger-fg">{saveError}</p>}

@@ -98,7 +98,11 @@ export function DescriptionList({ items, columns = 2, className }: {
   )
 }
 
-export interface TabItem<K extends string = string> { key: K; label: React.ReactNode; count?: number; disabled?: boolean }
+export interface TabItem<K extends string = string> {
+  key: K; label: React.ReactNode; count?: number; disabled?: boolean
+  /** danger: the count needs attention (exceptions, overdue). */
+  countTone?: 'muted' | 'danger'
+}
 
 /** Underline tabs for switching views on one page. */
 export function Tabs<K extends string>({ items, value, onChange, className }: {
@@ -122,7 +126,11 @@ export function Tabs<K extends string>({ items, value, onChange, className }: {
             )}
           >
             {t.label}
-            {t.count !== undefined && <span className="font-mono text-xs tabular-nums text-fg-muted">{t.count}</span>}
+            {t.count !== undefined && (
+              <span className={cn('font-mono text-xs tabular-nums', t.countTone === 'danger' ? 'rounded bg-danger-soft px-1 text-danger-fg' : 'text-fg-muted')}>
+                {t.count}
+              </span>
+            )}
           </button>
         )
       })}
@@ -156,5 +164,64 @@ export function Segmented<K extends string>({ items, value, onChange, className,
         )
       })}
     </div>
+  )
+}
+
+/** Single-select filter chips that wrap (status filters, date presets). */
+export function ChipGroup<K extends string>({ items, value, onChange, className, label }: {
+  items: Array<{ key: K; label: React.ReactNode; count?: number }>
+  value: K
+  onChange: (k: K) => void
+  className?: string
+  /** Accessible name for the group, e.g. "Status". */
+  label?: string
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className={cn('flex flex-wrap gap-1.5', className)}>
+      {items.map((it) => {
+        const on = it.key === value
+        return (
+          <button
+            key={it.key}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(it.key)}
+            className={cn(
+              'inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors',
+              on ? 'border-accent bg-accent-soft text-accent-fg' : 'border-line bg-surface text-fg-secondary hover:border-line-strong hover:text-fg',
+            )}
+          >
+            {it.label}
+            {it.count !== undefined && <span className="font-mono tabular-nums text-fg-muted">{it.count}</span>}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** One on/off filter chip (e.g. "Overdue" next to a status ChipGroup). */
+export function Chip({ pressed, tone = 'accent', onClick, className, children }: {
+  pressed: boolean
+  tone?: 'accent' | 'danger'
+  onClick: () => void
+  className?: string
+  children: React.ReactNode
+}) {
+  const on = tone === 'danger' ? 'border-danger-line bg-danger-soft text-danger-fg' : 'border-accent bg-accent-soft text-accent-fg'
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onClick}
+      className={cn(
+        'inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors',
+        pressed ? on : 'border-line bg-surface text-fg-secondary hover:border-line-strong hover:text-fg',
+        className,
+      )}
+    >
+      {children}
+    </button>
   )
 }

@@ -26,6 +26,7 @@ import { useFeeLinkCandidates, useInvoiceFeeLinks, useSaveInvoiceFeeLinks } from
 import { FEE_TYPE_LABEL, type FeeType } from '@/services/poFee'
 import type { InvoiceLineItem } from '@/services/invoices'
 
+import { Checkbox, Select } from '@uniops/shell'
 interface DraftLink {
   fee_type: FeeType
   /** What an Other fee is; required for that type. */
@@ -159,7 +160,7 @@ export function InvoiceFeeLinksPanel({
   return (
     <div className="rounded-xl border border-line bg-surface p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-fg-muted">
+        <h3 className="flex items-center gap-1.5 text-xs font-semibold text-fg-muted">
           <Link2 className="h-3.5 w-3.5" />
           Link to PO
         </h3>
@@ -185,7 +186,7 @@ export function InvoiceFeeLinksPanel({
         <ul className="mb-3 flex flex-col gap-1.5">
           {shown.map((l) => (
             <li key={keyOf(l)} className="flex flex-wrap items-center gap-2 rounded-lg border border-line-subtle bg-surface-subtle px-3 py-1.5 text-sm">
-              <span className="rounded bg-surface px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-fg-secondary border border-line">
+              <span className="rounded bg-surface px-1.5 py-0.5 text-2xs font-semibold text-fg-secondary border border-line">
                 {FEE_TYPE_LABEL[l.fee_type]}
               </span>
               <Link to={`/po/${l.po_id}`} className="font-mono text-xs font-semibold text-primary-700 hover:underline">
@@ -196,7 +197,7 @@ export function InvoiceFeeLinksPanel({
               </span>
               <span className="text-xs text-fg-muted">· {lineLabel(l.invoice_line_id)}</span>
               {l.fee_type === 'other' && (editing ? (
-                <input
+                <Input
                   className={`h-7 min-w-[12rem] flex-1 rounded border bg-surface px-2 text-xs ${(l.note ?? '').trim() ? 'border-line-strong' : 'border-danger-solid'}`}
                   placeholder="What is this fee? (required)"
                   maxLength={200}
@@ -207,14 +208,14 @@ export function InvoiceFeeLinksPanel({
                 <span className="text-xs text-fg-secondary">— {l.note}</span>
               ))}
               {editing && (
-                <button
+                <Button variant="danger-ghost" size="icon-xs"
                   type="button"
-                  className="ml-auto text-fg-muted hover:text-danger-fg"
+                  className="ml-auto"
                   aria-label="Remove link"
                   onClick={() => setDraft((prev) => prev.filter((d) => keyOf(d) !== keyOf(l)))}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                </Button>
               )}
             </li>
           ))}
@@ -228,10 +229,10 @@ export function InvoiceFeeLinksPanel({
               <div className="grid gap-2 sm:grid-cols-[1fr_9rem]">
                 <label className="flex flex-col gap-1 text-xs text-fg-muted">
                   Part of the invoice
-                  <select
+                  <Select selectSize="sm"
                     value={applyTo}
                     onChange={(e) => chooseApplyTo(e.target.value)}
-                    className="h-9 rounded border border-line-strong bg-surface px-2 text-sm text-fg"
+                   
                   >
                     <option value="*">Whole invoice</option>
                     {lineItems.filter((l) => l.id).map((l) => (
@@ -239,19 +240,19 @@ export function InvoiceFeeLinksPanel({
                         Line: {l.description} ({formatAmount(Number(l.line_total), currency)})
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 <label className="flex flex-col gap-1 text-xs text-fg-muted">
                   Fee type
-                  <select
+                  <Select selectSize="sm"
                     value={feeType}
                     onChange={(e) => setFeeType(e.target.value as FeeType)}
-                    className="h-9 rounded border border-line-strong bg-surface px-2 text-sm text-fg"
+                   
                   >
                     {(Object.keys(FEE_TYPE_LABEL) as FeeType[]).map((t) => (
                       <option key={t} value={t}>{FEE_TYPE_LABEL[t]}</option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
               </div>
 
@@ -291,17 +292,17 @@ export function InvoiceFeeLinksPanel({
                           <span className="font-mono text-xs font-semibold text-fg">{po.number}</span>
                           <span className="text-fg-secondary">{po.vendor_name}</span>
                           {po.source === 'epms' && (
-                            <span className="rounded bg-surface-sunken px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-fg-secondary">EPMS</span>
+                            <span className="rounded bg-surface-sunken px-1.5 py-0.5 text-2xs font-semibold text-fg-secondary">EPMS</span>
                           )}
                           {po.is_milk && (
-                            <span className="rounded bg-primary-50 px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-primary-700">Milk</span>
+                            <span className="rounded bg-primary-50 px-1.5 py-0.5 text-2xs font-semibold text-primary-700">Milk</span>
                           )}
                           {po.incoterms_code && <span className="text-xs text-fg-muted">{po.incoterms_code}</span>}
                         </div>
                         <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
                           {po.arrivals.length === 0 && (
                             <label className="flex items-center gap-1.5 text-xs text-fg-secondary">
-                              <input type="checkbox" checked={isTicked(po.id, null)}
+                              <Checkbox checked={isTicked(po.id, null)}
                                      disabled={needsNote && !isTicked(po.id, null)}
                                      onChange={() => toggle(po.id, po.number, null, null)} />
                               Whole PO <span className="text-fg-muted">(no arrival yet)</span>
@@ -309,7 +310,7 @@ export function InvoiceFeeLinksPanel({
                           )}
                           {po.arrivals.map((a) => (
                             <label key={a.id} className="flex items-center gap-1.5 text-xs text-fg-secondary">
-                              <input type="checkbox" checked={isTicked(po.id, a.id)}
+                              <Checkbox checked={isTicked(po.id, a.id)}
                                      disabled={needsNote && !isTicked(po.id, a.id)}
                                      onChange={() => toggle(po.id, po.number, a.id, a.number)} />
                               <span className="font-mono">{a.number}</span>

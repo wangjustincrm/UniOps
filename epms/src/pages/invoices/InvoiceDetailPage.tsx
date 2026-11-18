@@ -34,6 +34,7 @@ import { CourierInvoiceView } from './CourierInvoiceView'
 import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 import { ATTACHMENT_RULE, uploadProblem } from '@/lib/uploadLimits'
 
+import { Checkbox, FileInput, Input, Select, TBody, TFoot, THead, Table, Tabs, Td, Textarea, Th, Tr } from '@uniops/shell'
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<InvoiceStatus, { label: string; variant: 'neutral' | 'warning' | 'info' | 'success' | 'danger'; dot: string }> = {
@@ -78,21 +79,21 @@ function MatchRow({
   action?: React.ReactNode
 }) {
   return (
-    <tr className="border-b border-line-subtle">
-      <td className="px-4 py-3">
+    <Tr>
+      <Td>
         <div className="flex items-center gap-2 text-sm font-medium text-fg">
           {icon}{label}
         </div>
-      </td>
-      <td className="px-4 py-3">
+      </Td>
+      <Td>
         {docRef && href
           ? <Link to={href} className="font-mono text-xs text-primary-600 hover:underline inline-flex items-center gap-1">
               {docRef} <ExternalLink className="h-3 w-3" />
             </Link>
           : <span className="text-fg-faint text-xs">—</span>
         }
-      </td>
-      <td className="px-4 py-3 text-right">
+      </Td>
+      <Td align="right">
         {amount != null && currency
           ? <span className="font-mono text-sm font-semibold text-fg">{formatAmount(amount, currency)}</span>
           : <span className="text-fg-faint text-xs">—</span>
@@ -103,15 +104,15 @@ function MatchRow({
             {formatAmount(amountInclTax, currency)} incl. tax
           </div>
         )}
-      </td>
-      <td className="px-4 py-3 text-xs text-fg-muted">{note}</td>
-      <td className="px-4 py-3 text-center">
+      </Td>
+      <Td className="text-xs text-fg-muted">{note}</Td>
+      <Td align="center">
         {ok === true  && <CheckCircle2 className="h-4 w-4 text-success-fg mx-auto" />}
         {ok === false && <AlertTriangle className="h-4 w-4 text-danger-fg mx-auto" />}
         {ok == null   && <span className="text-fg-faint">—</span>}
-      </td>
-      <td className="px-4 py-3 text-right">{action}</td>
-    </tr>
+      </Td>
+      <Td align="right">{action}</Td>
+    </Tr>
   )
 }
 
@@ -122,15 +123,15 @@ function UnmatchButton({ label, blockedReason, onClick }: {
   onClick: () => void
 }) {
   return (
-    <button
+    <Button variant="danger-outline" size="xs"
       type="button"
       disabled={blockedReason != null}
       onClick={onClick}
       title={blockedReason ?? 'Reverse this link (a reason is required)'}
-      className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs font-medium text-danger-fg transition-colors hover:border-danger-line hover:bg-danger-soft disabled:cursor-not-allowed disabled:border-line-subtle disabled:text-fg-faint disabled:hover:bg-transparent"
+     
     >
       <Unlink className="h-3 w-3" />{label}
-    </button>
+    </Button>
   )
 }
 
@@ -496,7 +497,7 @@ export default function InvoiceDetailPage() {
           </Link>
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-bold text-fg font-mono">{inv.internal_ref}</h1>
+              <h1 className="text-2xl font-semibold text-fg font-mono">{inv.internal_ref}</h1>
               <InvoiceStatusBadge status={inv.status} />
               {sla && (
                 <span className={cn('text-xs font-medium rounded-full px-2 py-0.5',
@@ -642,15 +643,7 @@ export default function InvoiceDetailPage() {
         {/* Main content */}
         <div className="flex-1 min-w-0 flex flex-col gap-4">
           {/* Tabs */}
-          <div className="flex gap-1 border-b border-line">
-            {tabs.map((t) => (
-              <button key={t.key} onClick={() => setActiveTab(t.key)}
-                className={cn('px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
-                  activeTab === t.key ? 'border-primary-600 text-primary-600' : 'border-transparent text-fg-muted hover:text-fg-secondary')}>
-                {t.label}
-              </button>
-            ))}
-          </div>
+          <Tabs items={tabs.map((t) => ({ key: t.key, label: t.label }))} value={activeTab} onChange={(k) => setActiveTab(k as typeof activeTab)} />
 
           {/* ── Details tab ───────────────────────────────────────────────────── */}
           {activeTab === 'details' && !editing && (
@@ -683,9 +676,9 @@ export default function InvoiceDetailPage() {
                     Confirm to finalize the match,
                     or reject to send it back to {inv.match_assignee_name ?? 'the assignee'}.
                   </p>
-                  <textarea rows={2} value={reviewNote} onChange={(e) => setReviewNote(e.target.value)}
+                  <Textarea rows={2} value={reviewNote} onChange={(e) => setReviewNote(e.target.value)}
                     placeholder="Review note (required to reject)..."
-                    className="px-3 py-2 rounded-lg border border-line-strong text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-600" />
+                    className="resize-none" />
                   {reviewMutation.isError && (
                     <p className="text-xs text-danger-fg">
                       {reviewMutation.error instanceof Error ? reviewMutation.error.message : 'Review action failed'}
@@ -712,7 +705,7 @@ export default function InvoiceDetailPage() {
 
               {/* Invoice fields */}
               <div className="rounded-xl border border-line bg-surface p-5">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">Invoice Information</h3>
+                <h3 className="text-xs font-semibold text-fg-muted mb-3">Invoice Information</h3>
                 <div className="flex flex-col gap-2.5">
                   <MetaRow label="Internal Ref"     value={inv.internal_ref}          mono />
                   <MetaRow label="Vendor Invoice #" value={inv.vendor_invoice_number}  mono />
@@ -726,7 +719,7 @@ export default function InvoiceDetailPage() {
 
               {/* Amounts */}
               <div className="rounded-xl border border-line bg-surface p-5">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">Amounts</h3>
+                <h3 className="text-xs font-semibold text-fg-muted mb-3">Amounts</h3>
                 <div className="flex flex-col gap-2.5">
                   <MetaRow label="Pre-tax Amount"  value={formatAmount(inv.amount, inv.currency)}    mono />
                   <MetaRow label="Tax Amount"      value={formatAmount(inv.tax_amount, inv.currency)} mono />
@@ -747,7 +740,7 @@ export default function InvoiceDetailPage() {
 
               {/* Linked documents */}
               <div className="rounded-xl border border-line bg-surface p-5 sm:col-span-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">Linked Documents</h3>
+                <h3 className="text-xs font-semibold text-fg-muted mb-3">Linked Documents</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {(() => {
                     // Agreement route: the PO slot shows the agreement instead —
@@ -872,50 +865,50 @@ export default function InvoiceDetailPage() {
               {/* Line Items */}
               {inv.line_items && inv.line_items.length > 0 && (
                 <div className="rounded-xl border border-line bg-surface p-5 sm:col-span-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">
+                  <h3 className="text-xs font-semibold text-fg-muted mb-3">
                     Line Items <span className="ml-1 normal-case font-normal text-fg-faint">({inv.line_items.length})</span>
                   </h3>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-line-subtle">
-                          <th className="pb-2 text-left text-xs font-semibold text-fg-muted uppercase tracking-wide">Description</th>
-                          <th className="pb-2 text-right text-xs font-semibold text-fg-muted uppercase tracking-wide w-16">Qty</th>
-                          <th className="pb-2 pl-3 text-left text-xs font-semibold text-fg-muted uppercase tracking-wide w-16">Unit</th>
-                          <th className="pb-2 text-right text-xs font-semibold text-fg-muted uppercase tracking-wide w-28">Unit Price</th>
-                          <th className="pb-2 text-right text-xs font-semibold text-fg-muted uppercase tracking-wide w-28">Line Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                    <Table>
+                      <THead>
+                        <Tr>
+                          <Th>Description</Th>
+                          <Th align="right" className="w-16">Qty</Th>
+                          <Th className="pl-3 w-16">Unit</Th>
+                          <Th align="right" className="w-28">Unit Price</Th>
+                          <Th align="right" className="w-28">Line Total</Th>
+                        </Tr>
+                      </THead>
+                      <TBody>
                         {inv.line_items.map((item, idx) => (
-                          <tr key={idx} className="border-b border-line-subtle last:border-0">
-                            <td className="py-2.5 pr-4 text-fg">
+                          <Tr key={idx}>
+                            <Td className="pr-4 text-fg">
                               <span>{item.description}</span>
                               {item.non_po_fee && (
-                                <span className="ml-2 inline-flex items-center rounded bg-surface-sunken px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-fg-muted align-middle">
+                                <span className="ml-2 inline-flex items-center rounded bg-surface-sunken px-1.5 py-0.5 text-2xs font-semibold text-fg-muted align-middle">
                                   Non-PO fee
                                 </span>
                               )}
                               {item.non_po_fee && item.non_po_note && (
                                 <span className="ml-2 text-2xs text-fg-muted">{item.non_po_note}</span>
                               )}
-                            </td>
-                            <td className="py-2.5 text-right font-mono text-xs text-fg-secondary">{Number(item.quantity)}</td>
-                            <td className="py-2.5 pl-3 text-xs text-fg-muted">{item.unit ?? '—'}</td>
-                            <td className="py-2.5 text-right font-mono text-xs text-fg-secondary">{formatAmount(Number(item.unit_price), inv.currency)}</td>
-                            <td className="py-2.5 text-right font-mono text-xs font-semibold text-fg">{formatAmount(Number(item.line_total), inv.currency)}</td>
-                          </tr>
+                            </Td>
+                            <Td align="right" className="font-mono text-xs text-fg-secondary">{Number(item.quantity)}</Td>
+                            <Td className="pl-3 text-xs text-fg-muted">{item.unit ?? '—'}</Td>
+                            <Td align="right" className="font-mono text-xs text-fg-secondary">{formatAmount(Number(item.unit_price), inv.currency)}</Td>
+                            <Td align="right" className="font-mono text-xs font-semibold text-fg">{formatAmount(Number(item.line_total), inv.currency)}</Td>
+                          </Tr>
                         ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t border-line">
-                          <td colSpan={4} className="pt-2.5 text-xs text-fg-muted text-right pr-4">Subtotal</td>
-                          <td className="pt-2.5 text-right font-mono text-xs font-semibold text-fg">
+                      </TBody>
+                      <TFoot>
+                        <Tr>
+                          <Td align="right" colSpan={4} className="text-xs text-fg-muted pr-4">Subtotal</Td>
+                          <Td align="right" className="font-mono text-xs font-semibold text-fg">
                             {formatAmount(inv.line_items.reduce((s, i) => s + Number(i.line_total), 0), inv.currency)}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                          </Td>
+                        </Tr>
+                      </TFoot>
+                    </Table>
                   </div>
                 </div>
               )}
@@ -965,14 +958,14 @@ export default function InvoiceDetailPage() {
             <div className="flex flex-col gap-4">
               {/* Basic info */}
               <div className="rounded-xl border border-line bg-surface p-5">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-4">Invoice Information</h3>
+                <h3 className="text-xs font-semibold text-fg-muted mb-4">Invoice Information</h3>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className="block text-xs font-medium text-fg-muted mb-1">Vendor Invoice #</label>
-                    <input
+                    <Input
                       value={editVendorInvoiceNumber}
                       onChange={(e) => setEditVendorInvoiceNumber(e.target.value)}
-                      className="w-full rounded-lg border border-line-strong px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="w-full"
                     />
                   </div>
                   <div>
@@ -983,20 +976,20 @@ export default function InvoiceDetailPage() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-fg-muted mb-1">Invoice Date</label>
-                    <input
+                    <Input
                       type="date"
                       value={editInvoiceDate}
                       onChange={(e) => setEditInvoiceDate(e.target.value)}
-                      className="w-full rounded-lg border border-line-strong px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="w-full"
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-fg-muted mb-1">Due Date</label>
-                    <input
+                    <Input
                       type="date"
                       value={editDueDate}
                       onChange={(e) => setEditDueDate(e.target.value)}
-                      className="w-full rounded-lg border border-line-strong px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="w-full"
                     />
                   </div>
                   {inv.po_id && (
@@ -1026,8 +1019,8 @@ export default function InvoiceDetailPage() {
                                     checked ? 'bg-primary-50 border border-primary-200' : 'border border-transparent hover:bg-surface',
                                   )}
                                 >
-                                  <input
-                                    type="checkbox"
+                                  <Checkbox
+                                   
                                     checked={checked}
                                     onChange={(e) =>
                                       setEditGrIds((prev) =>
@@ -1036,7 +1029,7 @@ export default function InvoiceDetailPage() {
                                           : prev.filter((id) => id !== g.id),
                                       )
                                     }
-                                    className="h-4 w-4 rounded border-line-strong text-primary-600 focus:ring-primary-500"
+                                   
                                   />
                                   <span className="font-mono text-sm font-medium text-fg">{g.number}</span>
                                   <span className="text-xs text-fg-muted flex-1 truncate">{g.title}</span>
@@ -1055,29 +1048,29 @@ export default function InvoiceDetailPage() {
 
               {/* Amounts */}
               <div className="rounded-xl border border-line bg-surface p-5">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-4">Amounts</h3>
+                <h3 className="text-xs font-semibold text-fg-muted mb-4">Amounts</h3>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
                     <label className="block text-xs font-medium text-fg-muted mb-1">Pre-tax Amount</label>
-                    <input
+                    <Input
                       type="number"
                       min="0"
                       step="0.01"
                       value={editAmount}
                       onChange={(e) => setEditAmount(e.target.value)}
-                      className="w-full rounded-lg border border-line-strong px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="w-full font-mono"
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-fg-muted mb-1">Tax Amount</label>
-                    <input
+                    <Input
                       type="number"
                       min="0"
                       step="0.01"
                       value={editTaxAmount}
                       onChange={(e) => setEditTaxAmount(e.target.value)}
                       disabled={hasTaxLines}
-                      className="w-full rounded-lg border border-line-strong px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-surface-subtle disabled:text-fg-muted"
+                      className="w-full font-mono"
                     />
                     {hasTaxLines && (
                       <p className="mt-1 text-2xs text-fg-muted">
@@ -1087,15 +1080,15 @@ export default function InvoiceDetailPage() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-fg-muted mb-1">Currency</label>
-                    <select
+                    <Select
                       value={editCurrency}
                       onChange={(e) => setEditCurrency(e.target.value)}
-                      className="w-full rounded-lg border border-line-strong px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="w-full"
                     >
                       {['CAD', 'USD', 'EUR', 'RMB'].map((c) => (
                         <option key={c} value={c}>{c}</option>
                       ))}
-                    </select>
+                    </Select>
                   </div>
                 </div>
                 <div className="mt-3 flex items-center justify-between rounded-lg bg-surface-subtle border border-line px-4 py-2.5">
@@ -1108,95 +1101,95 @@ export default function InvoiceDetailPage() {
 
               {/* Notes */}
               <div className="rounded-xl border border-line bg-surface p-5">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-4">Notes</h3>
-                <textarea
+                <h3 className="text-xs font-semibold text-fg-muted mb-4">Notes</h3>
+                <Textarea
                   value={editNotes}
                   onChange={(e) => setEditNotes(e.target.value)}
                   rows={3}
                   placeholder="Optional notes…"
-                  className="w-full rounded-lg border border-line-strong px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                  className="w-full resize-none"
                 />
               </div>
 
               {/* Line Items */}
               <div className="rounded-xl border border-line bg-surface p-5">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted">Line Items</h3>
-                  <button
+                  <h3 className="text-xs font-semibold text-fg-muted">Line Items</h3>
+                  <Button variant="link"
                     onClick={addEditLineItem}
-                    className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700"
+                    className="gap-1 text-xs"
                   >
                     <Plus className="h-3.5 w-3.5" /> Add Row
-                  </button>
+                  </Button>
                 </div>
                 {editLineItems.length === 0 ? (
                   <p className="text-xs text-fg-muted text-center py-4">No line items — click Add Row to add one</p>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-line-subtle">
-                          <th className="pb-2 text-left text-xs font-semibold text-fg-muted uppercase tracking-wide">Description</th>
-                          <th className="pb-2 text-right text-xs font-semibold text-fg-muted uppercase tracking-wide w-20">Qty</th>
-                          <th className="pb-2 pl-2 text-left text-xs font-semibold text-fg-muted uppercase tracking-wide w-20">Unit</th>
-                          <th className="pb-2 text-right text-xs font-semibold text-fg-muted uppercase tracking-wide w-28">Unit Price</th>
-                          <th className="pb-2 text-right text-xs font-semibold text-fg-muted uppercase tracking-wide w-28">Total</th>
-                          <th className="pb-2 w-8" />
-                        </tr>
-                      </thead>
-                      <tbody>
+                    <Table density="compact">
+                      <THead>
+                        <Tr>
+                          <Th>Description</Th>
+                          <Th align="right" className="w-20">Qty</Th>
+                          <Th className="pl-2 w-20">Unit</Th>
+                          <Th align="right" className="w-28">Unit Price</Th>
+                          <Th align="right" className="w-28">Total</Th>
+                          <Th className="w-8" />
+                        </Tr>
+                      </THead>
+                      <TBody>
                         {editLineItems.map((item, idx) => (
-                          <tr key={idx} className="border-b border-line-subtle last:border-0">
-                            <td className="py-1.5 pr-2">
-                              <input
+                          <Tr key={idx}>
+                            <Td className="pr-2">
+                              <Input inputSize="sm"
                                 value={item.description}
                                 onChange={(e) => updateEditLineItem(idx, { description: e.target.value })}
                                 placeholder="Description"
-                                className="w-full rounded border border-line px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary-400"
+                                className="w-full"
                               />
-                            </td>
-                            <td className="py-1.5 px-1">
-                              <input
+                            </Td>
+                            <Td>
+                              <Input inputSize="sm"
                                 type="number"
                                 min="0"
                                 step="1"
                                 value={item.quantity}
                                 onChange={(e) => updateEditLineItem(idx, { quantity: parseFloat(e.target.value) || 0 })}
-                                className="w-full rounded border border-line px-2 py-1 text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-400"
+                                className="w-full text-right font-mono"
                               />
-                            </td>
-                            <td className="py-1.5 px-1">
-                              <input
+                            </Td>
+                            <Td>
+                              <Input inputSize="sm"
                                 value={item.unit ?? ''}
                                 onChange={(e) => updateEditLineItem(idx, { unit: e.target.value || null })}
                                 placeholder="unit"
-                                className="w-full rounded border border-line px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary-400"
+                                className="w-full"
                               />
-                            </td>
-                            <td className="py-1.5 px-1">
-                              <input
+                            </Td>
+                            <Td>
+                              <Input inputSize="sm"
                                 type="number"
                                 step="0.01"
                                 value={item.unit_price}
                                 onChange={(e) => updateEditLineItem(idx, { unit_price: parseFloat(e.target.value) || 0 })}
-                                className="w-full rounded border border-line px-2 py-1 text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-400"
+                                className="w-full text-right font-mono"
                               />
-                            </td>
-                            <td className="py-1.5 px-1 text-right font-mono text-xs text-fg-secondary">
+                            </Td>
+                            <Td align="right" className="font-mono text-xs text-fg-secondary">
                               {(Number(item.quantity) * Number(item.unit_price)).toLocaleString('en-CA', { minimumFractionDigits: 2 })}
-                            </td>
-                            <td className="py-1.5 pl-1">
-                              <button
+                            </Td>
+                            <Td className="pl-1">
+                              <Button variant="danger-ghost" size="icon-xs" aria-label="Remove"
                                 onClick={() => removeEditLineItem(idx)}
-                                className="rounded p-1 text-fg-muted hover:text-danger-fg hover:bg-danger-soft"
+                               
                               >
                                 <X className="h-3.5 w-3.5" />
-                              </button>
-                            </td>
-                          </tr>
+                              </Button>
+                            </Td>
+                          </Tr>
                         ))}
-                      </tbody>
-                    </table>
+                      </TBody>
+                    </Table>
                   </div>
                 )}
               </div>
@@ -1390,18 +1383,18 @@ export default function InvoiceDetailPage() {
 
                   {/* Match table */}
                   <div className="rounded-xl border border-line bg-surface overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-line bg-surface-subtle">
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Document</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Reference</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Amount (pre-tax)</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Note</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-fg-muted">Status</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                    <Table>
+                      <THead>
+                        <Tr className="bg-surface-subtle">
+                          <Th>Document</Th>
+                          <Th>Reference</Th>
+                          <Th align="right">Amount (pre-tax)</Th>
+                          <Th>Note</Th>
+                          <Th align="center">Status</Th>
+                          <Th align="right">Action</Th>
+                        </Tr>
+                      </THead>
+                      <TBody>
                         {(() => {
                           // A multi-PO invoice lists each PO with its own reference
                           // (ISS-0190) — po_total is their sum, which one row under the
@@ -1484,8 +1477,8 @@ export default function InvoiceDetailPage() {
                             : 'Within tolerance'}
                           ok={!hasException && !overBilledSince}
                         />
-                      </tbody>
-                    </table>
+                      </TBody>
+                    </Table>
                     {/* Variance footer */}
                     <div className="px-4 py-3 border-t border-line bg-surface-subtle flex justify-end">
                       <div className="flex items-center gap-6 text-sm">
@@ -1503,42 +1496,42 @@ export default function InvoiceDetailPage() {
                   {inv.allocations && inv.allocations.length > 0 && (
                     <div className="rounded-xl border border-line bg-surface overflow-hidden">
                       <div className="px-4 py-3 border-b border-line bg-surface-subtle">
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted">PO Allocations</h3>
+                        <h3 className="text-xs font-semibold text-fg-muted">PO Allocations</h3>
                       </div>
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-line bg-surface-subtle">
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">PO</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">PO Line</th>
-                            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Allocated</th>
-                            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Variance</th>
-                          </tr>
-                        </thead>
-                        <tbody>
+                      <Table>
+                        <THead>
+                          <Tr className="bg-surface-subtle">
+                            <Th>PO</Th>
+                            <Th>PO Line</Th>
+                            <Th align="right">Allocated</Th>
+                            <Th align="right">Variance</Th>
+                          </Tr>
+                        </THead>
+                        <TBody>
                           {inv.allocations.map((a) => (
-                            <tr key={a.id} className="border-b border-line-subtle last:border-0">
-                              <td className="px-4 py-3">
+                            <Tr key={a.id}>
+                              <Td>
                                 <Link to={`/po/${a.po_id}`} className="font-mono text-xs text-primary-600 hover:underline">
                                   {a.po_number ?? a.po_id.slice(0, 8)}
                                 </Link>
-                              </td>
-                              <td className="px-4 py-3 text-xs text-fg-muted">{a.po_line_description ?? (a.po_line_id ? a.po_line_id.slice(0, 8) : 'PO header')}</td>
-                              <td className="px-4 py-3 text-right font-mono text-xs">{formatAmount(Number(a.allocated_total), inv.currency)}</td>
-                              <td className={cn('px-4 py-3 text-right font-mono text-xs',
+                              </Td>
+                              <Td className="text-xs text-fg-muted">{a.po_line_description ?? (a.po_line_id ? a.po_line_id.slice(0, 8) : 'PO header')}</Td>
+                              <Td align="right" className="font-mono text-xs">{formatAmount(Number(a.allocated_total), inv.currency)}</Td>
+                              <Td className={cn('px-4 py-3 text-right font-mono text-xs',
                                 Number(a.variance ?? 0) === 0 ? 'text-success-fg' : 'text-danger-fg')}>
                                 {a.variance == null ? '-' : formatAmount(Number(a.variance), inv.currency)}
-                              </td>
-                            </tr>
+                              </Td>
+                            </Tr>
                           ))}
-                        </tbody>
-                      </table>
+                        </TBody>
+                      </Table>
                     </div>
                   )}
 
                   {/* Exception resolution detail */}
                   {inv.exception_resolved_at && (
                     <div className="rounded-xl border border-line bg-surface p-5">
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">Exception Resolution</h3>
+                      <h3 className="text-xs font-semibold text-fg-muted mb-3">Exception Resolution</h3>
                       <div className="flex flex-col gap-2">
                         <MetaRow label="Resolution" value={inv.exception_resolution === 'accepted' ? 'Accepted with justification' : 'Credit note requested'} />
                         <MetaRow label="Resolved By" value={inv.exception_resolved_by_name ?? inv.exception_resolved_by ?? '—'} />
@@ -1560,7 +1553,7 @@ export default function InvoiceDetailPage() {
           {/* ── History tab ───────────────────────────────────────────────────── */}
           {activeTab === 'history' && (
             <div className="rounded-xl border border-line bg-surface p-5">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-4">Activity Log</h3>
+              <h3 className="text-xs font-semibold text-fg-muted mb-4">Activity Log</h3>
               {historyError && (
                 <p role="alert" className="mb-3 text-xs text-danger-fg">
                   The recorded steps could not be loaded ({historyError instanceof Error ? historyError.message : 'error'}) — only the upload and the current match are shown.
@@ -1638,7 +1631,7 @@ export default function InvoiceDetailPage() {
         {/* Right sidebar */}
         <div className="w-full lg:w-56 flex-shrink-0 flex flex-col gap-4">
           <div className="rounded-xl border border-line bg-surface p-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">Quick Info</h3>
+            <h3 className="text-xs font-semibold text-fg-muted mb-3">Quick Info</h3>
             <div className="flex flex-col gap-2 text-xs">
               <div className="flex justify-between">
                 <span className="text-fg-muted">Total Due</span>
@@ -1743,14 +1736,14 @@ function AttachmentItem({ att, token }: { att: AttachmentMeta; token: string | n
           <p className="truncate font-medium text-fg-secondary">{att.file_name}</p>
           <p className="text-fg-muted">{fmtBytes(att.file_size_bytes)}</p>
         </div>
-        <button onClick={handleOpen} disabled={!blobUrl}
-          className="flex items-center gap-1 rounded-lg border border-line px-2 py-1.5 text-xs font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-40 transition-colors shrink-0">
+        <Button variant="secondary" size="xs" onClick={handleOpen} disabled={!blobUrl}
+          className="shrink-0">
           <ExternalLink className="h-3 w-3" /> Open
-        </button>
-        <button onClick={handleDownload} disabled={!blobUrl}
-          className="flex items-center gap-1 rounded-lg bg-primary-50 border border-primary-200 px-2 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-100 disabled:opacity-40 transition-colors shrink-0">
+        </Button>
+        <Button variant="outline" size="xs" onClick={handleDownload} disabled={!blobUrl}
+          className="shrink-0">
           Download
-        </button>
+        </Button>
       </div>
       {error && (
         <p role="alert" className="flex items-center gap-1 text-xs text-danger-fg">
@@ -1823,15 +1816,15 @@ function InvoiceAttachments({
   const UploadButton = ({ label = 'Upload file' }: { label?: string }) => (
     canUpload ? (
       <>
-        <input ref={fileInputRef} type="file" accept={ATTACHMENT_RULE.accept} className="sr-only" onChange={handleFileChange} />
-        <button
+        <FileInput ref={fileInputRef} accept={ATTACHMENT_RULE.accept} className="sr-only" onChange={handleFileChange} />
+        <Button variant="secondary" size="xs"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50 transition-colors"
+         
         >
           <Upload className="h-3 w-3" />
           {uploading ? 'Uploading…' : label}
-        </button>
+        </Button>
       </>
     ) : null
   )
@@ -1839,7 +1832,7 @@ function InvoiceAttachments({
   return (
     <div className="rounded-xl border border-line bg-surface p-4">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
+        <h3 className="text-xs font-semibold text-fg-muted">
           Attachments {attachments.length > 0 && `(${attachments.length})`}
         </h3>
         {attachments.length > 0 && <UploadButton label="Add" />}

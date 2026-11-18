@@ -6,6 +6,7 @@ import type { ApiInvoice, InvoiceLineItem, AllocationInput, NonPoLineInput } fro
 import type { ApiPo } from '@/services/po'
 import { InvoiceTotalMatchPanel } from './InvoiceTotalMatchPanel'
 
+import { Input, MenuItem, Segmented, Select } from '@uniops/shell'
 // invoiceLineId -> { poId, poLineId }
 export type AllocationAssignment = Record<string, { poId: string; poLineId: string }>
 
@@ -120,12 +121,12 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="inline-flex self-start rounded-lg border border-line bg-surface-subtle p-0.5 text-xs">
-        <button onClick={() => setMode('line')}
-          className={`rounded-md px-3 py-1 ${mode === 'line' ? 'bg-surface shadow-sm font-medium' : 'text-fg-muted'}`}>By line</button>
-        <button onClick={() => setMode('total')}
-          className={`rounded-md px-3 py-1 ${mode === 'total' ? 'bg-surface shadow-sm font-medium' : 'text-fg-muted'}`}>By total amount</button>
-      </div>
+      <Segmented
+        className="self-start"
+        items={[{ key: 'line', label: 'By line' }, { key: 'total', label: 'By total amount' }]}
+        value={mode}
+        onChange={setMode}
+      />
       {mode === 'total' ? (
         <InvoiceTotalMatchPanel invoice={invoice} pos={pos} onSubmit={onSubmit} submitting={submitting} />
       ) : (
@@ -155,16 +156,16 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
           <span className="text-2xs text-warning-fg">
             This invoice has no PO line allocations. Link it to a purchase order (same vendor) for traceability — the charges are paid via the invoice header.
           </span>
-          <select
+          <Select selectSize="sm"
             value={referencePoId}
             onChange={(e) => setReferencePoId(e.target.value)}
-            className="mt-1 h-8 rounded-lg border border-line-strong bg-surface px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="mt-1"
           >
             <option value="">Select a purchase order…</option>
             {pos.map((po) => (
               <option key={po.id} value={po.id}>{po.number}</option>
             ))}
-          </select>
+          </Select>
         </div>
       )}
 
@@ -172,7 +173,7 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
       <div className="grid grid-cols-2 gap-4">
         {/* Invoice lines (drag source) */}
         <div className="rounded-xl border border-line bg-surface p-4">
-          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-fg-muted">Invoice lines · Pretax total {formatAmount(total, currency)}</h4>
+          <h4 className="mb-3 text-xs font-semibold text-fg-muted">Invoice lines · Pretax total {formatAmount(total, currency)}</h4>
           <div className="flex max-h-[55vh] flex-col gap-2 overflow-y-auto pr-1">
             {lines.map((l) => {
               const a = l.id ? assign[l.id] : undefined
@@ -183,24 +184,24 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate text-fg-muted line-through">{l.description}</span>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="rounded bg-surface-strong px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-fg-secondary">
+                        <span className="rounded bg-surface-strong px-1.5 py-0.5 text-2xs font-semibold text-fg-secondary">
                           Non-PO fee
                         </span>
                         <span className="font-mono text-xs text-fg-muted">{formatAmount(Number(l.line_total), currency)}</span>
                       </div>
                     </div>
                     <div className="mt-1.5 flex items-center gap-2">
-                      <input
+                      <Input inputSize="sm"
                         type="text"
                         value={(l.id && nonPo[l.id]) || ''}
                         onChange={(e) => l.id && setNote(l.id, e.target.value)}
                         placeholder="note (optional), e.g. shipping"
-                        className="h-6 flex-1 rounded border border-line-strong bg-surface px-2 text-2xs focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        className="flex-1"
                       />
-                      <button onClick={() => l.id && unmarkNonPo(l.id)}
-                        className="text-2xs text-primary-600 hover:underline">
+                      <Button variant="link" onClick={() => l.id && unmarkNonPo(l.id)}
+                        className="text-2xs">
                         Unmark
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 )
@@ -216,10 +217,10 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
                     <span className="font-mono text-xs">{formatAmount(Number(l.line_total), currency)}</span>
                   </div>
                   {a && (
-                    <button onClick={() => l.id && clearLine(l.id)}
-                      className="mt-1 text-2xs text-primary-600 hover:underline">
+                    <Button variant="link" onClick={() => l.id && clearLine(l.id)}
+                      className="mt-1 text-2xs">
                       Assigned - unassign
-                    </button>
+                    </Button>
                   )}
                   <span className="mt-1 block text-2xs text-fg-faint">right-click to mark as other fee</span>
                 </div>
@@ -230,7 +231,7 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
 
         {/* PO lines (drop target) */}
         <div className="rounded-xl border border-line bg-surface p-4">
-          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+          <h4 className="mb-3 text-xs font-semibold text-fg-muted">
             PO lines (drop here)
             <span className="ml-2 normal-case font-normal text-fg-faint">same accent color = same amount on both sides (hint only)</span>
           </h4>
@@ -290,11 +291,11 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
           <div className="absolute min-w-[210px] rounded-lg border border-line bg-surface py-1 shadow-lg"
             style={{ top: menu.y, left: menu.x }}
             onClick={(e) => e.stopPropagation()}>
-            <button
-              className="block w-full px-3 py-2 text-left text-sm text-fg-secondary hover:bg-surface-subtle"
+            <MenuItem
+              className="block"
               onClick={() => markNonPo(menu.lineId)}>
               Mark as other fee (shipping etc.)
-            </button>
+            </MenuItem>
           </div>
         </div>,
         document.body,

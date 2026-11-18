@@ -8,6 +8,7 @@ import {
   MAX_SPLITTABLE_PAGES, describeGroup, groupsFromCuts, type PageGroup,
 } from '@/lib/pdf-split'
 import { Button } from '@/components/ui/button'
+import { ChoiceCard } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 
 // Where a multi-page PDF is cut into one file per invoice — by a person,
@@ -117,30 +118,26 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
           <span className="rounded bg-inverse-raised px-2 py-0.5 text-xs">Invoice #{groupIndex + 1}</span>
         </div>
         <div className="flex items-center gap-2">
-          <button
+          <Button
             type="button"
             onClick={onToggleStart}
             disabled={page === 1}
             title={page === 1 ? 'The first page always starts the first invoice' : undefined}
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
-              page === 1 ? 'cursor-not-allowed bg-inverse-raised text-fg-on-inverse-faint'
-                : startsInvoice ? 'bg-primary-600 text-white hover:bg-primary-700'
-                : 'bg-inverse-raised text-fg-on-inverse hover:bg-inverse-hover',
-            )}
+            variant={page !== 1 && startsInvoice ? 'primary' : 'inverse'}
+            size="xs"
           >
             <Scissors className="h-3.5 w-3.5" />
             {startsInvoice ? 'Starts a new invoice' : 'Start a new invoice here'}
-          </button>
-          <button type="button" onClick={() => setFit((f) => !f)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-inverse-raised px-3 py-1.5 text-xs font-medium text-fg-on-inverse hover:bg-inverse-hover">
+          </Button>
+          <Button variant="inverse" size="xs" type="button" onClick={() => setFit((f) => !f)}
+                 >
             {fit ? <><Maximize2 className="h-3.5 w-3.5" /> Actual size</>
                  : <><Minimize2 className="h-3.5 w-3.5" /> Fit to window</>}
-          </button>
-          <button type="button" onClick={onClose}
-                  className="rounded-lg bg-inverse-raised p-1.5 text-fg-on-inverse hover:bg-inverse-hover">
+          </Button>
+          <Button variant="inverse" size="icon-sm" type="button" onClick={onClose}
+                 >
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -159,16 +156,16 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
                 className={cn('mx-auto block rounded bg-surface shadow-lg', rendering && 'hidden')} />
       </div>
 
-      <button type="button" disabled={page === 1}
+      <Button variant="inverse" size="icon" aria-label="Previous page" type="button" disabled={page === 1}
               onClick={(e) => { e.stopPropagation(); onGo(page - 1) }}
-              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-inverse-raised/90 p-2 text-white hover:bg-inverse-hover disabled:opacity-20">
+              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full disabled:opacity-20">
         <ChevronLeft className="h-5 w-5" />
-      </button>
-      <button type="button" disabled={page === pageCount}
+      </Button>
+      <Button variant="inverse" size="icon" aria-label="Next page" type="button" disabled={page === pageCount}
               onClick={(e) => { e.stopPropagation(); onGo(page + 1) }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-inverse-raised/90 p-2 text-white hover:bg-inverse-hover disabled:opacity-20">
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full disabled:opacity-20">
         <ChevronRight className="h-5 w-5" />
-      </button>
+      </Button>
     </div>,
     document.body,
   )
@@ -306,14 +303,14 @@ export function PdfSplitPanel({ file, onConfirm, onCancel, busy = false }: Props
                 return (
                   <div key={page} className="flex items-stretch">
                     <div className="flex w-[104px] flex-col items-center gap-1">
-                      <button
-                        type="button"
+                      <ChoiceCard
                         onClick={() => setPreviewPage(page)}
                         title={`Open page ${page} full size`}
+                        aria-label={`Open page ${page} full size`}
                         className={cn(
-                          'group relative flex h-[134px] w-[100px] items-center justify-center overflow-hidden rounded border bg-surface',
-                          'transition hover:ring-2 hover:ring-primary-500',
-                          groupIndex % 2 === 0 ? 'border-primary-200' : 'border-line-strong',
+                          // Alternate border = which invoice the page belongs to.
+                          'group relative h-[134px] w-[100px] items-center justify-center overflow-hidden rounded p-0',
+                          groupIndex % 2 === 0 ? 'border-accent-line' : 'border-line-strong',
                         )}
                       >
                         {thumbs[page - 1]
@@ -322,25 +319,23 @@ export function PdfSplitPanel({ file, onConfirm, onCancel, busy = false }: Props
                         <span className="pointer-events-none absolute inset-0 hidden items-center justify-center bg-inverse/50 group-hover:flex">
                           <Maximize2 className="h-4 w-4 text-white" />
                         </span>
-                      </button>
+                      </ChoiceCard>
                       <span className="text-2xs text-fg-muted">
                         p{page} · <span className="font-medium text-fg-secondary">#{groupIndex + 1}</span>
                       </span>
                     </div>
                     {page < pageCount && (
-                      <button
+                      <Button
                         type="button"
+                        variant={isCut ? 'primary' : 'subtle'}
                         onClick={() => toggleCut(page)}
                         title={isCut ? `Join page ${page} and ${page + 1}` : `Start a new invoice at page ${page + 1}`}
-                        className={cn(
-                          'mx-0.5 flex w-6 shrink-0 items-center justify-center rounded transition-colors',
-                          isCut
-                            ? 'bg-primary-600 text-white hover:bg-primary-700'
-                            : 'text-fg-faint hover:bg-surface-strong hover:text-fg-secondary',
-                        )}
+                        aria-label={isCut ? `Join page ${page} and ${page + 1}` : `Start a new invoice at page ${page + 1}`}
+                        aria-pressed={isCut}
+                        className="mx-0.5 h-auto w-6 shrink-0 self-stretch px-0"
                       >
                         <Scissors className="h-3.5 w-3.5" />
-                      </button>
+                      </Button>
                     )}
                   </div>
                 )

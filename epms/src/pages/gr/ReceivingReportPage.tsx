@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Download, Loader2, PackageSearch, Search } from 'lucide-react'
-import { SortTh, sortParams, useSort, type Sort } from '@uniops/shell'
+import { ChipGroup, Input, Select, SortTh, TBody, THead, Table, Td, Tr, sortParams, type Sort, useSort } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Pagination } from '@/components/ui/Pagination'
 import { cn, formatDate, todayISO, toLocalDate } from '@/lib/utils'
@@ -139,7 +139,7 @@ export default function ReceivingReportPage() {
       {/* Page header */}
       <div className="flex flex-wrap items-start justify-between gap-3 shrink-0">
         <div>
-          <h1 className="text-2xl font-bold text-fg">Receiving Report</h1>
+          <h1 className="text-2xl font-semibold text-fg">Receiving Report</h1>
           <p className="mt-1 text-sm text-fg-muted">
             Every physical line received, with the days each order took to arrive.
             Service confirmations and ERP-imported orders are excluded.
@@ -154,20 +154,7 @@ export default function ReceivingReportPage() {
       {/* Filters */}
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 shrink-0">
         <div className="flex flex-wrap items-center gap-1.5">
-          {PRESETS.map((p) => (
-            <button
-              key={p.value}
-              onClick={() => applyPreset(p.value)}
-              className={cn(
-                'px-3 py-1 rounded-full text-xs font-medium transition-colors',
-                preset === p.value
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-surface-sunken text-fg-secondary hover:bg-surface-strong',
-              )}
-            >
-              {p.label}
-            </button>
-          ))}
+          <ChipGroup label="Period" items={PRESETS.map((p) => ({ key: p.value, label: p.label }))} value={preset} onChange={(k) => applyPreset(k as Preset)} />
           {preset === 'custom' && (
             <span className="px-3 py-1 rounded-full text-xs font-medium bg-primary-600 text-white">
               Custom
@@ -189,39 +176,39 @@ export default function ReceivingReportPage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-fg-muted">Arrival From</label>
-            <input type="date" className={inputCls} value={range.from}
+            <Input type="date" className={inputCls} value={range.from}
               onChange={(e) => setBound('from', e.target.value)} />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-fg-muted">Arrival To</label>
-            <input type="date" className={inputCls} value={range.to}
+            <Input type="date" className={inputCls} value={range.to}
               onChange={(e) => setBound('to', e.target.value)} />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-fg-muted">Department</label>
-            <select className={inputCls} value={departmentId}
+            <Select className={inputCls} value={departmentId}
               onChange={(e) => setDepartmentId(e.target.value)}>
               <option value="">All Departments</option>
               {(departments?.items ?? []).map((d) => (
                 <option key={d.id} value={d.id}>{d.name}</option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-fg-muted">Vendor</label>
-            <select className={inputCls} value={vendorId}
+            <Select className={inputCls} value={vendorId}
               onChange={(e) => setVendorId(e.target.value)}>
               <option value="">All Vendors</option>
               {(vendors?.items ?? []).map((v) => (
                 <option key={v.id} value={v.id}>{v.name}</option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-fg-muted">Search</label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-fg-muted" />
-              <input
+              <Input
                 type="text"
                 placeholder="Item, material ID, PO#, supplier…"
                 value={search}
@@ -264,9 +251,9 @@ export default function ReceivingReportPage() {
               isFetching && 'opacity-60',
             )}
           >
-            <table className="w-full text-sm whitespace-nowrap">
-              <thead>
-                <tr>
+            <Table className="whitespace-nowrap">
+              <THead>
+                <Tr>
                   <Th label="Material ID" sortKey="material_id" sort={sort} onSort={onSort} />
                   <Th label="Description" sortKey="description" sort={sort} onSort={onSort} />
                   <Th label="Manufacturer / Supplier" sortKey="supplier" sort={sort} onSort={onSort} />
@@ -282,14 +269,14 @@ export default function ReceivingReportPage() {
                   <Th label="Person Accepting" sortKey="person_accepting" sort={sort} onSort={onSort} />
                   <Th label="Lead Time" sortKey="lead_time_days" sort={sort} onSort={onSort} align="right" />
                   <Th label="GR Number" sortKey="gr_number" sort={sort} onSort={onSort} />
-                </tr>
-              </thead>
-              <tbody>
+                </Tr>
+              </THead>
+              <TBody>
                 {rows.map((row, idx) => (
                   <ReportRow key={`${row.gr_id}-${idx}`} row={row} />
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
         )}
 
@@ -339,7 +326,7 @@ function Th({ label, sortKey, sort, onSort, align = 'left' }: {
     <SortTh
       label={label} sortKey={sortKey} sort={sort} onSort={onSort} align={align}
       className={cn(
-        'sticky top-0 z-10 bg-surface-subtle px-3 py-3 text-xs font-semibold uppercase tracking-wide',
+        'sticky top-0 z-10 bg-surface-subtle px-3 py-3 text-xs font-semibold',
         'text-fg-muted whitespace-nowrap shadow-[inset_0_-1px_0_var(--color-line)]',
         align === 'right' ? 'text-right' : 'text-left',
       )}
@@ -349,36 +336,36 @@ function Th({ label, sortKey, sort, onSort, align = 'left' }: {
 
 function ReportRow({ row }: { row: ReceivingReportRow }) {
   return (
-    <tr className="border-b border-line-subtle bg-surface hover:bg-primary-50/60 transition-colors">
-      <td className="px-3 py-2.5 font-mono text-xs text-fg-secondary">{row.material_id || '—'}</td>
-      <td className="px-3 py-2.5 text-fg max-w-md truncate" title={row.description}>
+    <Tr className="bg-surface hover:bg-primary-50/60 transition-colors">
+      <Td className="font-mono text-xs text-fg-secondary">{row.material_id || '—'}</Td>
+      <Td className="text-fg max-w-md truncate" title={row.description}>
         {row.description}
-      </td>
-      <td className="px-3 py-2.5 text-fg-secondary">{row.supplier}</td>
-      <td className="px-3 py-2.5">
+      </Td>
+      <Td className="text-fg-secondary">{row.supplier}</Td>
+      <Td>
         <Link to={`/po/${row.po_id}`} className="text-primary-600 hover:underline font-mono text-xs">
           {row.po_number}
         </Link>
-      </td>
-      <td className="px-3 py-2.5 text-fg-secondary">{row.unit}</td>
-      <td className="px-3 py-2.5 text-right font-mono text-xs text-fg">
+      </Td>
+      <Td className="text-fg-secondary">{row.unit}</Td>
+      <Td align="right" className="font-mono text-xs text-fg">
         {Number(row.quantity).toLocaleString(undefined, { maximumFractionDigits: 4 })}
-      </td>
-      <td className="px-3 py-2.5 text-fg-secondary">{row.department || '—'}</td>
-      <td className="px-3 py-2.5 text-fg-secondary">{row.requested_by || '—'}</td>
-      <td className="px-3 py-2.5 text-fg-secondary">{formatDate(row.date_ordered)}</td>
-      <td className="px-3 py-2.5 text-fg-secondary">{formatDate(row.arrival_date)}</td>
-      <td className="px-3 py-2.5 text-fg-secondary">{formatDate(row.left_warehouse_date)}</td>
-      <td className="px-3 py-2.5 text-fg-secondary">{row.warehouse_receiver || '—'}</td>
-      <td className="px-3 py-2.5 text-fg-secondary">{row.person_accepting || '—'}</td>
-      <td className="px-3 py-2.5 text-right font-mono text-xs text-fg">
+      </Td>
+      <Td className="text-fg-secondary">{row.department || '—'}</Td>
+      <Td className="text-fg-secondary">{row.requested_by || '—'}</Td>
+      <Td className="text-fg-secondary">{formatDate(row.date_ordered)}</Td>
+      <Td className="text-fg-secondary">{formatDate(row.arrival_date)}</Td>
+      <Td className="text-fg-secondary">{formatDate(row.left_warehouse_date)}</Td>
+      <Td className="text-fg-secondary">{row.warehouse_receiver || '—'}</Td>
+      <Td className="text-fg-secondary">{row.person_accepting || '—'}</Td>
+      <Td align="right" className="font-mono text-xs text-fg">
         {row.lead_time_days === null ? '—' : `${row.lead_time_days}d`}
-      </td>
-      <td className="px-3 py-2.5">
+      </Td>
+      <Td>
         <Link to={`/gr/${row.gr_id}`} className="text-primary-600 hover:underline font-mono text-xs">
           {row.gr_number}
         </Link>
-      </td>
-    </tr>
+      </Td>
+    </Tr>
   )
 }

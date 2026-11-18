@@ -9,10 +9,10 @@
    "raw-table": 60
   },
   "epms": {
-   "raw-control": 631,
-   "raw-table": 950,
+   "raw-control": 439,
+   "raw-table": 606,
    "raw-overlay": 29,
-   "shouting-type": 320,
+   "shouting-type": 204,
    "emoji": 20,
    "arbitrary-size": 1
   },
@@ -179,27 +179,8 @@
   "epms/src/components/budget/BudgetAccountSelect.tsx": {
    "raw-control": 1
   },
-  "epms/src/components/invoices/InvoiceBillingPeriodPanel.tsx": {
-   "raw-control": 1
-  },
-  "epms/src/components/invoices/InvoiceFeeLinksPanel.tsx": {
-   "raw-control": 6,
-   "shouting-type": 4
-  },
-  "epms/src/components/invoices/InvoiceMatchVariancePanel.tsx": {
-   "raw-table": 62,
-   "shouting-type": 18
-  },
-  "epms/src/components/invoices/InvoiceReceiptsPanel.tsx": {
-   "raw-control": 4,
-   "shouting-type": 2
-  },
-  "epms/src/components/invoices/InvoiceTaxSection.tsx": {
-   "raw-control": 5,
-   "shouting-type": 4
-  },
   "epms/src/components/invoices/ResolveExceptionPanel.tsx": {
-   "raw-control": 3
+   "raw-control": 1
   },
   "epms/src/components/pa/DirectPaBudgetPanel.tsx": {
    "shouting-type": 1
@@ -338,89 +319,36 @@
    "shouting-type": 4
   },
   "epms/src/pages/gr/CollectionConfirmPage.tsx": {
-   "raw-control": 5,
-   "shouting-type": 1,
    "emoji": 1
   },
-  "epms/src/pages/gr/GrCreatePage.tsx": {
-   "raw-control": 14,
-   "raw-table": 22,
-   "shouting-type": 8
-  },
   "epms/src/pages/gr/GrDetailPage.tsx": {
-   "raw-control": 7,
-   "raw-table": 22,
-   "raw-overlay": 1,
-   "shouting-type": 17
-  },
-  "epms/src/pages/gr/GrListPage.tsx": {
-   "raw-control": 2,
-   "raw-table": 13,
-   "shouting-type": 2
+   "raw-overlay": 1
   },
   "epms/src/pages/gr/ReceivingReportPage.tsx": {
-   "raw-control": 6,
-   "raw-table": 20,
-   "arbitrary-size": 1,
-   "shouting-type": 2
-  },
-  "epms/src/pages/gr/ServiceGrConfirmPage.tsx": {
-   "raw-control": 7,
-   "raw-table": 15,
-   "shouting-type": 6
+   "arbitrary-size": 1
   },
   "epms/src/pages/invoices/AssignMatchDialog.tsx": {
-   "raw-control": 3,
    "raw-overlay": 1
   },
   "epms/src/pages/invoices/CourierInvoiceReview.tsx": {
-   "raw-control": 22,
-   "raw-table": 22,
    "shouting-type": 1
-  },
-  "epms/src/pages/invoices/CourierInvoiceView.tsx": {
-   "raw-control": 10,
-   "raw-table": 26,
-   "shouting-type": 6
-  },
-  "epms/src/pages/invoices/FilePreviewPanel.tsx": {
-   "raw-control": 2
   },
   "epms/src/pages/invoices/InvoiceAllocationPanel.tsx": {
-   "raw-control": 7,
-   "raw-overlay": 1,
-   "shouting-type": 3
+   "raw-overlay": 1
   },
   "epms/src/pages/invoices/InvoiceChainDrawer.tsx": {
-   "raw-control": 1,
-   "raw-overlay": 1,
-   "shouting-type": 1
+   "raw-overlay": 1
   },
   "epms/src/pages/invoices/InvoiceDetailPage.tsx": {
-   "raw-control": 21,
-   "raw-table": 66,
-   "shouting-type": 35,
    "emoji": 4
   },
   "epms/src/pages/invoices/InvoiceListPage.tsx": {
-   "raw-control": 45,
-   "raw-table": 76,
-   "raw-overlay": 3,
-   "shouting-type": 5
-  },
-  "epms/src/pages/invoices/InvoiceTotalMatchPanel.tsx": {
-   "raw-control": 2,
-   "shouting-type": 2
-  },
-  "epms/src/pages/invoices/MatchPanel.tsx": {
-   "raw-control": 11
+   "raw-overlay": 3
   },
   "epms/src/pages/invoices/PdfSplitPanel.tsx": {
-   "raw-control": 7,
    "raw-overlay": 1
   },
   "epms/src/pages/invoices/UnmatchDialog.tsx": {
-   "raw-control": 2,
    "raw-overlay": 1
   },
   "epms/src/pages/pa/DerivedPaLinesTable.tsx": {

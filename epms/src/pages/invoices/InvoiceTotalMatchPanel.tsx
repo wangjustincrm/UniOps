@@ -4,6 +4,7 @@ import { formatAmount } from '@/lib/utils'
 import type { ApiInvoice, AllocationInput } from '@/services/invoices'
 import type { ApiPo } from '@/services/po'
 
+import { Input } from '@uniops/shell'
 // poId -> amount allocated to that PO from THIS invoice (this session)
 type TotalAssign = Record<string, number>
 
@@ -72,7 +73,7 @@ export function InvoiceTotalMatchPanel({ invoice, pos, onSubmit, submitting }: P
       <div className="grid grid-cols-2 gap-4">
         {/* Whole-invoice drag source */}
         <div className="rounded-xl border border-line bg-surface p-4">
-          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-fg-muted">Invoice</h4>
+          <h4 className="mb-3 text-xs font-semibold text-fg-muted">Invoice</h4>
           <div
             draggable
             onDragStart={() => setDragging(true)}
@@ -88,7 +89,7 @@ export function InvoiceTotalMatchPanel({ invoice, pos, onSubmit, submitting }: P
 
         {/* PO header drop targets */}
         <div className="rounded-xl border border-line bg-surface p-4">
-          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-fg-muted">Purchase orders (drop here)</h4>
+          <h4 className="mb-3 text-xs font-semibold text-fg-muted">Purchase orders (drop here)</h4>
           <div className="flex max-h-[55vh] flex-col gap-2 overflow-y-auto pr-1">
             {pos.map((po) => {
               const here = assign[po.id]
@@ -107,10 +108,10 @@ export function InvoiceTotalMatchPanel({ invoice, pos, onSubmit, submitting }: P
                   {here != null && (
                     <div className="mt-1.5 flex items-center gap-2">
                       <span className="text-2xs text-fg-muted">Allocate</span>
-                      <input type="number" step="0.01" value={here}
+                      <Input inputSize="sm" type="number" step="0.01" value={here}
                         onChange={(e) => editAmount(po.id, e.target.value)}
-                        className="h-6 w-28 rounded border border-line-strong bg-surface px-2 text-2xs focus:outline-none focus:ring-1 focus:ring-primary-500" />
-                      <button onClick={() => unassign(po.id)} className="text-2xs text-primary-600 hover:underline">unassign</button>
+                        className="w-28" />
+                      <Button variant="link" onClick={() => unassign(po.id)} className="text-2xs">unassign</Button>
                     </div>
                   )}
                 </div>

@@ -14,7 +14,7 @@ export {
 export { Modal, Drawer, ConfirmDialog, type ModalProps, type DrawerProps, type ConfirmDialogProps } from './overlay'
 export { PageHeader, PageBody, Section, Toolbar, Eyebrow, type PageHeaderProps } from './page'
 export { Alert, EmptyState, Spinner, LoadingState, type AlertProps, type EmptyStateProps } from './feedback'
-export { Amount, formatAmount, DocNumber, Stat, DescriptionList, Tabs, Segmented, type TabItem } from './data'
+export { Amount, formatAmount, DocNumber, Stat, DescriptionList, Tabs, Segmented, ChipGroup, Chip, type TabItem } from './data'
 export {
   AppShell, Sidebar, Topbar, UserMenu, useSidebarCollapsed,
   type NavItem, type NavSection, type Branding, type SidebarProps, type UserMenuProps, type UserMenuItem, type TopbarProps,

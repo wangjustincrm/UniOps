@@ -41,6 +41,10 @@ export const buttonVariants = cva(
         outline: 'border border-accent bg-surface text-accent-fg hover:bg-accent-soft',
         // Remove-row / delete icon: quiet until hovered.
         'danger-ghost': 'text-fg-faint hover:bg-danger-soft hover:text-danger-fg',
+        'warning-outline': 'border border-warning-line bg-surface text-warning-fg hover:bg-warning-soft',
+        // On dark surfaces (PDF viewer).
+        inverse: 'bg-inverse-raised text-fg-on-inverse hover:bg-inverse-hover',
+        'inverse-ghost': 'text-fg-on-inverse-muted hover:bg-inverse-raised hover:text-fg-on-inverse',
       },
       size: {
         xs: 'h-7 px-2.5 text-xs',

@@ -20,6 +20,7 @@ import { canCancelGr } from '@/lib/documentActions'
 import { serviceHasIssues } from '@/lib/grNotes'
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog'
 
+import { Input, Radio, TBody, THead, Table, Tabs, Td, Textarea, Th, Tr } from '@uniops/shell'
 // Statuses the backend accepts for POST /gr/{id}/attachments/regenerate-pdf
 // (anything from the acknowledge step onward, excluding cancelled).
 const GR_PDF_REGENERATABLE_STATUSES: GrStatus[] = ['collection_pending', 'collected', 'confirmed', 'discrepancy']
@@ -257,7 +258,7 @@ export default function GrDetailPage() {
           </Link>
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-bold text-fg font-mono">{gr.number}</h1>
+              <h1 className="text-2xl font-semibold text-fg font-mono">{gr.number}</h1>
               <GrStatusBadge status={gr.status} />
             </div>
             <p className="mt-1 text-sm text-fg-muted">
@@ -372,29 +373,14 @@ export default function GrDetailPage() {
         {/* Main content */}
         <div className="flex-1 min-w-0 flex flex-col gap-4">
           {/* Tabs */}
-          <div className="flex gap-1 border-b border-line">
-            {tabs.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setActiveTab(t.key)}
-                className={cn(
-                  'px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px',
-                  activeTab === t.key
-                    ? 'border-primary-600 text-primary-600'
-                    : 'border-transparent text-fg-muted hover:text-fg-secondary'
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
+          <Tabs items={tabs.map((t) => ({ key: t.key, label: t.label }))} value={activeTab} onChange={(k) => setActiveTab(k as typeof activeTab)} />
 
           {/* Details tab */}
           {activeTab === 'details' && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {/* GR Info */}
               <div className="rounded-xl border border-line bg-surface p-5">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">Receipt Details</h3>
+                <h3 className="text-xs font-semibold text-fg-muted mb-3">Receipt Details</h3>
                 <div className="flex flex-col gap-2">
                   <MetaRow label="GR Number"   value={gr.number} mono />
                   <MetaRow label="GR Type"     value={gr.gr_type === 'physical' ? 'Physical Goods' : 'Service'} />
@@ -414,7 +400,7 @@ export default function GrDetailPage() {
               </div>
               {/* Linked Documents */}
               <div className="rounded-xl border border-line bg-surface p-5">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">Linked Documents</h3>
+                <h3 className="text-xs font-semibold text-fg-muted mb-3">Linked Documents</h3>
                 <div className="flex flex-col gap-3">
                   {po && (
                     <div className="flex items-center justify-between rounded-lg border border-line px-3 py-2.5">
@@ -433,19 +419,19 @@ export default function GrDetailPage() {
               </div>
               {/* Value summary */}
               <div className="rounded-xl border border-line bg-surface p-5 sm:col-span-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">Value Summary</h3>
+                <h3 className="text-xs font-semibold text-fg-muted mb-3">Value Summary</h3>
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <p className="text-xs text-fg-muted">Lines Received</p>
-                    <p className="text-lg font-bold text-fg mt-0.5">{gr.line_items.length}</p>
+                    <p className="text-lg font-semibold text-fg mt-0.5">{gr.line_items.length}</p>
                   </div>
                   <div>
                     <p className="text-xs text-fg-muted">Total Received Value</p>
-                    <p className="text-lg font-bold text-fg mt-0.5 font-mono">{formatAmount(totalValue, gr.currency)}</p>
+                    <p className="text-lg font-semibold text-fg mt-0.5 font-mono">{formatAmount(totalValue, gr.currency)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-fg-muted">Issues</p>
-                    <p className={cn('text-lg font-bold mt-0.5', hasDiscrepancy ? 'text-danger-fg' : serviceIssues ? 'text-warning-fg' : 'text-success-fg')}>
+                    <p className={cn('text-lg font-semibold mt-0.5', hasDiscrepancy ? 'text-danger-fg' : serviceIssues ? 'text-warning-fg' : 'text-success-fg')}>
                       {hasDiscrepancy
                         ? `${gr.line_items.filter((l) => l.condition !== 'good').length} line(s)`
                         : serviceIssues ? 'Service has issues' : 'None'}
@@ -459,29 +445,29 @@ export default function GrDetailPage() {
               {/* Line Items */}
               <div className="rounded-xl border border-line bg-surface overflow-hidden sm:col-span-2">
                 <div className="px-5 py-3 border-b border-line bg-surface-subtle">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
+                  <h3 className="text-xs font-semibold text-fg-muted">
                     Line Items ({gr.line_items.length})
                   </h3>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-line bg-surface-subtle">
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted w-8">#</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Description</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted w-24">Ordered</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted w-24">Received</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted w-16">Unit</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted w-32">Line Total</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted w-32">Condition</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table>
+                    <THead>
+                      <Tr className="bg-surface-subtle">
+                        <Th className="w-8">#</Th>
+                        <Th>Description</Th>
+                        <Th align="right" className="w-24">Ordered</Th>
+                        <Th align="right" className="w-24">Received</Th>
+                        <Th className="w-16">Unit</Th>
+                        <Th align="right" className="w-32">Line Total</Th>
+                        <Th className="w-32">Condition</Th>
+                      </Tr>
+                    </THead>
+                    <TBody>
                       {gr.line_items.map((line, idx) => (
                         <LineDetailRow key={line.id} line={line} idx={idx} currency={gr.currency} serviceIssues={serviceIssues} />
                       ))}
-                    </tbody>
-                  </table>
+                    </TBody>
+                  </Table>
                 </div>
                 <div className="px-4 py-4 border-t border-line flex justify-end">
                   <div className="min-w-52">
@@ -499,20 +485,20 @@ export default function GrDetailPage() {
           {activeTab === 'attachments' && (
             <div className="rounded-xl border border-line bg-surface p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+                <h2 className="text-sm font-semibold text-fg-muted">
                   Attachments
                 </h2>
                 {GR_PDF_REGENERATABLE_STATUSES.includes(gr.status) && (
-                  <button
+                  <Button variant="secondary" size="sm"
                     type="button"
                     onClick={() => regeneratePdf.mutate()}
                     disabled={regeneratePdf.isPending}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-100 disabled:opacity-50"
+                   
                     title="Generate the GR PDF and attach it (replaces the existing one)"
                   >
                     <RotateCcw className={`h-3.5 w-3.5 ${regeneratePdf.isPending ? 'animate-spin' : ''}`} />
                     {regeneratePdf.isPending ? 'Generating…' : 'Regenerate PDF'}
-                  </button>
+                  </Button>
                 )}
               </div>
               {downloadError && (
@@ -532,7 +518,7 @@ export default function GrDetailPage() {
                       <Paperclip className="h-4 w-4 shrink-0 text-fg-muted" />
                       <span className="flex-1 truncate text-sm text-fg-secondary">{att.filename}</span>
                       <span className="text-xs text-fg-muted">{formatBytes(att.file_size)}</span>
-                      <button
+                      <Button variant="link"
                         type="button"
                         onClick={() => {
                           setDownloadError(null)
@@ -540,17 +526,17 @@ export default function GrDetailPage() {
                             setDownloadError(`Could not download "${att.filename}". Please try again or contact IT if it persists.`)
                           })
                         }}
-                        className="text-xs text-primary-600 hover:underline"
+                        className="text-xs"
                       >
                         Download
-                      </button>
-                      <button
+                      </Button>
+                      <Button variant="danger-ghost" size="icon-xs" aria-label="Remove"
                         type="button"
                         onClick={() => deleteAttachment.mutate(att.id)}
-                        className="text-fg-faint hover:text-danger-fg"
+                       
                       >
                         <X className="h-3.5 w-3.5" />
-                      </button>
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -588,33 +574,33 @@ function LineDetailRow({ line, idx, currency, serviceIssues }: {
   const cond = serviceIssues && line.condition === 'good' ? SERVICE_ISSUES_CONDITION : CONDITION_CONFIG[line.condition]
   return (
     <>
-      <tr className={cn('border-b border-line-subtle', idx % 2 === 1 && 'bg-surface-subtle/50')}>
-        <td className="px-4 py-3 text-center text-fg-muted text-xs">{idx + 1}</td>
-        <td className="px-4 py-3">
+      <Tr className={cn('border-b border-line-subtle', idx % 2 === 1 && 'bg-surface-subtle/50')}>
+        <Td align="center" className="text-fg-muted text-xs">{idx + 1}</Td>
+        <Td>
           <div className="text-fg">{line.description}</div>
           {line.material_id && <div className="text-xs text-fg-muted font-mono mt-0.5">{line.material_id}</div>}
-        </td>
-        <td className="px-4 py-3 text-right font-mono text-xs text-fg-muted">{formatQty(line.qty_ordered)}</td>
-        <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-fg">{formatQty(line.qty_received)}</td>
-        <td className="px-4 py-3 text-xs text-fg-muted">{line.unit}</td>
-        <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-fg">
+        </Td>
+        <Td align="right" className="font-mono text-xs text-fg-muted">{formatQty(line.qty_ordered)}</Td>
+        <Td align="right" className="font-mono text-xs font-semibold text-fg">{formatQty(line.qty_received)}</Td>
+        <Td className="text-xs text-fg-muted">{line.unit}</Td>
+        <Td align="right" className="font-mono text-xs font-semibold text-fg">
           {formatAmount(line.line_total, currency)}
-        </td>
-        <td className="px-4 py-3">
+        </Td>
+        <Td>
           <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', cond.cls)}>
             {cond.label}
           </span>
-        </td>
-      </tr>
+        </Td>
+      </Tr>
       {line.discrepancy_notes && (
-        <tr className={cn('border-b border-line-subtle', idx % 2 === 1 && 'bg-surface-subtle/50')}>
-          <td />
-          <td colSpan={6} className="px-4 pb-3">
+        <Tr className={cn('border-b border-line-subtle', idx % 2 === 1 && 'bg-surface-subtle/50')}>
+          <Td />
+          <Td colSpan={6}>
             <div className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-fg">
               <span className="font-medium">Issue: </span>{line.discrepancy_notes}
             </div>
-          </td>
-        </tr>
+          </Td>
+        </Tr>
       )}
     </>
   )
@@ -659,7 +645,7 @@ function DamageResolutionCard({ gr }: { gr: ApiGr }) {
   return (
     <div className="rounded-xl border border-line bg-surface p-5 sm:col-span-2">
       <div className="flex items-center justify-between gap-4 mb-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted">Vendor Resolution</h3>
+        <h3 className="text-xs font-semibold text-fg-muted">Vendor Resolution</h3>
         {!gr.damage_resolution && gr.status !== 'cancelled' && canResolve && !open && (
           <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
             Record Vendor Resolution
@@ -688,8 +674,8 @@ function DamageResolutionCard({ gr }: { gr: ApiGr }) {
           <div className="flex gap-4">
             {(Object.keys(RESOLUTION_LABELS) as GrDamageResolution[]).map((r) => (
               <label key={r} className="flex items-center gap-1.5 text-sm text-fg-secondary cursor-pointer">
-                <input
-                  type="radio"
+                <Radio
+                 
                   name="damage-resolution"
                   checked={resolution === r}
                   onChange={() => setResolution(r)}
@@ -704,7 +690,7 @@ function DamageResolutionCard({ gr }: { gr: ApiGr }) {
               {resolution === 'return' ? 'Return / RMA number' : 'Credit note number'}{' '}
               <span className="text-danger-fg">*</span>
             </label>
-            <input
+            <Input
               type="text"
               maxLength={100}
               value={ref}
@@ -718,12 +704,12 @@ function DamageResolutionCard({ gr }: { gr: ApiGr }) {
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-fg-secondary">Note</label>
-            <textarea
+            <Textarea
               rows={2}
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Optional — what was agreed with the vendor"
-              className="px-3 py-2 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
+              className="resize-none"
             />
           </div>
           {grAction.isError && (

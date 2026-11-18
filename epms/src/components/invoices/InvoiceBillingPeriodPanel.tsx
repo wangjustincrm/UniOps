@@ -7,6 +7,7 @@ import { useAssignBillingPeriod } from '@/hooks/useInvoices'
 import type { ApiInvoice } from '@/services/invoices'
 import type { ApiScheduleRow } from '@/services/agreement'
 
+import { Radio } from '@uniops/shell'
 /**
  * The invoice's billing period on a recurring agreement — and the way to set
  * or change it.
@@ -179,12 +180,12 @@ function InvoiceBillingPeriodPanelBody({
                       : 'border-line bg-surface hover:bg-surface-subtle',
                   )}
                 >
-                  <input
-                    type="radio"
+                  <Radio
+                   
                     name="billing-period"
                     checked={selectedId === row.id}
                     onChange={() => setSelectedId(row.id)}
-                    className="h-4 w-4 text-primary-600 focus:ring-primary-500"
+                   
                   />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-fg">

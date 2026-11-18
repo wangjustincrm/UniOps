@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { useReplaceTab } from '@uniops/shell'
+import { useReplaceTab, FileInput, Input, Radio, TBody, THead, Table, Td, Textarea, Th, Tr, MenuItem } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, AlertTriangle, CheckCircle2, Package, Paperclip, X, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -313,7 +313,7 @@ export default function GrCreatePage() {
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-fg">
+          <h1 className="text-2xl font-semibold text-fg">
             {selectedPo?.type === 4 ? 'Service Confirmation' : selectedPo?.type === 6 ? 'Project Completion' : 'New Goods Receipt'}
           </h1>
           <p className="mt-1 text-sm text-fg-muted">
@@ -351,7 +351,7 @@ export default function GrCreatePage() {
             Select PO <span className="text-danger-fg">*</span>
           </label>
           <div className="relative">
-            <input
+            <Input
               type="text"
               placeholder="Search by PO number, vendor, or title..."
               value={selectedPo ? `${selectedPo.number} — ${selectedPo.vendor_name} — ${selectedPo.title}` : poSearch}
@@ -367,12 +367,12 @@ export default function GrCreatePage() {
               )}
             />
             {selectedPo && (
-              <button
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
+              <Button variant="subtle" size="icon-xs" aria-label="Clear"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2"
                 onClick={() => { setSelectedPoId(''); setPoSearch(''); setShowPoDropdown(true) }}
               >
                 ×
-              </button>
+              </Button>
             )}
             {showPoDropdown && !selectedPo && (
               <div className="absolute z-10 mt-1 w-full rounded-lg border border-line bg-surface shadow-lg max-h-64 overflow-y-auto">
@@ -380,9 +380,9 @@ export default function GrCreatePage() {
                   <div className="px-4 py-3 text-sm text-fg-muted">No eligible POs found (must be issued, partially received, or approved service PO)</div>
                 ) : (
                   filteredPos.map((p) => (
-                    <button
+                    <MenuItem
                       key={p.id}
-                      className="w-full text-left px-4 py-3 hover:bg-primary-50 border-b border-line-subtle last:border-0"
+                      className="px-4 py-3 border-b border-line-subtle last:border-0"
                       onClick={() => {
                         setSelectedPoId(p.id)
                         setShowPoDropdown(false)
@@ -397,7 +397,7 @@ export default function GrCreatePage() {
                       <div className="text-xs text-fg-muted mt-0.5">
                         Expected {formatDate(p.expected_delivery)} · {formatAmount(p.total, p.currency)}
                       </div>
-                    </button>
+                    </MenuItem>
                   ))
                 )}
               </div>
@@ -451,12 +451,12 @@ export default function GrCreatePage() {
                 required
                 error={submitted && !title.trim() ? 'Required' : ''}
               >
-                <input
+                <Input
                   type="text"
                   maxLength={255}
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="w-full"
                 />
               </FormField>
               <FormField
@@ -465,13 +465,13 @@ export default function GrCreatePage() {
                   ? 'The person who physically received the goods — left empty, it is you'
                   : 'The person recording the service — left empty, it is you'}
               >
-                <input
+                <Input
                   type="text"
                   maxLength={200}
                   placeholder={user?.name ?? ''}
                   value={receivedBy}
                   onChange={(e) => setReceivedBy(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="w-full"
                 />
               </FormField>
               <FormField
@@ -479,11 +479,11 @@ export default function GrCreatePage() {
                 required
                 error={submitted && !receivedAt ? 'Required' : ''}
               >
-                <input
+                <Input
                   type="date"
                   value={receivedAt}
                   onChange={(e) => setReceivedAt(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                  className="w-full"
                 />
               </FormField>
               <FormField
@@ -492,23 +492,23 @@ export default function GrCreatePage() {
                 error={submitted && !storageLocation.trim() && isPhysicalGr(selectedPo.type) ? 'Required' : ''}
                 hint={!isPhysicalGr(selectedPo.type) ? 'Not applicable for service / project GR' : ''}
               >
-                <input
+                <Input
                   type="text"
                   placeholder="e.g. Bay 3A, Technical Warehouse"
                   value={storageLocation}
                   onChange={(e) => setStorageLocation(e.target.value)}
                   disabled={!isPhysicalGr(selectedPo.type)}
-                  className="w-full h-10 px-3 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-surface-sunken disabled:text-fg-muted"
+                  className="w-full"
                 />
               </FormField>
             </div>
             <FormField label="Notes" hint="Optional — any delivery notes, missing items, etc.">
-              <textarea
+              <Textarea
                 rows={2}
                 placeholder="e.g. Items delivered to receiving dock B."
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-line-strong text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
+                className="w-full resize-none"
               />
             </FormField>
           </div>
@@ -534,9 +534,9 @@ export default function GrCreatePage() {
               <Upload className="h-7 w-7 text-fg-muted" />
               <p className="text-sm font-medium text-fg-secondary">Drop files here or click to browse</p>
               <p className="text-xs text-fg-muted">{ATTACHMENT_RULE.hint}</p>
-              <input
+              <FileInput
                 ref={fileInputRef}
-                type="file"
+               
                 multiple
                 accept={ATTACHMENT_RULE.accept}
                 className="hidden"
@@ -553,14 +553,14 @@ export default function GrCreatePage() {
                     <Paperclip className="h-4 w-4 text-fg-muted shrink-0" />
                     <span className="flex-1 text-sm text-fg-secondary truncate">{file.name}</span>
                     <span className="text-xs text-fg-muted shrink-0">{(file.size / 1024).toFixed(0)} KB</span>
-                    <button
+                    <Button variant="danger-ghost" size="icon-xs"
                       type="button"
                       onClick={(e) => { e.stopPropagation(); removeFile(idx) }}
-                      className="text-fg-muted hover:text-danger-fg transition-colors"
+                     
                       aria-label="Remove file"
                     >
                       <X className="h-4 w-4" />
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -574,19 +574,19 @@ export default function GrCreatePage() {
               <span className="text-xs text-fg-muted">{lineItems.length} line{lineItems.length !== 1 ? 's' : ''}</span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-line bg-surface-subtle">
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted w-8">#</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Description</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted w-24">Ordered</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted w-28">Received Qty</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted w-16">Unit</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted w-32">Line Total</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted w-48">Condition</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table density="compact">
+                <THead>
+                  <Tr className="bg-surface-subtle">
+                    <Th className="w-8">#</Th>
+                    <Th>Description</Th>
+                    <Th align="right" className="w-24">Ordered</Th>
+                    <Th align="right" className="w-28">Received Qty</Th>
+                    <Th className="w-16">Unit</Th>
+                    <Th align="right" className="w-32">Line Total</Th>
+                    <Th className="w-48">Condition</Th>
+                  </Tr>
+                </THead>
+                <TBody>
                   {lineItems.map((line, idx) => (
                     <LineRow
                       key={line.id}
@@ -597,8 +597,8 @@ export default function GrCreatePage() {
                       onChange={(patch) => updateLine(idx, patch)}
                     />
                   ))}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
             {/* Totals */}
             <div className="px-6 py-4 border-t border-line flex justify-end">
@@ -630,7 +630,7 @@ export default function GrCreatePage() {
                 <label className="text-xs font-medium text-warning-fg">
                   Over-receipt reason <span className="text-danger-fg">*</span>
                 </label>
-                <textarea
+                <Textarea
                   rows={2}
                   placeholder="e.g. Vendor shipped a full case; extra units kept as spares"
                   value={overReceiptReason}
@@ -702,23 +702,23 @@ function LineRow({
 
   return (
     <>
-      <tr className={cn('border-b border-line-subtle', idx % 2 === 1 && 'bg-surface-subtle/50')}>
-        <td className="px-4 py-3 text-center text-fg-muted text-xs">{idx + 1}</td>
-        <td className="px-4 py-3">
+      <Tr className={cn('border-b border-line-subtle', idx % 2 === 1 && 'bg-surface-subtle/50')}>
+        <Td align="center" className="text-fg-muted text-xs">{idx + 1}</Td>
+        <Td>
           <div className="text-fg">{line.description}</div>
           {line.material_id && <div className="text-xs text-fg-muted font-mono mt-0.5">{line.material_id}</div>}
-        </td>
-        <td className="px-4 py-3 text-right text-fg-muted font-mono text-xs">
+        </Td>
+        <Td align="right" className="text-fg-muted font-mono text-xs">
           {formatQty(line.qty_ordered)} {line.unit}
           {line.open !== null && (
             <div className="mt-0.5 text-2xs text-fg-muted whitespace-nowrap">
               Received {line.already_received} · Pending {line.pending} · Open {line.open}
             </div>
           )}
-        </td>
-        <td className="px-4 py-3 text-right">
+        </Td>
+        <Td align="right">
           <div className="flex flex-col items-end gap-0.5">
-            <input
+            <Input
               type="number"
               min={0}
               step="any"
@@ -736,17 +736,17 @@ function LineRow({
             {qtyError && <span className="text-2xs text-danger-fg">Required</span>}
             {over && <span className="text-2xs text-warning-fg">Over open qty</span>}
           </div>
-        </td>
-        <td className="px-4 py-3 text-fg-muted text-xs">{line.unit}</td>
-        <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-fg">
+        </Td>
+        <Td className="text-fg-muted text-xs">{line.unit}</Td>
+        <Td align="right" className="font-mono text-xs font-semibold text-fg">
           {formatAmount(line.line_total, currency)}
-        </td>
-        <td className="px-4 py-3">
+        </Td>
+        <Td>
           <div className="flex gap-3">
             {CONDITION_OPTIONS.map((opt) => (
               <label key={opt.value} className={cn('flex items-center gap-1 cursor-pointer text-xs', opt.color)}>
-                <input
-                  type="radio"
+                <Radio
+                 
                   name={`condition-${line.id}`}
                   value={opt.value}
                   checked={line.condition === opt.value}
@@ -757,18 +757,18 @@ function LineRow({
               </label>
             ))}
           </div>
-        </td>
-      </tr>
+        </Td>
+      </Tr>
       {/* Discrepancy details row */}
       {hasIssue && (
-        <tr className={cn('border-b border-line-subtle', idx % 2 === 1 && 'bg-surface-subtle/50')}>
-          <td />
-          <td colSpan={6} className="px-4 pb-3">
+        <Tr className={cn('border-b border-line-subtle', idx % 2 === 1 && 'bg-surface-subtle/50')}>
+          <Td />
+          <Td colSpan={6}>
             <div className="rounded-lg border border-warning-line bg-warning-soft p-3 flex flex-col gap-2">
               <label className="text-xs font-medium text-warning-fg">
                 {line.condition === 'damaged' ? 'Damage' : 'Discrepancy'} Notes <span className="text-danger-fg">*</span>
               </label>
-              <textarea
+              <Textarea
                 rows={2}
                 placeholder="Describe the issue — quantity short, damage details, etc."
                 value={line.discrepancy_notes ?? ''}
@@ -780,8 +780,8 @@ function LineRow({
               />
               {noteError && <p className="text-xs text-danger-fg">Notes are required for discrepancy/damage</p>}
             </div>
-          </td>
-        </tr>
+          </Td>
+        </Tr>
       )}
     </>
   )

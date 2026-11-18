@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, Loader2, Percent, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn, formatAmount } from '@/lib/utils'
+import { Checkbox, Input, Select } from '@uniops/shell'
 import {
   getTaxCodes, getTaxLines, saveTaxLines, type TaxLine,
 } from '@/services/invoiceTax'
@@ -101,7 +102,7 @@ export function InvoiceTaxSection({ invoiceId, currency, pretaxAmount, headerTax
   return (
     <div className="rounded-lg border border-line bg-surface">
       <div className="flex items-center justify-between border-b border-line-subtle px-4 py-2.5">
-        <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+        <h3 className="flex items-center gap-2 text-xs font-semibold text-fg-muted">
           <Percent className="h-3.5 w-3.5" />
           Tax Lines
           <span className="normal-case font-normal text-fg-faint">
@@ -131,17 +132,17 @@ export function InvoiceTaxSection({ invoiceId, currency, pretaxAmount, headerTax
             {/* Column labels line up with the inputs only on the one-row (sm+)
                 layout; below that each input carries its own label (MOB-001,
                 ISS-0178: the row was ~640 px wide and pushed a 360 px page sideways). */}
-            <div className="hidden sm:flex items-center gap-2 text-xs uppercase tracking-wide text-fg-muted">
+            <div className="hidden sm:flex items-center gap-2 text-xs text-fg-muted">
               <span className="w-64">Tax code</span>
               <span className="w-32 text-right">Taxable base</span>
               <span className="w-28 text-right">Tax</span>
             </div>
             {rows.map((row, i) => (
               <div key={row.id ?? `new-${i}`} className="flex flex-wrap sm:flex-nowrap items-end sm:items-center gap-2 text-sm border-b border-line-subtle pb-2 sm:border-0 sm:pb-0">
-                <select value={row.tax_code} disabled={!editable}
+                <Select value={row.tax_code} disabled={!editable}
                         onChange={(e) => pickCode(i, e.target.value)}
                         aria-label="Tax code"
-                        className="w-full sm:w-64 rounded-md border border-line px-2 py-1.5 disabled:bg-surface-subtle">
+                        className="w-full sm:w-64">
                   <option value="">— Tax code —</option>
                   {codes.map((c) => (
                     <option key={`${c.code}-${c.rate}`} value={c.code}>
@@ -149,33 +150,33 @@ export function InvoiceTaxSection({ invoiceId, currency, pretaxAmount, headerTax
                       {c.recoverable ? '' : ' (non-recoverable)'}
                     </option>
                   ))}
-                </select>
+                </Select>
                 <label className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-none">
-                  <span className="text-2xs uppercase tracking-wide text-fg-muted sm:hidden">Taxable base</span>
-                  <input type="number" step="0.01" min="0"
+                  <span className="text-2xs text-fg-muted sm:hidden">Taxable base</span>
+                  <Input type="number" step="0.01" min="0"
                          value={row.taxable_amount ?? ''} disabled={!editable}
                          onChange={(e) => setBase(i, e.target.value)}
-                         className="w-full sm:w-32 rounded-md border border-line px-2 py-1.5 text-right disabled:bg-surface-subtle" />
+                         className="w-full sm:w-32 text-right" />
                 </label>
                 <label className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-none">
-                  <span className="text-2xs uppercase tracking-wide text-fg-muted sm:hidden">Tax</span>
-                  <input type="number" step="0.01" min="0"
+                  <span className="text-2xs text-fg-muted sm:hidden">Tax</span>
+                  <Input type="number" step="0.01" min="0"
                          value={row.tax_amount} disabled={!editable}
                          title="Computed from base × rate — editable for rounding"
                          onChange={(e) => update(i, { tax_amount: e.target.value })}
-                         className="w-full sm:w-28 rounded-md border border-line px-2 py-1.5 text-right text-fg-secondary disabled:bg-surface-subtle" />
+                         className="w-full sm:w-28 text-right" />
                 </label>
                 <label className={cn('flex items-center gap-1.5 py-1.5 text-xs sm:py-0',
                                      row.recoverable ? 'text-success-fg' : 'text-fg-muted')}>
-                  <input type="checkbox" checked={row.recoverable} disabled={!editable}
+                  <Checkbox checked={row.recoverable} disabled={!editable}
                          onChange={(e) => update(i, { recoverable: e.target.checked })} />
                   ITC recoverable
                 </label>
                 {editable && (
-                  <button onClick={() => removeRow(i)} aria-label="Remove tax line"
-                          className="py-1.5 text-fg-faint hover:text-danger-fg sm:py-0">
+                  <Button variant="danger-ghost" size="icon-xs" onClick={() => removeRow(i)} aria-label="Remove tax line"
+                         >
                     <Trash2 className="h-4 w-4" />
-                  </button>
+                  </Button>
                 )}
               </div>
             ))}

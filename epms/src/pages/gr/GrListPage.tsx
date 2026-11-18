@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Plus, Search, Warehouse, ClipboardList } from 'lucide-react'
-import { SortTh, sortParams, useSort, type Sort } from '@uniops/shell'
+import { ChipGroup, Input, SortTh, TBody, THead, Table, Td, Tr, sortParams, type Sort, useSort } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
@@ -80,7 +80,7 @@ export default function GrListPage() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-fg">Goods Receipt</h1>
+          <h1 className="text-2xl font-semibold text-fg">Goods Receipt</h1>
           <p className="mt-1 text-sm text-fg-muted">Record received goods and service confirmations</p>
         </div>
         <div className="flex items-center gap-2">
@@ -101,29 +101,16 @@ export default function GrListPage() {
       <div className="rounded-xl border border-line bg-surface p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
         <div className="relative flex-1 min-w-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-fg-muted" />
-          <input
+          <Input inputSize="sm"
             type="text"
             placeholder="Search by GR#, PO#, vendor..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-            className="w-full h-9 pl-9 pr-3 rounded-lg border border-line-strong bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+            className="w-full pl-9 pr-3"
           />
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {STATUS_FILTERS.map((f) => (
-            <button
-              key={f.value}
-              onClick={() => { setStatusFilter(f.value as GrStatus | 'all'); setPage(1) }}
-              className={cn(
-                'px-3 py-1 rounded-full text-xs font-medium transition-colors',
-                statusFilter === f.value
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-surface-sunken text-fg-secondary hover:bg-surface-strong'
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
+          <ChipGroup label="Status" items={STATUS_FILTERS.map((f) => ({ key: f.value, label: f.label }))} value={statusFilter} onChange={(k) => { setStatusFilter(k as GrStatus | 'all'); setPage(1) }} />
         </div>
       </div>
 
@@ -138,9 +125,9 @@ export default function GrListPage() {
             {!isLoading && <p className="text-xs text-fg-muted mt-1">Try adjusting your filters</p>}
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line bg-surface-subtle">
+          <Table>
+            <THead>
+              <Tr className="bg-surface-subtle">
                 <Th label="GR Number" sortKey="number" sort={sort} onSort={onSort} />
                 <Th label="PO Reference" sortKey="po_number" sort={sort} onSort={onSort} />
                 <Th label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} />
@@ -149,14 +136,14 @@ export default function GrListPage() {
                 <Th label="Received Date" sortKey="received_at" sort={sort} onSort={onSort} />
                 <Th label="Total Value" sortKey="total_value" sort={sort} onSort={onSort} align="right" />
                 <Th label="Received By" sortKey="received_by" sort={sort} onSort={onSort} />
-              </tr>
-            </thead>
-            <tbody>
+              </Tr>
+            </THead>
+            <TBody>
               {grs.map((gr, idx) => (
                 <GrRow key={gr.id} gr={gr} idx={idx} />
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         )}
       </div>
 
@@ -182,7 +169,7 @@ function Th({
     <SortTh
       label={label} sortKey={sortKey} sort={sort} onSort={onSort} align={align}
       className={cn(
-        'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-fg-muted whitespace-nowrap',
+        'px-4 py-3 text-xs font-semibold text-fg-muted whitespace-nowrap',
         align === 'right' ? 'text-right' : 'text-left',
       )}
     />
@@ -193,34 +180,34 @@ function GrRow({ gr, idx }: { gr: ApiGr; idx: number }) {
   const totalValue = gr.line_items.reduce((s, l) => s + Number(l.line_total), 0)
 
   return (
-    <tr className="border-b border-line-subtle bg-surface hover:bg-primary-50/60 transition-colors">
-      <td className="px-4 py-3 font-medium">
+    <Tr className="bg-surface hover:bg-primary-50/60 transition-colors">
+      <Td className="font-medium">
         <Link to={`/gr/${gr.id}`} className="text-primary-600 hover:underline font-mono text-xs">
           {gr.number}
         </Link>
-      </td>
-      <td className="px-4 py-3">
+      </Td>
+      <Td>
         <Link to={`/po/${gr.po_id}`} className="text-primary-600 hover:underline font-mono text-xs">
           {gr.po_number}
         </Link>
-      </td>
-      <td className="px-4 py-3 text-fg-secondary">{gr.vendor_name}</td>
-      <td className="px-4 py-3">
+      </Td>
+      <Td className="text-fg-secondary">{gr.vendor_name}</Td>
+      <Td>
         <span className={cn(
           'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
           gr.gr_type === 'physical' ? 'bg-info-soft text-info-fg' : 'bg-cat4-soft text-cat4-fg'
         )}>
           {gr.gr_type === 'physical' ? 'Physical' : 'Service'}
         </span>
-      </td>
-      <td className="px-4 py-3">
+      </Td>
+      <Td>
         <GrStatusBadge status={gr.status} />
-      </td>
-      <td className="px-4 py-3 text-fg-secondary">{formatDate(gr.received_at)}</td>
-      <td className="px-4 py-3 font-mono text-xs text-fg-secondary text-right">
+      </Td>
+      <Td className="text-fg-secondary">{formatDate(gr.received_at)}</Td>
+      <Td align="right" className="font-mono text-xs text-fg-secondary ">
         {formatAmount(totalValue, gr.currency)}
-      </td>
-      <td className="px-4 py-3 text-fg-secondary">{gr.received_by}</td>
-    </tr>
+      </Td>
+      <Td className="text-fg-secondary">{gr.received_by}</Td>
+    </Tr>
   )
 }

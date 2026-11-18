@@ -18,6 +18,7 @@ import { cn, formatDate } from '@/lib/utils'
 import { dueInfo, type DueTone } from '@/lib/dueDate'
 import type { ChainStep, ChainStepKey, ChainStepRef, ChainStepState } from '@/services/invoices'
 
+import { Button } from '@uniops/shell'
 const STEP_TITLES: Record<ChainStepKey, string> = {
   match_po: 'Match PO',
   link_gr: 'Link GR',
@@ -164,7 +165,7 @@ export function InvoiceChainDrawer({
       >
         <header className="flex items-start justify-between border-b border-line px-5 py-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            <p className="text-xs font-semibold text-fg-muted">
               Invoice status
             </p>
             <p className="mt-0.5 font-mono text-sm text-fg">
@@ -179,13 +180,13 @@ export function InvoiceChainDrawer({
               </p>
             )}
           </div>
-          <button
+          <Button variant="subtle" size="icon-xs"
             onClick={onClose}
-            className="rounded p-1 text-fg-muted transition-colors hover:bg-surface-sunken hover:text-fg-secondary"
+           
             aria-label="Close"
           >
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </header>
 
         <div className="flex-1 overflow-y-auto px-5 py-5">

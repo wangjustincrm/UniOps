@@ -13,6 +13,7 @@ import { Unlink, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useUnmatchInvoice, type UnmatchScope } from '@/hooks/useInvoices'
 
+import { Textarea } from '@uniops/shell'
 const COPY: Record<UnmatchScope, { title: string; body: string; confirm: string }> = {
   po: {
     title: 'Unmatch Purchase Order',
@@ -72,22 +73,22 @@ export function UnmatchDialog({
             <Unlink className="h-4 w-4 text-danger-fg" />
             <h2 className="text-sm font-semibold text-fg">{copy.title}</h2>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken">
+          <Button variant="subtle" size="icon-sm" aria-label="Close" onClick={onClose}>
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
 
         <div className="flex flex-col gap-3 px-5 py-4">
           <p className="text-xs text-fg-secondary">{copy.body}</p>
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-fg-secondary">Reason (required)</span>
-            <textarea
+            <Textarea
               autoFocus
               rows={3}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Why is this being unmatched?"
-              className="w-full rounded-lg border border-line-strong px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+              className="w-full"
             />
           </label>
           {unmatch.isError && (

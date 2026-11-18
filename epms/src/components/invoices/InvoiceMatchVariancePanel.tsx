@@ -9,6 +9,7 @@ import { RECEIPT_TYPE_LABELS, type ReceiptType } from '@/services/agreementRecei
 import type { ApiInvoice } from '@/services/invoices'
 import type { ApiPoLineItem } from '@/services/po'
 
+import { TBody, TFoot, THead, Table, Td, Th, Tr } from '@uniops/shell'
 // PA Detail approver view of how each linked invoice compares to its PO —
 // see docs/superpowers/specs/2026-08-13-ap-payment-officer-and-match-visibility-design.md.
 // AP will not personally absorb a payment difference; instead of adding an
@@ -51,29 +52,29 @@ function FeeLinesSection({ invoice }: { invoice: ApiInvoice }) {
   return (
     <div className="rounded-lg border border-line bg-surface-subtle overflow-hidden">
       <div className="px-3 py-2 border-b border-line">
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
+        <h4 className="text-xs font-semibold text-fg-muted">
           Not compared to PO (billed as invoiced)
         </h4>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[360px]">
-          <tbody>
+        <Table density="compact" className="min-w-[360px]">
+          <TBody>
             {lines.map((line, idx) => (
-              <tr key={idx} className="border-b border-line last:border-0">
-                <td className="px-3 py-2 text-xs text-fg-muted">{line.description}</td>
-                <td className="px-3 py-2 text-right font-mono text-xs text-fg-muted">
+              <Tr key={idx}>
+                <Td className="text-xs text-fg-muted">{line.description}</Td>
+                <Td align="right" className="font-mono text-xs text-fg-muted">
                   {formatAmount(line.amount, invoice.currency)}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-            <tr>
-              <td className="px-3 py-2 text-xs font-medium text-fg-secondary">Fee lines total</td>
-              <td className="px-3 py-2 text-right font-mono text-xs font-medium text-fg-secondary">
+            <Tr>
+              <Td className="text-xs font-medium text-fg-secondary">Fee lines total</Td>
+              <Td align="right" className="font-mono text-xs font-medium text-fg-secondary">
                 {formatAmount(total, invoice.currency)}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+              </Td>
+            </Tr>
+          </TBody>
+        </Table>
       </div>
     </div>
   )
@@ -138,45 +139,45 @@ function HouseAccountReceiptPanel({ invoice }: { invoice: ApiInvoice }): JSX.Ele
       {expanded && (
         <div className="border-t border-inherit px-4 py-4 bg-surface flex flex-col gap-4">
           <div className="overflow-x-auto rounded-lg border border-line">
-            <table className="w-full text-sm min-w-[480px]">
-              <thead>
-                <tr className="border-b border-line bg-surface-subtle">
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Reference</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Date</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Type</th>
-                  <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table density="compact" className="min-w-[480px]">
+              <THead>
+                <Tr className="bg-surface-subtle">
+                  <Th>Reference</Th>
+                  <Th>Date</Th>
+                  <Th>Type</Th>
+                  <Th align="right">Amount</Th>
+                </Tr>
+              </THead>
+              <TBody>
                 {receipts.map((r) => (
-                  <tr key={r.id} className="border-b border-line-subtle last:border-0">
-                    <td className="px-3 py-2.5 font-mono text-xs text-fg">{r.receipt_ref ?? '—'}</td>
-                    <td className="px-3 py-2.5 text-xs text-fg-secondary">{formatDate(r.receipt_date)}</td>
-                    <td className="px-3 py-2.5 text-xs text-fg-secondary">
+                  <Tr key={r.id}>
+                    <Td className="font-mono text-xs text-fg">{r.receipt_ref ?? '—'}</Td>
+                    <Td className="text-xs text-fg-secondary">{formatDate(r.receipt_date)}</Td>
+                    <Td className="text-xs text-fg-secondary">
                       {RECEIPT_TYPE_LABELS[r.receipt_type as ReceiptType] ?? r.receipt_type}
-                    </td>
-                    <td className="px-3 py-2.5 text-right font-mono text-xs">
+                    </Td>
+                    <Td align="right" className="font-mono text-xs">
                       {r.total_amount === null
                         // Delivery / service evidence carries no amount — shown, but
                         // visibly excluded from the total below (matches
                         // InvoiceReceiptsPanel's candidate-row convention).
                         ? <span className="text-fg-muted italic">no amount</span>
                         : formatAmount(Number(r.total_amount), invoice.currency)}
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 ))}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={3} className="px-3 py-2 text-xs font-medium text-fg-secondary">
+              </TBody>
+              <TFoot>
+                <Tr>
+                  <Td colSpan={3} className="text-xs font-medium text-fg-secondary">
                     Priced receipts total ({summary.pricedCount} of {receipts.length})
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono text-xs font-medium text-fg-secondary">
+                  </Td>
+                  <Td align="right" className="font-mono text-xs font-medium text-fg-secondary">
                     {formatAmount(summary.receiptTotal, invoice.currency)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+                  </Td>
+                </Tr>
+              </TFoot>
+            </Table>
           </div>
         </div>
       )}
@@ -294,10 +295,10 @@ function PoRouteVariancePanel({
                   there is no per-invoice reference in the data to compute it
                   from; label honestly instead. */}
               <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[720px]">
-                  <thead>
-                    <tr className="border-b border-line bg-surface-subtle">
-                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Invoice Line</th>
+                <Table density="compact" className="min-w-[720px]">
+                  <THead>
+                    <Tr className="bg-surface-subtle">
+                      <Th>Invoice Line</Th>
                       {/* Whole-branch review (finding 6): one invoice can span several
                           POs, but the caller only has ONE PO's line items on hand
                           (PaDetailPage's usePo(pa.po_id)) — an allocation pointing at
@@ -305,27 +306,27 @@ function PoRouteVariancePanel({
                           with a description, which read as corrupt data. This column
                           makes which PO the row belongs to explicit and clickable,
                           same as the by-amount table below already does. */}
-                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">PO</th>
-                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">PO Line</th>
-                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">PO line variance (all invoices)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                      <Th>PO</Th>
+                      <Th>PO Line</Th>
+                      <Th align="right">PO line variance (all invoices)</Th>
+                    </Tr>
+                  </THead>
+                  <TBody>
                     {comparisons.map((row) => (
-                      <tr key={row.allocationId} className="border-b border-line-subtle last:border-0 align-top">
-                        <td className="px-3 py-2.5">
+                      <Tr key={row.allocationId} className="align-top">
+                        <Td>
                           <p className="text-xs font-medium text-fg">{row.invoiceLineDescription}</p>
                           <p className="text-2xs text-fg-muted">
                             {row.invoiceQty ?? '—'} × {row.invoiceUnitPrice != null ? formatAmount(row.invoiceUnitPrice, invoice.currency) : '—'}
                             {' = '}{formatAmount(row.invoiceAmount, invoice.currency)}
                           </p>
-                        </td>
-                        <td className="px-3 py-2.5">
+                        </Td>
+                        <Td>
                           <Link to={`/po/${row.poId}`} className="font-mono text-xs text-primary-700 hover:underline">
                             {row.poNumber ?? row.poId.slice(0, 8)}
                           </Link>
-                        </td>
-                        <td className="px-3 py-2.5">
+                        </Td>
+                        <Td>
                           {row.poLineDescription != null ? (
                             <>
                               <p className="text-xs font-medium text-fg">{row.poLineDescription}</p>
@@ -343,15 +344,15 @@ function PoRouteVariancePanel({
                           ) : (
                             <p className="text-xs text-fg-muted italic">PO line not available</p>
                           )}
-                        </td>
-                        <td className={cn('px-3 py-2.5 text-right font-mono text-xs',
+                        </Td>
+                        <Td className={cn('px-3 py-2.5 text-right font-mono text-xs',
                           centsEqual(row.variance, 0) ? 'text-success-fg' : 'text-danger-fg')}>
                           {row.variance >= 0 ? '+' : ''}{formatAmount(row.variance, invoice.currency)}
-                        </td>
-                      </tr>
+                        </Td>
+                      </Tr>
                     ))}
-                  </tbody>
-                </table>
+                  </TBody>
+                </Table>
               </div>
               <p className="text-2xs text-fg-muted italic">
                 PO line variance figures are cumulative across every invoice matched to that PO line, not this invoice's share alone.
@@ -364,33 +365,33 @@ function PoRouteVariancePanel({
             // in the match — see the module docstring.
             <div className="flex flex-col gap-4">
               <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-2">Invoice Line Items</h4>
+                <h4 className="text-xs font-semibold text-fg-muted mb-2">Invoice Line Items</h4>
                 <div className="overflow-x-auto rounded-lg border border-line">
-                  <table className="w-full text-sm min-w-[480px]">
-                    <thead>
-                      <tr className="border-b border-line bg-surface-subtle">
-                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">Description</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Qty</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Unit Price</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table density="compact" className="min-w-[480px]">
+                    <THead>
+                      <Tr className="bg-surface-subtle">
+                        <Th>Description</Th>
+                        <Th align="right">Qty</Th>
+                        <Th align="right">Unit Price</Th>
+                        <Th align="right">Amount</Th>
+                      </Tr>
+                    </THead>
+                    <TBody>
                       {invoice.line_items.map((line, idx) => (
-                        <tr key={line.id ?? idx} className="border-b border-line-subtle last:border-0">
-                          <td className="px-3 py-2.5 text-xs text-fg">{line.description}</td>
-                          <td className="px-3 py-2.5 text-right font-mono text-xs">{Number(line.quantity)}</td>
-                          <td className="px-3 py-2.5 text-right font-mono text-xs">{formatAmount(Number(line.unit_price), invoice.currency)}</td>
-                          <td className="px-3 py-2.5 text-right font-mono text-xs">{formatAmount(Number(line.line_total), invoice.currency)}</td>
-                        </tr>
+                        <Tr key={line.id ?? idx}>
+                          <Td className="text-xs text-fg">{line.description}</Td>
+                          <Td align="right" className="font-mono text-xs">{Number(line.quantity)}</Td>
+                          <Td align="right" className="font-mono text-xs">{formatAmount(Number(line.unit_price), invoice.currency)}</Td>
+                          <Td align="right" className="font-mono text-xs">{formatAmount(Number(line.line_total), invoice.currency)}</Td>
+                        </Tr>
                       ))}
-                    </tbody>
-                  </table>
+                    </TBody>
+                  </Table>
                 </div>
               </div>
 
               <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-2">Amount Allocated per PO</h4>
+                <h4 className="text-xs font-semibold text-fg-muted mb-2">Amount Allocated per PO</h4>
                 {/* Column label + caption (fix round 1, Important — same
                     finding as the by-line table above, widened to here):
                     total-value (by-amount) matches take the po_line_id IS
@@ -404,36 +405,36 @@ function PoRouteVariancePanel({
                     misread as this invoice's own shortfall/overage. Do not
                     recompute — no per-invoice reference exists in the data. */}
                 <div className="overflow-x-auto rounded-lg border border-line">
-                  <table className="w-full text-sm min-w-[420px]">
-                    <thead>
-                      <tr className="border-b border-line bg-surface-subtle">
-                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted">PO</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">Allocated</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-fg-muted">PO variance (all invoices)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table density="compact" className="min-w-[420px]">
+                    <THead>
+                      <Tr className="bg-surface-subtle">
+                        <Th>PO</Th>
+                        <Th align="right">Allocated</Th>
+                        <Th align="right">PO variance (all invoices)</Th>
+                      </Tr>
+                    </THead>
+                    <TBody>
                       {allocations.map((a) => {
                         const allocVariance = a.variance != null ? Number(a.variance) : null
                         return (
-                          <tr key={a.id} className="border-b border-line-subtle last:border-0">
-                            <td className="px-3 py-2.5">
+                          <Tr key={a.id}>
+                            <Td>
                               <Link to={`/po/${a.po_id}`} className="font-mono text-xs text-primary-700 hover:underline">
                                 {a.po_number ?? a.po_id.slice(0, 8)}
                               </Link>
-                            </td>
-                            <td className="px-3 py-2.5 text-right font-mono text-xs">
+                            </Td>
+                            <Td align="right" className="font-mono text-xs">
                               {formatAmount(Number(a.allocated_amount), invoice.currency)}
-                            </td>
-                            <td className={cn('px-3 py-2.5 text-right font-mono text-xs',
+                            </Td>
+                            <Td className={cn('px-3 py-2.5 text-right font-mono text-xs',
                               allocVariance == null || centsEqual(allocVariance, 0) ? 'text-success-fg' : 'text-danger-fg')}>
                               {allocVariance == null ? '—' : `${allocVariance >= 0 ? '+' : ''}${formatAmount(allocVariance, invoice.currency)}`}
-                            </td>
-                          </tr>
+                            </Td>
+                          </Tr>
                         )
                       })}
-                    </tbody>
-                  </table>
+                    </TBody>
+                  </Table>
                 </div>
                 <p className="text-2xs text-fg-muted italic mt-1">
                   PO variance figures are cumulative across every invoice matched to that PO, not this invoice's share alone.

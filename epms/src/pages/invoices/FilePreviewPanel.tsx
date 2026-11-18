@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, ExternalLink, FileText, Loader2 } from 'lucide-react'
 import { pdfjsLib, type PDFDocumentProxy, type RenderTask } from '@/lib/pdfjs'
 
+import { Button } from '@uniops/shell'
 // Live preview of the uploaded invoice file so the user can verify AI-parsed
 // fields against the source document. PDFs are rendered to a canvas with
 // pdf.js (same pattern as OA PaDirectCreatePage) — the browser's native PDF
@@ -88,23 +89,23 @@ function PdfCanvas({ file }: { file: File }) {
       </div>
       {totalPages > 1 && (
         <div className="flex shrink-0 items-center justify-center gap-3 border-t border-line-on-inverse bg-inverse-sunken py-1.5 text-xs text-fg-on-inverse-muted">
-          <button
+          <Button variant="inverse-ghost" size="icon-xs" aria-label="Previous page"
             type="button"
             onClick={() => setPageNum((p) => Math.max(1, p - 1))}
             disabled={pageNum === 1}
-            className="rounded p-1 hover:bg-inverse-raised disabled:opacity-30"
+           
           >
             <ChevronLeft className="h-4 w-4" />
-          </button>
+          </Button>
           <span>Page {pageNum} / {totalPages}</span>
-          <button
+          <Button variant="inverse-ghost" size="icon-xs" aria-label="Next page"
             type="button"
             onClick={() => setPageNum((p) => Math.min(totalPages, p + 1))}
             disabled={pageNum === totalPages}
-            className="rounded p-1 hover:bg-inverse-raised disabled:opacity-30"
+           
           >
             <ChevronRight className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       )}
     </>
