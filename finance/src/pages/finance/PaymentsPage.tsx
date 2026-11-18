@@ -138,7 +138,7 @@ function fmtMoney(v: string, ccy: string): string {
   return `${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${ccy}`
 }
 
-const PAYMENT_STATUS_STYLE: Record<string, BadgeTone> = {
+const PAYMENT_STATUS_TONE: Record<string, BadgeTone> = {
   pending: 'warning',
   completed: 'success',
   cancelled: 'neutral',
@@ -149,7 +149,7 @@ const PAYMENT_STATUS_STYLE: Record<string, BadgeTone> = {
  * shared `StatusBadge` in `@uniops/shell`. */
 function PaymentStatusBadge({ status }: { status: string }) {
   return (
-    <Badge variant={PAYMENT_STATUS_STYLE[status] ?? 'neutral'} className="capitalize">
+    <Badge variant={PAYMENT_STATUS_TONE[status] ?? 'neutral'} className="capitalize">
       {status}
     </Badge>
   )

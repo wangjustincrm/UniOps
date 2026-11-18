@@ -12,7 +12,7 @@ const STATUS_LABEL: Record<VisitStatus, string> = {
   no_show:          'No Show',
 }
 
-const STATUS_STYLE: Record<VisitStatus, BadgeTone> = {
+const STATUS_TONE: Record<VisitStatus, BadgeTone> = {
   pending_approval: 'warning',
   confirmed:        'accent',
   checked_in:       'success',
@@ -23,7 +23,7 @@ const STATUS_STYLE: Record<VisitStatus, BadgeTone> = {
 
 export function StatusBadge({ status }: { status: VisitStatus }) {
   return (
-    <Badge variant={STATUS_STYLE[status]}>
+    <Badge variant={STATUS_TONE[status]}>
       {STATUS_LABEL[status]}
     </Badge>
   )

@@ -54,7 +54,7 @@ interface JvLine {
 }
 interface JvDetail { voucher: JvHeader; lines: JvLine[] }
 
-export const JV_STATUS_STYLE: Record<string, BadgeTone> = {
+export const JV_STATUS_TONE: Record<string, BadgeTone> = {
   draft: 'neutral',
   reviewed: 'blue',
   posted: 'success',
@@ -63,7 +63,7 @@ export const JV_STATUS_STYLE: Record<string, BadgeTone> = {
 
 export function JvStatusBadge({ status }: { status: string }) {
   return (
-    <Badge variant={JV_STATUS_STYLE[status] ?? 'neutral'} className="capitalize">
+    <Badge variant={JV_STATUS_TONE[status] ?? 'neutral'} className="capitalize">
       {status}
     </Badge>
   )
