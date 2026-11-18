@@ -36,9 +36,6 @@ const SORTS: { key: ReconSort; label: string }[] = [
   { key: 'gl_ia', label: 'Largest unexplained GL−IA' },
 ]
 
-const selectCls =
-  'h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500'
-
 function Chip({ active, onClick, children, title }: {
   active: boolean
   onClick: () => void
@@ -227,8 +224,7 @@ export default function ReconciliationPage() {
                 const v = e.target.value
                 // Keep the URL clean on the default so a bookmark keeps meaning "last month end".
                 if (v && DATE_ONLY.test(v) && v <= today) setParams({ date: v === defaultDate ? '' : v })
-              }}
-              className={selectCls} />
+              }} />
           </label>
           <label className="flex items-center gap-2 text-xs text-fg-secondary">
             Material class

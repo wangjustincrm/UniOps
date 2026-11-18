@@ -32,9 +32,6 @@ type TabKey = typeof TABS[number]['key']
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
-const selectCls =
-  'h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500'
-
 function IaBadge({ ia }: { ia: NcMeta['ia'] }) {
   if (ia.status === 'closed') return <Badge variant="success">IA period closed</Badge>
   if (ia.status === 'open_costed') return <Badge variant="warning">IA period open — costs calculated</Badge>
@@ -124,7 +121,6 @@ export default function NcInventoryPage() {
                 // Keep the URL clean on "today" so a bookmark keeps meaning today.
                 if (v && DATE_ONLY.test(v) && v <= today) setParam('date', v === today ? '' : v)
               }}
-              className={selectCls}
             />
           </label>
           <label className="flex items-center gap-2 text-xs text-fg-secondary">

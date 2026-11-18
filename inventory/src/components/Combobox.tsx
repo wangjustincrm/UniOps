@@ -230,9 +230,7 @@ export function Combobox<T>({
         onFocus={() => { if (!disabled) setOpen(true) }}
         onClick={() => { if (!disabled && !open) setOpen(true) }}
         onKeyDown={onKeyDown}
-        className={cn(
-          'h-9 w-full rounded-lg border border-line-strong bg-surface pl-2 pr-12 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-fg-muted',
-          inputClassName)}
+        className={cn('pr-12', inputClassName)}
       />
       <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center gap-0.5 text-fg-muted">
         {loading && open && <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" />}

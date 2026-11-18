@@ -72,8 +72,7 @@ function Row({ row, canAdmin, toasts }: {
       </Td>
       <Td>
         {canAdmin ? (
-          <Input
-            className="h-9" value={note} maxLength={500} aria-label={`Note for ${row.code}`}
+          <Input value={note} maxLength={500} aria-label={`Note for ${row.code}`}
             onChange={(e) => setNote(e.target.value)}
           />
         ) : (

@@ -26,8 +26,6 @@ import { exportTrace } from './exportTrace'
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
-const inputCls =
-  'h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-fg-muted'
 export default function TracePage() {
   const { material } = useParams()
   if (!material) return <TraceStart />
@@ -76,7 +74,7 @@ function TraceStart() {
         </div>
         <label className="flex flex-col gap-1 text-xs text-fg-secondary">
           To date
-          <Input type="date" value={date} max={today} onChange={(e) => setDate(e.target.value || today)} className={inputCls} />
+          <Input type="date" value={date} max={today} onChange={(e) => setDate(e.target.value || today)} />
         </label>
         <Button size="md" type="submit" disabled={!material}
          >
@@ -257,8 +255,7 @@ function TraceView({ material }: { material: string }) {
           <label className="flex items-center gap-2 text-xs text-fg-secondary">
             To date
             <Input type="date" value={date} max={today}
-              onChange={(e) => setParams({ date: e.target.value && e.target.value !== today ? e.target.value : '' })}
-              className={inputCls} />
+              onChange={(e) => setParams({ date: e.target.value && e.target.value !== today ? e.target.value : '' })} />
           </label>
           {q.isFetching && <Loader2 aria-label="Loading" className="h-4 w-4 animate-spin text-fg-muted" />}
         </div>
