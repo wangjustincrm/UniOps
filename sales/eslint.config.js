@@ -121,6 +121,17 @@ const NO_RAW_OPEN_IMPORT = {
   name: '@/platform-ui', importNames: ['requestOpen', 'requestView'],
   message: 'Use useOpenRecord / useOpenView / useGoTo from @/platform-ui (they close this sheet and ask about unsaved input).',
 }
+// Pages act and read one way (step 1, user 2026-11-18): an action through ActionButton / ConfirmAction /
+// useAction (once, said in the status row, refreshing what it changed); a read through useRecord /
+// useRecordList / useLookup (keyed by the resource, a failure said one way), shown with QueryState.
+const NO_RAW_QUERY_IMPORT = {
+  name: '@tanstack/react-query', importNames: ['useQuery', 'useQueries', 'useMutation', 'useInfiniteQuery', 'useSuspenseQuery'],
+  message: 'Act with ActionButton / ConfirmAction / useAction, read with useRecord / useRecordList / useLookup from @/platform-ui.',
+}
+const NO_RAW_ERROR_VIEW_IMPORT = {
+  name: '@/platform-ui', importNames: ['ErrorView'],
+  message: "Show a read's loading and error with QueryState from @/platform-ui (or errors in the status row, the read hooks' default).",
+}
 const NO_RAW_SHEET_IMPORT = {
   name: '@/platform-ui', importNames: ['Sheet'],
   message: 'A record detail is a RecordSheet (a form: FormSheet) from @/platform-ui, not a raw Sheet.',
@@ -185,6 +196,15 @@ export default defineConfig([
     rules: { 'no-restricted-imports': ['error', {
       patterns: [SHELL, { group: ['@/platform-ui/primitives/toastContext'], message: NO_TOAST_IMPORT.message }],
       paths: [NO_RAW_SHEET_IMPORT, NO_TOAST_IMPORT, NO_RAW_OPEN_IMPORT],
+    }] },
+  },
+  // The pages (features, pages) also act and read only through the platform hooks (no allow-list).
+  {
+    files: ['src/features/**/*.{ts,tsx}', 'src/pages/**/*.{ts,tsx}'],
+    ignores: ['src/**/*.test.{ts,tsx}'],
+    rules: { 'no-restricted-imports': ['error', {
+      patterns: [SHELL, { group: ['@/platform-ui/primitives/toastContext'], message: NO_TOAST_IMPORT.message }],
+      paths: [NO_RAW_SHEET_IMPORT, NO_TOAST_IMPORT, NO_RAW_OPEN_IMPORT, NO_RAW_QUERY_IMPORT, NO_RAW_ERROR_VIEW_IMPORT],
     }] },
   },
   // One block per file group for no-restricted-syntax (a later block would

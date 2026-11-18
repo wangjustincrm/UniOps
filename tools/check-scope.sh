@@ -462,11 +462,15 @@ TS
       control_probe src/features/__eslint_probe__.tsx "<div className=\"w-full sm:min-w-[16rem]\" />" passes
       # ...and a toast from a feature is refused the same way.
       probe src/features/__eslint_probe__.ts "import { useToast } from \"@/platform-ui\""
+      # Pages act and read only through the platform hooks (step 1, 2026-11-18): useQuery / useMutation and ErrorView refused.
+      probe src/features/__eslint_probe__.ts "import { useQuery } from \"@tanstack/react-query\""
+      probe src/pages/__eslint_probe__.ts "import { useMutation } from \"@tanstack/react-query\""
+      probe src/features/__eslint_probe__.ts "import { ErrorView } from \"@/platform-ui\""
       npx vite build >/tmp/b.log 2>&1 || { echo "build failed"; tail -10 /tmp/b.log; exit 16; }
       grep -q "radix-popover-trigger-width" dist/assets/*.css || { echo "platform-ui classes missing from the built CSS"; exit 17; }
       # As written in CSS: hover:x → .hover\:x
       grep -qF "$SHELL_SELECTOR" dist/assets/*.css || { echo "shell-only class $SHELL_SENTINEL missing from the built CSS"; exit 19; }
-      echo "probe reported; 0 other type errors; import + layer rules pass; 7 planted import violations, 4 raw form controls, 2 hand-made dates, 2 raw tables, 2 raw forms, 2 raw sheets, 1 direct refetch, 2 ad-hoc messages, 1 toast, 1 raw heading and 2 fixed widths caught, primitives admitted; library and shell classes in CSS"
+      echo "probe reported; 0 other type errors; import + layer rules pass; 7 planted import violations, 4 raw form controls, 2 hand-made dates, 2 raw tables, 2 raw forms, 2 raw sheets, 1 direct refetch, 2 ad-hoc messages, 1 toast, 1 raw heading, 2 fixed widths and 3 raw reads / actions caught, primitives admitted; library and shell classes in CSS"
     '
   rc=$?
   if [[ $rc == 0 ]]; then ok "sales: TS5101 trap, import + layer rules, ESLint probes (imports, raw controls, raw tables, raw forms, raw sheets, direct refetch, ad-hoc messages, toasts, raw headings), library + shell CSS"; else fail "sales checks (code $rc)"; fi
