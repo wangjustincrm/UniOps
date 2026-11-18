@@ -28,8 +28,6 @@ type ArSortKey = 'invoice_number' | 'customer_name' | 'invoice_date' | 'due_date
   | 'total_amount' | 'outstanding' | 'status'
 
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 interface Invoice {
   id: string; invoice_number: string; customer_id: string; customer_name: string
@@ -130,12 +128,10 @@ export default function AccountsReceivablePage() {
       <div className="mx-auto max-w-6xl">
         <div className="mb-4 flex items-center gap-2">
           {([['invoices', 'Invoices'], ['aging', 'Aging']] as const).map(([t, label]) => (
-            <button key={t} onClick={() => setTab(t)}
-                    className={cn('rounded-lg px-4 py-2 text-sm font-medium',
-                      tab === t ? 'bg-primary-700 text-white'
-                                : 'border border-line-strong bg-surface text-fg-secondary hover:bg-surface-subtle')}>
+            <Button key={t} onClick={() => setTab(t)}
+                    variant={tab === t ? 'primary' : 'secondary'} size="md" aria-pressed={tab === t}>
               {label}
-            </button>
+            </Button>
           ))}
         </div>
 
@@ -150,14 +146,14 @@ export default function AccountsReceivablePage() {
           <>
             <div className="mb-3 flex flex-wrap items-center gap-3">
               <Select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
-                      className={cn(inputCls, 'w-44')}>
+                      className="w-44">
                 <option value="">All statuses</option>
                 {STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
               </Select>
               {canManage && (
-                <button onClick={() => setNewInvoice(true)} className={cn(primaryBtn, 'ml-auto')}>
+                <Button size="md" onClick={() => setNewInvoice(true)} className={cn('ml-auto')}>
                   <Plus className="h-4 w-4" /> New Invoice
-                </button>
+                </Button>
               )}
             </div>
 
@@ -346,7 +342,7 @@ function InvoiceModal({ onClose, onSaved, onError }: {
       <div className="grid grid-cols-2 gap-3">
         <label className="col-span-2 flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Customer</span>
-          <Select value={customerId} onChange={(e) => onPickCustomer(e.target.value)} className={inputCls}>
+          <Select value={customerId} onChange={(e) => onPickCustomer(e.target.value)}>
             <option value="">Select a customer…</option>
             {customers?.items.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.currency}</option>)}
           </Select>
@@ -361,7 +357,7 @@ function InvoiceModal({ onClose, onSaved, onError }: {
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Currency</span>
-          <Select value={currency} onChange={(e) => setCurrency(e.target.value)} className={inputCls}>
+          <Select value={currency} onChange={(e) => setCurrency(e.target.value)}>
             {['CAD', 'USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}
           </Select>
         </label>
@@ -379,7 +375,7 @@ function InvoiceModal({ onClose, onSaved, onError }: {
       <div className="mt-4">
         <div className="mb-2 flex items-center justify-between">
           <span className="text-sm font-medium text-fg-secondary">Output tax lines</span>
-          <button onClick={addTaxLine} className={secondaryBtn}><Plus className="h-4 w-4" /> Add</button>
+          <Button variant="secondary" size="md" onClick={addTaxLine}><Plus className="h-4 w-4" /> Add</Button>
         </div>
         {taxLines.length === 0 ? (
           <p className="text-xs text-fg-muted">No tax (zero-rated / exempt). Add a line for GST/HST.</p>
@@ -389,7 +385,7 @@ function InvoiceModal({ onClose, onSaved, onError }: {
               <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2">
                 <label className="flex flex-col gap-1 text-xs">
                   <span className="text-fg-muted">Tax code</span>
-                  <Select value={t.tax_code} onChange={(e) => onCodeChange(i, e.target.value)} className={inputCls}>
+                  <Select value={t.tax_code} onChange={(e) => onCodeChange(i, e.target.value)}>
                     <option value="">—</option>
                     {taxCodes.map((tc) => <option key={`${tc.code}-${tc.rate}`} value={tc.code}>{tc.code} ({(Number(tc.rate) * 100).toFixed(0)}%)</option>)}
                   </Select>
@@ -417,10 +413,10 @@ function InvoiceModal({ onClose, onSaved, onError }: {
         <span className="font-semibold">Total: <span className="font-mono">{fmtMoney(String(total), currency)}</span></span>
       </div>
       <div className="mt-4 flex justify-end gap-2">
-        <button onClick={onClose} className={secondaryBtn}>Cancel</button>
-        <button onClick={save} disabled={busy} className={primaryBtn}>
+        <Button variant="secondary" size="md" onClick={onClose}>Cancel</Button>
+        <Button size="md" onClick={save} disabled={busy}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />} Create Draft
-        </button>
+        </Button>
       </div>
     </Modal>
   )
@@ -476,14 +472,14 @@ function ReceiptModal({ invoice, onClose, onSaved, onError }: {
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-fg-secondary">Method</span>
-            <Select value={method} onChange={(e) => setMethod(e.target.value)} className={inputCls}>
+            <Select value={method} onChange={(e) => setMethod(e.target.value)}>
               {['bank_transfer', 'cheque', 'cash', 'card', 'other'].map((m) => <option key={m} value={m}>{m.replace('_', ' ')}</option>)}
             </Select>
           </label>
         </div>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Bank account (optional)</span>
-          <Select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} className={inputCls}>
+          <Select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)}>
             <option value="">—</option>
             {sameCcy.map((a) => <option key={a.id} value={a.id}>{a.name} · {a.currency}</option>)}
           </Select>
@@ -494,10 +490,10 @@ function ReceiptModal({ invoice, onClose, onSaved, onError }: {
         </label>
       </div>
       <div className="mt-5 flex justify-end gap-2">
-        <button onClick={onClose} className={secondaryBtn}>Cancel</button>
-        <button onClick={save} disabled={busy} className={primaryBtn}>
+        <Button variant="secondary" size="md" onClick={onClose}>Cancel</Button>
+        <Button size="md" onClick={save} disabled={busy}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Record
-        </button>
+        </Button>
       </div>
     </Modal>
   )

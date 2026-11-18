@@ -21,7 +21,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Loader2, Play, Undo2, Wallet } from 'lucide-react'
-import { SortTh, sortParams, useOptionalTabStoreApi, useSort, useSortableRows, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
+import { Button, Checkbox, Input, Modal as ShellModal, Select, SortTh, TBody, THead, Table, Tabs, Td, Th, Tr, sortParams, useOptionalTabStoreApi, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
 import { cn, formatDate, todayISO } from '@/lib/utils'
@@ -33,8 +33,6 @@ import { fetchPreview, scopeKey } from '@/services/remittance'
 import { planApplications, plannedTotal, suggestCredits,
          type CreditSuggestResponse } from '@/services/vendorCredits'
 
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 interface Due {
@@ -98,7 +96,7 @@ const matchesSearch = (d: Due, term: string) =>
 
 // Keeps a long list's header in view: the list scrolls in its own box.
 const listBox = 'max-h-[calc(100vh-15rem)] overflow-auto rounded-lg border border-line'
-const listHead = 'sticky top-0 z-10 bg-surface-subtle text-left text-xs text-fg-muted shadow-[0_1px_0_#e5e5e5]'
+const listHead = 'sticky top-0 z-10 bg-surface-subtle text-left text-xs text-fg-muted'
 
 type PageTab = 'due' | 'batches'
 
@@ -332,33 +330,28 @@ export default function PaymentBatchPage() {
           </div>
         )}
 
-        <div role="tablist" className="mb-4 flex gap-6 border-b border-line">
-          {([['due', 'Due for Payment', dueAll.length], ['batches', 'Batches', batchResp?.total]] as const).map(([key, label, count]) => (
-            <button key={key} role="tab" aria-selected={pageTab === key} onClick={() => setPageTab(key)}
-                    className={cn('-mb-px border-b-2 px-1 pb-2 text-sm font-medium',
-                      pageTab === key
-                        ? 'border-primary-700 text-primary-700'
-                        : 'border-transparent text-fg-muted hover:text-fg-secondary')}>
-              {label} {count !== undefined && <span className="ml-1 text-xs text-fg-muted">{count}</span>}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          className="mb-4"
+          items={[
+            { key: 'due' as const, label: 'Due for Payment', count: dueAll.length },
+            { key: 'batches' as const, label: 'Batches', count: batchResp?.total },
+          ]}
+          value={pageTab}
+          onChange={setPageTab}
+        />
 
         {pageTab === 'due' && (<>
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <Select value={currency} onChange={(e) => setFilter('currency', e.target.value)}
-                  className={cn(inputCls, 'w-28')}>
+                  className="w-28">
             {DUE_CURRENCIES.map((c) => <option key={c}>{c}</option>)}
           </Select>
           <div className="flex flex-wrap gap-1.5">
             {DUE_TYPES.map((t) => (
-              <button key={t.key} onClick={() => setFilter('type', t.key)}
-                      className={cn('rounded-full border px-3 py-1 text-xs font-medium',
-                        dueType === t.key
-                          ? 'border-primary-700 bg-primary-700 text-white'
-                          : 'border-line-strong bg-surface text-fg-secondary hover:bg-surface-subtle')}>
+              <Button key={t.key} onClick={() => setFilter('type', t.key)}
+                      variant={dueType === t.key ? 'primary' : 'secondary'} size="xs" aria-pressed={dueType === t.key}>
                 {t.label} <span className={dueType === t.key ? 'text-white/80' : 'text-fg-muted'}>{typeCounts[t.key]}</span>
-              </button>
+              </Button>
             ))}
           </div>
           <div className="ml-auto flex items-center gap-3">
@@ -371,17 +364,17 @@ export default function PaymentBatchPage() {
                    placeholder="Search PA or invoice no" aria-label="Search PA or invoice number"
                    className={cn(inputCls, 'w-56')} />
             {canPay && (
-              <button onClick={() => {
+              <Button size="md" onClick={() => {
                 const held = heldInDrafts()
                 if (held.length > 0 && !window.confirm(
                   `${held.join('\n')}\n\n`
                   + 'Add to a new batch anyway? It can be paid only once — whichever batch is executed first pays it.')) return
                 createBatch.mutate()
               }} disabled={selected.size === 0 || createBatch.isPending}
-                      className={primaryBtn}>
+                      >
                 {createBatch.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
                 Create Batch
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -538,7 +531,7 @@ export default function PaymentBatchPage() {
                   <Td className="text-xs text-fg-muted">{b.payment_method}</Td>
                   <Td align="right" className="font-mono">{fmtMoney(b.total, b.currency)}</Td>
                   <Td align="right">
-                    <button onClick={() => setOpenBatch(b.id)} className={secondaryBtn}>Open</button>
+                    <Button variant="secondary" size="md" onClick={() => setOpenBatch(b.id)}>Open</Button>
                   </Td>
                 </Tr>
               ))}
@@ -922,11 +915,11 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
                     ))}
                   </Select>
                 </label>
-                <button onClick={() => execute.mutate()} disabled={execute.isPending || !bankId}
-                        title={!bankId ? 'Select a funding bank first' : undefined} className={primaryBtn}>
+                <Button size="md" onClick={() => execute.mutate()} disabled={execute.isPending || !bankId}
+                        title={!bankId ? 'Select a funding bank first' : undefined} >
                   {execute.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                   Execute Batch
-                </button>
+                </Button>
               </>
             ) : null}
           </div>

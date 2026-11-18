@@ -25,8 +25,6 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 // widened the whole column and every field in the dialog overflowed the
 // max-w-md panel. Invisible until a full NC sync put real rows in the picker.
 const inputCls = 'h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 interface Account {
   id: string; name: string; bank_name: string; kind: string
@@ -96,16 +94,16 @@ export default function BankSettingsPage() {
         )}
 
         <div className="mb-3 flex flex-wrap items-center gap-3">
-          <Select value={kindFilter} onChange={(e) => setKindFilter(e.target.value)} className={cn(inputCls, 'w-44')}>
+          <Select value={kindFilter} onChange={(e) => setKindFilter(e.target.value)} className="w-44">
             <option value="">All accounts</option>
             <option value="bank">Bank Accounts</option>
             <option value="credit_card">Credit Cards</option>
           </Select>
           {canManage && (
-            <button onClick={() => setEditing({ kind: 'bank', currency: 'CAD', is_active: true })}
-                    className={cn(primaryBtn, 'ml-auto')}>
+            <Button size="md" onClick={() => setEditing({ kind: 'bank', currency: 'CAD', is_active: true })}
+                    className={cn('ml-auto')}>
               <Plus className="h-4 w-4" /> New Account
-            </button>
+            </Button>
           )}
         </div>
 
@@ -223,7 +221,7 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
       <div className="grid gap-3">
         <label className="flex min-w-0 flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Type</span>
-          <Select value={f.kind ?? 'bank'} onChange={(e) => set({ kind: e.target.value })} className={inputCls}>
+          <Select value={f.kind ?? 'bank'} onChange={(e) => set({ kind: e.target.value })} className="w-full">
             <option value="bank">Bank Account</option>
             <option value="credit_card">Credit Card</option>
           </Select>
@@ -247,7 +245,7 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
         <div className="grid grid-cols-2 gap-3">
           <label className="flex min-w-0 flex-col gap-1 text-sm">
             <span className="text-fg-secondary">Currency</span>
-            <Select value={f.currency ?? 'CAD'} onChange={(e) => set({ currency: e.target.value })} className={inputCls}>
+            <Select value={f.currency ?? 'CAD'} onChange={(e) => set({ currency: e.target.value })} className="w-full">
               {['CAD', 'USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}
             </Select>
           </label>
@@ -262,7 +260,7 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
             <span className="text-fg-secondary">NC bank account</span>
             <Select value={f.nc_bank_account_code ?? ''}
                     onChange={(e) => set({ nc_bank_account_code: e.target.value || null })}
-                    className={cn(inputCls, 'truncate')}>
+                    className="w-full">
               <option value="">— not linked —</option>
               {ncAccounts.map((n) => (
                 <option key={n.code} value={n.code}>{n.label} · {n.currency}</option>
@@ -284,10 +282,10 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
         </label>
       </div>
       <div className="mt-5 flex justify-end gap-2">
-        <button onClick={onClose} className={secondaryBtn}>Cancel</button>
-        <button onClick={save} disabled={busy} className={primaryBtn}>
+        <Button variant="secondary" size="md" onClick={onClose}>Cancel</Button>
+        <Button size="md" onClick={save} disabled={busy}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save
-        </button>
+        </Button>
       </div>
     </ShellModal>
   )

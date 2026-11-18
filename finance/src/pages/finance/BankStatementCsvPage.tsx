@@ -30,8 +30,6 @@ import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 interface Account {
   id: string; name: string; bank_name: string; account_masked: string | null
@@ -196,7 +194,7 @@ export default function BankStatementCsvPage() {
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <Landmark className="h-5 w-5 text-fg-muted" />
           <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}
-                  className={cn(inputCls, 'w-80')}>
+                  className="w-80">
             <option value="">Select a bank account…</option>
             {Object.entries(byBank).map(([bank, accts]) => (
               <optgroup key={bank} label={bank}>
@@ -215,15 +213,15 @@ export default function BankStatementCsvPage() {
           )}
           <div className="ml-auto flex gap-2">
             {canManage && (
-              <button onClick={() => setEditAccount({ currency: 'CAD', is_active: true })}
-                      className={secondaryBtn}>
+              <Button variant="secondary" size="md" onClick={() => setEditAccount({ currency: 'CAD', is_active: true })}
+                      >
                 <Plus className="h-4 w-4" /> New Account
-              </button>
+              </Button>
             )}
             {account && canManage && (
-              <button onClick={() => setEditAccount(account)} className={secondaryBtn}>
+              <Button variant="secondary" size="md" onClick={() => setEditAccount(account)}>
                 Edit
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -248,7 +246,7 @@ export default function BankStatementCsvPage() {
             {/* toolbar */}
             <div className="mb-3 flex flex-wrap items-center gap-3">
               <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
-                      className={cn(inputCls, 'w-40')}>
+                      className="w-40">
                 <option value="">All statuses</option>
                 <option value="unmatched">Unmatched</option>
                 <option value="matched">Matched</option>
@@ -257,16 +255,16 @@ export default function BankStatementCsvPage() {
               <div className="ml-auto flex gap-2">
                 {canManage && (
                   <>
-                    <button onClick={() => autoMatch.mutate()} disabled={autoMatch.isPending}
-                            className={secondaryBtn}>
+                    <Button variant="secondary" size="md" onClick={() => autoMatch.mutate()} disabled={autoMatch.isPending}
+                            >
                       {autoMatch.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                       Auto-match
-                    </button>
+                    </Button>
                     <FileInput ref={fileInput} accept=".csv,text/csv" className="hidden"
                            onChange={(e) => e.target.files?.[0] && setImportFile(e.target.files[0])} />
-                    <button onClick={() => fileInput.current?.click()} className={primaryBtn}>
+                    <Button size="md" onClick={() => fileInput.current?.click()}>
                       <Upload className="h-4 w-4" /> Import Statement
-                    </button>
+                    </Button>
                   </>
                 )}
               </div>
@@ -441,7 +439,7 @@ function ImportMappingModal({ account, file, onClose, onDone, onError }: {
     <label className="flex flex-col gap-1 text-sm">
       <span className="text-fg-secondary">{label}{required && <span className="text-danger-fg"> *</span>}</span>
       <Select value={(m[key] as string) ?? ''} onChange={(e) => set({ [key]: e.target.value || undefined } as Partial<ColumnMapping>)}
-              className={inputCls}>
+             >
         <option value="">— none —</option>
         {headers.map((h) => <option key={h} value={h}>{h}</option>)}
       </Select>
@@ -482,7 +480,7 @@ function ImportMappingModal({ account, file, onClose, onDone, onError }: {
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-fg-secondary">Date format</span>
           <Select value={m.date_format ?? ''} onChange={(e) => set({ date_format: e.target.value || undefined })}
-                  className={inputCls}>
+                 >
             {DATE_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
           </Select>
         </label>
@@ -518,10 +516,10 @@ function ImportMappingModal({ account, file, onClose, onDone, onError }: {
       </div>
 
       <div className="mt-5 flex justify-end gap-2">
-        <button onClick={onClose} className={secondaryBtn}>Cancel</button>
-        <button onClick={submit} disabled={busy || headers.length === 0} className={primaryBtn}>
+        <Button variant="secondary" size="md" onClick={onClose}>Cancel</Button>
+        <Button size="md" onClick={submit} disabled={busy || headers.length === 0}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Import
-        </button>
+        </Button>
       </div>
     </Modal>
   )
@@ -569,7 +567,7 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-fg-secondary">Currency</span>
-            <Select value={f.currency ?? 'CAD'} onChange={(e) => set({ currency: e.target.value })} className={inputCls}>
+            <Select value={f.currency ?? 'CAD'} onChange={(e) => set({ currency: e.target.value })}>
               {['CAD', 'USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}
             </Select>
           </label>
@@ -585,10 +583,10 @@ function AccountModal({ initial, onClose, onSaved, onError }: {
         </label>
       </div>
       <div className="mt-5 flex justify-end gap-2">
-        <button onClick={onClose} className={secondaryBtn}>Cancel</button>
-        <button onClick={save} disabled={busy} className={primaryBtn}>
+        <Button variant="secondary" size="md" onClick={onClose}>Cancel</Button>
+        <Button size="md" onClick={save} disabled={busy}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save
-        </button>
+        </Button>
       </div>
     </Modal>
   )
@@ -638,11 +636,11 @@ function ManualMatchModal({ txn, candidates, onClose, onMatched, onError }: {
                       {exact && <span className="ml-2 rounded bg-success-soft px-1.5 py-0.5 text-xs text-success-fg">exact</span>}
                     </Td>
                     <Td align="right">
-                      <button onClick={() => match(c.payment_record_id)} disabled={!!busy}
-                              className={cn(secondaryBtn, 'ml-auto')}>
+                      <Button variant="secondary" size="md" onClick={() => match(c.payment_record_id)} disabled={!!busy}
+                              className={cn('ml-auto')}>
                         {busy === c.payment_record_id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
                         Match
-                      </button>
+                      </Button>
                     </Td>
                   </Tr>
                 )

@@ -411,7 +411,7 @@ function DecompositionSettingsSection() {
           Each Budget Account may have up to <strong>3 decomposition factors</strong>. Factor order in the
           catalog determines the matrix layout:
         </p>
-        <ul className="ml-5 list-disc text-[13px] text-fg-secondary space-y-0.5">
+        <ul className="ml-5 list-disc text-sm text-fg-secondary space-y-0.5">
           <li><strong>Primary factor</strong> → matrix <em>rows</em></li>
           <li><strong>2nd factor</strong> → matrix <em>columns</em></li>
           <li><strong>3rd factor</strong> → <em>sub-columns</em> within each column</li>

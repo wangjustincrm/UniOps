@@ -23,13 +23,12 @@ import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CalendarX2, CheckCircle2, Download, Loader2, Scale } from 'lucide-react'
-import { SortTh, sortParams, useSort, useSortableRows, Checkbox, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Badge, Button, Checkbox, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-const linkBtn = 'text-xs font-medium text-primary-700 hover:underline'
 const PAGE = 200
 
 interface MirrorState {
@@ -340,15 +339,15 @@ export default function ApReconciliationPage() {
                                       category === c.key && 'bg-primary-50/60',
                                       n === 0 && 'text-fg-muted')}>
                       <Td>
-                        <button className={cn(linkBtn, n === 0 && 'text-fg-muted hover:no-underline')}
+                        <Button variant="link" size="xs" className={cn(n === 0 && 'text-fg-muted hover:no-underline')}
                                 disabled={n === 0} onClick={() => pick(c.key)}>
                           {c.label}
-                        </button>
+                        </Button>
                         {c.tone === 'bad' && n > 0 && (
-                          <span className="ml-2 rounded bg-danger-soft px-1.5 py-0.5 text-2xs font-semibold uppercase text-danger-fg">action</span>
+                          <Badge variant="danger" className="ml-2">Action</Badge>
                         )}
                         {c.tone === 'warn' && n > 0 && (
-                          <span className="ml-2 rounded bg-warning-soft px-1.5 py-0.5 text-2xs font-semibold uppercase text-warning-fg">check</span>
+                          <Badge variant="warning" className="ml-2">Check</Badge>
                         )}
                       </Td>
                       <Td align="right" className="font-mono tabular-nums">{n.toLocaleString()}</Td>

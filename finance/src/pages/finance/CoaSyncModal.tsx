@@ -8,7 +8,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { financeApi } from '@/lib/api'
 
-import { Modal, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { Button, Modal, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 export interface CoaSyncStatus {
   can_sync: boolean
   configured: boolean
@@ -30,7 +30,6 @@ interface ApplyResult {
   aux_items_inserted: number; aux_items_deleted: number
 }
 
-const btn = 'rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50'
 
 export function CoaSyncModal({ onClose, onSynced }:
                              { onClose: () => void; onSynced: () => void }) {
@@ -72,10 +71,10 @@ export function CoaSyncModal({ onClose, onSynced }:
         )}
 
         {!preview && !result && (
-          <button className={`${btn} bg-primary-700 text-white`} disabled={busy === 'preview'}
+          <Button size="md" disabled={busy === 'preview'}
                   onClick={runPreview}>
             {busy === 'preview' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Preview changes'}
-          </button>
+          </Button>
         )}
 
         {preview && !result && (
@@ -147,11 +146,11 @@ export function CoaSyncModal({ onClose, onSynced }:
             )}
 
             <div className="flex justify-end gap-2">
-              <button className={`${btn} border border-line-strong`} onClick={onClose}>Cancel</button>
-              <button className={`${btn} bg-primary-700 text-white`} disabled={busy === 'apply'}
+              <Button variant="secondary" size="md" onClick={onClose}>Cancel</Button>
+              <Button size="md" disabled={busy === 'apply'}
                       onClick={runApply}>
                 {busy === 'apply' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Apply'}
-              </button>
+              </Button>
             </div>
           </>
         )}
@@ -164,7 +163,7 @@ export function CoaSyncModal({ onClose, onSynced }:
               −{result.aux_items_deleted}.
             </div>
             <div className="flex justify-end">
-              <button className={`${btn} bg-primary-700 text-white`} onClick={onSynced}>Close</button>
+              <Button size="md" onClick={onSynced}>Close</Button>
             </div>
           </>
         )}

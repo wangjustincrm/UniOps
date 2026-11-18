@@ -37,10 +37,8 @@ import {
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
-import { Checkbox, FileInput, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Button, Checkbox, ChoiceCard, FileInput, Input, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 interface Account {
   id: string; name: string; bank_name: string; account_masked: string | null
@@ -178,7 +176,7 @@ const KIND_TONE: Record<string, string> = {
 const DOC_TONE: Record<string, string> = {
   statement: 'bg-info-soft text-info-fg',
   advice: 'bg-success-soft text-success-fg',
-  report: 'bg-[#E4EFEC] text-primary-700',
+  report: 'bg-accent-soft text-primary-700',
 }
 
 const KIND_LABEL_UI: Record<string, string> = {
@@ -503,7 +501,7 @@ export default function BankReconciliationPage() {
             <label className="mb-1 block text-2xs text-fg-muted">Bank account</label>
             <div className="flex items-center gap-2">
               <Landmark className="h-4 w-4 text-fg-muted" />
-              <Select value={accountId} className={cn(inputCls, 'w-72')}
+              <Select value={accountId} className="w-72"
                       onChange={(e) => { setAccountId(e.target.value); setReconId(''); clearPicks() }}>
                 <option value="">Select an account…</option>
                 {accounts.map((a) => (
@@ -525,12 +523,12 @@ export default function BankReconciliationPage() {
                      className={cn(inputCls, 'w-40')} />
             </div>
           </div>
-          <button onClick={() => openPeriod.mutate()}
+          <Button size="md" onClick={() => openPeriod.mutate()}
                   disabled={!accountId || !periodStart || !periodEnd || openPeriod.isPending}
-                  className={primaryBtn}>
+                  >
             {openPeriod.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Open period
-          </button>
+          </Button>
           <Link to="/finance/bank/csv-import"
                 className="ml-auto text-xs text-fg-muted underline hover:text-fg-secondary">
             Import a statement as CSV instead →
@@ -557,7 +555,7 @@ export default function BankReconciliationPage() {
                         onClick={() => { setReconId(h.id); setFindings([]); clearPicks() }}
                         className={cn('cursor-pointer border-t border-line-subtle hover:bg-surface-subtle',
                           i % 2 && 'bg-surface-subtle/40',
-                          h.id === reconId && 'bg-[#E4EFEC]')}>
+                          h.id === reconId && 'bg-accent-soft')}>
                       <Td className="w-56 font-mono text-sm">
                         {formatDate(h.period_start)} → {formatDate(h.period_end)}
                       </Td>
@@ -690,12 +688,12 @@ export default function BankReconciliationPage() {
                            if (f) importStatement.mutate(f)
                            e.target.value = ''
                          }} />
-                  <button onClick={() => stmtInput.current?.click()} disabled={busy}
-                          className={secondaryBtn}>
+                  <Button variant="secondary" size="md" onClick={() => stmtInput.current?.click()} disabled={busy}
+                          >
                     {importStatement.isPending ? <Loader2 className="h-4 w-4 animate-spin" />
                       : <Upload className="h-4 w-4" />}
                     Import statement (PDF)
-                  </button>
+                  </Button>
 
                   <FileInput ref={adviceInput} accept="application/pdf" multiple className="hidden"
                          onChange={(e) => {
@@ -703,51 +701,51 @@ export default function BankReconciliationPage() {
                            if (fs.length) importAdvices.mutate(fs)
                            e.target.value = ''
                          }} />
-                  <button onClick={() => adviceInput.current?.click()} disabled={busy}
-                          className={secondaryBtn}>
+                  <Button variant="secondary" size="md" onClick={() => adviceInput.current?.click()} disabled={busy}
+                          >
                     {importAdvices.isPending ? <Loader2 className="h-4 w-4 animate-spin" />
                       : <FileText className="h-4 w-4" />}
                     Import payment files
-                  </button>
+                  </Button>
 
                   {/* "Auto-match", not "Match": the legend below tells people to tick
                       both sides and then match, and with this button also called
                       Match they ticked two lines and never ran the ladder — BOC July
                       sat at 1 manual group while 29 same-amount pairs waited. */}
-                  <button onClick={() => autoMatch.mutate()} disabled={busy} className={primaryBtn}
+                  <Button size="md" onClick={() => autoMatch.mutate()} disabled={busy} 
                           title="Match everything the rules can prove: payment files, confirmation numbers, and one statement line to one ledger line of the same amount within 5 days">
                     {autoMatch.isPending ? <Loader2 className="h-4 w-4 animate-spin" />
                       : <Sparkles className="h-4 w-4" />}
                     Auto-match
-                  </button>
+                  </Button>
                 </>
               )}
               <div className="ml-auto flex items-center gap-2">
-                <button onClick={() => setShowDocs((v) => !v)}
-                        className={cn(secondaryBtn, showDocs && 'border-primary-700 text-primary-700')}>
+                <Button variant="secondary" size="md" onClick={() => setShowDocs((v) => !v)}
+                        className={cn(showDocs && 'border-primary-700 text-primary-700')}>
                   <Paperclip className="h-4 w-4" />
                   {showDocs ? 'Hide' : 'Attachments'}
-                </button>
-                <button onClick={() => download.mutate('pdf')} disabled={download.isPending}
-                        className={secondaryBtn}>
+                </Button>
+                <Button variant="secondary" size="md" onClick={() => download.mutate('pdf')} disabled={download.isPending}
+                        >
                   <Download className="h-4 w-4" /> Report (PDF)
-                </button>
-                <button onClick={() => download.mutate('xlsx')} disabled={download.isPending}
-                        className={secondaryBtn}>
+                </Button>
+                <Button variant="secondary" size="md" onClick={() => download.mutate('xlsx')} disabled={download.isPending}
+                        >
                   <Download className="h-4 w-4" /> Excel
-                </button>
+                </Button>
                 {canManage && (frozen ? (
-                  <button onClick={() => reopen.mutate()} disabled={busy} className={secondaryBtn}>
+                  <Button variant="secondary" size="md" onClick={() => reopen.mutate()} disabled={busy}>
                     {reopen.isPending ? <Loader2 className="h-4 w-4 animate-spin" />
                       : <LockOpen className="h-4 w-4" />}
                     Reopen
-                  </button>
+                  </Button>
                 ) : (
-                  <button onClick={() => finalize.mutate()} disabled={busy} className={primaryBtn}>
+                  <Button size="md" onClick={() => finalize.mutate()} disabled={busy}>
                     {finalize.isPending ? <Loader2 className="h-4 w-4 animate-spin" />
                       : <Lock className="h-4 w-4" />}
                     Sign off
-                  </button>
+                  </Button>
                 ))}
               </div>
             </div>
@@ -796,7 +794,7 @@ export default function BankReconciliationPage() {
 
             {/* ── the manual-match bar, only while a selection is live ──── */}
             {(pickedBank.size > 0 || pickedBook.size > 0) && !frozen && (
-              <div className="sticky top-2 z-10 mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-primary-700/30 bg-[#F2F8F7] px-3 py-2 text-sm">
+              <div className="sticky top-2 z-10 mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-primary-700/30 bg-accent-soft/60 px-3 py-2 text-sm">
                 <span className="font-medium text-fg-secondary">
                   {pickedBank.size} statement · {pickedBook.size} ledger
                 </span>
@@ -809,14 +807,14 @@ export default function BankReconciliationPage() {
                     : `off by ${money(pickedBankTotal - pickedBookTotal)}`}
                 </span>
                 <div className="ml-auto flex gap-2">
-                  <button onClick={clearPicks} className={secondaryBtn}>Clear</button>
-                  <button onClick={() => matchByHand.mutate()}
+                  <Button variant="secondary" size="md" onClick={clearPicks}>Clear</Button>
+                  <Button size="md" onClick={() => matchByHand.mutate()}
                           disabled={!picksBalance || matchByHand.isPending || busy}
-                          className={primaryBtn}>
+                          >
                     {matchByHand.isPending ? <Loader2 className="h-4 w-4 animate-spin" />
                       : <Link2 className="h-4 w-4" />}
                     Match these
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
@@ -854,7 +852,7 @@ export default function BankReconciliationPage() {
                               className={cn('cursor-pointer border-t border-line-subtle hover:bg-surface-subtle',
                                 i % 2 && 'bg-surface-subtle/40',
                                 pickedBook.has(c.jv_line_id)
-                                  && 'bg-[#F2F8F7] ring-1 ring-inset ring-primary-700/30')}>
+                                  && 'bg-accent-soft/60 ring-1 ring-inset ring-primary-700/30')}>
                             <Td className="w-10">
                               <Checkbox readOnly checked={pickedBook.has(c.jv_line_id)}
                                      className="h-3.5 w-3.5 accent-[#085E5E]" />
@@ -965,7 +963,7 @@ export default function BankReconciliationPage() {
                 not matched — tick both sides, then Match these
               </span>
               <span className="flex items-center gap-1">
-                <span className="inline-block h-3 w-3 rounded-sm bg-[#BFE3DA] ring-1 ring-primary-700" />
+                <span className="inline-block h-3 w-3 rounded-sm bg-primary-100 ring-1 ring-primary-700" />
                 the group you are looking at
               </span>
               <span className="ml-auto flex items-center gap-2">
@@ -1015,10 +1013,10 @@ export default function BankReconciliationPage() {
                             className={cn('cursor-pointer border-t border-line-subtle',
                               i % 2 && 'bg-surface-subtle/40',
                               // The focused group has to read at a glance across a
-                              // 37-row table; the old bg-[#E4EFEC] was too close to
+                              // 37-row table; the old bg-accent-soft was too close to
                               // the zebra stripe to find by eye.
-                              inFocus && 'bg-[#BFE3DA] ring-1 ring-inset ring-primary-700',
-                              pickedBank.has(b.id) && 'bg-[#F2F8F7] ring-1 ring-inset ring-primary-700/30')}>
+                              inFocus && 'bg-primary-100 ring-1 ring-inset ring-primary-700',
+                              pickedBank.has(b.id) && 'bg-accent-soft/60 ring-1 ring-inset ring-primary-700/30')}>
                           <Td>
                             {b.cleared
                               ? <CheckCircle2 className="h-4 w-4 text-success-fg" />
@@ -1075,8 +1073,8 @@ export default function BankReconciliationPage() {
                             id={`book-${b.jv_line_id}`}
                             className={cn('cursor-pointer border-t border-line-subtle',
                               i % 2 && 'bg-surface-subtle/40',
-                              inFocus && 'bg-[#BFE3DA] ring-1 ring-inset ring-primary-700',
-                              pickedBook.has(b.jv_line_id) && 'bg-[#F2F8F7] ring-1 ring-inset ring-primary-700/30')}>
+                              inFocus && 'bg-primary-100 ring-1 ring-inset ring-primary-700',
+                              pickedBook.has(b.jv_line_id) && 'bg-accent-soft/60 ring-1 ring-inset ring-primary-700/30')}>
                           <Td>
                             {b.cleared
                               ? <CheckCircle2 className="h-4 w-4 text-success-fg" />
@@ -1159,19 +1157,19 @@ export default function BankReconciliationPage() {
                   {focused.note && <span className="text-xs text-fg-muted">· {focused.note}</span>}
                   <div className="ml-auto flex gap-2">
                     {focused.advice_id && (
-                      <button className={secondaryBtn}
+                      <Button variant="secondary" size="md" 
                               onClick={() => setOpenAdvice(openAdvice === focused.advice_id ? null : focused.advice_id)}>
                         <FileText className="h-4 w-4" />
                         {openAdvice === focused.advice_id ? 'Hide' : 'Show'} the payment file
-                      </button>
+                      </Button>
                     )}
                     {canManage && !frozen && (
-                      <button onClick={() => unmatch.mutate(focused.id)} disabled={unmatch.isPending || busy}
-                              className={secondaryBtn}>
+                      <Button variant="secondary" size="md" onClick={() => unmatch.mutate(focused.id)} disabled={unmatch.isPending || busy}
+                              >
                         {unmatch.isPending ? <Loader2 className="h-4 w-4 animate-spin" />
                           : <Undo2 className="h-4 w-4" />}
                         Undo this match
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -1218,14 +1216,14 @@ export default function BankReconciliationPage() {
                     noise. Aligned columns make the list scannable. */}
                 <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-6">
                   {period.matches.map((g) => (
-                    <button key={g.id}
+                    <ChoiceCard key={g.id} selected={g.id === focusGroup}
                             onClick={() => setFocusGroup(g.id === focusGroup ? null : g.id)}
                             title={`${g.bank_ids.length} statement line(s) matched against `
                               + `${g.book_lines.length} ledger line(s) — `
                               + `${TRUST_WORD[METHOD_TRUST[g.method] ?? 'manual']}`}
-                            className={cn('rounded-lg border px-2 py-1 text-left text-xs',
+                            className={cn('block rounded-lg px-2 py-1 text-xs',
                               g.id === focusGroup
-                                ? 'border-primary-700 bg-[#BFE3DA] text-primary-700 ring-1 ring-primary-700'
+                                ? 'bg-primary-100 text-accent-fg'
                                 : TRUST_CHIP[METHOD_TRUST[g.method] ?? 'manual']
                                   ?? 'border-line bg-surface text-fg-secondary')}>
                       {/* Stacked and left-aligned: in a fixed column the three parts
@@ -1236,7 +1234,7 @@ export default function BankReconciliationPage() {
                       <span className="block text-2xs text-fg-muted">
                         {g.bank_ids.length} ↔ {g.book_lines.length} lines
                       </span>
-                    </button>
+                    </ChoiceCard>
                   ))}
                 </div>
               </div>

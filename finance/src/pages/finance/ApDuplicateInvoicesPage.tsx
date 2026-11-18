@@ -23,7 +23,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Download, Loader2, Undo2 } from 'lucide-react'
-import { SortTh, sortParams, useSort, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
+import { Button, ChoiceCard, Input, Modal as ShellModal, Select, SortTh, TBody, THead, Table, Td, Textarea, Th, Tr, sortParams, useSort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
@@ -315,10 +315,8 @@ export default function ApDuplicateInvoicesPage() {
             const s = summary?.[k]
             const byCcy = Object.entries(s?.by_currency ?? {})
             return (
-              <button key={k} onClick={() => { setKind(k); setExpanded(new Set()) }}
-                      className={cn('rounded-lg border p-3 text-left transition-colors',
-                                    kind === k ? 'border-primary-700 bg-primary-50/60'
-                                               : 'border-line hover:bg-surface-subtle')}>
+              <ChoiceCard key={k} selected={kind === k} onClick={() => { setKind(k); setExpanded(new Set()) }}
+                      className="items-stretch gap-0 rounded-lg p-3">
                 <div className="flex items-center gap-1.5">
                   {s && s.actionable && s.unreviewed > 0
                     ? <AlertTriangle className="h-3.5 w-3.5 text-warning-fg" />
@@ -337,7 +335,7 @@ export default function ApDuplicateInvoicesPage() {
                     )}
                   </p>
                 ))}
-              </button>
+              </ChoiceCard>
             )
           })}
         </div>
@@ -345,11 +343,10 @@ export default function ApDuplicateInvoicesPage() {
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <div className="inline-flex rounded-lg border border-line-strong p-0.5 text-xs">
             {(['no', 'yes', 'all'] as const).map((r) => (
-              <button key={r} onClick={() => setReviewed(r)}
-                      className={cn('rounded-md px-2.5 py-1',
-                                    reviewed === r ? 'bg-primary-700 text-white' : 'text-fg-secondary hover:bg-surface-subtle')}>
+              <Button key={r} onClick={() => setReviewed(r)}
+                      variant={reviewed === r ? 'primary' : 'subtle'} size="xs" aria-pressed={reviewed === r}>
                 {r === 'no' ? 'To review' : r === 'yes' ? 'Reviewed' : 'All'}
-              </button>
+              </Button>
             ))}
           </div>
           <Input value={search} onChange={(e) => setSearch(e.target.value)}

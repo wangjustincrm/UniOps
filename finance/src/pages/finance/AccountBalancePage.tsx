@@ -17,9 +17,6 @@ import { JvDetailModal } from './JvDetailModal'
 
 import { Checkbox, Input, TBody, TFoot, THead, Table, Td, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
-const linkBtn = 'text-xs font-medium text-primary-700 hover:underline'
 
 interface AbRow {
   account_code: string; account_name: string; account_type: string | null
@@ -154,10 +151,10 @@ export default function AccountBalancePage() {
                       <Td align="right" className="font-mono">{money(r.period_credit)}</Td>
                       <Td align="right" className="font-mono font-semibold">{money(r.closing)}</Td>
                       <Td align="right">
-                        <button className={linkBtn}
+                        <Button variant="link" size="xs" 
                                 onClick={() => setDrill({ accountCode: r.account_code, title: `Vouchers — ${r.account_code} ${r.account_name} · ${period}` })}>
                           Vouchers
-                        </button>
+                        </Button>
                       </Td>
                     </Tr>
                     {expanded[r.account_code] && (
@@ -238,11 +235,11 @@ function DimPickerModal({ accountCode, onClose, onApply }: {
         </div>
       )}
       <div className="mt-4 flex justify-end gap-2 border-t border-line-subtle pt-3">
-        <button onClick={onClose} className={secondaryBtn}>Cancel</button>
-        <button onClick={() => onApply(chosenSupported)}
-                disabled={chosenSupported.length === 0} className={primaryBtn}>
+        <Button variant="secondary" size="md" onClick={onClose}>Cancel</Button>
+        <Button size="md" onClick={() => onApply(chosenSupported)}
+                disabled={chosenSupported.length === 0} >
           Expand
-        </button>
+        </Button>
       </div>
     </ShellModal>
   )
@@ -292,13 +289,13 @@ function DimExpansion({ accountCode, accountName, period, dims, includeUnposted,
               {Number(row.closing) === 0 ? <span className="text-fg-muted">Balanced</span> : money(row.closing)}
             </Td>
             <Td align="right">
-              <button className={linkBtn}
+              <Button variant="link" size="xs" 
                       onClick={() => onDrill({
                         accountCode, dimsValues: dv,
                         title: `Vouchers — ${accountCode} ${accountName} · ${label} · ${period}`,
                       })}>
                 Vouchers
-              </button>
+              </Button>
             </Td>
           </Tr>
         )

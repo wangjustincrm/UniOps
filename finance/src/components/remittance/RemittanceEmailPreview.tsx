@@ -12,9 +12,8 @@ import { useState } from 'react'
 import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { RenderedEmail } from '@/services/remittance'
-import { primaryBtn, secondaryBtn } from './buttonStyles'
 
-import { Select } from '@uniops/shell'
+import { Select, Button } from '@uniops/shell'
 /**
  * The email body in a sandboxed iframe: its styles cannot leak into the page
  * and vice versa, and with no `allow-scripts` nothing in it can run.
@@ -78,10 +77,10 @@ export function RemittanceEmailPreview({ emails, sending, onBack, onConfirm }: {
 
       {emails.length > 1 && (
         <div className="flex items-center gap-2">
-          <button type="button" aria-label="Previous email" disabled={index === 0}
-            onClick={() => setIndex((i) => i - 1)} className={secondaryBtn}>
+          <Button variant="secondary" size="md" type="button" aria-label="Previous email" disabled={index === 0}
+            onClick={() => setIndex((i) => i - 1)} >
             <ChevronLeft className="h-4 w-4" />
-          </button>
+          </Button>
           <Select value={index} onChange={(e) => setIndex(Number(e.target.value))}
             className="min-w-0 flex-1">
             {emails.map((e, i) => (
@@ -90,10 +89,10 @@ export function RemittanceEmailPreview({ emails, sending, onBack, onConfirm }: {
               </option>
             ))}
           </Select>
-          <button type="button" aria-label="Next email" disabled={index >= emails.length - 1}
-            onClick={() => setIndex((i) => i + 1)} className={secondaryBtn}>
+          <Button variant="secondary" size="md" type="button" aria-label="Next email" disabled={index >= emails.length - 1}
+            onClick={() => setIndex((i) => i + 1)} >
             <ChevronRight className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       )}
 
@@ -115,14 +114,14 @@ export function RemittanceEmailPreview({ emails, sending, onBack, onConfirm }: {
       ))}
 
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onBack} disabled={sending} className={secondaryBtn}>
+        <Button variant="secondary" size="md" type="button" onClick={onBack} disabled={sending}>
           <ArrowLeft className="h-4 w-4" />
           Back
-        </button>
-        <button type="button" onClick={onConfirm} disabled={sending || readyCount === 0} className={primaryBtn}>
+        </Button>
+        <Button size="md" type="button" onClick={onConfirm} disabled={sending || readyCount === 0}>
           {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           {sending ? 'Sending…' : `Confirm & Send (${readyCount})`}
-        </button>
+        </Button>
       </div>
     </div>
   )

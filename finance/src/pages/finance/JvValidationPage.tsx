@@ -27,7 +27,6 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { JvDetailModal } from './JvDetailModal'
 
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const linkBtn = 'text-xs font-medium text-primary-700 hover:underline'
 
 interface RuleSummary {
   rule: string; label: string
@@ -207,7 +206,7 @@ export default function JvValidationPage() {
               <TBody>
                 <Tr className={cn('border-t border-line-subtle', rule === null && 'bg-primary-50/60')}>
                   <Td>
-                    <button className={linkBtn} onClick={() => pick(null)}>All findings</button>
+                    <Button variant="link" size="xs" onClick={() => pick(null)}>All findings</Button>
                   </Td>
                   <Td align="right" className="font-mono">{lines?.total ?? '—'}</Td>
                   <Td></Td>
@@ -219,11 +218,11 @@ export default function JvValidationPage() {
                       className={cn('border-t border-line-subtle', rule === r.rule && 'bg-primary-50/60',
                                     r.lines === 0 && 'text-fg-muted')}>
                     <Td>
-                      <button className={cn(linkBtn, r.lines === 0 && 'text-fg-muted hover:no-underline')}
+                      <Button variant="link" size="xs" className={cn(r.lines === 0 && 'text-fg-muted hover:no-underline')}
                               disabled={r.lines === 0} onClick={() => pick(r.rule)}
                               title={RULE_HELP[r.rule]}>
                         {r.label}
-                      </button>
+                      </Button>
                     </Td>
                     <Td align="right" className="font-mono">{r.lines.toLocaleString()}</Td>
                     <Td align="right" className="font-mono">{r.vouchers.toLocaleString()}</Td>
@@ -318,7 +317,7 @@ export default function JvValidationPage() {
                     </Td>
                     <Td className="text-xs text-fg-secondary">{r.label}</Td>
                     <Td align="right">
-                      <button className={linkBtn} onClick={() => setJvId(r.jv_id)}>Voucher</button>
+                      <Button variant="link" size="xs" onClick={() => setJvId(r.jv_id)}>Voucher</Button>
                     </Td>
                   </Tr>
                 ))}
@@ -329,10 +328,10 @@ export default function JvValidationPage() {
             <div className="flex items-center justify-between border-t border-line-subtle px-3 py-2 text-xs text-fg-muted">
               <span>{offset + 1}–{Math.min(offset + PAGE, lines.total)} of {lines.total.toLocaleString()}</span>
               <span className="flex gap-2">
-                <button className={linkBtn} disabled={offset === 0}
-                        onClick={() => setOffset(Math.max(0, offset - PAGE))}>Previous</button>
-                <button className={linkBtn} disabled={offset + PAGE >= lines.total}
-                        onClick={() => setOffset(offset + PAGE)}>Next</button>
+                <Button variant="link" size="xs"  disabled={offset === 0}
+                        onClick={() => setOffset(Math.max(0, offset - PAGE))}>Previous</Button>
+                <Button variant="link" size="xs"  disabled={offset + PAGE >= lines.total}
+                        onClick={() => setOffset(offset + PAGE)}>Next</Button>
               </span>
             </div>
           )}

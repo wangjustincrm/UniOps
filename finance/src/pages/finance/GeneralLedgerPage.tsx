@@ -20,8 +20,6 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 import { Checkbox, Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Button , Modal as ShellModal } from '@uniops/shell'
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 interface TBRow {
   account_code: string; account_name: string; account_type: string | null
@@ -112,24 +110,22 @@ export default function GeneralLedgerPage() {
       <div className="mx-auto max-w-6xl">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           {TABS.map(([t, label]) => (
-            <button key={t} onClick={() => setTab(t)}
-                    className={cn('rounded-lg px-4 py-2 text-sm font-medium',
-                      tab === t ? 'bg-primary-700 text-white'
-                                : 'border border-line-strong bg-surface text-fg-secondary hover:bg-surface-subtle')}>
+            <Button key={t} onClick={() => setTab(t)}
+                    variant={tab === t ? 'primary' : 'secondary'} size="md" aria-pressed={tab === t}>
               {label}
-            </button>
+            </Button>
           ))}
           <div className="ml-auto flex items-center gap-2">
             <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)}
                    className={cn(inputCls, 'w-40')} />
             {canManage && (
               <>
-                <button onClick={() => setShowOpening(true)} className={secondaryBtn}>
+                <Button variant="secondary" size="md" onClick={() => setShowOpening(true)}>
                   <Plus className="h-4 w-4" /> Opening
-                </button>
-                <button onClick={() => setShowClose(true)} className={secondaryBtn}>
+                </Button>
+                <Button variant="secondary" size="md" onClick={() => setShowClose(true)}>
                   <Lock className="h-4 w-4" /> Year-End Close
-                </button>
+                </Button>
               </>
             )}
           </div>
@@ -436,11 +432,11 @@ function OpeningModal({ onClose, onSaved, onError }: {
       <div className="space-y-2">
         {lines.map((l, i) => (
           <div key={i} className="grid grid-cols-[1fr_7rem_8rem_auto] items-center gap-2">
-            <Select value={l.account_code} onChange={(e) => setLine(i, { account_code: e.target.value })} className={inputCls}>
+            <Select value={l.account_code} onChange={(e) => setLine(i, { account_code: e.target.value })}>
               <option value="">Select account…</option>
               {accounts.map((a) => <option key={a.code} value={a.code}>{a.code} · {a.name}</option>)}
             </Select>
-            <Select value={l.side} onChange={(e) => setLine(i, { side: e.target.value as 'debit' | 'credit' })} className={inputCls}>
+            <Select value={l.side} onChange={(e) => setLine(i, { side: e.target.value as 'debit' | 'credit' })}>
               <option value="debit">Debit</option>
               <option value="credit">Credit</option>
             </Select>
@@ -452,10 +448,10 @@ function OpeningModal({ onClose, onSaved, onError }: {
           </div>
         ))}
       </div>
-      <button onClick={() => setLines((p) => [...p, { account_code: '', side: 'debit', amount: '' }])}
-              className={cn(secondaryBtn, 'mt-2')}>
+      <Button variant="secondary" size="md" onClick={() => setLines((p) => [...p, { account_code: '', side: 'debit', amount: '' }])}
+              className={cn('mt-2')}>
         <Plus className="h-4 w-4" /> Add line
-      </button>
+      </Button>
 
       <div className="mt-4 flex items-center justify-end gap-6 border-t border-line-subtle pt-3 text-sm">
         <span>Debits: <span className="font-mono">{money(String(totals.dr))}</span></span>
@@ -463,10 +459,10 @@ function OpeningModal({ onClose, onSaved, onError }: {
         <Balanced ok={totals.balanced} />
       </div>
       <div className="mt-4 flex justify-end gap-2">
-        <button onClick={onClose} className={secondaryBtn}>Cancel</button>
-        <button onClick={save} disabled={busy || !totals.balanced} className={primaryBtn}>
+        <Button variant="secondary" size="md" onClick={onClose}>Cancel</Button>
+        <Button size="md" onClick={save} disabled={busy || !totals.balanced}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Post
-        </button>
+        </Button>
       </div>
     </Modal>
   )
@@ -501,10 +497,10 @@ function CloseYearModal({ onClose, onDone, onError }: {
                className={cn(inputCls, 'font-mono')} />
       </label>
       <div className="mt-5 flex justify-end gap-2">
-        <button onClick={onClose} className={secondaryBtn}>Cancel</button>
-        <button onClick={run} disabled={busy} className={primaryBtn}>
+        <Button variant="secondary" size="md" onClick={onClose}>Cancel</Button>
+        <Button size="md" onClick={run} disabled={busy}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarClock className="h-4 w-4" />} Run Close
-        </button>
+        </Button>
       </div>
     </Modal>
   )

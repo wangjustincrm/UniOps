@@ -11,7 +11,7 @@
 import { Fragment, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { SortTh, deriveTabMeta, useOptionalTabStoreApi, useSortableRows, Input, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { ChoiceCard, Input, SortTh, TBody, THead, Table, Td, Th, Tr, deriveTabMeta, useOptionalTabStoreApi, useSortableRows } from '@uniops/shell'
 import { financeRoutes } from '@/app/routes'
 import { ChevronDown, ChevronRight, Loader2, Search } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
@@ -225,16 +225,15 @@ export default function CostAnomaliesPage() {
                 const info = data.rules[r]
                 const n = data.counts[r] ?? 0
                 return (
-                  <button key={r} onClick={() => setRule(rule === r ? null : r)} title={RULE_HELP[r]}
-                          className={cn('rounded-lg border p-2.5 text-left transition-colors',
-                            rule === r ? 'border-primary-700 bg-primary-50/60' : 'border-line hover:bg-surface-subtle')}>
+                  <ChoiceCard key={r} selected={rule === r} onClick={() => setRule(rule === r ? null : r)} title={RULE_HELP[r]}
+                          className="items-stretch gap-0 rounded-lg p-2.5">
                     <div className="flex items-center justify-between">
                       <span className="font-mono text-xs text-fg-muted">{r}</span>
                       {n > 0 && <SeverityBadge severity={info?.severity ?? 'medium'} />}
                     </div>
                     <p className="mt-1 text-xs font-medium leading-snug text-fg-secondary">{info?.title}</p>
                     <p className="mt-1 font-mono text-lg font-semibold text-fg">{n}</p>
-                  </button>
+                  </ChoiceCard>
                 )
               })}
             </div>

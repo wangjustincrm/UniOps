@@ -81,7 +81,7 @@ export function BudgetActualBreakdown({ fiscalYear, window: win, windowLabel, sc
       role="dialog" aria-label={`Composition of ${scope.label}`}
       className={cn(
         'absolute inset-x-0 bottom-0 z-40 flex flex-col rounded-t-xl border-t border-line',
-        'bg-surface shadow-[0_-8px_32px_-12px_rgb(0_0_0/0.25)]',
+        'bg-surface shadow-up',
         'motion-safe:animate-[slideUp_220ms_cubic-bezier(0.16,1,0.3,1)]',
         tall ? 'h-[85%]' : 'h-[58%]',
       )}

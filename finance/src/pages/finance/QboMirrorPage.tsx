@@ -9,7 +9,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ChevronLeft, ChevronRight, Download, Loader2, Mail, RefreshCw } from 'lucide-react'
-import { SortTh, sortParams, useSort, Input, TBody, THead, Table, Td, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
+import { Button, Input, Modal as ShellModal, SortTh, TBody, THead, Table, Tabs, Td, Th, Tr, sortParams, useSort } from '@uniops/shell'
 import { qboApi, ENTITY_TABS, type QboBackfillResult, type QboDetail } from '@/services/qboApi'
 import { financeDownload } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
@@ -24,8 +24,6 @@ const PAGE_SIZE = 50
 // turn refetchInterval off before the row ever appears).
 const POST_TRIGGER_POLL_MS = 20000
 
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 export default function QboMirrorPage() {
   const qc = useQueryClient()
@@ -60,20 +58,20 @@ export default function QboMirrorPage() {
                 server refuses anyone else and reports it as can_sync. */}
             {status?.can_sync ? (
               <>
-                <button
-                  className={primaryBtn}
+                <Button size="md"
+                  
                   disabled={!!running || !status?.configured}
                   onClick={() => trigger('incremental')}
                 >
                   <RefreshCw className="h-4 w-4" /> Incremental sync
-                </button>
-                <button
-                  className={secondaryBtn}
+                </Button>
+                <Button variant="secondary" size="md"
+                  
                   disabled={!!running || !status?.configured}
                   onClick={() => setConfirming(true)}
                 >
                   Full reload…
-                </button>
+                </Button>
               </>
             ) : status && (
               <span className="text-sm text-fg-muted">Syncing with QuickBooks is limited to System Admin.</span>
@@ -187,22 +185,7 @@ function QboTabs() {
 
   return (
     <section className="space-y-3">
-      <div className="flex flex-wrap gap-1 border-b border-line">
-        {ENTITY_TABS.map((t) => (
-          <button
-            key={t.slug}
-            onClick={() => switchTab(t.slug)}
-            className={cn(
-              'px-3 py-1.5 text-sm',
-              tab === t.slug
-                ? 'border-b-2 border-primary-700 font-medium text-primary-700'
-                : 'text-fg-muted hover:text-fg-secondary',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs items={ENTITY_TABS.map((t) => ({ key: t.slug, label: t.label }))} value={tab} onChange={switchTab} />
 
       <div className="flex flex-wrap items-center gap-2">
         <form className="flex items-center gap-1"
@@ -217,9 +200,9 @@ function QboTabs() {
             Search
           </Button>
         </form>
-        <button
+        <Button variant="secondary" size="md"
           type="button"
-          className={secondaryBtn}
+          
           disabled={exporting}
           onClick={async () => {
             setExporting(true)
@@ -235,7 +218,7 @@ function QboTabs() {
         >
           {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           Export CSV
-        </button>
+        </Button>
         {tab === 'vendors' && canSync && <VendorEmailBackfill />}
       </div>
 
@@ -293,13 +276,13 @@ function QboTabs() {
       <div className="mt-3 flex items-center justify-between text-sm text-fg-muted">
         <span>{total.toLocaleString()} row{total === 1 ? '' : 's'}</span>
         <div className="flex items-center gap-2">
-          <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} className={secondaryBtn}>
+          <Button variant="secondary" size="md" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
             <ChevronLeft className="h-4 w-4" /> Prev
-          </button>
+          </Button>
           <span>Page {page} / {pageCount}</span>
-          <button onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={page >= pageCount} className={secondaryBtn}>
+          <Button variant="secondary" size="md" onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={page >= pageCount}>
             Next <ChevronRight className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -431,9 +414,9 @@ function VendorEmailBackfill() {
 
   return (
     <>
-      <button className={secondaryBtn} onClick={() => { setError(null); setConfirming(true) }}>
+      <Button variant="secondary" size="md" onClick={() => { setError(null); setConfirming(true) }}>
         <Mail className="h-4 w-4" /> Fill Remittance Emails
-      </button>
+      </Button>
 
       {confirming && (
         <ShellModal open onClose={() => setConfirming(false)} busy={busy} title="Fill Remittance Emails" closeOnBackdrop closeOnEscape={false}

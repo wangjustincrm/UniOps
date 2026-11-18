@@ -12,7 +12,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
-import { SortTh, useSortableRows, TBody, THead, Table, Td, Tr, Button } from '@uniops/shell'
+import { Button, Input, SortTh, TBody, THead, Table, Td, Tr, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -130,12 +130,12 @@ export default function BatchCostPage() {
         <SyncBar />
         <form className="mb-5 flex flex-wrap items-center gap-2 text-sm"
               onSubmit={(e) => { e.preventDefault(); const c = draft.trim().toUpperCase(); if (c && dFrom <= dTo) navigate(`/finance/analysis/batches/${encodeURIComponent(c)}?from=${dFrom}&to=${dTo}`) }}>
-          <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Product, e.g. S0104"
-                 className="w-56 rounded-lg border border-line-strong px-2.5 py-1 font-mono" />
+          <Input inputSize="sm" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Product, e.g. S0104"
+                 className="w-56 font-mono" aria-label="Product" />
           <label className="text-xs text-fg-muted">From</label>
-          <input type="month" value={dFrom} onChange={(e) => setDFrom(e.target.value)} className="rounded-lg border border-line-strong px-2 py-1" />
+          <Input inputSize="sm" type="month" value={dFrom} onChange={(e) => setDFrom(e.target.value)} className="w-40" aria-label="From" />
           <label className="text-xs text-fg-muted">To</label>
-          <input type="month" value={dTo} onChange={(e) => setDTo(e.target.value)} className="rounded-lg border border-line-strong px-2 py-1" />
+          <Input inputSize="sm" type="month" value={dTo} onChange={(e) => setDTo(e.target.value)} className="w-40" aria-label="To" />
           <Button size="xs" type="submit" disabled={!draft.trim()}>Show batches</Button>
           {isFetching && <Loader2 className="h-4 w-4 animate-spin text-fg-muted" />}
         </form>

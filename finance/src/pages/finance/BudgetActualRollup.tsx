@@ -23,7 +23,7 @@ import { cn, currentMonthISO } from '@/lib/utils'
 import { UnallocatedLinesModal } from './UnallocatedLinesModal'
 import { JvDetailModal } from './JvDetailModal'
 
-import { Checkbox, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Button, Checkbox, MenuItem, Select, TBody, TFoot, THead, Table, Td, Th, Tr } from '@uniops/shell'
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -80,7 +80,6 @@ function presetRange(preset: Preset, now: number): [number, number] {
   return [1, now]
 }
 
-const selectCls = 'h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win,
                                     onWindowChange, scope, onScopeChange,
@@ -152,23 +151,21 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
       {/* controls */}
       <div className="flex flex-wrap items-center gap-2 border-b border-line-subtle px-3 py-2.5">
         <Select value={fiscalYear} onChange={(e) => onFiscalYearChange(Number(e.target.value))}
-                className={selectCls}>
+               >
           {years.map((y) => <option key={y} value={y}>FY {y}</option>)}
         </Select>
         <div className="flex rounded-lg border border-line-strong p-0.5">
           {([['month', 'Month'], ['quarter', 'Quarter'], ['ytd', 'YTD'],
              ['custom', 'Custom']] as [Preset, string][]).map(([p, label]) => (
-            <button key={p} onClick={() => choosePreset(p)}
-                    className={cn('rounded-md px-2.5 py-1 text-xs font-medium',
-                      'cursor-pointer transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600',
-                      preset === p ? 'bg-primary-600 text-white shadow-sm' : 'text-fg-secondary hover:bg-surface-sunken')}>
+            <Button key={p} onClick={() => choosePreset(p)}
+                    variant={preset === p ? 'primary' : 'subtle'} size="xs" aria-pressed={preset === p}>
               {label}
-            </button>
+            </Button>
           ))}
         </div>
         {preset === 'custom' && (
           <span className="flex items-center gap-1">
-            <Select value={custom[0]} className={selectCls}
+            <Select value={custom[0]}
                     onChange={(e) => {
                       const next: [number, number] = [Number(e.target.value), custom[1]]
                       setCustom(next); applyWindow(next)
@@ -176,7 +173,7 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
               {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
             </Select>
             <span className="text-xs text-fg-muted">to</span>
-            <Select value={custom[1]} className={selectCls}
+            <Select value={custom[1]}
                     onChange={(e) => {
                       const next: [number, number] = [custom[0], Number(e.target.value)]
                       setCustom(next); applyWindow(next)
@@ -210,12 +207,12 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
       ) : (
         <>
           {/* company — clicking the header resets the composition to everything */}
-          <button onClick={() => onScopeChange({ kind: 'company', key: '', label: 'All cost centres' })}
-                  className={cn('w-full cursor-pointer border-b border-line-subtle px-4 py-2 text-left text-xs transition-colors',
-                    scope?.kind === 'company' ? 'bg-primary-50/70 font-medium text-primary-800'
-                                              : 'text-fg-muted hover:bg-surface-subtle')}>
+          <MenuItem active={scope?.kind === 'company'} aria-pressed={scope?.kind === 'company'}
+                  onClick={() => onScopeChange({ kind: 'company', key: '', label: 'All cost centres' })}
+                  className={cn('border-b border-line-subtle px-4 py-2 text-xs',
+                    scope?.kind === 'company' ? 'font-medium text-accent-fg' : 'text-fg-muted')}>
             Whole company — click for its composition
-          </button>
+          </MenuItem>
           <div className="grid grid-cols-2 gap-px bg-surface-sunken lg:grid-cols-4">
             {[
               { label: `Plan ${windowLabel}`, v: data.company.plan_period },
@@ -239,12 +236,10 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
           <div className="flex items-center gap-1 border-t border-line-subtle px-3 py-2">
             {([['centre', 'By expense centre'], ['department', 'By department']] as const)
               .map(([t, label]) => (
-                <button key={t} onClick={() => { setTab(t); setOpen(new Set()) }}
-                        className={cn('rounded-md px-2.5 py-1 text-xs font-medium',
-                          'cursor-pointer transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600',
-                          tab === t ? 'bg-inverse-sunken text-white' : 'text-fg-muted hover:bg-surface-sunken')}>
+                <Button key={t} onClick={() => { setTab(t); setOpen(new Set()) }}
+                        variant={tab === t ? 'primary' : 'subtle'} size="xs" aria-pressed={tab === t}>
                   {label}
-                </button>
+                </Button>
               ))}
             <span className="ml-2 text-xs text-fg-muted">
               Same cost centres, two ways in
@@ -262,7 +257,7 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
             {/* Exports whichever grouping is on screen, fully expanded — a
                 collapsed row is a convenience on a page and missing data in a
                 spreadsheet. */}
-            <button
+            <Button variant="secondary" size="sm"
               onClick={async () => {
                 setExporting(true); setExportError(null)
                 try {
@@ -277,17 +272,11 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
                 } finally { setExporting(false) }
               }}
               disabled={exporting || !data}
-              className={cn(
-                'inline-flex cursor-pointer items-center gap-1.5 rounded-lg border',
-                multiMonth ? 'ml-3' : 'ml-auto',
-                'border-line-strong px-2.5 py-1.5 text-xs font-medium text-fg-secondary',
-                'transition-colors hover:bg-surface-subtle',
-                'focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600',
-                'disabled:cursor-not-allowed disabled:opacity-50')}>
+              className={multiMonth ? 'ml-3' : 'ml-auto'}>
               {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                          : <Download className="h-3.5 w-3.5" />}
               Export to Excel
-            </button>
+            </Button>
           </div>
           {exportError && (
             <p role="alert" className="px-3 pb-2 text-xs text-danger-fg">{exportError}</p>
@@ -429,11 +418,11 @@ function Row({ node, isOpen, onToggle, tab, months, scope, onScopeChange }: {
               <ChevronRight className={cn('h-3.5 w-3.5 text-fg-muted transition-transform',
                 isOpen && 'rotate-90')} />
             </Button>
-            <button onClick={() => onScopeChange({ kind, key: node.code, label: node.label })}
-                    className="cursor-pointer rounded text-left transition-colors hover:text-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
+            <Button variant="link" size="xs" onClick={() => onScopeChange({ kind, key: node.code, label: node.label })}
+                    className="h-auto text-left text-sm text-fg hover:text-accent-fg">
               <span className="font-medium text-fg">{node.label}</span>
               {node.code && <span className="ml-1.5 font-mono text-xs text-fg-muted">{node.code}</span>}
-            </button>
+            </Button>
           </span>
         </Td>
         <Cells m={node} overspent={overspent} months={months} />
@@ -443,12 +432,12 @@ function Row({ node, isOpen, onToggle, tab, months, scope, onScopeChange }: {
             className={cn('border-t border-line-subtle bg-surface-subtle/40 text-fg-secondary',
               scope?.kind === 'cost_centre' && scope.key === c.cost_center_code && 'bg-primary-50/70')}>
           <Td className="border-l-2 border-primary-200 pl-9 pr-3">
-            <button className="cursor-pointer rounded text-left transition-colors hover:text-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+            <Button variant="link" size="xs" className="h-auto text-left text-fg hover:text-accent-fg"
                     onClick={() => onScopeChange({ kind: 'cost_centre', key: c.cost_center_code,
                                                    label: `${c.cost_center_code} ${c.cost_center_name}` })}>
               <span className="font-mono text-xs">{c.cost_center_code}</span>
               <span className="ml-1.5 text-xs">{c.cost_center_name}</span>
-            </button>
+            </Button>
             {/* In the department tree, say which expense centre a cost centre
                 belongs to — that is exactly what the department spans. */}
             {tab === 'department' && (

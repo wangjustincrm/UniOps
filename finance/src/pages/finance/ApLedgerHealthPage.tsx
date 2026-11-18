@@ -26,7 +26,7 @@ import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, Download, EyeOff, Loader2, Search, Undo2 } from 'lucide-react'
-import { SortTh, sortParams, useSort, type Sort, Checkbox, Input, Select, TBody, TFoot, THead, Table, Td, Textarea, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
+import { Button, Checkbox, ChoiceCard, Input, Modal as ShellModal, Segmented, Select, SortTh, TBody, TFoot, THead, Table, Td, Textarea, Th, Tr, sortParams, type Sort, useSort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { invalidateApJudgement } from '@/lib/apJudgement'
@@ -860,18 +860,15 @@ function BillsByDate({ currency }: { currency: string }) {
         </p>
         <div className="flex flex-wrap gap-1.5">
           {(clusters?.items ?? []).map((c) => (
-            <button key={c.bill_date} onClick={() => pick(c)}
-                    className={cn('rounded-lg border px-2.5 py-1.5 text-left text-xs transition-colors',
-                                  from === c.bill_date && to === c.bill_date
-                                    ? 'border-primary-700 bg-primary-50/60'
-                                    : 'border-line hover:bg-surface-subtle')}>
+            <ChoiceCard key={c.bill_date} selected={from === c.bill_date && to === c.bill_date} onClick={() => pick(c)}
+                    className="block rounded-lg px-2.5 py-1.5 text-xs">
               <span className="font-mono">{day(c.bill_date)}</span>
               <span className="ml-2 font-mono tabular-nums font-semibold">{money(c.amount)}</span>
               <span className="ml-2 text-fg-muted">
                 {c.bills} bills · {c.suppliers} suppliers
                 {c.dismissed_bills > 0 && <>, {c.dismissed_bills} ignored</>}
               </span>
-            </button>
+            </ChoiceCard>
           ))}
         </div>
       </div>
@@ -1197,11 +1194,8 @@ export default function ApLedgerHealthPage() {
             {ccyRows.map((c) => {
               const bad = Number(c.inconsistent.gap) !== 0
               return (
-                <button key={c.currency} onClick={() => setCurrency(c.currency)}
-                        className={cn('rounded-lg border p-3 text-left transition-colors',
-                                      currency === c.currency
-                                        ? 'border-primary-700 bg-primary-50/60'
-                                        : 'border-line hover:bg-surface-subtle')}>
+                <ChoiceCard key={c.currency} selected={currency === c.currency} onClick={() => setCurrency(c.currency)}
+                        className="items-stretch gap-0 rounded-lg p-3">
                   <div className="flex items-center gap-1.5">
                     {/* The health signal is the approved side disagreeing —
                         never the size of the excluded pile, which is inert. */}
@@ -1252,27 +1246,26 @@ export default function ApLedgerHealthPage() {
                     {c.abandoned.superseded_bills > 0 && <>, {c.abandoned.superseded_bills} duplicate</>}
                     {c.ignored.bills > 0 && <> · {c.ignored.bills} bills ignored</>}
                   </p>
-                </button>
+                </ChoiceCard>
               )
             })}
           </div>
         )}
 
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <div className="inline-flex overflow-hidden rounded-lg border border-line-strong">
-            {([['suppliers', 'Approved suppliers'],
-               // The same population as the first view, sliced by document
-               // instead of by supplier — because what is not real debt turned
-               // out to cluster by DATE, across dozens of suppliers at once.
-               ['bills', 'Bills by date'],
-               ['abandoned', 'Excluded documents']] as const).map(([k, label]) => (
-              <button key={k} onClick={() => setView(k)}
-                      className={cn('px-3 py-1.5 text-sm',
-                                    view === k ? 'bg-primary-700 text-white' : 'bg-surface text-fg-secondary hover:bg-surface-subtle')}>
-                {label}
-              </button>
-            ))}
-          </div>
+          {/* 'Bills by date': the same population as the first view, sliced by
+              document instead of by supplier — because what is not real debt
+              turned out to cluster by DATE, across dozens of suppliers at once. */}
+          <Segmented<typeof view>
+            size="md"
+            items={[
+              { key: 'suppliers', label: 'Approved suppliers' },
+              { key: 'bills', label: 'Bills by date' },
+              { key: 'abandoned', label: 'Excluded documents' },
+            ]}
+            value={view}
+            onChange={setView}
+          />
           <span className="text-sm text-fg-muted">
             {currency}
             {view === 'abandoned'

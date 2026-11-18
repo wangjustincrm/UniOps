@@ -17,8 +17,6 @@ import { JvDetailModal, JvStatusBadge, type JvHeader } from './JvDetailModal'
 import { NcSyncModal, type NcSyncStatus } from './NcSyncModal'
 
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 const PAGE_SIZE = 50
 const STATUSES = ['', 'draft', 'reviewed', 'posted', 'reversed'] as const
@@ -72,7 +70,7 @@ function NameSelect({ value, options, onChange }:
   { value?: string; options?: string[]; onChange: (v: string) => void }) {
   return (
     <Select value={value ?? ''} onChange={(e) => onChange(e.target.value)}
-            className={cn(inputCls, 'w-full')}>
+            className="w-full">
       <option value="">Anyone</option>
       {(options ?? []).map((n) => <option key={n} value={n}>{n}</option>)}
     </Select>
@@ -223,24 +221,24 @@ export default function JournalVouchersPage() {
                    onChange={(e) => { setPeriodTo(e.target.value); resetPage() }}
                    className={cn(inputCls, 'w-36')} />
           </div>
-          <Select value={status} onChange={(e) => { setStatus(e.target.value); resetPage() }} className={inputCls}>
+          <Select value={status} onChange={(e) => { setStatus(e.target.value); resetPage() }}>
             {STATUSES.map((s) => <option key={s} value={s}>{s ? s[0].toUpperCase() + s.slice(1) : 'All statuses'}</option>)}
           </Select>
           <Select value={subsystem} onChange={(e) => { setPage(0); setSubsystem(e.target.value) }}
-                  className={inputCls}>
+                 >
             <option value="">All systems</option>
             {SUBSYSTEMS.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
           </Select>
           <form className="flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); resetPage() }}>
             <Input value={qInput} onChange={(e) => setQInput(e.target.value)}
                    placeholder="Voucher no. / summary…" className={cn(inputCls, 'w-56')} />
-            <button type="submit" className={secondaryBtn}><Search className="h-4 w-4" /></button>
+            <Button variant="secondary" size="md" type="submit"><Search className="h-4 w-4" /></Button>
           </form>
-          <button type="button" onClick={() => setShowAdvanced((v) => !v)}
-                  className={cn(secondaryBtn, advCount > 0 && 'border-primary-600 text-primary-700')}>
+          <Button variant="secondary" size="md" type="button" onClick={() => setShowAdvanced((v) => !v)}
+                  className={cn(advCount > 0 && 'border-primary-600 text-primary-700')}>
             <SlidersHorizontal className="h-4 w-4" />
             More filters{advCount > 0 ? ` (${advCount})` : ''}
-          </button>
+          </Button>
           {advCount > 0 && (
             <Button variant="subtle" size="xs" type="button" onClick={() => { setAdv({}); resetPage() }}
                     className="text-sm">
@@ -249,14 +247,14 @@ export default function JournalVouchersPage() {
           )}
           {canAct && (
             <div className="ml-auto flex items-center gap-2">
-              <button onClick={() => runBatch('review')} disabled={!!busy || selected.size === 0} className={secondaryBtn}>
+              <Button variant="secondary" size="md" onClick={() => runBatch('review')} disabled={!!busy || selected.size === 0}>
                 {busy === 'review' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                 Review Selected
-              </button>
-              <button onClick={() => runBatch('post')} disabled={!!busy || selected.size === 0} className={primaryBtn}>
+              </Button>
+              <Button size="md" onClick={() => runBatch('post')} disabled={!!busy || selected.size === 0}>
                 {busy === 'post' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 Post Selected
-              </button>
+              </Button>
             </div>
           )}
         </div>
@@ -283,13 +281,13 @@ export default function JournalVouchersPage() {
                      onChange={(e) => { setAdvField('num_to', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Voucher state">
-              <Select value={adv.voucher_state ?? ''} className={cn(inputCls, 'w-full')}
+              <Select value={adv.voucher_state ?? ''} className="w-full"
                       onChange={(e) => { setAdvField('voucher_state', e.target.value); resetPage() }}>
                 {VOUCHER_STATES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </Select>
             </AdvField>
             <AdvField label="Voucher kind">
-              <Select value={adv.voucher_kind ?? ''} className={cn(inputCls, 'w-full')}
+              <Select value={adv.voucher_kind ?? ''} className="w-full"
                       onChange={(e) => { setAdvField('voucher_kind', e.target.value); resetPage() }}>
                 <option value="">All kinds</option>
                 {(opts?.voucher_kinds ?? []).map((k) => (
@@ -330,7 +328,7 @@ export default function JournalVouchersPage() {
                      onChange={(e) => { setAdvField('amount_max', e.target.value); resetPage() }} />
             </AdvField>
             <AdvField label="Auxiliary">
-              <Select value={adv.aux_code ?? ''} className={cn(inputCls, 'w-full')}
+              <Select value={adv.aux_code ?? ''} className="w-full"
                       onChange={(e) => {
                         setAdvField('aux_code', e.target.value)
                         setAdvField('aux_value', '')   // a value is meaningless under a different dimension
@@ -476,13 +474,13 @@ export default function JournalVouchersPage() {
             <div className="mt-3 flex items-center justify-between text-sm text-fg-muted">
               <span>{total.toLocaleString()} voucher{total === 1 ? '' : 's'}</span>
               <div className="flex items-center gap-2">
-                <button onClick={() => gotoPage(Math.max(0, page - 1))} disabled={page === 0} className={secondaryBtn}>
+                <Button variant="secondary" size="md" onClick={() => gotoPage(Math.max(0, page - 1))} disabled={page === 0}>
                   <ChevronLeft className="h-4 w-4" /> Prev
-                </button>
+                </Button>
                 <span>Page {page + 1} / {pageCount}</span>
-                <button onClick={() => gotoPage(Math.min(pageCount - 1, page + 1))} disabled={page >= pageCount - 1} className={secondaryBtn}>
+                <Button variant="secondary" size="md" onClick={() => gotoPage(Math.min(pageCount - 1, page + 1))} disabled={page >= pageCount - 1}>
                   Next <ChevronRight className="h-4 w-4" />
-                </button>
+                </Button>
               </div>
             </div>
           </>

@@ -10,10 +10,7 @@ import { BookOpen, Check, Loader2, RotateCcw, Send, Undo2 } from 'lucide-react'
 import { financeApi } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
 
-import { TBody, TFoot, THead, Table, Td, Th, Tr, Modal as ShellModal } from '@uniops/shell'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
-const dangerBtn = 'flex items-center gap-1.5 rounded-lg border border-danger-line bg-surface px-3 py-2 text-sm font-medium text-danger-fg hover:bg-danger-soft disabled:opacity-50'
+import { TBody, TFoot, THead, Table, Td, Th, Tr, Modal as ShellModal, Button } from '@uniops/shell'
 
 function money(v: string | null | undefined) {
   const n = Number(v ?? 0)
@@ -224,30 +221,30 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
           {canAct && (
             <div className="mt-4 flex justify-end gap-2 border-t border-line-subtle pt-3">
               {v.status === 'draft' && !v.nc_source_pk && (
-                <button onClick={() => act('review')} disabled={!!busy} className={primaryBtn}>
+                <Button size="md" onClick={() => act('review')} disabled={!!busy}>
                   {busy === 'review' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Review
-                </button>
+                </Button>
               )}
               {v.status === 'reviewed' && (
                 <>
-                  <button onClick={() => act('unreview')} disabled={!!busy} className={secondaryBtn}>
+                  <Button variant="secondary" size="md" onClick={() => act('unreview')} disabled={!!busy}>
                     {busy === 'unreview' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />} Unreview
-                  </button>
-                  <button onClick={() => act('post')} disabled={!!busy} className={primaryBtn}>
+                  </Button>
+                  <Button size="md" onClick={() => act('post')} disabled={!!busy}>
                     {busy === 'post' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Post
-                  </button>
+                  </Button>
                 </>
               )}
               {v.status === 'posted' && !v.nc_source_pk && (
                 <>
-                  <button onClick={() => act('unpost')} disabled={!!busy} className={secondaryBtn}>
+                  <Button variant="secondary" size="md" onClick={() => act('unpost')} disabled={!!busy}>
                     {busy === 'unpost' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />} Unpost
-                  </button>
-                  <button
+                  </Button>
+                  <Button variant="danger-outline" size="md"
                     onClick={() => act('reverse', 'Create a posted red-flush voucher that offsets this one, and mark it reversed?')}
-                    disabled={!!busy} className={dangerBtn}>
+                    disabled={!!busy} >
                     {busy === 'reverse' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Reverse
-                  </button>
+                  </Button>
                 </>
               )}
             </div>

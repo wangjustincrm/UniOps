@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check, Loader2, Search } from 'lucide-react'
-import { SortTh, useSortableRows, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Button, Input, MenuItem, SortTh, TBody, THead, Table, Td, Th, Tr, useSortableRows } from '@uniops/shell'
 import {
   qboCreditImportApi,
   type ImportRunResponse,
@@ -24,8 +24,6 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { cn, formatDateTime } from '@/lib/utils'
 
 const STORAGE_KEY = 'qbo-credit-import-decisions'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 const inputCls = 'h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 /** chosen vendor id per QBO vendor, plus rows the operator marked skip. */
@@ -276,19 +274,19 @@ export default function QboCreditImportPage() {
         </section>
 
         <section className="flex flex-wrap items-center gap-3">
-          <button
+          <Button variant="secondary" size="md"
             type="button"
-            className={secondaryBtn}
+            
             disabled={run.isPending || mappedCount === 0}
             onClick={() => { if (!run.isPending) run.mutate(true) }}
           >
             {run.isPending && run.variables === true
               ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Preview {mappedCount > 0 ? `(${mappedCount} vendors)` : ''}
-          </button>
-          <button
+          </Button>
+          <Button size="md"
             type="button"
-            className={primaryBtn}
+            
             // Import unlocks only after a preview of the CURRENT mapping.
             disabled={run.isPending || !preview || preview.imported === 0}
             onClick={() => { if (!run.isPending) run.mutate(false) }}
@@ -296,7 +294,7 @@ export default function QboCreditImportPage() {
             {run.isPending && run.variables === false
               ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
             Import
-          </button>
+          </Button>
           {mappedCount === 0 && (
             <span className="text-sm text-fg-muted">
               Confirm at least one EPMS vendor to continue.
@@ -463,15 +461,14 @@ function VendorPicker({
               <p className="px-2 py-2 text-xs text-fg-muted">No matches.</p>
             )}
             {options.map((o) => (
-              <button
+              <MenuItem
                 key={o.id}
-                type="button"
-                className="block w-full px-2 py-1.5 text-left text-xs hover:bg-surface-subtle"
+                className="px-2 py-1.5 text-xs"
                 onClick={() => { onChoose(o.id); setOpen(false) }}
               >
                 <span className="font-medium">{o.name}</span>
                 <span className="ml-2 text-fg-muted">{o.code}</span>
-              </button>
+              </MenuItem>
             ))}
           </div>
           <Button variant="link" type="button" className="text-xs text-fg-muted"

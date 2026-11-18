@@ -13,7 +13,7 @@ import {
   Layers, Plus, Pencil, Trash2, X, Check, Search,
   ChevronDown, ChevronRight, AlertCircle,
 } from 'lucide-react'
-import { SortTh, useSortableRows, Checkbox, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Button, Checkbox, Input, SortTh, TBody, THead, Table, Td, Th, Tr, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { budgetApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -436,13 +436,16 @@ function TemplateValuesEditor({
           <li key={v.id} className="flex items-center gap-2 rounded border border-line bg-surface px-2.5 py-1.5">
             <span className="inline-flex items-center rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-2xs font-semibold text-fg-secondary">{v.value_code}</span>
             <span className="flex-1 text-sm text-fg">{v.value_name}</span>
-            <button
+            <Button
+              variant="subtle"
+              size="xs"
+              aria-pressed={v.is_active}
               onClick={() => updateValueMut.mutate({ id: v.id, body: { is_active: !v.is_active } })}
-              className={cn('rounded-full px-2 py-0.5 text-2xs font-medium', v.is_active ? 'bg-success-soft text-success-fg' : 'bg-surface-sunken text-fg-muted')}
+              className={cn('h-auto rounded-full px-2 py-0.5 text-2xs', v.is_active ? 'bg-success-soft text-success-fg hover:bg-success-soft' : 'bg-surface-sunken text-fg-muted')}
               title="Click to toggle"
             >
               {v.is_active ? 'Active' : 'Inactive'}
-            </button>
+            </Button>
             <Button variant="danger-ghost" size="icon-xs" aria-label="Remove"
               onClick={() => { if (confirm(`Delete value "${v.value_code}"?`)) deleteValueMut.mutate(v.id) }}
              

@@ -34,7 +34,7 @@ import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, Download, HelpCircle, Loader2, Search } from 'lucide-react'
-import { SortTh, sortParams, useSort, useSortableRows, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Button, ChoiceCard, Input, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, formatDate, formatDateTime } from '@/lib/utils'
@@ -277,11 +277,8 @@ export default function ApCashFlowPage() {
         ) : (
           <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {(summary?.currencies ?? []).map((c) => (
-              <button key={c.currency} onClick={() => { setCurrency(c.currency); setBucket(null) }}
-                      className={cn('rounded-lg border p-3 text-left transition-colors',
-                                    currency === c.currency
-                                      ? 'border-primary-700 bg-primary-50/60'
-                                      : 'border-line hover:bg-surface-subtle')}>
+              <ChoiceCard key={c.currency} selected={currency === c.currency} onClick={() => { setCurrency(c.currency); setBucket(null) }}
+                      className="items-stretch gap-0 rounded-lg p-3">
                 <span className="font-mono text-sm font-semibold">{c.currency}</span>
                 <dl className="mt-2 space-y-1 text-xs">
                   {/* The forecast figure comes first because it is the only one
@@ -302,7 +299,7 @@ export default function ApCashFlowPage() {
                 <p className="mt-1.5 text-2xs text-fg-muted">
                   {money(c.total)} open in total
                 </p>
-              </button>
+              </ChoiceCard>
             ))}
           </div>
         )}

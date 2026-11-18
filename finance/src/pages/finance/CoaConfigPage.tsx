@@ -72,8 +72,6 @@ const EMPTY_FORM: AccountForm = {
 }
 
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 // ── Account edit/create modal ──────────────────────────────────────────────────
 
@@ -125,7 +123,7 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
           <span className="mb-1 block text-fg-secondary">Type</span>
           <Select value={form.account_type}
                   onChange={(e) => set({ account_type: e.target.value })}
-                  className={cn(inputCls, 'w-full')}>
+                  className="w-full">
             {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
           </Select>
         </label>
@@ -133,7 +131,7 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
           <span className="mb-1 block text-fg-secondary">Normal Balance</span>
           <Select value={form.normal_balance}
                   onChange={(e) => set({ normal_balance: e.target.value })}
-                  className={cn(inputCls, 'w-full')}>
+                  className="w-full">
             <option value="debit">Debit</option>
             <option value="credit">Credit</option>
           </Select>
@@ -203,13 +201,14 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
           {auxTypes.map((d) => {
             const state = auxOf(d.code)
             return (
-              <button key={d.code} type="button" disabled
+              // Read-only display (NC Sync owns it), so a plain element, not a disabled button.
+              <div key={d.code} aria-disabled="true"
                       title="Managed by NC Sync — read-only"
                       className={cn(
                         'flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-sm cursor-not-allowed opacity-70',
-                        !state && 'border-line text-fg-muted hover:bg-surface-subtle',
-                        state && !state.required && 'border-primary-600/40 bg-primary-50 text-primary-700',
-                        state?.required && 'border-primary-700 bg-primary-700 text-white',
+                        !state && 'border-line text-fg-muted',
+                        state && !state.required && 'border-accent-line bg-accent-soft text-accent-fg',
+                        state?.required && 'border-accent bg-accent text-fg-on-accent',
                       )}>
                 <span className="flex items-center gap-1.5">
                   {state && <Check className="h-3.5 w-3.5" />}
@@ -217,11 +216,11 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
                 </span>
                 {state && (
                   <span className={cn('text-2xs font-semibold',
-                                      state.required ? 'text-white/90' : 'text-primary-600')}>
+                                      state.required ? 'text-fg-on-accent' : 'text-accent-fg')}>
                     {state.required ? 'Required' : 'Optional'}
                   </span>
                 )}
-              </button>
+              </div>
             )
           })}
         </div>
@@ -234,13 +233,13 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
       )}
 
       <div className="mt-5 flex justify-end gap-2">
-        <button onClick={onClose} className={secondaryBtn}>Cancel</button>
-        <button onClick={() => save.mutate()}
+        <Button variant="secondary" size="md" onClick={onClose}>Cancel</Button>
+        <Button size="md" onClick={() => save.mutate()}
                 disabled={save.isPending || !form.code || !form.name}
-                className={primaryBtn}>
+                >
           {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
           Save
-        </button>
+        </Button>
       </div>
     </ShellModal>
   )
@@ -276,7 +275,7 @@ function MappingsTab({ accounts, canManage }: { accounts: Account[]; canManage: 
 
   const acctSelect = (value: string, onChange: (v: string) => void) => (
     <Select value={value} disabled={!canManage} onChange={(e) => onChange(e.target.value)}
-            className={cn(inputCls, 'h-8 py-0 disabled:bg-surface-subtle')}>
+            selectSize="sm">
       <option value="">— Select account —</option>
       {postable.map((a) => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}
     </Select>
@@ -307,11 +306,11 @@ function MappingsTab({ accounts, canManage }: { accounts: Account[]; canManage: 
                        className={cn(inputCls, 'h-8 w-48 py-0')} />
                 <span className="text-fg-muted">→</span>
                 {acctSelect(newAcct, setNewAcct)}
-                <button disabled={!newSrc || !newAcct || upsert.isPending}
+                <Button size="md" disabled={!newSrc || !newAcct || upsert.isPending}
                         onClick={() => upsert.mutate({ mtype, src: newSrc, acct: newAcct })}
-                        className={cn(primaryBtn, 'px-2.5 py-1')}>
+                        className={cn('px-2.5 py-1')}>
                   <Plus className="h-4 w-4" /> Add
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -427,12 +426,10 @@ export default function CoaConfigPage() {
         <div className="mb-4 flex items-center gap-2">
           {([['accounts', 'Accounts'], ['mappings', 'Mappings'],
              ['aux', 'Aux Dimensions']] as const).map(([t, label]) => (
-            <button key={t} onClick={() => setTab(t)}
-                    className={cn('rounded-lg px-4 py-2 text-sm font-medium',
-                      tab === t ? 'bg-primary-700 text-white'
-                                : 'border border-line-strong bg-surface text-fg-secondary hover:bg-surface-subtle')}>
+            <Button key={t} onClick={() => setTab(t)}
+                    variant={tab === t ? 'primary' : 'secondary'} size="md" aria-pressed={tab === t}>
               {label}
-            </button>
+            </Button>
           ))}
         </div>
 
@@ -454,7 +451,7 @@ export default function CoaConfigPage() {
                        className={cn(inputCls, 'w-56 pl-8')} />
               </div>
               <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
-                      className={cn(inputCls, 'w-36')}>
+                      className="w-36">
                 <option value="">All types</option>
                 {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
               </Select>
@@ -464,22 +461,22 @@ export default function CoaConfigPage() {
                 Include inactive
               </label>
               <div className="ml-auto flex gap-2">
-                <button onClick={onExport} className={secondaryBtn}>
+                <Button variant="secondary" size="md" onClick={onExport}>
                   <Download className="h-4 w-4" /> Export CSV
-                </button>
+                </Button>
                 {canManage && (
                   <>
                     <FileInput ref={fileInput} accept=".csv,text/csv" className="hidden"
                            onChange={(e) => e.target.files?.[0] && onImportFile(e.target.files[0])} />
-                    <button onClick={() => fileInput.current?.click()} disabled={importBusy}
-                            className={secondaryBtn}>
+                    <Button variant="secondary" size="md" onClick={() => fileInput.current?.click()} disabled={importBusy}
+                            >
                       {importBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                       Import CSV
-                    </button>
-                    <button onClick={() => setEditing({ form: EMPTY_FORM, isNew: true })}
-                            className={primaryBtn}>
+                    </Button>
+                    <Button size="md" onClick={() => setEditing({ form: EMPTY_FORM, isNew: true })}
+                            >
                       <Plus className="h-4 w-4" /> New Account
-                    </button>
+                    </Button>
                   </>
                 )}
               </div>
@@ -632,10 +629,10 @@ function AuxTypesTab({ auxTypes, canManage }: { auxTypes: AuxType[]; canManage: 
                  className={cn(inputCls, 'w-56')} />
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Display name"
                  className={cn(inputCls, 'w-64')} />
-          <button disabled={!code.trim() || !name.trim() || create.isPending}
-                  onClick={() => create.mutate()} className={primaryBtn}>
+          <Button size="md" disabled={!code.trim() || !name.trim() || create.isPending}
+                  onClick={() => create.mutate()} >
             <Plus className="h-4 w-4" /> Add Dimension
-          </button>
+          </Button>
           {error && <span className="text-sm text-danger-fg">{error}</span>}
         </div>
       )}

@@ -25,7 +25,6 @@ import {
   fetchPreview, renderRemittance, scopeKey, sendRemittance,
   type PayeeGroup, type RemittanceScope, type RenderedEmail, type SendResult,
 } from '@/services/remittance'
-import { primaryBtn, secondaryBtn } from './buttonStyles'
 import { RemittanceEmailPreview } from './RemittanceEmailPreview'
 
 import { Checkbox, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
@@ -313,10 +312,10 @@ export function RemittancePanel({ scope, onSent }: {
               title="The date the advice tells the payee the funds left. Defaults to today — back-date it if the payment actually cleared earlier."
               />
           </label>
-          <button type="button" onClick={() => void refetch()} disabled={isFetching} className={secondaryBtn}>
+          <Button variant="secondary" size="md" type="button" onClick={() => void refetch()} disabled={isFetching}>
             <RefreshCw className={cn('h-4 w-4', isFetching && 'animate-spin')} />
             Refresh
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -457,10 +456,10 @@ export function RemittancePanel({ scope, onSent }: {
       )}
 
       <div className="flex justify-end">
-        <button type="button" disabled={rendering || selectedCount === 0} onClick={() => void handlePreview()} className={primaryBtn}>
+        <Button size="md" type="button" disabled={rendering || selectedCount === 0} onClick={() => void handlePreview()}>
           {rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
           {rendering ? 'Preparing preview…' : `Preview & Send (${selectedCount})`}
-        </button>
+        </Button>
       </div>
     </div>
   )

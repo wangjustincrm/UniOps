@@ -9,10 +9,8 @@ import { AlertTriangle, DatabaseZap, Loader2 } from 'lucide-react'
 import { financeApi } from '@/lib/api'
 import { cn, formatDateTime } from '@/lib/utils'
 
-import { Input, Radio, Modal as ShellModal } from '@uniops/shell'
+import { Input, Radio, Modal as ShellModal, Button } from '@uniops/shell'
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 const FULL_CONFIRM = 'FULL RELOAD'
 
@@ -148,11 +146,11 @@ export function NcSyncModal({ onClose, onSynced }: { onClose: () => void; onSync
             {err && <div className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{err}</div>}
 
             <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">
-              <button onClick={onClose} className={secondaryBtn}>Close</button>
-              <button onClick={start} disabled={!canStart} className={primaryBtn}>
+              <Button variant="secondary" size="md" onClick={onClose}>Close</Button>
+              <Button size="md" onClick={start} disabled={!canStart}>
                 {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <DatabaseZap className="h-4 w-4" />}
                 Start Sync
-              </button>
+              </Button>
             </div>
           </>
         )}

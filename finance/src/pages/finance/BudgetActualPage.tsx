@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
-import { SortTh, useSortableRows, Input, TBody, TFoot, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { SortTh, useSortableRows, Input, TBody, TFoot, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn, currentMonthISO } from '@/lib/utils'
@@ -21,7 +21,6 @@ import { BudgetActualBreakdown } from './BudgetActualBreakdown'
 import { JvDetailModal } from './JvDetailModal'
 
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const linkBtn = 'text-xs font-medium text-primary-700 hover:underline'
 
 const CATEGORY_LABEL: Record<string, string> = {
   MOH: 'Manufacturing Overhead', RD: 'R&D', SELL: 'Selling', GA: 'G&A', FN: 'Financial',
@@ -214,7 +213,7 @@ export default function BudgetActualPage() {
                           <Td className={cn('px-3 py-2 text-right font-mono',
                             Number(r.variance) < 0 && 'text-danger-fg')}>{money(r.variance)}</Td>
                           <Td align="right">
-                            <button className={linkBtn} onClick={() => openDetailDrill(cat.account_code, r)}>Vouchers</button>
+                            <Button variant="link" size="xs" onClick={() => openDetailDrill(cat.account_code, r)}>Vouchers</Button>
                           </Td>
                         </Tr>
                       ))}
@@ -279,11 +278,11 @@ export default function BudgetActualPage() {
                         <Td align="right" className="font-mono">{money(u.actual)}</Td>
                         <Td align="right" className="font-mono text-fg-muted">{u.line_count}</Td>
                         <Td align="right">
-                          <button className={linkBtn}
+                          <Button variant="link" size="xs" 
                                   onClick={() => setDrill({
                                     accountCode: u.account_code, dimsValues: 'cost_center:none',
                                     title: `Vouchers — ${u.account_code} · no cost center · ${period}`,
-                                  })}>Vouchers</button>
+                                  })}>Vouchers</Button>
                         </Td>
                       </Tr>
                     ))}

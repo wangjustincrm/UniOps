@@ -135,7 +135,7 @@ export default function ExchangeRatesPage() {
       <div className="mx-auto max-w-6xl space-y-4">
         <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-line bg-surface p-3 text-sm">
-            <div className="text-xs font-medium uppercase text-fg-muted">Last fetch</div>
+            <div className="text-xs font-medium text-fg-muted">Last fetch</div>
             {last ? (
               <div className="mt-1">
                 <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium',
@@ -147,7 +147,7 @@ export default function ExchangeRatesPage() {
             ) : <div className="mt-1 text-fg-muted">Never</div>}
           </div>
           <div className="rounded-lg border border-line bg-surface p-3 text-sm">
-            <div className="text-xs font-medium uppercase text-fg-muted">Latest rate per currency</div>
+            <div className="text-xs font-medium text-fg-muted">Latest rate per currency</div>
             <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
               {(status?.currencies ?? []).map((c) => (
                 <span key={c.currency} className="text-fg-secondary"><b>{c.currency}</b> {formatDate(c.latest_date)}</span>
@@ -156,10 +156,10 @@ export default function ExchangeRatesPage() {
             </div>
           </div>
           <div className="rounded-lg border border-line bg-surface p-3 text-sm">
-            <div className="text-xs font-medium uppercase text-fg-muted">Rate for a document dated</div>
+            <div className="text-xs font-medium text-fg-muted">Rate for a document dated</div>
             <div className="mt-1 flex items-center gap-2">
               <Select value={probe.currency} onChange={(e) => setProbe({ ...probe, currency: e.target.value })}
-                      className={cn(inputCls, 'h-8 w-24')}>
+                      className="w-24" selectSize="sm">
                 {currencies.map((c) => <option key={c}>{c}</option>)}
               </Select>
               <Input type="date" value={probe.on} onChange={(e) => setProbe({ ...probe, on: e.target.value })}
@@ -174,7 +174,7 @@ export default function ExchangeRatesPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Select value={currency} onChange={(e) => { setCurrency(e.target.value); setPage(0) }} className={cn(inputCls, 'w-32')}>
+          <Select value={currency} onChange={(e) => { setCurrency(e.target.value); setPage(0) }} className="w-32">
             <option value="">All currencies</option>
             {currencies.map((c) => <option key={c}>{c}</option>)}
           </Select>

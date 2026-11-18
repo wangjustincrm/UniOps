@@ -21,7 +21,6 @@ import { ListPager } from '@/components/ListPager'
 import { JvDetailModal } from './JvDetailModal'
 
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 const PAGE_SIZE = 50
 const SUBSYSTEMS = [
@@ -134,11 +133,11 @@ export default function JvLinesPage() {
       title="JV Detail"
       subtitle="Every NC voucher line, one column per auxiliary — filter and export to CSV"
       headerActions={(
-        <button onClick={exportCsv} disabled={exporting || total === 0} className={secondaryBtn}
+        <Button variant="secondary" size="md" onClick={exportCsv} disabled={exporting || total === 0} 
                 title="All lines matching the filters, auxiliaries one column each">
           {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           Export CSV
-        </button>
+        </Button>
       )}
     >
       <div className="mx-auto max-w-[110rem]">
@@ -152,7 +151,7 @@ export default function JvLinesPage() {
                    onChange={(e) => { setPeriodTo(e.target.value); reset() }}
                    className={cn(inputCls, 'w-36')} />
           </div>
-          <Select value={subsystem} onChange={(e) => { setSubsystem(e.target.value); reset() }} className={inputCls}>
+          <Select value={subsystem} onChange={(e) => { setSubsystem(e.target.value); reset() }}>
             <option value="">All systems</option>
             {SUBSYSTEMS.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
           </Select>
@@ -164,7 +163,7 @@ export default function JvLinesPage() {
                  className={cn(inputCls, 'w-24')} />
           <Select value={auxCode} aria-label="Auxiliary"
                   onChange={(e) => { setAuxCode(e.target.value); setAuxValue(''); reset() }}
-                  className={inputCls}>
+                 >
             <option value="">Any auxiliary</option>
             {(opts?.aux_codes ?? []).map((c) => <option key={c} value={c}>{dimLabel(c)}</option>)}
           </Select>
@@ -178,7 +177,7 @@ export default function JvLinesPage() {
           <form className="flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); reset() }}>
             <Input value={qInput} onChange={(e) => setQInput(e.target.value)}
                    placeholder="Voucher no. / line summary…" className={cn(inputCls, 'w-60')} />
-            <button type="submit" className={secondaryBtn}><Search className="h-4 w-4" /></button>
+            <Button variant="secondary" size="md" type="submit"><Search className="h-4 w-4" /></Button>
           </form>
           {(subsystem || account || currency || auxCode || q) && (
             <Button variant="subtle" size="xs" type="button"
@@ -197,7 +196,7 @@ export default function JvLinesPage() {
           <>
             <div className="max-h-[calc(100vh-15rem)] min-h-[16rem] overflow-auto rounded-lg border border-line">
               <Table density="compact">
-                <THead className="sticky top-0 z-10 shadow-[0_1px_0_#e5e5e5]">
+                <THead>
                   <Tr>
                     <SortTh label="Date" sortKey="voucher_date" sort={sort} onSort={onSort} className="px-3 py-2 whitespace-nowrap" />
                     <SortTh label="Voucher No." sortKey="jv_number" sort={sort} onSort={onSort} className="px-3 py-2 whitespace-nowrap" />

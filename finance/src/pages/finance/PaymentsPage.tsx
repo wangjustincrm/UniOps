@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { SortTh, deriveTabMeta, sortParams, useOptionalTabStoreApi, useSort, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Button, Checkbox, Input, MenuItem, Select, SortTh, TBody, THead, Table, Td, Th, Tr, deriveTabMeta, sortParams, useOptionalTabStoreApi, useSort } from '@uniops/shell'
 import { Download, Receipt, Send, X } from 'lucide-react'
 import { financeRoutes } from '@/app/routes'
 import { financeApi, financeDownload, mdmApi } from '@/lib/api'
@@ -27,7 +27,6 @@ import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { RemittanceStatusBadge, type RemittanceStatus } from '@/components/remittance/RemittancePanel'
 import { RemittanceDialog } from '@/components/remittance/RemittanceDialog'
-import { primaryBtn, secondaryBtn } from '@/components/remittance/buttonStyles'
 
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
@@ -265,11 +264,10 @@ function VendorFilter({ vendorId, vendorName, onChange }: {
             <div className="px-3 py-2 text-xs text-fg-muted">No vendors found</div>
           )}
           {options.map((v) => (
-            <button key={v.id} type="button"
-                    className="block w-full px-3 py-1.5 text-left text-sm hover:bg-surface-subtle"
+            <MenuItem key={v.id} className="py-1.5"
                     onClick={() => { onChange({ id: v.id, name: v.name }); setQuery(v.name); setOpen(false) }}>
               {v.name} <span className="text-xs text-fg-muted">({v.code})</span>
-            </button>
+            </MenuItem>
           ))}
         </div>,
         document.body,
@@ -466,7 +464,7 @@ export default function PaymentsPage() {
           </label>
           <label className="text-xs text-fg-secondary">
             Currency
-            <Select value={filters.currency} className={cn(inputCls, 'block w-24')}
+            <Select value={filters.currency} className="block w-24"
                     onChange={(e) => setFilter({ currency: e.target.value })}>
               <option value="">All</option>
               {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
@@ -474,7 +472,7 @@ export default function PaymentsPage() {
           </label>
           <label className="text-xs text-fg-secondary">
             Method
-            <Select value={filters.payment_method} className={cn(inputCls, 'block w-28')}
+            <Select value={filters.payment_method} className="block w-28"
                     onChange={(e) => setFilter({ payment_method: e.target.value })}>
               <option value="">All</option>
               <option value="eft">EFT</option>
@@ -485,7 +483,7 @@ export default function PaymentsPage() {
           </label>
           <label className="text-xs text-fg-secondary">
             Bank Account
-            <Select value={filters.bank_account_id} className={cn(inputCls, 'block w-56')}
+            <Select value={filters.bank_account_id} className="block w-56"
                     onChange={(e) => setFilter({ bank_account_id: e.target.value })}>
               <option value="">All</option>
               {bankAccounts.map((a) => (
@@ -495,7 +493,7 @@ export default function PaymentsPage() {
           </label>
           <label className="text-xs text-fg-secondary">
             Source
-            <Select value={filters.source} className={cn(inputCls, 'block w-24')}
+            <Select value={filters.source} className="block w-24"
                     onChange={(e) => setFilter({ source: e.target.value })}>
               <option value="">All</option>
               <option value="batch">Batch</option>
@@ -504,7 +502,7 @@ export default function PaymentsPage() {
           </label>
           <label className="text-xs text-fg-secondary">
             Remittance
-            <Select value={filters.remittance} className={cn(inputCls, 'block w-28')}
+            <Select value={filters.remittance} className="block w-28"
                     onChange={(e) => setFilter({ remittance: e.target.value })}>
               <option value="">All</option>
               <option value="sent">Sent</option>
@@ -522,11 +520,11 @@ export default function PaymentsPage() {
               }}
             />
           </label>
-          <button type="button" onClick={() => void handleExport()} disabled={exporting}
-                  className={cn(secondaryBtn, 'ml-auto')}>
+          <Button variant="secondary" size="md" type="button" onClick={() => void handleExport()} disabled={exporting}
+                  className={cn('ml-auto')}>
             <Download className="h-4 w-4" />
             {exporting ? 'Exporting…' : 'Export CSV'}
-          </button>
+          </Button>
         </div>
 
         {exportError && <div className="mb-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{exportError}</div>}
@@ -542,14 +540,14 @@ export default function PaymentsPage() {
               </span>
             )}
             <div className="ml-auto flex items-center gap-2">
-              <button type="button" className={secondaryBtn} onClick={() => setSelectedIds(new Set())}>
+              <Button variant="secondary" size="md" type="button" onClick={() => setSelectedIds(new Set())}>
                 Clear
-              </button>
-              <button type="button" className={primaryBtn} disabled={!singlePayee}
+              </Button>
+              <Button size="md" type="button"  disabled={!singlePayee}
                       onClick={() => setSelectionScopeIds([...selectedIds])}>
                 <Send className="h-4 w-4" />
                 Send remittance
-              </button>
+              </Button>
             </div>
           </div>
         )}

@@ -279,24 +279,22 @@ export default function AccountsPayablePage() {
       <div className="mx-auto max-w-6xl">
         <div className="mb-4 flex items-center gap-2">
           {([['invoices', 'Invoices'], ['aging', 'Aging']] as const).map(([t, label]) => (
-            <button key={t} onClick={() => setTab(t)}
-                    className={cn('rounded-lg px-4 py-2 text-sm font-medium',
-                      tab === t ? 'bg-primary-700 text-white'
-                                : 'border border-line-strong bg-surface text-fg-secondary hover:bg-surface-subtle')}>
+            <Button key={t} onClick={() => setTab(t)}
+                    variant={tab === t ? 'primary' : 'secondary'} size="md" aria-pressed={tab === t}>
               {label}
-            </button>
+            </Button>
           ))}
         </div>
 
         {tab === 'invoices' ? (
           <>
-            <div ref={barRef} className="sticky top-0 z-20 -mx-1 bg-[#FAFBFC] px-1 pb-3 pt-1">
+            <div ref={barRef} className="sticky top-0 z-20 -mx-1 bg-canvas px-1 pb-3 pt-1">
             <div className="flex flex-wrap items-center gap-3">
-              <Select value={source} onChange={(e) => { setSource(e.target.value); resetPage() }} className={cn(inputCls, 'w-40')}>
+              <Select value={source} onChange={(e) => { setSource(e.target.value); resetPage() }} className="w-40">
                 <option value="">All sources</option>
                 {SOURCES.map((s) => <option key={s} value={s}>{s.toUpperCase()}</option>)}
               </Select>
-              <Select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); resetPage() }} className={cn(inputCls, 'w-44')}>
+              <Select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); resetPage() }} className="w-44">
                 <option value="">All statuses</option>
                 {STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
               </Select>
@@ -335,7 +333,7 @@ export default function AccountsPayablePage() {
 
             <div className="overflow-clip rounded-lg border border-line">
               <Table density="compact">
-                <THead className="sticky z-10 shadow-[0_1px_0_#e5e5e5]"
+                <THead
                        style={{ top: barH }}>
                   <Tr>
                     <Th className="w-9" />
