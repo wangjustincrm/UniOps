@@ -3,12 +3,13 @@ import { useQuery } from '@tanstack/react-query'
 import {
   UserCheck,
   ArrowRight, CheckCircle2, AlertCircle,
-  Briefcase, CreditCard, Activity, Cloud, Landmark, CalendarClock, Network, Warehouse,
+  Briefcase, CreditCard, Activity, Cloud,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, INVENTORY_URL, encodeSession } from '@/lib/api'
 import { cn, formatAmount, timeAgo } from '@/lib/utils'
 import { groupTasks } from '@/lib/groupTasks'
+import { MODULE, type ModuleKey } from '@/lib/modules'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { PortalSidebar } from '@/components/layout/PortalSidebar'
 import { TopHeader } from '@/components/layout/TopHeader'
@@ -209,6 +210,13 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 // ── Module card ───────────────────────────────────────────────────────────────
+
+/** Words and icon of a module card come from the module registry (also used by the sign-in page). */
+function moduleCard(key: ModuleKey) {
+  const m = MODULE[key]
+  const Icon = m.icon
+  return { icon: <Icon className="h-5 w-5 text-primary-600" />, iconBg: 'bg-primary-50', label: m.label, description: m.description }
+}
 
 interface ModuleCardProps {
   icon: React.ReactNode
@@ -722,29 +730,19 @@ export default function PortalHome() {
 
   const MODULES: ModuleCardProps[] = [
     {
-      icon: <Briefcase className="h-5 w-5 text-primary-600" />,
-      iconBg: 'bg-primary-50',
-      label: 'EPMS',
-      description: 'Enterprise procurement, purchase orders, goods receipt, invoices',
+      ...moduleCard('epms'),
       href: epmsHref,
       healthy: epmsHealth.data?.ok,
       loading: epmsHealth.isLoading,
     },
     {
-      icon: <CreditCard className="h-5 w-5 text-amber-500" />,
-      iconBg: 'bg-amber-50',
-      label: 'OA',
-      // Vendor payments left OA (PRD OA §15) — expenses, mileage and travel only.
-      description: 'Expense reimbursements, mileage and travel',
+      ...moduleCard('oa'),
       href: oaHref,
       healthy: oaHealth.data?.ok,
       loading: oaHealth.isLoading,
     },
     ...(hasFinanceAccess ? [{
-      icon: <Landmark className="h-5 w-5 text-primary-600" />,
-      iconBg: 'bg-primary-50',
-      label: 'Finance',
-      description: 'AP/AR, general ledger, payments, bank rec, budgets, tax',
+      ...moduleCard('finance'),
       href: financeHref,
       healthy: undefined,
       loading: false,
@@ -752,38 +750,26 @@ export default function PortalHome() {
     // Row break: with the 3-column grid, EPMS/OA/Finance fill row 1;
     // VMS + Meeting Rooms flow onto row 2.
     {
-      icon: <UserCheck className="h-5 w-5 text-primary-600" />,
-      iconBg: 'bg-primary-50',
-      label: 'VMS',
-      description: 'Visitor appointments, badge printing, on-site tracking',
+      ...moduleCard('vms'),
       href: vmsHref,
       // No health check yet — vms-api healthcheck wiring lands in W7.
       healthy: undefined,
       loading: false,
     },
     ...(hasBookingAccess ? [{
-      icon: <CalendarClock className="h-5 w-5 text-teal-600" />,
-      iconBg: 'bg-teal-50',
-      label: 'Meeting Rooms',
-      description: 'Find and book meeting rooms',
+      ...moduleCard('booking'),
       href: bookingHref,
       healthy: undefined,
       loading: false,
     }] : []),
     ...(hasMrpAccess ? [{
-      icon: <Network className="h-5 w-5 text-indigo-600" />,
-      iconBg: 'bg-indigo-50',
-      label: 'MRP',
-      description: 'Demand forecast, MPS production planning, BOM explorer',
+      ...moduleCard('mrp'),
       href: mrpHref,
       healthy: undefined,
       loading: false,
     }] : []),
     ...(hasInventoryAccess ? [{
-      icon: <Warehouse className="h-5 w-5 text-emerald-600" />,
-      iconBg: 'bg-emerald-50',
-      label: 'Inventory',
-      description: 'WMS and NC stock side by side — reconcile, explain differences, trace batches.',
+      ...moduleCard('inventory'),
       href: inventoryHref,
       healthy: undefined,
       loading: false,

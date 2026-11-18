@@ -53,11 +53,11 @@
    "raw-table": 122
   },
   "portal": {
-   "raw-color": 1251,
-   "raw-control": 268,
+   "raw-color": 1216,
+   "raw-control": 262,
    "raw-overlay": 14,
    "arbitrary-size": 33,
-   "shouting-type": 66,
+   "shouting-type": 58,
    "raw-table": 290,
    "emoji": 1
   },
@@ -1697,15 +1697,10 @@
    "raw-control": 1,
    "raw-color": 9
   },
-  "portal/src/pages/LoginPage.tsx": {
-   "raw-control": 6,
-   "raw-color": 27,
-   "shouting-type": 8
-  },
   "portal/src/pages/PortalHome.tsx": {
    "raw-control": 1,
    "raw-overlay": 1,
-   "raw-color": 85,
+   "raw-color": 77,
    "arbitrary-size": 11,
    "shouting-type": 10
   },
