@@ -56,6 +56,18 @@ export const METRICS = {
   // control that draws the frame) are exempt.
   'input-chrome': new RegExp(
     String.raw`<(?:Input|Textarea|SearchInput)\b(?!(?:[^>{]|\{[^{}]*\})*\bbare\b)(?:(?!</?[A-Za-z])[\s\S])*?className=(?:"[^"]*(?<![\w-])(?:border(?:-[\w-]+)?|rounded(?:-\w+)?|bg-[\w-]+|focus:ring(?:-[\w-]+)?|h-(?:7|8|9|10|11))(?![\w-])[^"]*"|\{[^}]*(?:(?:[Cc]ls|Class|CLS)\b|\b[A-Z][A-Z0-9_]{2,}\b|\brounded\b|\bborder-))`, 'g'),
+  // A status / category / code badge drawn by hand: a span/div/p whose className has a
+  // radius, badge padding (px-1…2.5 + py-0/0.5/px) and a tint (or a colour-table
+  // lookup). Use <Badge variant size>. A chip with a remove button is not a badge:
+  // mark it data-chip and it is exempt.
+  'hand-badge': new RegExp(
+    String.raw`<(?:span|div|p)\b(?!(?:[^>{]|\{(?:[^{}]|\{[^{}]*\})*\})*\bdata-chip\b)(?:[^<>{}]|\{(?:[^{}]|\{[^{}]*\})*\})*?className=(?:"|\{)(?=[^>]{0,400}?(?<![\w-])rounded(?:-full|-md|-sm)?(?![\w-]))(?=[^>]{0,400}?(?<![\w-])px-(?:1|1\.5|2|2\.5)(?![\w-]))(?=[^>]{0,400}?(?<![\w-])py-(?:0|0\.5|px)(?![\w-]))(?=[^>]{0,400}?(?:(?<![\w-])bg-(?:success|warning|danger|info|cat\d|primary-\d+|accent-soft|surface-(?:sunken|strong|subtle))|\b\w*(?:STYLE|CLS|COLORS)\b|\b(?:cls|style|tone|badge)\b\s*[\])}]))`, 'g'),
+  // The same badge chrome kept in a string constant and joined later
+  // (const cls = 'rounded-full px-1.5 py-0.5 text-2xs'; <span className={cn(cls, tint)}>)
+  // — invisible to hand-badge, which only reads className. Any '…' / "…" / `…` literal
+  // holding a radius + badge padding counts. Cards (rounded-lg, p-3 …) do not match.
+  'badge-chrome-string': new RegExp(
+    String.raw`(['"\x60])(?=[^'"\x60\n]*?(?<![\w-])rounded(?:-full|-md|-sm)?(?![\w-]))(?=[^'"\x60\n]*?(?<![\w-])px-(?:1|1\.5|2|2\.5)(?![\w-]))(?=[^'"\x60\n]*?(?<![\w-])py-(?:0|0\.5|px)(?![\w-]))[^'"\x60\n]*\1`, 'g'),
   // emoji as icons / decoration
   'emoji': /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}\u{2705}\u{274C}\u{2B06}\u{27A1}]/gu,
 }

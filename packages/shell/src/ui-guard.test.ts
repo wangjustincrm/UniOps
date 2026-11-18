@@ -51,6 +51,33 @@ describe('ui-guard ratchet', () => {
     expect('<Input className={cn("pr-12", inputClassName)} />'.match(re)).toBeNull()
     expect('<Input className="w-40" /><div className="rounded border">'.match(re)).toBeNull()
   })
+  it('hand-badge: a tinted span with badge padding, pill or square; not a chip, not layout', async () => {
+    const guard = await import(/* @vite-ignore */ guardPath)
+    const re = guard.METRICS['hand-badge']
+    const hit = (src: string) => src.match(re)?.length ?? 0
+    expect(hit('<span className="rounded-full bg-success-soft px-2 py-0.5 text-xs text-success-fg">Active</span>')).toBe(1)
+    expect(hit('<span className="rounded bg-surface-strong px-1 py-0.5 text-2xs text-fg-muted">ignored</span>')).toBe(1)
+    expect(hit("<span title={x} className={cn('rounded border px-1.5 py-0.5 text-2xs', st.cls)}>")).toBe(1)
+    expect(hit("<span className={cn('rounded-full px-2 py-0.5', STATUS_STYLE[s])}>")).toBe(1)
+    expect(hit('<div className="rounded-md bg-primary-50 px-2 py-0.5">x</div>')).toBe(1)
+    // not badges
+    expect(hit('<span data-chip key={u.id} className="rounded-full bg-primary-50 px-2 py-0.5">Ann <Button /></span>')).toBe(0)
+    expect(hit('<div className="rounded-lg border bg-surface px-4 py-3">card</div>')).toBe(0)
+    expect(hit('<span className="rounded px-1 py-0.5 font-mono text-xs">code</span>')).toBe(0)
+    expect(hit('<Badge variant="success" size="sm">Active</Badge>')).toBe(0)
+    // data-chip after an arrow-function prop still exempts
+    expect(hit('<span onClick={() => f()} data-chip className="rounded-full bg-primary-50 px-2 py-0.5">x</span>')).toBe(0)
+  })
+  it('badge-chrome-string: badge chrome kept in a string constant', async () => {
+    const guard = await import(/* @vite-ignore */ guardPath)
+    const re = guard.METRICS['badge-chrome-string']
+    const hit = (src: string) => src.match(re)?.length ?? 0
+    expect(hit("const cls = 'shrink-0 inline-flex rounded-full px-1.5 py-0.5 text-2xs font-medium'")).toBe(1)
+    expect(hit('const PILL = "rounded px-2 py-0.5 text-xs"')).toBe(1)
+    expect(hit("const card = 'rounded-lg border bg-surface p-3'")).toBe(0)
+    expect(hit("const row = 'rounded-md px-3 py-2 text-sm'")).toBe(0)
+    expect(hit("const tone = 'success'")).toBe(0)
+  })
   it('a "/*" inside a string is not a comment (accept="image/*")', async () => {
     const guard = await import(/* @vite-ignore */ guardPath)
     const src = '<FileInput accept="image/*" />\n<button>x</button>\n/* gone */<input />'

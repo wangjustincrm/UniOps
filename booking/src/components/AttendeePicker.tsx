@@ -174,7 +174,7 @@ export function AttendeePicker({ value, onChange, excludeUserId }: Props) {
       {value.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1.5">
           {value.map((u) => (
-            <span
+            <span data-chip
               key={u.id}
               className="inline-flex items-center gap-1 rounded-full bg-primary-700/10 px-2.5 py-0.5 text-xs font-medium text-primary-700"
             >

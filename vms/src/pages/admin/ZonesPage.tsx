@@ -198,7 +198,7 @@ function ZoneModal({ zone, onClose }: { zone: Zone | null; onClose: () => void }
         <p className="text-2xs text-fg-muted">Leave empty if visits to this zone need no approval.</p>
         <div className="mt-1 flex flex-wrap gap-1">
           {managers.map((m) => (
-            <span key={m.id} title={m.email} className="inline-flex items-center gap-1 rounded-full bg-primary-50 px-2 py-0.5 text-xs text-primary-700">
+            <span data-chip key={m.id} title={m.email} className="inline-flex items-center gap-1 rounded-full bg-primary-50 px-2 py-0.5 text-xs text-primary-700">
               {m.name}
               <Button variant="subtle" size="icon-xs" onClick={() => setManagers(managers.filter((x) => x.id !== m.id))} aria-label={`Remove ${m.name}`}>
                 <X className="h-3 w-3" />

@@ -1,10 +1,15 @@
 {
  "$comment": "UI ratchet baseline — counts may only go down. Regenerate with: node scripts/ui-guard.mjs --update",
  "totals": {
+  "booking": {
+   "badge-chrome-string": 2
+  },
   "epms": {
+   "badge-chrome-string": 3,
    "shouting-type": 2
   },
   "finance": {
+   "badge-chrome-string": 3,
    "shouting-type": 3
   },
   "inventory": {
@@ -16,15 +21,37 @@
   },
   "vms": {
    "raw-color": 2,
-   "shouting-type": 2
+   "shouting-type": 2,
+   "badge-chrome-string": 1
   }
  },
  "files": {
+  "booking/src/components/AttendeePicker.tsx": {
+   "badge-chrome-string": 1
+  },
+  "booking/src/pages/MeetingSummaryPage.tsx": {
+   "badge-chrome-string": 1
+  },
+  "epms/src/components/po/PoFeePanel.tsx": {
+   "badge-chrome-string": 1
+  },
   "epms/src/pages/admin/AdminPanel.tsx": {
    "shouting-type": 1
   },
   "epms/src/pages/invoices/CourierInvoiceReview.tsx": {
    "shouting-type": 1
+  },
+  "epms/src/pages/invoices/PdfSplitPanel.tsx": {
+   "badge-chrome-string": 1
+  },
+  "epms/src/pages/pa/PaCreatePage.tsx": {
+   "badge-chrome-string": 1
+  },
+  "finance/src/lib/costAnalysis.tsx": {
+   "badge-chrome-string": 2
+  },
+  "finance/src/pages/budget/FactorLibraryPage.tsx": {
+   "badge-chrome-string": 1
   },
   "finance/src/pages/finance/AccountsPayablePage.tsx": {
    "shouting-type": 1
@@ -48,6 +75,9 @@
   },
   "vms/src/components/HealthDeclForm.tsx": {
    "raw-color": 1
+  },
+  "vms/src/pages/admin/ZonesPage.tsx": {
+   "badge-chrome-string": 1
   }
  }
 }
