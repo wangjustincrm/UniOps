@@ -144,6 +144,44 @@
   --color-info-line:     var(--color-info-200);
   --color-info-solid:    var(--color-info-600);
 
+
+  /* Categorical series — for CATEGORIES (types, zones, process steps, chart
+     series), never for status. Each has a solid, a soft fill, readable fg text
+     (>= 4.5:1 on its soft fill) and a line. Order matters: charts take them in
+     sequence, so neighbours stay distinct. */
+  --color-cat1: #0F9999;  /* teal */
+  --color-cat1-soft: #E6F5F5;
+  --color-cat1-fg: #0B6B6B;
+  --color-cat1-line: #9ED6D6;
+  --color-cat2: #3B82F6;  /* blue */
+  --color-cat2-soft: #EFF6FF;
+  --color-cat2-fg: #1D4ED8;
+  --color-cat2-line: #BFDBFE;
+  --color-cat3: #F59E0B;  /* amber */
+  --color-cat3-soft: #FFFBEB;
+  --color-cat3-fg: #92400E;
+  --color-cat3-line: #FDE68A;
+  --color-cat4: #8B5CF6;  /* violet */
+  --color-cat4-soft: #F5F3FF;
+  --color-cat4-fg: #6D28D9;
+  --color-cat4-line: #DDD6FE;
+  --color-cat5: #F43F5E;  /* rose */
+  --color-cat5-soft: #FFF1F2;
+  --color-cat5-fg: #BE123C;
+  --color-cat5-line: #FECDD3;
+  --color-cat6: #10B981;  /* emerald */
+  --color-cat6-soft: #ECFDF5;
+  --color-cat6-fg: #047857;
+  --color-cat6-line: #A7F3D0;
+  --color-cat7: #F97316;  /* orange */
+  --color-cat7-soft: #FFF7ED;
+  --color-cat7-fg: #C2410C;
+  --color-cat7-line: #FED7AA;
+  --color-cat8: #6366F1;  /* indigo */
+  --color-cat8-soft: #EEF2FF;
+  --color-cat8-fg: #4338CA;
+  --color-cat8-line: #C7D2FE;
+
   /* Sidebar (app chrome) */
   --color-nav:           var(--color-primary-700);
   --color-nav-fg:        rgb(255 255 255 / 0.72);
