@@ -109,12 +109,12 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
     // z-60: this opens from inside the upload modal, which is z-50.
     // Absolute bands rather than a flex column: the viewport box needs a
     // definite height for both the scroll and the fit measurement above.
-    <div className="fixed inset-0 z-[60] bg-inverse/80 backdrop-blur-sm" onClick={onClose}>
-      <div className="absolute inset-x-0 top-0 flex h-14 items-center justify-between gap-3 px-5 text-sm text-fg-faint"
+    <div className="fixed inset-0 z-[60] bg-inverse-sunken/80 backdrop-blur-sm" onClick={onClose}>
+      <div className="absolute inset-x-0 top-0 flex h-14 items-center justify-between gap-3 px-5 text-sm text-fg-on-inverse"
            onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3">
           <span className="font-medium">Page {page} of {pageCount}</span>
-          <span className="rounded bg-inverse px-2 py-0.5 text-xs">Invoice #{groupIndex + 1}</span>
+          <span className="rounded bg-inverse-raised px-2 py-0.5 text-xs">Invoice #{groupIndex + 1}</span>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -124,21 +124,21 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
             title={page === 1 ? 'The first page always starts the first invoice' : undefined}
             className={cn(
               'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
-              page === 1 ? 'cursor-not-allowed bg-inverse text-fg-muted'
+              page === 1 ? 'cursor-not-allowed bg-inverse-raised text-fg-on-inverse-faint'
                 : startsInvoice ? 'bg-primary-600 text-white hover:bg-primary-700'
-                : 'bg-inverse text-fg-faint hover:bg-fg-faint',
+                : 'bg-inverse-raised text-fg-on-inverse hover:bg-inverse-hover',
             )}
           >
             <Scissors className="h-3.5 w-3.5" />
             {startsInvoice ? 'Starts a new invoice' : 'Start a new invoice here'}
           </button>
           <button type="button" onClick={() => setFit((f) => !f)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-inverse px-3 py-1.5 text-xs font-medium text-fg-faint hover:bg-fg-faint">
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-inverse-raised px-3 py-1.5 text-xs font-medium text-fg-on-inverse hover:bg-inverse-hover">
             {fit ? <><Maximize2 className="h-3.5 w-3.5" /> Actual size</>
                  : <><Minimize2 className="h-3.5 w-3.5" /> Fit to window</>}
           </button>
           <button type="button" onClick={onClose}
-                  className="rounded-lg bg-inverse p-1.5 text-fg-faint hover:bg-fg-faint">
+                  className="rounded-lg bg-inverse-raised p-1.5 text-fg-on-inverse hover:bg-inverse-hover">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -148,7 +148,7 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
            className="absolute inset-x-14 bottom-4 top-14 overflow-auto rounded-lg bg-inverse p-3"
            onClick={(e) => e.stopPropagation()}>
         {rendering && (
-          <div className="flex h-full items-center justify-center gap-2 text-sm text-fg-muted">
+          <div className="flex h-full items-center justify-center gap-2 text-sm text-fg-on-inverse-muted">
             <Loader2 className="h-4 w-4 animate-spin" /> Rendering…
           </div>
         )}
@@ -161,12 +161,12 @@ function PagePreview({ pdf, page, pageCount, groupIndex, startsInvoice, onToggle
 
       <button type="button" disabled={page === 1}
               onClick={(e) => { e.stopPropagation(); onGo(page - 1) }}
-              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-inverse/90 p-2 text-white hover:bg-fg-faint disabled:opacity-20">
+              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-inverse-raised/90 p-2 text-white hover:bg-inverse-hover disabled:opacity-20">
         <ChevronLeft className="h-5 w-5" />
       </button>
       <button type="button" disabled={page === pageCount}
               onClick={(e) => { e.stopPropagation(); onGo(page + 1) }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-inverse/90 p-2 text-white hover:bg-fg-faint disabled:opacity-20">
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-inverse-raised/90 p-2 text-white hover:bg-inverse-hover disabled:opacity-20">
         <ChevronRight className="h-5 w-5" />
       </button>
     </div>,

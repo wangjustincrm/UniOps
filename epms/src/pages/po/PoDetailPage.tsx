@@ -235,7 +235,7 @@ function PlaceOrderModal({ po, onClose }: PlaceOrderModalProps) {
                   onClick={() => setStep('online_confirm')}
                   className="flex flex-col items-start gap-3 rounded-xl border-2 border-line bg-surface p-5 text-left transition-colors hover:border-primary-400 hover:bg-primary-50 group"
                 >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success-soft group-hover:bg-success-soft">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success-soft group-hover:bg-success-100">
                     <Globe className="h-5 w-5 text-success-fg" />
                   </div>
                   <div>
@@ -440,7 +440,7 @@ function ApprovalModal({ action, poNumber, onConfirm, onClose, isPending, error 
       label: 'Return',
       icon: <RotateCcw className="h-5 w-5 text-warning-fg" />,
       bgIcon: 'bg-warning-soft',
-      btn: 'bg-warning-solid hover:bg-warning-solid text-white',
+      btn: 'bg-warning-solid hover:bg-warning-700 text-white',
       commentLabel: 'Revision instructions *',
       placeholder: 'Describe what needs to be revised…',
     },

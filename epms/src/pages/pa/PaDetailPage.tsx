@@ -158,7 +158,7 @@ function ApprovalModal({ action, paNumber, onConfirm, onClose, isPending, error 
   const cfg = {
     approve: { title: 'Approve Payment Application', label: 'Approve', icon: <CheckCircle2 className="h-5 w-5 text-success-fg" />, bg: 'bg-success-soft', btn: 'bg-success-solid hover:bg-success-700 text-white', placeholder: 'Add an optional comment…', commentLabel: 'Comment (optional)' },
     reject:  { title: 'Reject Payment Application',  label: 'Reject',  icon: <XCircle className="h-5 w-5 text-danger-fg" />,  bg: 'bg-danger-soft',  btn: 'bg-danger-solid hover:bg-danger-700 text-white',   placeholder: 'Explain why this PA is being rejected…', commentLabel: 'Reason for rejection *' },
-    return:  { title: 'Return for Revision',          label: 'Return',  icon: <RotateCcw className="h-5 w-5 text-warning-fg" />, bg: 'bg-warning-soft', btn: 'bg-warning-solid hover:bg-warning-solid text-white', placeholder: 'Describe what needs to be revised…', commentLabel: 'Revision instructions *' },
+    return:  { title: 'Return for Revision',          label: 'Return',  icon: <RotateCcw className="h-5 w-5 text-warning-fg" />, bg: 'bg-warning-soft', btn: 'bg-warning-solid hover:bg-warning-700 text-white', placeholder: 'Describe what needs to be revised…', commentLabel: 'Revision instructions *' },
   }[action]
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">

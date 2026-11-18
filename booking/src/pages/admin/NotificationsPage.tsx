@@ -161,7 +161,7 @@ export default function NotificationsPage() {
               Resending a notification will send a new email to the original recipients, even if the
               previous attempt succeeded. Use this to recover from delivery failures, not to correct content.
             </span>
-            <button type="button" onClick={() => setShowWarning(false)} className="text-warning-fg hover:text-warning-fg">
+            <button type="button" onClick={() => setShowWarning(false)} className="text-warning-fg hover:text-warning-800">
               <XIcon className="h-4 w-4" />
             </button>
           </div>

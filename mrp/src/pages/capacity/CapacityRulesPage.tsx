@@ -127,7 +127,7 @@ export default function CapacityRulesPage() {
             type="button"
             onClick={dismissBanner}
             aria-label="Dismiss this notice"
-            className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center text-warning-fg hover:text-warning-fg"
+            className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center text-warning-fg hover:text-warning-800"
           >
             <XIcon className="h-4 w-4" />
           </button>

@@ -71,12 +71,12 @@ function PdfCanvas({ file }: { file: File }) {
   }, [pageNum, loading])
 
   if (loading) return (
-    <div className="flex flex-1 items-center justify-center gap-2 text-sm text-fg-muted">
+    <div className="flex flex-1 items-center justify-center gap-2 text-sm text-fg-on-inverse-muted">
       <Loader2 className="h-4 w-4 animate-spin" /> Rendering PDF…
     </div>
   )
   if (error) return (
-    <div className="flex flex-1 items-center justify-center text-sm text-fg-muted">
+    <div className="flex flex-1 items-center justify-center text-sm text-fg-on-inverse-muted">
       Preview not available
     </div>
   )
@@ -87,12 +87,12 @@ function PdfCanvas({ file }: { file: File }) {
         <canvas ref={canvasRef} className="mx-auto max-w-full rounded shadow-sm" />
       </div>
       {totalPages > 1 && (
-        <div className="flex shrink-0 items-center justify-center gap-3 border-t border-fg-muted bg-inverse py-1.5 text-xs text-fg-faint">
+        <div className="flex shrink-0 items-center justify-center gap-3 border-t border-line-on-inverse bg-inverse-sunken py-1.5 text-xs text-fg-on-inverse-muted">
           <button
             type="button"
             onClick={() => setPageNum((p) => Math.max(1, p - 1))}
             disabled={pageNum === 1}
-            className="rounded p-1 hover:bg-inverse disabled:opacity-30"
+            className="rounded p-1 hover:bg-inverse-raised disabled:opacity-30"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
@@ -101,7 +101,7 @@ function PdfCanvas({ file }: { file: File }) {
             type="button"
             onClick={() => setPageNum((p) => Math.min(totalPages, p + 1))}
             disabled={pageNum === totalPages}
-            className="rounded p-1 hover:bg-inverse disabled:opacity-30"
+            className="rounded p-1 hover:bg-inverse-raised disabled:opacity-30"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
@@ -127,15 +127,15 @@ export function FilePreviewPanel({ file }: { file: File }) {
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border border-line bg-inverse">
       {/* Toolbar: file name + open in new tab */}
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-fg-muted bg-inverse px-3 py-2">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line-on-inverse bg-inverse-sunken px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
-          <FileText className="h-3.5 w-3.5 shrink-0 text-fg-muted" />
-          <span className="truncate text-xs font-medium text-fg-faint">{file.name}</span>
+          <FileText className="h-3.5 w-3.5 shrink-0 text-fg-on-inverse-muted" />
+          <span className="truncate text-xs font-medium text-fg-on-inverse">{file.name}</span>
         </div>
         {url && (
           <a
             href={url} target="_blank" rel="noreferrer"
-            className="inline-flex shrink-0 items-center gap-1 text-xs text-fg-muted hover:text-white"
+            className="inline-flex shrink-0 items-center gap-1 text-xs text-fg-on-inverse-muted hover:text-white"
           >
             <ExternalLink className="h-3 w-3" />
             Open in new tab
@@ -149,7 +149,7 @@ export function FilePreviewPanel({ file }: { file: File }) {
         </div>
       )}
       {(!url || kind === 'unsupported') && kind !== 'pdf' && (
-        <div className="flex flex-1 items-center justify-center text-sm text-fg-muted">
+        <div className="flex flex-1 items-center justify-center text-sm text-fg-on-inverse-muted">
           Preview not available
         </div>
       )}

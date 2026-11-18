@@ -524,7 +524,7 @@ export default function GrCreatePage() {
             <div
               className={cn(
                 'relative rounded-lg border-2 border-dashed transition-colors flex flex-col items-center justify-center gap-2 py-8 cursor-pointer',
-                dragOver ? 'border-primary-400 bg-primary-50' : 'border-line-strong hover:border-line-strong'
+                dragOver ? 'border-primary-400 bg-primary-50' : 'border-line-strong hover:border-fg-faint'
               )}
               onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
               onDragLeave={() => setDragOver(false)}

@@ -496,7 +496,7 @@ function ReceiptRow({
               variant="secondary"
               onClick={onVoid}
               disabled={anyVoidPending || anyReviewPending}
-              className={cn('text-danger-fg hover:text-danger-fg')}
+              className={cn('text-danger-fg hover:text-danger-800')}
             >
               <Trash2 className="h-3.5 w-3.5" />
               {voidPending ? 'Working…' : 'Remove'}

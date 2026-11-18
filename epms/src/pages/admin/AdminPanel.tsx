@@ -1560,7 +1560,7 @@ function UserManagement() {
                     type="button"
                     disabled={tempPwd.length < 8}
                     onClick={handleReset}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-warning-solid px-3 text-sm font-medium text-white hover:bg-warning-solid disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-warning-solid px-3 text-sm font-medium text-white hover:bg-warning-700 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <KeyRound className="h-3.5 w-3.5" />Reset Password
                   </button>

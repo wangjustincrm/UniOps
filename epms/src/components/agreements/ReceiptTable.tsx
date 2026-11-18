@@ -271,7 +271,7 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
                               variant="secondary"
                               onClick={() => handleVoid(receipt.id, receipt.receipt_ref)}
                               disabled={voidReceipt.isPending}
-                              className={cn('text-danger-fg hover:text-danger-fg')}
+                              className={cn('text-danger-fg hover:text-danger-800')}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                               {rowVoidPending ? 'Working…' : 'Remove'}

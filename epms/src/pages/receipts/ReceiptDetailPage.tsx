@@ -351,7 +351,7 @@ function ReceiptDetail({
           {canVoid && (
             <Button
               variant="secondary"
-              className="gap-2 text-danger-fg hover:text-danger-fg"
+              className="gap-2 text-danger-fg hover:text-danger-800"
               onClick={handleVoid}
               disabled={anyPending}
             >
@@ -456,7 +456,7 @@ function ReceiptDetail({
                           'flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors',
                           receiptType === t
                             ? 'border-primary-600 bg-primary-50 text-primary-700'
-                            : 'border-line-strong text-fg-secondary hover:border-line-strong',
+                            : 'border-line-strong text-fg-secondary hover:border-fg-faint',
                         )}
                       >
                         {RECEIPT_TYPE_LABELS[t]}

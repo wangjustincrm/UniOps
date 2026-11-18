@@ -9,7 +9,7 @@ type Cfg = { title: string; label: string; icon: ReactNode; bg: string; btn: str
 const CFG: Record<string, Cfg> = {
   [ACTION.SUBMIT]:  { title: 'Submit for Approval', label: 'Submit',  icon: <Send className="h-5 w-5 text-primary-600" />,       bg: 'bg-primary-50', btn: 'bg-primary-700 hover:bg-primary-800 text-white' },
   [ACTION.APPROVE]: { title: 'Approve',             label: 'Approve', icon: <CheckCircle2 className="h-5 w-5 text-success-fg" />, bg: 'bg-success-soft', btn: 'bg-success-solid hover:bg-success-700 text-white' },
-  [ACTION.RETURN]:  { title: 'Return for Revision', label: 'Return',  icon: <RotateCcw className="h-5 w-5 text-warning-fg" />,    bg: 'bg-warning-soft', btn: 'bg-warning-solid hover:bg-warning-solid text-white' },
+  [ACTION.RETURN]:  { title: 'Return for Revision', label: 'Return',  icon: <RotateCcw className="h-5 w-5 text-warning-fg" />,    bg: 'bg-warning-soft', btn: 'bg-warning-solid hover:bg-warning-700 text-white' },
   [ACTION.REJECT]:  { title: 'Reject',              label: 'Reject',  icon: <XCircle className="h-5 w-5 text-danger-fg" />,       bg: 'bg-danger-soft',  btn: 'bg-danger-solid hover:bg-danger-700 text-white' },
 }
 

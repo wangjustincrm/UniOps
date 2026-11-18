@@ -348,7 +348,7 @@ export default function TaskListPage() {
                 </span>
               )}
               {t.value === 'mine' && mineCount > 0 && (
-                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-fg-faint px-1 text-2xs font-bold text-white">
+                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-fg-muted px-1 text-2xs font-bold text-white">
                   {mineCount}
                 </span>
               )}

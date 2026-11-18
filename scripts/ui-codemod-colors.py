@@ -124,8 +124,49 @@ def rewrite(text: str, report: list) -> str:
     text = ARB_HEX_RE.sub(hexsub, text)
     text = SMALL_TEXT_RE.sub(lambda m: f'{m[1]}text-2xs', text)
     text = BG_WHITE_RE.sub(lambda m: f'{m[1]}bg-surface', text)
-    return text
+    return fix_collapse(text)
 
+
+
+# ── Hover collapse ────────────────────────────────────────────────────────────
+# Two different shades (base vs hover:/active:) can land on the same role, e.g.
+# bg-amber-500 hover:bg-amber-600 -> bg-warning-solid hover:bg-warning-solid,
+# leaving the control with no hover feedback. When base and state share util +
+# role inside one class string, the state class goes one step darker.
+DARKER = {
+    'fg-faint': 'fg-muted', 'fg-muted': 'fg-secondary', 'fg-secondary': 'fg',
+    'surface': 'surface-subtle', 'surface-subtle': 'surface-sunken',
+    'surface-sunken': 'surface-strong', 'surface-strong': 'line-strong',
+    'line-subtle': 'line', 'line': 'line-strong', 'line-strong': 'fg-faint',
+    'accent': 'accent-hover', 'accent-soft': 'primary-100', 'accent-fg': 'primary-800',
+}
+for _s in ('danger', 'warning', 'success', 'info'):
+    DARKER.update({f'{_s}-fg': f'{_s}-800', f'{_s}-solid': f'{_s}-700',
+                   f'{_s}-soft': f'{_s}-100', f'{_s}-line': f'{_s}-300'})
+for _n in range(50, 900, 100):
+    for _s in ('primary', 'danger', 'warning', 'success', 'info'):
+        _k = f'{_s}-{_n}'
+        DARKER.setdefault(_k, f'{_s}-{100 if _n == 50 else _n + 100}')
+
+ROLE = r'(?:fg(?:-[a-z]+)?|surface(?:-[a-z]+)?|line(?:-[a-z]+)?|accent(?:-[a-z]+)?|(?:danger|warning|success|info|primary)-(?:fg|solid|soft|line|\d{2,3}))'
+TOKEN_RE = re.compile(r'(?<![\w-])(?P<pre>(?:[\w\-\[\]&>=.:]+:)?)(?P<util>bg|text|border|ring|outline|divide)-(?P<role>' + ROLE + r')(?![\w/-])')
+STRING_RE = re.compile(r"'[^'\n]*'|\"[^\"\n]*\"|`[^`\n]*`")  # one line: a multi-line template is JSX, not a class string
+STATE = ('hover:', 'active:')
+
+
+def fix_collapse(text: str) -> str:
+    def per_string(m):
+        lit = m.group(0)
+        base = {(t['util'], t['role']) for t in TOKEN_RE.finditer(lit) if t['pre'] == ''}
+        if not base:
+            return lit
+        def sub(t):
+            pre = t['pre']
+            if any(pre.endswith(st) for st in STATE) and (t['util'], t['role']) in base and t['role'] in DARKER:
+                return f"{pre}{t['util']}-{DARKER[t['role']]}"
+            return t.group(0)
+        return TOKEN_RE.sub(sub, lit)
+    return STRING_RE.sub(per_string, text)
 
 def main(argv):
     dry = '--dry' in argv
@@ -133,7 +174,8 @@ def main(argv):
     files = []
     for p in paths:
         files += [p] if p.is_file() else [f for f in p.rglob('*') if f.suffix in ('.tsx', '.ts')
-                                          and 'node_modules' not in f.parts and '_retired' not in f.parts]
+                                          and 'node_modules' not in f.parts and '_retired' not in f.parts
+                                          and not re.search(r'\.(test|spec)\.tsx?$', f.name)]
     changed = 0
     manual: dict[str, list] = {}
     leftovers: dict[str, int] = {}

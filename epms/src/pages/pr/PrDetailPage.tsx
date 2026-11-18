@@ -134,7 +134,7 @@ function ApprovalModal({ action, prNumber, onConfirm, onClose, isPending, error 
       label: 'Return',
       icon: <RotateCcw className="h-5 w-5 text-warning-fg" />,
       bgIcon: 'bg-warning-soft',
-      btn: 'bg-warning-solid hover:bg-warning-solid text-white',
+      btn: 'bg-warning-solid hover:bg-warning-700 text-white',
       commentLabel: 'Revision instructions *',
       placeholder: 'Describe what needs to be revised…',
     },

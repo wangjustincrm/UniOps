@@ -330,7 +330,7 @@ export default function MyBookingsPage() {
             <button
               type="button"
               onClick={() => setSuccessNote(null)}
-              className="ml-3 text-success-fg hover:text-success-fg"
+              className="ml-3 text-success-fg hover:text-success-800"
             >
               <XIcon className="h-4 w-4" />
             </button>

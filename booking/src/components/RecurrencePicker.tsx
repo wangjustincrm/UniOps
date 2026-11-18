@@ -80,7 +80,7 @@ export function RecurrencePicker({ value, onChange }: Props) {
                 'rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
                 isActive
                   ? 'border-primary-700 bg-primary-700/10 text-primary-700'
-                  : 'border-line-strong bg-surface text-fg-secondary hover:border-line-strong',
+                  : 'border-line-strong bg-surface text-fg-secondary hover:border-fg-faint',
               )}
             >
               {label}

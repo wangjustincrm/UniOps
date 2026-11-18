@@ -283,7 +283,7 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
                       'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs cursor-pointer transition-colors',
                       checked
                         ? 'border-primary-700 bg-primary-700/10 text-primary-700 font-medium'
-                        : 'border-line-strong bg-surface text-fg-secondary hover:border-line-strong',
+                        : 'border-line-strong bg-surface text-fg-secondary hover:border-fg-faint',
                     )}
                   >
                     <input

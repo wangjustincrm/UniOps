@@ -110,7 +110,7 @@ function ImageUpload({ value, onChange }: ImageUploadProps) {
             <button
               type="button"
               onClick={() => onChange(null)}
-              className="flex items-center gap-1.5 rounded-lg border border-danger-line bg-danger-soft px-3 py-1.5 text-xs text-danger-fg hover:bg-danger-soft"
+              className="flex items-center gap-1.5 rounded-lg border border-danger-line bg-danger-soft px-3 py-1.5 text-xs text-danger-fg hover:bg-danger-100"
             >
               <X className="h-3.5 w-3.5" />
               Remove

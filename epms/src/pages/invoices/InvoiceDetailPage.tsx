@@ -626,7 +626,7 @@ export default function InvoiceDetailPage() {
           {isAp && !showResolvePanel && (
             <Button
               variant="secondary" size="sm"
-              className="self-start gap-1.5 border-warning-line bg-warning-soft text-warning-fg hover:bg-warning-soft"
+              className="self-start gap-1.5 border-warning-line bg-warning-soft text-warning-fg hover:bg-warning-100"
               onClick={() => setShowResolvePanel(true)}
             >
               Resolve

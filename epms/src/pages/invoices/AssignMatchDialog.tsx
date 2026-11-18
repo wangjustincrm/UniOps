@@ -73,7 +73,7 @@ export function AssignMatchDialog({ invoiceId, currentAssigneeName, courier = fa
             ) : users.map((u) => (
               <button key={u.id}
                 onClick={() => setSelected({ id: u.id, name: u.full_name })}
-                className={`w-full px-3 py-2 text-left text-sm hover:bg-primary-50 ${selected?.id === u.id ? 'bg-primary-50 font-medium' : ''}`}>
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-primary-100 ${selected?.id === u.id ? 'bg-primary-50 font-medium' : ''}`}>
                 {u.full_name}
                 {u.department_name && <span className="ml-2 text-xs text-fg-muted">{u.department_name}</span>}
               </button>

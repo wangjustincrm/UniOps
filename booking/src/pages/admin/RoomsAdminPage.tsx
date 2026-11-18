@@ -105,7 +105,7 @@ function StatusChangeDialog({ room, onClose }: StatusChangeDialogProps) {
                 <button
                   type="button"
                   onClick={() => navigate(`/admin/bookings?room_id=${room.id}`)}
-                  className="underline text-warning-fg hover:text-warning-fg font-medium"
+                  className="underline text-warning-fg hover:text-warning-800 font-medium"
                 >
                   All Bookings
                 </button>.

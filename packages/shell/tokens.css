@@ -110,6 +110,16 @@
   --color-surface-strong:  var(--color-neutral-200);  /* tracks, dividers as fill */
   --color-inverse:         var(--color-neutral-800);  /* tooltips, dark chips */
 
+  /* Dark surfaces (PDF viewer, lightbox). Text/line roles flip on them: never
+     use fg-* on inverse — the light-surface ramp loses contrast there. */
+  --color-inverse-sunken:      var(--color-neutral-900);
+  --color-inverse-raised:      var(--color-neutral-700);
+  --color-inverse-hover:       var(--color-neutral-600);
+  --color-fg-on-inverse:       var(--color-neutral-100);
+  --color-fg-on-inverse-muted: var(--color-neutral-300);
+  --color-fg-on-inverse-faint: var(--color-neutral-500);
+  --color-line-on-inverse:     var(--color-neutral-700);
+
   /* Lines */
   --color-line-subtle: var(--color-neutral-100);
   --color-line:        var(--color-neutral-200);

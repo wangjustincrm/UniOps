@@ -423,7 +423,7 @@ function VendorPicker({
           <span className="text-xs text-fg-secondary">
             Suggested: <span className="font-medium">{suggestedName}</span>
           </span>
-          <button type="button" className="rounded border border-success-line bg-success-soft px-2 py-0.5 text-xs text-success-fg hover:bg-success-soft"
+          <button type="button" className="rounded border border-success-line bg-success-soft px-2 py-0.5 text-xs text-success-fg hover:bg-success-100"
             onClick={() => onChoose(suggestedId)}>
             Confirm
           </button>

@@ -1551,7 +1551,7 @@ function UnmatchedTab() {
                           <button
                             onClick={() => deleteInvoice.mutate(inv.id, { onSuccess: () => setDeletingId(null) })}
                             disabled={deleteInvoice.isPending}
-                            className="inline-flex items-center rounded-lg border border-danger-line bg-danger-soft px-2.5 py-1 text-xs font-medium text-danger-fg hover:bg-danger-soft transition-colors disabled:opacity-50"
+                            className="inline-flex items-center rounded-lg border border-danger-line bg-danger-soft px-2.5 py-1 text-xs font-medium text-danger-fg hover:bg-danger-100 transition-colors disabled:opacity-50"
                           >
                             {deleteInvoice.isPending ? 'Deleting…' : 'Confirm'}
                           </button>
@@ -1708,7 +1708,7 @@ function ExceptionsTab() {
                   <td className="px-4 py-3">
                     <button
                       onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-warning-line bg-warning-soft px-2.5 py-1 text-xs font-medium text-warning-fg hover:bg-warning-soft transition-colors"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-warning-line bg-warning-soft px-2.5 py-1 text-xs font-medium text-warning-fg hover:bg-warning-100 transition-colors"
                     >
                       Resolve
                       {expandedId === inv.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -1889,7 +1889,7 @@ function AllInvoicesTab() {
                           <button
                             onClick={() => deleteInvoice.mutate(inv.id, { onSuccess: () => setDeletingId(null) })}
                             disabled={deleteInvoice.isPending}
-                            className="text-xs font-medium text-danger-fg hover:text-danger-fg disabled:opacity-50"
+                            className="text-xs font-medium text-danger-fg hover:text-danger-800 disabled:opacity-50"
                           >
                             {deleteInvoice.isPending ? 'Deleting…' : 'Confirm'}
                           </button>
