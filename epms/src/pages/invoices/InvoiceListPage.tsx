@@ -52,20 +52,19 @@ const MATCHABLE_PO_STATUSES = ['issued', 'approved', 'partially_received', 'full
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
-const STATUS_CFG: Record<InvoiceStatus, { label: string; variant: BadgeTone; dot: string }> = {
-  unmatched:    { label: 'Unmatched',       variant: 'warning', dot: 'bg-warning-solid'  },
-  matched:      { label: 'Matched',         variant: 'success', dot: 'bg-success-solid'  },
-  exception:    { label: 'Exception',       variant: 'danger',  dot: 'bg-danger-solid'   },
-  match_review: { label: 'Pending Review',  variant: 'info',    dot: 'bg-primary-500'  },
-  approved:     { label: 'Approved',        variant: 'success', dot: 'bg-success-solid'  },
-  paid:         { label: 'Paid',            variant: 'dark',    dot: 'bg-fg-faint'  },
+const STATUS_CFG: Record<InvoiceStatus, { label: string; variant: BadgeTone }> = {
+  unmatched:    { label: 'Unmatched',       variant: 'warning'  },
+  matched:      { label: 'Matched',         variant: 'success'  },
+  exception:    { label: 'Exception',       variant: 'danger'   },
+  match_review: { label: 'Pending Review',  variant: 'info'  },
+  approved:     { label: 'Approved',        variant: 'success'  },
+  paid:         { label: 'Paid',            variant: 'dark'  },
 }
 
 function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
   const c = STATUS_CFG[status]
   return (
-    <Badge variant={c.variant}>
-      <span className={cn('size-1.5 rounded-full', c.dot)} />
+    <Badge variant={c.variant} dot>
       {c.label}
     </Badge>
   )

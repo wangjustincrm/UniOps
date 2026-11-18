@@ -1,6 +1,6 @@
 /** Small shared pieces for the Freight pages (badges, modal, selects, dates). */
 import { Badge } from '@/components/ui/badge'
-import { cn, formatDate } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
 import type { ApiCostCenter } from '@/services/cost_centers'
 import type { ApiDepartment } from '@/services/departments'
 import type { MatchStatus } from '@/services/freight'
@@ -18,30 +18,26 @@ export const TH_CLS = 'px-3 py-2.5 text-left text-xs font-semibold text-fg-muted
 
 type Variant = BadgeTone
 
-function Dot({ cls }: { cls: string }) {
-  return <span className={cn('size-1.5 rounded-full', cls)} />
-}
-
-const SHIPMENT_STATUS: Record<string, { label: string; variant: Variant; dot: string }> = {
-  pending: { label: 'Pending', variant: 'warning', dot: 'bg-warning-solid' },
-  billed: { label: 'Billed', variant: 'success', dot: 'bg-success-solid' },
-  void: { label: 'Void', variant: 'outline', dot: 'bg-fg-faint' },
+const SHIPMENT_STATUS: Record<string, { label: string; variant: Variant }> = {
+  pending: { label: 'Pending', variant: 'warning' },
+  billed: { label: 'Billed', variant: 'success' },
+  void: { label: 'Void', variant: 'outline' },
 }
 
 export function ShipmentStatusBadge({ status }: { status: string }) {
-  const c = SHIPMENT_STATUS[status] ?? { label: status, variant: 'neutral' as const, dot: 'bg-fg-faint' }
-  return <Badge variant={c.variant}><Dot cls={c.dot} />{c.label}</Badge>
+  const c = SHIPMENT_STATUS[status] ?? { label: status, variant: 'neutral' as const }
+  return <Badge variant={c.variant} dot>{c.label}</Badge>
 }
 
-const INVOICE_STATUS: Record<string, { label: string; variant: Variant; dot: string }> = {
-  unmatched: { label: 'Matching', variant: 'warning', dot: 'bg-warning-solid' },
-  matched: { label: 'Matched', variant: 'success', dot: 'bg-success-solid' },
-  paid: { label: 'Paid', variant: 'dark', dot: 'bg-fg-faint' },
+const INVOICE_STATUS: Record<string, { label: string; variant: Variant }> = {
+  unmatched: { label: 'Matching', variant: 'warning' },
+  matched: { label: 'Matched', variant: 'success' },
+  paid: { label: 'Paid', variant: 'dark' },
 }
 
 export function FreightInvoiceStatusBadge({ status }: { status: string }) {
-  const c = INVOICE_STATUS[status] ?? { label: status, variant: 'neutral' as const, dot: 'bg-fg-faint' }
-  return <Badge variant={c.variant}><Dot cls={c.dot} />{c.label}</Badge>
+  const c = INVOICE_STATUS[status] ?? { label: status, variant: 'neutral' as const }
+  return <Badge variant={c.variant} dot>{c.label}</Badge>
 }
 
 /** Marks a courier invoice (match_route='freight') in the general invoice lists. */

@@ -34,21 +34,20 @@ const SERVICE_ISSUES_CONDITION = { label: 'Has Issues', tone: 'warning' } as con
 
 // ─── GR Status helpers ────────────────────────────────────────────────────────
 
-const GR_STATUS_CONFIG: Record<GrStatus, { label: string; variant: BadgeTone; dot: string }> = {
-  pending_ack:        { label: 'Pending Acknowledgement', variant: 'warning',  dot: 'bg-warning-solid' },
-  collection_pending: { label: 'Collection Pending',      variant: 'warning',  dot: 'bg-warning-solid' },
-  collected:          { label: 'Collected',               variant: 'success',  dot: 'bg-success-solid' },
-  confirmed:          { label: 'Confirmed',               variant: 'success',  dot: 'bg-success-solid' },
-  discrepancy:        { label: 'Discrepancy',             variant: 'danger',   dot: 'bg-danger-solid'  },
-  rejected:           { label: 'Rejected',                variant: 'danger',   dot: 'bg-danger-solid'  },
-  cancelled:          { label: 'Cancelled',               variant: 'outline',  dot: 'bg-fg-faint' },
+const GR_STATUS_CONFIG: Record<GrStatus, { label: string; variant: BadgeTone }> = {
+  pending_ack:        { label: 'Pending Acknowledgement', variant: 'warning' },
+  collection_pending: { label: 'Collection Pending',      variant: 'warning' },
+  collected:          { label: 'Collected',               variant: 'success' },
+  confirmed:          { label: 'Confirmed',               variant: 'success' },
+  discrepancy:        { label: 'Discrepancy',             variant: 'danger'  },
+  rejected:           { label: 'Rejected',                variant: 'danger'  },
+  cancelled:          { label: 'Cancelled',               variant: 'outline' },
 }
 
 function GrStatusBadge({ status }: { status: GrStatus }) {
   const cfg = GR_STATUS_CONFIG[status]
   return (
-    <Badge variant={cfg.variant}>
-      <span className={cn('size-1.5 rounded-full', cfg.dot)} />
+    <Badge variant={cfg.variant} dot>
       {cfg.label}
     </Badge>
   )

@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { CurrentStepHint } from '@/components/ui/CurrentStepHint'
 import { Pagination } from '@/components/ui/Pagination'
-import { cn, formatAmount, formatDate } from '@/lib/utils'
+import { formatAmount, formatDate } from '@/lib/utils'
 import { usePas } from '@/hooks/usePas'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useAuthStore } from '@/stores/auth.store'
@@ -18,15 +18,15 @@ import type { PaStatus, ApiPa } from '@/services/pa'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
-const STATUS_CFG: Record<PaStatus, { label: string; variant: BadgeTone; dot: string }> = {
-  draft:     { label: 'Draft',      variant: 'neutral', dot: 'bg-fg-faint'  },
-  submitted: { label: 'Submitted',  variant: 'warning', dot: 'bg-warning-solid'  },
-  in_review: { label: 'In Review',  variant: 'info',    dot: 'bg-info-solid'     },
-  approved:  { label: 'Approved',   variant: 'success', dot: 'bg-success-solid'  },
-  processed: { label: 'Processed',  variant: 'dark',    dot: 'bg-fg-faint'  },
-  returned:  { label: 'Returned',   variant: 'warning', dot: 'bg-warning-400'  },
-  rejected:  { label: 'Rejected',   variant: 'danger',  dot: 'bg-danger-solid'   },
-  cancelled: { label: 'Cancelled',  variant: 'outline', dot: 'bg-fg-faint'   },
+const STATUS_CFG: Record<PaStatus, { label: string; variant: BadgeTone }> = {
+  draft:     { label: 'Draft',      variant: 'neutral'  },
+  submitted: { label: 'Submitted',  variant: 'warning'  },
+  in_review: { label: 'In Review',  variant: 'info'     },
+  approved:  { label: 'Approved',   variant: 'success'  },
+  processed: { label: 'Processed',  variant: 'dark'  },
+  returned:  { label: 'Returned',   variant: 'warning'  },
+  rejected:  { label: 'Rejected',   variant: 'danger'   },
+  cancelled: { label: 'Cancelled',  variant: 'outline'   },
 }
 
 const STATUS_FILTER_OPTIONS = [
@@ -43,10 +43,9 @@ const STATUS_FILTER_OPTIONS = [
 
 function PaStatusBadge({ status }: { status: PaStatus }) {
   // Tolerate unexpected/legacy status values so one bad row can't crash the list.
-  const c = STATUS_CFG[status] ?? { label: String(status ?? '—'), variant: 'neutral' as const, dot: 'bg-fg-faint' }
+  const c = STATUS_CFG[status] ?? { label: String(status ?? '—'), variant: 'neutral' as const }
   return (
-    <Badge variant={c.variant}>
-      <span className={cn('size-1.5 rounded-full', c.dot)} />
+    <Badge variant={c.variant} dot>
       {c.label}
     </Badge>
   )
