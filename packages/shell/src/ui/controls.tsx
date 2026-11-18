@@ -1,19 +1,21 @@
 import React from 'react'
 import { ChevronDown, Search } from 'lucide-react'
 import { cn } from '../lib/cn'
-import { controlBase, controlClass } from './input'
+import { controlBase, controlClass, controlTone } from './input'
 
 export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   error?: boolean
+  /** Needs attention but is not wrong. error wins. */
+  warning?: boolean
 }
 
 export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, error, rows = 3, ...props }, ref) => (
+  ({ className, error, warning, rows = 3, ...props }, ref) => (
     <textarea
       ref={ref}
       rows={rows}
       aria-invalid={error || undefined}
-      className={cn(controlBase, 'min-h-20 px-3 py-2', error ? 'border-danger-solid bg-danger-soft' : 'border-line', className)}
+      className={cn(controlBase, 'min-h-20 px-3 py-2', controlTone(error, warning), className)}
       {...props}
     />
   )
@@ -22,12 +24,14 @@ Textarea.displayName = 'Textarea'
 
 export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
   error?: boolean
+  /** Needs attention but is not wrong. error wins. */
+  warning?: boolean
   selectSize?: 'sm' | 'md'
 }
 
 /** Native select (keyboard, mobile pickers and form posts all keep working). */
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
-  ({ className, error, selectSize = 'md', children, ...props }, ref) => (
+  ({ className, error, warning, selectSize = 'md', children, ...props }, ref) => (
     // className sizes/positions the wrapper (e.g. "w-40", "w-full"); the select
     // fills it. Without a width it sizes to its options like a native <select>
     // (and still stretches in a flex column), so a converted toolbar filter does
@@ -36,7 +40,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
       <select
         ref={ref}
         aria-invalid={error || undefined}
-        className={cn(controlClass(error, selectSize), 'appearance-none pr-8')}
+        className={cn(controlClass(error, selectSize, warning), 'appearance-none pr-8')}
         {...props}
       >
         {children}

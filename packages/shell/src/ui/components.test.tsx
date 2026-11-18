@@ -4,7 +4,8 @@ import { Badge, createStatusBadge } from './badge'
 import { Button } from './button'
 import { ConfirmDialog, Modal } from './overlay'
 import { Table, TableScroll, TBody, Td, Th, THead, Tr } from './table'
-import { Select, Switch } from './controls'
+import { Select, Switch, Textarea } from './controls'
+import { Input } from './input'
 
 describe('Button', () => {
   it('loading disables it so a double click cannot fire twice', () => {
@@ -181,5 +182,25 @@ describe('Modal stacked', () => {
     const layer = (name: string) => screen.getByRole('dialog', { name }).parentElement!
     expect(layer('Parent').className).toContain('z-50')
     expect(layer('Child').className).toContain('z-[55]')
+  })
+})
+
+describe('control state', () => {
+  it('warning draws the warning frame; error wins over warning and sets aria-invalid', () => {
+    render(<>
+      <Input aria-label="w" warning />
+      <Input aria-label="e" warning error />
+      <Textarea aria-label="t" warning />
+      <Select aria-label="s" warning><option>a</option></Select>
+    </>)
+    const w = screen.getByLabelText('w')
+    expect(w.className).toContain('border-warning-line')
+    expect(w).not.toHaveAttribute('aria-invalid')
+    const e = screen.getByLabelText('e')
+    expect(e.className).toContain('border-danger-solid')
+    expect(e.className).not.toContain('border-warning-line')
+    expect(e).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('t').className).toContain('border-warning-line')
+    expect(screen.getByLabelText('s').className).toContain('border-warning-line')
   })
 })
