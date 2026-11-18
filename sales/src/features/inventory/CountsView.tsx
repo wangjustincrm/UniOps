@@ -1,7 +1,8 @@
+import { z } from 'zod'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  ActionBar, ActionButton, Button, Callout, Checkbox, ConfirmAction, StatusCell, DateTimeInput, Dialog, FilePicker, FormField, ListPage, LocalTable, RecordSheet, Section, Textarea, ViewFileButton, columnsOf, formatDate, formatDateTime, formatNumber, queryKeys, startHidden, type ColumnDef, type RecordTab, useLookup,
+  ActionButton, Callout, Checkbox, ConfirmAction, StatusCell, ListPage, LocalTable, RecordSheet, Section, ViewFileButton, columnsOf, formatDate, formatDateTime, formatNumber, queryKeys, startHidden, type ColumnDef, type RecordTab, useLookup, FormDialog, SchemaForm, type FieldSpec,
 } from '@/platform-ui'
 import { api } from '@/lib/api'
 import {
@@ -169,28 +170,24 @@ const lineColumns: ColumnDef<StockCountLineRead, unknown>[] = [
   colLine.number('hold_ea', 'On hold EA'),
 ]
 
+const changeSchema = z.object({
+  counted_at: z.string().min(1, 'Set when the report was taken.'),
+  note: z.string().trim().max(2000).nullable().optional(),
+})
+
 function ChangeDialog({ count, open, onOpenChange }: { count: StockCountRead; open: boolean; onOpenChange: (o: boolean) => void }) {
-  const qc = useQueryClient()
-  const [when, setWhen] = useState<string | null>(count.counted_at)
-  const [note, setNote] = useState(count.note ?? '')
+  const fields: FieldSpec[] = [
+    { name: 'counted_at', label: "Taken at (from Radiant's portal)", type: 'datetime', required: true, readOnly: !!count.applied_at,
+      hint: count.applied_at ? 'Undo the count to change its moment.' : undefined },
+    { name: 'note', label: 'Note', type: 'textarea' },
+  ]
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Change the count"
-      footer={<>
-        <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-        <ActionButton permission={ADJUST} errorMessages={errorMessages} done="Saved" disabled={!when} disabledReason="Set when the report was taken."
-          onAction={async () => {
-            await updateCount(count.id, count.version, count.applied_at ? null : when, note.trim() || null)
-            await qc.invalidateQueries({ queryKey: queryKeys.list(stockCountsClient) })
-            onOpenChange(false)
-          }}>Save</ActionButton>
-      </>}>
-      <div className="space-y-3">
-        <FormField label="Taken at (from Radiant's portal)" hint={count.applied_at ? 'Undo the count to change its moment.' : undefined}>
-          <DateTimeInput value={when} onChange={setWhen} disabled={!!count.applied_at} aria-label="Taken at" />
-        </FormField>
-        <FormField label="Note"><Textarea rows={3} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note" /></FormField>
-      </div>
-    </Dialog>
+    <FormDialog open={open} onOpenChange={onOpenChange} title="Change the count">
+      <SchemaForm schema={changeSchema} fields={fields} defaultValues={{ counted_at: count.counted_at, note: count.note ?? '' }}
+        errorMessages={errorMessages} onCancel={() => onOpenChange(false)}
+        done="Saved" invalidates={[queryKeys.list(stockCountsClient)]} after={() => onOpenChange(false)}
+        onSubmit={(v) => updateCount(count.id, count.version, count.applied_at ? null : String(v.counted_at), (v.note as string | null)?.trim() || null)} />
+    </FormDialog>
   )
 }
 
@@ -248,32 +245,23 @@ function CountSheet({ row }: { row: StockCountRead }) {
   </>)
 }
 
+const uploadSchema = z.object({
+  file: z.instanceof(File, { message: 'Choose the report file' }),
+  counted_at: z.string().min(1, 'Set when the report was taken.'),
+  note: z.string().trim().max(2000).nullable().optional(),
+})
+const uploadFields: FieldSpec[] = [
+  { name: 'about', label: '', type: 'note', note: () => "The inventory report from Radiant's portal (CSV or Excel), by pallet or by lot. Nothing changes until you apply it." },
+  { name: 'file', label: 'Report file', type: 'file', required: true, accept: '.csv,.xlsx,.txt', maxBytes: MAX_MB * 1024 * 1024 },
+  { name: 'counted_at', label: 'Taken at', type: 'datetime', required: true, hint: 'When the report was taken from the portal: moves after it are not in it.' },
+  { name: 'note', label: 'Note', type: 'textarea' },
+]
+
 function UploadForm({ done, cancel }: { done: (c?: StockCountRead) => void; cancel: () => void }) {
-  const [file, setFile] = useState<File | null>(null)
-  const [when, setWhen] = useState<string | null>(null)
-  const [note, setNote] = useState('')
-  const tooLarge = !!file && file.size > MAX_MB * 1024 * 1024
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-neutral-600">
-        The inventory report from Radiant's portal (CSV or Excel), by pallet or by lot. Nothing changes until you apply it.
-      </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <FilePicker label="Report file" accept=".csv,.xlsx,.txt" onFile={setFile}>{file ? 'Choose another file' : 'Choose the file'}</FilePicker>
-        <span className="min-w-0 break-all text-sm text-neutral-700">{file ? file.name : 'No file chosen'}</span>
-      </div>
-      {tooLarge && <p className="text-sm text-danger-600">Too large: at most {MAX_MB} MB.</p>}
-      <FormField label="Taken at" hint="When the report was taken from the portal: moves after it are not in it.">
-        <DateTimeInput value={when} onChange={setWhen} aria-label="Taken at" />
-      </FormField>
-      <FormField label="Note"><Textarea rows={2} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note" /></FormField>
-      <ActionBar>
-        <Button variant="secondary" onClick={cancel}>Cancel</Button>
-        <ActionButton permission={ADJUST} disabled={!file || !when || tooLarge}
-          disabledReason={!file ? 'Choose the report file first.' : tooLarge ? 'The file is too large.' : 'Set when the report was taken.'} errorMessages={errorMessages} done="Uploaded"
-          onAction={async () => done(await uploadCount(file!, when!, note.trim() || null))}>Upload</ActionButton>
-      </ActionBar>
-    </div>
+    <SchemaForm schema={uploadSchema} fields={uploadFields} defaultValues={{ file: null, counted_at: '', note: '' }} submitLabel="Upload"
+      errorMessages={errorMessages} onCancel={cancel} done="Uploaded" after={(c) => done(c as StockCountRead)}
+      onSubmit={(v) => uploadCount(v.file as File, String(v.counted_at), (v.note as string | null)?.trim() || null)} />
   )
 }
 

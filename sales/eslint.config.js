@@ -132,10 +132,20 @@ const NO_RAW_ERROR_VIEW_IMPORT = {
   name: '@/platform-ui', importNames: ['ErrorView'],
   message: "Show a read's loading and error with QueryState from @/platform-ui (or errors in the status row, the read hooks' default).",
 }
+// A dialog with a form or buttons is a FormDialog (its errors inside it); a question is a ConfirmAction (step 2, 2026-11-18).
+const NO_RAW_DIALOG_IMPORT = {
+  name: '@/platform-ui', importNames: ['Dialog'],
+  message: 'A dialog is a FormDialog (a form or buttons, errors inside it) or a ConfirmAction (a question) from @/platform-ui.',
+}
 const NO_RAW_SHEET_IMPORT = {
   name: '@/platform-ui', importNames: ['Sheet'],
   message: 'A record detail is a RecordSheet (a form: FormSheet) from @/platform-ui, not a raw Sheet.',
 }
+
+// What every file outside platform-ui and the app shell may not import: written once, used by each block that
+// sets no-restricted-imports for those files (a later block replaces an earlier one's list, it never adds to it).
+const SRC_WIDE_PATTERNS = () => [SHELL, { group: ['@/platform-ui/primitives/toastContext'], message: NO_TOAST_IMPORT.message }]
+const SRC_WIDE_PATHS = () => [NO_RAW_SHEET_IMPORT, NO_TOAST_IMPORT, NO_RAW_OPEN_IMPORT]
 
 export default defineConfig([
   globalIgnores(['dist']),
@@ -193,18 +203,15 @@ export default defineConfig([
   {
     files: ['src/**/*.{ts,tsx}'],
     ignores: ['src/platform-ui/**', ...SHELL_LAYER],
-    rules: { 'no-restricted-imports': ['error', {
-      patterns: [SHELL, { group: ['@/platform-ui/primitives/toastContext'], message: NO_TOAST_IMPORT.message }],
-      paths: [NO_RAW_SHEET_IMPORT, NO_TOAST_IMPORT, NO_RAW_OPEN_IMPORT],
-    }] },
+    rules: { 'no-restricted-imports': ['error', { patterns: SRC_WIDE_PATTERNS(), paths: SRC_WIDE_PATHS() }] },
   },
   // The pages (features, pages) also act and read only through the platform hooks (no allow-list).
   {
     files: ['src/features/**/*.{ts,tsx}', 'src/pages/**/*.{ts,tsx}'],
     ignores: ['src/**/*.test.{ts,tsx}'],
     rules: { 'no-restricted-imports': ['error', {
-      patterns: [SHELL, { group: ['@/platform-ui/primitives/toastContext'], message: NO_TOAST_IMPORT.message }],
-      paths: [NO_RAW_SHEET_IMPORT, NO_TOAST_IMPORT, NO_RAW_OPEN_IMPORT, NO_RAW_QUERY_IMPORT, NO_RAW_ERROR_VIEW_IMPORT],
+      patterns: SRC_WIDE_PATTERNS(),
+      paths: [...SRC_WIDE_PATHS(), NO_RAW_QUERY_IMPORT, NO_RAW_ERROR_VIEW_IMPORT, NO_RAW_DIALOG_IMPORT],
     }] },
   },
   // One block per file group for no-restricted-syntax (a later block would

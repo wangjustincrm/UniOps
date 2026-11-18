@@ -224,6 +224,25 @@ async function run(name, viewport) {
     check(await page.locator('[data-group-chip="method"]').count() === 1, `${name} drag to group: dropping Method on Grouping groups by it`)
     await shot('dragged-group')
   })
+  if (phone) await step('upload form with the keyboard up', async () => {
+    // A form with a file and a date-time (step 2, 2026-11-18): its ActionBar stays reachable while the soft keyboard
+    // is up — simulated by focusing the date-time field and taking the keyboard's height off the window.
+    await open('/inventory')
+    await page.getByRole('button', { name: 'Radiant reports' }).first().click()
+    await page.getByRole('button', { name: 'Upload report' }).first().click()
+    const form = page.getByRole('dialog')
+    await form.waitFor({ timeout: 5000 })
+    check(await form.getByRole('button', { name: 'Choose a file' }).count() === 1, `${name} upload form: the file field`)
+    await form.getByLabel('Taken at').first().focus()
+    await page.setViewportSize({ width: viewport.width, height: 400 })
+    await page.waitForTimeout(300)
+    const upload = form.getByRole('button', { name: 'Upload' })
+    const box = await upload.boundingBox()
+    check(!!box && box.y >= 0 && box.y + box.height <= 400, `${name} upload form: Upload stays on screen with the keyboard up`)
+    await shot('upload-keyboard')
+    await page.setViewportSize(viewport)
+    await page.keyboard.press('Escape')
+  })
   await step('page help', async () => {
     await open('/orders')
     await page.getByRole('button', { name: 'Help: Orders' }).click()

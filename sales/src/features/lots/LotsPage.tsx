@@ -1,7 +1,8 @@
+import { z } from 'zod'
 import { useState } from 'react'
 import { Download } from 'lucide-react'
 import {
-  Badge, Button, Dialog, ListPage, Textarea, type ColumnDef, type Filter, IconButton, Callout, useNotices, columnsOf, useRecordList,
+  Badge, Button, ListPage, type ColumnDef, type Filter, IconButton, Callout, useNotices, columnsOf, useRecordList, FormDialog, SchemaForm, type FieldSpec,
 } from '@/platform-ui'
 import { PartnerCell } from '@/features/common/PartnerCell'
 import { exportLots, lotsClient, parseLots, type LotRead } from './lotsApi'
@@ -38,22 +39,22 @@ function RecallReach({ lots }: { lots: string[] }) {
   return <span>{q.data.total} rows · {groups.length} {groups.length === 1 ? 'order' : 'orders'} · {customers} {customers === 1 ? 'customer' : 'customers'}</span>
 }
 
+const recallSchema = z.object({
+  lots: z.string().refine((t) => parseLots(t).length > 0, 'Paste at least one lot.')
+    .refine((t) => parseLots(t).length <= MAX_LOTS, `At most ${MAX_LOTS} lots at a time.`),
+})
+const recallFields: FieldSpec[] = [
+  { name: 'lots', label: 'Lots', type: 'textarea', required: true, placeholder: 'LOT-A\nLOT-B',
+    hint: (v) => { const n = parseLots(String(v.lots ?? '')).length; return n ? `${n} ${n === 1 ? 'lot' : 'lots'}` : 'One per line, or separated by commas.' } },
+]
+
 function RecallDialog({ open, onOpenChange, onApply }: { open: boolean; onOpenChange: (o: boolean) => void; onApply: (lots: string[]) => void }) {
-  const [text, setText] = useState('')
-  const lots = parseLots(text)
-  const tooMany = lots.length > MAX_LOTS
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Recall: find where lots went"
-      description="Paste one lot or several (one per line, or separated by commas). Every order and customer they went to is listed, ready to export."
-      footer={<>
-        <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-        <Button disabled={lots.length === 0 || tooMany} onClick={() => { onApply(lots); onOpenChange(false) }}>
-          Find {lots.length > 0 ? `${lots.length} ${lots.length === 1 ? 'lot' : 'lots'}` : ''}
-        </Button>
-      </>}>
-      <Textarea aria-label="Lots" rows={6} value={text} onChange={(e) => setText(e.target.value)} placeholder={'LOT-A\nLOT-B'} />
-      {tooMany && <p className="mt-1 text-sm text-danger-600">At most {MAX_LOTS} lots at a time.</p>}
-    </Dialog>
+    <FormDialog open={open} onOpenChange={onOpenChange} title="Recall: find where lots went"
+      description="Paste one lot or several (one per line, or separated by commas). Every order and customer they went to is listed, ready to export.">
+      <SchemaForm schema={recallSchema} fields={recallFields} defaultValues={{ lots: '' }} submitLabel="Find" onCancel={() => onOpenChange(false)}
+        onSubmit={(v) => { onApply(parseLots(String(v.lots))); onOpenChange(false) }} />
+    </FormDialog>
   )
 }
 

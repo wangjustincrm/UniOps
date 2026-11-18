@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { orderRef } from '@/features/common/labels'
-import { useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, Dialog, MasterDetailForm, numberColumn, queryKeys, readColumn, useCan, type FieldSpec, useRecord,
+  ActionButton, MasterDetailForm, numberColumn, queryKeys, readColumn, useCan, type FieldSpec, useRecord, FormDialog,
 } from '@/platform-ui'
 import { fetchOrder, ordersClient, type LineRead, type OrderRead } from '@/features/orders/ordersApi'
 import { recordReturn } from './invoicesApi'
@@ -35,7 +34,6 @@ const problem = (b: Back) => {
  *  holds and a task is raised. */
 export function ReturnAfterShipment({ o }: { o: OrderRead }) {
   const can = useCan(OPERATE)
-  const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const shipped = o.fulfillment_status === 'Shipped' || o.fulfillment_status === 'On Hold'
   const q = useRecord(ordersClient, o.id, fetchOrder, { enabled: open })
@@ -43,7 +41,7 @@ export function ReturnAfterShipment({ o }: { o: OrderRead }) {
   return (
     <>
       <ActionButton size="sm" variant="secondary" permission={OPERATE} onAction={() => setOpen(true)}>Record a return or cancellation…</ActionButton>
-      <Dialog open={open} onOpenChange={setOpen} title={`Order ${orderRef(o)}: return or cancellation after shipment`} className="max-w-2xl">
+      <FormDialog wide open={open} onOpenChange={setOpen} title={`Order ${orderRef(o)}: return or cancellation after shipment`}>
         {open && q.data && (
           <MasterDetailForm<Back>
             schema={schema} fields={fields} defaultValues={{ kind: 'Returned', reason: '' }}
@@ -51,15 +49,12 @@ export function ReturnAfterShipment({ o }: { o: OrderRead }) {
               initial: q.data.lines.filter((l) => l.shipped_ea).map((line) => ({ line, qty: '' })) }}
             blocked={(st) => (st.lines.some((b) => Number(b.qty) > 0) ? null : 'Enter the EA of at least one line.')}
             submitLabel="Record (holds the invoice)" onCancel={() => setOpen(false)}
-            onSubmit={async (v, lines) => {
-              await recordReturn({ order_id: o.id, kind: v.kind as 'Returned' | 'Cancelled after shipment', reason: String(v.reason),
-                lines: lines.filter((b) => Number(b.qty) > 0).map((b) => ({ order_line_id: b.line.id, qty_ea: Number(b.qty) })) })
-              setOpen(false)
-              await qc.invalidateQueries({ queryKey: queryKeys.detail(ordersClient, o.id) })
-            }}
+            invalidates={[queryKeys.detail(ordersClient, o.id)]} after={() => setOpen(false)}
+            onSubmit={(v, lines) => recordReturn({ order_id: o.id, kind: v.kind as 'Returned' | 'Cancelled after shipment', reason: String(v.reason),
+              lines: lines.filter((b) => Number(b.qty) > 0).map((b) => ({ order_line_id: b.line.id, qty_ea: Number(b.qty) })) })}
           />
         )}
-      </Dialog>
+      </FormDialog>
     </>
   )
 }

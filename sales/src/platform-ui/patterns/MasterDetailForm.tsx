@@ -7,6 +7,7 @@ import type { z } from 'zod'
 import { EditableTable, type EditableColumn } from '../primitives/EditableTable'
 import { Button } from '../primitives/shell'
 import { ErrorMessage } from './ErrorMessage'
+import { useAfterAction, type ActionOptions } from './useAction'
 import { AddressFields } from './AddressFields'
 import { ADDRESS_FIELDS } from './address'
 import { SchemaFields, type FieldSpec } from './SchemaForm'
@@ -59,6 +60,10 @@ export interface MasterDetailFormProps<L> {
   /** Address sections after the header fields (e.g. Ship to): AddressFields
    *  under `name`; their rules go in `schema` (addressSchema()). */
   addresses?: { name: string; legend: string; phoneRequired?: boolean }[]
+  /** After it saved, as an action button: what to say, what to read again, what then (e.g. close the dialog). */
+  done?: ActionOptions['done']
+  invalidates?: ActionOptions['invalidates']
+  after?: ActionOptions['after']
 }
 
 /** A record with lines — a manual order, a transfer, an invoice: the header's
@@ -68,8 +73,9 @@ export interface MasterDetailFormProps<L> {
  *  Always rendered in a Sheet or a Dialog — a page never carries a form. */
 export function MasterDetailForm<L>({
   schema, fields, defaultValues, lines: spec, preview, onChange, blocked, onSubmit, submitLabel = 'Save', alsoSubmit, onCancel,
-  errorMessages, readOnly, addresses = [], version,
+  errorMessages, readOnly, addresses = [], version, done, invalidates, after,
 }: MasterDetailFormProps<L>) {
+  const afterAction = useAfterAction()
   // Server errors name nested address fields too (e.g. ship_to.zip).
   const known: FieldSpec[] = [...fields, ...addresses.flatMap((a) => ADDRESS_FIELDS.map((f) => ({ name: `${a.name}.${f}`, label: f })))]
   const resolver = useMemo<Resolver<FieldValues>>(() => {
@@ -107,7 +113,8 @@ export function MasterDetailForm<L>({
     inFlight.current = true
     setError(null)
     try {
-      await handler(Object.fromEntries(Object.entries(v).map(([k, x]) => [k, emptyToNull(x)])), lines, { version: edit.seen })
+      const saved = await handler(Object.fromEntries(Object.entries(v).map(([k, x]) => [k, emptyToNull(x)])), lines, { version: edit.seen })
+      if (done || invalidates || after) await afterAction(saved, { done, invalidates, refreshes: false, after })
     } catch (e) {
       if (!applyServerError(form, known, e, errorMessages)) setError(e)
     } finally {

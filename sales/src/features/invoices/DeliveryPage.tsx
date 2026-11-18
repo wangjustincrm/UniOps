@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, Button, DateInput, Dialog, ErrorMessage, FormField, MasterDetailForm, numberColumn, queryKeys, readColumn, todayDate, useCan, type ActionDone, type FieldSpec, useRecord, QueryState,
+  ActionButton, MasterDetailForm, numberColumn, queryKeys, readColumn, todayDate, useCan, type ActionDone, type FieldSpec, useRecord, QueryState, FormDialog, SchemaForm,
 } from '@/platform-ui'
 import { useTestRunRefusal } from '@/features/common/testRun'
 import { OrderList } from '@/features/orders/OrdersPage'
@@ -66,12 +66,13 @@ function ConfirmOne({ o, close }: { o: OrderRead; close: () => void }) {
   )
 }
 
+const bulkSchema = z.object({ date: z.string().nullable().optional() })
+const bulkFields: FieldSpec[] = [{ name: 'date', label: 'Delivered on (optional)', type: 'date' }]
+
 /** All shown, delivered in full (FR-OB-31: in bulk): each on its due date, or on one date given here. */
 function ConfirmShown({ rows, refresh }: { rows: OrderRead[]; refresh: () => Promise<void> }) {
   const [open, setOpen] = useState(false)
-  const [date, setDate] = useState('')
   const canSend = useCan(MANAGE)
-  const [error, setError] = useState<unknown>(null)  // a refusal of the whole request: said in the dialog too
   // The outcome in the list's status row: a warning while some were not confirmed; the dialog closes.
   const confirmed = {
     done: (res: unknown): ActionDone => {
@@ -83,25 +84,17 @@ function ConfirmShown({ rows, refresh }: { rows: OrderRead[]; refresh: () => Pro
     },
     after: async () => { setOpen(false); await refresh() },
   }
-  const run = (send: boolean) => async () => {
-    setError(null)
-    try { return await confirmBulk(rows.map((r) => r.id), date || null, send) } catch (e) { setError(e); throw e }
-  }
+  const run = (send: boolean) => (v: Record<string, unknown>) => confirmBulk(rows.map((r) => r.id), (v.date as string | null) || null, send)
   return (
     <>
       <ActionButton size="sm" permission={OPERATE} disabled={rows.length === 0} disabledReason="No order is shown to confirm." onAction={() => setOpen(true)}>
         Confirm all shown ({rows.length})…
       </ActionButton>
-      <Dialog open={open} onOpenChange={setOpen} title={`Confirm ${rows.length} deliveries`}
-        description="Each order shown, delivered in full (its shipped quantity). Leave the date empty to use each order's Delivery due date. The date becomes the invoice date."
-        footer={<>
-          <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-          {canSend && <ActionButton variant="secondary" permission={OPERATE} {...confirmed} onAction={run(true)}>Confirm and send</ActionButton>}
-          <ActionButton permission={OPERATE} {...confirmed} onAction={run(false)}>Confirm</ActionButton>
-        </>}>
-        <FormField label="Delivered on (optional)" htmlFor="bulk-date"><DateInput id="bulk-date" value={date} onChange={(e) => setDate(e.target.value)} /></FormField>
-        <ErrorMessage error={error} />
-      </Dialog>
+      <FormDialog open={open} onOpenChange={setOpen} title={`Confirm ${rows.length} deliveries`}
+        description="Each order shown, delivered in full (its shipped quantity). Leave the date empty to use each order's Delivery due date. The date becomes the invoice date.">
+        <SchemaForm schema={bulkSchema} fields={bulkFields} defaultValues={{ date: '' }} submitLabel="Confirm" onCancel={() => setOpen(false)}
+          {...confirmed} onSubmit={run(false)} alsoSubmit={canSend ? { label: 'Confirm and send', onSubmit: run(true) } : undefined} />
+      </FormDialog>
     </>
   )
 }

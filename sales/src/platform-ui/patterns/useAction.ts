@@ -2,6 +2,7 @@ import { useCallback, useContext, useRef, useState } from 'react'
 import { QueryClientContext, type QueryKey } from '@tanstack/react-query'
 import { errorText } from '../resource/businessError'
 import { useNotices, type NoticeInput } from './notices'
+import { useActionErrorSlot } from './actionErrorContext'
 
 /** What a finished action says: a text (success), or a notice of its own (a tone, e.g. a warning when only
  *  part of it worked; a key, so a repeat replaces it); null says nothing. */
@@ -44,6 +45,7 @@ export function useAfterAction() {
  *  never leaves a rejected promise behind: outside any status row the failure is logged. */
 export function useAction(opts: ActionOptions = {}) {
   const notices = useNotices()
+  const slot = useActionErrorSlot()  // inside a dialog or panel: its failure is said there too
   const afterAction = useAfterAction()
   const [pending, setPending] = useState(false)
   const inFlight = useRef(false)
@@ -55,6 +57,7 @@ export function useAction(opts: ActionOptions = {}) {
     if (inFlight.current) return false
     inFlight.current = true
     setPending(true)
+    slot?.clear()
     try {
       const result = await action()
       await afterAction(result, { done: call.done ?? baseDone, refreshes: call.refreshes ?? refreshes,
@@ -62,6 +65,7 @@ export function useAction(opts: ActionOptions = {}) {
       return true
     } catch (e) {
       const text = errorText(e, errorMessages)
+      slot?.report(e, errorMessages)
       if (notices.inScope) notices.notify({ tone: 'error', text: failPrefix ? `${failPrefix}: ${text}` : text })
       else console.error(failPrefix ?? 'Action failed', e)
       return false
@@ -69,6 +73,6 @@ export function useAction(opts: ActionOptions = {}) {
       inFlight.current = false
       setPending(false)
     }
-  }, [baseDone, baseMessages, basePrefix, notices, refreshes, invalidates, after, afterAction])
+  }, [baseDone, baseMessages, basePrefix, notices, refreshes, invalidates, after, afterAction, slot])
   return { run, pending }
 }

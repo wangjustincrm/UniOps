@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Paperclip, Trash2 } from 'lucide-react'
+import { z } from 'zod'
 import {
-  ActionButton, Button, ConfirmAction, Dialog, FilePicker, IconButton, LocalTable, Section, Textarea, columnsOf, formatNumber, useCan, useFileViewer, useNotices, type ColumnDef, useLookup,
+  Button, ConfirmAction, IconButton, LocalTable, Section, columnsOf, formatNumber, useCan, useFileViewer, useNotices, type ColumnDef, useLookup, FormDialog, SchemaForm, type FieldSpec,
 } from '@/platform-ui'
 import {
   ATTACH_PERMISSION, attachFile, downloadRecordFile, listAttachments, recordFile, removeAttachment, type RecordDocument, type RecordType,
@@ -19,28 +20,24 @@ const errorMessages: Record<string, string> = {
 }
 const size = (n: number | null | undefined) => (n == null ? '' : n < 1024 * 1024 ? `${formatNumber(Math.ceil(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
 
+const attachSchema = z.object({
+  file: z.instanceof(File, { message: 'Choose a file' }),
+  note: z.string().trim().max(500).nullable().optional(),
+})
+const attachFields: FieldSpec[] = [
+  { name: 'file', label: 'File to attach', type: 'file', required: true, accept: ACCEPT, maxBytes: MAX_MB * 1024 * 1024 },
+  { name: 'note', label: 'Note', type: 'textarea', placeholder: 'Optional: what it is' },
+]
+
 function AttachDialog({ type, id, open, onOpenChange }: { type: RecordType; id: number; open: boolean; onOpenChange: (o: boolean) => void }) {
-  const [file, setFile] = useState<File | null>(null)
-  const [note, setNote] = useState('')
-  const tooLarge = !!file && file.size > MAX_MB * 1024 * 1024
-  const close = () => { setFile(null); setNote(''); onOpenChange(false) }
   return (
-    <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : close())} title="Attach a file"
-      description={`A delivery note, a signed BOL, a photo, an email… up to ${MAX_MB} MB. It stays with this record; everyone who can see the record can open it.`}
-      footer={<>
-        <Button variant="secondary" onClick={close}>Cancel</Button>
-        <ActionButton disabled={!file || tooLarge} disabledReason={tooLarge ? 'The file is too large.' : 'Choose a file first.'} errorMessages={errorMessages} done="Attached"
-          onAction={async () => { await attachFile(type, id, file!, note.trim() || null); close() }}>Attach</ActionButton>
-      </>}>
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <FilePicker label="File to attach" accept={ACCEPT} onFile={setFile}>{file ? 'Choose another file' : 'Choose a file'}</FilePicker>
-          <span className="min-w-0 break-all text-sm text-neutral-700">{file ? `${file.name} · ${size(file.size)}` : 'No file chosen'}</span>
-        </div>
-        {tooLarge && <p className="text-sm text-danger-600">Too large: at most {MAX_MB} MB.</p>}
-        <Textarea aria-label="Note" rows={3} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional): what it is" />
-      </div>
-    </Dialog>
+    <FormDialog open={open} onOpenChange={onOpenChange} title="Attach a file"
+      description={`A delivery note, a signed BOL, a photo, an email… up to ${MAX_MB} MB. It stays with this record; everyone who can see the record can open it.`}>
+      <SchemaForm schema={attachSchema} fields={attachFields} defaultValues={{ file: null, note: '' }} submitLabel="Attach"
+        errorMessages={errorMessages} onCancel={() => onOpenChange(false)}
+        done="Attached" invalidates={[['attachments', type, id]]} after={() => onOpenChange(false)}
+        onSubmit={(v) => attachFile(type, id, v.file as File, (v.note as string | null)?.trim() || null)} />
+    </FormDialog>
   )
 }
 

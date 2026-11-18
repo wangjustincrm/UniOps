@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ActionButton, Badge, Button, DetailList, ErrorMessage, LocalTable, PageHeader, Section, StatCard, TourScope, formatDateTime, useOpenRecord, type ColumnDef, useRefresh, columnsOf, useLookup, QueryState,
+  ActionButton, Badge, Button, DetailList, LocalTable, PageHeader, Section, StatCard, TourScope, formatDateTime, useOpenRecord, type ColumnDef, useRefresh, columnsOf, useLookup, QueryState, ActionErrors,
 } from '@/platform-ui'
 import { testConnection, type ConnectionTest } from '@/features/configuration/connections/connectionsApi'
 import { fetchHealth, type CheckRead, type GateEventRead, type HealthRead } from './healthApi'
@@ -24,15 +24,11 @@ const CARDS: [string, string, string?][] = [
 /** "Test" on a connection's check: reads only (the connection test of Configuration → Connections). */
 function TestConnection({ id }: { id: number }) {
   const [result, setResult] = useState<ConnectionTest | null>(null)
-  const [error, setError] = useState<unknown>(null)  // a test refused: said beside it too
-  const test = async () => {
-    setError(null)
-    try { return await testConnection(id) } catch (e) { setError(e); throw e }
-  }
   const ok = result && !result.error && result.folders.every((f) => f.ok) && (result.host_key?.matches ?? true)
   return (
+    <ActionErrors>
     <span className="flex flex-col gap-1">
-      <ActionButton size="sm" variant="secondary" permission="sales.config" refreshes={false} after={(r) => setResult(r as ConnectionTest)} onAction={test}>
+      <ActionButton size="sm" variant="secondary" permission="sales.config" refreshes={false} after={(r) => setResult(r as ConnectionTest)} onAction={() => testConnection(id)}>
         Test
       </ActionButton>
       {result && (
@@ -40,8 +36,8 @@ function TestConnection({ id }: { id: number }) {
           {ok ? 'reachable' : (result.error ?? result.folders.find((f) => !f.ok)?.error ?? 'host key does not match the pinned one')}
         </span>
       )}
-      <ErrorMessage error={error} />
     </span>
+    </ActionErrors>
   )
 }
 

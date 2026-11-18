@@ -9,11 +9,14 @@ import { Checkbox } from '../primitives/Checkbox'
 import { MultiChoice } from '../primitives/MultiChoice'
 import { DayChips, PresetNumber, Segmented } from '../primitives/ChoiceControls'
 import type { ComboOption } from '../primitives/Combobox'
-import { DateInput, NumberInput, Textarea } from '../primitives/FieldInputs'
+import { DateInput, DateTimeInput, NumberInput, Textarea } from '../primitives/FieldInputs'
+import { FilePicker } from '../primitives/FilePicker'
+import { fileProblem, sizeText } from './fileField'
 import { Select } from '../primitives/Select'
 import { TagInput } from '../primitives/TagInput'
 import { Button, FormField, Input } from '../primitives/shell'
 import { ErrorMessage } from './ErrorMessage'
+import { useAfterAction, type ActionOptions } from './useAction'
 import { applyServerError, emptyToNull, hiddenFields, notShown, prepare, toInputs, withDefaultsWhenHidden } from './formValues'
 import { Section } from './Section'
 import { zodResolver } from './zodResolver'
@@ -29,7 +32,7 @@ import { ActionBar } from '../primitives/Layout'
 // line computed from the values (`note`; no value of its own), tags → TagInput (an array of
 // typed values, e.g. addresses; what is typed and not yet added is added when the box loses focus).
 export type FieldType = 'text' | 'email' | 'number' | 'textarea' | 'checkbox' | 'select' | 'date' | 'reference' | 'multiselect' | 'segmented' | 'days'
-  | 'presets' | 'note' | 'tags'
+  | 'presets' | 'note' | 'tags' | 'datetime' | 'file'
 
 export interface FieldSpec {
   name: string
@@ -59,6 +62,26 @@ export interface FieldSpec {
   numeric?: boolean
   /** type note: the line, from the current values. */
   note?: (values: FieldValues) => ReactNode
+  /** type file: the types offered (as an input's accept: ".csv,.xlsx") and the largest size, both checked before
+   *  submit with the reason on the field. The value handed to onSubmit is the File; the caller sends it. */
+  accept?: string
+  maxBytes?: number
+}
+
+/** A file field: choose (keyboard reachable), its name and size, × to clear. */
+function FileField({ id, value, onChange, accept, label, disabled, invalid }: {
+  id: string; value: unknown; onChange: (f: File | null) => void; accept?: string; label: string; disabled?: boolean; invalid?: boolean
+}) {
+  const file = value instanceof File ? value : null
+  return (
+    <div id={id} className="flex flex-wrap items-center gap-2" aria-invalid={invalid || undefined}>
+      <FilePicker label={label} accept={accept} onFile={onChange} disabled={disabled}>{file ? 'Choose another file' : 'Choose a file'}</FilePicker>
+      <span className="min-w-0 break-all text-sm text-neutral-700">{file ? `${file.name} · ${sizeText(file.size)}` : 'No file chosen'}</span>
+      {file && !disabled && (
+        <Button type="button" variant="ghost" size="sm" aria-label={`Clear ${label}`} onClick={() => onChange(null)}>×</Button>
+      )}
+    </div>
+  )
 }
 
 export interface SchemaFormProps {
@@ -80,6 +103,13 @@ export interface SchemaFormProps {
   fieldLabels?: Record<string, string>
   /** View only: every field disabled, no submit (a reader's view of a record). */
   readOnly?: boolean
+  /** A second way to submit the same values (e.g. "Confirm and send"), beside the main one. */
+  alsoSubmit?: { label: string; onSubmit: SchemaFormProps['onSubmit'] }
+  /** After it saved, as an action button: what to say (the status row), what to read again, what then
+   *  (e.g. close the dialog). Nothing is read again unless named. */
+  done?: ActionOptions['done']
+  invalidates?: ActionOptions['invalidates']
+  after?: ActionOptions['after']
 }
 
 /** A config form generated from a zod schema and a field list. Config forms
@@ -89,8 +119,10 @@ export interface SchemaFormProps {
  *  number is null, never 0; a blank optional select is accepted) and a number
  *  input's text becomes a number. */
 export function SchemaForm({
-  schema, fields, defaultValues, onSubmit, changesOnly, submitLabel = 'Save', onCancel, errorMessages, fieldLabels, readOnly, version,
+  schema, fields, defaultValues, onSubmit, changesOnly, submitLabel = 'Save', onCancel, errorMessages, fieldLabels, readOnly, version, alsoSubmit,
+  done, invalidates, after,
 }: SchemaFormProps) {
+  const afterAction = useAfterAction()
   const resolver = useMemo<Resolver<FieldValues>>(() => {
     const inner = zodResolver(schema, (v) => hiddenFields(fields, v))
     const start = toInputs(defaultValues, fields)
@@ -105,14 +137,21 @@ export function SchemaForm({
   useReportUnsaved(isDirty)
   const edit = useEditVersion(version, isDirty, () => form.reset(toInputs(defaultValues, fields)))
 
-  const submit = form.handleSubmit(async (values) => {
+  const submitWith = (send: SchemaFormProps['onSubmit']) => form.handleSubmit(async (values) => {
     setError(null)
     const off = notShown(fields, form.getValues())
+    // A file of the wrong type or too large: said on its field, nothing sent.
+    let refused = false
+    for (const f of fields.filter((x) => x.type === 'file' && !off.includes(x.name))) {
+      const why = fileProblem(f, values[f.name])
+      if (why) { form.setError(f.name, { message: why }); refused = true }
+    }
+    if (refused) return
     const out = changesOnly
       ? Object.fromEntries(Object.keys(dirtyFields).filter((k) => !off.includes(k)).map((k) => [k, emptyToNull(values[k])]))
       : Object.fromEntries(Object.entries(values).map(([k, v]) => [k, emptyToNull(v)]))
     try {
-      const saved = await onSubmit(out, { version: edit.seen })
+      const saved = await send(out, { version: edit.seen })
       // What was saved is the form's new starting point: not "unsaved", and a later change of the
       // record (our own new version) is no edit elsewhere (user 2026-11-12: "Discard your changes?"
       // and "Someone else changed" right after a save).
@@ -120,6 +159,7 @@ export function SchemaForm({
       form.reset(form.getValues())
       const v = (saved as { version?: unknown } | null | undefined)?.version
       if (typeof v === 'number') edit.adopt(v)
+      if (done || invalidates || after) await afterAction(saved, { done, invalidates, refreshes: false, after })
     } catch (e) {
       // A refusal names its field (details.field), or several
       // (details.errors: [{field, message}] for a request the server's
@@ -128,6 +168,7 @@ export function SchemaForm({
       if (!applyServerError(form, fields.filter((f) => !off.includes(f.name)), e, errorMessages, fieldLabels)) setError(e)
     }
   })
+  const submit = submitWith(onSubmit)
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-4">
@@ -140,6 +181,9 @@ export function SchemaForm({
       <ActionBar>
         {onCancel && (
           <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>{readOnly ? 'Close' : 'Cancel'}</Button>
+        )}
+        {!readOnly && alsoSubmit && (
+          <Button type="button" variant="secondary" disabled={isSubmitting} onClick={(e) => submitWith(alsoSubmit.onSubmit)(e)}>{alsoSubmit.label}</Button>
         )}
         {!readOnly && <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving…' : submitLabel}</Button>}
       </ActionBar>
@@ -233,6 +277,20 @@ export function SchemaFields({ form, fields, readOnly, idPrefix = 'sf' }: {
               <Autocomplete id={id} value={field.value || null} onChange={(v) => field.onChange(v ?? '')} onBlur={field.onBlur}
                 loadOptions={f.loadOptions ?? (async () => [])} placeholder={f.placeholder} disabled={common.disabled}
                 aria-label={f.label} aria-invalid={common['aria-invalid']} />
+            )} />
+          )
+        } else if (f.type === 'datetime') {
+          control = (
+            <Controller control={form.control} name={f.name} render={({ field }) => (
+              <DateTimeInput id={id} value={field.value || null} onChange={(v) => field.onChange(v ?? '')} onBlur={field.onBlur}
+                disabled={common.disabled} aria-label={f.label} aria-invalid={common['aria-invalid']} />
+            )} />
+          )
+        } else if (f.type === 'file') {
+          control = (
+            <Controller control={form.control} name={f.name} render={({ field }) => (
+              <FileField id={id} value={field.value} onChange={(v) => { field.onChange(v); form.clearErrors(f.name) }} accept={f.accept}
+                label={f.label} disabled={common.disabled} invalid={common['aria-invalid']} />
             )} />
           )
         } else if (f.type === 'textarea') {

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { z } from 'zod'
 import {
-  ADDRESS_FIELDS, ActionButton, Autocomplete, ErrorMessage, MasterDetailForm, formatNumber, Skeleton, addressSchema, cleanAddress, numberColumn, readColumn, selectColumn, type EditableColumn, type FieldSpec, useLookup, useLookups,
+  ADDRESS_FIELDS, ActionButton, Autocomplete, MasterDetailForm, formatNumber, Skeleton, addressSchema, cleanAddress, numberColumn, readColumn, selectColumn, type EditableColumn, type FieldSpec, useLookup, useLookups, ActionErrors,
 } from '@/platform-ui'
 import { itemOptions, itemUnits, manualPartnerOptions } from '../configuration/lookups'
 import { fetchEdiSettings } from '../configuration/connections/connectionsApi'
@@ -65,11 +65,6 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
   const codes = [...new Set(lines.map((l) => l.item_code).filter(Boolean))]
   const unitQueries = useLookups(codes.map((c) => ['sales', 'lookup', 'units', c]), (k) => itemUnits(String(k[3])), { staleTime: 60_000 })
   const units: Record<string, { value: string; label: string }[]> = Object.fromEntries(codes.map((c, i) => [c, unitQueries[i]?.data ?? []]))
-  const [checkError, setCheckError] = useState<unknown>(null)  // a preview refused: said under its button too
-  const check = (ls: ManualLine[]) => async () => {
-    setCheckError(null)
-    try { return await previewManual(ls) } catch (e) { setCheckError(e); throw e }
-  }
   const settings = useLookup(EDI_KEY, fetchEdiSettings)
   const fields = fieldsFor(carriersFor(settings.data?.express_offered ?? true))
 
@@ -107,12 +102,13 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
       onChange={(st) => { if (st.lines !== lines) { setLines(st.lines); setPreview(null) } }}
       blocked={() => (preview === null ? 'Preview the EA conversion before saving.' : null)}
       preview={(st) => (
+        <ActionErrors>
         <div className="flex flex-col gap-1">
           <ActionButton size="sm" variant="secondary" permission={OPERATE}
-            refreshes={false} after={(r) => setPreview(r as LinePreview[])} onAction={check(st.lines)}>Preview EA</ActionButton>
+            refreshes={false} after={(r) => setPreview(r as LinePreview[])} onAction={() => previewManual(st.lines)}>Preview EA</ActionButton>
           {preview && <WeightHint preview={preview} ltlFromLb={settings.data?.ltl_from_lb ?? 150} />}
-          <ErrorMessage error={checkError} />
         </div>
+        </ActionErrors>
       )}
       submitLabel={draft ? 'Save changes' : 'Save draft'}
       onCancel={onCancel}
