@@ -16,7 +16,7 @@ import {
   X as XIcon,
   Repeat,
 } from 'lucide-react'
-import { SortTh, useSort, sortParams, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal, Badge, type BadgeTone } from '@uniops/shell'
+import { SortTh, useSort, sortParams, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal, Badge, type BadgeTone, Card } from '@uniops/shell'
 import { cn, formatDate, formatTime } from '@/lib/utils'
 import {
   useAdminRoomList,
@@ -333,7 +333,7 @@ export default function AllBookingsPage() {
         )}
         {!isLoading && !error && (
           <>
-            <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
+            <Card className="overflow-x-auto">
               <Table className="text-left">
                 <THead>
                   <Tr>
@@ -398,7 +398,7 @@ export default function AllBookingsPage() {
                   )}
                 </TBody>
               </Table>
-            </div>
+            </Card>
 
             {/* Pagination */}
             {total > PAGE_SIZE && (

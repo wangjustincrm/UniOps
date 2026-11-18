@@ -15,7 +15,7 @@ import { Loader2, AlertCircle, CheckCircle2, X as XIcon, Eye, EyeOff } from 'luc
 import { useAdminConfig, useAdminUpdateConfig } from '@/services/api'
 import type { BookingRules, SmtpSettings } from '@/lib/types'
 
-import { Checkbox, Input, Select, Button } from '@uniops/shell'
+import { Checkbox, Input, Select, Button, Card } from '@uniops/shell'
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function Field({
@@ -82,7 +82,7 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
   }
 
   return (
-    <div className="rounded-xl border border-line bg-surface shadow-sm">
+    <Card>
       <div className="px-6 py-4 border-b border-line-subtle">
         <h2 className="text-sm font-semibold text-fg">Booking Rules</h2>
       </div>
@@ -187,7 +187,7 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
           Save Rules
         </Button>
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -229,7 +229,7 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
   }
 
   return (
-    <div className="rounded-xl border border-line bg-surface shadow-sm">
+    <Card>
       <div className="px-6 py-4 border-b border-line-subtle">
         <h2 className="text-sm font-semibold text-fg">Email (SMTP)</h2>
       </div>
@@ -344,7 +344,7 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
           Save Email Settings
         </Button>
       </div>
-    </div>
+    </Card>
   )
 }
 

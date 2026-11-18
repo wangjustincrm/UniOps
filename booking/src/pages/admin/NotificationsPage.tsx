@@ -9,7 +9,7 @@
  * Banner warns that resend duplicates emails for already-sent logs.
  */
 import { useState } from 'react'
-import { SortTh, useSort, sortParams, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Badge, type BadgeTone } from '@uniops/shell'
+import { SortTh, useSort, sortParams, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Badge, type BadgeTone, Card } from '@uniops/shell'
 import {
   Loader2,
   AlertCircle,
@@ -218,7 +218,7 @@ export default function NotificationsPage() {
         )}
         {!isLoading && !error && (
           <>
-            <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
+            <Card className="overflow-x-auto">
               <Table className="text-left">
                 <THead>
                   <Tr>
@@ -251,7 +251,7 @@ export default function NotificationsPage() {
                   )}
                 </TBody>
               </Table>
-            </div>
+            </Card>
 
             {/* Pagination */}
             {total > PAGE_SIZE && (

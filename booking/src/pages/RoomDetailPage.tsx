@@ -19,7 +19,7 @@ import { ROOM_STATUS_TONE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
 import { DayTimeline } from '@/components/DayTimeline'
 import { WeekStrip } from '@/components/WeekStrip'
 import { AuthImage } from '@/components/AuthImage'
-import { Button, Badge } from '@uniops/shell'
+import { Button, Badge, Card } from '@uniops/shell'
 
 // ── Equipment icon map ────────────────────────────────────────────────────────
 
@@ -35,12 +35,12 @@ const EQUIPMENT_ICONS: Record<EquipmentOption, LucideIcon> = {
 
 function Skeleton() {
   return (
-    <div className="animate-pulse space-y-4 rounded-xl border border-line bg-surface p-6">
+    <Card className="animate-pulse space-y-4 p-6">
       <div className="h-7 w-1/2 rounded bg-surface-strong" />
       <div className="h-4 w-1/3 rounded bg-surface-sunken" />
       <div className="h-4 w-1/4 rounded bg-surface-sunken" />
       <div className="mt-6 h-8 w-full rounded bg-surface-strong" />
-    </div>
+    </Card>
   )
 }
 
@@ -122,7 +122,7 @@ export default function RoomDetailPage() {
         </BackLink>
 
         {/* Room header card */}
-        <div className="rounded-xl border border-line bg-surface p-6 shadow-sm">
+        <Card className="p-6">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="min-w-0">
               <div className="flex items-center gap-3 flex-wrap">
@@ -216,10 +216,10 @@ export default function RoomDetailPage() {
               {isBookable ? 'Book this room' : 'Room unavailable for booking'}
             </Button>
           </div>
-        </div>
+        </Card>
 
         {/* Timeline card */}
-        <div className="rounded-xl border border-line bg-surface p-6 shadow-sm space-y-4">
+        <Card className="p-6 space-y-4">
           <h2 className="text-base font-semibold text-fg">Schedule</h2>
 
           {/* Week strip */}
@@ -241,7 +241,7 @@ export default function RoomDetailPage() {
               day={selectedDay}
             />
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   )

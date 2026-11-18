@@ -12,7 +12,7 @@ import { EQUIPMENT_OPTIONS, EQUIPMENT_LABELS, ROOM_TYPES, ROOM_TYPE_LABELS } fro
 import { ROOM_STATUS_TONE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
 import { zonedToISO } from '@/lib/tz'
 
-import { Button, Checkbox, Input, Select, Badge } from '@uniops/shell'
+import { Button, Checkbox, Input, Select, Badge, Card } from '@uniops/shell'
 // ── Equipment icon map ────────────────────────────────────────────────────────
 
 const EQUIPMENT_ICONS: Record<EquipmentOption, LucideIcon> = {
@@ -56,7 +56,7 @@ const toISO = (date: string, time: string) => zonedToISO(date, time)
 
 function RoomCardSkeleton() {
   return (
-    <div className="animate-pulse rounded-xl border border-line bg-surface p-4 flex flex-col gap-3">
+    <Card className="animate-pulse p-4 flex flex-col gap-3">
       <div className="h-4 w-3/4 rounded bg-surface-strong" />
       <div className="h-3 w-1/2 rounded bg-surface-sunken" />
       <div className="h-3 w-1/3 rounded bg-surface-sunken" />
@@ -64,7 +64,7 @@ function RoomCardSkeleton() {
         <div className="h-8 w-16 rounded bg-surface-sunken" />
         <div className="ml-auto h-8 w-20 rounded bg-surface-strong" />
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -221,7 +221,7 @@ export default function RoomsPage() {
         </div>
 
         {/* Filter bar */}
-        <div className="mb-6 rounded-xl border border-line bg-surface p-4 shadow-sm">
+        <Card className="mb-6 p-4">
           {/* Row 1: date + time window + attendees + location + type */}
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
@@ -340,7 +340,7 @@ export default function RoomsPage() {
               })}
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* Error */}
         {error && (
@@ -358,7 +358,7 @@ export default function RoomsPage() {
             ))}
           </div>
         ) : rooms.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-line bg-surface py-16 text-center">
+          <Card className="flex flex-col items-center justify-center py-16 text-center">
             <Users className="mb-3 h-10 w-10 text-fg-faint" />
             <p className="text-base font-medium text-fg-muted">No rooms found</p>
             <p className="mt-1 text-sm text-fg-muted">
@@ -366,7 +366,7 @@ export default function RoomsPage() {
                 ? 'No rooms are available for the selected time window. Try adjusting the filters.'
                 : 'No rooms match the current filters. Try broadening your search.'}
             </p>
-          </div>
+          </Card>
         ) : (
           <>
             <p className="mb-3 text-sm text-fg-muted">

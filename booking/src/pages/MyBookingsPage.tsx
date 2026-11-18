@@ -23,7 +23,7 @@ import {
   Pencil,
   X as XIcon,
 } from 'lucide-react'
-import { Button, Modal, Pagination, SortTh, TBody, THead, Table, Tabs, Td, Th, Tr, sortParams, type Sort, useSort, Badge, type BadgeTone } from '@uniops/shell'
+import { Button, Modal, Pagination, SortTh, TBody, THead, Table, Tabs, Td, Th, Tr, sortParams, type Sort, useSort, Badge, type BadgeTone, Card } from '@uniops/shell'
 import { formatDate, formatTime } from '@/lib/utils'
 import { useMyBookingsPaged, useCancelBooking } from '@/services/api'
 import type { BookingOut } from '@/lib/types'
@@ -365,7 +365,7 @@ export default function MyBookingsPage() {
         )}
 
         {!isLoading && !error && (
-          <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
+          <Card className="overflow-x-auto">
             <Table className="text-left">
               <THead>
                 <Tr>
@@ -406,7 +406,7 @@ export default function MyBookingsPage() {
                 onPageSizeChange={(s) => { setPageSize(s); setPage(1) }}
               />
             )}
-          </div>
+          </Card>
         )}
       </div>
 

@@ -23,7 +23,7 @@ import {
   X as XIcon,
   CheckCircle2,
 } from 'lucide-react'
-import { SortTh, useSortableRows, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Button, Modal, Badge, type BadgeTone } from '@uniops/shell'
+import { SortTh, useSortableRows, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Button, Modal, Badge, type BadgeTone, Card } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import {
   useAdminRoomList,
@@ -324,7 +324,7 @@ export default function RoomsAdminPage() {
         )}
 
         {!isLoading && !error && (
-          <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
+          <Card className="overflow-x-auto">
             <Table className="text-left">
               <THead>
                 <Tr>
@@ -387,7 +387,7 @@ export default function RoomsAdminPage() {
                 )}
               </TBody>
             </Table>
-          </div>
+          </Card>
         )}
       </div>
 
