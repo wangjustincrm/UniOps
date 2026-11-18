@@ -9,7 +9,7 @@ import { columnMismatch, useListMeta, type FieldMeta, type ListMeta } from '../r
 import {
   MAX_GROUP_KEYS, clampPageSize, groupBy, sortBy, type Filter, type GroupCount, type ListTotal, type QuerySpec,
 } from '../resource/querySpec'
-import { normalizeView, viewStateOf, type Layout, type ViewState } from '../resource/viewState'
+import { MAX_LOCKED, normalizeView, viewStateOf, type Layout, type ViewState } from '../resource/viewState'
 import { errorText } from '../resource/businessError'
 import { ColumnChooser } from '../primitives/ColumnChooser'
 import { columnId, startsHidden } from '../primitives/columnMeta'
@@ -73,6 +73,9 @@ export interface QueryTableProps<T> {
   onLayoutChange?: (layout: Layout) => void
   /** The list's saved views (useListView(...).picker): shown left of the toolbar. */
   picker?: ViewPickerModel
+  /** How many first columns stay in place while the table scrolls sideways when the view does not say
+   *  (default 1; 0 none). The user changes it from a column's menu; it saves with the view. */
+  defaultLocked?: number
   /** The visible columns an export can write, in their order: those /meta says each row carries
    *  (a page's own computed cell is not a field). Told on every change. */
   onExportColumns?: (ids: string[]) => void
@@ -138,7 +141,7 @@ function WithMeta<T>({ resource, ...props }: ViewProps<T> & { resource: NonNulla
 
 function QueryTableView<T>({
   columns, defaultHidden, spec, onSpecChange, meta, locked = [], sortable = [], total, groups, groupsTruncated, totals, searchable, error,
-  errorMessages, toolbar, onViewChange, layout: layoutProp, onLayoutChange, picker, suggest, onExportColumns, ...view
+  errorMessages, toolbar, onViewChange, layout: layoutProp, onLayoutChange, picker, suggest, onExportColumns, defaultLocked = 1, ...view
 }: ViewProps<T> & { meta: ListMeta | undefined; suggest?: (field: string, query: string) => Promise<string[]> }) {
   const fields = useMemo(() => new Map((meta?.fields ?? []).map((f) => [f.name, f])), [meta])
   const [ownLayout, setOwnLayout] = useState<Layout>({ columns: [], hidden: [] })
@@ -209,7 +212,9 @@ function QueryTableView<T>({
   const exportIds = visible.map(columnId).filter((id) => fields.get(id)?.in_row).join(',')
   useEffect(() => { onExportColumns?.(exportIds ? exportIds.split(',') : []) }, [exportIds])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  const shownKey = visible.map(columnId).join(',')
+  const lockedCount = Math.min(layout.locked ?? defaultLocked, MAX_LOCKED)
+  const visibleIds = visible.map(columnId)
+  const shownKey = visibleIds.join(',')
   const shownIds = shownKey.split(',')
 
   // The summed fields, in the response's order; labelled when there are several.
@@ -295,6 +300,7 @@ function QueryTableView<T>({
         {...view}
         {...empty}
         columns={visible}
+        locked={lockedCount}
         grouping={grouping}
         footer={footer}
         errorMessage={error ? errorText(error, errorMessages) : null}
@@ -314,12 +320,14 @@ function QueryTableView<T>({
               onGroup={(desc) => change(groupBy(spec, id, desc))}
               canGroup={(spec.group ?? []).length < MAX_GROUP_KEYS || (spec.group ?? []).some((g) => g.field === id)}
               onHide={() => setHidden([...hidden, id])}
+              lock={{ index: visibleIds.indexOf(id), locked: lockedCount, max: MAX_LOCKED, onLock: (n) => setLayout({ ...layout, locked: n }) }}
             />
           ) : null
         }}
         leadingHeader={meta ? (
           <ColumnChooser
-            columns={order.map((id) => ({ id, label: headerText(byId.get(id)!, fields.get(id)), group: pageIds.has(id) ? 'page' : 'more' }))}
+            columns={order.map((id) => ({ id, label: headerText(byId.get(id)!, fields.get(id)), group: pageIds.has(id) ? 'page' : 'more',
+              locked: visibleIds.indexOf(id) > -1 && visibleIds.indexOf(id) < lockedCount }))}
             groups={COLUMN_GROUPS}
             hidden={hidden}
             onChange={setHidden}

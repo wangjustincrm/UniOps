@@ -1,9 +1,9 @@
-import { Fragment, createElement, isValidElement, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { Fragment, createElement, isValidElement, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import {
   getCoreRowModel, useReactTable,
   type ColumnDef, type SortingState, type Updater,
 } from '@tanstack/react-table'
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, GripVertical, Lock } from 'lucide-react'
 import { Button, Input, Pagination, Skeleton, SkeletonRow } from './shell'
 import { DropdownMenu } from './DropdownMenu'
 import { useElementWidth } from './useResponsive'
@@ -115,9 +115,10 @@ export interface DataTableProps<T> {
    *  "label: value" lines (column meta `card`), and a Sort menu instead of the headers. Default
    *  640; false keeps the table at every width. */
   cardsBelow?: number | false
-  /** The first column (whatever is first now) stays in place while the table scrolls sideways; default on.
-   *  The table only, never the cards. */
-  freezeFirst?: boolean
+  /** The first N columns (whatever is first now) stay in place while the table scrolls sideways; default 1,
+   *  0 none. Only as many as fit in half the table's width are frozen (the header's title says so). The table
+   *  only, never the cards. */
+  locked?: number
   /** In a card, at most this many lines when a row opens (the rest is in the record); every line otherwise. */
   cardLines?: number
 }
@@ -137,7 +138,7 @@ const FROZEN_EDGE = 'shadow-[inset_-1px_0_0_0_var(--color-neutral-200,#e5e7eb)]'
 export function DataTable<T>({
   columns, rows, rowKey, onRowClick, loading, fetching, stale, busyNow, highlight, fit, statusBar, errorMessage, onRetry, emptyTitle = 'Nothing here yet', emptyText, emptyAction,
   sort, sortable = [], onSortChange, headerAddon, leadingHeader, chips, grouping, leading, afterSearch, onColumnMove, onColumnDrag, search, filters,
-  toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs, expand, cardsBelow = 640, cardLines = 6, freezeFirst = true,
+  toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs, expand, cardsBelow = 640, cardLines = 6, locked = 1,
 }: DataTableProps<T>) {
   const rootRef = useRef<HTMLDivElement>(null)
   const searchStop = useTourStop({ help: 'list.search', slot: 'list.search' })
@@ -164,7 +165,29 @@ export function DataTable<T>({
   })
   // The leading cell: the header's (e.g. the column chooser) and each row's ▸.
   const leadCell = leadingHeader !== undefined || !!expand
-  const frozenLeft = leadCell ? '2rem' : 0  // after the leading cell (w-8), itself frozen at 0
+  // Locked columns: each one's left = the leading cell (2rem) + the measured widths of the locked ones before it;
+  // only as many as fit in half the table's visible width (a narrow window keeps room to scroll the rest).
+  const headRow = useRef<HTMLTableRowElement>(null)
+  const [lockWidths, setLockWidths] = useState<number[]>([])
+  const want = Math.max(0, Math.min(locked, columns.length))
+  useLayoutEffect(() => {
+    const ths = [...(headRow.current?.querySelectorAll<HTMLElement>('th[data-col]') ?? [])].slice(0, want)
+    const next = ths.map((th) => th.getBoundingClientRect().width)
+    setLockWidths((prev) => (prev.length === next.length && prev.every((w, i) => Math.abs(w - next[i]) < 0.5) ? prev : next))
+  })
+  const leadPx = leadCell ? 32 : 0
+  let frozenCount = 0
+  for (let i = 0, used = leadPx; i < want; i++) {
+    const w = lockWidths[i] ?? 0
+    if (i > 0 && width && used + w > width / 2) break  // the first always stays (as before); the next only if it fits
+    used += w
+    frozenCount++
+  }
+  const freezeLead = want > 0
+  const leftOf = (i: number) => leadPx + lockWidths.slice(0, i).reduce((a, b) => a + b, 0)
+  const frozenAt = (i: number) => i < frozenCount
+  const frozenStyle = (i: number) => (frozenAt(i) ? { left: leftOf(i) } : undefined)
+  const edgeAt = (i: number) => i === frozenCount - 1
   const toggle = (k: string) => setCollapsed((s) => {
     const next = new Set(s)
     if (next.has(k)) next.delete(k)
@@ -407,8 +430,8 @@ export function DataTable<T>({
           <table aria-label={ariaLabel} aria-busy={busy || (loading && rows.length === 0) || undefined} className={cn('w-full', density === 'compact' ? 'text-xs' : 'text-sm')}>
             <thead data-sticky-head className="sticky top-0 z-[1] bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500 shadow-[inset_0_-1px_0_0_var(--color-neutral-200,#e5e7eb)]">
               {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {leadCell && <th className={cn(LEAD, 'py-2', freezeFirst && 'sticky left-0 z-[2] bg-neutral-50')}>{leadingHeader}</th>}
+                <tr key={hg.id} ref={headRow}>
+                  {leadCell && <th className={cn(LEAD, 'py-2', freezeLead && 'sticky left-0 z-[2] bg-neutral-50')}>{leadingHeader}</th>}
                   {hg.headers.map((h, hi) => {
                     const canSort = sortableSet.has(h.column.id) && !!onSortChange
                     const dir = h.column.getIsSorted()
@@ -416,9 +439,12 @@ export function DataTable<T>({
                     return (
                       <th
                         key={h.id}
-                        style={freezeFirst && hi === 0 ? { left: frozenLeft } : undefined}
-                        data-frozen={freezeFirst && hi === 0 ? true : undefined}
-                        className={cn(cellPad, 'font-medium', freezeFirst && hi === 0 && cn('sticky z-[2] bg-neutral-50', FROZEN_EDGE),
+                        style={frozenStyle(hi)}
+                        data-col={h.column.id}
+                        data-frozen={frozenAt(hi) || undefined}
+                        data-locked={hi < want ? (frozenAt(hi) ? 'frozen' : 'unfrozen') : undefined}
+                        title={hi < want && !frozenAt(hi) ? `${frozenCount} of ${want} locked columns frozen: the window is too narrow` : undefined}
+                        className={cn(cellPad, 'font-medium', frozenAt(hi) && cn('sticky z-[2] bg-neutral-50', edgeAt(hi) && FROZEN_EDGE),
                           dragging === h.column.id && 'opacity-40', dropOn === h.column.id && dragging !== h.column.id && 'shadow-[inset_2px_0_0_0_var(--color-primary-600,#0a7c7c)]')}
                         aria-sort={dir ? (dir === 'desc' ? 'descending' : 'ascending') : undefined}
                         onDragOver={onColumnMove ? (e) => { if (dragging) { e.preventDefault(); setDropOn(h.column.id) } } : undefined}
@@ -464,6 +490,11 @@ export function DataTable<T>({
                           ) : (
                             <Render def={h.column.columnDef.header} ctx={h.getContext()} />
                           )}
+                          {hi < want && (
+                            // locked: frozen, or (a narrow window) kept but not frozen — the title says which
+                            <Lock aria-label={frozenAt(hi) ? 'locked' : 'locked, not frozen: the window is too narrow'}
+                              className={cn('h-3 w-3', frozenAt(hi) ? 'text-neutral-400' : 'text-neutral-300')} />
+                          )}
                           {h.column.columnDef.meta?.help && <HelpTip id={h.column.columnDef.meta.help} />}
                           {headerAddon?.(h.column.id)}
                         </span>
@@ -493,11 +524,11 @@ export function DataTable<T>({
                       onKeyDown={onRowClick ? (e) => {
                         if (e.target === e.currentTarget && e.key === 'Enter') { e.preventDefault(); onRowClick(r.original) }
                       } : undefined}
-                      className={cn('border-t border-neutral-100', freezeFirst && 'bg-white', onRowClick && 'cursor-pointer hover:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary-500', rowClass,
+                      className={cn('border-t border-neutral-100', freezeLead && 'bg-white', onRowClick && 'cursor-pointer hover:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary-500', rowClass,
                         flash && 'bg-primary-50 animate-[platform-flash_2s_ease-out_forwards] motion-reduce:animate-none')}
                     >
                       {leadCell && (
-                        <td className={cn(LEAD, freezeFirst && 'sticky left-0 bg-inherit')}>
+                        <td className={cn(LEAD, freezeLead && 'sticky left-0 bg-inherit')}>
                           {detail !== null && (
                             <button type="button" ref={r.id === firstDetailId ? detailStop.attach : undefined} data-help={r.id === firstDetailId ? 'list.rowDetails' : undefined} aria-expanded={isOpen} aria-label={isOpen ? 'Hide details' : 'Show details'}
                               onClick={() => toggleRow(r.id)}
@@ -508,8 +539,8 @@ export function DataTable<T>({
                         </td>
                       )}
                       {r.getVisibleCells().map((c, ci) => (
-                        <td key={c.id} style={freezeFirst && ci === 0 ? { left: frozenLeft } : undefined}
-                          className={cn(cellPad, 'text-neutral-700', freezeFirst && ci === 0 && cn('sticky bg-inherit', FROZEN_EDGE))}>
+                        <td key={c.id} style={frozenStyle(ci)}
+                          className={cn(cellPad, 'text-neutral-700', frozenAt(ci) && cn('sticky bg-inherit', edgeAt(ci) && FROZEN_EDGE))}>
                           <Render def={c.column.columnDef.cell} ctx={c.getContext()} />
                         </td>
                       ))}
@@ -528,7 +559,7 @@ export function DataTable<T>({
                     <tr key={`g:${g.key}`} ref={i === 0 && g.level === 0 ? groupStop.attach : undefined} data-help={i === 0 && g.level === 0 ? 'list.groups' : undefined} className="border-t border-neutral-200 bg-neutral-50/70">
                       <td colSpan={span} className="py-1.5 pr-3" style={{ paddingLeft: `${0.75 + g.level * 1.25}rem` }}>
                         {/* in view while the table scrolls sideways */}
-                        <span className={cn('inline-flex items-center', freezeFirst && 'sticky left-3')}>
+                        <span className={cn('inline-flex items-center', freezeLead && 'sticky left-3')}>
                           {groupButton(g)}
                           {g.summary && <span data-group-summary className="ml-3 text-xs font-medium text-neutral-600">{g.summary}</span>}
                         </span>
@@ -541,9 +572,9 @@ export function DataTable<T>({
             {footer && rows.length > 0 && (
               <tfoot ref={totalsStop.attach} data-help="list.totals" data-stale={dim || undefined} className={cn('sticky bottom-0 z-[1] bg-neutral-50 font-medium shadow-[inset_0_1px_0_0_var(--color-neutral-200,#e5e7eb)] transition-opacity', dim && 'opacity-60')}>
                 <tr>
-                  {leadCell && <td className={cn(LEAD, freezeFirst && 'sticky left-0 bg-neutral-50')} />}
-                  {footer.map((f, i) => <td key={i} style={freezeFirst && i === 0 ? { left: frozenLeft } : undefined}
-                    className={cn(cellPad, 'text-neutral-800', freezeFirst && i === 0 && cn('sticky bg-neutral-50', FROZEN_EDGE))}>{f}</td>)}
+                  {leadCell && <td className={cn(LEAD, freezeLead && 'sticky left-0 bg-neutral-50')} />}
+                  {footer.map((f, i) => <td key={i} style={frozenStyle(i)}
+                    className={cn(cellPad, 'text-neutral-800', frozenAt(i) && cn('sticky bg-neutral-50', edgeAt(i) && FROZEN_EDGE))}>{f}</td>)}
                 </tr>
               </tfoot>
             )}

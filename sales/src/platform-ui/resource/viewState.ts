@@ -22,13 +22,20 @@ export interface ViewState {
   hidden: string[]
   /** Auto-refresh every N seconds (absent: off). */
   refresh?: number
+  /** The first N visible columns stay in place while the table scrolls sideways (absent: the page's default). */
+  locked?: number
 }
+
+/** At most this many locked columns (the server's MAX_LOCKED). */
+export const MAX_LOCKED = 3
 
 export interface Layout {
   columns: string[]
   hidden: string[]
   /** Auto-refresh every N seconds (absent: off). */
   refresh?: number
+  /** Locked columns (absent: the page's default). */
+  locked?: number
 }
 
 /** The auto-refresh choices, in seconds (0 = off). */
@@ -40,7 +47,7 @@ export function viewStateOf(spec: QuerySpec, layout: Layout): ViewState {
   return normalizeView({
     version: VIEW_STATE_VERSION, sort: spec.sort ?? [], group: spec.group ?? [], filters: spec.filters ?? [],
     search: spec.search, pageSize: spec.pageSize,
-    columns: layout.columns, hidden: layout.hidden, refresh: layout.refresh,
+    columns: layout.columns, hidden: layout.hidden, refresh: layout.refresh, locked: layout.locked,
   })
 }
 
@@ -52,7 +59,7 @@ export function specOf(view: ViewState): QuerySpec {
 }
 
 export const layoutOf = (view: ViewState): Layout => ({ columns: view.columns, hidden: view.hidden,
-  ...(view.refresh ? { refresh: view.refresh } : {}) })
+  ...(view.refresh ? { refresh: view.refresh } : {}), ...(view.locked !== undefined ? { locked: view.locked } : {}) })
 
 /** Every part present and in one shape, so two states compare as text. */
 export function normalizeView(v: Partial<ViewState>): ViewState {
@@ -67,6 +74,7 @@ export function normalizeView(v: Partial<ViewState>): ViewState {
     columns: v.columns ?? [],
     hidden: v.hidden ?? [],
     ...(v.refresh ? { refresh: v.refresh } : {}),
+    ...(typeof v.locked === 'number' ? { locked: Math.max(0, Math.min(MAX_LOCKED, Math.floor(v.locked))) } : {}),  // 0 is a choice: none
   }
 }
 

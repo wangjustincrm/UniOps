@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowDown, ArrowUp, Eye } from 'lucide-react'
+import { ArrowDown, ArrowUp, Eye, Lock } from 'lucide-react'
 import { Checkbox } from './Checkbox'
 import { Popover } from './Popover'
 import { Input } from './shell'
@@ -10,6 +10,8 @@ export interface ColumnChoice {
   label: string
   /** The group it is listed under (a ColumnGroup id); none: one plain list. */
   group?: string
+  /** Locked: it stays in place while the table scrolls sideways (a 🔒 beside it). */
+  locked?: boolean
 }
 
 export interface ColumnGroup {
@@ -68,7 +70,8 @@ export function ColumnChooser({ columns, hidden, onChange, onMove, groups }: {
     return (
       <li key={c.id} className="flex items-center gap-1 rounded px-1 py-1 hover:bg-neutral-50">
         <Checkbox
-          label={c.label}
+          label={c.locked ? <span className="inline-flex items-center gap-1">{c.label}<Lock aria-label="locked" className="h-3 w-3 text-neutral-400" /></span> : c.label}
+          aria-label={c.label}
           className="min-w-0 flex-1"
           checked={shown}
           disabled={shown && visibleCount === 1}  /* never hide the last column */

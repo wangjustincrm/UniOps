@@ -182,6 +182,22 @@ async function run(name, viewport) {
     check(scrolled > 0 && Math.abs(x1 - x0) < 1, `${name} frozen column: the first column stays while the table scrolls (scrolled ${scrolled}px, x ${x0} → ${x1})`)
     await shot('frozen-column')
     await page.locator('[data-table-scroll]:visible').first().evaluate((el) => { el.scrollLeft = 0 })
+    // Locked columns from a column's menu (user 2026-11-18): up to Customer = 3; on a narrow window only those that fit freeze.
+    await page.getByRole('button', { name: 'Customer column menu' }).first().click()
+    await page.getByRole('menuitem', { name: /Lock columns up to here/ }).click()
+    await page.waitForTimeout(300)
+    check(await page.locator('thead th[data-frozen]:visible').count() === 3, `${name} lock columns: three columns locked from the menu`)
+    await page.setViewportSize({ width: 1024, height: 800 })
+    await page.waitForTimeout(400)
+    const frozenNarrow = await page.locator('thead th[data-frozen]:visible').count()
+    const note = await page.locator('thead th[data-locked="unfrozen"]:visible').first().getAttribute('title').catch(() => null)
+    check(frozenNarrow < 3 && /locked columns frozen: the window is too narrow/.test(note ?? ''),
+      `${name} lock columns: a narrow window freezes only what fits (${frozenNarrow} of 3) and says so`)
+    await shot('locked-narrow')
+    await page.setViewportSize(viewport)
+    await page.getByRole('button', { name: 'Customer column menu' }).first().click()
+    await page.getByRole('menuitem', { name: /Unlock columns/ }).click()
+    await page.waitForTimeout(300)
     const tableTop = async () => (await page.locator('thead:visible').first().boundingBox()).y
     const top0 = await tableTop()
     const dt = await page.evaluateHandle(() => new DataTransfer())

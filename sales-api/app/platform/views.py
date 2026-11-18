@@ -33,7 +33,9 @@ from app.platform.query import MAX_FILTERS, MAX_GROUP_KEYS, MAX_PAGE_SIZE
 
 VIEW_STATE_VERSION = 1
 MAX_VIEWS_PER_LIST = 50
-_STATE_KEYS = {"version", "sort", "group", "filters", "search", "pageSize", "columns", "hidden", "refresh"}
+_STATE_KEYS = {"version", "sort", "group", "filters", "search", "pageSize", "columns", "hidden", "refresh", "locked"}
+# The first N visible columns stay in place while the table scrolls sideways (absent: the page's default).
+MAX_LOCKED = 3
 # Parts a state no longer has: dropped as it is read (a view saved before carries them).
 # includeHistorical: lists show historical rows like any other since 2026-11-12.
 _RETIRED_KEYS = {"includeHistorical"}
@@ -105,6 +107,9 @@ def check_state(state: Any, repo: Any) -> dict[str, Any]:
             raise ValueError("search is text")
         if "refresh" in out and out["refresh"] not in AUTO_REFRESH_SECONDS:
             raise ValueError(f"refresh is one of {', '.join(map(str, AUTO_REFRESH_SECONDS))} seconds")
+        if "locked" in out and (isinstance(out["locked"], bool) or not isinstance(out["locked"], int)
+                                or not 0 <= out["locked"] <= MAX_LOCKED):
+            raise ValueError(f"locked is 0…{MAX_LOCKED} columns")
     except ValueError as e:
         raise InvalidInput("view.bad_state", f"the view's state is not valid: {e}", {"field": "state"}) from e
     missing = (set(sort) - set(repo.sortable)) | (set(group) - set(repo.groupable)) | (set(filters) - set(repo.filterable))

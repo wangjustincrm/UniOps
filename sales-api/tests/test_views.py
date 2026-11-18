@@ -107,6 +107,8 @@ async def test_one_default_per_list_and_a_name_once_whatever_its_case(http):
     ({"version": VIEW_STATE_VERSION, "colour": "red"}, "view.bad_state"),
     ({"version": VIEW_STATE_VERSION, "pageSize": 1000}, "view.bad_state"),
     ({"version": VIEW_STATE_VERSION, "refresh": 7}, "view.bad_state"),
+    ({"version": VIEW_STATE_VERSION, "locked": 4}, "view.bad_state"),      # at most 3 locked columns
+    ({"version": VIEW_STATE_VERSION, "locked": True}, "view.bad_state"),
     ({"version": VIEW_STATE_VERSION, "filters": [{"field": "secret_name", "op": "eq", "value": "x"}]}, "view.unknown_field"),
     ({"version": VIEW_STATE_VERSION, "group": [{"field": "review_reason"}]}, "view.unknown_field"),  # not groupable
 ])
@@ -121,6 +123,14 @@ async def test_a_view_keeps_its_auto_refresh(http):
     r = await new(http, state={"version": VIEW_STATE_VERSION, "refresh": 30})
     assert r.status_code == 201, r.text
     assert r.json()["state"]["refresh"] == 30
+
+
+async def test_a_view_keeps_its_locked_columns(http):
+    """How many first columns stay in place (user 2026-11-18): 0 (none) … 3, saved with the view."""
+    for n in (0, 3):
+        r = await new(http, name=f"locked {n}", state={"version": VIEW_STATE_VERSION, "locked": n})
+        assert r.status_code == 201, r.text
+        assert r.json()["state"]["locked"] == n
 
 
 async def test_a_view_that_no_longer_fits_is_flagged_stale_not_dropped(http):
