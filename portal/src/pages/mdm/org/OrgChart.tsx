@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
+import { ChevronDown, ChevronRight, Minus, Plus, RefreshCw } from 'lucide-react'
 import { PortalPageLayout } from '@/components/layout/PortalPageLayout'
 import { mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useStaffPerm } from '@/pages/mdm/staff/shared'
 import { Combobox, type ComboOption } from './Combobox'
 
-import { Input, Select, Button } from '@uniops/shell'
+import { Button, ChoiceCard, Input, MenuItem, Segmented, Select } from '@uniops/shell'
 type Relation = 'child' | 'assistant'
 type Drop = 'before' | 'after' | 'inside'
 interface Box { id: string; parent_id: string | null; relation: Relation; tone: string | null }
@@ -23,7 +23,8 @@ interface Person extends Box {
 }
 
 const STUB = 18
-const LINE = '#cbd5d5'
+// Connector lines: the Shell's strong hairline token.
+const LINE = 'var(--color-line-strong)'
 const LINES = `
 .org-tree ul { display: flex; justify-content: center; position: relative; padding-top: ${STUB}px; margin: 0; }
 .org-tree > ul { padding-top: 0; }
@@ -56,11 +57,12 @@ const LINES = `
 `
 const MAX_SIDE_BY_SIDE = 4
 const TONES: Record<string, string> = {
-  teal: 'bg-[#E4F3EE] border-[#9CCFBD]',
-  violet: 'bg-[#EEEBFB] border-[#BDB5EC]',
+  teal: 'bg-cat1-soft border-cat1-line',
+  violet: 'bg-cat4-soft border-cat4-line',
   outside: 'bg-surface border-dashed border-line-strong',
 }
-const CARD = 'org-card block w-44 rounded-lg border bg-surface px-2.5 py-2 text-left shadow-sm hover:border-primary-700 transition-colors'
+// Chart nodes are Shell ChoiceCards; `block` + the padding override its tile layout.
+const CARD = 'org-card block w-44 rounded-lg px-2.5 py-2 shadow-sm hover:border-accent'
 
 function childrenOf<T extends Box>(nodes: T[]) {
   const ids = new Set(nodes.map((n) => n.id))
@@ -179,11 +181,10 @@ function AddBox({ withTitle, disabled, onAdd }: {
       <p className="mb-1.5 text-xs text-fg-muted">Add a box</p>
       <div className="flex gap-1">
         {WHERE.map((w) => (
-          <button key={w.key} title={w.title} onClick={() => setWhere(where === w.key ? null : w.key)}
-            className={cn('flex-1 rounded-md border px-1.5 py-1.5 text-xs font-medium',
-              where === w.key ? 'border-primary-700 bg-[#E9F3F3] text-primary-700' : 'border-line text-fg-secondary hover:bg-surface-subtle')}>
+          <ChoiceCard key={w.key} title={w.title} selected={where === w.key} onClick={() => setWhere(where === w.key ? null : w.key)}
+            className={cn('flex-1 items-center rounded-md px-1.5 py-1.5 text-xs font-medium', where === w.key ? 'text-accent-fg' : 'text-fg-secondary')}>
             {w.label}
-          </button>
+          </ChoiceCard>
         ))}
       </div>
       {where && (
@@ -325,34 +326,28 @@ export default function OrgChart() {
       <div className="p-6">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <h1 className="mr-2 text-lg font-semibold text-fg">Org Chart</h1>
-          <div className="flex rounded-lg border border-line bg-surface p-0.5">
-            {(['units', 'people'] as const).map((v) => (
-              <button key={v} onClick={() => { setView(v); setPicked(null) }}
-                className={cn('rounded-md px-3 py-1.5 text-sm font-medium', view === v ? 'bg-primary-700 text-white' : 'text-fg-secondary')}>
-                {v === 'units' ? 'Departments' : 'Reporting Lines'}
-              </button>
-            ))}
-          </div>
+          <Segmented size="md" items={[{ key: 'units' as const, label: 'Departments' }, { key: 'people' as const, label: 'Reporting Lines' }]}
+            value={view} onChange={(v) => { setView(v); setPicked(null) }} />
           {view === 'people' && (
             <div className="relative">
               <Input className="w-60" placeholder="Find a person" value={search} onChange={(e) => setSearch(e.target.value)} />
               {found.length > 0 && (
                 <div className="absolute z-20 mt-1 w-72 rounded-lg border border-line bg-surface py-1 shadow-lg">
                   {found.map((p) => (
-                    <button key={p.id} className="block w-full px-3 py-1.5 text-left text-sm hover:bg-surface-subtle"
+                    <MenuItem key={p.id} className="block py-1.5"
                       onClick={() => { setSearch(''); reveal(p.id) }}>
                       {p.name} <span className="text-xs text-fg-muted">{p.title}</span>
-                    </button>
+                    </MenuItem>
                   ))}
                 </div>
               )}
             </div>
           )}
           <div className="ml-auto flex gap-2">
-            <div className="flex items-center rounded-lg border border-line bg-surface text-sm text-fg-secondary">
-              <button aria-label="Zoom out" className="px-2.5 py-2 hover:text-primary-700" onClick={() => setZoom((z) => Math.max(0.4, z - 0.1))}>−</button>
-              <button className="w-12 py-2 hover:text-primary-700" title="Fit to the page" onClick={() => fit()}>{Math.round(zoom * 100)}%</button>
-              <button aria-label="Zoom in" className="px-2.5 py-2 hover:text-primary-700" onClick={() => setZoom((z) => Math.min(1.2, z + 0.1))}>+</button>
+            <div className="flex items-center rounded-lg border border-line bg-surface">
+              <Button variant="subtle" size="icon" aria-label="Zoom out" onClick={() => setZoom((z) => Math.max(0.4, z - 0.1))}><Minus className="h-4 w-4" /></Button>
+              <Button variant="subtle" size="md" className="w-14 px-0 font-mono tabular-nums" title="Fit to the page" onClick={() => fit()}>{Math.round(zoom * 100)}%</Button>
+              <Button variant="subtle" size="icon" aria-label="Zoom in" onClick={() => setZoom((z) => Math.min(1.2, z + 0.1))}><Plus className="h-4 w-4" /></Button>
             </div>
             {view === 'people' && (
               <>
@@ -387,21 +382,21 @@ export default function OrgChart() {
                   <Tree nodes={units} open={unitsOpen} onToggle={(id) => setOpenUnits(toggle(unitsOpen, id))}
                     onDropOn={editable ? drop('units') : undefined}
                     card={(u) => (
-                      <button onClick={() => setPicked(u.id)} className={cn(CARD, u.tone ? TONES[u.tone] : !u.department_id ? 'bg-[#E9F3F3] border-line' : 'border-line', picked === u.id && '!border-primary-700')}>
+                      <ChoiceCard selected={picked === u.id} onClick={() => setPicked(u.id)} className={cn(CARD, u.tone ? TONES[u.tone] : !u.department_id ? 'bg-accent-soft border-line' : 'border-line bg-surface', picked === u.id && '!border-accent')}>
                         <span className="block truncate text-sm font-medium text-fg">{u.name}</span>
                         <span className="block truncate text-xs text-fg-muted">{u.head_name ?? 'No head'}</span>
                         {u.department_id && <span className="block text-xs text-fg-muted">{u.department_code} · {u.employees} people</span>}
-                      </button>
+                      </ChoiceCard>
                     )} />
                 ) : (
                   <Tree nodes={people} open={peopleOpen} onToggle={(id) => setOpenPeople(toggle(peopleOpen, id))}
                     onDropOn={editable ? drop('nodes') : undefined}
                     card={(p) => (
-                      <button onClick={() => setPicked(p.id)} className={cn(CARD, p.tone ? TONES[p.tone] : p.review ? 'border-warning-line' : 'border-line', picked === p.id && '!border-primary-700')}>
+                      <ChoiceCard selected={picked === p.id} onClick={() => setPicked(p.id)} className={cn(CARD, p.tone ? TONES[p.tone] : p.review ? 'border-warning-line bg-surface' : 'border-line bg-surface', picked === p.id && '!border-accent')}>
                         <span className="block truncate text-sm font-medium text-fg">{p.name}</span>
                         <span className="block truncate text-xs text-fg-muted">{p.title ?? '—'}</span>
                         {p.employee_id && <span className="block truncate text-xs text-fg-muted">{p.adp_department ?? '—'}</span>}
-                      </button>
+                      </ChoiceCard>
                     )} />
                 )}
               </div>

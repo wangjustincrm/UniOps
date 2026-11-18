@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { adminApi, type RefHit } from '@/services/adminApi'
 
-import { Input, Button } from '@uniops/shell'
+import { Button, Input, MenuItem } from '@uniops/shell'
 interface Props {
   system: string
   source: string
@@ -56,8 +56,7 @@ export function ReferencePicker({ system, source, valueLabel, onPick }: Props) {
           <ul className="max-h-64 overflow-y-auto pb-1">
             {hits.map((h) => (
               <li key={h.id}>
-                <button type="button" onClick={() => { onPick(h); setOpen(false) }}
-                  className="block w-full truncate px-3 py-1.5 text-left text-sm hover:bg-primary-50">{h.label}</button>
+                <MenuItem onClick={() => { onPick(h); setOpen(false) }} className="block truncate py-1.5">{h.label}</MenuItem>
               </li>
             ))}
             {hits.length === 0 && <li className="px-3 py-2 text-xs text-fg-muted">No matches</li>}

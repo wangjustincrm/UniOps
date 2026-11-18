@@ -7,6 +7,7 @@ import { PortalPageLayout } from '@/components/layout/PortalPageLayout'
 import { EntityTable } from './data-maintenance/EntityTable'
 import { RecordEditForm } from './data-maintenance/RecordEditForm'
 import { DeleteConfirm } from './data-maintenance/DeleteConfirm'
+import { Button } from '@uniops/shell'
 
 export default function DataMaintenance() {
   const { user } = useAuthStore()
@@ -38,12 +39,13 @@ export default function DataMaintenance() {
 
         {systems.map((sys) => (
           <div key={sys} className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold uppercase text-fg-muted">{sys}</span>
+            <span className="text-xs font-medium text-fg-muted">{sys.toUpperCase()}</span>
             {entities!.filter((e) => e.system === sys).map((e) => (
-              <button key={e.key} onClick={() => setActiveKey(e.key)}
-                className={`rounded-lg px-3 py-1.5 text-sm ${active?.key === e.key ? 'bg-primary-600 text-white' : 'bg-surface-sunken text-fg-secondary hover:bg-surface-strong'}`}>
+              <Button key={e.key} size="sm" variant={active?.key === e.key ? 'primary' : 'subtle'}
+                aria-pressed={active?.key === e.key} onClick={() => setActiveKey(e.key)}
+                className={active?.key === e.key ? undefined : 'bg-surface-sunken'}>
                 {e.label}
-              </button>
+              </Button>
             ))}
           </div>
         ))}

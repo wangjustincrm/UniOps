@@ -1,8 +1,9 @@
+import { X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { adminApi, type RefHit } from '@/services/adminApi'
 
-import { Input, Button } from '@uniops/shell'
+import { Button, Input, MenuItem } from '@uniops/shell'
 export interface RefListItem { id: string; label: string }
 
 interface Props {
@@ -76,7 +77,7 @@ export function ReferenceListPicker({ system, source, value, onChange }: Props) 
               <span className="min-w-0 flex-1 truncate text-xs" title={v.label}>{v.label}</span>
               <Button variant="danger-ghost" size="xs" type="button" onClick={() => remove(v.id)}
                 className="shrink-0"
-                aria-label={`Remove ${v.label}`}>✕</Button>
+                aria-label={`Remove ${v.label}`}><X className="h-3 w-3" /></Button>
             </li>
           ))}
         </ul>
@@ -99,10 +100,10 @@ export function ReferenceListPicker({ system, source, value, onChange }: Props) 
               const already = value.some((v) => v.id === h.id)
               return (
                 <li key={h.id}>
-                  <button type="button" disabled={already} onClick={() => add(h)}
-                    className="block w-full truncate px-3 py-1.5 text-left text-xs hover:bg-primary-50 disabled:cursor-default disabled:bg-surface-subtle disabled:text-fg-muted">
+                  <MenuItem disabled={already} onClick={() => add(h)}
+                    className="block truncate py-1.5 text-xs disabled:cursor-default disabled:bg-surface-subtle disabled:text-fg-muted disabled:opacity-100">
                     {h.label}{already && ' · already linked'}
-                  </button>
+                  </MenuItem>
                 </li>
               )
             })}

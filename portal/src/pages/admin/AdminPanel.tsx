@@ -1,14 +1,8 @@
 import { useEffect, useState, useRef } from 'react'
-import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  Building2, ShieldCheck, CreditCard, Bell,
-  Plus, Pencil, Trash2, X, Check, Eye, EyeOff, Search,
-  CheckCircle2, AlertCircle, Loader2, ArrowLeft,
-  Download, Upload, ChevronLeft, ChevronRight, FileText,
-  Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail, DatabaseZap, Warehouse,
-} from 'lucide-react'
-import { SortTh, useSort, useSortableRows, sortParams, type Sort, Checkbox, FileInput, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
+import { Building2, ShieldCheck, CreditCard, Bell, Plus, Pencil, Trash2, X, Check, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, Download, Upload, ChevronLeft, ChevronRight, FileText, Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail, DatabaseZap, Warehouse } from 'lucide-react'
+import { Button, Checkbox, ChoiceCard, FileInput, Input, Modal as ShellModal, SearchInput, Segmented, Select, Sidebar, SortTh, Switch, TBody, THead, Table, Tabs, Td, Textarea as ShellTextarea, Th, Topbar, Tr, sortParams, type Sort, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { adminPageLinks } from '@/components/layout/navConfig'
@@ -140,19 +134,12 @@ function Field({ label, children, hint }: { label: string; children: React.React
     </div>
   )
 }
-function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={cn('w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-200', className)} {...props} />
-}
+// The panel's form controls are the Shell's; these keep the old local names.
 function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={cn('w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400 resize-none', className)} {...props} />
+  return <ShellTextarea className={cn('resize-none', className)} {...props} />
 }
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button type="button" onClick={() => onChange(!checked)}
-      className={cn('relative inline-flex h-5 w-9 items-center rounded-full transition-colors', checked ? 'bg-primary-600' : 'bg-surface-strong')}>
-      <span className={cn('inline-block h-3.5 w-3.5 rounded-full bg-surface shadow transition-transform', checked ? 'translate-x-4.5' : 'translate-x-0.5')} />
-    </button>
-  )
+  return <Switch size="sm" checked={checked} onCheckedChange={onChange} />
 }
 function SaveButton({ loading }: { loading: boolean }) {
   return (
@@ -695,11 +682,10 @@ export function UserManagement() {
       {/* Toolbar */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {/* Search */}
-        <div className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 flex-1 min-w-[180px] max-w-xs">
-          <Search className="h-4 w-4 text-fg-muted shrink-0" />
-          <input className="flex-1 text-sm focus:outline-none" placeholder="Search name or email…"
-            value={search} onChange={(e) => handleSearch(e.target.value)} />
-          {search && <Button aria-label="Clear search" variant="subtle" size="icon-xs" onClick={() => handleSearch('')}><X className="h-3.5 w-3.5" /></Button>}
+        <div className="relative min-w-[180px] max-w-xs flex-1">
+          <SearchInput placeholder="Search name or email…" aria-label="Search name or email"
+            value={search} onChange={(e) => handleSearch(e.target.value)} className="[&>input]:pr-9" />
+          {search && <Button aria-label="Clear search" variant="subtle" size="icon-xs" className="absolute right-1.5 top-1/2 -translate-y-1/2" onClick={() => handleSearch('')}><X className="h-3.5 w-3.5" /></Button>}
         </div>
 
         {/* Role filter */}
@@ -844,11 +830,11 @@ export function UserManagement() {
                 .map((p, i) =>
                   p === '…'
                     ? <span key={`e${i}`} className="px-1 text-xs text-fg-muted">…</span>
-                    : <button key={p} onClick={() => setPage(p as number)}
-                        className={cn('h-7 min-w-[28px] rounded border px-2 text-xs transition-colors',
-                          page === p ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium' : 'border-line text-fg-secondary hover:bg-surface-subtle')}>
+                    : <Button key={p} size="xs" variant={page === p ? 'primary' : 'secondary'}
+                        aria-current={page === p ? 'page' : undefined}
+                        onClick={() => setPage(p as number)} className="min-w-7 px-2">
                         {p}
-                      </button>
+                      </Button>
                 )}
               <Button aria-label="Next page" variant="secondary" size="icon-xs"
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
@@ -986,10 +972,10 @@ function CurrencySettings() {
           {allCurrencies.map((c) => {
             const on = currEnabled.includes(c)
             return (
-              <button key={c} type="button" onClick={() => toggleEnabled(c)}
-                className={cn('rounded-lg border px-3 py-2 text-sm font-mono font-medium transition-colors', on ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-line text-fg-muted hover:bg-surface-subtle')}>
+              <ChoiceCard key={c} selected={on} onClick={() => toggleEnabled(c)}
+                className="items-center rounded-lg px-3 py-2 font-mono text-sm font-medium">
                 {c}
-              </button>
+              </ChoiceCard>
             )
           })}
         </div>
@@ -1167,10 +1153,10 @@ function NotificationSettings() {
       <Field label="Default Notification Channel">
         <div className="grid grid-cols-2 gap-2 mt-1">
           {CHANNELS.map(({ value, label }) => (
-            <button key={value} type="button" onClick={() => setChannel(value)}
-              className={cn('rounded-lg border px-3 py-2.5 text-sm text-left transition-colors', channelVal === value ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium' : 'border-line text-fg-secondary hover:bg-surface-subtle')}>
+            <ChoiceCard key={value} selected={channelVal === value} onClick={() => setChannel(value)}
+              className={cn('rounded-lg px-3 py-2.5 text-sm', channelVal === value && 'font-medium text-accent-fg')}>
               {label}
-            </button>
+            </ChoiceCard>
           ))}
         </div>
       </Field>
@@ -1515,7 +1501,7 @@ function RemittanceSettings() {
 
       <div className="rounded-lg border border-line bg-surface-subtle p-4">
         <p className="text-sm font-semibold text-fg-secondary mb-3">Preview (sample data — the payment table is added automatically)</p>
-        <div className="rounded-lg border border-line bg-surface p-5 font-sans text-[#222]">
+        <div className="rounded-lg border border-line bg-surface p-5 font-sans text-fg">
           {tplShowLogoVal && cfg?.logo_data_url && (
             <img src={cfg.logo_data_url} alt="" className="mb-3 max-h-12" />
           )}
@@ -1794,26 +1780,19 @@ function ApprovalWorkflows() {
       </div>
 
       {/* Action key tabs */}
-      <div className="flex flex-wrap gap-1 rounded-xl bg-surface-sunken p-1">
-        {ACTION_KEYS.map(key => (
-          <button
-            key={key}
-            onClick={() => setActiveKey(key)}
-            className={cn(
-              'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
-              activeKey === key
-                ? 'bg-surface text-fg shadow-sm'
-                : 'text-fg-muted hover:text-fg-secondary',
-            )}
-          >
-            {key === 'pa_dir'      ? 'PA-DIR'
-              : key === 'pa_frt'    ? 'Freight PA'
-              : key === 'vms_visit' ? 'VMS Visit'
-              : key === 'posign'    ? 'PO Sign-off'
-              : key.toUpperCase()}
-          </button>
-        ))}
-      </div>
+      <Segmented<ActionKey>
+        className="flex-wrap"
+        items={ACTION_KEYS.map(key => ({
+          key,
+          label: key === 'pa_dir'      ? 'PA-DIR'
+          : key === 'pa_frt'    ? 'Freight PA'
+          : key === 'vms_visit' ? 'VMS Visit'
+          : key === 'posign'    ? 'PO Sign-off'
+          : key.toUpperCase(),
+        }))}
+        value={activeKey}
+        onChange={setActiveKey}
+      />
 
       {/* Step list */}
       <div className="flex flex-col gap-2">
@@ -1839,11 +1818,13 @@ function ApprovalWorkflows() {
               {i + 1}
             </span>
 
-            <input
+            <Input
+              inputSize="sm"
               value={step.label}
               onChange={e => updateStep(i, { label: e.target.value })}
               placeholder="Step label…"
-              className="flex-1 min-w-0 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary-700"
+              aria-label={`Step ${i + 1} label`}
+              className="min-w-0 flex-1"
             />
 
             <Select selectSize="sm"
@@ -2053,15 +2034,12 @@ function ErpMdmSection() {
   return (
     <div>
       <SectionHeader title="ERP MDM" description="Mirror of ERP master data. Sync manually, then import into Users/Vendors or use in PR Type 1." />
-      <div className="mb-4 flex gap-1 border-b border-line">
-        {(['material','supplier','person'] as ErpKind[]).map(k => (
-          <button key={k} onClick={() => setTab(k)}
-            className={cn('px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
-              tab === k ? 'border-primary-700 text-primary-700' : 'border-transparent text-fg-muted hover:text-fg-secondary')}>
-            {k === 'material' ? 'Materials' : k === 'supplier' ? 'Suppliers' : 'Persons'}
-          </button>
-        ))}
-      </div>
+      <Tabs<ErpKind>
+        className="mb-4"
+        items={[{ key: 'material', label: 'Materials' }, { key: 'supplier', label: 'Suppliers' }, { key: 'person', label: 'Persons' }]}
+        value={tab}
+        onChange={setTab}
+      />
       {tab === 'material' && <ErpMaterialsTab />}
       {tab === 'supplier' && <ErpSuppliersTab />}
       {tab === 'person'   && <ErpPersonsTab />}
@@ -2126,11 +2104,8 @@ function ErpSyncToolbar({ kind, onSearchChange, search, filters }: {
           {syncing === 'full' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           Full Resync
         </Button>
-        <div className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 ml-auto flex-1 min-w-[180px] max-w-xs">
-          <Search className="h-4 w-4 text-fg-muted shrink-0" />
-          <input className="flex-1 text-sm focus:outline-none" placeholder="Search…"
-            value={search} onChange={(e) => onSearchChange(e.target.value)} />
-        </div>
+        <SearchInput placeholder="Search…" aria-label="Search" className="ml-auto min-w-[180px] max-w-xs flex-1"
+          value={search} onChange={(e) => onSearchChange(e.target.value)} />
         {filters}
       </div>
       {toast && <div className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-fg">{toast}</div>}
@@ -2508,8 +2483,8 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
         <>
           <div className="border-b border-line px-4 py-3 space-y-2">
             <div className="flex items-center gap-2">
-              <input className="flex-1 rounded-lg border border-line px-3 py-2 text-sm"
-                placeholder="Search code or name…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
+              <SearchInput className="flex-1" placeholder="Search code or name…" aria-label="Search code or name"
+                value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
               <label className="flex items-center gap-1 text-xs text-fg-secondary">
                 <Checkbox checked={excludeImported} onChange={e => { setExcludeImported(e.target.checked); setPage(1) }} />
                 Only show not-imported
@@ -2525,9 +2500,9 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
                   <THead>
                     <Tr>
                       <Th></Th>
-                      <SortTh label="Code" sortKey="erp_person_code" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted" />
-                      <SortTh label="Name" sortKey="person_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted" />
-                      <SortTh label="Dept" sortKey="department_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-fg-muted" />
+                      <SortTh label="Code" sortKey="erp_person_code" sort={sort} onSort={onSort} className="px-2 py-2" />
+                      <SortTh label="Name" sortKey="person_name" sort={sort} onSort={onSort} className="px-2 py-2" />
+                      <SortTh label="Dept" sortKey="department_name" sort={sort} onSort={onSort} className="px-2 py-2" />
                       <Th>Email *</Th>
                     </Tr>
                   </THead>
@@ -2541,12 +2516,14 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
                           <Td>{p.person_name}</Td>
                           <Td className="text-xs text-fg-muted">{p.department_name}</Td>
                           <Td>
-                            <input
+                            <Input
+                              inputSize="sm"
                               disabled={!isSel}
                               placeholder="email@royalmilk.com"
+                              aria-label={`Email for ${p.person_name}`}
                               value={selected[p.erp_person_code]?.email || ''}
                               onChange={e => setSelected(prev => ({ ...prev, [p.erp_person_code]: { email: e.target.value } }))}
-                              className="w-full rounded border border-line px-2 py-1 text-xs disabled:bg-surface-subtle"
+                              className="text-xs"
                             />
                           </Td>
                         </Tr>
@@ -2622,10 +2599,12 @@ export default function AdminPanel() {
   // ?section=<key> makes each panel deep-linkable — the NC sync error tasks in
   // the Task Inbox link straight to /admin?section=nc_sync. An unknown or absent
   // key falls back to the default panel.
-  const [section, setSection] = useState(() => {
-    const wanted = new URLSearchParams(window.location.search).get('section')
-    return wanted && SECTIONS.some((s) => s.key === wanted) ? wanted : 'company'
-  })
+  // Read from the URL on every render (not just the first), so the sidebar's
+  // section links, deep links and back/forward all agree.
+  const [params] = useSearchParams()
+  const wanted = params.get('section')
+  const section = wanted && SECTIONS.some((s) => s.key === wanted) ? wanted : 'company'
+  const [mobileOpen, setMobileOpen] = useState(false)
   // Above the early return (Rules of Hooks).
   const perms = useRolePermissions().data?.permissions
 
@@ -2640,84 +2619,40 @@ export default function AdminPanel() {
   const currentSection = SECTIONS.find((s) => s.key === section)
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#F5F6FA]">
+    <div className="flex h-screen overflow-hidden bg-canvas">
+      {/* Shell Sidebar: the panel's sections, then the admin pages that live
+          outside it (ISS-0027), and Back to Portal. */}
+      <Sidebar
+        brand={{ name: 'UniOps', tagline: 'Admin Panel' }}
+        brandHref="/"
+        portalUrl="/"
+        mobileOpen={mobileOpen}
+        onMobileClose={() => setMobileOpen(false)}
+        sections={[
+          {
+            items: SECTIONS.map(({ key, label, icon: Icon }) => ({
+              label, href: `/admin?section=${key}`, icon: <Icon />, active: section === key,
+            })),
+          },
+          {
+            title: 'More admin pages',
+            items: otherPages.map(({ label, icon: Icon, href }) => ({
+              label, href: href.slice('portal:'.length), icon: <Icon />, active: false,
+            })),
+          },
+        ]}
+      />
 
-      {/* ── Teal sidebar — matches Portal main nav style ─────────────── */}
-      <nav className="w-56 shrink-0 flex flex-col bg-primary-700 overflow-hidden">
-        {/* Brand */}
-        <div className="flex h-[60px] items-center gap-2.5 border-b border-white/10 px-4 shrink-0">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white font-semibold text-sm select-none">
-            U
-          </div>
-          <div className="leading-tight min-w-0">
-            <p className="text-sm font-semibold text-white tracking-tight">UniOps</p>
-            <p className="text-2xs font-semibold text-white/50">Admin Panel</p>
-          </div>
-        </div>
-
-        {/* Back to Portal */}
-        <div className="px-2 pt-3 pb-2 border-b border-white/10 shrink-0">
-          <a
-            href="/"
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-white/65 hover:bg-white/10 hover:text-white transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4 shrink-0" />
-            Back to Portal
-          </a>
-        </div>
-
-        {/* Section nav. No scrollbar of its own (ISS-0182): Chrome on Windows
-            gives it ~15px, narrowing the menu out of line with "Back to Portal"
-            above; it still scrolls with wheel, touchpad and keyboard. */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {SECTIONS.map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              onClick={() => setSection(key)}
-              className={cn(
-                'flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors text-left',
-                section === key
-                  ? 'bg-white/20 text-white font-medium'
-                  : 'text-white/65 hover:bg-white/10 hover:text-white',
-              )}
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {label}
-            </button>
-          ))}
-
-          {otherPages.length > 0 && (
-            <div className="mt-3 border-t border-white/10 pt-3 space-y-0.5">
-              <p className="px-3 pb-1 text-2xs font-semibold text-white/40">
-                More admin pages
-              </p>
-              {otherPages.map(({ label, icon: Icon, href }) => (
-                <Link
-                  key={href}
-                  to={href.slice('portal:'.length)}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm text-white/65 hover:bg-white/10 hover:text-white transition-colors"
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {label}
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      </nav>
-
-      {/* ── Main content area ─────────────────────────────────────────── */}
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-
-        {/* Header */}
-        <header className="flex h-[60px] shrink-0 items-center gap-3 border-b border-line bg-surface px-6">
-          {currentSection && (
+        <Topbar
+          onMobileMenu={() => setMobileOpen((v) => !v)}
+          start={currentSection && (
             <div className="flex items-center gap-2">
-              <currentSection.icon className="h-4 w-4 text-fg-muted shrink-0" />
+              <currentSection.icon className="h-4 w-4 shrink-0 text-fg-muted" />
               <h1 className="text-sm font-semibold text-fg">{currentSection.label}</h1>
             </div>
           )}
-        </header>
+        />
 
         {/* Scrollable content — no max-width cap so wide sections (User Management) expand fully */}
         <main className="flex-1 overflow-y-auto p-6">

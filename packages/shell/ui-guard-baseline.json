@@ -32,10 +32,8 @@
    "arbitrary-size": 1
   },
   "portal": {
-   "raw-color": 12,
-   "raw-control": 39,
-   "shouting-type": 8,
-   "emoji": 1
+   "raw-control": 1,
+   "raw-color": 1
   },
   "vms": {
    "raw-color": 3,
@@ -369,65 +367,9 @@
    "raw-control": 2,
    "raw-overlay": 1
   },
-  "portal/src/pages/ForcePasswordChangePage.tsx": {
-   "raw-color": 1
-  },
-  "portal/src/pages/admin/AccessControl.tsx": {
-   "raw-control": 2
-  },
   "portal/src/pages/admin/AdminPanel.tsx": {
-   "raw-control": 15,
-   "raw-color": 3,
-   "shouting-type": 3
-  },
-  "portal/src/pages/admin/ApprovalDelegation.tsx": {
-   "raw-control": 1
-  },
-  "portal/src/pages/admin/DataMaintenance.tsx": {
-   "raw-control": 1,
-   "shouting-type": 1
-  },
-  "portal/src/pages/admin/NcPurchaseSyncSection.tsx": {
-   "raw-control": 1
-  },
-  "portal/src/pages/admin/UnitsOfMeasure.tsx": {
-   "raw-control": 1
-  },
-  "portal/src/pages/admin/WmsSyncSection.tsx": {
-   "raw-control": 2
-  },
-  "portal/src/pages/admin/data-maintenance/EntityTable.tsx": {
-   "shouting-type": 1
-  },
-  "portal/src/pages/admin/data-maintenance/LineItemsEditor.tsx": {
-   "raw-control": 1
-  },
-  "portal/src/pages/admin/data-maintenance/ReferenceListPicker.tsx": {
-   "raw-control": 1,
-   "emoji": 1
-  },
-  "portal/src/pages/admin/data-maintenance/ReferencePicker.tsx": {
-   "raw-control": 1
-  },
-  "portal/src/pages/admin/data-maintenance/cascadeDisplay.tsx": {
-   "shouting-type": 3
-  },
-  "portal/src/pages/admin/nc-sync/NcSyncSection.tsx": {
-   "raw-control": 2
-  },
-  "portal/src/pages/admin/nc-sync/ScheduleCard.tsx": {
-   "raw-control": 1
-  },
-  "portal/src/pages/mdm/org/Combobox.tsx": {
    "raw-control": 1,
    "raw-color": 1
-  },
-  "portal/src/pages/mdm/org/OrgChart.tsx": {
-   "raw-control": 8,
-   "raw-color": 7
-  },
-  "portal/src/pages/mdm/staff/StaffNcTodo.tsx": {
-   "raw-control": 1
   },
   "vms/src/components/BadgePreview.tsx": {
    "raw-color": 1,

@@ -105,8 +105,10 @@ export interface TabItem<K extends string = string> {
 }
 
 /** Underline tabs for switching views on one page. */
+// K is inferred from `value` only (items are NoInfer): otherwise an items array
+// built with .map() widens K to string and a typed setState no longer fits onChange.
 export function Tabs<K extends string>({ items, value, onChange, className }: {
-  items: TabItem<K>[]; value: K; onChange: (k: K) => void; className?: string
+  items: TabItem<NoInfer<K>>[]; value: K; onChange: (k: NoInfer<K>) => void; className?: string
 }) {
   return (
     <div role="tablist" className={cn('flex gap-1 overflow-x-auto border-b border-line', className)}>
@@ -140,7 +142,7 @@ export function Tabs<K extends string>({ items, value, onChange, className }: {
 
 /** Pill-free segmented control for 2–4 options (filters, modes). */
 export function Segmented<K extends string>({ items, value, onChange, className, size = 'sm' }: {
-  items: Array<{ key: K; label: React.ReactNode }>; value: K; onChange: (k: K) => void; className?: string; size?: 'sm' | 'md'
+  items: Array<{ key: NoInfer<K>; label: React.ReactNode }>; value: K; onChange: (k: NoInfer<K>) => void; className?: string; size?: 'sm' | 'md'
 }) {
   return (
     <div role="radiogroup" className={cn('inline-flex rounded-lg border border-line bg-surface-subtle p-0.5', className)}>
@@ -169,9 +171,9 @@ export function Segmented<K extends string>({ items, value, onChange, className,
 
 /** Single-select filter chips that wrap (status filters, date presets). */
 export function ChipGroup<K extends string>({ items, value, onChange, className, label }: {
-  items: Array<{ key: K; label: React.ReactNode; count?: number }>
+  items: Array<{ key: NoInfer<K>; label: React.ReactNode; count?: number }>
   value: K
-  onChange: (k: K) => void
+  onChange: (k: NoInfer<K>) => void
   className?: string
   /** Accessible name for the group, e.g. "Status". */
   label?: string

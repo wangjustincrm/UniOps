@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateActio
 import { createPortal } from 'react-dom'
 import { AlertCircle, ChevronDown, Loader2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Badge, Button, FormField, Input, SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
+import { Badge, Button, FormField, Input, MenuItem, SortTh, TBody, THead, Table, Td, Th, Tr, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi } from '@/lib/api'
 import { adminApi, type DelegationCreate, type DelegationOut, type DelegationUpdate } from '@/services/adminApi'
@@ -179,13 +179,12 @@ function UserCombobox({ users, value, onChange, placeholder }: UserComboboxProps
           <ul className="max-h-64 overflow-y-auto pb-1">
             {filtered.map((u) => (
               <li key={u.id}>
-                <button
-                  type="button"
+                <MenuItem
                   onClick={() => { onChange(u.id); setOpen(false); setQ('') }}
-                  className="block w-full truncate px-3 py-1.5 text-left text-sm hover:bg-primary-50"
+                  className="block truncate py-1.5"
                 >
                   {userLabel(u)}
-                </button>
+                </MenuItem>
               </li>
             ))}
             {filtered.length === 0 && <li className="px-3 py-2 text-xs text-fg-muted">No matches</li>}

@@ -12,9 +12,9 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Clock, Loader2 } from 'lucide-react'
 import { epmsApi, financeApi, mdmApi } from '@/lib/api'
-import { cn, formatDateTime } from '@/lib/utils'
+import { formatDateTime } from '@/lib/utils'
 
-import { Checkbox, Input, Select } from '@uniops/shell'
+import { Button, Checkbox, Input, Select } from '@uniops/shell'
 export interface ScheduleState {
   interval_minutes: number
   next_due_at: string | null
@@ -158,13 +158,11 @@ export function ScheduleCard({ endpoint, title, maxMinutes = DEFAULT_MAX_MINUTES
           <option value="hours">Hours</option>
         </Select>
 
-        <button type="button" disabled={save.isPending}
-                onClick={() => { if (!save.isPending) save.mutate() }}
-                className={cn('ml-auto flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2',
-                              'text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50')}>
+        <Button type="button" size="md" disabled={save.isPending} className="ml-auto"
+                onClick={() => { if (!save.isPending) save.mutate() }}>
           {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
           Save
-        </button>
+        </Button>
       </div>
 
       <div className="mt-3 border-t border-line-subtle pt-3 text-xs text-fg-muted">

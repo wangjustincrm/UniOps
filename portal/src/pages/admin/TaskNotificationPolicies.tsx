@@ -112,11 +112,9 @@ export function TaskNotificationPolicies() {
                         <>
                           <Td>
                             <Checkbox
-                             
                               aria-label={`Email for ${p.label}`}
                               checked={c.email}
                               onChange={(e) => set(p, { email: e.target.checked })}
-                              className="accent-[#085E5E]"
                             />
                           </Td>
                           <Td>

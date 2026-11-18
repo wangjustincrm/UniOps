@@ -16,6 +16,15 @@ describe('Sidebar', () => {
     expect(screen.getByRole('link', { name: 'Home' })).not.toHaveAttribute('target')
   })
 
+  it('in-app items with `active` mark only that one current, whatever the path', () => {
+    render(<MemoryRouter initialEntries={['/admin?section=b']}><Sidebar brand={brand} sections={[{ items: [
+      { label: 'A', href: '/admin?section=a', active: false },
+      { label: 'B', href: '/admin?section=b', active: true },
+    ] }]} /></MemoryRouter>)
+    expect(screen.getByRole('link', { name: 'B' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'A' })).not.toHaveAttribute('aria-current')
+  })
+
   it('a collapsible group opens by itself when it holds the active item, and toggles', () => {
     const icon = <svg />
     const { rerender } = render(<MemoryRouter><Sidebar brand={brand} sections={[

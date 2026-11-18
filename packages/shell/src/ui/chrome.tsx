@@ -120,6 +120,16 @@ export function Sidebar({ brand, sections, collapsed, onToggleCollapse, mobileOp
         </a>
       )
     }
+    // An app-tracked current item (e.g. /admin?section=x, where every link shares
+    // one path) must not let NavLink's path match mark them all aria-current.
+    if (item.active !== undefined) {
+      return (
+        <Link key={item.href} to={item.href} title={collapsed ? item.label : undefined} onClick={onMobileClose}
+          aria-current={item.active ? 'page' : undefined} className={cls(item.active)}>
+          {content(item.active)}
+        </Link>
+      )
+    }
     return (
       <NavLink key={item.href} to={item.href} title={collapsed ? item.label : undefined} onClick={onMobileClose}
         className={({ isActive: a }) => cls(isActive(item, a))}>

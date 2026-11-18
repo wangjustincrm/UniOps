@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import type { ChildSchema } from '@/services/adminApi'
 
-import { Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Button, Input, Select, TBody, TFoot, THead, Table, Td, Th, Tr } from '@uniops/shell'
 export interface LineRow { id?: string; [k: string]: unknown }
 
 interface Props {
@@ -68,8 +68,7 @@ export function LineItemsEditor({ child, rows, onChange }: Props) {
                 ))}
                 <Td className="tabular-nums">{lineTotal(r).toFixed(2)}</Td>
                 <Td>
-                  <button type="button" onClick={() => delRow(i)}
-                    className="rounded px-2 py-1 text-xs text-danger-fg hover:bg-danger-soft">Delete</button>
+                  <Button type="button" variant="danger-ghost" size="xs" onClick={() => delRow(i)}>Delete</Button>
                 </Td>
               </Tr>
             ))}

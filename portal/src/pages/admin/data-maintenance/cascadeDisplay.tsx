@@ -67,7 +67,7 @@ export function CascadeBreakdown({ parts, removedLabel }: {
     <div className="space-y-3">
       {parts.blocked.length > 0 && (
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase text-danger-fg">Blocked</p>
+          <p className="mb-1 text-xs font-medium text-danger-fg">Blocked</p>
           <Rows entries={parts.blocked} labels={BLOCKED_LABELS} tone="text-danger-fg" />
           <p className="mt-1 text-xs text-fg-muted">
             Resolve this first — deleting would pull the evidence out from under it.
@@ -76,13 +76,13 @@ export function CascadeBreakdown({ parts, removedLabel }: {
       )}
       {parts.removed.length > 0 && (
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase text-fg-muted">{removedLabel}</p>
+          <p className="mb-1 text-xs font-medium text-fg-muted">{removedLabel}</p>
           <Rows entries={parts.removed} tone="text-danger-fg" />
         </div>
       )}
       {parts.kept.length > 0 && (
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase text-fg-muted">Changed, not deleted</p>
+          <p className="mb-1 text-xs font-medium text-fg-muted">Changed, not deleted</p>
           <Rows entries={parts.kept} labels={KEPT_LABELS} tone="text-fg-secondary" />
         </div>
       )}

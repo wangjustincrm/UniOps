@@ -24,10 +24,8 @@ import { AlertTriangle, Loader2, RefreshCw, Warehouse } from 'lucide-react'
 import { mrpApi } from '@/lib/api'
 import { formatDateTime } from '@/lib/utils'
 
-import { Input } from '@uniops/shell'
+import { Input, Button } from '@uniops/shell'
 const inputCls = 'h-9 w-24 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50'
 
 const INTERVAL_KEY = 'wms_sync_interval_minutes'
 const MAX_INTERVAL_MINUTES = 1440
@@ -195,17 +193,17 @@ export function WmsSyncSection() {
             className={inputCls}
           />
         </label>
-        <button type="button" className={primaryBtn} onClick={saveInterval} disabled={saving}>
+        <Button size="md" type="button" onClick={saveInterval} disabled={saving}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Warehouse className="h-4 w-4" />}
           Save
-        </button>
-        <button type="button" className={secondaryBtn} onClick={syncNow}
+        </Button>
+        <Button variant="secondary" size="md" type="button" onClick={syncNow}
                 disabled={syncing || status?.running || status?.configured === false}>
           {syncing || status?.running
             ? <Loader2 className="h-4 w-4 animate-spin" />
             : <RefreshCw className="h-4 w-4" />}
           Sync now
-        </button>
+        </Button>
       </div>
 
       <p className="mt-2 text-xs text-fg-muted">

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, RefreshCw } from 'lucide-react'
-import { Pagination, SortTh, sortParams, useSort, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Button, Checkbox, Input, Pagination, Segmented, Select, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, useSort } from '@uniops/shell'
 import { mdmApi, mdmDownload } from '@/lib/api'
 import { formatDate, cn } from '@/lib/utils'
 import {
@@ -78,14 +78,8 @@ export default function StaffNcTodo() {
   return (
     <StaffShell permission="employee.view">
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="flex rounded-lg border border-line bg-surface p-0.5">
-          {(['todos', 'report'] as const).map((v) => (
-            <button key={v} onClick={() => setView(v)}
-              className={cn('rounded-md px-3 py-1.5 text-sm font-medium', view === v ? 'bg-primary-700 text-white' : 'text-fg-secondary')}>
-              {v === 'todos' ? 'To-dos' : 'Reconciliation'}
-            </button>
-          ))}
-        </div>
+        <Segmented size="md" items={[{ key: 'todos' as const, label: 'To-dos' }, { key: 'report' as const, label: 'Reconciliation' }]}
+          value={view} onChange={setView} />
         <span className="text-xs text-fg-muted">
           {report?.ran_at ? `NC last read ${formatDate(report.ran_at)}` : 'NC has not been read yet'}
         </span>

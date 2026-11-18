@@ -13,7 +13,6 @@ import { cn, formatDate, formatDateTime } from '@/lib/utils'
 
 import { Input, Radio, Button } from '@uniops/shell'
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
 
 const FULL_CONFIRM = 'FULL RELOAD'
 
@@ -269,10 +268,10 @@ export function NcPurchaseSyncSection() {
                 {err && <div className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{err}</div>}
 
                 <div className="flex justify-end border-t border-line-subtle pt-3">
-                  <button onClick={start} disabled={!canStart} className={primaryBtn}>
+                  <Button size="md" onClick={start} disabled={!canStart}>
                     {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <DatabaseZap className="h-4 w-4" />}
                     Start Sync
-                  </button>
+                  </Button>
                 </div>
               </>
             )}

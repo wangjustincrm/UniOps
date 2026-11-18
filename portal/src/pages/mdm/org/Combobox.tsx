@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
-import { cn } from '@/lib/utils'
 
-import { Input, Button } from '@uniops/shell'
+import { Button, Input, MenuItem } from '@uniops/shell'
 export interface ComboOption { value: string; label: string; hint?: string | null; search?: string }
 
 /** Type-to-search picker over a list the page already holds. Portalled so the panel's edge does not clip it. */
@@ -59,11 +58,10 @@ export function Combobox({ options, value, onChange, disabled, label, placeholde
           <ul className="max-h-72 overflow-y-auto pb-1">
             {filtered.map((o) => (
               <li key={o.value}>
-                <button type="button" onClick={() => pick(o.value)}
-                  className={cn('block w-full px-3 py-1.5 text-left text-sm hover:bg-surface-subtle', o.value === value && 'bg-[#E9F3F3]')}>
+                <MenuItem active={o.value === value} onClick={() => pick(o.value)} className="block py-1.5">
                   <span className="block truncate text-fg">{o.label}</span>
                   {o.hint && <span className="block truncate text-xs text-fg-muted">{o.hint}</span>}
-                </button>
+                </MenuItem>
               </li>
             ))}
             {filtered.length === 0 && <li className="px-3 py-2 text-sm text-fg-muted">No match</li>}

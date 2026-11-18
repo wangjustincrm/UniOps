@@ -17,10 +17,9 @@ import { cn, formatDateTime } from '@/lib/utils'
 import { NcPurchaseSyncSection } from '../NcPurchaseSyncSection'
 import { ScheduleCard, type ScheduleEndpoint } from './ScheduleCard'
 
-import { Input, Radio } from '@uniops/shell'
+import { Button, Input, Radio, Tabs } from '@uniops/shell'
 const FULL_CONFIRM = 'FULL RELOAD'
 const inputCls = 'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50'
 
 type Tab = 'purchase' | 'jv' | 'mdm'
 
@@ -168,10 +167,10 @@ function JvManualSync() {
           )}
           {err && <div className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-fg">{err}</div>}
           <div className="flex justify-end border-t border-line-subtle pt-3">
-            <button onClick={start} disabled={!canStart} className={primaryBtn}>
+            <Button size="md" onClick={start} disabled={!canStart}>
               {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <DatabaseZap className="h-4 w-4" />}
               Start Sync
-            </button>
+            </Button>
           </div>
         </>
       )}
@@ -191,17 +190,7 @@ export function NcSyncSection() {
         </p>
       </div>
 
-      <div className="mb-4 flex gap-1 border-b border-line">
-        {TABS.map((t) => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            className={cn('-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-              tab === t.key
-                ? 'border-primary-700 text-primary-700'
-                : 'border-transparent text-fg-muted hover:text-fg-secondary')}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs className="mb-4" items={TABS.map((t) => ({ key: t.key, label: t.label }))} value={tab} onChange={setTab} />
 
       {tab === 'purchase' && (
         <div className="max-w-lg space-y-4">

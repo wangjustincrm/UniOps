@@ -134,7 +134,7 @@ export function EntityTable({ schema, onEdit, onDelete }: Props) {
               )}
               {cols.map((c) => sortable.has(c) ? (
                 <SortTh key={c} label={columnLabel(c)} sortKey={c} sort={sort} onSort={onSort}
-                  className="px-3 py-2 text-left text-xs font-semibold uppercase text-fg-muted" />
+                  />
               ) : (
                 <Th key={c}>{columnLabel(c)}</Th>
               ))}

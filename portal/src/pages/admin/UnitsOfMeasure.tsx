@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { SortTh, useSortableRows, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal as ShellModal } from '@uniops/shell'
+import { Button, Input, Modal as ShellModal, Select, SortTh, Switch, TBody, THead, Table, Td, Th, Tr, useSortableRows } from '@uniops/shell'
 import { mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useConfirmDialog } from '@/components/ConfirmDialog'
@@ -146,10 +146,8 @@ export function UnitsOfMeasure() {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-fg-secondary">Active</span>
-              <button type="button" onClick={() => setForm((p) => ({ ...p, is_active: !p.is_active }))}
-                className={cn('relative inline-flex h-5 w-9 items-center rounded-full transition-colors', form.is_active ? 'bg-primary-600' : 'bg-surface-strong')}>
-                <span className={cn('inline-block h-3.5 w-3.5 rounded-full bg-surface shadow transition-transform', form.is_active ? 'translate-x-4.5' : 'translate-x-0.5')} />
-              </button>
+              <Switch size="sm" aria-label="Active" checked={form.is_active}
+                onCheckedChange={(is_active) => setForm((p) => ({ ...p, is_active }))} />
             </div>
             {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-fg">{error}</p>}
             <div className="flex justify-end gap-2 border-t border-line-subtle pt-3">

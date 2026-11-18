@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Lock, Loader2, Search, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { SortTh, useSortableRows, Checkbox, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
+import { Button, Checkbox, Chip, Input, Select, SortTh, TBody, THead, Table, Tabs, Td, Th, Tr, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -150,20 +150,7 @@ export default function AccessControl() {
           </p>
         </div>
 
-        <div className="flex gap-1 border-b border-line">
-          {(['matrix', 'users'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={cn(
-                '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors',
-                tab === t ? 'border-primary-600 text-primary-700' : 'border-transparent text-fg-muted hover:text-fg-secondary',
-              )}
-            >
-              {t === 'matrix' ? 'Permission Matrix' : 'User Roles'}
-            </button>
-          ))}
-        </div>
+        <Tabs items={[{ key: 'matrix', label: 'Permission Matrix' }, { key: 'users', label: 'User Roles' }]} value={tab} onChange={setTab} />
 
         {tab === 'matrix' ? <PermissionMatrixTab /> : <UserRolesTab />}
       </div>
@@ -547,19 +534,14 @@ function UserRolesTab() {
                         {additionalOptions.map((r) => {
                           const on = row.additional.includes(r.code)
                           return (
-                            <button
+                            <Chip
                               key={r.code}
-                              type="button"
+                              pressed={on}
                               onClick={() => toggleAdditional(u, r.code)}
-                              className={cn(
-                                'rounded-full border px-2 py-0.5 text-2xs font-medium transition-colors',
-                                on
-                                  ? 'border-primary-400 bg-primary-50 text-primary-700'
-                                  : 'border-line text-fg-muted hover:bg-surface-subtle',
-                              )}
+                              className="px-2 py-0.5 text-2xs"
                             >
                               {r.label}
-                            </button>
+                            </Chip>
                           )
                         })}
                       </div>

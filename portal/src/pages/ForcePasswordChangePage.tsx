@@ -24,7 +24,7 @@ export default function ForcePasswordChangePage() {
   const { data: branding } = useBranding()
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F5F6FA] p-4">
+    <div className="flex min-h-screen items-center justify-center bg-canvas p-4">
       <div className="w-full max-w-md rounded-2xl bg-surface shadow-xl">
         <div className="flex items-center gap-3 border-b border-line-subtle px-6 py-5">
           {branding?.logo_data_url ? (
