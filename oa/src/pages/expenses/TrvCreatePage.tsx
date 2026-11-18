@@ -322,10 +322,7 @@ function CategorySection({
                         const total = (parseFloat(net || '0') + parseFloat(tax)).toFixed(2)
                         onUpdate(li.line_number, { net_amount: net, tax_amount: tax, total_amount: total })
                       }}
-                      className={cn(
-                        'mt-0.5 w-full rounded border px-2 py-1.5 text-sm text-right focus:outline-none focus:border-primary-400',
-                        isOver ? 'border-warning-line bg-warning-soft' : 'border-line',
-                      )}
+                      warning={!!isOver} className="mt-0.5 text-right"
                     />
                   </div>
                   )}
@@ -355,10 +352,7 @@ function CategorySection({
                       </label>
                       <Input type="number" min="1" max={span || undefined} step="1" value={li.period_days}
                         onChange={e => setRange({ period_days: e.target.value })}
-                        className={cn(
-                          'mt-0.5 w-full rounded border px-2 py-1.5 text-sm text-right focus:outline-none focus:border-primary-400',
-                          Number(li.period_days) > span ? 'border-danger-line bg-danger-soft' : 'border-line',
-                        )}
+                        error={!!(Number(li.period_days) > span)} className="mt-0.5 text-right"
                       />
                     </div>
                     <div>
@@ -367,10 +361,7 @@ function CategorySection({
                       </label>
                       <Input type="number" min="0" max={limit ?? undefined} step="0.01" value={li.daily_rate}
                         onChange={e => setRange({ daily_rate: e.target.value })}
-                        className={cn(
-                          'mt-0.5 w-full rounded border px-2 py-1.5 text-sm text-right focus:outline-none focus:border-primary-400',
-                          isOver ? 'border-danger-line bg-danger-soft' : 'border-line',
-                        )}
+                        error={!!isOver} className="mt-0.5 text-right"
                       />
                     </div>
                     <div className="sm:col-span-2 lg:col-span-4 text-xs text-fg-muted">

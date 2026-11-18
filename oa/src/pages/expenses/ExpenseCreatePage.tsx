@@ -11,7 +11,7 @@ import { ReceiptScanButton, type ReceiptFields } from '@/components/ReceiptScanB
 import { AccountPicker, useBudgetAccounts, type BudgetAccount } from '@/components/BudgetAccountPicker'
 import { CardField } from '@/components/LineCardField'
 import { LINE_TABLE_QUERY, useMediaQuery } from '@/lib/useMediaQuery'
-import { INVALID_FIELD, isBlankLine, lineMessage, missingFields, useJumpToFirstInvalid, type LineField } from '@/lib/lineValidation'
+import { isBlankLine, lineMessage, missingFields, useJumpToFirstInvalid, type LineField } from '@/lib/lineValidation'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -298,7 +298,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
           type="date"
           value={line.expense_date}
           onChange={(e) => updateLine(idx, { expense_date: e.target.value })}
-          className={cn('w-full rounded border px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-line' : 'border-line')}
+          warning={!!isOverBudget} inputSize="sm"
         />
       ),
       description: (
@@ -308,8 +308,8 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
             value={line.description}
             onChange={(e) => updateLine(idx, { description: e.target.value })}
             placeholder="What was purchased"
-            aria-invalid={missing.includes('description') || undefined}
-            className={cn('w-full rounded border px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-line' : 'border-line', missing.includes('description') && INVALID_FIELD)}
+            error={missing.includes('description')}
+            warning={isOverBudget} inputSize="sm"
           />
           <ReceiptScanButton
             className="self-start"
@@ -351,8 +351,8 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
           value={line.net_amount}
           onChange={(e) => handleNetChange(idx, e.target.value)}
           placeholder="0.00"
-          aria-invalid={missing.includes('net_amount') || undefined}
-          className={cn('w-full rounded border px-2 py-1.5 text-xs text-right font-mono focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-line' : 'border-line', missing.includes('net_amount') && INVALID_FIELD)}
+          error={missing.includes('net_amount')}
+          warning={isOverBudget} inputSize="sm" className="text-right font-mono"
         />
       ),
       tax: (

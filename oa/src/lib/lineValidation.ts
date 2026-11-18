@@ -52,9 +52,6 @@ export function lineMessage(where: string, fields: LineField[]): string {
   return `${where}: ${said}`
 }
 
-/** Red outline for a field the last save attempt found missing. */
-export const INVALID_FIELD = 'border-danger-400 bg-danger-50/40'
-
 /**
  * After a save refused for missing line fields, bring the first one into view
  * and focus it. The list of what is missing sits under the lines, below the

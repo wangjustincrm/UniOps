@@ -29,14 +29,13 @@ function DynamicField({
 }: {
   field: CfmField; value: string; onChange: (v: string) => void
 }) {
-  const base = 'w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-primary-400'
 
   if (field.field_type === 'textarea') {
     return (
       <Textarea value={value} onChange={e => onChange(e.target.value)}
         placeholder={field.placeholder ?? ''}
         required={field.required} rows={3}
-        className={`${base} resize-none`} />
+        className="resize-none" />
     )
   }
   if (field.field_type === 'select') {
@@ -55,7 +54,6 @@ function DynamicField({
       value={value} onChange={e => onChange(e.target.value)}
       placeholder={field.placeholder ?? ''}
       required={field.required}
-      className={base}
     />
   )
 }
