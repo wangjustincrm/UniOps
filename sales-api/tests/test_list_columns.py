@@ -115,3 +115,22 @@ async def test_every_csv_export_route_writes_the_bom(ops_api):  # noqa: F811
         cols = [f["name"] for f in meta["fields"] if f["in_row"]][:3]  # the visible columns way, on every export
         r = await ops_api.get(f"{p}?columns={','.join(cols)}", headers=READER)
         assert r.status_code == 200 and r.content[:3] == b"\xef\xbb\xbf", (p, r.status_code, r.text[:200])
+
+
+async def test_the_visible_columns_csv_writes_times_in_toronto_and_dates_plainly(env):  # noqa: F811
+    import re
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    env.shop.orders = [shopify_order(1, 9301)]
+    await env.pull()
+    async with env.factory(OP) as u:
+        text = (await OrderService(u).export_csv(QuerySpec(), ["source_reference", "first_received_at", "order_date"])).decode("utf-8-sig")
+        full = (await OrderService(u).export_csv(QuerySpec())).decode("utf-8-sig")
+        [o] = (await OrderService(u).list(QuerySpec())).items
+    head, row = text.splitlines()[:2]
+    assert head == "Order ref,Received (Toronto),Order date"
+    _, received, ordered = row.split(",")
+    want = o.first_received_at.replace(tzinfo=o.first_received_at.tzinfo or timezone.utc).astimezone(ZoneInfo("America/Toronto"))
+    assert received == want.strftime("%Y-%m-%d %H:%M") and re.fullmatch(r"\d{4}-\d\d-\d\d", ordered)
+    assert "T" in full.splitlines()[1].split(",")[full.splitlines()[0].split(",").index("first_received_at")]  # All fields: as stored
+    assert isinstance(o.first_received_at, datetime)

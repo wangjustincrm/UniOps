@@ -19,7 +19,9 @@ import io
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import date, datetime, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 from typing import Any, ClassVar, Generic, TypeVar
 
 from pydantic import BaseModel, ValidationError
@@ -57,6 +59,9 @@ class ReadOnlyService(Generic[T, R]):
     read_permission: ClassVar[str]
     # The system actor (jobs) may use this service's operations.
     system_allowed: ClassVar[bool] = False
+    # The zone a "Visible columns" export writes date-times in, as people read them ("2026-11-17 15:54",
+    # the zone named in the header); None: as stored (ISO, UTC). The business code sets it once.
+    export_timezone: ClassVar[str | None] = None
 
     def __init__(self, uow) -> None:
         self.uow = uow
@@ -113,12 +118,20 @@ class ReadOnlyService(Generic[T, R]):
             cur = fields[c].get("currency_field")
             if fields[c].get("money") and cur and cur not in columns and cur not in cols:
                 cols.append(cur)
-        labels = [fields[c]["label"] if c in fields else c.replace("_", " ").capitalize() for c in cols]
+        zone = ZoneInfo(self.export_timezone) if self.export_timezone else None
+        place = self.export_timezone.rsplit("/", 1)[-1].replace("_", " ") if self.export_timezone else ""
+        labels = [(fields[c]["label"] if c in fields else c.replace("_", " ").capitalize())
+                  + (f" ({place})" if zone and fields.get(c, {}).get("type") == "datetime" else "") for c in cols]
+
+        def shown(v: Any) -> Any:  # a date-time in the zone, to the minute; a date as YYYY-MM-DD
+            if zone and isinstance(v, datetime):
+                return (v if v.tzinfo else v.replace(tzinfo=timezone.utc)).astimezone(zone).strftime("%Y-%m-%d %H:%M")
+            return v.isoformat() if isinstance(v, date) and not isinstance(v, datetime) else v
         rows: list[list[Any]] = []
         page_no = 1
         while True:
             page = await self.repo.list(spec.model_copy(update={"page": page_no, "page_size": EXPORT_PAGE}))
-            rows.extend([getattr(r, c, None) for c in cols] for r in await self._read_all(list(page.items)))
+            rows.extend([shown(getattr(r, c, None)) for c in cols] for r in await self._read_all(list(page.items)))
             if page_no * EXPORT_PAGE >= page.total:
                 break
             page_no += 1
