@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { Download, Loader2, Search, X } from 'lucide-react'
-import { SortTh, nextSort, type Sort } from '@uniops/shell'
+import { Button, Checkbox, Chip as ShellChip, ChoiceCard, Input, Select, SortTh, TBody, THead, Table, Th, Tr, nextSort, type Sort } from '@uniops/shell'
 import { cn, formatDate } from '@/lib/utils'
 import { formatMoney, formatQty } from '@/lib/number'
 import { previousMonthEnd, todayToronto } from '@/lib/time'
@@ -46,18 +46,14 @@ function Chip({ active, onClick, children, title }: {
   title?: string
 }) {
   return (
-    <button type="button" aria-pressed={active} onClick={onClick} title={title}
-      className={cn('rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors',
-        active ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-line-strong bg-surface text-fg-muted hover:bg-surface-subtle')}>
-      {children}
-    </button>
+    <span title={title}><ShellChip pressed={active} onClick={onClick}>{children}</ShellChip></span>
   )
 }
 
 function Tile({ label, value, sub, title }: { label: string; value: string; sub?: string; title?: string }) {
   return (
     <div className="min-w-[9rem] rounded-lg border border-line bg-surface px-3 py-2" title={title}>
-      <p className="text-2xs font-medium uppercase tracking-wide text-fg-muted">{label}</p>
+      <p className="text-2xs font-medium text-fg-muted">{label}</p>
       <p className="mt-0.5 font-mono text-sm text-fg">{value}</p>
       {sub && <p className="font-mono text-2xs text-fg-muted">{sub}</p>}
     </div>
@@ -215,18 +211,18 @@ export default function ReconciliationPage() {
             WMS vs NC stock (IC) vs NC cost (IA) vs NC general ledger (GL), with each difference attributed to a cause
           </p>
         </div>
-        <button type="button" onClick={onExport} disabled={exporting || !data}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50">
+        <Button variant="secondary" size="md" type="button" onClick={onExport} disabled={exporting || !data}
+         >
           {exporting ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <Download aria-hidden className="h-4 w-4" />}
           {exporting ? 'Exporting…' : 'Export'}
-        </button>
+        </Button>
       </header>
 
       <div className="flex flex-col gap-2.5 rounded-lg border border-line bg-surface px-3 py-3">
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-xs text-fg-secondary">
             Date
-            <input type="date" value={date} max={today}
+            <Input type="date" value={date} max={today}
               onChange={(e) => {
                 const v = e.target.value
                 // Keep the URL clean on the default so a bookmark keeps meaning "last month end".
@@ -236,30 +232,30 @@ export default function ReconciliationPage() {
           </label>
           <label className="flex items-center gap-2 text-xs text-fg-secondary">
             Material class
-            <select value={classCode} onChange={(e) => setParams({ class: e.target.value })} className={selectCls}>
+            <Select value={classCode} onChange={(e) => setParams({ class: e.target.value })}>
               <option value="">All</option>
               {MATERIAL_CLASSES.map((c) => <option key={c.code} value={c.code}>{c.code} {c.label}</option>)}
-            </select>
+            </Select>
           </label>
           <div className="flex h-9 w-64 items-center gap-2 rounded-lg border border-line-strong bg-surface px-3">
             <Search aria-hidden className="h-4 w-4 shrink-0 text-fg-muted" />
-            <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)}
+            <Input value={searchInput} onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Material or name…" aria-label="Search" maxLength={100}
-              className="w-full text-sm focus:outline-none" />
+              className="w-full" />
             {searchInput && (
-              <button type="button" onClick={() => setSearchInput('')} aria-label="Clear search"
-                className="shrink-0 text-fg-muted hover:text-fg-secondary">
+              <Button variant="subtle" size="icon-xs" type="button" onClick={() => setSearchInput('')} aria-label="Clear search"
+                className="shrink-0">
                 <X className="h-4 w-4" />
-              </button>
+              </Button>
             )}
           </div>
           <label className="flex items-center gap-2 text-xs text-fg-secondary">
             Sort
-            <select value={presetSort} onChange={(e) => setParams({ sort: e.target.value === 'material' ? '' : e.target.value, dir: '' })}
-              className={selectCls}>
+            <Select value={presetSort} onChange={(e) => setParams({ sort: e.target.value === 'material' ? '' : e.target.value, dir: '' })}
+             >
               {!presetSort && <option value="" disabled>By column header</option>}
               {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-            </select>
+            </Select>
           </label>
         </div>
 
@@ -271,13 +267,13 @@ export default function ReconciliationPage() {
             ))}
           </div>
           <label className="flex items-center gap-2 text-sm text-fg-secondary">
-            <input type="checkbox" checked={expandBatches} onChange={(e) => setParams({ batches: e.target.checked ? '1' : '' })}
-              className="h-4 w-4 rounded border-line-strong" />
+            <Checkbox checked={expandBatches} onChange={(e) => setParams({ batches: e.target.checked ? '1' : '' })}
+              />
             Expand batches
           </label>
           <label className="flex items-center gap-2 text-sm text-fg-secondary">
-            <input type="checkbox" checked={includeUnposted} onChange={(e) => setParams({ unposted: e.target.checked ? '' : '0' })}
-              className="h-4 w-4 rounded border-line-strong" />
+            <Checkbox checked={includeUnposted} onChange={(e) => setParams({ unposted: e.target.checked ? '' : '0' })}
+              />
             Include unposted GL vouchers
           </label>
         </div>
@@ -291,8 +287,8 @@ export default function ReconciliationPage() {
               </Chip>
             ))}
             {category.length > 0 && (
-              <button type="button" onClick={() => setParams({ cat: '' })}
-                className="text-xs text-fg-muted underline hover:text-fg">Clear</button>
+              <Button variant="link" type="button" onClick={() => setParams({ cat: '' })}
+                className="text-xs text-fg-muted">Clear</Button>
             )}
           </div>
         )}
@@ -324,13 +320,12 @@ export default function ReconciliationPage() {
             {(['ok', 'explained', 'unexplained'] as const).map((s) => {
               const active = status.length === 1 && status[0] === s
               return (
-                <button key={s} type="button" onClick={() => setStatus([s])} aria-pressed={active}
+                <ChoiceCard key={s} selected={active} onClick={() => setStatus([s])}
                   title={`Show only ${STATUSES.find((x) => x.key === s)?.label} materials`}
-                  className={cn('min-w-[8rem] rounded-lg border bg-surface px-3 py-2 text-left hover:bg-surface-subtle',
-                    STATUS_TILE[s], active && 'ring-2 ring-primary-300')}>
-                  <p className="text-2xs font-medium uppercase tracking-wide">{STATUSES.find((x) => x.key === s)?.label}</p>
+                  className={cn('min-w-[8rem] items-stretch gap-0 rounded-lg px-3 py-2 shadow-none', STATUS_TILE[s], active && 'ring-2 ring-accent-line')}>
+                  <p className="text-2xs font-medium">{STATUSES.find((x) => x.key === s)?.label}</p>
                   <p className="mt-0.5 font-mono text-sm">{t.by_status[s].toLocaleString('en-US')}</p>
-                </button>
+                </ChoiceCard>
               )
             })}
             <span className="text-2xs text-fg-muted">
@@ -345,10 +340,10 @@ export default function ReconciliationPage() {
 
       {!(q.isError && !data) && (
         <ScrollTable className={cn(q.isFetching && data && 'opacity-70')}>
-          <table className="min-w-full text-sm">
-            <thead className={stickyHeadCls}>
-              <tr>
-                <th className="w-8 px-2 py-2" aria-label="Expand" />
+          <Table density="compact" className="min-w-full">
+            <THead className={stickyHeadCls}>
+              <Tr>
+                <Th className="w-8" aria-label="Expand" />
                 <SortTh label="Material" sortKey="material" sort={shownSort} onSort={onColumnSort} className="px-3 py-2 text-left" />
                 <SortTh label="WMS" sortKey="wms" sort={shownSort} onSort={onColumnSort} align="right" className="px-3 py-2" />
                 <SortTh label="NC stock in WMS wh." title="NC stock in the warehouses WMS manages — click to sort"
@@ -370,11 +365,11 @@ export default function ReconciliationPage() {
                   <SortTh label="GL−IA amount" title="Sort by unexplained GL−IA amount" sortKey="gl_ia" sort={shownSort} onSort={onColumnSort} align="right" className="px-3 py-2" />
                 )}
                 <SortTh label="Status" sortKey="status" sort={shownSort} onSort={onColumnSort} className="px-3 py-2 text-left" />
-                <th className="px-3 py-2 text-left">Causes</th>
-                <th className="px-3 py-2" aria-label="Trace" />
-              </tr>
-            </thead>
-            <tbody>
+                <Th>Causes</Th>
+                <Th aria-label="Trace" />
+              </Tr>
+            </THead>
+            <TBody>
               {q.isLoading && <LoadingRows cols={cols} />}
               {data && data.items.length === 0 && (
                 <EmptyRow cols={cols}>
@@ -386,8 +381,8 @@ export default function ReconciliationPage() {
                   open={expanded.has(r.material_code)} onToggle={() => toggleRow(r.material_code)}
                   onShowBatches={() => setParams({ batches: '1' })} />
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </ScrollTable>
       )}
 

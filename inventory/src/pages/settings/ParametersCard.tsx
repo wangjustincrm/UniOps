@@ -4,7 +4,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
-import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from '@uniops/shell'
+import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import type { useToasts } from '@/hooks/useToasts'
 import {
@@ -42,8 +42,6 @@ function asNumber(s: string): number | string {
   return t !== '' && Number.isFinite(n) ? n : t
 }
 
-const selectCls =
-  'h-10 w-full rounded-lg border border-line bg-surface-sunken px-3 text-sm text-fg focus:outline-none focus:bg-surface focus:border-primary-600 disabled:cursor-not-allowed disabled:text-fg-muted'
 
 export function ParametersCard({ canAdmin, toasts }: {
   canAdmin: boolean
@@ -116,12 +114,12 @@ export function ParametersCard({ canAdmin, toasts }: {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="p-tz">NC time zone</Label>
-                <select
-                  id="p-tz" className={selectCls} value={draft.timeZone} disabled={!canAdmin}
+                <Select
+                  id="p-tz" className="w-full" value={draft.timeZone} disabled={!canAdmin}
                   onChange={(e) => setDraft({ ...draft, timeZone: e.target.value })}
                 >
                   {zones.map((z) => <option key={z} value={z}>{TIME_ZONE_LABELS[z] ?? z}</option>)}
-                </select>
+                </Select>
                 <p className="text-xs text-fg-muted">The clock NC writes business times in.</p>
               </div>
               <div className="space-y-1.5">

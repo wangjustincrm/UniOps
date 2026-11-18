@@ -4,8 +4,8 @@
 // provision is shown on its own line and never compared per material.
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
-import { Badge, SortTh, sortParams, useSort } from '@uniops/shell'
+import { Check, ChevronDown, ChevronRight } from 'lucide-react'
+import { Badge, SortTh, sortParams, useSort, Checkbox, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { cn, formatDate } from '@/lib/utils'
 import { formatMoney, formatQty, isNegative } from '@/lib/number'
 import { ncApi, type LedgerAccountRow, type LedgerRow, type LedgerSort } from './ncApi'
@@ -26,40 +26,40 @@ function AccountsTable({ accounts, impairment, showAmt }: {
   const cols = showAmt ? 4 : 3
   return (
     <div className={cn(tableWrapCls, 'sm:max-w-3xl')}>
-      <table className="min-w-full text-sm">
-        <thead className={thCls}>
-          <tr>
-            <th className="px-3 py-2 text-left">Account</th>
-            <th className="px-3 py-2 text-left">Name</th>
-            <th className="px-3 py-2 text-right" title="Summed across units of measure">Qty</th>
-            {showAmt && <th className="px-3 py-2 text-right">Amount</th>}
-          </tr>
-        </thead>
-        <tbody>
+      <Table density="compact" className="min-w-full">
+        <THead className={thCls}>
+          <Tr>
+            <Th>Account</Th>
+            <Th>Name</Th>
+            <Th align="right" title="Summed across units of measure">Qty</Th>
+            {showAmt && <Th align="right">Amount</Th>}
+          </Tr>
+        </THead>
+        <TBody>
           {accounts.length === 0 && <EmptyRow cols={cols}>No inventory account balances on this date.</EmptyRow>}
           {accounts.map((a) => (
-            <tr key={a.account_code} className="border-t border-line-subtle">
-              <td className="px-3 py-2 font-mono text-xs">{a.account_code}</td>
-              <td className="px-3 py-2 text-xs text-fg-secondary">{a.account_name ?? '—'}</td>
-              <td className={num(a.qty)}>{formatQty(a.qty)}</td>
-              {showAmt && <td className={num(a.amount)}>{formatMoney(a.amount)}</td>}
-            </tr>
+            <Tr key={a.account_code}>
+              <Td className="font-mono text-xs">{a.account_code}</Td>
+              <Td className="text-xs text-fg-secondary">{a.account_name ?? '—'}</Td>
+              <Td className={num(a.qty)}>{formatQty(a.qty)}</Td>
+              {showAmt && <Td className={num(a.amount)}>{formatMoney(a.amount)}</Td>}
+            </Tr>
           ))}
           {impairment.map((a) => (
-            <tr key={a.account_code} className="border-t-2 border-line bg-surface-subtle/60">
-              <td className="px-3 py-2 font-mono text-xs">{a.account_code}</td>
-              <td className="px-3 py-2 text-xs text-fg-secondary">
+            <Tr key={a.account_code} className="border-t-2 bg-surface-subtle/60">
+              <Td className="font-mono text-xs">{a.account_code}</Td>
+              <Td className="text-xs text-fg-secondary">
                 {a.account_name ?? '—'}
                 <span className="block text-2xs text-fg-muted">
                   Impairment provision — shown separately, not compared per material.
                 </span>
-              </td>
-              <td className={num(a.qty)}>{formatQty(a.qty)}</td>
-              {showAmt && <td className={num(a.amount)}>{formatMoney(a.amount)}</td>}
-            </tr>
+              </Td>
+              <Td className={num(a.qty)}>{formatQty(a.qty)}</Td>
+              {showAmt && <Td className={num(a.amount)}>{formatMoney(a.amount)}</Td>}
+            </Tr>
           ))}
-        </tbody>
-      </table>
+        </TBody>
+      </Table>
     </div>
   )
 }
@@ -83,42 +83,42 @@ function VoucherLines({ row, date, includeUnposted }: { row: LedgerRow; date: st
   return (
     <div className="flex flex-col gap-1.5">
       <div className="max-h-96 overflow-auto rounded-md border border-line bg-surface">
-        <table className="min-w-full text-xs">
-          <thead className={cn(thCls, 'sticky top-0')}>
-            <tr>
-              <th className="px-3 py-1.5 text-left">Year-Period</th>
-              <th className="px-3 py-1.5 text-left">Voucher #</th>
-              <th className="px-3 py-1.5 text-left" title="As NC recorded it, on NC's clock">Prepared</th>
-              <th className="px-3 py-1.5 text-left">Posted</th>
-              <th className="px-3 py-1.5 text-left">Source</th>
-              <th className="px-3 py-1.5 text-left">Explanation</th>
-              <th className="px-3 py-1.5 text-right">Qty</th>
-              {showAmt && <th className="px-3 py-1.5 text-right">Amount</th>}
-            </tr>
-          </thead>
-          <tbody>
+        <Table density="compact" className="min-w-full">
+          <THead className={cn(thCls, 'sticky top-0')}>
+            <Tr>
+              <Th>Year-Period</Th>
+              <Th>Voucher #</Th>
+              <Th title="As NC recorded it, on NC's clock">Prepared</Th>
+              <Th>Posted</Th>
+              <Th>Source</Th>
+              <Th>Explanation</Th>
+              <Th align="right">Qty</Th>
+              {showAmt && <Th align="right">Amount</Th>}
+            </Tr>
+          </THead>
+          <TBody>
             {q.isLoading && <LoadingRows cols={cols} rows={4} />}
             {q.data && q.data.items.length === 0 && <EmptyRow cols={cols}>No voucher lines up to this date.</EmptyRow>}
             {q.data?.items.map((l, i) => (
-              <tr key={i} className="border-t border-line-subtle">
-                <td className="px-3 py-1.5 font-mono">{l.year}-{l.period}</td>
-                <td className="px-3 py-1.5 font-mono">{l.voucher_num ?? '—'}</td>
-                <td className="px-3 py-1.5 whitespace-nowrap" title={l.prepared ?? undefined}>
+              <Tr key={i}>
+                <Td className="font-mono">{l.year}-{l.period}</Td>
+                <Td className="font-mono">{l.voucher_num ?? '—'}</Td>
+                <Td className="whitespace-nowrap" title={l.prepared ?? undefined}>
                   {l.prepared ? formatDate(l.prepared.slice(0, 10)) : '—'}
-                </td>
-                <td className="px-3 py-1.5">
+                </Td>
+                <Td>
                   {l.posted
-                    ? <span className="text-success-fg" aria-label="Posted">✓</span>
+                    ? <Check className="inline h-3.5 w-3.5 text-success-fg" aria-label="Posted" />
                     : <span className="text-warning-fg" aria-label="Not posted" title="Not posted yet">—</span>}
-                </td>
-                <td className="px-3 py-1.5 font-mono">{l.source ?? '—'}</td>
-                <td className="max-w-md px-3 py-1.5 text-fg-secondary">{l.explanation ?? '—'}</td>
-                <td className={num(l.qty)}>{formatQty(l.qty)}</td>
-                {showAmt && <td className={num(l.amount)}>{formatMoney(l.amount)}</td>}
-              </tr>
+                </Td>
+                <Td className="font-mono">{l.source ?? '—'}</Td>
+                <Td className="max-w-md text-fg-secondary">{l.explanation ?? '—'}</Td>
+                <Td className={num(l.qty)}>{formatQty(l.qty)}</Td>
+                {showAmt && <Td className={num(l.amount)}>{formatMoney(l.amount)}</Td>}
+              </Tr>
             ))}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </div>
       {q.data && q.data.total > LINES_PAGE_SIZE && (
         <Pager page={page} pageSize={LINES_PAGE_SIZE} total={q.data.total} busy={q.isFetching} onPage={setPage} />
@@ -169,8 +169,8 @@ export function LedgerTab({ date, classCode, search, includeUnposted, onIncludeU
   return (
     <div className="flex flex-col gap-3">
       <label className="flex items-center gap-2 text-sm text-fg-secondary">
-        <input type="checkbox" checked={includeUnposted} onChange={(e) => onIncludeUnposted(e.target.checked)}
-          className="h-4 w-4 rounded border-line-strong" />
+        <Checkbox checked={includeUnposted} onChange={(e) => onIncludeUnposted(e.target.checked)}
+          />
         Include unposted vouchers
       </label>
 
@@ -178,7 +178,7 @@ export function LedgerTab({ date, classCode, search, includeUnposted, onIncludeU
 
       {q.isLoading && (
         <div className={cn(tableWrapCls, 'sm:max-w-3xl')}>
-          <table className="min-w-full text-sm"><tbody><LoadingRows cols={3} rows={3} /></tbody></table>
+          <Table className="min-w-full"><TBody><LoadingRows cols={3} rows={3} /></TBody></Table>
         </div>
       )}
       {data && <AccountsTable accounts={data.accounts} impairment={data.impairment} showAmt={showAmt} />}
@@ -188,17 +188,17 @@ export function LedgerTab({ date, classCode, search, includeUnposted, onIncludeU
 
       {!(q.isError && !data) && (
         <ScrollTable className={cn(q.isFetching && data && 'opacity-70')}>
-          <table className="min-w-full text-sm">
-            <thead className={stickyHeadCls}>
-              <tr>
-                <th className="w-8 px-2 py-2" aria-label="Expand" />
+          <Table density="compact" className="min-w-full">
+            <THead className={stickyHeadCls}>
+              <Tr>
+                <Th className="w-8" aria-label="Expand" />
                 <SortTh label="Account" sortKey="account" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
                 <SortTh label="Material" sortKey="material" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
                 <SortTh label="Qty" sortKey="qty" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
                 {showAmt && <SortTh label="Amount" sortKey="amount" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />}
-              </tr>
-            </thead>
-            <tbody>
+              </Tr>
+            </THead>
+            <TBody>
               {q.isLoading && <LoadingRows cols={cols} />}
               {data && data.items.length === 0 && (
                 <EmptyRow cols={cols}>{search ? `Nothing matches "${search}".` : 'No ledger balances on this date for these filters.'}</EmptyRow>
@@ -210,22 +210,22 @@ export function LedgerTab({ date, classCode, search, includeUnposted, onIncludeU
                 const drillable = true
                 const open = drillable && expanded.has(key)
                 return [
-                  <tr key={key}
+                  <Tr key={key}
                     className={cn('border-t border-line-subtle', drillable && 'cursor-pointer hover:bg-surface-subtle', open && 'bg-surface-subtle')}
                     onClick={drillable ? () => toggle(key) : undefined}>
-                    <td className="w-8 px-2 py-2 text-fg-muted">
+                    <Td className="w-8 text-fg-muted">
                       {drillable && (
-                        <button type="button" aria-expanded={open} aria-label={open ? 'Hide voucher lines' : 'Show voucher lines'}
+                        <Button variant="subtle" size="icon-xs" type="button" aria-expanded={open} aria-label={open ? 'Hide voucher lines' : 'Show voucher lines'}
                           onClick={(e) => { e.stopPropagation(); toggle(key) }}>
                           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        </button>
+                        </Button>
                       )}
-                    </td>
-                    <td className="px-3 py-2">
+                    </Td>
+                    <Td>
                       <span className="font-mono text-xs">{r.account_code}</span>
                       {r.account_name && <span className="ml-1.5 text-xs text-fg-muted">{r.account_name}</span>}
-                    </td>
-                    <td className="px-3 py-2">
+                    </Td>
+                    <Td>
                       {r.material_code ? (
                         <>
                           <span className="font-mono text-xs">{r.material_code}</span>
@@ -241,21 +241,21 @@ export function LedgerTab({ date, classCode, search, includeUnposted, onIncludeU
                           {r.unposted_lines.toLocaleString('en-US')} unposted
                         </Badge>
                       )}
-                    </td>
-                    <td className={num(r.qty)}>{formatQty(r.qty)}<Uom uom={r.uom} /></td>
-                    {showAmt && <td className={num(r.amount)}>{formatMoney(r.amount)}</td>}
-                  </tr>,
+                    </Td>
+                    <Td className={num(r.qty)}>{formatQty(r.qty)}<Uom uom={r.uom} /></Td>
+                    {showAmt && <Td className={num(r.amount)}>{formatMoney(r.amount)}</Td>}
+                  </Tr>,
                   open && (
-                    <tr key={`${key}-lines`} className="border-t border-line-subtle bg-surface-subtle/60">
-                      <td colSpan={cols} className="px-4 py-3">
+                    <Tr key={`${key}-lines`} className="bg-surface-subtle/60">
+                      <Td colSpan={cols}>
                         <VoucherLines row={r} date={date} includeUnposted={includeUnposted} />
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                   ),
                 ]
               })}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </ScrollTable>
       )}
 

@@ -4,7 +4,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { Badge, SortTh, sortParams, useSort } from '@uniops/shell'
+import { Badge, SortTh, sortParams, useSort, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { cn, formatDate } from '@/lib/utils'
 import { formatMoney, formatQty, formatUnitPrice, isNegative } from '@/lib/number'
 import { ncApi, type CostRow, type CostSort } from './ncApi'
@@ -28,28 +28,28 @@ function Breakdown({ code, date, uom }: { code: string; date: string; uom: strin
       <p className="text-2xs text-fg-muted">IA costs at material level only — amounts are not split by batch.</p>
       {q.isError ? <ErrorBox error={q.error} fallback="Could not load the breakdown." /> : (
         <div className="max-h-72 overflow-auto rounded-md border border-line bg-surface">
-          <table className="min-w-full text-xs">
-            <thead className={thCls}>
-              <tr>
-                <th className="px-3 py-1.5 text-left">Warehouse</th>
-                <th className="px-3 py-1.5 text-left">Batch</th>
-                <th className="px-3 py-1.5 text-right">Qty</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table density="compact" className="min-w-full">
+            <THead className={thCls}>
+              <Tr>
+                <Th>Warehouse</Th>
+                <Th>Batch</Th>
+                <Th align="right">Qty</Th>
+              </Tr>
+            </THead>
+            <TBody>
               {q.isLoading && <LoadingRows cols={3} rows={3} />}
               {q.data && q.data.items.length === 0 && <EmptyRow cols={3}>No quantity on this date.</EmptyRow>}
               {q.data?.items.map((r, i) => (
-                <tr key={`${r.warehouse_code}|${r.batch}|${i}`} className="border-t border-line-subtle">
-                  <td className="px-3 py-1.5 font-mono">{r.warehouse_code ?? '—'}</td>
-                  <td className="px-3 py-1.5 font-mono">{r.batch ?? <span className="font-sans text-fg-muted">no batch</span>}</td>
-                  <td className={cn(numCls, isNegative(r.qty) && 'text-danger-fg')}>
+                <Tr key={`${r.warehouse_code}|${r.batch}|${i}`}>
+                  <Td className="font-mono">{r.warehouse_code ?? '—'}</Td>
+                  <Td className="font-mono">{r.batch ?? <span className="font-sans text-fg-muted">no batch</span>}</Td>
+                  <Td className={cn(numCls, isNegative(r.qty) && 'text-danger-fg')}>
                     {formatQty(r.qty)}<Uom uom={uom} />
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </div>
       )}
     </section>
@@ -71,56 +71,56 @@ function Lines({ code, date }: { code: string; date: string }) {
       {q.isError ? <ErrorBox error={q.error} fallback="Could not load the ledger lines." /> : (
         <>
           <div className="max-h-96 overflow-auto rounded-md border border-line bg-surface">
-            <table className="min-w-full text-xs">
-              <thead className={cn(thCls, 'sticky top-0')}>
-                <tr>
-                  <th className="px-3 py-1.5 text-left">Period</th>
-                  <th className="px-3 py-1.5 text-left" title="As NC recorded it, on NC's clock">Biz date</th>
-                  <th className="px-3 py-1.5 text-left">Dir</th>
-                  <th className="px-3 py-1.5 text-right">Qty</th>
-                  {showAmt && <th className="px-3 py-1.5 text-right">Amount</th>}
-                  <th className="px-3 py-1.5 text-left">Type</th>
-                  <th className="px-3 py-1.5 text-left">Bill</th>
-                  <th className="px-3 py-1.5 text-left">Source</th>
-                  <th className="px-3 py-1.5 text-left">Batch</th>
-                  <th className="px-3 py-1.5 text-left">Warehouse</th>
-                  <th className="px-3 py-1.5 text-left">Estimate</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table density="compact" className="min-w-full">
+              <THead className={cn(thCls, 'sticky top-0')}>
+                <Tr>
+                  <Th>Period</Th>
+                  <Th title="As NC recorded it, on NC's clock">Biz date</Th>
+                  <Th>Dir</Th>
+                  <Th align="right">Qty</Th>
+                  {showAmt && <Th align="right">Amount</Th>}
+                  <Th>Type</Th>
+                  <Th>Bill</Th>
+                  <Th>Source</Th>
+                  <Th>Batch</Th>
+                  <Th>Warehouse</Th>
+                  <Th>Estimate</Th>
+                </Tr>
+              </THead>
+              <TBody>
                 {q.isLoading && <LoadingRows cols={cols} rows={4} />}
                 {q.data && q.data.items.length === 0 && <EmptyRow cols={cols}>No ledger lines up to this date.</EmptyRow>}
                 {q.data?.items.map((l, i) => (
-                  <tr key={i} className={cn('border-t border-line-subtle', l.uncosted && 'bg-danger-50/50')}>
-                    <td className="px-3 py-1.5 font-mono">{l.period ?? '—'}</td>
-                    <td className="px-3 py-1.5 whitespace-nowrap" title={l.biz_date ?? undefined}>
+                  <Tr key={i} className={cn('border-t border-line-subtle', l.uncosted && 'bg-danger-50/50')}>
+                    <Td className="font-mono">{l.period ?? '—'}</Td>
+                    <Td className="whitespace-nowrap" title={l.biz_date ?? undefined}>
                       {l.biz_date ? formatDate(l.biz_date.slice(0, 10)) : '—'}
-                    </td>
-                    <td className="px-3 py-1.5">{l.direction === 'in' ? 'In' : 'Out'}</td>
-                    <td className={numCls}>{formatQty(l.qty)}</td>
+                    </Td>
+                    <Td>{l.direction === 'in' ? 'In' : 'Out'}</Td>
+                    <Td className={numCls}>{formatQty(l.qty)}</Td>
                     {showAmt && (
-                      <td className={numCls}>
+                      <Td className={numCls}>
                         {l.uncosted
                           ? <span className="font-sans font-medium text-danger-fg">not costed</span>
                           : formatMoney(l.amount)}
-                      </td>
+                      </Td>
                     )}
-                    <td className="px-3 py-1.5">
+                    <Td>
                       <span className="font-mono">{l.trantype_code ?? l.bill_type ?? '—'}</span>
                       {l.trantype_name && <span className="ml-1.5 text-fg-muted">{l.trantype_name}</span>}
-                    </td>
-                    <td className="px-3 py-1.5 font-mono">{l.bill_code ?? '—'}</td>
-                    <td className="px-3 py-1.5 font-mono">{l.source_code ?? '—'}</td>
-                    <td className="px-3 py-1.5 font-mono">{l.batch ?? '—'}</td>
-                    <td className="px-3 py-1.5 font-mono">{l.warehouse_code ?? '—'}</td>
-                    <td className="px-3 py-1.5">
+                    </Td>
+                    <Td className="font-mono">{l.bill_code ?? '—'}</Td>
+                    <Td className="font-mono">{l.source_code ?? '—'}</Td>
+                    <Td className="font-mono">{l.batch ?? '—'}</Td>
+                    <Td className="font-mono">{l.warehouse_code ?? '—'}</Td>
+                    <Td>
                       {l.estimate && <Badge variant="warning" className="text-2xs">Estimate</Badge>}
                       {l.uncosted && !showAmt && <span className="ml-1 font-medium text-danger-fg">not costed</span>}
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
           {q.data && q.data.total > LINES_PAGE_SIZE && (
             <Pager page={page} pageSize={LINES_PAGE_SIZE} total={q.data.total} busy={q.isFetching} onPage={setPage} />
@@ -142,45 +142,45 @@ function CostRowView({ r, showAmt, open, onToggle, date, cols }: {
   const code = r.material_code
   return (
     <>
-      <tr
+      <Tr
         className={cn('border-t border-line-subtle', code && 'cursor-pointer hover:bg-surface-subtle', open && 'bg-surface-subtle')}
         onClick={code ? onToggle : undefined}
       >
-        <td className="w-8 px-2 py-2 text-fg-muted">
+        <Td className="w-8 text-fg-muted">
           {code && (
-            <button type="button" aria-expanded={open} aria-label={open ? 'Hide details' : 'Show details'}
+            <Button variant="subtle" size="icon-xs" type="button" aria-expanded={open} aria-label={open ? 'Hide details' : 'Show details'}
               onClick={(e) => { e.stopPropagation(); onToggle() }}>
               {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            </button>
+            </Button>
           )}
-        </td>
-        <td className="px-3 py-2"><MaterialCell code={code} name={r.material_name} /></td>
-        <td className={cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(r.qty) && 'text-danger-fg')}>
+        </Td>
+        <Td><MaterialCell code={code} name={r.material_name} /></Td>
+        <Td className={cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(r.qty) && 'text-danger-fg')}>
           {formatQty(r.qty)}<Uom uom={r.uom} />
-        </td>
+        </Td>
         {showAmt && (
-          <td className={cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(r.amount) && 'text-danger-fg')}>
+          <Td className={cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(r.amount) && 'text-danger-fg')}>
             {formatMoney(r.amount)}
-          </td>
+          </Td>
         )}
         {showAmt && (
-          <td className={cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(r.unit_price) && 'text-danger-fg')}>
+          <Td className={cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(r.unit_price) && 'text-danger-fg')}>
             {formatUnitPrice(r.unit_price)}
-          </td>
+          </Td>
         )}
-        <td className="px-3 py-2">
+        <Td>
           {r.uncosted_rows > 0 && <Badge variant="danger">{r.uncosted_rows.toLocaleString('en-US')} uncosted</Badge>}
-        </td>
-      </tr>
+        </Td>
+      </Tr>
       {open && code && (
-        <tr className="border-t border-line-subtle bg-surface-subtle/60">
-          <td colSpan={cols} className="px-4 py-3">
+        <Tr className="bg-surface-subtle/60">
+          <Td colSpan={cols}>
             <div className="flex flex-col gap-4">
               <Breakdown code={code} date={date} uom={r.uom} />
               <Lines code={code} date={date} />
             </div>
-          </td>
-        </tr>
+          </Td>
+        </Tr>
       )}
     </>
   )
@@ -232,18 +232,18 @@ export function CostTab({ date, classCode, search }: { date: string; classCode: 
 
       {!(q.isError && !data) && (
         <ScrollTable className={cn(q.isFetching && data && 'opacity-70')}>
-          <table className="min-w-full text-sm">
-            <thead className={stickyHeadCls}>
-              <tr>
-                <th className="w-8 px-2 py-2" aria-label="Expand" />
+          <Table density="compact" className="min-w-full">
+            <THead className={stickyHeadCls}>
+              <Tr>
+                <Th className="w-8" aria-label="Expand" />
                 <SortTh label="Material" sortKey="material" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
                 <SortTh label="Qty" sortKey="qty" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
                 {showAmt && <SortTh label="Amount" sortKey="amount" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />}
                 {showAmt && <SortTh label="Unit price" sortKey="unit_price" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />}
                 <SortTh label="Costing" title="Sort by number of uncosted rows" sortKey="uncosted" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
-              </tr>
-            </thead>
-            <tbody>
+              </Tr>
+            </THead>
+            <TBody>
               {q.isLoading && <LoadingRows cols={cols} />}
               {data && data.items.length === 0 && (
                 <EmptyRow cols={cols}>{search ? `Nothing matches "${search}".` : 'No IA balance on this date for these filters.'}</EmptyRow>
@@ -253,8 +253,8 @@ export function CostTab({ date, classCode, search }: { date: string; classCode: 
                   open={!!r.material_code && expanded.has(r.material_code)}
                   onToggle={() => r.material_code && toggle(r.material_code)} />
               ))}
-            </tbody>
-          </table>
+            </TBody>
+          </Table>
         </ScrollTable>
       )}
 
@@ -266,7 +266,7 @@ export function CostTab({ date, classCode, search }: { date: string; classCode: 
 function Tile({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
     <div className="min-w-[9rem] rounded-lg border border-line bg-surface px-3 py-2" title={title}>
-      <p className="text-2xs font-medium uppercase tracking-wide text-fg-muted">{label}</p>
+      <p className="text-2xs font-medium text-fg-muted">{label}</p>
       <p className="mt-0.5 font-mono text-sm text-fg">{value}</p>
     </div>
   )

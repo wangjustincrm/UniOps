@@ -10,7 +10,7 @@
 // Usage:
 //   <ScrollTable>
 //     <table className="min-w-full text-sm">
-//       <thead className={stickyHeadCls}>…</thead>
+//       <THead className={stickyHeadCls}>…</THead>
 //       …
 //   </ScrollTable>
 import type { HTMLAttributes } from 'react'
@@ -29,9 +29,8 @@ export function ScrollTable({ className, children, ...rest }: HTMLAttributes<HTM
   )
 }
 
-/** For the <thead> of a ScrollTable: the whole header block (every row, every
- *  wrapped line) sticks together. Opaque background so rows don't show
- *  through; the inset shadow stands in for the bottom border, which
- *  border-collapse would otherwise leave behind with the scrolled rows. */
-export const stickyHeadCls =
-  'sticky top-0 z-10 bg-surface-subtle text-xs uppercase tracking-wide text-fg-muted shadow-[inset_0_-1px_0_var(--color-neutral-200)]'
+/** For the THead of a ScrollTable. The Shell THead already sticks the whole
+ *  header block, is opaque and draws its bottom line (an inset shadow, since
+ *  border-collapse would leave a border behind with the scrolled rows); this
+ *  only sets the header text. */
+export const stickyHeadCls = 'text-xs text-fg-muted'

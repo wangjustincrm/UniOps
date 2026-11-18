@@ -11,6 +11,7 @@ import {
 } from './traceApi'
 import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 
+import { TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 const numCls = 'text-right font-mono text-xs tabular-nums whitespace-nowrap'
 
 function qtyTone(v: string | null | undefined): string {
@@ -29,43 +30,43 @@ export function SummaryTable({ t, showHidden }: { t: TraceResponse; showHidden: 
   const hiddenCount = t.summary.length - lines.length
   return (
     <div className="w-fit max-w-full overflow-x-auto rounded-lg border border-line bg-surface">
-      <table className="text-sm">
-        <thead className={thCls}>
-          <tr>
-            <th className="px-3 py-2 text-left">Category</th>
-            <th className={cn('px-3 py-2 text-right', NC_HEAD)}>NC</th>
-            <th className={cn('px-3 py-2 text-right', WMS_HEAD)}>WMS</th>
-            <th className="px-3 py-2 text-right">Difference</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr className="border-t border-line-subtle bg-surface-subtle/60">
-            <td className="px-3 py-1.5 text-xs text-fg-secondary">Opening (before {formatDate(t.start)})</td>
-            <td className={cn('px-3 py-1.5', numCls, NC_CELL)}>{formatQty(t.opening.nc)}</td>
-            <td className={cn('px-3 py-1.5', numCls, WMS_CELL)}>{formatQty(t.opening.wms)}</td>
-            <td className={cn('px-3 py-1.5', numCls, diffTone(openingDiff(t)))}>{formatQty(openingDiff(t))}</td>
-          </tr>
+      <Table density="compact">
+        <THead className={thCls}>
+          <Tr>
+            <Th>Category</Th>
+            <Th className={cn('px-3 py-2 text-right', NC_HEAD)}>NC</Th>
+            <Th className={cn('px-3 py-2 text-right', WMS_HEAD)}>WMS</Th>
+            <Th align="right">Difference</Th>
+          </Tr>
+        </THead>
+        <TBody>
+          <Tr className="bg-surface-subtle/60">
+            <Td className="text-xs text-fg-secondary">Opening (before {formatDate(t.start)})</Td>
+            <Td className={cn('px-3 py-1.5', numCls, NC_CELL)}>{formatQty(t.opening.nc)}</Td>
+            <Td className={cn('px-3 py-1.5', numCls, WMS_CELL)}>{formatQty(t.opening.wms)}</Td>
+            <Td className={cn('px-3 py-1.5', numCls, diffTone(openingDiff(t)))}>{formatQty(openingDiff(t))}</Td>
+          </Tr>
           {lines.map((s) => (
-            <tr key={s.category} className={cn('border-t border-line-subtle', s.hidden_by_default && 'text-fg-muted')}>
-              <td className="px-3 py-1.5 text-xs">{s.label}</td>
-              <td className={cn('px-3 py-1.5', numCls, NC_CELL, qtyTone(s.nc))}>{signedQty(s.nc)}</td>
-              <td className={cn('px-3 py-1.5', numCls, WMS_CELL, qtyTone(s.wms))}>{signedQty(s.wms)}</td>
-              <td className={cn('px-3 py-1.5', numCls, diffTone(s.diff))}>{formatQty(s.diff)}</td>
-            </tr>
+            <Tr key={s.category} className={cn('border-t border-line-subtle', s.hidden_by_default && 'text-fg-muted')}>
+              <Td className="text-xs">{s.label}</Td>
+              <Td className={cn('px-3 py-1.5', numCls, NC_CELL, qtyTone(s.nc))}>{signedQty(s.nc)}</Td>
+              <Td className={cn('px-3 py-1.5', numCls, WMS_CELL, qtyTone(s.wms))}>{signedQty(s.wms)}</Td>
+              <Td className={cn('px-3 py-1.5', numCls, diffTone(s.diff))}>{formatQty(s.diff)}</Td>
+            </Tr>
           ))}
           {lines.length === 0 && (
-            <tr className="border-t border-line-subtle">
-              <td colSpan={4} className="px-3 py-3 text-center text-xs text-fg-muted">No movements in the window.</td>
-            </tr>
+            <Tr>
+              <Td align="center" colSpan={4} className="text-xs text-fg-muted">No movements in the window.</Td>
+            </Tr>
           )}
-          <tr className="border-t border-line bg-surface-subtle/60 font-medium">
-            <td className="px-3 py-1.5 text-xs text-fg-secondary">Closing ({formatDate(t.date)})</td>
-            <td className={cn('px-3 py-1.5', numCls, NC_CELL)}>{formatQty(t.closing.nc)}</td>
-            <td className={cn('px-3 py-1.5', numCls, WMS_CELL)}>{formatQty(t.closing.wms)}</td>
-            <td className={cn('px-3 py-1.5', numCls, diffTone(t.closing.diff))}>{formatQty(t.closing.diff)}</td>
-          </tr>
-        </tbody>
-      </table>
+          <Tr className="bg-surface-subtle/60 font-medium">
+            <Td className="text-xs text-fg-secondary">Closing ({formatDate(t.date)})</Td>
+            <Td className={cn('px-3 py-1.5', numCls, NC_CELL)}>{formatQty(t.closing.nc)}</Td>
+            <Td className={cn('px-3 py-1.5', numCls, WMS_CELL)}>{formatQty(t.closing.wms)}</Td>
+            <Td className={cn('px-3 py-1.5', numCls, diffTone(t.closing.diff))}>{formatQty(t.closing.diff)}</Td>
+          </Tr>
+        </TBody>
+      </Table>
       {hiddenCount > 0 && (
         <p className="border-t border-line-subtle px-3 py-1.5 text-2xs text-fg-muted">
           {hiddenCount} internal / state-change {hiddenCount === 1 ? 'category' : 'categories'} hidden
@@ -211,11 +212,11 @@ export function MovementsTable({ rows, indices, highlight, registerRow, closing,
   }
   return (
     <ScrollTable>
-      <table className="min-w-full text-sm">
-        <thead className={stickyHeadCls}>
-          <tr>
-            <th className={cn('px-3 py-2 text-left font-medium', NC_HEAD)}><SideHeader label="NC" closing={closing.nc} date={date} /></th>
-            <th className="border-x border-line px-3 py-2 text-left">
+      <Table density="compact" className="min-w-full">
+        <THead className={stickyHeadCls}>
+          <Tr>
+            <Th className={cn('px-3 py-2 text-left font-medium', NC_HEAD)}><SideHeader label="NC" closing={closing.nc} date={date} /></Th>
+            <Th className="border-x border-line">
               <span className="flex flex-col">
                 <span>Time · category · match</span>
                 <span className={cn(numCls, 'text-sm font-semibold normal-case tracking-normal', diffTone(closing.diff))}
@@ -223,13 +224,13 @@ export function MovementsTable({ rows, indices, highlight, registerRow, closing,
                   End difference {formatQty(closing.diff)}
                 </span>
               </span>
-            </th>
-            <th className={cn('px-3 py-2 text-left font-medium', WMS_HEAD)}><SideHeader label="WMS" closing={closing.wms} date={date} /></th>
-          </tr>
-        </thead>
-        <tbody>
+            </Th>
+            <Th className={cn('px-3 py-2 text-left font-medium', WMS_HEAD)}><SideHeader label="WMS" closing={closing.wms} date={date} /></Th>
+          </Tr>
+        </THead>
+        <TBody>
           {indices.length === 0 && (
-            <tr><td colSpan={3} className="px-3 py-8 text-center text-sm text-fg-muted">No movements in the window.</td></tr>
+            <Tr><Td align="center" colSpan={3} className="text-sm text-fg-muted">No movements in the window.</Td></Tr>
           )}
           {indices.map((i) => {
             const r = rows[i]
@@ -237,20 +238,20 @@ export function MovementsTable({ rows, indices, highlight, registerRow, closing,
             const onlyDateNc = r.kind === 'nc_only' && r.nc[0]?.date_only
             return (
               <Fragment key={i}>
-                <tr ref={(el) => registerRow(i, el)}
+                <Tr ref={(el) => registerRow(i, el)}
                   className={cn('border-t border-line-subtle align-top',
                     rowHidden(r) && 'text-fg-muted',
                     highlight === i && 'outline outline-2 -outline-offset-2 outline-danger-solid')}>
-                  <td className={cn('px-3 py-1.5', NC_CELL, r.kind === 'nc_only' && 'border-l-4 border-l-danger-400')}>
+                  <Td className={cn('px-3 py-1.5', NC_CELL, r.kind === 'nc_only' && 'border-l-4 border-l-danger-400')}>
                     <SideCell lines={r.nc} total={r.nc_qty} kind={r.kind} />
-                  </td>
-                  <td className={cn('border-x border-line-subtle px-3 py-1.5', r.kind !== 'pair' && 'bg-danger-soft')}>
+                  </Td>
+                  <Td className={cn('border-x border-line-subtle px-3 py-1.5', r.kind !== 'pair' && 'bg-danger-soft')}>
                     <div className="flex items-start gap-1.5">
-                      <button type="button" onClick={() => toggle(i)} aria-expanded={isOpen}
+                      <Button variant="subtle" size="xs" type="button" onClick={() => toggle(i)} aria-expanded={isOpen}
                         aria-label={isOpen ? 'Hide details' : 'Show details'}
-                        className="mt-0.5 text-fg-muted hover:text-fg-secondary">
+                        className="mt-0.5">
                         {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                      </button>
+                      </Button>
                       <div className="flex min-w-[11rem] flex-col gap-0.5">
                         <span className="font-mono text-2xs text-fg-secondary">{formatTraceTimeDisplay(r.time, onlyDateNc)}</span>
                         <span className="text-xs">{(r.nc[0] ?? r.wms[0])?.category_label ?? r.category}</span>
@@ -264,27 +265,27 @@ export function MovementsTable({ rows, indices, highlight, registerRow, closing,
                         </span>
                       </div>
                     </div>
-                  </td>
-                  <td className={cn('px-3 py-1.5', WMS_CELL, r.kind === 'wms_only' && 'border-l-4 border-l-danger-400')}>
+                  </Td>
+                  <Td className={cn('px-3 py-1.5', WMS_CELL, r.kind === 'wms_only' && 'border-l-4 border-l-danger-400')}>
                     <SideCell lines={r.wms} total={r.wms_qty} kind={r.kind} />
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
                 {isOpen && (
-                  <tr className="border-t border-line-subtle bg-surface-subtle/60">
-                    <td className={cn('px-4 py-2', NC_CELL)}><DetailList lines={r.nc} side="NC" /></td>
-                    <td className="border-x border-line-subtle px-4 py-2 text-2xs text-fg-muted">
+                  <Tr className="bg-surface-subtle/60">
+                    <Td className={cn('px-4 py-2', NC_CELL)}><DetailList lines={r.nc} side="NC" /></Td>
+                    <Td className="border-x border-line-subtle text-2xs text-fg-muted">
                       {r.kind === 'pair'
                         ? <>Group: NC {signedQty(r.nc_qty)} · WMS {signedQty(r.wms_qty)} · diff <span className={diffTone(r.diff)}>{formatQty(r.diff)}</span></>
                         : 'Unmatched — no movement on the other side was paired with this one.'}
-                    </td>
-                    <td className={cn('px-4 py-2', WMS_CELL)}><DetailList lines={r.wms} side="WMS" /></td>
-                  </tr>
+                    </Td>
+                    <Td className={cn('px-4 py-2', WMS_CELL)}><DetailList lines={r.wms} side="WMS" /></Td>
+                  </Tr>
                 )}
               </Fragment>
             )
           })}
-        </tbody>
-      </table>
+        </TBody>
+      </Table>
     </ScrollTable>
   )
 }

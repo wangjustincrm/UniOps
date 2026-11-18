@@ -14,6 +14,7 @@ import { createPortal } from 'react-dom'
 import { ChevronDown, Loader2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+import { Input, Button } from '@uniops/shell'
 export interface ComboboxProps<T> {
   /** The input's text (controlled). */
   inputValue: string
@@ -210,7 +211,7 @@ export function Combobox<T>({
 
   return (
     <div ref={wrapRef} className={cn('relative', className)}>
-      <input
+      <Input
         ref={inputRef}
         id={inputId}
         role="combobox"
@@ -236,19 +237,19 @@ export function Combobox<T>({
       <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center gap-0.5 text-fg-muted">
         {loading && open && <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" />}
         {onClear && inputValue && !disabled && (
-          <button type="button" aria-label="Clear" tabIndex={-1}
+          <Button variant="subtle" size="icon-xs" type="button" aria-label="Clear" tabIndex={-1}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => { onClear(); inputRef.current?.focus() }}
-            className="pointer-events-auto rounded p-0.5 hover:text-fg-secondary">
+           >
             <X className="h-3.5 w-3.5" />
-          </button>
+          </Button>
         )}
-        <button type="button" aria-label={open ? 'Close list' : 'Open list'} tabIndex={-1} disabled={disabled}
+        <Button variant="subtle" size="icon-xs" type="button" aria-label={open ? 'Close list' : 'Open list'} tabIndex={-1} disabled={disabled}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => { setOpen(!open); inputRef.current?.focus() }}
-          className="pointer-events-auto rounded p-0.5 hover:text-fg-secondary disabled:cursor-not-allowed">
+         >
           <ChevronDown className="h-4 w-4" />
-        </button>
+        </Button>
       </span>
       {list}
     </div>

@@ -12,7 +12,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Search, X,
 } from 'lucide-react'
-import { SortTh, sortParams, useSort } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Checkbox, Input, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { formatDateOnly, inventoryApi, isPositiveQty, qty, type MaterialSortKey } from './inventoryApi'
@@ -49,32 +49,32 @@ function OpenPoLines({ materialCode }: { materialCode: string }) {
   }
 
   return (
-    <table className="min-w-full text-xs">
-      <thead className="text-2xs uppercase tracking-wide text-fg-muted">
-        <tr>
-          <th className="px-3 py-1.5 text-left">PO</th>
-          <th className="px-3 py-1.5 text-left">Supplier</th>
-          <th className="px-3 py-1.5 text-right">Ordered</th>
-          <th className="px-3 py-1.5 text-right">Received</th>
-          <th className="px-3 py-1.5 text-right">Still owed</th>
-          <th className="px-3 py-1.5 text-left">Expected</th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table density="compact" className="min-w-full">
+      <THead>
+        <Tr>
+          <Th>PO</Th>
+          <Th>Supplier</Th>
+          <Th align="right">Ordered</Th>
+          <Th align="right">Received</Th>
+          <Th align="right">Still owed</Th>
+          <Th>Expected</Th>
+        </Tr>
+      </THead>
+      <TBody>
         {lines.map((line, i) => (
-          <tr key={`${line.po_number}-${i}`} className="border-t border-line-subtle">
-            <td className="px-3 py-1.5 font-mono">{line.po_number}</td>
-            <td className="px-3 py-1.5 text-fg-secondary">{line.vendor_name}</td>
-            <td className="px-3 py-1.5 text-right font-mono text-fg-muted">
+          <Tr key={`${line.po_number}-${i}`}>
+            <Td className="font-mono">{line.po_number}</Td>
+            <Td className="text-fg-secondary">{line.vendor_name}</Td>
+            <Td align="right" className="font-mono text-fg-muted">
               {qty(line.ordered)} {line.unit}
-            </td>
-            <td className="px-3 py-1.5 text-right font-mono text-fg-muted">
+            </Td>
+            <Td align="right" className="font-mono text-fg-muted">
               {qty(line.received)}
-            </td>
-            <td className="px-3 py-1.5 text-right font-mono font-medium">
+            </Td>
+            <Td align="right" className="font-mono font-medium">
               {qty(line.remaining)}
-            </td>
-            <td className="px-3 py-1.5">
+            </Td>
+            <Td>
               {line.expected_arrival ? (
                 <span className="text-fg-secondary">
                   {formatDateOnly(line.expected_arrival)}
@@ -93,11 +93,11 @@ function OpenPoLines({ materialCode }: { materialCode: string }) {
                   not stated
                 </span>
               )}
-            </td>
-          </tr>
+            </Td>
+          </Tr>
         ))}
-      </tbody>
-    </table>
+      </TBody>
+    </Table>
   )
 }
 
@@ -154,25 +154,25 @@ export function MaterialsTab({
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex h-10 flex-1 items-center gap-2 rounded-lg border border-line-strong bg-surface px-3 sm:max-w-md">
           <Search aria-hidden className="h-4 w-4 shrink-0 text-fg-muted" />
-          <input
+          <Input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search material code or name…"
             aria-label="Search materials"
-            className="w-full text-sm focus:outline-none"
+            className="w-full"
           />
           {searchInput && (
-            <button type="button" onClick={() => setSearchInput('')} aria-label="Clear search"
-              className="shrink-0 text-fg-muted hover:text-fg-secondary">
+            <Button variant="subtle" size="icon-xs" type="button" onClick={() => setSearchInput('')} aria-label="Clear search"
+              className="shrink-0">
               <X className="h-4 w-4" />
-            </button>
+            </Button>
           )}
         </div>
 
         <label className="flex items-center gap-2 text-xs text-fg-secondary">
-          <input type="checkbox" checked={onlyWithStock}
+          <Checkbox checked={onlyWithStock}
             onChange={(e) => setOnlyWithStock(e.target.checked)}
-            className="h-4 w-4 rounded border-line-strong" />
+            />
           Hide materials with no stock and nothing on order
         </label>
 
@@ -189,9 +189,9 @@ export function MaterialsTab({
       )}
 
       <ScrollTable>
-        <table className="min-w-full text-sm">
-          <thead className={stickyHeadCls}>
-            <tr>
+        <Table density="compact" className="min-w-full">
+          <THead className={stickyHeadCls}>
+            <Tr>
               <SortTh label="Material" sortKey="material_code" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
               <SortTh label="On hand" sortKey="on_hand" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
               <SortTh label="Available" sortKey="available" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
@@ -200,23 +200,23 @@ export function MaterialsTab({
               <SortTh label="Next expiry" sortKey="next_expiry" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
               <SortTh label="On order" sortKey="in_transit" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
               <SortTh label="Arriving" sortKey="earliest_arrival" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
-            </tr>
-          </thead>
-          <tbody>
+            </Tr>
+          </THead>
+          <TBody>
             {query.isLoading && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-fg-muted">Loading materials…</td></tr>
+              <Tr><Td align="center" colSpan={8} className="text-fg-muted">Loading materials…</Td></Tr>
             )}
             {!query.isLoading && items.length === 0 && !query.isError && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-fg-muted">
+              <Tr><Td align="center" colSpan={8} className="text-sm text-fg-muted">
                 {search ? `Nothing matches "${search}".` : 'No materials for these filters.'}
-              </td></tr>
+              </Td></Tr>
             )}
             {items.map((row) => {
               const noneOnOrder = isZero(row.in_transit)
               const isOpen = expanded === row.material_code
               return [
-                <tr key={row.material_code} className="border-t border-line-subtle">
-                  <td className="px-3 py-2">
+                <Tr key={row.material_code}>
+                  <Td>
                     <span className="font-mono text-xs">{row.material_code}</span>
                     {row.material_name && (
                       <span className="ml-1.5 text-xs text-fg-muted">{row.material_name}</span>
@@ -224,15 +224,15 @@ export function MaterialsTab({
                     {row.base_uom && (
                       <span className="ml-1.5 text-2xs text-fg-muted">{row.base_uom}</span>
                     )}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono">{qty(row.on_hand)}</td>
-                  <td className="px-3 py-2 text-right font-mono text-success-fg">{qty(row.available)}</td>
-                  <td className="px-3 py-2 text-right font-mono text-fg-muted">{qty(row.on_hold)}</td>
-                  <td className={cn('px-3 py-2 text-right font-mono',
+                  </Td>
+                  <Td align="right" className="font-mono">{qty(row.on_hand)}</Td>
+                  <Td align="right" className="font-mono text-success-fg">{qty(row.available)}</Td>
+                  <Td align="right" className="font-mono text-fg-muted">{qty(row.on_hold)}</Td>
+                  <Td className={cn('px-3 py-2 text-right font-mono',
                     isPositiveQty(row.expired_qty) ? 'text-danger-fg' : 'text-fg-muted')}>
                     {qty(row.expired_qty)}
-                  </td>
-                  <td className="px-3 py-2 text-xs">
+                  </Td>
+                  <Td className="text-xs">
                     {row.next_expiry ? (
                       <span className={cn(
                         row.days_to_next_expiry !== null && row.days_to_next_expiry < 0 && 'text-danger-fg',
@@ -245,18 +245,18 @@ export function MaterialsTab({
                         )}
                       </span>
                     ) : <span className="text-fg-muted">—</span>}
-                  </td>
-                  <td className="px-3 py-2 text-right">
+                  </Td>
+                  <Td align="right">
                     {noneOnOrder ? (
                       // 0, not blank: "nothing is on order" is a fact, and an
                       // empty cell reads as "unknown".
                       <span className="font-mono text-fg-muted">0</span>
                     ) : (
-                      <button
+                      <Button variant="link"
                         type="button"
                         onClick={() => setExpanded(isOpen ? null : row.material_code)}
                         aria-expanded={isOpen}
-                        className="inline-flex items-center gap-1 font-mono font-medium text-primary-700 hover:underline"
+                        className="font-mono"
                       >
                         {qty(row.in_transit)}
                         <span className="text-2xs font-normal text-fg-muted">
@@ -264,10 +264,10 @@ export function MaterialsTab({
                         </span>
                         {isOpen ? <ChevronUp aria-hidden className="h-3 w-3" />
                                 : <ChevronDown aria-hidden className="h-3 w-3" />}
-                      </button>
+                      </Button>
                     )}
-                  </td>
-                  <td className="px-3 py-2 text-xs">
+                  </Td>
+                  <Td className="text-xs">
                     {noneOnOrder
                       ? <span className="text-fg-faint">—</span>
                       : row.earliest_arrival
@@ -275,19 +275,19 @@ export function MaterialsTab({
                         : <span className="text-fg-muted" title="Neither the ERP nor the purchase order states an arrival date">
                             not stated
                           </span>}
-                  </td>
-                </tr>,
+                  </Td>
+                </Tr>,
                 isOpen && (
-                  <tr key={`${row.material_code}-lines`} className="border-t border-line-subtle bg-surface-subtle/60">
-                    <td colSpan={8} className="p-0">
+                  <Tr key={`${row.material_code}-lines`} className="bg-surface-subtle/60">
+                    <Td colSpan={8}>
                       <OpenPoLines materialCode={row.material_code} />
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 ),
               ]
             })}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </ScrollTable>
 
       <div className="flex items-center justify-between gap-2">
@@ -296,17 +296,17 @@ export function MaterialsTab({
           {query.data && <> · expiry checked against {formatDateOnly(query.data.as_of)}</>}
         </span>
         <div className="flex items-center gap-1">
-          <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))}
+          <Button variant="subtle" size="icon-sm" type="button" onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1 || query.isFetching} aria-label="Previous page"
-            className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40">
+           >
             <ChevronLeft className="h-4 w-4" />
-          </button>
+          </Button>
           <span className="text-2xs text-fg-muted">Page {page} of {pageCount}</span>
-          <button type="button" onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+          <Button variant="subtle" size="icon-sm" type="button" onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
             disabled={page >= pageCount || query.isFetching} aria-label="Next page"
-            className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40">
+           >
             <ChevronRight className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       </div>
     </div>

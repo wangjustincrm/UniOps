@@ -18,7 +18,7 @@ import {
   AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MapPin,
   Search, X,
 } from 'lucide-react'
-import { SortTh, sortParams, useSort } from '@uniops/shell'
+import { SortTh, sortParams, useSort, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import {
@@ -112,46 +112,46 @@ function BatchLocations({
   }
 
   return (
-    <table className="min-w-full text-xs">
-      <thead className="text-2xs uppercase tracking-wide text-fg-muted">
-        <tr>
-          <th className="px-3 py-1.5 text-left">Location</th>
-          <th className="px-3 py-1.5 text-left">Zone</th>
-          <th className="px-3 py-1.5 text-left">Tracking ID</th>
-          <th className="px-3 py-1.5 text-right">Qty</th>
-          <th className="px-3 py-1.5 text-left">Produced</th>
-          <th className="px-3 py-1.5 text-left"
+    <Table density="compact" className="min-w-full">
+      <THead>
+        <Tr>
+          <Th>Location</Th>
+          <Th>Zone</Th>
+          <Th>Tracking ID</Th>
+          <Th align="right">Qty</Th>
+          <Th>Produced</Th>
+          <Th
             title="Dates before 2025-02-03 were carried over by WMS's opening-stock import — WMS has no movements before that day.">
             Received
-          </th>
-          <th className="px-3 py-1.5 text-left">Expiry</th>
-          <th className="px-3 py-1.5 text-left">Quality</th>
-        </tr>
-      </thead>
-      <tbody>
+          </Th>
+          <Th>Expiry</Th>
+          <Th>Quality</Th>
+        </Tr>
+      </THead>
+      <TBody>
         {rows.map((row) => (
-          <tr key={`${row.location_id}|${row.trace_id ?? ''}|${row.lot_no}`}
-            className="border-t border-line-subtle">
-            <td className="px-3 py-1.5">
+          <Tr key={`${row.location_id}|${row.trace_id ?? ''}|${row.lot_no}`}
+           >
+            <Td>
               <span className="inline-flex items-center gap-1 font-mono">
                 <MapPin aria-hidden className="h-3 w-3 text-fg-muted" />
                 {row.location_id}
               </span>
-            </td>
-            <td className="px-3 py-1.5 text-fg-muted">{row.zone_id ?? '—'}</td>
-            <td className="px-3 py-1.5 font-mono text-fg-muted">{row.trace_id ?? '—'}</td>
-            <td className="px-3 py-1.5 text-right font-mono font-medium">
+            </Td>
+            <Td className="text-fg-muted">{row.zone_id ?? '—'}</Td>
+            <Td className="font-mono text-fg-muted">{row.trace_id ?? '—'}</Td>
+            <Td align="right" className="font-mono font-medium">
               {qty(row.qty)}
               {uom && <span className="ml-1 font-sans text-fg-muted">{uom}</span>}
-            </td>
-            <td className="px-3 py-1.5 text-fg-secondary">{formatDateOnly(row.production_date)}</td>
-            <td className="px-3 py-1.5 text-fg-secondary">{formatDateOnly(row.inbound_date)}</td>
-            <td className="px-3 py-1.5 text-fg-secondary">{formatDateOnly(row.expiry_date)}</td>
-            <td className="px-3 py-1.5 text-fg-secondary">{row.quality_status_label ?? '—'}</td>
-          </tr>
+            </Td>
+            <Td className="text-fg-secondary">{formatDateOnly(row.production_date)}</Td>
+            <Td className="text-fg-secondary">{formatDateOnly(row.inbound_date)}</Td>
+            <Td className="text-fg-secondary">{formatDateOnly(row.expiry_date)}</Td>
+            <Td className="text-fg-secondary">{row.quality_status_label ?? '—'}</Td>
+          </Tr>
         ))}
-      </tbody>
-    </table>
+      </TBody>
+    </Table>
   )
 }
 
@@ -228,34 +228,34 @@ export function BatchesTab({
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex h-10 flex-1 items-center gap-2 rounded-lg border border-line-strong bg-surface px-3 sm:max-w-md">
           <Search aria-hidden className="h-4 w-4 shrink-0 text-fg-muted" />
-          <input
+          <Input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search material, name, supplier batch or NC QC batch…"
             aria-label="Search inventory stock"
-            className="w-full text-sm focus:outline-none"
+            className="w-full"
           />
           {searchInput && (
-            <button type="button" onClick={() => setSearchInput('')} aria-label="Clear search"
-              className="shrink-0 text-fg-muted hover:text-fg-secondary">
+            <Button variant="subtle" size="icon-xs" type="button" onClick={() => setSearchInput('')} aria-label="Clear search"
+              className="shrink-0">
               <X className="h-4 w-4" />
-            </button>
+            </Button>
           )}
         </div>
 
         <label className="flex items-center gap-1.5 text-xs text-fg-secondary">
           Status
-          <select
+          <Select selectSize="sm"
             value={status}
             onChange={(e) => setStatus(e.target.value)}
             aria-label="Filter by stock status"
-            className="h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+           
           >
             <option value="">Any</option>
             <option value="available">Available</option>
             <option value="hold">On hold</option>
             <option value="expired">Expired</option>
-          </select>
+          </Select>
         </label>
 
         <span className="text-xs text-fg-muted">
@@ -276,9 +276,9 @@ export function BatchesTab({
       )}
 
       <ScrollTable>
-        <table className="min-w-full text-sm">
-          <thead className={stickyHeadCls}>
-            <tr>
+        <Table density="compact" className="min-w-full">
+          <THead className={stickyHeadCls}>
+            <Tr>
               <SortTh label="Material" sortKey="material_code" sort={sort} onSort={onSort} className={thL} />
               <SortTh label="Supplier batch" sortKey="supplier_batch" sort={sort} onSort={onSort} className={thL} />
               <SortTh label="NC QC batch" sortKey="qc_batches" sort={sort} onSort={onSort} className={thL}
@@ -292,39 +292,39 @@ export function BatchesTab({
               <SortTh label="Shelf life" sortKey="days_to_expiry" sort={sort} onSort={onSort} className={thL} />
               <SortTh label="Quality" sortKey="quality_status" sort={sort} onSort={onSort} className={thL} />
               <SortTh label="Status" sortKey="mapped_status" sort={sort} onSort={onSort} className={thL} />
-            </tr>
-          </thead>
-          <tbody>
+            </Tr>
+          </THead>
+          <TBody>
             {batchQuery.isLoading && (
-              <tr><td colSpan={10} className="px-3 py-8 text-center text-fg-muted">Loading stock…</td></tr>
+              <Tr><Td align="center" colSpan={10} className="text-fg-muted">Loading stock…</Td></Tr>
             )}
             {!batchQuery.isLoading && items.length === 0 && !batchQuery.isError && (
-              <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-fg-muted">
+              <Tr><Td align="center" colSpan={10} className="text-sm text-fg-muted">
                 {search
                   ? `Nothing matches "${search}".`
                   : 'No stock for these filters.'}
-              </td></tr>
+              </Td></Tr>
             )}
             {items.map((lot) => {
               const key = `${lot.warehouse_id}|${lot.material_code}|${lot.supplier_batch ?? ''}`
               const isOpen = expanded === key
               return [
-              <tr key={key} className={cn(
+              <Tr key={key} className={cn(
                 'border-t border-line-subtle',
                 lot.aging_bucket === 'expired' && 'bg-danger-50/40',
               )}>
-                <td className="px-3 py-2">
+                <Td>
                   <span className="font-mono text-xs">{lot.material_code}</span>
                   {lot.material_name && (
                     <span className="ml-1.5 text-xs text-fg-muted">{lot.material_name}</span>
                   )}
-                </td>
-                <td className="px-3 py-2 text-xs">
-                  <button
+                </Td>
+                <Td className="text-xs">
+                  <Button variant="link"
                     type="button"
                     onClick={() => setExpanded(isOpen ? null : key)}
                     aria-expanded={isOpen}
-                    className="inline-flex items-center gap-1 font-mono hover:text-primary-700 hover:underline"
+                    className="font-mono"
                     title="Show where this batch is stored"
                   >
                     {lot.supplier_batch ?? (
@@ -334,18 +334,18 @@ export function BatchesTab({
                     )}
                     {isOpen ? <ChevronUp aria-hidden className="h-3 w-3 shrink-0" />
                             : <ChevronDown aria-hidden className="h-3 w-3 shrink-0" />}
-                  </button>
-                </td>
-                <td className="px-3 py-2 font-mono text-xs text-fg-secondary">
+                  </Button>
+                </Td>
+                <Td className="font-mono text-xs text-fg-secondary">
                   {lot.qc_batches || <span className="font-sans text-fg-muted">—</span>}
-                </td>
-                <td className="px-3 py-2 text-right font-mono">
+                </Td>
+                <Td align="right" className="font-mono">
                   {qty(lot.qty)}
                   {lot.base_uom && (
                     <span className="ml-1 font-sans text-xs text-fg-muted">{lot.base_uom}</span>
                   )}
-                </td>
-                <td className="px-3 py-2 text-xs text-fg-secondary">
+                </Td>
+                <Td className="text-xs text-fg-secondary">
                   {formatDateOnly(lot.production_date)}
                   {lot.production_spans_dates && (
                     <span
@@ -353,8 +353,8 @@ export function BatchesTab({
                       title="This batch's lots have different production dates — the earliest is shown"
                     >+</span>
                   )}
-                </td>
-                <td className="px-3 py-2 text-xs text-fg-secondary">
+                </Td>
+                <Td className="text-xs text-fg-secondary">
                   {formatDateOnly(lot.expiry_date)}
                   {lot.expiry_spans_dates && (
                     // The batch's lots do not share one date, so the date shown
@@ -365,9 +365,9 @@ export function BatchesTab({
                       title="This batch's lots have different expiry dates — the earliest is shown"
                     >+</span>
                   )}
-                </td>
-                <td className="px-3 py-2 text-right font-mono text-xs text-fg-muted">{lot.lots}</td>
-                <td className="px-3 py-2">
+                </Td>
+                <Td align="right" className="font-mono text-xs text-fg-muted">{lot.lots}</Td>
+                <Td>
                   {lot.aging_bucket === null ? (
                     // Not a band, and not rendered as one. Packaging has no
                     // expiry because it does not expire.
@@ -384,8 +384,8 @@ export function BatchesTab({
                         : `${lot.days_to_expiry} d left`}
                     </span>
                   )}
-                </td>
-                <td className="px-3 py-2">
+                </Td>
+                <Td>
                   {lot.quality_status_label && (
                     <span
                       className={cn(
@@ -398,8 +398,8 @@ export function BatchesTab({
                       {lot.quality_status_label}
                     </span>
                   )}
-                </td>
-                <td className="px-3 py-2">
+                </Td>
+                <Td>
                   <span
                     className={cn(
                       'rounded-full border px-2 py-0.5 text-2xs font-medium',
@@ -409,23 +409,23 @@ export function BatchesTab({
                   >
                     {lot.mapped_status}
                   </span>
-                </td>
-              </tr>,
+                </Td>
+              </Tr>,
               isOpen && (
-                <tr key={`${key}-locations`} className="border-t border-line-subtle bg-surface-subtle/60">
-                  <td colSpan={10} className="p-0">
+                <Tr key={`${key}-locations`} className="bg-surface-subtle/60">
+                  <Td colSpan={10}>
                     <BatchLocations
                       materialCode={lot.material_code}
                       supplierBatch={lot.supplier_batch}
                       uom={lot.base_uom}
                     />
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ),
               ]
             })}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </ScrollTable>
 
       <div className="flex items-center justify-between gap-2">
@@ -434,17 +434,17 @@ export function BatchesTab({
           {batchQuery.data && <> · expiry checked against {formatDateOnly(batchQuery.data.as_of)}</>}
         </span>
         <div className="flex items-center gap-1">
-          <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))}
+          <Button variant="subtle" size="icon-sm" type="button" onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1 || batchQuery.isFetching} aria-label="Previous page"
-            className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40">
+           >
             <ChevronLeft className="h-4 w-4" />
-          </button>
+          </Button>
           <span className="text-2xs text-fg-muted">Page {page} of {pageCount}</span>
-          <button type="button" onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+          <Button variant="subtle" size="icon-sm" type="button" onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
             disabled={page >= pageCount || batchQuery.isFetching} aria-label="Next page"
-            className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40">
+           >
             <ChevronRight className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       </div>
     </div>

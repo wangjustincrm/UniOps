@@ -9,7 +9,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
-import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label, SortTh, useSortableRows } from '@uniops/shell'
+import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label, SortTh, useSortableRows, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { formatDate } from '@/lib/utils'
 import type { useToasts } from '@/hooks/useToasts'
@@ -152,23 +152,23 @@ export function NoBatchMaterialsCard({ canAdmin, toasts }: {
         {q.data && items.length === 0 && <p className="text-sm text-fg-muted">No materials on the list.</p>}
         {items.length > 0 && (
           <div className="overflow-x-auto rounded-lg border border-line">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-subtle">
-                <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-fg-muted">
+            <Table density="compact">
+              <THead>
+                <Tr className="text-left text-xs text-fg-muted">
                   <SortTh label="Material code" sortKey="code" sort={sort} onSort={onSort} className={th} />
                   <SortTh label="Since" sortKey="since" sort={sort} onSort={onSort} className={th} />
                   <SortTh label="Note" sortKey="note" sort={sort} onSort={onSort} className={th} />
-                  {canAdmin && <th className="px-3 py-2" />}
-                </tr>
-              </thead>
-              <tbody>
+                  {canAdmin && <Th />}
+                </Tr>
+              </THead>
+              <TBody>
                 {rows.map((m) => (
-                  <tr key={m.material_code} className="border-b border-line-subtle last:border-0">
-                    <td className="px-3 py-2 font-mono text-xs">{m.material_code}</td>
-                    <td className="px-3 py-2 tabular-nums">{formatDate(m.since_date)}</td>
-                    <td className="px-3 py-2 text-fg-secondary">{m.note || '—'}</td>
+                  <Tr key={m.material_code}>
+                    <Td className="font-mono text-xs">{m.material_code}</Td>
+                    <Td className="tabular-nums">{formatDate(m.since_date)}</Td>
+                    <Td className="text-fg-secondary">{m.note || '—'}</Td>
                     {canAdmin && (
-                      <td className="px-3 py-2">
+                      <Td>
                         <div className="flex justify-end gap-1">
                           <Button
                             size="icon-sm" variant="ghost" aria-label={`Edit ${m.material_code}`}
@@ -184,12 +184,12 @@ export function NoBatchMaterialsCard({ canAdmin, toasts }: {
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
-                      </td>
+                      </Td>
                     )}
-                  </tr>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
         )}
       </CardContent>

@@ -11,7 +11,6 @@
 // multi-tab shell restores the right one instead of always reopening on Batches.
 import { Link, useSearchParams } from 'react-router-dom'
 import { Boxes, CalendarClock, Layers } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import { ToastStack } from '@/components/Toast'
 import { useToasts } from '@/hooks/useToasts'
 import { MATERIAL_CLASSES } from './inventoryApi'
@@ -22,6 +21,7 @@ import { WmsFreshness } from './WmsFreshness'
 import { WmsHistoryNote } from '@/components/WmsHistoryNote'
 import { useWmsHistory } from '@/lib/wmsHistory'
 
+import { Checkbox, Select, Tabs } from '@uniops/shell'
 const TABS = [
   { key: 'batches', label: 'Batches', icon: Layers,
     hint: 'Stock by supplier batch — search by material, name, supplier batch or NC QC batch' },
@@ -86,11 +86,11 @@ export default function InventoryPage() {
         <div className="flex flex-wrap items-center gap-4">
         {byproductsRelevant && (
           <label className="flex items-center gap-2 text-xs text-fg-secondary">
-            <input
-              type="checkbox"
+            <Checkbox
+             
               checked={includeByproducts}
               onChange={(e) => setParam('byproducts', e.target.checked ? '1' : '')}
-              className="mt-0.5 h-4 w-4 rounded border-line-strong"
+              className="mt-0.5"
             />
             <span>
               Animal Feed and Waste
@@ -103,16 +103,16 @@ export default function InventoryPage() {
 
         <label className="flex items-center gap-2 text-xs text-fg-secondary">
           Material class
-          <select
+          <Select selectSize="sm"
             value={erpClass}
             onChange={(e) => setParam('class', e.target.value)}
-            className="h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+           
           >
             <option value="">All classes</option>
             {MATERIAL_CLASSES.map((c) => (
               <option key={c.code} value={c.code}>{c.code} · {c.label}</option>
             ))}
-          </select>
+          </Select>
         </label>
         </div>
       </header>
@@ -126,26 +126,13 @@ export default function InventoryPage() {
         delivered straight into production and its receipts are recorded in the ERP.
       </p>
 
-      <div role="tablist" aria-label="Inventory views" className="flex gap-1 border-b border-line">
-        {TABS.map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={tab === key}
-            onClick={() => setParam('tab', key)}
-            className={cn(
-              'flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-              tab === key
-                ? 'border-primary-600 text-primary-700'
-                : 'border-transparent text-fg-muted hover:border-line-strong hover:text-fg-secondary',
-            )}
-          >
-            <Icon aria-hidden className="h-4 w-4" />
-            {label}
-          </button>
-        ))}
-      </div>
+      <Tabs<TabKey>
+        items={TABS.map(({ key, label, icon: Icon }) => ({
+          key, label: <span className="inline-flex items-center gap-1.5"><Icon aria-hidden className="h-4 w-4" />{label}</span>,
+        }))}
+        value={tab}
+        onChange={(key) => setParam('tab', key)}
+      />
 
       {tab === 'batches' && (
         <BatchesTab erpClassCode={erpClass} includeByproducts={includeByproducts} />

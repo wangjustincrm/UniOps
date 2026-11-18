@@ -8,13 +8,7 @@
    "shouting-type": 3
   },
   "inventory": {
-   "raw-control": 68,
-   "raw-overlay": 2,
-   "arbitrary-size": 1,
-   "shouting-type": 22,
-   "raw-color": 2,
-   "raw-table": 411,
-   "emoji": 1
+   "shouting-type": 1
   },
   "portal": {
    "raw-control": 1,
@@ -41,107 +35,7 @@
   "finance/src/pages/finance/TaxSettingsPage.tsx": {
    "shouting-type": 1
   },
-  "inventory/src/components/Combobox.tsx": {
-   "raw-control": 3
-  },
-  "inventory/src/components/ConfirmDialog.tsx": {
-   "raw-control": 1,
-   "raw-overlay": 1
-  },
-  "inventory/src/components/ScrollTable.tsx": {
-   "arbitrary-size": 1,
-   "shouting-type": 1
-  },
-  "inventory/src/components/Toast.tsx": {
-   "raw-control": 2
-  },
-  "inventory/src/components/layout/AppLayout.tsx": {
-   "raw-control": 5,
-   "raw-overlay": 1,
-   "raw-color": 2,
-   "shouting-type": 4
-  },
-  "inventory/src/pages/nc/CostTab.tsx": {
-   "raw-control": 1,
-   "raw-table": 52,
-   "shouting-type": 1
-  },
-  "inventory/src/pages/nc/LedgerTab.tsx": {
-   "raw-control": 2,
-   "raw-table": 54,
-   "emoji": 1
-  },
-  "inventory/src/pages/nc/NcInventoryPage.tsx": {
-   "raw-control": 5
-  },
-  "inventory/src/pages/nc/NcUi.tsx": {
-   "raw-control": 2,
-   "raw-table": 4,
-   "shouting-type": 1
-  },
-  "inventory/src/pages/nc/StockTab.tsx": {
-   "raw-control": 3,
-   "raw-table": 25,
-   "shouting-type": 1
-  },
-  "inventory/src/pages/recon/ReconRows.tsx": {
-   "raw-control": 2,
-   "raw-table": 74
-  },
-  "inventory/src/pages/recon/ReconciliationPage.tsx": {
-   "raw-control": 11,
-   "raw-table": 7,
-   "shouting-type": 2
-  },
-  "inventory/src/pages/settings/NoBatchMaterialsCard.tsx": {
-   "raw-table": 10,
-   "shouting-type": 1
-  },
-  "inventory/src/pages/settings/ParametersCard.tsx": {
-   "raw-control": 1
-  },
-  "inventory/src/pages/settings/SyncStatusCard.tsx": {
-   "raw-control": 1,
-   "raw-table": 22,
-   "shouting-type": 4
-  },
-  "inventory/src/pages/settings/WarehouseClassesCard.tsx": {
-   "raw-control": 1,
-   "raw-table": 12,
-   "shouting-type": 1
-  },
-  "inventory/src/pages/trace/TracePage.tsx": {
-   "raw-control": 8,
-   "shouting-type": 1
-  },
   "inventory/src/pages/trace/TracePickers.tsx": {
-   "shouting-type": 1
-  },
-  "inventory/src/pages/trace/TraceRows.tsx": {
-   "raw-control": 1,
-   "raw-table": 42
-  },
-  "inventory/src/pages/wms/AgingTab.tsx": {
-   "raw-control": 3,
-   "raw-table": 17,
-   "shouting-type": 1
-  },
-  "inventory/src/pages/wms/BatchesTab.tsx": {
-   "raw-control": 6,
-   "raw-table": 42,
-   "shouting-type": 1
-  },
-  "inventory/src/pages/wms/InventoryPage.tsx": {
-   "raw-control": 3
-  },
-  "inventory/src/pages/wms/InventorySummary.tsx": {
-   "raw-control": 1,
-   "raw-table": 14,
-   "shouting-type": 1
-  },
-  "inventory/src/pages/wms/MaterialsTab.tsx": {
-   "raw-control": 6,
-   "raw-table": 36,
    "shouting-type": 1
   },
   "portal/src/pages/admin/AdminPanel.tsx": {

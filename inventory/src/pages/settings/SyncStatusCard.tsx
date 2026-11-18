@@ -7,7 +7,7 @@
 import { useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Loader2, RefreshCw, XCircle } from 'lucide-react'
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, SortTh, sortParams, useSort } from '@uniops/shell'
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, SortTh, sortParams, useSort, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn, displayTimeZone } from '@/lib/utils'
 import { formatDateTimeToronto, formatDuration, formatNumber, relativeAge } from '@/lib/time'
@@ -61,7 +61,7 @@ const SOURCES: Record<SyncSource, {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-xs font-medium uppercase tracking-wide text-fg-muted">{label}</dt>
+      <dt className="text-xs font-medium text-fg-muted">{label}</dt>
       <dd className="mt-0.5 text-sm text-fg">{children}</dd>
     </div>
   )
@@ -74,31 +74,31 @@ function CountsTable({ status, name }: { status: NcSyncStatus; name: string }) {
   if (tables.length === 0) return null
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-fg-muted">
-            <th className="py-2 pr-4 font-medium">Mirror table</th>
-            <th className="py-2 pr-4 text-right font-medium">Rows</th>
-            <th className="py-2 text-right font-medium" title={`Rows ${name} returned that were dropped as unusable (duplicates, missing keys)`}>
+      <Table density="compact">
+        <THead>
+          <Tr className="text-left text-xs text-fg-muted">
+            <Th className="pr-4">Mirror table</Th>
+            <Th align="right" className="pr-4 ">Rows</Th>
+            <Th align="right" title={`Rows ${name} returned that were dropped as unusable (duplicates, missing keys)`}>
               Filtered out
-            </th>
-          </tr>
-        </thead>
-        <tbody>
+            </Th>
+          </Tr>
+        </THead>
+        <TBody>
           {tables.map((t) => {
             const filtered = status.filtered_counts[t] ?? 0
             return (
-              <tr key={t} className="border-b border-line-subtle last:border-0">
-                <td className="py-1.5 pr-4 font-mono text-xs text-fg-secondary">{t}</td>
-                <td className="py-1.5 pr-4 text-right tabular-nums">{formatNumber(status.row_counts[t] ?? 0, 0)}</td>
-                <td className={cn('py-1.5 text-right tabular-nums', filtered > 0 ? 'text-warning-fg' : 'text-fg-muted')}>
+              <Tr key={t}>
+                <Td className="pr-4 font-mono text-xs text-fg-secondary">{t}</Td>
+                <Td align="right" className="pr-4 tabular-nums">{formatNumber(status.row_counts[t] ?? 0, 0)}</Td>
+                <Td className={cn('py-1.5 text-right tabular-nums', filtered > 0 ? 'text-warning-fg' : 'text-fg-muted')}>
                   {formatNumber(filtered, 0)}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             )
           })}
-        </tbody>
-      </table>
+        </TBody>
+      </Table>
     </div>
   )
 }
@@ -151,30 +151,30 @@ function TieoutIssuesTable({ source }: { source: SyncSource }) {
         By check: {byCheck.map(([k, n]) => `${tieoutCheckLabel(k)} ${n}`).join(' · ')}
       </p>
       <div className={cn('max-h-96 overflow-auto rounded-lg border border-line', q.isFetching && 'opacity-70')}>
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-surface-subtle">
-            <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-fg-muted">
+        <Table density="compact">
+          <THead className="sticky top-0">
+            <Tr className="text-left text-xs text-fg-muted">
               <SortTh label="Check" sortKey="check" sort={sort} onSort={onSort} className={issueTh} />
               <SortTh label="Measure" sortKey="measure" sort={sort} onSort={onSort} className={issueTh} />
               <SortTh label="Label" sortKey="label" sort={sort} onSort={onSort} className={issueTh} />
               <SortTh label="Mirror" sortKey="mirror" sort={sort} onSort={onSort} align="right" className={issueTh} />
               <SortTh label={source === 'wms' ? 'WMS' : 'NC'} sortKey="nc" sort={sort} onSort={onSort} align="right" className={issueTh} />
               <SortTh label="Diff" sortKey="diff" sort={sort} onSort={onSort} align="right" className={issueTh} />
-            </tr>
-          </thead>
-          <tbody>
+            </Tr>
+          </THead>
+          <TBody>
             {items.map((i) => (
-              <tr key={`${i.check}|${i.measure}|${i.key}`} className="border-b border-line-subtle last:border-0">
-                <td className="px-3 py-1.5 text-xs" title={i.check}>{tieoutCheckLabel(i.check)}</td>
-                <td className="px-3 py-1.5">{i.measure}</td>
-                <td className="px-3 py-1.5" title={i.key}>{i.label || i.key}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(i.mirror_value, 4)}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums">{formatNumber(i.nc_value, 4)}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-danger-fg">{diffOf(i.mirror_value, i.nc_value)}</td>
-              </tr>
+              <Tr key={`${i.check}|${i.measure}|${i.key}`}>
+                <Td className="text-xs" title={i.check}>{tieoutCheckLabel(i.check)}</Td>
+                <Td>{i.measure}</Td>
+                <Td title={i.key}>{i.label || i.key}</Td>
+                <Td align="right" className="tabular-nums">{formatNumber(i.mirror_value, 4)}</Td>
+                <Td align="right" className="tabular-nums">{formatNumber(i.nc_value, 4)}</Td>
+                <Td align="right" className="tabular-nums text-danger-fg">{diffOf(i.mirror_value, i.nc_value)}</Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </div>
       <Pager page={page} pageSize={ISSUES_PAGE_SIZE} total={data.total} busy={q.isFetching} onPage={setPage} />
     </div>
@@ -304,7 +304,7 @@ export function SyncStatusCard({ canAdmin, toasts, source = 'nc' }: {
             )}
 
             <div>
-              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-fg-muted">Tie-out to {cfg.name}</p>
+              <p className="mb-1 text-xs font-medium text-fg-muted">Tie-out to {cfg.name}</p>
               {s.tieout_ok == null ? (
                 <p className="text-sm text-fg-muted">Not run yet.</p>
               ) : s.tieout_ok ? (
@@ -313,10 +313,10 @@ export function SyncStatusCard({ canAdmin, toasts, source = 'nc' }: {
                 </p>
               ) : (
                 <div className="space-y-3">
-                  <button
+                  <Button variant="link"
                     type="button"
                     onClick={() => setShowIssues((v) => !v)}
-                    className="flex items-center gap-1.5 text-sm font-medium text-danger-fg hover:underline"
+                    className="text-sm text-danger-fg"
                     aria-expanded={showIssues}
                   >
                     <XCircle aria-hidden className="h-4 w-4" />
@@ -324,7 +324,7 @@ export function SyncStatusCard({ canAdmin, toasts, source = 'nc' }: {
                     {showIssues
                       ? <ChevronDown aria-hidden className="h-3.5 w-3.5" />
                       : <ChevronRight aria-hidden className="h-3.5 w-3.5" />}
-                  </button>
+                  </Button>
                   {showIssues && <TieoutIssuesTable source={source} />}
                 </div>
               )}

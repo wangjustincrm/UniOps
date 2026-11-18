@@ -14,7 +14,7 @@
 import { useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ChevronLeft, ChevronRight, Info } from 'lucide-react'
-import { SortTh, sortParams, useSort } from '@uniops/shell'
+import { Button, ChoiceCard, SortTh, TBody, THead, Table, Td, Tr, sortParams, useSort } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import {
@@ -126,17 +126,14 @@ export function AgingTab({
           const bucket = byKey.get(key)
           const active = selected === key
           return (
-            <button
+            <ChoiceCard
               key={key}
-              type="button"
+              selected={active}
               onClick={() => setSelected(key)}
-              aria-pressed={active}
-              className={cn(
-                'rounded-lg border p-3 text-left transition-colors',
-                active ? CARD_STYLE[key].active : CARD_STYLE[key].idle,
-              )}
+              // Each bucket keeps its own colour; ChoiceCard supplies the tile.
+              className={cn('items-stretch gap-0 rounded-lg p-3 shadow-none', active ? CARD_STYLE[key].active : CARD_STYLE[key].idle)}
             >
-              <div className="text-2xs font-medium uppercase tracking-wide text-fg-muted">
+              <div className="text-2xs font-medium text-fg-muted">
                 {bucket?.label ?? key}
               </div>
               <div className="mt-1 text-xl font-semibold tabular-nums text-fg">
@@ -151,7 +148,7 @@ export function AgingTab({
                   </span>
                 )}
               </div>
-            </button>
+            </ChoiceCard>
           )
         })}
       </div>
@@ -178,9 +175,9 @@ export function AgingTab({
       )}
 
       <ScrollTable>
-        <table className="min-w-full text-sm">
-          <thead className={stickyHeadCls}>
-            <tr>
+        <Table density="compact" className="min-w-full">
+          <THead className={stickyHeadCls}>
+            <Tr>
               <SortTh label="Material" sortKey="material_code" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
               <SortTh label="Supplier batch" sortKey="supplier_batch" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
               <SortTh label="Qty" sortKey="qty" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
@@ -189,44 +186,44 @@ export function AgingTab({
               <SortTh label="Expiry" sortKey="expiry_date" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
               <SortTh label="Days" sortKey="days_to_expiry" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
               <SortTh label="Quality" sortKey="quality_status" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
-            </tr>
-          </thead>
-          <tbody>
+            </Tr>
+          </THead>
+          <TBody>
             {lotsQuery.isLoading && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-fg-muted">Loading stock…</td></tr>
+              <Tr><Td align="center" colSpan={8} className="text-fg-muted">Loading stock…</Td></Tr>
             )}
             {!lotsQuery.isLoading && items.length === 0 && !lotsQuery.isError && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-fg-muted">
+              <Tr><Td align="center" colSpan={8} className="text-sm text-fg-muted">
                 Nothing in this band.
-              </td></tr>
+              </Td></Tr>
             )}
             {items.map((lot) => (
-              <tr
+              <Tr
                 key={`${lot.warehouse_id}|${lot.material_code}|${lot.supplier_batch ?? ''}`}
-                className="border-t border-line-subtle"
+               
               >
-                <td className="px-3 py-2">
+                <Td>
                   <span className="font-mono text-xs">{lot.material_code}</span>
                   {lot.material_name && (
                     <span className="ml-1.5 text-xs text-fg-muted">{lot.material_name}</span>
                   )}
-                </td>
-                <td className="px-3 py-2 font-mono text-xs">
+                </Td>
+                <Td className="font-mono text-xs">
                   {lot.supplier_batch ?? (
                     <span className="font-sans text-fg-muted">no supplier batch</span>
                   )}
-                </td>
-                <td className="px-3 py-2 text-right font-mono">
+                </Td>
+                <Td align="right" className="font-mono">
                   {qty(lot.qty)}
                   {lot.base_uom && (
                     <span className="ml-1 font-sans text-xs text-fg-muted">{lot.base_uom}</span>
                   )}
-                </td>
-                <td className="px-3 py-2 text-right font-mono text-xs text-fg-muted">{lot.lots}</td>
-                <td className="px-3 py-2 text-xs text-fg-secondary">
+                </Td>
+                <Td align="right" className="font-mono text-xs text-fg-muted">{lot.lots}</Td>
+                <Td className="text-xs text-fg-secondary">
                   {formatDateOnly(lot.production_date)}
-                </td>
-                <td className="px-3 py-2 text-xs text-fg-secondary">
+                </Td>
+                <Td className="text-xs text-fg-secondary">
                   {formatDateOnly(lot.expiry_date)}
                   {lot.expiry_spans_dates && (
                     <span
@@ -234,22 +231,22 @@ export function AgingTab({
                       title="This batch's lots have different expiry dates — the earliest is shown"
                     >+</span>
                   )}
-                </td>
-                <td className={cn(
+                </Td>
+                <Td className={cn(
                   'px-3 py-2 text-right font-mono text-xs',
                   lot.days_to_expiry !== null && lot.days_to_expiry < 0 && 'text-danger-fg',
                   lot.days_to_expiry !== null && lot.days_to_expiry >= 0 && lot.days_to_expiry < 30
                     && 'text-warning-fg',
                 )}>
                   {lot.days_to_expiry ?? '—'}
-                </td>
-                <td className="px-3 py-2 text-xs text-fg-secondary">
+                </Td>
+                <Td className="text-xs text-fg-secondary">
                   {lot.quality_status_label ?? '—'}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </ScrollTable>
 
       <div className="flex items-center justify-between gap-2">
@@ -258,17 +255,17 @@ export function AgingTab({
           {asOf && <> · shelf life measured from {formatDateOnly(asOf)}</>}
         </span>
         <div className="flex items-center gap-1">
-          <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))}
+          <Button variant="subtle" size="icon-sm" type="button" onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1 || lotsQuery.isFetching} aria-label="Previous page"
-            className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40">
+           >
             <ChevronLeft className="h-4 w-4" />
-          </button>
+          </Button>
           <span className="text-2xs text-fg-muted">Page {page} of {pageCount}</span>
-          <button type="button" onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+          <Button variant="subtle" size="icon-sm" type="button" onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
             disabled={page >= pageCount || lotsQuery.isFetching} aria-label="Next page"
-            className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40">
+           >
             <ChevronRight className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 // Small pieces the three NC tabs share: error box, loading rows, pager,
 // material cell. (Sortable headers: SortTh from @uniops/shell.)
 import { AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
-import { Skeleton } from '@uniops/shell'
+import { Skeleton, Td, Tr, Button } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 
 export function ErrorBox({ error, fallback }: { error: unknown; fallback: string }) {
@@ -19,13 +19,13 @@ export function LoadingRows({ cols, rows = 6 }: { cols: number; rows?: number })
   return (
     <>
       {Array.from({ length: rows }).map((_, r) => (
-        <tr key={r} className="border-t border-line-subtle">
+        <Tr key={r}>
           {Array.from({ length: cols }).map((__, c) => (
-            <td key={c} className="px-3 py-2.5">
+            <Td key={c}>
               <Skeleton className={c === 0 ? 'w-32' : 'w-16'} />
-            </td>
+            </Td>
           ))}
-        </tr>
+        </Tr>
       ))}
     </>
   )
@@ -33,9 +33,9 @@ export function LoadingRows({ cols, rows = 6 }: { cols: number; rows?: number })
 
 export function EmptyRow({ cols, children }: { cols: number; children: React.ReactNode }) {
   return (
-    <tr>
-      <td colSpan={cols} className="px-3 py-8 text-center text-sm text-fg-muted">{children}</td>
-    </tr>
+    <Tr>
+      <Td align="center" colSpan={cols} className="text-sm text-fg-muted">{children}</Td>
+    </Tr>
   )
 }
 
@@ -55,17 +55,17 @@ export function Pager({ page, pageSize, total, busy, onPage }: {
         {from.toLocaleString('en-US')}–{to.toLocaleString('en-US')} of {total.toLocaleString('en-US')}
       </span>
       <div className="flex items-center gap-1">
-        <button type="button" onClick={() => onPage(Math.max(1, page - 1))}
+        <Button variant="subtle" size="icon-sm" type="button" onClick={() => onPage(Math.max(1, page - 1))}
           disabled={page <= 1 || busy} aria-label="Previous page"
-          className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40">
+         >
           <ChevronLeft className="h-4 w-4" />
-        </button>
+        </Button>
         <span className="text-2xs text-fg-muted">Page {page} of {pageCount}</span>
-        <button type="button" onClick={() => onPage(Math.min(pageCount, page + 1))}
+        <Button variant="subtle" size="icon-sm" type="button" onClick={() => onPage(Math.min(pageCount, page + 1))}
           disabled={page >= pageCount || busy} aria-label="Next page"
-          className="rounded p-1.5 text-fg-muted hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40">
+         >
           <ChevronRight className="h-4 w-4" />
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -90,5 +90,5 @@ export function Uom({ uom }: { uom: string | null }) {
   return <span className="ml-1 font-sans text-xs text-fg-muted">{uom}</span>
 }
 
-export const thCls = 'bg-surface-subtle text-xs uppercase tracking-wide text-fg-muted'
+export const thCls = 'bg-surface-subtle text-xs text-fg-muted'
 export const tableWrapCls = 'overflow-x-auto rounded-lg border border-line bg-surface'

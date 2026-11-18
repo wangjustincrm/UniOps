@@ -17,6 +17,7 @@ import { AlertTriangle, Info } from 'lucide-react'
 import { cn, formatDate } from '@/lib/utils'
 import { isPositiveQty, qty, type InventorySummaryLine } from './inventoryApi'
 
+import { CellButton, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 /** Add whole days to a 'YYYY-MM-DD' on a UTC clock — never through the local
  *  timezone, which shifts a date-only value by a day. */
 function shiftIso(iso: string, days: number): string {
@@ -61,37 +62,37 @@ export function InventorySummary({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="min-w-full">
-          <thead>
-            <tr className="text-2xs uppercase tracking-wide text-fg-muted">
+        <Table density="compact" className="min-w-full">
+          <THead>
+            <Tr className="text-2xs text-fg-muted">
               {/* The unit column only earns its space when there is more than
                   one unit in scope; with a single unit it rides along with the
                   numbers instead. */}
-              {multiUnit && <th className="px-4 py-2 text-left">Unit</th>}
-              <th className="px-4 py-2 text-right">Total</th>
-              <th className="px-4 py-2 text-right">Available</th>
-              <th className="px-4 py-2 text-right">Expired</th>
-              <th className="px-4 py-2 text-right">Blocked</th>
-              <th className="px-4 py-2 text-right">
+              {multiUnit && <Th>Unit</Th>}
+              <Th align="right">Total</Th>
+              <Th align="right">Available</Th>
+              <Th align="right">Expired</Th>
+              <Th align="right">Blocked</Th>
+              <Th align="right">
                 Expiring in {warningDays} days
-              </th>
-            </tr>
-          </thead>
-          <tbody>
+              </Th>
+            </Tr>
+          </THead>
+          <TBody>
             {summary.map((line) => {
               const unit = line.uom ?? 'no unit'
               const hasExpiring = isPositiveQty(line.expiring_soon_qty)
               return (
-                <tr key={unit} className="border-t border-line-subtle">
+                <Tr key={unit}>
                   {multiUnit && (
-                    <td className="px-4 py-3 text-xs font-medium text-fg-secondary">
+                    <Td className="text-xs font-medium text-fg-secondary">
                       {line.uom ?? (
                         // 495 lots belong to materials the master has no row
                         // for. Saying so beats an empty cell that reads as a
                         // rendering fault.
                         <span className="text-fg-muted">no unit on file</span>
                       )}
-                    </td>
+                    </Td>
                   )}
                   <Metric value={line.total_qty} unit={unit} showUnit={!multiUnit}
                     sub={`${line.batches.toLocaleString('en-US')} batches · ${line.lots.toLocaleString('en-US')} lots`} />
@@ -101,9 +102,9 @@ export function InventorySummary({
                     tone={isPositiveQty(line.expired_qty) ? 'bad' : undefined} />
                   <Metric value={line.blocked_qty} unit={unit} showUnit={!multiUnit}
                     tone={isPositiveQty(line.blocked_qty) ? 'bad' : undefined} />
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      type="button"
+                  <Td align="right">
+                    <CellButton
+                      align="end"
                       disabled={!asOf || (!hasExpiring && !expiringFilterActive)}
                       aria-pressed={expiringFilterActive}
                       onClick={() => {
@@ -118,10 +119,10 @@ export function InventorySummary({
                         })
                       }}
                       className={cn(
-                        'rounded-md px-2 py-1 text-right transition-colors',
+                        'ml-auto block h-auto w-auto rounded-md px-2 py-1 hover:text-current disabled:opacity-100',
                         expiringFilterActive && 'bg-warning-soft ring-1 ring-warning-solid',
                         hasExpiring && !expiringFilterActive && 'hover:bg-warning-soft',
-                        !hasExpiring && !expiringFilterActive && 'cursor-default',
+                        !hasExpiring && !expiringFilterActive && 'cursor-default hover:bg-transparent',
                       )}
                       title={hasExpiring
                         ? (expiringFilterActive
@@ -139,13 +140,13 @@ export function InventorySummary({
                       <span className="block text-2xs text-fg-muted">
                         {line.expiring_soon_batches.toLocaleString('en-US')} batches
                       </span>
-                    </button>
-                  </td>
-                </tr>
+                    </CellButton>
+                  </Td>
+                </Tr>
               )
             })}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </div>
 
       <p className="flex items-start gap-1.5 border-t border-line-subtle px-4 py-2 text-2xs text-fg-muted">
@@ -183,7 +184,7 @@ function Metric({
   sub?: string
 }) {
   return (
-    <td className="px-4 py-3 text-right">
+    <Td align="right">
       <span className={cn(
         'block text-lg font-semibold tabular-nums',
         tone === 'good' && 'text-success-fg',
@@ -194,6 +195,6 @@ function Metric({
         {showUnit && <span className="ml-1 text-xs font-normal text-fg-muted">{unit}</span>}
       </span>
       {sub && <span className="block text-2xs text-fg-muted">{sub}</span>}
-    </td>
+    </Td>
   )
 }

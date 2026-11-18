@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Download, Loader2, Route } from 'lucide-react'
-import { Badge, Skeleton } from '@uniops/shell'
+import { Badge, Button, Checkbox, Input, Skeleton } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
 import { formatQty, isZero } from '@/lib/number'
@@ -28,9 +28,6 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
 const inputCls =
   'h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-fg-muted'
-const btnCls =
-  'inline-flex h-9 items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50'
-
 export default function TracePage() {
   const { material } = useParams()
   if (!material) return <TraceStart />
@@ -79,12 +76,12 @@ function TraceStart() {
         </div>
         <label className="flex flex-col gap-1 text-xs text-fg-secondary">
           To date
-          <input type="date" value={date} max={today} onChange={(e) => setDate(e.target.value || today)} className={inputCls} />
+          <Input type="date" value={date} max={today} onChange={(e) => setDate(e.target.value || today)} className={inputCls} />
         </label>
-        <button type="submit" disabled={!material}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary-600 px-4 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50">
+        <Button size="md" type="submit" disabled={!material}
+         >
           <Route aria-hidden className="h-4 w-4" />Trace
-        </button>
+        </Button>
         {batchLocked && <p className="basis-full text-xs text-fg-muted">{noBatchNote(noBatchSince!)}</p>}
         <p className="basis-full text-2xs text-fg-muted">
           Leave the batch empty to trace the whole material. A batch number matches its whole batch group
@@ -101,7 +98,7 @@ function Tile({ label, children, tone }: { label: string; children: React.ReactN
   return (
     <div className={cn('min-w-[8rem] rounded-lg border bg-surface px-3 py-2',
       tone === 'bad' ? 'border-danger-line' : 'border-line')}>
-      <p className="text-2xs font-medium uppercase tracking-wide text-fg-muted">{label}</p>
+      <p className="text-2xs font-medium text-fg-muted">{label}</p>
       <div className="mt-0.5 font-mono text-sm text-fg">{children}</div>
     </div>
   )
@@ -231,10 +228,10 @@ function TraceView({ material }: { material: string }) {
         </div>
         <div className="flex items-center gap-2">
           <Link to="/trace" className="text-xs font-medium text-primary-700 hover:underline">Trace another material</Link>
-          <button type="button" onClick={onExport} disabled={exporting || !t} className={btnCls}>
+          <Button type="button" variant="secondary" size="md" onClick={onExport} disabled={exporting || !t}>
             {exporting ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <Download aria-hidden className="h-4 w-4" />}
             {exporting ? 'Exporting…' : 'Export'}
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -259,7 +256,7 @@ function TraceView({ material }: { material: string }) {
           </div>
           <label className="flex items-center gap-2 text-xs text-fg-secondary">
             To date
-            <input type="date" value={date} max={today}
+            <Input type="date" value={date} max={today}
               onChange={(e) => setParams({ date: e.target.value && e.target.value !== today ? e.target.value : '' })}
               className={inputCls} />
           </label>
@@ -294,9 +291,9 @@ function TraceView({ material }: { material: string }) {
 
       {q.isError && <ErrorBox error={q.error} fallback="Could not load the trace." />}
       {batchRefused && (
-        <button type="button" onClick={() => setParams({ batch: '' })} className={cn(btnCls, 'w-fit')}>
+        <Button type="button" variant="secondary" size="md" onClick={() => setParams({ batch: '' })} className="w-fit">
           Trace the whole material instead
-        </button>
+        </Button>
       )}
       {exportError != null && <ErrorBox error={exportError} fallback="Export failed." />}
 
@@ -344,19 +341,19 @@ function TraceView({ material }: { material: string }) {
                     <span className="text-xs font-normal text-danger-fg">— the two balances never agree in this window</span>
                   )}
                 </p>
-                <button type="button" onClick={() => jumpTo(divIndex)} disabled={divIndex < 0}
-                  className="w-fit text-left text-sm text-danger-fg underline decoration-danger-300 underline-offset-2 hover:decoration-danger-fg disabled:no-underline"
+                <Button variant="link" type="button" onClick={() => jumpTo(divIndex)} disabled={divIndex < 0}
+                  className="text-left text-sm text-danger-fg"
                   title={divIndex >= 0 ? 'Show this movement in the table below' : undefined}>
                   {div.summary}
-                </button>
+                </Button>
                 {div.main && (
                   <p className="text-xs text-danger-fg">
                     Largest unmatched since then:{' '}
-                    <button type="button" onClick={() => jumpTo(mainIndex)} disabled={mainIndex < 0}
-                      className="text-left underline decoration-danger-300 underline-offset-2 hover:decoration-danger-fg disabled:no-underline"
+                    <Button variant="link" type="button" onClick={() => jumpTo(mainIndex)} disabled={mainIndex < 0}
+                      className="text-left"
                       title={mainIndex >= 0 ? 'Show this document in the table below' : undefined}>
                       {div.main.summary}
-                    </button>
+                    </Button>
                   </p>
                 )}
               </div>
@@ -376,8 +373,8 @@ function TraceView({ material }: { material: string }) {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-fg">By category</h2>
               <label className="flex items-center gap-2 text-xs text-fg-secondary">
-                <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)}
-                  className="h-4 w-4 rounded border-line-strong" />
+                <Checkbox checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)}
+                  />
                 Show internal moves &amp; state changes
               </label>
             </div>

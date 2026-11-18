@@ -13,6 +13,7 @@ import { CheckCircle2, AlertCircle, X as XIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ToastItem } from '@/hooks/useToasts'
 
+import { Button } from '@uniops/shell'
 export function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
   if (toasts.length === 0) return null
   return createPortal(
@@ -33,22 +34,22 @@ export function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismi
             : <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />}
           <span className="flex-1">{t.message}</span>
           {t.action && (
-            <button
+            <Button variant="secondary" size="xs"
               type="button"
               onClick={() => { t.action!.onClick(); onDismiss(t.id) }}
-              className="shrink-0 rounded-md border border-current/30 px-2 py-1 text-xs font-medium hover:bg-current/10"
+              className="shrink-0"
             >
               {t.action.label}
-            </button>
+            </Button>
           )}
-          <button
+          <Button variant="subtle" size="icon-xs"
             type="button"
             onClick={() => onDismiss(t.id)}
             aria-label="Dismiss notification"
-            className="shrink-0 text-current/60 hover:text-current"
+            className="shrink-0"
           >
             <XIcon className="h-3.5 w-3.5" />
-          </button>
+          </Button>
         </div>
       ))}
     </div>,

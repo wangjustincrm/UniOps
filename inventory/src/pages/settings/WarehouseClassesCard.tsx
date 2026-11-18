@@ -5,7 +5,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2 } from 'lucide-react'
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, SortTh, useSortableRows } from '@uniops/shell'
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, SortTh, useSortableRows, Select, TBody, THead, Table, Td, Th, Tr } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import { formatNumber } from '@/lib/time'
 import type { useToasts } from '@/hooks/useToasts'
@@ -21,8 +21,6 @@ const CLASS_LABELS: Record<WarehouseClass, string> = {
 
 const CLASS_ORDER: WarehouseClass[] = ['wms', 'external', 'production', 'transient', 'other']
 
-const selectCls =
-  'h-9 w-full min-w-[16rem] rounded-lg border border-line bg-surface-sunken px-2 text-sm text-fg focus:outline-none focus:bg-surface focus:border-primary-600'
 
 function Row({ row, canAdmin, toasts }: {
   row: WarehouseClassRow
@@ -47,32 +45,32 @@ function Row({ row, canAdmin, toasts }: {
   const unclassified = row.warehouse_class === 'unclassified'
 
   return (
-    <tr className={cn('border-b border-line-subtle align-top last:border-0', unclassified && 'bg-warning-50/60')}>
-      <td className="px-3 py-2 font-mono text-xs">
+    <Tr className={cn('border-b border-line-subtle align-top last:border-0', unclassified && 'bg-warning-50/60')}>
+      <Td className="font-mono text-xs">
         {row.code}
         {!row.in_nc && <Badge variant="neutral" className="ml-2">Not in NC</Badge>}
-      </td>
-      <td className="px-3 py-2">
+      </Td>
+      <Td>
         {row.name ?? '—'}
         {row.costed === false && <Badge variant="warning" className="ml-2">Not costed</Badge>}
-      </td>
-      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(row.on_hand_qty)}</td>
-      <td className="px-3 py-2">
+      </Td>
+      <Td align="right" className="tabular-nums">{formatNumber(row.on_hand_qty)}</Td>
+      <Td>
         {canAdmin ? (
-          <select
-            className={selectCls} value={cls} aria-label={`Class for ${row.code}`}
+          <Select
+            className="w-full min-w-[16rem]" value={cls} aria-label={`Class for ${row.code}`}
             onChange={(e) => setCls(e.target.value)}
           >
             {cls === 'unclassified' && <option value="unclassified" disabled>Unclassified — choose…</option>}
             {CLASS_ORDER.map((c) => <option key={c} value={c}>{CLASS_LABELS[c]}</option>)}
-          </select>
+          </Select>
         ) : unclassified ? (
           <Badge variant="warning">Unclassified</Badge>
         ) : (
           CLASS_LABELS[row.warehouse_class as WarehouseClass] ?? row.warehouse_class
         )}
-      </td>
-      <td className="px-3 py-2">
+      </Td>
+      <Td>
         {canAdmin ? (
           <Input
             className="h-9" value={note} maxLength={500} aria-label={`Note for ${row.code}`}
@@ -82,9 +80,9 @@ function Row({ row, canAdmin, toasts }: {
           <span className="text-fg-secondary">{row.note || '—'}</span>
         )}
         {error && <p role="alert" className="mt-1 text-xs text-danger-fg">{error}</p>}
-      </td>
+      </Td>
       {canAdmin && (
-        <td className="px-3 py-2 text-right">
+        <Td align="right">
           <Button
             size="sm" variant="secondary"
             disabled={!dirty || cls === 'unclassified' || save.isPending}
@@ -93,9 +91,9 @@ function Row({ row, canAdmin, toasts }: {
             {save.isPending && <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" />}
             Save
           </Button>
-        </td>
+        </Td>
       )}
-    </tr>
+    </Tr>
   )
 }
 
@@ -146,18 +144,18 @@ export function WarehouseClassesCard({ canAdmin, toasts }: {
         )}
         {data && data.items.length > 0 && (
           <div className="overflow-x-auto rounded-lg border border-line">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-subtle">
-                <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-fg-muted">
+            <Table density="compact">
+              <THead>
+                <Tr className="text-left text-xs text-fg-muted">
                   <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className={th} />
                   <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className={th} />
                   <SortTh label="On-hand qty" sortKey="qty" sort={sort} onSort={onSort} align="right" className={th} />
                   <SortTh label="Class" sortKey="cls" sort={sort} onSort={onSort} className={th} />
                   <SortTh label="Note" sortKey="note" sort={sort} onSort={onSort} className={th} />
-                  {canAdmin && <th className="px-3 py-2" />}
-                </tr>
-              </thead>
-              <tbody>
+                  {canAdmin && <Th />}
+                </Tr>
+              </THead>
+              <TBody>
                 {rows.map((row) => (
                   // Keyed on the saved state too, so a refetch after save
                   // re-seeds the row's local edit state from the server.
@@ -166,8 +164,8 @@ export function WarehouseClassesCard({ canAdmin, toasts }: {
                     row={row} canAdmin={canAdmin} toasts={toasts}
                   />
                 ))}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
         )}
       </CardContent>

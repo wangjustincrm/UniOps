@@ -4,7 +4,7 @@
 // those columns show "—" rather than a number that would be invented.
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Badge, SortTh, sortParams, useSort, type Sort } from '@uniops/shell'
+import { Badge, Button, Chip, Segmented, SortTh, TBody, THead, Table, Td, Th, Tr, sortParams, type Sort, useSort } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import { formatQty, isNegative } from '@/lib/number'
 import {
@@ -26,10 +26,10 @@ const CLASS_BADGE: Record<string, 'info' | 'neutral' | 'warning' | 'dark'> = {
 
 function QtyCell({ value, uom }: { value: string | null; uom?: string | null }) {
   return (
-    <td className={cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(value) && 'text-danger-fg')}>
+    <Td className={cn('px-3 py-2 text-right font-mono text-xs tabular-nums', isNegative(value) && 'text-danger-fg')}>
       {formatQty(value)}
       {uom !== undefined && <Uom uom={uom} />}
-    </td>
+    </Td>
   )
 }
 
@@ -40,7 +40,7 @@ function Summary({ rows, residue }: { rows: StockSummaryRow[]; residue: number }
       <div className="flex flex-wrap gap-2">
         {rows.map((s) => (
           <div key={s.warehouse_class} className="min-w-[9rem] rounded-lg border border-line bg-surface px-3 py-2">
-            <p className="text-2xs font-medium uppercase tracking-wide text-fg-muted">
+            <p className="text-2xs font-medium text-fg-muted">
               {CLASS_LABEL[s.warehouse_class] ?? s.warehouse_class}
             </p>
             <p className="mt-0.5 text-sm text-fg">
@@ -75,9 +75,9 @@ function BatchTable({ items, stateAvailable, sort, onSort, loading, emptyText }:
   const cols = 10
   const dash = <span className="text-fg-faint">—</span>
   return (
-    <table className="min-w-full text-sm">
-      <thead className={stickyHeadCls}>
-        <tr>
+    <Table density="compact" className="min-w-full">
+      <THead className={stickyHeadCls}>
+        <Tr>
           <SortTh label="Warehouse" sortKey="warehouse" sort={sort} onSort={onSort} className={thL} />
           <SortTh label="Material" sortKey="material" sort={sort} onSort={onSort} className={thL} />
           <SortTh label="Batch" sortKey="batch" sort={sort} onSort={onSort} className={thL} />
@@ -92,19 +92,19 @@ function BatchTable({ items, stateAvailable, sort, onSort, loading, emptyText }:
             <SortTh label="Available" sortKey="available" sort={sort} onSort={onSort} align="right" className={thR} />
             <SortTh label="State" sortKey="state" sort={sort} onSort={onSort} className={thL} />
           </> : <>
-            <th className="px-3 py-2 text-right text-fg-faint">Locked</th>
-            <th className="px-3 py-2 text-right text-fg-faint">Available</th>
-            <th className="px-3 py-2 text-left text-fg-faint">State</th>
+            <Th align="right">Locked</Th>
+            <Th align="right">Available</Th>
+            <Th>State</Th>
           </>}
-        </tr>
-      </thead>
-      <tbody>
+        </Tr>
+      </THead>
+      <TBody>
         {loading && <LoadingRows cols={cols} />}
         {!loading && items.length === 0 && <EmptyRow cols={cols}>{emptyText}</EmptyRow>}
         {!loading && items.map((r, i) => (
-          <tr key={`${r.warehouse_code}|${r.material_code}|${r.batch ?? ''}|${r.state ?? ''}|${i}`}
-            className="border-t border-line-subtle align-top">
-            <td className="px-3 py-2">
+          <Tr key={`${r.warehouse_code}|${r.material_code}|${r.batch ?? ''}|${r.state ?? ''}|${i}`}
+            className="align-top">
+            <Td>
               <span className="font-mono text-xs" title={r.warehouse_name ?? undefined}>{r.warehouse_code ?? '—'}</span>
               <span className="ml-1.5 inline-flex flex-wrap gap-1">
                 <Badge variant={CLASS_BADGE[r.warehouse_class] ?? 'neutral'} className="text-2xs">
@@ -112,20 +112,20 @@ function BatchTable({ items, stateAvailable, sort, onSort, loading, emptyText }:
                 </Badge>
                 {r.costed === false && <Badge variant="warning" className="text-2xs">Not costed</Badge>}
               </span>
-            </td>
-            <td className="px-3 py-2"><MaterialCell code={r.material_code} name={r.material_name} /></td>
-            <td className="px-3 py-2 font-mono text-xs">{r.batch ?? <span className="font-sans text-fg-muted">no batch</span>}</td>
-            <td className="px-3 py-2 font-mono text-xs text-fg-secondary">{r.supplier_batch ?? '—'}</td>
-            <td className="px-3 py-2 text-xs text-fg-secondary">{r.produced ?? '—'}</td>
-            <td className="px-3 py-2 text-xs text-fg-secondary">{r.expires ?? '—'}</td>
+            </Td>
+            <Td><MaterialCell code={r.material_code} name={r.material_name} /></Td>
+            <Td className="font-mono text-xs">{r.batch ?? <span className="font-sans text-fg-muted">no batch</span>}</Td>
+            <Td className="font-mono text-xs text-fg-secondary">{r.supplier_batch ?? '—'}</Td>
+            <Td className="text-xs text-fg-secondary">{r.produced ?? '—'}</Td>
+            <Td className="text-xs text-fg-secondary">{r.expires ?? '—'}</Td>
             <QtyCell value={r.qty} uom={r.uom} />
-            {stateAvailable ? <QtyCell value={r.locked} /> : <td className="px-3 py-2 text-right">{dash}</td>}
-            {stateAvailable ? <QtyCell value={r.available} /> : <td className="px-3 py-2 text-right">{dash}</td>}
-            <td className="px-3 py-2 text-xs text-fg-secondary">{stateAvailable ? (r.state ?? '—') : dash}</td>
-          </tr>
+            {stateAvailable ? <QtyCell value={r.locked} /> : <Td align="right">{dash}</Td>}
+            {stateAvailable ? <QtyCell value={r.available} /> : <Td align="right">{dash}</Td>}
+            <Td className="text-xs text-fg-secondary">{stateAvailable ? (r.state ?? '—') : dash}</Td>
+          </Tr>
         ))}
-      </tbody>
-    </table>
+      </TBody>
+    </Table>
   )
 }
 
@@ -139,9 +139,9 @@ function MaterialTable({ items, stateAvailable, sort, onSort, loading, emptyText
 }) {
   const cols = stateAvailable ? 8 : 7
   return (
-    <table className="min-w-full text-sm">
-      <thead className={stickyHeadCls}>
-        <tr>
+    <Table density="compact" className="min-w-full">
+      <THead className={stickyHeadCls}>
+        <Tr>
           <SortTh label="Material" sortKey="material" sort={sort} onSort={onSort} className={thL} />
           <SortTh label="Total" sortKey="qty" sort={sort} onSort={onSort} align="right" className={thR} />
           <SortTh label="WMS warehouses" sortKey="qty_wms" sort={sort} onSort={onSort} align="right" className={thR} />
@@ -151,25 +151,25 @@ function MaterialTable({ items, stateAvailable, sort, onSort, loading, emptyText
             sortKey="qty_other" sort={sort} onSort={onSort} align="right" className={thR} />
           <SortTh label="Batches" sortKey="batches" sort={sort} onSort={onSort} align="right" className={thR} />
           {stateAvailable && <SortTh label="Locked" sortKey="locked" sort={sort} onSort={onSort} align="right" className={thR} />}
-        </tr>
-      </thead>
-      <tbody>
+        </Tr>
+      </THead>
+      <TBody>
         {loading && <LoadingRows cols={cols} />}
         {!loading && items.length === 0 && <EmptyRow cols={cols}>{emptyText}</EmptyRow>}
         {!loading && items.map((r, i) => (
-          <tr key={`${r.material_code}|${i}`} className="border-t border-line-subtle">
-            <td className="px-3 py-2"><MaterialCell code={r.material_code} name={r.material_name} /></td>
+          <Tr key={`${r.material_code}|${i}`}>
+            <Td><MaterialCell code={r.material_code} name={r.material_name} /></Td>
             <QtyCell value={r.qty} uom={r.uom} />
             <QtyCell value={r.qty_wms} />
             <QtyCell value={r.qty_external} />
             <QtyCell value={r.qty_production} />
             <QtyCell value={r.qty_other} />
-            <td className="px-3 py-2 text-right font-mono text-xs">{r.batches.toLocaleString('en-US')}</td>
+            <Td align="right" className="font-mono text-xs">{r.batches.toLocaleString('en-US')}</Td>
             {stateAvailable && <QtyCell value={r.locked} />}
-          </tr>
+          </Tr>
         ))}
-      </tbody>
-    </table>
+      </TBody>
+    </Table>
   )
 }
 
@@ -211,15 +211,11 @@ export function StockTab({ date, classCode, search }: { date: string; classCode:
       {shown && <Summary rows={shown.summary} residue={shown.lock_residue_rows} />}
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div role="group" aria-label="Group rows" className="inline-flex rounded-lg border border-line-strong bg-surface p-0.5">
-          {(['batch', 'material'] as const).map((g) => (
-            <button key={g} type="button" onClick={() => setGroup(g)} aria-pressed={group === g}
-              className={cn('rounded-md px-3 py-1 text-xs font-medium',
-                group === g ? 'bg-primary-600 text-white' : 'text-fg-secondary hover:bg-surface-sunken')}>
-              {g === 'batch' ? 'By batch' : 'By material'}
-            </button>
-          ))}
-        </div>
+        <Segmented<'batch' | 'material'>
+          items={[{ key: 'batch', label: 'By batch' }, { key: 'material', label: 'By material' }]}
+          value={group}
+          onChange={setGroup}
+        />
 
         <fieldset className="flex flex-wrap items-center gap-1.5">
           <legend className="sr-only">Warehouse class</legend>
@@ -227,17 +223,15 @@ export function StockTab({ date, classCode, search }: { date: string; classCode:
           {WAREHOUSE_CLASSES.map((c) => {
             const on = classes.includes(c.key)
             return (
-              <button key={c.key} type="button" onClick={() => toggleClass(c.key)} aria-pressed={on}
-                className={cn('rounded-full border px-2.5 py-0.5 text-xs',
-                  on ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-line-strong bg-surface text-fg-secondary hover:bg-surface-subtle')}>
+              <Chip key={c.key} pressed={on} onClick={() => toggleClass(c.key)}>
                 {c.label}
-              </button>
+              </Chip>
             )
           })}
           {classes.length > 0 ? (
-            <button type="button" onClick={() => setClasses([])} className="text-xs text-primary-600 hover:underline">
+            <Button variant="link" type="button" onClick={() => setClasses([])} className="text-xs">
               All
-            </button>
+            </Button>
           ) : <span className="text-2xs text-fg-muted">(all)</span>}
         </fieldset>
       </div>

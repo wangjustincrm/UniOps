@@ -9,8 +9,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, BookOpen, Coins, Package, Search, X } from 'lucide-react'
-import { Badge } from '@uniops/shell'
-import { cn, displayTimeZone, formatDate } from '@/lib/utils'
+import { Badge, Button, Input, Select, Tabs } from '@uniops/shell'
+import { displayTimeZone, formatDate } from '@/lib/utils'
 import { formatDateTimeToronto, relativeAge, todayToronto } from '@/lib/time'
 import { MATERIAL_CLASSES, ncApi, type NcMeta } from './ncApi'
 import { ErrorBox } from './NcUi'
@@ -115,7 +115,7 @@ export default function NcInventoryPage() {
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-xs text-fg-secondary">
             Date
-            <input
+            <Input
               type="date"
               value={date}
               max={today}
@@ -129,29 +129,29 @@ export default function NcInventoryPage() {
           </label>
           <label className="flex items-center gap-2 text-xs text-fg-secondary">
             Material class
-            <select value={classCode} onChange={(e) => setParam('class', e.target.value)} className={selectCls}>
+            <Select value={classCode} onChange={(e) => setParam('class', e.target.value)}>
               <option value="">All</option>
               {MATERIAL_CLASSES.map((c) => (
                 <option key={c.code} value={c.code}>{c.code} {c.label}</option>
               ))}
-            </select>
+            </Select>
           </label>
           <div className="flex h-9 w-64 items-center gap-2 rounded-lg border border-line-strong bg-surface px-3">
             <Search aria-hidden className="h-4 w-4 shrink-0 text-fg-muted" />
-            <input
+            <Input
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder={tab === 'ledger' ? 'Material, name or account…' : tab === 'stock'
                 ? 'Material, name or batch…' : 'Material or name…'}
               aria-label="Search"
               maxLength={100}
-              className="w-full text-sm focus:outline-none"
+              className="w-full"
             />
             {searchInput && (
-              <button type="button" onClick={() => setSearchInput('')} aria-label="Clear search"
-                className="shrink-0 text-fg-muted hover:text-fg-secondary">
+              <Button variant="subtle" size="icon-xs" type="button" onClick={() => setSearchInput('')} aria-label="Clear search"
+                className="shrink-0">
                 <X className="h-4 w-4" />
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -159,26 +159,13 @@ export default function NcInventoryPage() {
 
       <MetaStrip date={date} />
 
-      <div role="tablist" aria-label="NC ledgers" className="flex gap-1 border-b border-line">
-        {TABS.map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={tab === key}
-            onClick={() => setParam('tab', key === 'stock' ? '' : key)}
-            className={cn(
-              'flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-              tab === key
-                ? 'border-primary-600 text-primary-700'
-                : 'border-transparent text-fg-muted hover:border-line-strong hover:text-fg-secondary',
-            )}
-          >
-            <Icon aria-hidden className="h-4 w-4" />
-            {label}
-          </button>
-        ))}
-      </div>
+      <Tabs<TabKey>
+        items={TABS.map(({ key, label, icon: Icon }) => ({
+          key, label: <span className="inline-flex items-center gap-1.5"><Icon aria-hidden className="h-4 w-4" />{label}</span>,
+        }))}
+        value={tab}
+        onChange={(key) => setParam('tab', key === 'stock' ? '' : key)}
+      />
 
       {tab === 'stock' && <StockTab {...filters} />}
       {tab === 'cost' && <CostTab {...filters} />}
