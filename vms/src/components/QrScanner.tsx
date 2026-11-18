@@ -76,7 +76,7 @@ export function QrScanner({ onDecode, cooldownMs = 1500 }: Props) {
   }, [])
 
   return (
-    <div className="rounded-md border border-line bg-inverse overflow-hidden">
+    <div className="rounded-md border border-line bg-inverse-sunken overflow-hidden">
       <div className="relative aspect-square w-full max-w-sm mx-auto">
         {/* `playsInline` is critical for iOS Safari. */}
         <video

@@ -505,7 +505,7 @@ function MfaSection({ mfaEnabled }: { mfaEnabled: boolean }) {
           disabled={mutation.isPending}
           className={cn(
             'relative h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none disabled:opacity-50',
-            isEnabled ? 'bg-primary-600' : 'bg-surface-strong'
+            isEnabled ? 'bg-primary-600' : 'bg-line-strong'
           )}
           aria-label={isEnabled ? 'Disable MFA' : 'Enable MFA'}
         >

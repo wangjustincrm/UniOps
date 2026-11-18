@@ -92,7 +92,7 @@ export function BudgetActualBreakdown({ fiscalYear, window: win, windowLabel, sc
       <button onClick={() => setTall((v) => !v)}
               aria-label={tall ? 'Shrink panel' : 'Expand panel'}
               className="group mx-auto mt-2 mb-1 flex h-4 w-16 cursor-pointer items-center justify-center">
-        <span className="h-1 w-10 rounded-full bg-surface-strong transition-colors group-hover:bg-fg-faint" />
+        <span className="h-1 w-10 rounded-full bg-line-strong transition-colors group-hover:bg-fg-faint" />
       </button>
 
       <header className="flex flex-wrap items-center gap-2 px-4 pb-2.5">

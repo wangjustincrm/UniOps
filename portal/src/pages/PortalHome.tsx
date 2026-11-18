@@ -492,7 +492,7 @@ function PlatformHealth({
             <div className="flex items-center gap-2">
               <div className={cn(
                 'h-1.5 w-1.5 rounded-full',
-                svc.ok === null ? 'bg-surface-strong' : svc.ok ? 'bg-success-solid' : 'bg-danger-solid',
+                svc.ok === null ? 'bg-line-strong' : svc.ok ? 'bg-success-solid' : 'bg-danger-solid',
               )} />
               <span className="text-fg-secondary">{svc.label}</span>
             </div>

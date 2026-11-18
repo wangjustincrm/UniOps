@@ -401,7 +401,7 @@ export default function BudgetDashboard() {
                     <PlanActualCell plan={monthlyGrandTotals.plan[m]} nc={monthlyGrandTotals.nc[m]} strong />
                   </td>
                 ))}
-                <td className="sticky bottom-0 z-20 border-t-2 border-line-strong bg-surface-strong py-3 px-2">
+                <td className="sticky bottom-0 z-20 border-t-2 border-line-strong bg-line-strong py-3 px-2">
                   <PlanActualCell plan={monthlyGrandTotals.planYear} nc={monthlyGrandTotals.ncYear} strong />
                 </td>
               </tr>

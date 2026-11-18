@@ -241,7 +241,7 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
                 <button key={t} onClick={() => { setTab(t); setOpen(new Set()) }}
                         className={cn('rounded-md px-2.5 py-1 text-xs font-medium',
                           'cursor-pointer transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600',
-                          tab === t ? 'bg-inverse text-white' : 'text-fg-muted hover:bg-surface-sunken')}>
+                          tab === t ? 'bg-inverse-sunken text-white' : 'text-fg-muted hover:bg-surface-sunken')}>
                   {label}
                 </button>
               ))}

@@ -1348,7 +1348,7 @@ function PoPaCreate() {
                                 'inline-flex items-center gap-1 mt-0.5 text-2xs font-medium',
                                 isReceived ? 'text-success-fg' : 'text-fg-muted'
                               )}>
-                                <span className={cn('h-1.5 w-1.5 rounded-full', isReceived ? 'bg-success-solid' : 'bg-surface-strong')} />
+                                <span className={cn('h-1.5 w-1.5 rounded-full', isReceived ? 'bg-success-solid' : 'bg-line-strong')} />
                                 {isReceived ? `Received (${receivedQty} ${line.unit})` : 'Not yet received'}
                               </div>
                             </td>

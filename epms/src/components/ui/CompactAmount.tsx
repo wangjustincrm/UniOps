@@ -34,7 +34,7 @@ export function CompactAmount({ value, hint, className }: {
       {at && createPortal(
         <div
           role="tooltip"
-          className="pointer-events-none fixed z-[1000] -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md bg-inverse px-2 py-1 text-xs text-white shadow-lg"
+          className="pointer-events-none fixed z-[1000] -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md bg-inverse-sunken px-2 py-1 text-xs text-white shadow-lg"
           style={{ left: at.x, top: at.y - 6 }}
         >
           <div className="font-mono font-semibold">{full}</div>

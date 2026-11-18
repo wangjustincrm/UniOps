@@ -994,7 +994,7 @@ export default function PoDetailPage() {
                                       style={{ width: `${pct}%` }}
                                       className={cn(
                                         'h-full rounded-full transition-all',
-                                        pct >= 100 ? 'bg-success-solid' : pct > 0 ? 'bg-primary-500' : 'bg-surface-strong'
+                                        pct >= 100 ? 'bg-success-solid' : pct > 0 ? 'bg-primary-500' : 'bg-line-strong'
                                       )}
                                     />
                                   </div>

@@ -62,11 +62,11 @@ def neutral(util: str, shade: int) -> str | None:
         if shade <= 500: return 'line-strong'
         return 'fg-muted'
     if util in BGISH:
-        if shade <= 50: return 'surface-subtle'
-        if shade <= 100: return 'surface-sunken'
-        if shade <= 300: return 'surface-strong'
-        if shade <= 600: return 'fg-faint'
-        return 'inverse'
+        # Exact step for step: a solid mid/dark grey must not drift lighter or
+        # darker (bg-neutral-600 badge -> near black, toggle tracks fading).
+        return {50: 'surface-subtle', 100: 'surface-sunken', 200: 'surface-strong',
+                300: 'line-strong', 400: 'fg-faint', 500: 'fg-muted', 600: 'fg-secondary',
+                700: 'inverse-raised', 800: 'inverse'}.get(shade, 'inverse-sunken')
     return None
 
 

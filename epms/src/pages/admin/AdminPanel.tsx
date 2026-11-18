@@ -127,7 +127,7 @@ function ToggleRow({ label, description, checked, onToggle }: {
       </div>
       <button type="button" role="switch" aria-checked={checked} onClick={onToggle}
         className={cn('relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2',
-          checked ? 'bg-primary-600' : 'bg-surface-strong')}>
+          checked ? 'bg-primary-600' : 'bg-line-strong')}>
         <span className={cn('absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-surface shadow transition-transform',
           checked ? 'translate-x-5' : 'translate-x-0')} />
       </button>
@@ -470,7 +470,7 @@ function SecuritySettings() {
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <button type="button" role="switch" aria-checked={smtpUseTls} onClick={() => setSmtpUseTls((p) => !p)}
                 className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2',
-                  smtpUseTls ? 'bg-primary-600' : 'bg-surface-strong')}>
+                  smtpUseTls ? 'bg-primary-600' : 'bg-line-strong')}>
                 <span className={cn('absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-surface shadow transition-transform', smtpUseTls ? 'translate-x-4' : 'translate-x-0')} />
               </button>
               <span className="text-sm text-fg-secondary">Use TLS/SSL</span>
@@ -553,7 +553,7 @@ function CurrencyRow({ c, isDefault, isEnabled, canToggle, onSetDefault, onToggl
         {onDelete && <button type="button" onClick={onDelete} className="flex h-6 w-6 items-center justify-center rounded text-fg-faint hover:text-danger-fg hover:bg-danger-soft transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>}
         {canToggle && (
           <button type="button" role="switch" aria-checked={isEnabled} disabled={isDefault} onClick={onToggle}
-            className={cn('relative h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50', isEnabled ? 'bg-primary-600' : 'bg-surface-strong')}>
+            className={cn('relative h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50', isEnabled ? 'bg-primary-600' : 'bg-line-strong')}>
             <span className={cn('absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-surface shadow transition-transform', isEnabled ? 'translate-x-5' : 'translate-x-0')} />
           </button>
         )}

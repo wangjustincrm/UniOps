@@ -358,7 +358,7 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
                 disabled={mfaLoading || mfaEnabled === null}
                 className={cn(
                   'relative h-5 w-9 shrink-0 rounded-full transition-colors focus:outline-none disabled:opacity-50',
-                  mfaEnabled ? 'bg-primary-600' : 'bg-surface-strong'
+                  mfaEnabled ? 'bg-primary-600' : 'bg-line-strong'
                 )}
               >
                 <span className={cn('absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-surface shadow transition-transform', mfaEnabled ? 'translate-x-4' : 'translate-x-0')} />

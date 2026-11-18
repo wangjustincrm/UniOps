@@ -51,7 +51,7 @@ export function ApprovalTimeline({ steps, onSendReminder, reminder }: ApprovalTi
               >
                 {step.status === 'completed' && <Check className="h-3.5 w-3.5" strokeWidth={2.5} />}
                 {step.status === 'current' && <Clock className="h-3.5 w-3.5" />}
-                {step.status === 'pending' && <span className="h-2 w-2 rounded-full bg-surface-strong" />}
+                {step.status === 'pending' && <span className="h-2 w-2 rounded-full bg-line-strong" />}
                 {step.status === 'skipped' && <SkipForward className="h-3.5 w-3.5" />}
                 {step.status === 'returned' && <RotateCcw className="h-3.5 w-3.5" />}
                 {step.status === 'rejected' && <X className="h-3.5 w-3.5" strokeWidth={2.5} />}

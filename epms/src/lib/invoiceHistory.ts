@@ -76,15 +76,15 @@ export function historyLine(e: InvoiceHistoryEntry): HistoryLine {
     case 'unmatch': {
       const reason = str(a.reason) ?? undefined
       if (a.scope === 'gr') {
-        return { action: `Goods receipt ${str(b.gr_number) ?? ''} unlinked`.replace(/\s+/g, ' '), note: reason, color: 'bg-fg-faint' }
+        return { action: `Goods receipt ${str(b.gr_number) ?? ''} unlinked`.replace(/\s+/g, ' '), note: reason, color: 'bg-fg-muted' }
       }
       if (a.scope === 'agreement') {
-        return { action: `Unmatched from Agreement ${str(b.agreement_number) ?? ''} — back to Unmatched`.replace(/\s+/g, ' '), note: reason, color: 'bg-fg-faint' }
+        return { action: `Unmatched from Agreement ${str(b.agreement_number) ?? ''} — back to Unmatched`.replace(/\s+/g, ' '), note: reason, color: 'bg-fg-muted' }
       }
       if (a.scope === 'direct') {
-        return { action: 'Taken off the Direct PA route — back to Unmatched', note: reason, color: 'bg-fg-faint' }
+        return { action: 'Taken off the Direct PA route — back to Unmatched', note: reason, color: 'bg-fg-muted' }
       }
-      return { action: `Unmatched from ${str(b.po_number) ?? 'its PO'} — back to Unmatched`, note: reason, color: 'bg-fg-faint' }
+      return { action: `Unmatched from ${str(b.po_number) ?? 'its PO'} — back to Unmatched`, note: reason, color: 'bg-fg-muted' }
     }
     default:
       return { action: e.action, color: 'bg-fg-faint' }
