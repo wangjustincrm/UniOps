@@ -1,8 +1,8 @@
 import { useState, type ChangeEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { useReplaceTab } from '@uniops/shell'
-import { ArrowLeft, Info } from 'lucide-react'
+import { Alert, Card, FormField, IconButton, Textarea, useReplaceTab } from '@uniops/shell'
+import { ArrowLeft } from 'lucide-react'
 import { epmsRoutes } from '@/app/routes'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { Button } from '@/components/ui/button'
@@ -75,32 +75,28 @@ export function DepositPaEditForm({ pa }: { pa: ApiPa }) {
   return (
     <div className="flex flex-col gap-6 p-6 max-w-3xl mx-auto">
       <div className="flex items-center gap-3">
-        <button onClick={() => replaceTab(`/pa/${pa.id}`)} className="p-2 rounded-lg hover:bg-surface-sunken text-fg-muted">
-          <ArrowLeft className="h-5 w-5" />
-        </button>
+        <IconButton label="Back to the PA" icon={<ArrowLeft className="h-5 w-5" />} size="icon" type="button"
+          onClick={() => replaceTab(`/pa/${pa.id}`)} />
         <div>
-          <h1 className="text-2xl font-bold text-fg">Edit Deposit PA</h1>
+          <h1 className="text-2xl font-semibold text-fg">Edit Deposit PA</h1>
           <p className="text-sm text-fg-muted mt-0.5">
             {pa.pa_number} · {pa.status === 'returned' ? 'Returned — revise and resubmit' : 'Draft'}
           </p>
         </div>
       </div>
 
-      <div className="flex items-start gap-2 rounded-lg border border-primary-100 bg-primary-50 px-4 py-3 text-xs text-primary-800">
-        <Info className="h-4 w-4 shrink-0 mt-px" />
-        <span>
-          The amount is the agreement’s deposit and cannot be changed here. To change it, edit the
-          Deposit Amount on the agreement (while it is a draft), or cancel this PA and raise a new one.
-        </span>
-      </div>
+      <Alert tone="info">
+        The amount is the agreement’s deposit and cannot be changed here. To change it, edit the
+        Deposit Amount on the agreement (while it is a draft), or cancel this PA and raise a new one.
+      </Alert>
 
-      <div className="rounded-xl border border-line bg-surface p-5 shadow-sm flex flex-col gap-4">
+      <Card className="flex flex-col gap-4 p-5">
         <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 text-sm">
           <div>
             <dt className="text-xs font-medium text-fg-muted">Purchase Agreement</dt>
             <dd className="mt-0.5">
               {pa.agreement_id
-                ? <Link to={`/agreements/${pa.agreement_id}`} className="font-mono text-primary-700 hover:underline">{pa.agreement_number}</Link>
+                ? <Link to={`/agreements/${pa.agreement_id}`} className="font-mono text-accent-fg hover:underline">{pa.agreement_number}</Link>
                 : pa.agreement_number}
               <span className="text-fg-muted"> · {pa.vendor_name}</span>
             </dd>
@@ -112,23 +108,18 @@ export function DepositPaEditForm({ pa }: { pa: ApiPa }) {
             </dd>
           </div>
         </dl>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="depositEditTitle" className="text-xs font-medium text-fg-secondary">Title *</label>
+        <FormField label="Title" required htmlFor="depositEditTitle">
           <Input id="depositEditTitle" value={title} maxLength={255}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)} />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="depositEditRefund" className="text-xs font-medium text-fg-secondary">Expected Refund Date</label>
-          <input id="depositEditRefund" type="date" value={expectedRefund}
-            onChange={(e) => setExpectedRefund(e.target.value)}
-            className="h-10 w-full rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="depositEditNotes" className="text-xs font-medium text-fg-secondary">Notes</label>
-          <textarea id="depositEditNotes" rows={4} value={notes} onChange={(e) => setNotes(e.target.value)}
-            className="w-full resize-none rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
-        </div>
-      </div>
+        </FormField>
+        <FormField label="Expected Refund Date" htmlFor="depositEditRefund">
+          <Input id="depositEditRefund" type="date" value={expectedRefund}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => setExpectedRefund(e.target.value)} />
+        </FormField>
+        <FormField label="Notes" htmlFor="depositEditNotes">
+          <Textarea id="depositEditNotes" rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} className="resize-none" />
+        </FormField>
+      </Card>
 
       <div className="flex justify-end gap-2">
         <Button variant="secondary" onClick={() => replaceTab(`/pa/${pa.id}`)} disabled={busy}>Cancel</Button>

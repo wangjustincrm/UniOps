@@ -1,13 +1,14 @@
 import { useState } from 'react'
-import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, CreditCard, RotateCcw, Undo2, Upload, X } from 'lucide-react'
+import { CheckCircle2, CreditCard, Paperclip, RotateCcw, Undo2, Upload, X } from 'lucide-react'
+import {
+  Alert, Card, DescriptionList, FileInput, IconButton, Modal, Table, TableScroll, TBody, Td, Textarea, Th, THead, Tr,
+} from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
 import { StatusBadge } from '@/components/ui/badge'
-import { useCloseOnEscape } from '@/hooks/useCloseOnEscape'
 import { useCreatePa, usePas, useRecordDepositRefund, useReturnDepositRefund, useConfirmSettlement } from '@/hooks/usePas'
 import { paService, type ApiPa } from '@/services/pa'
 import type { ApiAgreement } from '@/services/agreement'
@@ -74,9 +75,9 @@ export function DepositCard({ agreement, attachmentCount, canCreatePaPerm, admis
     && !refunds.some((r) => !DEAD.includes(r.status))
 
   return (
-    <div className="rounded-xl bg-surface shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+    <Card className="flex flex-col gap-4 p-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">Deposit</h2>
+        <h2 className="text-sm font-semibold text-fg">Deposit</h2>
         <div className="flex gap-2">
           {!liveDeposit && canCreatePaPerm && (
             <span title={blocked ?? undefined}>
@@ -95,64 +96,56 @@ export function DepositCard({ agreement, attachmentCount, canCreatePaPerm, admis
         </div>
       </div>
 
-      <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-3 text-sm">
-        <div className="flex flex-col gap-0.5">
-          <dt className="text-xs font-medium text-fg-muted">Deposit Amount</dt>
-          <dd className="font-semibold text-fg">
-            {agreement.deposit_amount ? formatAmount(Number(agreement.deposit_amount), agreement.currency) : '—'}
-          </dd>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <dt className="text-xs font-medium text-fg-muted">Deposit PA</dt>
-          <dd className="text-fg">
-            {liveDeposit ? (
+      <DescriptionList
+        columns={3}
+        items={[
+          { label: 'Deposit amount',
+            value: agreement.deposit_amount ? formatAmount(Number(agreement.deposit_amount), agreement.currency) : '—' },
+          { label: 'Deposit PA',
+            value: liveDeposit ? (
               <span className="inline-flex items-center gap-2">
-                <Link to={`/pa/${liveDeposit.id}`} className="font-medium text-primary-700 hover:underline">{liveDeposit.pa_number}</Link>
+                <Link to={`/pa/${liveDeposit.id}`} className="font-medium text-accent-fg hover:underline">{liveDeposit.pa_number}</Link>
                 <StatusBadge status={liveDeposit.status as DocumentStatus} />
               </span>
-            ) : 'Not raised yet'}
-          </dd>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <dt className="text-xs font-medium text-fg-muted">Refund</dt>
-          <dd className="text-fg">{refundSummary(liveDeposit, refunds, agreement.currency)}</dd>
-        </div>
-      </dl>
+            ) : 'Not raised yet' },
+          { label: 'Refund', value: refundSummary(liveDeposit, refunds, agreement.currency) },
+        ]}
+      />
 
       {refunds.length > 0 && (
-        <div className="rounded-lg border border-line overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line bg-surface-subtle text-xs font-semibold text-fg-muted">
-                <th className="px-4 py-2 text-left">Refund PA</th>
-                <th className="px-4 py-2 text-right">Refunded</th>
-                <th className="px-4 py-2 text-right">Retained</th>
-                <th className="px-4 py-2 text-left">Reason</th>
-                <th className="px-4 py-2 text-left">Status</th>
-              </tr>
-            </thead>
-            <tbody>
+        <TableScroll scroll="page">
+          <Table density="compact">
+            <THead>
+              <Tr>
+                <Th>Refund PA</Th>
+                <Th align="right">Refunded</Th>
+                <Th align="right">Retained</Th>
+                <Th>Reason</Th>
+                <Th>Status</Th>
+              </Tr>
+            </THead>
+            <TBody>
               {refunds.map((r) => {
                 const refunded = Number(r.deposit_refund_amount ?? 0)
                 const retained = Number(liveDeposit?.payment_amount ?? 0) - refunded
                 return (
-                  <tr key={r.id} className="border-b border-line-subtle last:border-0">
-                    <td className="px-4 py-2"><Link to={`/pa/${r.id}`} className="font-medium text-primary-700 hover:underline">{r.pa_number}</Link></td>
-                    <td className="px-4 py-2 text-right tabular-nums">{formatAmount(refunded, agreement.currency)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{retained > 0 ? formatAmount(retained, agreement.currency) : '—'}</td>
-                    <td className="px-4 py-2 text-fg-secondary">{r.deposit_retained_reason || '—'}</td>
-                    <td className="px-4 py-2"><StatusBadge status={r.status as DocumentStatus} /></td>
-                  </tr>
+                  <Tr key={r.id}>
+                    <Td><Link to={`/pa/${r.id}`} className="font-medium text-accent-fg hover:underline">{r.pa_number}</Link></Td>
+                    <Td numeric>{formatAmount(refunded, agreement.currency)}</Td>
+                    <Td numeric>{retained > 0 ? formatAmount(retained, agreement.currency) : '—'}</Td>
+                    <Td muted>{r.deposit_retained_reason || '—'}</Td>
+                    <Td><StatusBadge status={r.status as DocumentStatus} /></Td>
+                  </Tr>
                 )
               })}
-            </tbody>
-          </table>
-        </div>
+            </TBody>
+          </Table>
+        </TableScroll>
       )}
 
       {creating && <CreateDepositPaDialog agreement={agreement} onClose={() => setCreating(false)} />}
       {recording && liveDeposit && <RecordRefundDialog deposit={liveDeposit} onClose={() => setRecording(false)} />}
-    </div>
+    </Card>
   )
 }
 
@@ -165,34 +158,6 @@ function refundSummary(deposit: ApiPa | undefined, refunds: ApiPa[], currency: s
   if (refunds.some((r) => r.status === 'submitted')) return 'Recorded — waiting for Finance to confirm'
   if (deposit.status !== 'processed') return 'After the deposit is paid'
   return 'Not refunded yet'
-}
-
-// ── Shared dialog shell ──────────────────────────────────────────────────────
-
-function DialogShell({ title, subtitle, onClose, children }: {
-  title: string
-  subtitle?: string
-  onClose: () => void
-  children: React.ReactNode
-}) {
-  useCloseOnEscape(true, onClose)
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-surface shadow-2xl max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
-        <div className="flex items-center justify-between border-b border-line-subtle px-6 py-4">
-          <div>
-            <h2 className="text-sm font-semibold text-fg">{title}</h2>
-            {subtitle && <p className="text-xs text-fg-muted">{subtitle}</p>}
-          </div>
-          <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-fg-muted hover:bg-surface-sunken hover:text-fg-secondary">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="px-6 py-5 flex flex-col gap-4">{children}</div>
-      </div>
-    </div>,
-    document.body,
-  )
 }
 
 // ── Create Deposit PA ────────────────────────────────────────────────────────
@@ -260,12 +225,26 @@ function CreateDepositPaDialog({ agreement, onClose }: { agreement: ApiAgreement
   }
 
   return (
-    <DialogShell title="Create Deposit PA" subtitle={`${agreement.number} · ${agreement.vendor_name}`} onClose={onClose}>
-      <div className="rounded-lg border border-primary-100 bg-primary-50/60 px-3 py-2 text-xs text-primary-800">
+    <Modal
+      open
+      onClose={onClose}
+      busy={busy}
+      title="Create Deposit PA"
+      description={`${agreement.number} · ${agreement.vendor_name}`}
+      bodyClassName="flex flex-col gap-4"
+      footer={<>
+        <Button variant="secondary" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button size="sm" onClick={submit} disabled={busy || !title.trim()}>
+          <CreditCard className="h-3.5 w-3.5" />
+          {busy ? 'Submitting…' : 'Create & Submit'}
+        </Button>
+      </>}
+    >
+      <Alert tone="info" plain>
         A prepayment of the agreement’s deposit, with no invoice — the agreement’s attachments are its
         evidence. It goes through the normal PA approval and Finance pays it. When the vendor returns the
         money, record the refund on the deposit PA.
-      </div>
+      </Alert>
       <div className="flex flex-col gap-0.5">
         <span className="text-xs font-medium text-fg-muted">Amount (from the agreement, cannot be changed)</span>
         <span className="text-lg font-semibold text-fg">{formatAmount(amount, agreement.currency)}</span>
@@ -274,32 +253,14 @@ function CreateDepositPaDialog({ agreement, onClose }: { agreement: ApiAgreement
         <Input id="depositTitle" value={title} maxLength={255} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)} />
       </FormField>
       <FormField label="Expected Refund Date" htmlFor="depositRefundDate" hint="Usually the agreement's end date.">
-        <input
-          id="depositRefundDate"
-          type="date"
-          value={expectedRefund}
-          onChange={(e) => setExpectedRefund(e.target.value)}
-          className="h-10 w-full rounded-md border border-line-strong bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
-        />
+        <Input id="depositRefundDate" type="date" value={expectedRefund}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setExpectedRefund(e.target.value)} />
       </FormField>
       <FormField label="Notes" htmlFor="depositNotes">
-        <textarea
-          id="depositNotes"
-          rows={3}
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
-        />
+        <Textarea id="depositNotes" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} className="resize-none" />
       </FormField>
-      {error && <p role="alert" className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">{error}</p>}
-      <div className="flex justify-end gap-2">
-        <Button variant="secondary" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
-        <Button size="sm" onClick={submit} disabled={busy || !title.trim()}>
-          <CreditCard className="h-3.5 w-3.5" />
-          {busy ? 'Submitting…' : 'Create & Submit'}
-        </Button>
-      </div>
-    </DialogShell>
+      {error && <Alert tone="danger">{error}</Alert>}
+    </Modal>
   )
 }
 
@@ -356,11 +317,25 @@ export function RecordRefundDialog({ deposit, onClose, onRecorded }: {
   }
 
   return (
-    <DialogShell title="Record Deposit Refund" subtitle={`${deposit.pa_number} · ${deposit.vendor_name}`} onClose={onClose}>
-      <div className="rounded-lg border border-primary-100 bg-primary-50/60 px-3 py-2 text-xs text-primary-800">
+    <Modal
+      open
+      onClose={onClose}
+      busy={record.isPending}
+      title="Record Deposit Refund"
+      description={`${deposit.pa_number} · ${deposit.vendor_name}`}
+      bodyClassName="flex flex-col gap-4"
+      footer={<>
+        <Button variant="secondary" size="sm" onClick={onClose} disabled={record.isPending}>Cancel</Button>
+        <Button size="sm" onClick={submit} disabled={!canSubmit}>
+          <RotateCcw className="h-3.5 w-3.5" />
+          {record.isPending ? 'Recording…' : 'Record Refund'}
+        </Button>
+      </>}
+    >
+      <Alert tone="info" plain>
         Record what the vendor actually returned. Nothing is paid — Finance confirms the money has arrived,
         then the deposit is settled. The refund itself is booked in NC by Finance.
-      </div>
+      </Alert>
       <div className="flex flex-col gap-0.5">
         <span className="text-xs font-medium text-fg-muted">Deposit paid</span>
         <span className="text-base font-semibold text-fg">{formatAmount(depositAmount, deposit.currency)}</span>
@@ -388,58 +363,38 @@ export function RecordRefundDialog({ deposit, onClose, onRecorded }: {
           required
           htmlFor="retainedReason"
         >
-          <textarea
-            id="retainedReason"
-            rows={2}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="e.g. repair of floor damage deducted per clause 12"
-            className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
-          />
+          <Textarea id="retainedReason" rows={2} value={reason} onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. repair of floor damage deducted per clause 12" className="resize-none" />
         </FormField>
       )}
       <div className="flex flex-col gap-2">
         <span className="text-sm font-medium text-fg-secondary">Refund Evidence <span className="text-danger-fg">*</span></span>
         <label
           htmlFor="refund-evidence"
-          className="flex cursor-pointer flex-col items-center gap-1 rounded-lg border-2 border-dashed border-line-strong p-4 text-center hover:border-primary-400 hover:bg-primary-50 transition-colors"
+          className="flex cursor-pointer flex-col items-center gap-1 rounded-lg border-2 border-dashed border-line-strong p-4 text-center transition-colors hover:border-accent hover:bg-accent-soft"
         >
           <Upload className="h-6 w-6 text-fg-muted" />
           <span className="text-sm text-fg-secondary">Bank receipt, vendor’s refund letter…</span>
           <span className="text-xs text-fg-muted">{ATTACHMENT_RULE.hint}</span>
-          <input id="refund-evidence" type="file" multiple accept={ATTACHMENT_RULE.accept} className="sr-only"
+          <FileInput id="refund-evidence" multiple accept={ATTACHMENT_RULE.accept} className="sr-only"
             onChange={(e) => { addFiles(e.target.files); e.target.value = '' }} />
         </label>
         {fileProblem && <p role="alert" className="text-xs text-danger-fg">{fileProblem}</p>}
         {files.map((f, i) => (
           <div key={i} className="flex items-center gap-2 rounded-md border border-line bg-surface-subtle px-3 py-1.5 text-sm">
-            <span className="flex-1 truncate text-fg-secondary">📎 {f.name}</span>
+            <Paperclip aria-hidden className="h-3.5 w-3.5 shrink-0 text-fg-muted" />
+            <span className="flex-1 truncate text-fg-secondary">{f.name}</span>
             <span className="text-fg-muted text-xs">{formatBytes(f.size)}</span>
-            <button type="button" aria-label={`Remove ${f.name}`} className="text-fg-muted hover:text-danger-fg"
-              onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}>
-              <X className="h-3.5 w-3.5" />
-            </button>
+            <IconButton label={`Remove ${f.name}`} icon={<X className="h-3.5 w-3.5" />} size="icon-xs" type="button"
+              onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))} />
           </div>
         ))}
       </div>
       <FormField label="Notes" htmlFor="refundNotes">
-        <textarea
-          id="refundNotes"
-          rows={2}
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
-        />
+        <Textarea id="refundNotes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className="resize-none" />
       </FormField>
-      {error && <p role="alert" className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">{error}</p>}
-      <div className="flex justify-end gap-2">
-        <Button variant="secondary" size="sm" onClick={onClose} disabled={record.isPending}>Cancel</Button>
-        <Button size="sm" onClick={submit} disabled={!canSubmit}>
-          <RotateCcw className="h-3.5 w-3.5" />
-          {record.isPending ? 'Recording…' : 'Record Refund'}
-        </Button>
-      </div>
-    </DialogShell>
+      {error && <Alert tone="danger">{error}</Alert>}
+    </Modal>
   )
 }
 
@@ -461,8 +416,8 @@ export function DepositRefundPanel({ pa, depositAmount, canFinance }: {
   const err = confirm.error ?? ret.error
 
   return (
-    <div className="rounded-xl border border-primary-100 bg-primary-50/40 p-5 flex flex-col gap-4">
-      <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Deposit Refund</h3>
+    <Card className="flex flex-col gap-4 p-5">
+      <h3 className="text-sm font-semibold text-fg">Deposit refund</h3>
       <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3 text-sm">
         <div><dt className="text-xs text-fg-muted">Deposit</dt>
           <dd className="font-medium">{depositAmount !== null ? formatAmount(depositAmount, pa.currency) : '—'}</dd></div>
@@ -485,13 +440,9 @@ export function DepositRefundPanel({ pa, depositAmount, canFinance }: {
         <div className="flex flex-col gap-2">
           {returning ? (
             <>
-              <textarea
-                rows={2}
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder="Why is this refund being returned? (not received yet, wrong amount, evidence missing…)"
-                className="w-full resize-none rounded-md border border-line-strong bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
-              />
+              <Textarea rows={2} value={comment} onChange={(e) => setComment(e.target.value)} className="resize-none"
+                aria-label="Reason for returning the refund"
+                placeholder="Why is this refund being returned? (not received yet, wrong amount, evidence missing…)" />
               <div className="flex gap-2">
                 <Button size="sm" variant="secondary" disabled={busy} onClick={() => setReturning(false)}>Cancel</Button>
                 <Button size="sm" disabled={busy || !comment.trim()} onClick={() => ret.mutate(comment.trim())}>
@@ -514,7 +465,7 @@ export function DepositRefundPanel({ pa, depositAmount, canFinance }: {
           )}
         </div>
       )}
-      {err && <p role="alert" className="text-sm text-danger-fg">{errorMessage(err, 'The action failed')}</p>}
-    </div>
+      {err && <Alert tone="danger">{errorMessage(err, 'The action failed')}</Alert>}
+    </Card>
   )
 }
