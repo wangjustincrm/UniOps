@@ -2,7 +2,7 @@ import { DisabledReason } from '../help'
 import { cn } from '../lib/cn'
 import { Button, type ButtonProps } from '../primitives/shell'
 import { useCan } from './permissions'
-import { useAction } from './useAction'
+import { useAction, type ActionOptions } from './useAction'
 
 export interface ActionButtonProps extends Omit<ButtonProps, 'onClick'> {
   /** The permission key that allows this action; checked through PermissionProvider. */
@@ -11,8 +11,13 @@ export interface ActionButtonProps extends Omit<ButtonProps, 'onClick'> {
   whenDenied?: 'hide' | 'disable'
   onAction: () => unknown | Promise<unknown>
   pendingLabel?: string
-  /** Inside a list or a sheet: what to say when it worked (its status row); a failure is always said there. */
-  done?: string | ((result: unknown) => string | null)
+  /** Inside a list or a sheet: what to say when it worked (its status row; a tone of its own if it says so);
+   *  a failure is always said there. */
+  done?: ActionOptions['done']
+  /** Read again only these query keys (default: everything on screen). */
+  invalidates?: ActionOptions['invalidates']
+  /** Then, after it worked: e.g. close a sheet, show the result. */
+  after?: ActionOptions['after']
   /** Business error codes → words, for a failure said in the status row. */
   errorMessages?: Record<string, string>
   /** Before the error text (e.g. "Download failed"). */
@@ -30,10 +35,10 @@ export interface ActionButtonProps extends Omit<ButtonProps, 'onClick'> {
  *  given, so it never submits a surrounding form. Inside a list or a sheet, a
  *  failure (and with `done`, a success) is said in its status row (useNotices). */
 export function ActionButton({
-  permission, whenDenied = 'hide', onAction, pendingLabel, disabled, children, done, errorMessages, failPrefix, refreshes, disabledReason, ...rest
+  permission, whenDenied = 'hide', onAction, pendingLabel, disabled, children, done, errorMessages, failPrefix, refreshes, invalidates, after, disabledReason, ...rest
 }: ActionButtonProps) {
   const allowed = useCan(permission)
-  const { run, pending } = useAction({ done, errorMessages, failPrefix, refreshes })
+  const { run, pending } = useAction({ done, errorMessages, failPrefix, refreshes, invalidates, after })
   if (!allowed && whenDenied === 'hide') return null
 
   const reason = !allowed ? "You don't have permission for this action." : disabled && !pending ? disabledReason : null

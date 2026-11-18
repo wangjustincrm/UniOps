@@ -4,6 +4,7 @@ import { Textarea } from '../primitives/FieldInputs'
 import { Dialog } from '../primitives/Dialog'
 import { errorText } from '../resource/businessError'
 import { DisabledReason } from '../help'
+import { useAfterAction, type ActionOptions } from './useAction'
 
 export interface ConfirmActionProps {
   open: boolean
@@ -19,11 +20,19 @@ export interface ConfirmActionProps {
   /** Asks why: a text the person must fill (at least `minLength`, default 3)
    *  before Confirm is enabled — e.g. cancelling, releasing a hold. */
   reason?: { label: string; minLength?: number }
+  /** After it worked, as an action button: what to say (the status row), what to read again (default
+   *  everything on screen; `refreshes={false}` nothing), and what then (`after`). A failure stays in the dialog. */
+  done?: ActionOptions['done']
+  refreshes?: boolean
+  invalidates?: ActionOptions['invalidates']
+  after?: ActionOptions['after']
 }
 
 export function ConfirmAction({
   open, onOpenChange, title, description, confirmLabel = 'Confirm', destructive, onConfirm, errorMessages, reason,
+  done, refreshes, invalidates, after,
 }: ConfirmActionProps) {
+  const afterAction = useAfterAction()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [text, setText] = useState('')
@@ -38,9 +47,10 @@ export function ConfirmAction({
     setPending(true)
     setError(null)
     try {
-      await onConfirm(text.trim())
+      const result = await onConfirm(text.trim())
       setText('')
       onOpenChange(false)
+      await afterAction(result, { done, refreshes, invalidates, after })
     } catch (e) {
       setError(errorText(e, errorMessages))
     } finally {
