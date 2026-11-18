@@ -5,6 +5,7 @@ import { cn, displayTimeZone, formatDate, todayISO } from '@/lib/utils'
 import { useDaySummary } from '@/services/api'
 import type { DaySummaryRoom, DaySummaryBooking } from '@/lib/types'
 
+import { Input, Button } from '@uniops/shell'
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
 function addDays(iso: string, n: number): string {
@@ -229,40 +230,35 @@ export default function MeetingSummaryPage() {
         <div className="mx-2 h-5 w-px bg-surface-strong" />
 
         {/* Today button */}
-        <button
+        <Button
           onClick={() => setSelectedDate(todayISO())}
-          className={cn(
-            'rounded-md border px-3 py-1 text-sm font-medium transition-colors',
-            isToday
-              ? 'border-primary-700 bg-primary-700 text-white'
-              : 'border-line-strong bg-surface text-fg-secondary hover:bg-surface-subtle',
-          )}
+          variant={isToday ? 'primary' : 'secondary'} size="xs" aria-pressed={isToday}
         >
           Today
-        </button>
+        </Button>
 
         {/* Arrows */}
-        <button
+        <Button variant="subtle" size="icon-xs"
           onClick={() => setSelectedDate(d => addDays(d, -1))}
-          className="rounded p-1 text-fg-muted hover:bg-surface-sunken transition-colors"
+         
           aria-label="Previous day"
         >
           <ChevronLeft className="h-4 w-4" />
-        </button>
-        <button
+        </Button>
+        <Button variant="subtle" size="icon-xs"
           onClick={() => setSelectedDate(d => addDays(d, 1))}
-          className="rounded p-1 text-fg-muted hover:bg-surface-sunken transition-colors"
+         
           aria-label="Next day"
         >
           <ChevronRight className="h-4 w-4" />
-        </button>
+        </Button>
 
         {/* Date input */}
-        <input
+        <Input inputSize="sm"
           type="date"
           value={selectedDate}
           onChange={e => e.target.value && setSelectedDate(e.target.value)}
-          className="rounded-md border border-line-strong px-2 py-1 text-sm text-fg-secondary focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+         
         />
 
         {/* Weekday label */}

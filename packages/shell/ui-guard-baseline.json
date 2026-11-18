@@ -1,13 +1,6 @@
 {
  "$comment": "UI ratchet baseline — counts may only go down. Regenerate with: node scripts/ui-guard.mjs --update",
  "totals": {
-  "booking": {
-   "raw-control": 137,
-   "shouting-type": 27,
-   "raw-overlay": 6,
-   "raw-color": 5,
-   "raw-table": 60
-  },
   "epms": {
    "shouting-type": 2
   },
@@ -37,84 +30,6 @@
   }
  },
  "files": {
-  "booking/src/components/AttendeePicker.tsx": {
-   "raw-control": 3
-  },
-  "booking/src/components/RecurrencePicker.tsx": {
-   "raw-control": 6,
-   "shouting-type": 1
-  },
-  "booking/src/components/SuggestionPanel.tsx": {
-   "raw-control": 2
-  },
-  "booking/src/components/WeekStrip.tsx": {
-   "raw-control": 1,
-   "shouting-type": 2
-  },
-  "booking/src/components/layout/AppLayout.tsx": {
-   "raw-control": 4,
-   "raw-overlay": 1,
-   "raw-color": 1,
-   "shouting-type": 4
-  },
-  "booking/src/pages/BookingCreatePage.tsx": {
-   "raw-control": 8,
-   "raw-color": 1,
-   "shouting-type": 2
-  },
-  "booking/src/pages/BookingEditPage.tsx": {
-   "raw-control": 8,
-   "raw-color": 1,
-   "shouting-type": 2
-  },
-  "booking/src/pages/MeetingSummaryPage.tsx": {
-   "raw-control": 4
-  },
-  "booking/src/pages/MyBookingsPage.tsx": {
-   "raw-control": 9,
-   "raw-table": 14,
-   "raw-overlay": 1,
-   "shouting-type": 7
-  },
-  "booking/src/pages/RoomDetailPage.tsx": {
-   "raw-control": 1,
-   "raw-color": 1,
-   "shouting-type": 1
-  },
-  "booking/src/pages/RoomsPage.tsx": {
-   "raw-control": 9,
-   "raw-color": 1,
-   "shouting-type": 1
-  },
-  "booking/src/pages/admin/AllBookingsPage.tsx": {
-   "raw-control": 15,
-   "raw-table": 15,
-   "raw-overlay": 1,
-   "shouting-type": 2
-  },
-  "booking/src/pages/admin/NotificationsPage.tsx": {
-   "raw-control": 8,
-   "raw-table": 16,
-   "shouting-type": 2
-  },
-  "booking/src/pages/admin/RoomFormModal.tsx": {
-   "raw-control": 18,
-   "raw-overlay": 1
-  },
-  "booking/src/pages/admin/RoomImportModal.tsx": {
-   "raw-control": 5,
-   "raw-overlay": 1
-  },
-  "booking/src/pages/admin/RoomsAdminPage.tsx": {
-   "raw-control": 16,
-   "raw-table": 15,
-   "raw-overlay": 1,
-   "shouting-type": 2
-  },
-  "booking/src/pages/admin/SettingsPage.tsx": {
-   "raw-control": 20,
-   "shouting-type": 1
-  },
   "epms/src/pages/admin/AdminPanel.tsx": {
    "shouting-type": 1
   },

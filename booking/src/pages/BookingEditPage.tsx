@@ -40,6 +40,7 @@ import { SuggestionPanel } from '@/components/SuggestionPanel'
 import { useBookingAuth } from '@/store/auth'
 import { isoToHMInZone, isoToDateInZone, zonedToISO } from '@/lib/tz'
 
+import { Button, Input, Select, Textarea } from '@uniops/shell'
 // ── Time helpers ──────────────────────────────────────────────────────────────
 
 function buildTimeOptions(startHour: number, endHour: number): string[] {
@@ -86,7 +87,7 @@ function Field({ label, required, children, hint }: {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-fg-muted">{title}</h2>
+      <h2 className="mb-3 text-xs font-semibold text-fg-muted">{title}</h2>
       <div className="space-y-4">{children}</div>
     </section>
   )
@@ -421,7 +422,7 @@ export default function BookingEditPage() {
 
         {/* Page title */}
         <div>
-          <h1 className="text-2xl font-bold text-fg">Edit Booking</h1>
+          <h1 className="text-2xl font-semibold text-fg">Edit Booking</h1>
           <p className="mt-1 text-sm text-fg-muted">
             {isSeries
               ? 'Update details for your recurring series.'
@@ -444,7 +445,7 @@ export default function BookingEditPage() {
         <form onSubmit={handleSubmit} className="rounded-xl border border-line bg-surface p-6 shadow-sm space-y-6">
           <Section title="Details">
             <Field label="Title" required>
-              <input
+              <Input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
@@ -455,7 +456,7 @@ export default function BookingEditPage() {
             </Field>
 
             <Field label="Description">
-              <textarea
+              <Textarea
                 value={description}
                 onChange={(e) => setDesc(e.target.value)}
                 rows={3}
@@ -467,10 +468,10 @@ export default function BookingEditPage() {
 
           <Section title="Room">
             <Field label="Room" required>
-              <select
+              <Select
                 value={roomId}
                 onChange={(e) => setRoomId(e.target.value)}
-                className={inputCls}
+                className="w-full"
               >
                 {!rooms && (
                   <option value={booking.room_id}>
@@ -482,7 +483,7 @@ export default function BookingEditPage() {
                     {r.name} ({r.code})
                   </option>
                 ))}
-              </select>
+              </Select>
             </Field>
           </Section>
 
@@ -490,7 +491,7 @@ export default function BookingEditPage() {
             {/* Date input: hidden in series mode (pattern is fixed; date is per-occurrence) */}
             {!isSeries && (
               <Field label="Date" required>
-                <input
+                <Input
                   type="date"
                   value={date}
                   min={today}
@@ -506,26 +507,26 @@ export default function BookingEditPage() {
                 required
                 hint={isSeries ? 'Applied to all upcoming occurrences' : undefined}
               >
-                <select
+                <Select
                   value={startTime}
                   onChange={(e) => setStart(e.target.value)}
-                  className={inputCls}
+                  className="w-full"
                 >
                   {TIME_OPTIONS.map((t) => (
                     <option key={t} value={t}>{t}</option>
                   ))}
-                </select>
+                </Select>
               </Field>
               <Field label="End time" required>
-                <select
+                <Select
                   value={endTime}
                   onChange={(e) => setEnd(e.target.value)}
-                  className={inputCls}
+                  className="w-full"
                 >
                   {TIME_OPTIONS.filter((t) => t > startTime).map((t) => (
                     <option key={t} value={t}>{t}</option>
                   ))}
-                </select>
+                </Select>
               </Field>
             </div>
           </Section>
@@ -589,26 +590,21 @@ export default function BookingEditPage() {
 
           {/* Submit */}
           <div className="flex justify-end gap-2 pt-2">
-            <button
+            <Button variant="secondary" size="md"
               type="button"
               onClick={() => navigate('/my')}
-              className="rounded-md border border-line-strong px-4 py-2 text-sm text-fg-secondary hover:bg-surface-subtle"
+             
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
+              size="md"
               disabled={!canSubmit}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold transition-colors',
-                canSubmit
-                  ? 'bg-primary-700 text-white hover:bg-[#074f4f]'
-                  : 'bg-surface-sunken text-fg-muted cursor-not-allowed',
-              )}
             >
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               {isSeries ? 'Update Series' : 'Save Changes'}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

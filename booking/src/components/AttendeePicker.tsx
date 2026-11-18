@@ -14,6 +14,7 @@ import { directoryService } from '@/services/api'
 import type { DirectoryUserOut } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
+import { Button, Input, MenuItem } from '@uniops/shell'
 interface Props {
   value: DirectoryUserOut[]
   onChange: (users: DirectoryUserOut[])  => void
@@ -154,16 +155,15 @@ export function AttendeePicker({ value, onChange, excludeUserId }: Props) {
         <p className="px-3 py-2 text-xs text-fg-muted">No matches.</p>
       )}
       {results.map((u) => (
-        <button
+        <MenuItem
           key={u.id}
-          type="button"
           onMouseDown={(e) => e.preventDefault()} // prevent blur before click
           onClick={() => select(u)}
-          className="block w-full border-b border-line-subtle px-3 py-2 text-left hover:bg-primary-700/5 transition-colors last:border-0"
+          className="block border-b border-line-subtle last:border-0"
         >
           <p className="text-sm font-medium text-fg">{u.full_name}</p>
           <p className="text-xs text-fg-muted">{u.email}</p>
-        </button>
+        </MenuItem>
       ))}
     </div>,
     document.body,
@@ -180,14 +180,14 @@ export function AttendeePicker({ value, onChange, excludeUserId }: Props) {
               className="inline-flex items-center gap-1 rounded-full bg-primary-700/10 px-2.5 py-0.5 text-xs font-medium text-primary-700"
             >
               {u.full_name}
-              <button
+              <Button variant="ghost" size="icon-xs"
                 type="button"
                 onClick={() => remove(u.id)}
-                className="ml-0.5 rounded-full text-primary-700/60 hover:text-primary-700 transition-colors"
+                className="ml-0.5"
                 aria-label={`Remove ${u.full_name}`}
               >
                 <X className="h-3 w-3" />
-              </button>
+              </Button>
             </span>
           ))}
         </div>
@@ -196,7 +196,7 @@ export function AttendeePicker({ value, onChange, excludeUserId }: Props) {
       {/* Search input */}
       <div ref={triggerRef} className="relative">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-fg-muted pointer-events-none" />
-        <input
+        <Input
           ref={inputRef}
           type="text"
           value={query}

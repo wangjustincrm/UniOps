@@ -8,7 +8,6 @@
  * Actions: Force Cancel (confirm dialog, series-aware), Export CSV
  */
 import { useState, useEffect } from 'react'
-import { createPortal } from 'react-dom'
 import { useLocation } from 'react-router-dom'
 import {
   Loader2,
@@ -17,7 +16,7 @@ import {
   X as XIcon,
   Repeat,
 } from 'lucide-react'
-import { SortTh, useSort, sortParams } from '@uniops/shell'
+import { SortTh, useSort, sortParams, Input, Select, TBody, THead, Table, Td, Th, Tr, Button, Modal } from '@uniops/shell'
 import { cn, formatDate, formatTime } from '@/lib/utils'
 import {
   useAdminRoomList,
@@ -83,47 +82,54 @@ interface ForceCancelDialogProps {
 
 function ForceCancelDialog({ booking, onConfirm, onClose, isPending }: ForceCancelDialogProps) {
   const isSeries = !!booking.series_id
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-xl border border-line bg-surface p-6 shadow-xl space-y-4">
-        <h2 className="text-base font-semibold text-fg">Force Cancel Booking</h2>
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      busy={isPending}
+      title="Force Cancel Booking"
+      // Closes by Keep / the close button only, as before.
+      closeOnEscape={false}
+      size="full"
+      className="max-w-sm"
+    >
+      <div className="space-y-4">
         <p className="text-sm text-fg-secondary">
           {isSeries
             ? `"${booking.title}" booked by ${booking.organizer_name} is part of a recurring series. Cancel only this occurrence, or the whole series? Cancelling the series keeps past and in-progress occurrences.`
             : `Cancel "${booking.title}" booked by ${booking.organizer_name}? This cannot be undone.`}
         </p>
         <div className="flex justify-end gap-2 pt-1">
-          <button
+          <Button variant="secondary" size="sm"
             type="button"
             onClick={onClose}
             disabled={isPending}
-            className="rounded-md border border-line-strong px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50"
+           
           >
             Keep
-          </button>
+          </Button>
           {isSeries && (
-            <button
+            <Button variant="danger-outline" size="sm"
               type="button"
               onClick={() => onConfirm(false)}
               disabled={isPending}
-              className="rounded-md border border-danger-line px-3 py-1.5 text-sm font-medium text-danger-fg hover:bg-danger-soft disabled:opacity-50"
+             
             >
               This occurrence
-            </button>
+            </Button>
           )}
-          <button
+          <Button variant="danger" size="sm"
             type="button"
             onClick={() => onConfirm(isSeries)}
             disabled={isPending}
-            className="inline-flex items-center gap-1.5 rounded-md bg-danger-solid px-3 py-1.5 text-sm font-semibold text-white hover:bg-danger-700 disabled:opacity-50"
+           
           >
             {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {isSeries ? 'Cancel series' : 'Force cancel'}
-          </button>
+          </Button>
         </div>
       </div>
-    </div>,
-    document.body,
+    </Modal>
   )
 }
 
@@ -221,7 +227,7 @@ export default function AllBookingsPage() {
     }
   }
 
-  const thCls = 'px-4 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted text-left'
+  const thCls = 'px-4 py-3 text-xs font-semibold text-fg-muted text-left'
   const tdCls = 'px-4 py-3 text-sm'
 
   return (
@@ -229,86 +235,86 @@ export default function AllBookingsPage() {
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-fg">All Bookings</h1>
-          <button
+          <h1 className="text-2xl font-semibold text-fg">All Bookings</h1>
+          <Button variant="secondary" size="sm"
             type="button"
             onClick={handleExport}
             disabled={exporting}
-            className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50"
+           
           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Export CSV
-          </button>
+          </Button>
         </div>
 
         {/* Banners */}
         {successNote && (
           <div className="flex items-center justify-between rounded-md border border-success-line bg-success-soft px-4 py-2.5 text-sm text-success-fg">
             <span>{successNote}</span>
-            <button type="button" onClick={() => setSuccessNote(null)}><XIcon className="h-4 w-4 text-success-fg" /></button>
+            <Button variant="subtle" size="icon-xs" aria-label="Clear" type="button" onClick={() => setSuccessNote(null)}><XIcon className="h-4 w-4 text-success-fg" /></Button>
           </div>
         )}
         {cancelError && (
           <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-4 py-2.5 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4 shrink-0" />
             {cancelError}
-            <button type="button" onClick={() => setCancelError(null)} className="ml-auto"><XIcon className="h-4 w-4" /></button>
+            <Button aria-label="Dismiss" variant="subtle" size="icon-xs" type="button" onClick={() => setCancelError(null)} className="ml-auto"><XIcon className="h-4 w-4" /></Button>
           </div>
         )}
         {exportError && (
           <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-4 py-2.5 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4 shrink-0" />
             Export failed: {exportError}
-            <button type="button" onClick={() => setExportError(null)} className="ml-auto"><XIcon className="h-4 w-4" /></button>
+            <Button aria-label="Dismiss" variant="subtle" size="icon-xs" type="button" onClick={() => setExportError(null)} className="ml-auto"><XIcon className="h-4 w-4" /></Button>
           </div>
         )}
 
         {/* Filters */}
         <div className="flex flex-wrap gap-3">
-          <select
+          <Select
             value={roomId}
             onChange={(e) => setRoomId(e.target.value)}
-            className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+           
           >
             <option value="">All Rooms</option>
             {(rooms ?? []).map((r) => (
               <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
             ))}
-          </select>
+          </Select>
           <div className="flex items-center gap-1.5">
             <label className="text-xs text-fg-muted">From</label>
-            <input
+            <Input
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+             
             />
           </div>
           <div className="flex items-center gap-1.5">
             <label className="text-xs text-fg-muted">To</label>
-            <input
+            <Input
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+             
             />
           </div>
-          <select
+          <Select
             value={status}
             onChange={(e) => setStatus(e.target.value)}
-            className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+           
           >
             <option value="">All Statuses</option>
             <option value="confirmed">Confirmed</option>
             <option value="cancelled">Cancelled</option>
             <option value="completed">Completed</option>
             <option value="no_show">No Show</option>
-          </select>
-          <input
+          </Select>
+          <Input
             value={organizerFilter}
             onChange={(e) => setOrganizerFilter(e.target.value)}
             placeholder="Organizer name…"
-            className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40 w-44"
+            className="w-44"
           />
         </div>
 
@@ -328,29 +334,29 @@ export default function AllBookingsPage() {
         {!isLoading && !error && (
           <>
             <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-line bg-surface-subtle">
-                  <tr>
+              <Table className="text-left">
+                <THead>
+                  <Tr>
                     <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} className={thCls} />
                     <SortTh label="Room" sortKey="room" sort={sort} onSort={onSort} className={thCls} />
                     <SortTh label="Organizer" sortKey="organizer" sort={sort} onSort={onSort} className={thCls} />
                     <SortTh label="Date / Time" sortKey="starts_at" sort={sort} onSort={onSort} className={thCls} />
                     <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={thCls} />
                     <SortTh label="Sync" sortKey="sync_status" sort={sort} onSort={onSort} className={thCls} />
-                    <th className={thCls}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
+                    <Th className={thCls}>Actions</Th>
+                  </Tr>
+                </THead>
+                <TBody>
                   {items.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-12 text-center text-sm text-fg-muted">
+                    <Tr>
+                      <Td align="center" colSpan={7} className="text-sm text-fg-muted">
                         No bookings found.
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                   ) : (
                     items.map((b) => (
-                      <tr key={b.id} className="border-b border-line-subtle last:border-0 hover:bg-surface-subtle transition-colors">
-                        <td className={tdCls}>
+                      <Tr key={b.id} className="hover:bg-surface-subtle transition-colors">
+                        <Td className={tdCls}>
                           <div className="flex items-center gap-1.5">
                             <span className="font-medium text-fg">{b.title}</span>
                             {b.series_id && (
@@ -359,39 +365,39 @@ export default function AllBookingsPage() {
                               </span>
                             )}
                           </div>
-                        </td>
-                        <td className={tdCls}>
+                        </Td>
+                        <Td className={tdCls}>
                           <span className="font-medium">{b.room_name}</span>
                           <span className="ml-1 text-xs text-fg-muted">({b.room_code})</span>
-                        </td>
-                        <td className={cn(tdCls, 'text-fg-secondary')}>{b.organizer_name}</td>
-                        <td className={cn(tdCls, 'whitespace-nowrap')}>
+                        </Td>
+                        <Td className={cn(tdCls, 'text-fg-secondary')}>{b.organizer_name}</Td>
+                        <Td className={cn(tdCls, 'whitespace-nowrap')}>
                           <div className="text-fg-secondary">{formatDate(b.starts_at)}</div>
                           <div className="text-xs text-fg-muted">{fmtTime(b.starts_at)}–{fmtTime(b.ends_at)}</div>
-                        </td>
-                        <td className={tdCls}>
+                        </Td>
+                        <Td className={tdCls}>
                           <BookingStatusBadge status={b.status} />
-                        </td>
-                        <td className={tdCls}>
+                        </Td>
+                        <Td className={tdCls}>
                           <SyncBadge syncStatus={b.sync_status} />
-                        </td>
-                        <td className={tdCls}>
+                        </Td>
+                        <Td className={tdCls}>
                           {b.status === 'confirmed' && (
-                            <button
+                            <Button variant="danger-outline" size="xs"
                               type="button"
                               onClick={() => setCancelTarget(b)}
-                              className="inline-flex items-center gap-1 rounded-md border border-danger-line bg-surface px-2.5 py-1 text-xs font-medium text-danger-fg hover:bg-danger-soft"
+                             
                             >
                               <XIcon className="h-3 w-3" />
                               Cancel
-                            </button>
+                            </Button>
                           )}
-                        </td>
-                      </tr>
+                        </Td>
+                      </Tr>
                     ))
                   )}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
 
             {/* Pagination */}
@@ -399,23 +405,23 @@ export default function AllBookingsPage() {
               <div className="flex items-center justify-between text-sm text-fg-secondary">
                 <span>{total} total</span>
                 <div className="flex items-center gap-2">
-                  <button
+                  <Button variant="secondary" size="xs"
                     type="button"
                     disabled={offset === 0}
                     onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
-                    className="rounded-md border border-line-strong px-3 py-1 text-sm disabled:opacity-40 hover:bg-surface-subtle"
+                   
                   >
                     Previous
-                  </button>
+                  </Button>
                   <span>Page {currentPage} of {totalPages}</span>
-                  <button
+                  <Button variant="secondary" size="xs"
                     type="button"
                     disabled={offset + PAGE_SIZE >= total}
                     onClick={() => setOffset((o) => o + PAGE_SIZE)}
-                    className="rounded-md border border-line-strong px-3 py-1 text-sm disabled:opacity-40 hover:bg-surface-subtle"
+                   
                   >
                     Next
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}

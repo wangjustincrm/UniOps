@@ -6,8 +6,7 @@
  * preserved on edit so removing and re-saving does not wipe existing images.
  */
 import { useState, useEffect, useRef } from 'react'
-import { createPortal } from 'react-dom'
-import { Loader2, X as XIcon, AlertCircle, ImagePlus, Trash2 } from 'lucide-react'
+import { Loader2, AlertCircle, ImagePlus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   useAdminCreateRoom,
@@ -24,6 +23,7 @@ import {
 import { ApiError } from '@/lib/api'
 import { AuthImage } from '@/components/AuthImage'
 
+import { Checkbox, FileInput, Input, Select, Textarea, Button, Modal } from '@uniops/shell'
 // ── File-api base URL for thumbnail rendering ─────────────────────────────────
 
 const FILE_API_BASE = (import.meta.env.VITE_FILE_API_URL as string | undefined) ?? ''
@@ -172,22 +172,16 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
   }
 
   const modal = (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-2xl rounded-xl border border-line bg-surface shadow-xl flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-line shrink-0">
-          <h2 className="text-base font-semibold text-fg">
-            {isEdit ? 'Edit Room' : 'New Room'}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-fg-muted hover:text-fg-secondary"
-          >
-            <XIcon className="h-5 w-5" />
-          </button>
-        </div>
-
+    <Modal
+      open
+      onClose={onClose}
+      title={isEdit ? 'Edit Room' : 'New Room'}
+      // Closes by Cancel / the close button only, as before.
+      closeOnEscape={false}
+      size="full"
+      className="max-w-2xl"
+      bodyClassName="flex min-h-0 flex-col p-0"
+    >
         {/* Scrollable body */}
         <form id="room-form" onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
           {error && (
@@ -201,21 +195,21 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">Name <span className="text-danger-fg">*</span></label>
-              <input
+              <Input
                 required
                 value={form.name}
                 onChange={(e) => setField('name', e.target.value)}
-                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+                className="w-full"
                 placeholder="Conference Room A"
               />
             </div>
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">Code <span className="text-danger-fg">*</span></label>
-              <input
+              <Input
                 required
                 value={form.code}
                 onChange={(e) => setField('code', e.target.value.toUpperCase())}
-                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+                className="w-full"
                 placeholder="CR-A"
               />
             </div>
@@ -225,19 +219,19 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">Floor</label>
-              <input
+              <Input
                 value={form.floor as string ?? ''}
                 onChange={(e) => setField('floor', e.target.value)}
-                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+                className="w-full"
                 placeholder="2"
               />
             </div>
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">Area</label>
-              <input
+              <Input
                 value={form.area as string ?? ''}
                 onChange={(e) => setField('area', e.target.value)}
-                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+                className="w-full"
                 placeholder="East Wing"
               />
             </div>
@@ -247,26 +241,26 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">Capacity <span className="text-danger-fg">*</span></label>
-              <input
+              <Input
                 required
                 type="number"
                 min={1}
                 value={form.capacity}
                 onChange={(e) => setField('capacity', Number(e.target.value))}
-                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+                className="w-full"
               />
             </div>
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">Room Type</label>
-              <select
+              <Select
                 value={form.room_type}
                 onChange={(e) => setField('room_type', e.target.value)}
-                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+                className="w-full"
               >
                 {ROOM_TYPES.map((t) => (
                   <option key={t} value={t}>{ROOM_TYPE_LABELS[t]}</option>
                 ))}
-              </select>
+              </Select>
             </div>
           </div>
 
@@ -286,8 +280,8 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
                         : 'border-line-strong bg-surface text-fg-secondary hover:border-fg-faint',
                     )}
                   >
-                    <input
-                      type="checkbox"
+                    <Checkbox
+                     
                       className="sr-only"
                       checked={checked}
                       onChange={() => toggleEquipment(item)}
@@ -303,20 +297,20 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">Open Time Start</label>
-              <input
+              <Input
                 type="time"
                 value={form.open_time_start as string ?? ''}
                 onChange={(e) => setField('open_time_start', e.target.value)}
-                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+                className="w-full"
               />
             </div>
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">Open Time End</label>
-              <input
+              <Input
                 type="time"
                 value={form.open_time_end as string ?? ''}
                 onChange={(e) => setField('open_time_end', e.target.value)}
-                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+                className="w-full"
               />
             </div>
           </div>
@@ -324,12 +318,12 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
           {/* Advance booking days */}
           <div>
             <label className="block text-xs font-medium text-fg-secondary mb-1">Advance Booking Days</label>
-            <input
+            <Input
               type="number"
               min={0}
               value={form.advance_booking_days ?? ''}
               onChange={(e) => setField('advance_booking_days', e.target.value ? Number(e.target.value) : undefined)}
-              className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+              className="w-full"
               placeholder="Leave blank to use system default"
             />
           </div>
@@ -337,10 +331,10 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
           {/* Owner department */}
           <div>
             <label className="block text-xs font-medium text-fg-secondary mb-1">Owner Department</label>
-            <input
+            <Input
               value={form.owner_department as string ?? ''}
               onChange={(e) => setField('owner_department', e.target.value)}
-              className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+              className="w-full"
               placeholder="e.g. Facilities"
             />
           </div>
@@ -348,11 +342,11 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
           {/* Notes */}
           <div>
             <label className="block text-xs font-medium text-fg-secondary mb-1">Notes</label>
-            <textarea
+            <Textarea
               rows={2}
               value={form.notes as string ?? ''}
               onChange={(e) => setField('notes', e.target.value)}
-              className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40 resize-none"
+              className="w-full resize-none"
               placeholder="Optional notes visible to admins"
             />
           </div>
@@ -371,43 +365,44 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
                       alt="Room image"
                       className="h-20 w-28 rounded-lg object-cover border border-line"
                     />
-                    <button
+                    <Button variant="danger" size="icon-xs"
                       type="button"
                       onClick={() => removeImage(fid)}
-                      className="absolute top-1 right-1 hidden group-hover:flex items-center justify-center h-5 w-5 rounded-full bg-danger-solid text-white shadow"
+                      // Shows on hover, and on keyboard focus too (it was hover-only).
+                      className="absolute right-1 top-1 hidden h-5 w-5 rounded-full shadow-xs group-hover:inline-flex group-focus-within:inline-flex"
                       title="Remove image"
+                      aria-label="Remove image"
                     >
                       <Trash2 className="h-3 w-3" />
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>
             )}
 
             {/* Upload button */}
-            <input
+            <FileInput
               ref={fileInputRef}
-              type="file"
+             
               accept="image/*"
               multiple
               className="sr-only"
               onChange={handleImageSelect}
               disabled={uploading || !FILE_API_BASE}
             />
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="xs"
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading || !FILE_API_BASE}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-md border border-line-strong px-3 py-1.5 text-xs text-fg-secondary hover:bg-surface-subtle disabled:opacity-50 disabled:cursor-not-allowed',
-              )}
             >
               {uploading
                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 : <ImagePlus className="h-3.5 w-3.5" />
               }
               {uploading ? 'Uploading…' : 'Add Images'}
-            </button>
+            </Button>
 
             {!FILE_API_BASE && (
               <p className="mt-1 text-xs text-fg-muted">
@@ -425,28 +420,27 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
 
         {/* Footer */}
         <div className="flex justify-end gap-2 px-6 py-4 border-t border-line shrink-0">
-          <button
+          <Button variant="secondary" size="sm"
             type="button"
             onClick={onClose}
             disabled={isPending}
-            className="rounded-md border border-line-strong px-4 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50"
+           
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button size="sm"
             type="submit"
             form="room-form"
             disabled={isPending}
             onClick={handleSubmit}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-primary-700/90 disabled:opacity-50"
+           
           >
             {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {isEdit ? 'Save Changes' : 'Create Room'}
-          </button>
+          </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 
-  return createPortal(modal, document.body)
+  return modal
 }

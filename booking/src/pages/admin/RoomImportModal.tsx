@@ -5,10 +5,10 @@
  * equipment (comma-separated), room_type, open_time_start, open_time_end
  */
 import { useState, useRef } from 'react'
-import { createPortal } from 'react-dom'
-import { Upload, Loader2, X as XIcon, AlertCircle, CheckCircle2, FileSpreadsheet } from 'lucide-react'
+import { Upload, Loader2, AlertCircle, CheckCircle2, FileSpreadsheet } from 'lucide-react'
 import { useAdminImportRooms } from '@/services/api'
 
+import { Button, ChoiceCard, FileInput, Modal } from '@uniops/shell'
 interface Props {
   onClose: () => void
 }
@@ -50,16 +50,16 @@ export function RoomImportModal({ onClose }: Props) {
   }
 
   const modal = (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-xl border border-line bg-surface shadow-xl">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-line">
-          <h2 className="text-base font-semibold text-fg">Import Rooms from Excel</h2>
-          <button type="button" onClick={onClose} className="text-fg-muted hover:text-fg-secondary">
-            <XIcon className="h-5 w-5" />
-          </button>
-        </div>
-
+    <Modal
+      open
+      onClose={onClose}
+      title="Import Rooms from Excel"
+      // Closes by Cancel / the close button only, as before.
+      closeOnEscape={false}
+      size="full"
+      className="max-w-lg"
+      bodyClassName="p-0"
+    >
         <div className="px-6 py-4 space-y-4">
           {/* Template hint */}
           <div className="rounded-md border border-line bg-surface-subtle p-3">
@@ -79,17 +79,16 @@ export function RoomImportModal({ onClose }: Props) {
 
           {/* File picker */}
           <div>
-            <input
+            <FileInput
               ref={inputRef}
-              type="file"
+             
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               hidden
               onChange={onFilePick}
             />
-            <button
-              type="button"
+            <ChoiceCard
               onClick={() => inputRef.current?.click()}
-              className="w-full flex flex-col items-center gap-2 rounded-lg border-2 border-dashed border-line-strong px-4 py-6 text-sm text-fg-muted hover:border-primary-700/40 hover:text-primary-700 transition-colors"
+              className="w-full items-center border-2 border-dashed border-line-strong px-4 py-6 text-sm text-fg-muted hover:border-accent hover:text-accent-fg"
             >
               <FileSpreadsheet className="h-8 w-8 text-fg-faint" />
               {file ? (
@@ -97,7 +96,7 @@ export function RoomImportModal({ onClose }: Props) {
               ) : (
                 <span>Click to select an .xlsx file</span>
               )}
-            </button>
+            </ChoiceCard>
           </div>
 
           {/* Error from mutation */}
@@ -135,18 +134,18 @@ export function RoomImportModal({ onClose }: Props) {
 
         {/* Footer */}
         <div className="flex justify-end gap-2 px-6 py-4 border-t border-line">
-          <button
+          <Button variant="secondary" size="sm"
             type="button"
             onClick={onClose}
-            className="rounded-md border border-line-strong px-4 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle"
+           
           >
             Close
-          </button>
-          <button
+          </Button>
+          <Button size="sm"
             type="button"
             onClick={handleUpload}
             disabled={!file || importMut.isPending}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-primary-700/90 disabled:opacity-50"
+           
           >
             {importMut.isPending ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -154,11 +153,10 @@ export function RoomImportModal({ onClose }: Props) {
               <Upload className="h-3.5 w-3.5" />
             )}
             Upload
-          </button>
+          </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 
-  return createPortal(modal, document.body)
+  return modal
 }

@@ -15,6 +15,7 @@ import { Loader2, AlertCircle, CheckCircle2, X as XIcon, Eye, EyeOff } from 'luc
 import { useAdminConfig, useAdminUpdateConfig } from '@/services/api'
 import type { BookingRules, SmtpSettings } from '@/lib/types'
 
+import { Checkbox, Input, Select, Button } from '@uniops/shell'
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function Field({
@@ -98,13 +99,13 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
         {error && (
           <div className="flex items-center justify-between rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
             <div className="flex items-center gap-2"><AlertCircle className="h-4 w-4" />{error}</div>
-            <button type="button" onClick={() => setError(null)}><XIcon className="h-4 w-4" /></button>
+            <Button variant="subtle" size="icon-xs" aria-label="Clear" type="button" onClick={() => setError(null)}><XIcon className="h-4 w-4" /></Button>
           </div>
         )}
 
         <div className="grid grid-cols-2 gap-4">
           <Field label="Slot Minutes" hint="Meeting start/end granularity">
-            <input
+            <Input
               type="number" min={5} max={60}
               value={form.slot_minutes ?? ''}
               onChange={(e) => setNum('slot_minutes', e.target.value)}
@@ -113,7 +114,7 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
             />
           </Field>
           <Field label="Min Duration (minutes)">
-            <input
+            <Input
               type="number" min={1}
               value={form.min_duration_minutes ?? ''}
               onChange={(e) => setNum('min_duration_minutes', e.target.value)}
@@ -122,7 +123,7 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
             />
           </Field>
           <Field label="Max Duration (minutes)">
-            <input
+            <Input
               type="number" min={1}
               value={form.max_duration_minutes ?? ''}
               onChange={(e) => setNum('max_duration_minutes', e.target.value)}
@@ -131,7 +132,7 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
             />
           </Field>
           <Field label="Advance Booking Days" hint="How far ahead users can book">
-            <input
+            <Input
               type="number" min={0}
               value={form.advance_days ?? ''}
               onChange={(e) => setNum('advance_days', e.target.value)}
@@ -140,7 +141,7 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
             />
           </Field>
           <Field label="Default Open Start">
-            <input
+            <Input
               type="time"
               value={form.default_open_start ?? ''}
               onChange={(e) => setStr('default_open_start', e.target.value)}
@@ -148,7 +149,7 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
             />
           </Field>
           <Field label="Default Open End">
-            <input
+            <Input
               type="time"
               value={form.default_open_end ?? ''}
               onChange={(e) => setStr('default_open_end', e.target.value)}
@@ -158,12 +159,12 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
         </div>
 
         <div className="flex items-center gap-3">
-          <input
+          <Checkbox
             id="notify_room_admin"
-            type="checkbox"
+           
             checked={!!form.notify_room_admin}
             onChange={(e) => setForm((f) => ({ ...f, notify_room_admin: e.target.checked }))}
-            className="h-4 w-4 rounded border-line-strong text-primary-700 focus:ring-primary-700/30"
+           
           />
           <label htmlFor="notify_room_admin" className="text-sm text-fg-secondary">
             Notify room admin when a booking is made or cancelled
@@ -175,7 +176,7 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
             label="Room Admin Emails"
             hint="Comma-separated list of email addresses"
           >
-            <input
+            <Input
               type="text"
               value={emailsRaw}
               onChange={(e) => setEmailsRaw(e.target.value)}
@@ -186,15 +187,15 @@ function RulesCard({ rules: initialRules, onSave, saving }: RulesCardProps) {
         )}
       </div>
       <div className="px-6 py-4 border-t border-line-subtle flex justify-end">
-        <button
+        <Button size="sm"
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-primary-700/90 disabled:opacity-50"
+         
         >
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Save Rules
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -252,14 +253,14 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
         {error && (
           <div className="flex items-center justify-between rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-fg">
             <div className="flex items-center gap-2"><AlertCircle className="h-4 w-4" />{error}</div>
-            <button type="button" onClick={() => setError(null)}><XIcon className="h-4 w-4" /></button>
+            <Button variant="subtle" size="icon-xs" aria-label="Clear" type="button" onClick={() => setError(null)}><XIcon className="h-4 w-4" /></Button>
           </div>
         )}
 
         <div className="grid grid-cols-2 gap-4">
           <div className="col-span-2 sm:col-span-1">
             <Field label="SMTP Host">
-              <input
+              <Input
                 type="text"
                 value={form.host ?? ''}
                 onChange={(e) => setStr('host', e.target.value)}
@@ -269,7 +270,7 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
             </Field>
           </div>
           <Field label="Port">
-            <input
+            <Input
               type="number"
               value={form.port ?? ''}
               onChange={(e) => setForm((f) => ({ ...f, port: e.target.value ? Number(e.target.value) : null }))}
@@ -278,7 +279,7 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
             />
           </Field>
           <Field label="Username">
-            <input
+            <Input
               type="text"
               value={form.user ?? ''}
               onChange={(e) => setStr('user', e.target.value)}
@@ -289,7 +290,7 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
           </Field>
           <Field label="Password">
             <div className="relative">
-              <input
+              <Input
                 type={showPw ? 'text' : 'password'}
                 value={form.password ?? ''}
                 onChange={(e) => setStr('password', e.target.value)}
@@ -297,17 +298,17 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
                 placeholder={form.password ? '••••••••' : 'Enter password'}
                 autoComplete="new-password"
               />
-              <button
+              <Button variant="subtle" size="icon-xs"
                 type="button"
                 onClick={() => setShowPw((s) => !s)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg-secondary"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2"
               >
                 {showPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </button>
+              </Button>
             </div>
           </Field>
           <Field label="From Email">
-            <input
+            <Input
               type="email"
               value={form.from_email ?? ''}
               onChange={(e) => setStr('from_email', e.target.value)}
@@ -318,12 +319,12 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
         </div>
 
         <div className="flex items-center gap-3">
-          <input
+          <Checkbox
             id="use_tls"
-            type="checkbox"
+           
             checked={!!form.use_tls}
             onChange={(e) => setForm((f) => ({ ...f, use_tls: e.target.checked }))}
-            className="h-4 w-4 rounded border-line-strong text-primary-700 focus:ring-primary-700/30"
+           
           />
           <label htmlFor="use_tls" className="text-sm text-fg-secondary">Use TLS</label>
         </div>
@@ -336,26 +337,26 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
               : 'Meeting organizer: shows as sent on behalf of the organizer.'
           }
         >
-          <select
+          <Select
             value={mode}
             onChange={(e) => setMode(e.target.value as 'system' | 'initiator')}
-            className={inputCls}
+            className="w-full"
           >
             <option value="system">System mailbox</option>
             <option value="initiator">Meeting organizer</option>
-          </select>
+          </Select>
         </Field>
       </div>
       <div className="px-6 py-4 border-t border-line-subtle flex justify-end">
-        <button
+        <Button size="sm"
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-primary-700/90 disabled:opacity-50"
+         
         >
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Save Email Settings
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -420,7 +421,7 @@ export default function SettingsPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-2xl px-4 py-6 sm:px-6 space-y-6">
-        <h1 className="text-2xl font-bold text-fg">Settings</h1>
+        <h1 className="text-2xl font-semibold text-fg">Settings</h1>
         <RulesCard
           rules={rules}
           onSave={handleRulesSave}

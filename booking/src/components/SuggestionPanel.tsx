@@ -10,6 +10,7 @@ import { Clock, MapPin, Users, Video, CheckCircle2, AlertTriangle } from 'lucide
 import type { BookingSlimOut, SuggestOut, RoomWithStatusOut } from '@/lib/types'
 import { cn, formatDate, formatDateTime, formatTime } from '@/lib/utils'
 import { ROOM_STATUS_STYLE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
+import { Button, ChoiceCard } from '@uniops/shell'
 
 interface Props {
   conflicts: BookingSlimOut[]
@@ -93,18 +94,15 @@ export function SuggestionPanel({ conflicts, occurrenceConflicts, suggestions, o
           <p className="text-xs font-semibold text-fg-secondary mb-2">Nearest available slots:</p>
           <div className="flex flex-wrap gap-2">
             {suggestions!.nearest_slots.map((slot, i) => (
-              <button
+              <Button
                 key={i}
-                type="button"
+                variant="outline"
+                size="xs"
                 onClick={() => onPickSlot(slot.starts_at, slot.ends_at)}
-                className={cn(
-                  'inline-flex items-center gap-1 rounded-md border border-primary-700 bg-surface px-2.5 py-1',
-                  'text-xs font-medium text-primary-700 hover:bg-primary-700/5 transition-colors',
-                )}
               >
                 <CheckCircle2 className="h-3 w-3" />
                 {formatSlot(slot.starts_at, slot.ends_at)}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -118,14 +116,10 @@ export function SuggestionPanel({ conflicts, occurrenceConflicts, suggestions, o
             {suggestions!.alternative_rooms.map((room) => {
               const locationParts = [room.floor, room.area].filter(Boolean)
               return (
-                <button
+                <ChoiceCard
                   key={room.id}
-                  type="button"
                   onClick={() => onPickRoom(room)}
-                  className={cn(
-                    'flex items-center gap-3 rounded-lg border border-line bg-surface p-3 text-left',
-                    'hover:border-primary-700/40 hover:bg-primary-700/5 transition-colors',
-                  )}
+                  className="flex-row items-center gap-3 rounded-lg p-3"
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-fg truncate">{room.name}</p>
@@ -154,7 +148,7 @@ export function SuggestionPanel({ conflicts, occurrenceConflicts, suggestions, o
                   )}>
                     {ROOM_STATUS_LABEL[room.status_now]}
                   </span>
-                </button>
+                </ChoiceCard>
               )
             })}
           </div>

@@ -26,7 +26,7 @@ export function TabBar() {
   }
 
   return (
-    <div className="flex h-10 shrink-0 items-stretch gap-1 overflow-x-auto border-b border-line bg-surface px-2">
+    <div className="flex h-10 shrink-0 items-stretch gap-1 overflow-x-auto border-b border-line bg-surface px-2 print:hidden">
       {tabs.map((t) => {
         const Icon = resolveIcon(t.icon)
         const active = t.key === activeKey

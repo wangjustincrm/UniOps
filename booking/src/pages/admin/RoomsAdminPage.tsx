@@ -12,7 +12,6 @@
  * 409 duplicate code → inline error in RoomFormModal.
  */
 import { useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   Loader2,
@@ -24,7 +23,7 @@ import {
   X as XIcon,
   CheckCircle2,
 } from 'lucide-react'
-import { SortTh, useSortableRows } from '@uniops/shell'
+import { SortTh, useSortableRows, Input, Select, TBody, THead, Table, Td, Textarea, Th, Tr, Button, Modal } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import {
   useAdminRoomList,
@@ -88,9 +87,17 @@ function StatusChangeDialog({ room, onClose }: StatusChangeDialogProps) {
   }
 
   const modal = (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-xl border border-line bg-surface shadow-xl p-6 space-y-4">
-        <h2 className="text-base font-semibold text-fg">Change Room Status</h2>
+    <Modal
+      open
+      onClose={onClose}
+      busy={mut.isPending}
+      title="Change Room Status"
+      // Closes by Close / Cancel / the close button only, as before.
+      closeOnEscape={false}
+      size="full"
+      className="max-w-sm"
+    >
+      <div className="space-y-4">
         <p className="text-sm text-fg-secondary">
           Room: <span className="font-medium">{room.name}</span> ({room.code})
         </p>
@@ -102,56 +109,56 @@ function StatusChangeDialog({ room, onClose }: StatusChangeDialogProps) {
               <span>
                 <strong>{affectedWarning}</strong> future booking{affectedWarning !== 1 ? 's' : ''} are affected.
                 Review them in{' '}
-                <button
+                <Button variant="link"
                   type="button"
                   onClick={() => navigate(`/admin/bookings?room_id=${room.id}`)}
-                  className="underline text-warning-fg hover:text-warning-800 font-medium"
+                 
                 >
                   All Bookings
-                </button>.
+                </Button>.
               </span>
             </div>
             <div className="flex justify-end gap-2">
-              <button
+              <Button variant="secondary" size="sm"
                 type="button"
                 onClick={onClose}
-                className="rounded-md border border-line-strong px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle"
+               
               >
                 Close
-              </button>
-              <button
+              </Button>
+              <Button size="sm"
                 type="button"
                 onClick={() => navigate(`/admin/bookings?room_id=${room.id}`)}
-                className="rounded-md bg-primary-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-700/90"
+               
               >
                 View Bookings
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
           <>
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">New Status</label>
-              <select
+              <Select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+                className="w-full"
               >
                 <option value="available">Available</option>
                 <option value="disabled">Disabled</option>
                 <option value="maintenance">Maintenance</option>
-              </select>
+              </Select>
             </div>
             <div>
               <label className="block text-xs font-medium text-fg-secondary mb-1">
                 Notes {status === 'maintenance' && <span className="text-danger-fg">*</span>}
               </label>
-              <textarea
+              <Textarea
                 rows={2}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 required={status === 'maintenance'}
-                className="w-full rounded-md border border-line-strong px-3 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+                className="w-full resize-none"
                 placeholder={status === 'maintenance' ? 'Describe the maintenance work' : 'Optional reason'}
               />
             </div>
@@ -164,31 +171,31 @@ function StatusChangeDialog({ room, onClose }: StatusChangeDialogProps) {
             )}
 
             <div className="flex justify-end gap-2">
-              <button
+              <Button variant="secondary" size="sm"
                 type="button"
                 onClick={onClose}
                 disabled={mut.isPending}
-                className="rounded-md border border-line-strong px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50"
+               
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button size="sm"
                 type="button"
                 onClick={handleApply}
                 disabled={mut.isPending || (status === 'maintenance' && !notes.trim())}
-                className="inline-flex items-center gap-1.5 rounded-md bg-primary-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-700/90 disabled:opacity-50"
+               
               >
                 {mut.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 Apply
-              </button>
+              </Button>
             </div>
           </>
         )}
       </div>
-    </div>
+    </Modal>
   )
 
-  return createPortal(modal, document.body)
+  return modal
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -224,7 +231,7 @@ export default function RoomsAdminPage() {
     void refetch()
   }
 
-  const thCls = 'px-4 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted text-left'
+  const thCls = 'px-4 py-3 text-xs font-semibold text-fg-muted text-left'
   const tdCls = 'px-4 py-3 text-sm'
 
   return (
@@ -232,24 +239,24 @@ export default function RoomsAdminPage() {
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-fg">Rooms</h1>
+          <h1 className="text-2xl font-semibold text-fg">Rooms</h1>
           <div className="flex items-center gap-2">
-            <button
+            <Button variant="secondary" size="sm"
               type="button"
               onClick={() => setShowImport(true)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-fg-secondary hover:bg-surface-subtle"
+             
             >
               <Upload className="h-4 w-4" />
               Import
-            </button>
-            <button
+            </Button>
+            <Button size="sm"
               type="button"
               onClick={() => setFormTarget(null)}
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-700/90"
+             
             >
               <Plus className="h-4 w-4" />
               New Room
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -260,44 +267,44 @@ export default function RoomsAdminPage() {
               <CheckCircle2 className="h-4 w-4" />
               {successNote}
             </div>
-            <button type="button" onClick={() => setSuccessNote(null)}>
+            <Button variant="subtle" size="icon-xs" aria-label="Clear" type="button" onClick={() => setSuccessNote(null)}>
               <XIcon className="h-4 w-4 text-success-fg" />
-            </button>
+            </Button>
           </div>
         )}
 
         {/* Filter bar */}
         <div className="flex flex-wrap gap-3">
-          <input
+          <Input
             value={filters.floor}
             onChange={(e) => setFilters((f) => ({ ...f, floor: e.target.value }))}
             placeholder="Floor…"
-            className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40 w-32"
+            className="w-32"
           />
-          <input
+          <Input
             value={filters.area}
             onChange={(e) => setFilters((f) => ({ ...f, area: e.target.value }))}
             placeholder="Area…"
-            className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40 w-36"
+            className="w-36"
           />
-          <select
+          <Select
             value={filters.status}
             onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
-            className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+           
           >
             <option value="">All Statuses</option>
             <option value="available">Available</option>
             <option value="disabled">Disabled</option>
             <option value="maintenance">Maintenance</option>
-          </select>
+          </Select>
           {(filters.floor || filters.area || filters.status) && (
-            <button
+            <Button variant="subtle" size="xs"
               type="button"
               onClick={() => setFilters({ floor: '', area: '', status: '' })}
-              className="text-xs text-fg-muted hover:text-fg-secondary underline"
+             
             >
               Clear filters
-            </button>
+            </Button>
           )}
         </div>
 
@@ -318,68 +325,68 @@ export default function RoomsAdminPage() {
 
         {!isLoading && !error && (
           <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-line bg-surface-subtle">
-                <tr>
+            <Table className="text-left">
+              <THead>
+                <Tr>
                   <SortTh label="Code" sortKey="code" sort={sorted.sort} onSort={sorted.onSort} className={thCls} />
                   <SortTh label="Name" sortKey="name" sort={sorted.sort} onSort={sorted.onSort} className={thCls} />
                   <SortTh label="Location" sortKey="location" sort={sorted.sort} onSort={sorted.onSort} className={thCls} />
                   <SortTh label="Cap." sortKey="capacity" sort={sorted.sort} onSort={sorted.onSort} className={thCls} />
                   <SortTh label="Type" sortKey="type" sort={sorted.sort} onSort={sorted.onSort} className={thCls} />
                   <SortTh label="Status" sortKey="status" sort={sorted.sort} onSort={sorted.onSort} className={thCls} />
-                  <th className={thCls}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
+                  <Th className={thCls}>Actions</Th>
+                </Tr>
+              </THead>
+              <TBody>
                 {(rooms ?? []).length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-sm text-fg-muted">
+                  <Tr>
+                    <Td align="center" colSpan={7} className="text-sm text-fg-muted">
                       No rooms found. Add one or adjust filters.
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 ) : (
                   sorted.rows.map((room) => (
-                    <tr
+                    <Tr
                       key={room.id}
-                      className="border-b border-line-subtle last:border-0 hover:bg-surface-subtle transition-colors"
+                      className="hover:bg-surface-subtle transition-colors"
                     >
-                      <td className={cn(tdCls, 'font-mono text-xs text-fg-secondary')}>{room.code}</td>
-                      <td className={cn(tdCls, 'font-medium text-fg')}>{room.name}</td>
-                      <td className={cn(tdCls, 'text-fg-muted max-w-[180px] truncate')} title={locationStr(room)}>
+                      <Td className={cn(tdCls, 'font-mono text-xs text-fg-secondary')}>{room.code}</Td>
+                      <Td className={cn(tdCls, 'font-medium text-fg')}>{room.name}</Td>
+                      <Td className={cn(tdCls, 'text-fg-muted max-w-[180px] truncate')} title={locationStr(room)}>
                         {locationStr(room) || '—'}
-                      </td>
-                      <td className={tdCls}>{room.capacity}</td>
-                      <td className={tdCls}>
+                      </Td>
+                      <Td className={tdCls}>{room.capacity}</Td>
+                      <Td className={tdCls}>
                         {ROOM_TYPE_LABELS[room.room_type as RoomType] ?? room.room_type}
-                      </td>
-                      <td className={tdCls}>
+                      </Td>
+                      <Td className={tdCls}>
                         <RoomStatusBadge status={room.status} />
-                      </td>
-                      <td className={tdCls}>
+                      </Td>
+                      <Td className={tdCls}>
                         <div className="flex items-center gap-1.5">
-                          <button
+                          <Button variant="outline" size="xs"
                             type="button"
                             onClick={() => setFormTarget(room)}
-                            className="inline-flex items-center gap-1 rounded-md border border-primary-700/30 bg-surface px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-700/5"
+                           
                           >
                             <Pencil className="h-3 w-3" />
                             Edit
-                          </button>
-                          <button
+                          </Button>
+                          <Button variant="warning-outline" size="xs"
                             type="button"
                             onClick={() => setStatusTarget(room)}
-                            className="inline-flex items-center gap-1 rounded-md border border-warning-line bg-surface px-2.5 py-1 text-xs font-medium text-warning-fg hover:bg-warning-soft"
+                           
                           >
                             <ShieldAlert className="h-3 w-3" />
                             Status
-                          </button>
+                          </Button>
                         </div>
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                   ))
                 )}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
           </div>
         )}
       </div>

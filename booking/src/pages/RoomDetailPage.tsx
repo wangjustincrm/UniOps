@@ -19,6 +19,7 @@ import { ROOM_STATUS_STYLE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
 import { DayTimeline } from '@/components/DayTimeline'
 import { WeekStrip } from '@/components/WeekStrip'
 import { AuthImage } from '@/components/AuthImage'
+import { Button } from '@uniops/shell'
 
 // ── Equipment icon map ────────────────────────────────────────────────────────
 
@@ -125,7 +126,7 @@ export default function RoomDetailPage() {
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="min-w-0">
               <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-2xl font-bold text-fg">{room.name}</h1>
+                <h1 className="text-2xl font-semibold text-fg">{room.name}</h1>
                 <span className="font-mono text-sm text-fg-muted bg-surface-subtle border border-line rounded px-2 py-0.5">
                   {room.code}
                 </span>
@@ -210,19 +211,13 @@ export default function RoomDetailPage() {
 
           {/* Book button */}
           <div className="mt-6">
-            <button
-              type="button"
+            <Button
+              size="lg"
               onClick={handleBook}
               disabled={!isBookable}
-              className={cn(
-                'rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors',
-                isBookable
-                  ? 'bg-primary-700 text-white hover:bg-[#074f4f]'
-                  : 'bg-surface-sunken text-fg-muted cursor-not-allowed',
-              )}
             >
               {isBookable ? 'Book this room' : 'Room unavailable for booking'}
-            </button>
+            </Button>
           </div>
         </div>
 

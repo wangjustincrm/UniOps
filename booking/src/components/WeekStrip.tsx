@@ -4,6 +4,7 @@
  */
 import type { BookingSlimOut } from '@/lib/types'
 import { cn, isoDateInZone, todayISO } from '@/lib/utils'
+import { ChoiceCard } from '@uniops/shell'
 
 interface Props {
   weekBookings: BookingSlimOut[]
@@ -66,22 +67,17 @@ export function WeekStrip({ weekBookings, selectedDay, onSelectDay, weekStart }:
         const density    = count / maxCount // 0–1
 
         return (
-          <button
+          <ChoiceCard
             key={ymd}
-            type="button"
+            selected={isSelected}
             onClick={() => onSelectDay(ymd)}
-            className={cn(
-              'flex flex-1 flex-col items-center rounded-lg border px-1 py-1.5 text-center transition-colors',
-              isSelected
-                ? 'border-primary-700 bg-primary-700/10 text-primary-700'
-                : 'border-line bg-surface text-fg-secondary hover:border-line-strong hover:bg-surface-subtle',
-            )}
+            className={cn('flex-1 items-center gap-0 rounded-lg px-1 py-1.5 text-center', isSelected ? 'text-accent-fg' : 'text-fg-secondary')}
           >
-            <span className={cn('text-2xs font-medium uppercase tracking-wide', isSelected ? 'text-primary-700' : 'text-fg-muted')}>
+            <span className={cn('text-2xs font-medium', isSelected ? 'text-primary-700' : 'text-fg-muted')}>
               {label}
             </span>
             <span className={cn(
-              'mt-0.5 text-sm font-bold leading-none',
+              'mt-0.5 text-sm font-semibold leading-none',
               isToday && !isSelected && 'text-primary-700',
             )}>
               {dayNum}
@@ -106,7 +102,7 @@ export function WeekStrip({ weekBookings, selectedDay, onSelectDay, weekStart }:
                 {count}
               </span>
             )}
-          </button>
+          </ChoiceCard>
         )
       })}
     </div>

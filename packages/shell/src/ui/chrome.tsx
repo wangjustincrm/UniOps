@@ -144,7 +144,7 @@ export function Sidebar({ brand, sections, collapsed, onToggleCollapse, mobileOp
       {mobileOpen && <div className="fixed inset-0 z-20 bg-inverse/40 md:hidden" onClick={onMobileClose} aria-hidden />}
       <aside
         className={cn(
-          'flex h-screen shrink-0 flex-col bg-nav transition-[width,transform] duration-200',
+          'flex h-screen shrink-0 flex-col bg-nav transition-[width,transform] duration-200 print:hidden',
           collapsed ? 'w-16' : 'w-60',
           'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:w-60',
           mobileOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full',
@@ -308,7 +308,7 @@ export interface TopbarProps {
 
 export function Topbar({ start, end, onMobileMenu, className }: TopbarProps) {
   return (
-    <header className={cn('flex h-15 shrink-0 items-center gap-3 border-b border-line-subtle bg-surface px-4', className)}>
+    <header className={cn('flex h-15 shrink-0 items-center gap-3 border-b border-line-subtle bg-surface px-4 print:hidden', className)}>
       {onMobileMenu && (
         <button type="button" onClick={onMobileMenu} aria-label="Open menu"
           className="rounded-md p-1.5 text-fg-muted transition-colors hover:bg-surface-sunken md:hidden">

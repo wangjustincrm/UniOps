@@ -23,7 +23,7 @@ import {
   Pencil,
   X as XIcon,
 } from 'lucide-react'
-import { Pagination, SortTh, useSort, sortParams, type Sort } from '@uniops/shell'
+import { Button, Modal, Pagination, SortTh, TBody, THead, Table, Tabs, Td, Th, Tr, sortParams, type Sort, useSort } from '@uniops/shell'
 import { cn, formatDate, formatTime } from '@/lib/utils'
 import { useMyBookingsPaged, useCancelBooking } from '@/services/api'
 import type { BookingOut } from '@/lib/types'
@@ -95,45 +95,53 @@ interface CancelDialogProps {
 function CancelDialog({ booking, onConfirm, onClose, isPending }: CancelDialogProps) {
   const isSeries = !!booking.series_id
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-xl border border-line bg-surface p-6 shadow-xl space-y-4">
-        <h2 className="text-base font-semibold text-fg">Cancel booking</h2>
+    <Modal
+      open
+      onClose={onClose}
+      busy={isPending}
+      title="Cancel booking"
+      // Closes by Keep / the close button only, as before.
+      closeOnEscape={false}
+      size="full"
+      className="max-w-sm"
+    >
+      <div className="space-y-4">
         <p className="text-sm text-fg-secondary">
           {isSeries
             ? `"${booking.title}" is part of a recurring series. Cancel only this occurrence, or the whole series? Cancelling the series keeps past and in-progress occurrences.`
             : `Are you sure you want to cancel "${booking.title}"? This cannot be undone.`}
         </p>
         <div className="flex justify-end gap-2 pt-1">
-          <button
+          <Button variant="secondary" size="sm"
             type="button"
             onClick={onClose}
             disabled={isPending}
-            className="rounded-md border border-line-strong px-3 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle disabled:opacity-50"
+           
           >
             Keep
-          </button>
+          </Button>
           {isSeries && (
-            <button
+            <Button variant="danger-outline" size="sm"
               type="button"
               onClick={() => onConfirm(false)}
               disabled={isPending}
-              className="rounded-md border border-danger-line px-3 py-1.5 text-sm font-medium text-danger-fg hover:bg-danger-soft disabled:opacity-50"
+             
             >
               This occurrence
-            </button>
+            </Button>
           )}
-          <button
+          <Button variant="danger" size="sm"
             type="button"
             onClick={() => onConfirm(isSeries)}
             disabled={isPending}
-            className="inline-flex items-center gap-1.5 rounded-md bg-danger-solid px-3 py-1.5 text-sm font-semibold text-white hover:bg-danger-700 disabled:opacity-50"
+           
           >
             {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {isSeries ? 'Cancel series' : 'Cancel booking'}
-          </button>
+          </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -150,9 +158,9 @@ function BookingRow({ booking, showActions, onEdit, onCancel }: RowProps) {
   const isSeries = !!booking.series_id
 
   return (
-    <tr className="border-b border-line-subtle last:border-0 hover:bg-surface-subtle transition-colors">
+    <Tr className="hover:bg-surface-subtle transition-colors">
       {/* Title + series icon */}
-      <td className="px-4 py-3 text-sm">
+      <Td className="text-sm">
         <div className="flex items-center gap-1.5">
           <span className="font-medium text-fg">{booking.title}</span>
           {isSeries && (
@@ -161,14 +169,14 @@ function BookingRow({ booking, showActions, onEdit, onCancel }: RowProps) {
             </span>
           )}
         </div>
-      </td>
+      </Td>
       {/* Room */}
-      <td className="px-4 py-3 text-sm text-fg-secondary">
+      <Td className="text-sm text-fg-secondary">
         <span className="font-medium">{booking.room_name}</span>
         <span className="ml-1 text-xs text-fg-muted">({booking.room_code})</span>
-      </td>
+      </Td>
       {/* Date + time */}
-      <td className="px-4 py-3 text-sm text-fg-secondary whitespace-nowrap">
+      <Td className="text-sm text-fg-secondary whitespace-nowrap">
         <div className="flex items-center gap-1">
           <CalendarDays className="h-3.5 w-3.5 text-fg-muted shrink-0" />
           <span>{formatDate(booking.starts_at)}</span>
@@ -176,48 +184,48 @@ function BookingRow({ booking, showActions, onEdit, onCancel }: RowProps) {
         <div className="text-xs text-fg-muted mt-0.5 ml-5">
           {fmtTime(booking.starts_at)}–{fmtTime(booking.ends_at)}
         </div>
-      </td>
+      </Td>
       {/* Attendees */}
-      <td className="px-4 py-3 text-sm text-fg-secondary">
+      <Td className="text-sm text-fg-secondary">
         <div className="flex items-center gap-1">
           <Users className="h-3.5 w-3.5 text-fg-muted" />
           <span>{booking.attendee_ids.length + 1}</span>
         </div>
-      </td>
+      </Td>
       {/* Status + sync */}
-      <td className="px-4 py-3">
+      <Td>
         <div className="flex flex-col gap-1">
           <StatusBadge status={booking.status} />
           <SyncBadge syncStatus={booking.sync_status} />
         </div>
-      </td>
+      </Td>
       {/* Actions */}
-      <td className="px-4 py-3">
+      <Td>
         {showActions && (
           <div className="flex items-center gap-1.5">
             {/* Edit — enabled for all bookings including series members (series mode handled in edit page) */}
-            <button
+            <Button variant="outline" size="xs"
               type="button"
               onClick={() => onEdit(booking)}
               title={isSeries ? 'Edit entire series' : 'Edit booking'}
-              className="inline-flex items-center gap-1 rounded-md border border-primary-700/30 bg-surface px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-700/5 transition-colors"
+             
             >
               <Pencil className="h-3 w-3" />
               Edit
-            </button>
+            </Button>
             {/* Cancel */}
-            <button
+            <Button variant="danger-outline" size="xs"
               type="button"
               onClick={() => onCancel(booking)}
-              className="inline-flex items-center gap-1 rounded-md border border-danger-line bg-surface px-2.5 py-1 text-xs font-medium text-danger-fg hover:bg-danger-soft transition-colors"
+             
             >
               <XIcon className="h-3 w-3" />
               Cancel
-            </button>
+            </Button>
           </div>
         )}
-      </td>
-    </tr>
+      </Td>
+    </Tr>
   )
 }
 
@@ -225,11 +233,11 @@ function BookingRow({ booking, showActions, onEdit, onCancel }: RowProps) {
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <tr>
-      <td colSpan={6} className="px-4 py-12 text-center text-sm text-fg-muted">
+    <Tr>
+      <Td align="center" colSpan={6} className="text-sm text-fg-muted">
         {message}
-      </td>
-    </tr>
+      </Td>
+    </Tr>
   )
 }
 
@@ -309,31 +317,24 @@ export default function MyBookingsPage() {
     )
   }
 
-  const tabCls = (t: Tab) =>
-    cn(
-      'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
-      activeTab === t
-        ? 'border-primary-700 text-primary-700'
-        : 'border-transparent text-fg-muted hover:text-fg-secondary hover:border-line-strong',
-    )
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 space-y-4">
         {/* Header */}
-        <h1 className="text-2xl font-bold text-fg">My Bookings</h1>
+        <h1 className="text-2xl font-semibold text-fg">My Bookings</h1>
 
         {/* Success note */}
         {successNote && (
           <div className="flex items-center justify-between rounded-md border border-success-line bg-success-soft px-4 py-3 text-sm text-success-fg">
             <span>{successNote}</span>
-            <button
+            <Button aria-label="Dismiss" variant="subtle" size="icon-xs"
               type="button"
               onClick={() => setSuccessNote(null)}
-              className="ml-3 text-success-fg hover:text-success-800"
+              className="ml-3"
             >
               <XIcon className="h-4 w-4" />
-            </button>
+            </Button>
           </div>
         )}
 
@@ -344,30 +345,22 @@ export default function MyBookingsPage() {
               <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{cancelError}</span>
             </div>
-            <button
+            <Button aria-label="Dismiss" variant="subtle" size="icon-xs"
               type="button"
               onClick={() => setCancelError(null)}
-              className="ml-3 text-danger-400 hover:text-danger-fg"
+              className="ml-3 text-danger-fg hover:bg-danger-soft"
             >
               <XIcon className="h-4 w-4" />
-            </button>
+            </Button>
           </div>
         )}
 
         {/* Tabs */}
-        <div className="flex border-b border-line">
-          <button type="button" className={tabCls('upcoming')} onClick={() => setActiveTab('upcoming')}>
-            Upcoming
-            {upcomingTotal > 0 && (
-              <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-primary-700/10 px-1.5 py-0.5 text-xs font-semibold text-primary-700">
-                {upcomingTotal}
-              </span>
-            )}
-          </button>
-          <button type="button" className={tabCls('past')} onClick={() => setActiveTab('past')}>
-            Past
-          </button>
-        </div>
+        <Tabs<Tab>
+          items={[{ key: 'upcoming', label: 'Upcoming', count: upcomingTotal > 0 ? upcomingTotal : undefined }, { key: 'past', label: 'Past' }]}
+          value={activeTab}
+          onChange={setActiveTab}
+        />
 
         {/* Content */}
         {isLoading && (
@@ -386,18 +379,18 @@ export default function MyBookingsPage() {
 
         {!isLoading && !error && (
           <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-line bg-surface-subtle">
-                <tr>
-                  <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted" />
-                  <SortTh label="Room" sortKey="room" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted" />
-                  <SortTh label="Date / Time" sortKey="starts_at" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted" />
-                  <SortTh label="Attendees" sortKey="attendees" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted" />
-                  <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted" />
-                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table className="text-left">
+              <THead>
+                <Tr>
+                  <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold text-fg-muted" />
+                  <SortTh label="Room" sortKey="room" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold text-fg-muted" />
+                  <SortTh label="Date / Time" sortKey="starts_at" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold text-fg-muted" />
+                  <SortTh label="Attendees" sortKey="attendees" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold text-fg-muted" />
+                  <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-xs font-semibold text-fg-muted" />
+                  <Th>Actions</Th>
+                </Tr>
+              </THead>
+              <TBody>
                 {displayed.length === 0 ? (
                   <EmptyState
                     message={
@@ -417,8 +410,8 @@ export default function MyBookingsPage() {
                     />
                   ))
                 )}
-              </tbody>
-            </table>
+              </TBody>
+            </Table>
             {total > 0 && (
               <Pagination
                 page={page} pageSize={pageSize} total={total}

@@ -1,16 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import {
-  DoorOpen, CalendarDays, Settings, BellRing, LayoutList, Wrench,
-  ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
-  type LucideIcon,
-} from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { useState, useEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { DoorOpen, CalendarDays, Settings, BellRing, LayoutList, Wrench, User, type LucideIcon } from 'lucide-react'
 import { signOut } from '@/lib/signOut'
 import { useBranding } from '@/hooks/useBranding'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { useBookingAuth } from '@/store/auth'
-import { TabStoreProvider, TabBar, TabHost, TabRouterSync, deriveTabMeta } from '@uniops/shell'
+import { TabStoreProvider, TabBar, TabHost, TabRouterSync, deriveTabMeta, Sidebar as ShellSidebar, Topbar, UserMenu, useSidebarCollapsed } from '@uniops/shell'
 import type { TabMeta } from '@uniops/shell'
 import { bookingRoutes } from '@/app/routes'
 
@@ -64,205 +59,60 @@ function getStoredSession(): { token: string | null; user: { id?: string; full_n
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
-function Sidebar({
-  mobileOpen, onClose, collapsed, onToggleCollapse,
-}: {
-  mobileOpen: boolean
-  onClose: () => void
-  collapsed: boolean
-  onToggleCollapse: () => void
-}) {
-  const location = useLocation()
+// Frame, colours and behaviour come from the Shell; Booking supplies nav + branding.
+function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => void }) {
+  const [collapsed, toggleCollapsed] = useSidebarCollapsed('booking.sidebar.collapsed')
   const { data: branding } = useBranding()
-  const brandName = branding?.name || 'UniOps'
-  const brandTagline = branding?.tagline || 'Booking'
-  const brandLogo = branding?.logo_data_url || null
-  const brandInitials = brandName.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase() || 'BK'
-
   const { data: matrix } = useRolePermissions()
   const userRole = useBookingAuth((s) => s.user?.role ?? null)
-  const isVisible = (item: NavItem) => isNavItemVisible(item, userRole, matrix)
 
-  const navLinkCls = (isActive: boolean) => cn(
-    'flex items-center gap-2.5 rounded-md px-2 py-2.5 text-sm transition-colors min-h-[44px]',
-    isActive ? 'bg-white/15 text-white font-medium' : 'text-white/70 hover:bg-white/10 hover:text-white/95',
-    collapsed && 'justify-center px-0',
-  )
+  const sections = NAV
+    .map((section) => ({
+      title: section.title,
+      items: section.items
+        .filter((item) => isNavItemVisible(item, userRole, matrix))
+        .map(({ label, href, icon: Icon }) => ({ label, href, icon: <Icon className="h-4 w-4" /> })),
+    }))
+    .filter((section) => section.items.length > 0)
 
   return (
-    <aside className={cn(
-      'no-print flex h-screen flex-col bg-primary-700 transition-all duration-200 shrink-0',
-      collapsed ? 'w-16' : 'w-60',
-      'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-2xl max-md:w-60',
-      mobileOpen ? 'max-md:translate-x-0 max-md:opacity-100' : 'max-md:-translate-x-full max-md:opacity-0',
-    )}>
-      {/* Brand */}
-      <div className="flex h-[60px] items-center justify-between border-b border-white/10 px-3 gap-2">
-        {!collapsed && (
-          <div className="flex items-center gap-2.5 min-w-0">
-            {brandLogo ? (
-              <img src={brandLogo} alt={brandName} className="h-8 w-8 shrink-0 rounded-md bg-surface object-contain p-0.5" />
-            ) : (
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/15">
-                <span className="text-xs font-bold text-white">{brandInitials}</span>
-              </div>
-            )}
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-white/95 leading-tight truncate">{brandName}</p>
-              <p className="text-2xs text-white/45 leading-tight truncate">{brandTagline}</p>
-            </div>
-          </div>
-        )}
-        {collapsed && (
-          brandLogo ? (
-            <img src={brandLogo} alt={brandName} className="mx-auto h-8 w-8 rounded-md bg-surface object-contain p-0.5" />
-          ) : (
-            <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-md bg-white/15">
-              <span className="text-2xs font-bold text-white">{brandInitials}</span>
-            </div>
-          )
-        )}
-        <button
-          onClick={onToggleCollapse}
-          className="hidden md:flex shrink-0 rounded p-1 text-white/50 hover:bg-white/10 hover:text-white/90 transition-colors"
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {collapsed
-            ? <ChevronRight className="h-4 w-4" />
-            : <ChevronLeft  className="h-4 w-4" />}
-        </button>
-      </div>
-
-      {/* Nav */}
-      {/* No scrollbar of its own (ISS-0182): Chrome on Windows gives it ~15px,
-          narrowing the menu out of line with the logo above; it still scrolls. */}
-      <nav className="flex-1 overflow-y-auto px-2 py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {NAV.map((section) => {
-          const items = section.items.filter(isVisible)
-          if (items.length === 0) return null
-          return (
-            <div key={section.title} className="mb-4">
-              {!collapsed && (
-                <p className="mb-1 px-2 text-2xs font-semibold uppercase tracking-wider text-white/40">
-                  {section.title}
-                </p>
-              )}
-              {collapsed && <div className="my-2 border-t border-white/10" />}
-              {items.map(({ label, href, icon: Icon }) => (
-                <NavLink
-                  key={href}
-                  to={href}
-                  onClick={onClose}
-                  title={collapsed ? label : undefined}
-                  className={() => navLinkCls(location.pathname === href || location.pathname.startsWith(href + '/'))}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {!collapsed && <span className="truncate">{label}</span>}
-                </NavLink>
-              ))}
-            </div>
-          )
-        })}
-      </nav>
-
-      {/* Portal link */}
-      {!collapsed && (
-        <div className="border-t border-white/10 p-3">
-          <a
-            href={PORTAL_URL}
-            className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-white/60 hover:bg-white/10 hover:text-white/90 transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>Back to UniOps Portal</span>
-          </a>
-        </div>
-      )}
-    </aside>
+    <ShellSidebar
+      brand={{
+        name: branding?.name || 'UniOps',
+        tagline: branding?.tagline || 'Booking',
+        logoUrl: branding?.logo_data_url || null,
+      }}
+      sections={sections}
+      collapsed={collapsed}
+      onToggleCollapse={toggleCollapsed}
+      mobileOpen={mobileOpen}
+      onMobileClose={onClose}
+      portalUrl={PORTAL_URL}
+    />
   )
 }
-
-// ── Header ────────────────────────────────────────────────────────────────────
 
 function Header({ onMobileMenuToggle }: { onMobileMenuToggle: () => void }) {
   const { user } = getStoredSession()
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  const fullName = user?.full_name ?? 'User'
-  const role = user?.role ?? ''
-  const initials = fullName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'U'
-  const roleLabel = role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-
-  useEffect(() => {
-    if (!menuOpen) return
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [menuOpen])
-
+  const roleLabel = (user?.role ?? '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
   return (
-    <header className="no-print flex h-[60px] shrink-0 items-center gap-4 border-b border-line bg-surface px-4 md:px-6">
-      <button
-        className="rounded-md p-2 text-fg-muted hover:bg-surface-subtle md:hidden"
-        aria-label="Open menu"
-        onClick={onMobileMenuToggle}
-      >
-        <Menu className="h-5 w-5" />
-      </button>
-
-      <div className="flex-1" />
-
-      <div className="relative" ref={menuRef}>
-        <button
-          onClick={() => setMenuOpen(v => !v)}
-          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-fg-secondary hover:bg-surface-subtle transition-colors"
-        >
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary-700/10 text-xs font-semibold text-primary-700 ring-2 ring-primary-700/30">
-            {initials}
-          </div>
-          <span className="hidden sm:block font-medium">{fullName}</span>
-          <ChevronDown className={cn('h-3.5 w-3.5 text-fg-muted transition-transform', menuOpen && 'rotate-180')} />
-        </button>
-
-        {menuOpen && (
-          <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-line bg-surface py-1 shadow-lg">
-            <div className="border-b border-line-subtle px-3 py-2.5">
-              <p className="text-sm font-semibold text-fg">{fullName}</p>
-              <p className="text-xs text-fg-muted">{roleLabel}</p>
-            </div>
-            <a
-              href={`${PORTAL_URL}/`}
-              onClick={() => setMenuOpen(false)}
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-fg-secondary hover:bg-surface-subtle transition-colors"
-            >
-              <User className="h-4 w-4" />
-              Portal Home
-            </a>
-            <div className="mt-1 border-t border-line-subtle">
-              <button
-                onClick={() => { setMenuOpen(false); signOut() }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger-fg hover:bg-danger-soft transition-colors"
-              >
-                <LogOut className="h-4 w-4" />
-                Sign Out
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </header>
+    <Topbar
+      onMobileMenu={onMobileMenuToggle}
+      className="relative z-10"
+      end={
+        <UserMenu
+          name={user?.full_name ?? 'User'}
+          subtitle={roleLabel}
+          items={[{ label: 'Portal Home', icon: <User />, href: `${PORTAL_URL}/` }]}
+          onSignOut={signOut}
+        />
+      }
+    />
   )
 }
 
-// ── AppLayout ─────────────────────────────────────────────────────────────────
-
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
   const isAuthenticated = useBookingAuth((s) => s.isAuthenticated)
   const userId = useBookingAuth((s) => s.user?.id)
   const userRole = useBookingAuth((s) => s.user?.role ?? null)
@@ -304,7 +154,7 @@ export default function AppLayout() {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-3 text-sm text-fg-muted">
         <p>No access. </p>
-        <a href={PORTAL_URL} className="font-medium text-primary-600 hover:underline">Back to Portal.</a>
+        <a href={PORTAL_URL} className="font-medium text-accent-fg hover:underline">Back to Portal.</a>
       </div>
     )
   }
@@ -314,21 +164,9 @@ export default function AppLayout() {
 
   return (
     <TabStoreProvider options={{ initialTabs, userId }}>
-      <div className="relative flex h-screen overflow-hidden bg-[#FAFBFC]">
-        {mobileOpen && (
-          <div
-            className="fixed inset-0 z-20 bg-black/50 md:hidden"
-            onClick={() => setMobileOpen(false)}
-            aria-hidden="true"
-          />
-        )}
-
-        <Sidebar
-          mobileOpen={mobileOpen}
-          onClose={() => setMobileOpen(false)}
-          collapsed={collapsed}
-          onToggleCollapse={() => setCollapsed(v => !v)}
-        />
+      {/* The Shell Sidebar draws its own mobile backdrop; Shell chrome hides when printing. */}
+      <div className="relative flex h-screen overflow-hidden bg-canvas">
+        <Sidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
 
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
           <Header onMobileMenuToggle={() => setMobileOpen(v => !v)} />

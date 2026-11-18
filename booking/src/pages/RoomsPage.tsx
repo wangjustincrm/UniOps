@@ -12,6 +12,7 @@ import { EQUIPMENT_OPTIONS, EQUIPMENT_LABELS, ROOM_TYPES, ROOM_TYPE_LABELS } fro
 import { ROOM_STATUS_STYLE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
 import { zonedToISO } from '@/lib/tz'
 
+import { Button, Checkbox, Input, Select } from '@uniops/shell'
 // ── Equipment icon map ────────────────────────────────────────────────────────
 
 const EQUIPMENT_ICONS: Record<EquipmentOption, LucideIcon> = {
@@ -141,18 +142,14 @@ function RoomCard({
 
       {/* Actions */}
       <div className="mt-auto pt-2">
-        <button
+        <Button
+          size="md"
+          className="w-full"
           onClick={() => onBook(room)}
           disabled={!isBookable}
-          className={cn(
-            'w-full rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-            isBookable
-              ? 'bg-primary-700 text-white hover:bg-[#074f4f]'
-              : 'bg-surface-sunken text-fg-muted cursor-not-allowed',
-          )}
         >
           {isBookable ? 'Book' : 'Unavailable'}
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -222,7 +219,7 @@ export default function RoomsPage() {
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
         {/* Page header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-fg">Meeting Rooms</h1>
+          <h1 className="text-2xl font-semibold text-fg">Meeting Rooms</h1>
           <p className="mt-1 text-sm text-fg-muted">
             {hasWindow
               ? 'Showing available rooms for the selected time window.'
@@ -236,87 +233,87 @@ export default function RoomsPage() {
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-fg-secondary">Date</label>
-              <input
+              <Input inputSize="sm"
                 type="date"
                 value={date}
                 min={today}
                 onChange={e => setDate(e.target.value)}
-                className="h-9 rounded-md border border-line-strong px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+               
               />
             </div>
 
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-fg-secondary">Start time</label>
-              <select
+              <Select selectSize="sm"
                 value={startTime}
                 onChange={e => setStartTime(e.target.value)}
-                className="h-9 rounded-md border border-line-strong px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+               
               >
                 <option value="">-- start --</option>
                 {TIME_OPTIONS.map(t => (
                   <option key={t} value={t}>{t}</option>
                 ))}
-              </select>
+              </Select>
             </div>
 
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-fg-secondary">End time</label>
-              <select
+              <Select selectSize="sm"
                 value={endTime}
                 onChange={e => setEndTime(e.target.value)}
-                className="h-9 rounded-md border border-line-strong px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+               
               >
                 <option value="">-- end --</option>
                 {TIME_OPTIONS.filter(t => !startTime || t > startTime).map(t => (
                   <option key={t} value={t}>{t}</option>
                 ))}
-              </select>
+              </Select>
             </div>
 
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-fg-secondary">Min. attendees</label>
-              <input
+              <Input inputSize="sm"
                 type="number"
                 min={1}
                 value={attendees}
                 onChange={e => setAttendees(e.target.value)}
                 placeholder="Any"
-                className="h-9 w-24 rounded-md border border-line-strong px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+                className="w-24"
               />
             </div>
 
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-fg-secondary">Floor</label>
-              <input
+              <Input inputSize="sm"
                 type="text"
                 value={floor}
                 onChange={e => setFloor(e.target.value)}
                 placeholder="All floors"
-                className="h-9 w-28 rounded-md border border-line-strong px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+                className="w-28"
               />
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-fg-secondary">Area</label>
-              <input
+              <Input inputSize="sm"
                 type="text"
                 value={area}
                 onChange={e => setArea(e.target.value)}
                 placeholder="All areas"
-                className="h-9 rounded-md border border-line-strong px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+               
               />
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-fg-secondary">Room type</label>
-              <select
+              <Select selectSize="sm"
                 value={roomType}
                 onChange={e => setRoomType(e.target.value)}
-                className="h-9 rounded-md border border-line-strong px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+               
               >
                 <option value="">All types</option>
                 {ROOM_TYPES.map(t => (
                   <option key={t} value={t}>{ROOM_TYPE_LABELS[t]}</option>
                 ))}
-              </select>
+              </Select>
             </div>
           </div>
 
@@ -337,8 +334,8 @@ export default function RoomsPage() {
                         : 'border-line bg-surface text-fg-secondary hover:border-line-strong',
                     )}
                   >
-                    <input
-                      type="checkbox"
+                    <Checkbox
+                     
                       className="sr-only"
                       checked={checked}
                       onChange={() => toggleEquipment(eq)}

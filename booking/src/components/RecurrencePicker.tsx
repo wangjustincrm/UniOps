@@ -9,6 +9,7 @@ import { useState } from 'react'
 import type { SeriesSpec } from '@/lib/types'
 import { cn, todayISO } from '@/lib/utils'
 
+import { Input, Radio, Button } from '@uniops/shell'
 interface Props {
   value: SeriesSpec | null
   onChange: (spec: SeriesSpec | null) => void
@@ -72,19 +73,14 @@ export function RecurrencePicker({ value, onChange }: Props) {
           const label = f === 'none' ? 'None' : f === 'daily' ? 'Daily' : 'Weekly'
           const isActive = (f === 'none' && !freq) || f === freq
           return (
-            <button
+            <Button
               key={f}
               type="button"
               onClick={() => setFreq(f)}
-              className={cn(
-                'rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
-                isActive
-                  ? 'border-primary-700 bg-primary-700/10 text-primary-700'
-                  : 'border-line-strong bg-surface text-fg-secondary hover:border-fg-faint',
-              )}
+              variant={isActive ? 'primary' : 'secondary'} size="sm" aria-pressed={isActive}
             >
               {label}
-            </button>
+            </Button>
           )
         })}
       </div>
@@ -94,7 +90,7 @@ export function RecurrencePicker({ value, onChange }: Props) {
           {/* Interval */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-fg-secondary">Every</span>
-            <input
+            <Input
               type="number"
               min={1}
               value={interval}
@@ -108,18 +104,18 @@ export function RecurrencePicker({ value, onChange }: Props) {
 
           {/* End mode */}
           <div className="space-y-2">
-            <p className="text-xs font-medium text-fg-muted uppercase tracking-wide">Ends</p>
+            <p className="text-xs font-medium text-fg-muted">Ends</p>
 
             <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
+              <Radio
+               
                 name="recurrence-end-mode"
                 checked={endMode === 'count'}
                 onChange={() => setEndMode('count')}
                 className="accent-[#085E5E]"
               />
               <span className="text-sm text-fg-secondary">After</span>
-              <input
+              <Input
                 type="number"
                 min={2}
                 max={60}
@@ -132,15 +128,15 @@ export function RecurrencePicker({ value, onChange }: Props) {
             </label>
 
             <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
+              <Radio
+               
                 name="recurrence-end-mode"
                 checked={endMode === 'until'}
                 onChange={() => setEndMode('until')}
                 className="accent-[#085E5E]"
               />
               <span className="text-sm text-fg-secondary">By date</span>
-              <input
+              <Input
                 type="date"
                 value={until}
                 disabled={endMode !== 'until'}

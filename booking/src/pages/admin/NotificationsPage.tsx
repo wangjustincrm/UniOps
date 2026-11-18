@@ -9,7 +9,7 @@
  * Banner warns that resend duplicates emails for already-sent logs.
  */
 import { useState } from 'react'
-import { SortTh, useSort, sortParams } from '@uniops/shell'
+import { SortTh, useSort, sortParams, Input, Select, TBody, THead, Table, Td, Th, Tr, Button } from '@uniops/shell'
 import {
   Loader2,
   AlertCircle,
@@ -69,32 +69,32 @@ function NotifRow({ log, resendingId, onResend }: RowProps) {
   const tdCls = 'px-3 py-3 text-sm'
 
   return (
-    <tr className="border-b border-line-subtle last:border-0 hover:bg-surface-subtle transition-colors">
-      <td className={cn(tdCls, 'text-fg-muted whitespace-nowrap text-xs')}>{formatDateTime(log.created_at)}</td>
-      <td className={cn(tdCls, 'text-fg-secondary')}>{typeFmt}</td>
-      <td className={cn(tdCls, 'text-fg-secondary max-w-[160px]')}>
+    <Tr className="hover:bg-surface-subtle transition-colors">
+      <Td className={cn(tdCls, 'text-fg-muted whitespace-nowrap text-xs')}>{formatDateTime(log.created_at)}</Td>
+      <Td className={cn(tdCls, 'text-fg-secondary')}>{typeFmt}</Td>
+      <Td className={cn(tdCls, 'text-fg-secondary max-w-[160px]')}>
         <span title={recipFull}>{recipDisp || '—'}</span>
-      </td>
-      <td className={tdCls}><NotifStatusBadge status={log.status} /></td>
-      <td className={cn(tdCls, 'text-fg-muted text-center')}>{log.retry_count}</td>
-      <td className={cn(tdCls, 'text-danger-fg max-w-[180px] text-xs')}>
+      </Td>
+      <Td className={tdCls}><NotifStatusBadge status={log.status} /></Td>
+      <Td className={cn(tdCls, 'text-fg-muted text-center')}>{log.retry_count}</Td>
+      <Td className={cn(tdCls, 'text-danger-fg max-w-[180px] text-xs')}>
         {errorTrunc ? <span title={log.error ?? undefined}>{errorTrunc}</span> : '—'}
-      </td>
-      <td className={cn(tdCls, 'text-fg-muted whitespace-nowrap text-xs')}>
+      </Td>
+      <Td className={cn(tdCls, 'text-fg-muted whitespace-nowrap text-xs')}>
         {log.sent_at ? formatDateTime(log.sent_at) : '—'}
-      </td>
-      <td className={tdCls}>
-        <button
+      </Td>
+      <Td className={tdCls}>
+        <Button variant="secondary" size="xs"
           type="button"
           disabled={isResending}
           onClick={() => onResend(log.id)}
-          className="inline-flex items-center gap-1 rounded-md border border-line-strong bg-surface px-2.5 py-1 text-xs font-medium text-fg-secondary hover:bg-surface-subtle disabled:opacity-50"
+         
         >
           {isResending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
           Resend
-        </button>
-      </td>
-    </tr>
+        </Button>
+      </Td>
+    </Tr>
   )
 }
 
@@ -145,13 +145,13 @@ export default function NotificationsPage() {
     })
   }
 
-  const thCls = 'px-3 py-3 text-xs font-semibold uppercase tracking-wider text-fg-muted text-left'
+  const thCls = 'px-3 py-3 text-xs font-semibold text-fg-muted text-left'
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 space-y-4">
         {/* Header */}
-        <h1 className="text-2xl font-bold text-fg">Notification Log</h1>
+        <h1 className="text-2xl font-semibold text-fg">Notification Log</h1>
 
         {/* Resend warning banner */}
         {showWarning && (
@@ -161,9 +161,9 @@ export default function NotificationsPage() {
               Resending a notification will send a new email to the original recipients, even if the
               previous attempt succeeded. Use this to recover from delivery failures, not to correct content.
             </span>
-            <button type="button" onClick={() => setShowWarning(false)} className="text-warning-fg hover:text-warning-800">
+            <Button aria-label="Dismiss" variant="subtle" size="icon-xs" type="button" onClick={() => setShowWarning(false)}>
               <XIcon className="h-4 w-4" />
-            </button>
+            </Button>
           </div>
         )}
 
@@ -171,35 +171,35 @@ export default function NotificationsPage() {
         {resendSuccess && (
           <div className="flex items-center justify-between rounded-md border border-success-line bg-success-soft px-4 py-2.5 text-sm text-success-fg">
             <span>{resendSuccess}</span>
-            <button type="button" onClick={() => setResendSuccess(null)}><XIcon className="h-4 w-4 text-success-fg" /></button>
+            <Button variant="subtle" size="icon-xs" aria-label="Clear" type="button" onClick={() => setResendSuccess(null)}><XIcon className="h-4 w-4 text-success-fg" /></Button>
           </div>
         )}
         {resendError && (
           <div className="flex items-center gap-2 rounded-md border border-danger-line bg-danger-soft px-4 py-2.5 text-sm text-danger-fg">
             <AlertCircle className="h-4 w-4 shrink-0" />
             {resendError}
-            <button type="button" onClick={() => setResendError(null)} className="ml-auto"><XIcon className="h-4 w-4" /></button>
+            <Button aria-label="Dismiss" variant="subtle" size="icon-xs" type="button" onClick={() => setResendError(null)} className="ml-auto"><XIcon className="h-4 w-4" /></Button>
           </div>
         )}
 
         {/* Filters */}
         <div className="flex flex-wrap gap-3">
-          <select
+          <Select
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setOffset(0) }}
-            className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40"
+           
           >
             <option value="">All Statuses</option>
             <option value="sent">Sent</option>
             <option value="pending">Pending</option>
             <option value="failed">Failed</option>
             <option value="retrying">Retrying</option>
-          </select>
-          <input
+          </Select>
+          <Input
             value={typeFilter}
             onChange={(e) => { setTypeFilter(e.target.value); setOffset(0) }}
             placeholder="Type filter…"
-            className="rounded-md border border-line-strong px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-700/40 w-44"
+            className="w-44"
           />
         </div>
 
@@ -219,9 +219,9 @@ export default function NotificationsPage() {
         {!isLoading && !error && (
           <>
             <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-line bg-surface-subtle">
-                  <tr>
+              <Table className="text-left">
+                <THead>
+                  <Tr>
                     <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className={thCls} />
                     <SortTh label="Type" sortKey="notif_type" sort={sort} onSort={onSort} className={thCls} />
                     <SortTh label="Recipients" sortKey="recipients" sort={sort} onSort={onSort} className={thCls} />
@@ -229,16 +229,16 @@ export default function NotificationsPage() {
                     <SortTh label="Retries" sortKey="retry_count" sort={sort} onSort={onSort} align="center" className={cn(thCls, 'text-center')} />
                     <SortTh label="Error" sortKey="error" sort={sort} onSort={onSort} className={thCls} />
                     <SortTh label="Sent At" sortKey="sent_at" sort={sort} onSort={onSort} className={thCls} />
-                    <th className={thCls}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
+                    <Th className={thCls}>Actions</Th>
+                  </Tr>
+                </THead>
+                <TBody>
                   {(data?.items ?? []).length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="px-4 py-12 text-center text-sm text-fg-muted">
+                    <Tr>
+                      <Td align="center" colSpan={8} className="text-sm text-fg-muted">
                         No notifications found.
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                   ) : (
                     (data?.items ?? []).map((log) => (
                       <NotifRow
@@ -249,8 +249,8 @@ export default function NotificationsPage() {
                       />
                     ))
                   )}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
 
             {/* Pagination */}
@@ -258,23 +258,23 @@ export default function NotificationsPage() {
               <div className="flex items-center justify-between text-sm text-fg-secondary">
                 <span>{total} total</span>
                 <div className="flex items-center gap-2">
-                  <button
+                  <Button variant="secondary" size="xs"
                     type="button"
                     disabled={offset === 0}
                     onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
-                    className="rounded-md border border-line-strong px-3 py-1 text-sm disabled:opacity-40 hover:bg-surface-subtle"
+                   
                   >
                     Previous
-                  </button>
+                  </Button>
                   <span>Page {currentPage} of {totalPages}</span>
-                  <button
+                  <Button variant="secondary" size="xs"
                     type="button"
                     disabled={offset + PAGE_SIZE >= total}
                     onClick={() => setOffset((o) => o + PAGE_SIZE)}
-                    className="rounded-md border border-line-strong px-3 py-1 text-sm disabled:opacity-40 hover:bg-surface-subtle"
+                   
                   >
                     Next
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
