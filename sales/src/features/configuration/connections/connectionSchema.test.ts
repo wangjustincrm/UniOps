@@ -37,4 +37,19 @@ describe('connection form schema', () => {
     for (const k of Object.keys(connectionCreateSchema.parse(valid))) expect(names).toContain(k)
     expect(names.some((n) => /password/i.test(n))).toBe(false)
   })
+  it('a payment gateway (Authorize.Net, PayPal) needs its own host, its login and its secret name; it never writes', () => {
+    const paypal = { ...connectionEmptyValues, name: 'paypal', kind: 'PAYPAL', host: 'api-m.paypal.com', username: 'client-id',
+      secret_name: 'SALES_SECRET_PAYPAL', inbound_folder: null }
+    expect(issues(connectionCreateSchema.safeParse(paypal))).toEqual({})
+    expect(issues(connectionCreateSchema.safeParse({ ...paypal, host: 'api-m.sandbox.paypal.com' }))).toEqual({})
+    expect(issues(connectionCreateSchema.safeParse({ ...paypal, host: 'api.authorize.net', username: '', can_write: true }))).toEqual({
+      host: 'api-m.paypal.com (or api-m.sandbox.paypal.com for the sandbox)', username: 'Required for a PayPal connection',
+      can_write: 'A PayPal connection only reads' })
+    const anet = { ...paypal, kind: 'AUTHORIZE_NET', host: 'api.authorize.net', secret_name: 'SALES_SECRET_AUTHNET' }
+    expect(issues(connectionCreateSchema.safeParse(anet))).toEqual({})
+    expect(issues(connectionCreateSchema.safeParse({ ...anet, host: 'api-m.paypal.com' }))).toEqual({
+      host: 'api.authorize.net (or apitest.authorize.net for the sandbox)' })
+    const kind = connectionFields.find((f) => f.name === 'kind')!
+    expect(kind.options?.map((o) => o.label)).toEqual(['SFTP', 'Shopify', 'Authorize.Net', 'PayPal'])
+  })
 })

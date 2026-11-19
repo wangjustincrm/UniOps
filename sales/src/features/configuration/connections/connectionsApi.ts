@@ -3,10 +3,39 @@ import { api } from '@/lib/api'
 import type { AuditEntry } from '../AuditHistory'
 
 // Mirrors sales-api app/schemas/connections.py (hand-written, see partnersApi.ts).
-export const KINDS = ['SFTP', 'SHOPIFY', 'AUTHORIZE_NET'] as const
-export const KIND_LABEL: Record<(typeof KINDS)[number], string> = { SFTP: 'SFTP', SHOPIFY: 'Shopify', AUTHORIZE_NET: 'Authorize.Net' }
-/** Authorize.Net's reporting API (Finance): production, or the sandbox. */
-export const AUTHORIZE_NET_HOSTS = ['api.authorize.net', 'apitest.authorize.net'] as const
+export const KINDS = ['SFTP', 'SHOPIFY', 'AUTHORIZE_NET', 'PAYPAL'] as const
+export const KIND_LABEL: Record<(typeof KINDS)[number], string> = { SFTP: 'SFTP', SHOPIFY: 'Shopify', AUTHORIZE_NET: 'Authorize.Net', PAYPAL: 'PayPal' }
+
+/** A payment gateway's reporting API (Finance: Authorize.Net 2026-11-17, PayPal 2026-11-19): read only, its words
+ *  once here; the form, its rules, the checklist and the list read them (a new gateway is a new entry). */
+export interface GatewayKind {
+  label: string
+  /** Production first, then the sandbox (the server allows only these). */
+  hosts: readonly [string, string]
+  about: string
+  reads: string
+  /** What the cursor is the start of ("batches settled from"). */
+  cursorWhat: string
+  login: string
+  secret: string
+}
+export const GATEWAY_KINDS: Partial<Record<(typeof KINDS)[number], GatewayKind>> = {
+  AUTHORIZE_NET: {
+    label: 'Authorize.Net', hosts: ['api.authorize.net', 'apitest.authorize.net'],
+    about: "Authorize.Net: its settled batches and their transactions, for Finance. It only reads. Amounts are taken as CAD (the merchant account's currency).",
+    reads: "Sales reads Authorize.Net's settled batches and their transactions.", cursorWhat: 'batches settled from',
+    login: 'The API Login ID (Account → API Credentials & Keys). It is not a secret.',
+    secret: 'The name of the Transaction Key on the server, e.g. SALES_SECRET_AUTHNET. The key itself is never typed here.',
+  },
+  PAYPAL: {
+    label: 'PayPal', hosts: ['api-m.paypal.com', 'api-m.sandbox.paypal.com'],
+    about: "PayPal: the account's transactions with their fees, for Finance. It only reads. The REST app needs Transaction Search turned on.",
+    reads: "Sales reads PayPal's transactions and fees (they show a few hours late).", cursorWhat: 'transactions from',
+    login: 'The REST app\'s Client ID (developer.paypal.com → Apps & Credentials). It is not a secret.',
+    secret: 'The name of the app\'s Secret on the server, e.g. SALES_SECRET_PAYPAL. The Secret itself is never typed here.',
+  },
+}
+export const gatewayOf = (kind: unknown): GatewayKind | null => GATEWAY_KINDS[kind as (typeof KINDS)[number]] ?? null
 export const AFTER_READ = ['LEAVE', 'MOVE', 'DELETE'] as const
 // An SFTP connection's folders: reading has its folder, its archive (after-read Move) and its error folder;
 // writing has one folder (user 2026-11-12: no Test / Live mode, no test folders; a Read and a Write tick).

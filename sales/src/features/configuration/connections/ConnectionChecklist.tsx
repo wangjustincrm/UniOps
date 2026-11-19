@@ -7,7 +7,7 @@ import {
 import { RunNowButton } from './RunNowButton'
 import { connectionHealth } from './connectionHealth'
 import { useEdiSettings } from './connectionSettings'
-import { clearAuthLatch, connectionsClient, pinHostKey, resetCursor, testConnection, type ConnectionRead, type ConnectionTest } from './connectionsApi'
+import { clearAuthLatch, connectionsClient, gatewayOf, pinHostKey, resetCursor, testConnection, type ConnectionRead, type ConnectionTest } from './connectionsApi'
 
 const CONFIG = 'sales.config'
 const TICK_ERRORS: Record<string, string> = {
@@ -52,8 +52,8 @@ function Cursor({ c, onDone }: { c: ConnectionRead; onDone: () => void }) {
   const [value, setValue] = useState<string | null>(null)  // ISO with its zone
   return (
     <Stack gap={1}>
-      <p>{c.kind === 'AUTHORIZE_NET' ? 'Next read: batches settled from ' : 'Next pull from: '}<Text weight="medium">{c.cursor_updated_at ? formatDateTime(c.cursor_updated_at) : 'not set: nothing is pulled'}</Text></p>
-      {c.kind === 'AUTHORIZE_NET' && !c.cursor_updated_at && <Hint>To read the history, set it to the first day you want (e.g. Jun 1, 2024).</Hint>}
+      <p>{gatewayOf(c.kind) ? `Next read: ${gatewayOf(c.kind)!.cursorWhat} ` : 'Next pull from: '}<Text weight="medium">{c.cursor_updated_at ? formatDateTime(c.cursor_updated_at) : 'not set: nothing is pulled'}</Text></p>
+      {gatewayOf(c.kind) && !c.cursor_updated_at && <Hint>To read the history, set it to the first day you want (e.g. Jun 1, 2024).</Hint>}
       <Cluster gap={2} align="center">
         <DateTimeInput aria-label="New cursor" value={value} onChange={setValue} className="h-8 max-w-[14rem] text-xs" />
         <ActionButton size="sm" variant="secondary" permission={CONFIG} disabled={!value} disabledReason="Choose the new date and time first."
@@ -76,7 +76,7 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
     const turnOn = !c[which]
     const sftpFolder = which === 'can_read' ? c.inbound_folder : c.outbound_folder
     const what = which === 'can_read'
-      ? (sftp ? `Sales will read the files in ${sftpFolder ?? '(no read folder)'}` : c.kind === 'AUTHORIZE_NET' ? "Sales will read Authorize.Net's settled batches" : "Sales will pull the store's orders")
+      ? (sftp ? `Sales will read the files in ${sftpFolder ?? '(no read folder)'}` : gatewayOf(c.kind) ? gatewayOf(c.kind)!.reads : "Sales will pull the store's orders")
       : (sftp ? `Sales will put the files it sends (940, 943, 810) in ${sftpFolder ?? '(no write folder)'}`
         + (c.after_read !== 'LEAVE' ? ` and ${c.after_read === 'MOVE' ? `move what it reads to ${c.processed_folder}` : 'delete what it reads'}` : '')
         : 'Sales will send fulfilments and tracking to the store and close orders')
@@ -97,7 +97,8 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
     </ActionButton>
   )
   const sftp = c.kind === 'SFTP'
-  const anet = c.kind === 'AUTHORIZE_NET'
+  const gateway = gatewayOf(c.kind)  // a payment gateway: no folders, no host key, reads only
+  const anet = !!gateway
   const key = result?.host_key
   const testButton = (
     <ActionButton size="sm" variant="secondary" permission={CONFIG} refreshes={false} after={(r) => setResult(r as ConnectionTest)} onAction={() => testConnection(c.id)}>Test connection</ActionButton>
@@ -138,7 +139,7 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
           {c.auth_failed_at ? `Refused, and skipped since ${formatDateTime(c.auth_failed_at)}: ${c.auth_failed_reason ?? 'no reason given'}. Fix the login, then clear this.`
             : 'No refusal recorded.'}
         </Step>
-        <Step label={sftp ? 'Folders reachable' : anet ? 'Authorize.Net reachable' : 'Store reachable'} status={reached} action={(!sftp || c.host_key) && testButton}>
+        <Step label={sftp ? 'Folders reachable' : anet ? `${gateway!.label} reachable` : 'Store reachable'} status={reached} action={(!sftp || c.host_key) && testButton}>
           {!result ? (sftp && !c.host_key ? 'Pin the key first, then the test lists the folders.' : 'Test the connection to check.')
             : reached === 'done' ? 'The test reached everything.' : (result.error ?? `${failedFolders} folder(s) could not be reached.`)}
         </Step>
@@ -150,7 +151,7 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
                 : <>; after reading, left in place (moving and deleting need Write)</>)
                 : <>; after reading, left in place</>}
               {c.error_folder && c.can_write ? <>; a file that cannot be read goes to <code>{c.error_folder}</code></> : null}.</>
-              : anet ? 'The settled batches and their transactions (Payments, Settlements).' : "The store's orders."}
+              : anet ? `${gateway!.reads.replace(/^Sales reads /, '')} (Payments, Settlements).` : "The store's orders."}
         </Step>
         {!anet && <Step label="Writes" status={c.can_write ? 'done' : usedFor ? 'todo' : 'unknown'} action={tickButton('can_write')}>
           {c.can_write
@@ -167,7 +168,7 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
       {health.state === 'inactive' && <Callout tone="neutral">{health.tip}</Callout>}
       <Hint as="p">
         {sftp ? 'The test lists the folders. Nothing is created, moved or deleted.'
-          : anet ? 'The test only checks the login. Sales never charges, refunds or voids anything.'
+          : anet ? 'The test only checks the login. Sales never charges, pays, refunds or voids anything.'
             : "The test reads the store's name and currency. Nothing is written."}
       </Hint>
       {result?.shop && (

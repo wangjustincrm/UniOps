@@ -14,7 +14,7 @@ import { HealthBadge } from './HealthBadge'
 import { RunNowButton } from './RunNowButton'
 import { connectionHealth } from './connectionHealth'
 import {
-  KIND_LABEL, connectionsClient, downloadConnections, fetchConnectionAudit, scheduleLabel,
+  KIND_LABEL, gatewayOf, connectionsClient, downloadConnections, fetchConnectionAudit, scheduleLabel,
   type ConnectionCreate, type ConnectionRead, type ConnectionUpdate,
 } from './connectionsApi'
 import {
@@ -36,7 +36,7 @@ const columns: ColumnDef<ConnectionRead, unknown>[] = [
     <Cluster as="span" gap={2} align="center">
       <Tooltip tip={KIND_LABEL[c.kind]}>
         <span>{c.kind === 'SFTP' ? <Icon icon={Server} tone="primary" label="SFTP" />
-          : c.kind === 'AUTHORIZE_NET' ? <Icon icon={Landmark} tone="primary" label="Authorize.Net" />
+          : gatewayOf(c.kind) ? <Icon icon={Landmark} tone="primary" label={KIND_LABEL[c.kind]} />
             : <Icon icon={ShoppingBag} tone="primary" label="Shopify" />}</span>
       </Tooltip>
       <Stack as="span" gap={0}><Text weight="medium">{c.name}</Text>{c.host && <Hint className="break-all">{c.host}</Hint>}</Stack>
