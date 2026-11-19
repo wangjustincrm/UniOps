@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Building2, ShieldCheck, CreditCard, Bell, Plus, Pencil, Trash2, X, Check, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, Download, Upload, ChevronLeft, ChevronRight, FileText, Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail, DatabaseZap, Warehouse } from 'lucide-react'
-import { Button, Checkbox, ChoiceCard, FileInput, Input, Modal as ShellModal, SearchInput, Segmented, Select, Sidebar, SortTh, Switch, TBody, THead, Table, Tabs, Td, Textarea as ShellTextarea, Th, Topbar, Tr, sortParams, type Sort, useSort, useSortableRows, Badge, Card, cardClass } from '@uniops/shell'
+import { Button, Checkbox, ChoiceCard, FileInput, Input, Modal as ShellModal, SearchInput, Segmented, Select, Sidebar, SortTh, Switch, TBody, THead, Table, Tabs, Td, Textarea as ShellTextarea, Th, Topbar, Tr, sortParams, type Sort, useSort, useSortableRows, Badge, Card, cardClass, THEMES, setSystemTheme } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { adminPageLinks } from '@/components/layout/navConfig'
@@ -33,6 +33,7 @@ interface CompanyConfig {
   delivery_address: string
   timezone: string
   timezone_choices?: string[]
+  default_theme?: string
   logo_data_url: string | null
   logo_file_name: string | null
   default_currency: string
@@ -211,6 +212,7 @@ function CompanySettings() {
   const save = useSaveConfig()
   const [form, setForm] = useState({ name: '', tagline: '', delivery_address: '' })
   const [timeZone, setTimeZone] = useState<string | undefined>(undefined) // undefined = not touched
+  const [defaultTheme, setDefaultTheme] = useState<string | undefined>(undefined) // undefined = not touched
   const [logoDataUrl, setLogoDataUrl] = useState<string | null | undefined>(undefined) // undefined = not touched
   const [logoFileName, setLogoFileName] = useState<string | null | undefined>(undefined)
   // Per-module tagline overrides for epms/oa/vms (portal uses `tagline`).
@@ -236,6 +238,8 @@ function CompanySettings() {
   const serverZones = cfg?.timezone_choices?.length ? cfg.timezone_choices : [currentTimeZone]
   const zoneOptions = serverZones.includes(currentTimeZone) ? serverZones : [currentTimeZone, ...serverZones]
   const zoneChanged = timeZone !== undefined && timeZone !== cfg?.timezone
+  const currentTheme = defaultTheme ?? cfg?.default_theme ?? 'uniops'
+  const themeChanged = defaultTheme !== undefined && defaultTheme !== cfg?.default_theme
 
   const taglineFor = (key: string): string =>
     key === 'portal' ? values.tagline : (currentModuleTaglines[key] ?? '')
@@ -277,10 +281,13 @@ function CompanySettings() {
       const body: any = { name: values.name, tagline: values.tagline, delivery_address: values.delivery_address }
       if (moduleTaglines !== undefined) body.module_taglines = moduleTaglines
       if (zoneChanged) body.timezone = timeZone
+      if (themeChanged) body.default_theme = defaultTheme
       if (logoDataUrl !== undefined) body.logo_data_url = logoDataUrl
       if (logoFileName !== undefined) body.logo_file_name = logoFileName
       await save.mutateAsync(body)
       if (zoneChanged) setDisplayTimeZone(timeZone)
+      // Users who follow the system default see it at once here; other pages on their next load.
+      if (themeChanged) setSystemTheme(defaultTheme)
       setToast({ ok: true, msg: zoneChanged
         ? `Company settings saved. Time zone is now ${timeZone}; other open pages use it after a reload.`
         : 'Company settings saved.' })
@@ -293,7 +300,7 @@ function CompanySettings() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5 max-w-lg">
-      <SectionHeader title="Company Settings" description="Organization name, tagline, delivery address, time zone and logo used across all modules." />
+      <SectionHeader title="Company Settings" description="Organization name, tagline, delivery address, time zone, default theme and logo used across all modules." />
 
       {/* Logo */}
       <Field label="Company Logo" hint="PNG or JPG, recommended 200×60 px. Shown on login page and PDF documents.">
@@ -348,6 +355,12 @@ function CompanySettings() {
         <Select value={currentTimeZone} onChange={(e) => setTimeZone(e.target.value)}
           className="w-full">
           {zoneOptions.map((z) => <option key={z} value={z}>{zoneLabel(z)}</option>)}
+        </Select>
+      </Field>
+      <Field label="Default Theme"
+        hint="The look every module uses for people who have not picked their own theme in their user menu (top right). Each person can still choose another one for themselves.">
+        <Select value={currentTheme} onChange={(e) => setDefaultTheme(e.target.value)} className="w-full">
+          {THEMES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
         </Select>
       </Field>
       <div className="flex items-center gap-3">

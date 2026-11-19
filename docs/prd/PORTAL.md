@@ -1,9 +1,13 @@
 # UniOps Portal — Product Requirements Document
 
-**Version:** 2.10
-**Date:** 2026-11-16
+**Version:** 2.11
+**Date:** 2026-11-18
 **Status:** In Production
 **Scope:** Portal web app (sign-in, launcher, Task Inbox, platform administration) and the platform services it administers: identity service (sign-in, MFA, password policy, users, roles, access control), approval engine (workflows, routing, delegation, re-sync), task-notification outbox, master-data service (MDM), file service, Data Maintenance and the AI Assistant panel.
+
+**What changed in version 2.11** (2026-11-18)
+
+- **Themes.** UniOps can be shown in more than one theme (today **UniOps**, the original teal, and **CRM**, Canada Royal Milk's slate navy and maple red from the company logo, with milk-white surfaces). A System Admin sets the **Default Theme** for everyone in Company Settings (§5.2); each person can pick another one for themselves in the user menu (§2.7). The choice covers every module.
 
 **What changed in version 2.10** (2026-11-16)
 
@@ -185,6 +189,8 @@ The top header shows the user's initials and name. *The search box in the header
 - **Profile** — opens EPMS **My Profile**, carrying the session. That page holds: display name, Teams account, personal notification channel (Email only / Teams only / Both / None), the email-MFA switch, and **My Signature** (draw or upload; used on PO sign-off PDFs). See EPMS.md §3.1.1.
 - **Change Password** — opens in place, using the same form as §2.3.
 - **Sign Out** — global sign-out (§2.6).
+
+The same user menu appears in every module (Shell). When more than one theme exists it starts with a **Theme** group: **System default (<name>)** — follow what the System Admin set in Company Settings (§5.2), the initial state — and one entry per theme (UniOps, CRM). A pick applies at once and to every module, and is remembered for that browser for a year; *it is not stored on the user account, so another computer or browser starts from the system default* (**By design**). Choosing *System default* again drops the personal pick.
 
 ---
 
@@ -415,6 +421,7 @@ The identity service holds switchable separation-of-duties rules. Anyone can rea
 
 - Logo upload (PNG/JPG/WebP, stored as a data URL, with Remove). The logo also appears on document PDFs.
 - Company name and delivery address (the default delivery address on POs).
+- **Default Theme** — the theme every module shows to people who have not picked their own in the user menu (§2.7). Default **UniOps**. It reaches every module through the public branding call each module makes when it opens, so it applies before sign-in too (login pages included); open pages pick it up on their next load. The admin's own page switches at once.
 - **Module taglines** for Portal, EPMS, OA, VMS, Finance and Meeting Rooms. A blank module tagline reuses the Portal tagline. *MRP and Inventory request a tagline but have no field* (**Not implemented**, §14).
 
 ### 5.3 Security
