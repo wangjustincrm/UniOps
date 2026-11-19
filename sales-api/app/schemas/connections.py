@@ -205,6 +205,10 @@ class EdiSettings(BaseModel):
     # Manual orders (2026-11-13, set by the product owner): Purolator Express offered; LTL suggested above this weight.
     express_offered: bool = True
     ltl_from_lb: Annotated[int, Field(ge=1, le=100000)] = 150
+    # Why a manual order is made (user 2026-11-19): one is required to submit.
+    manual_reasons: Annotated[list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]],
+                              Field(min_length=1, max_length=20)] = ["Gift", "Replacement", "Sample", "Staff purchase",
+                                                                     "Phone order", "Other"]
 
 
 class ShadowSetting(BaseModel):

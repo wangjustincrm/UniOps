@@ -88,6 +88,12 @@ class OrderRead(BaseModel):
     net_amount: Decimal | None = None
     returned_ea: int | None = None  # what the customer returned of what shipped (none when nothing)
     backordered_ea: int | None = None  # what the applied 945 left unshipped (none before a 945)
+    # A manual order's reason, the order it repeats, its month (Toronto) and EA (Free goods, user 2026-11-19)
+    manual_reason: str | None = None
+    parent_order_id: int | None = None
+    parent_reference: str | None = None
+    received_month: date | None = None
+    ordered_ea: int | None = None
     source_updated_at: datetime | None
     version: int
     created_at: datetime
@@ -385,6 +391,8 @@ class ManualOrderIn(BaseModel):
     lines: Annotated[list[ManualLineIn], Field(min_length=1, max_length=200)]
     # How it ships (user 2026-11-13): Purolator (parcel) or LTL; required to submit.
     carrier: Literal["Purolator", "Purolator Express", "LTL"] | None = None
+    # Why it is made (user 2026-11-19): one of Configuration's reasons; required to submit.
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, max_length=40)] | None = None
 
 
 class CancelOrderIn(BaseModel):

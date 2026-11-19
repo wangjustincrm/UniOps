@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, ClassVar
 
-from sqlalchemy import and_, case, or_, select
+from sqlalchemy import and_, case, func, or_, select
 
 from app.core.config import settings as app_settings
 from app.domain.address import address_flags
@@ -95,7 +95,7 @@ from app.services.order_status_sql import (
     TO_CONFIRM_SQL,
 )
 from app.services.orders import BarcodeLookup, OrderSync, order_ref
-from app.services.settings import SETTINGS, SHADOW_MODE, automatic_runs_on
+from app.services.settings import FREE_GOODS_REASONS, SETTINGS, SHADOW_MODE, automatic_runs_on
 
 READ = "sales.read"
 _DOC_COLUMNS = (Document.id, Document.kind, Document.direction, Document.remote_name, Document.created_at,
@@ -134,7 +134,7 @@ class OrderRepository(Repository[Order]):
                    "review_reason", "historical", "first_received_at", "paid_at", "source_updated_at",
                    "source_cancelled_at", "archived_in_shopify_at", "archive_suppressed", "shopify_financial_status",
                    "shopify_fulfillment_status", "source_name", "tags", "original_total", "total_refunded", "net_amount",
-                   "created_at", "updated_at")
+                   "manual_reason", "parent_order_id", "created_at", "updated_at")
     labels = {"order_number": "Internal no.", "source_reference": "Order ref", "partner_name": "Partner",
               "partner_code": "Partner code", "total_amount": "Total", "total": "Source total", "source_order_number": "Source no.", "source_order_id": "Source ID",
               "order_status": "Status", "on_hold_reason": "On Hold reason", "first_received_at": "Received", "paid_at": "Paid",
@@ -142,7 +142,8 @@ class OrderRepository(Repository[Order]):
               "archived_in_shopify_at": "Archived", "source_cancelled_at": "Cancelled",
               "source_name": "Sales channel", "connection_name": "Connection", "tags": "Tags", "original_total": "Original total",
               "total_refunded": "Refunded", "net_amount": "Net", "returned_ea": "Returned EA",
-              "delivery_due_date": "Delivery due"}
+              "delivery_due_date": "Delivery due", "manual_reason": "Reason", "parent_order_id": "Reorder of (no.)",
+              "parent_reference": "Reorder of", "received_month": "Month", "ordered_ea": "EA"}
     enums = {"source_type": SOURCE_TYPES, "fulfillment_status": tuple(s.value for s in F),
              "invoice_status": tuple(s.value for s in Inv), "hold_reason": HOLD_REASONS,
              "order_state": ORDER_STATES, "order_status": ORDER_STATUSES, "on_hold_reason": ON_HOLD_REASONS}
@@ -154,7 +155,8 @@ class OrderRepository(Repository[Order]):
                    "backordered_ea")
     sortable = {"order_state": ORDER_STATE_SQL, "order_status": ORDER_STATUS_SQL, "on_hold_reason": ON_HOLD_REASON_SQL, "partner_name": Order.partner_name_sql,
                 "connection_name": Order.connection_name_sql, "total_amount": Order.total_amount_sql, "backordered_ea": BACKORDERED_SQL, "returned_ea": Order.returned_ea_sql,
-                "delivery_due_date": Order.delivery_due_sql}
+                "delivery_due_date": Order.delivery_due_sql, "received_month": Order.received_month_sql,
+                "ordered_ea": Order.ordered_ea_sql, "parent_reference": Order.parent_reference_sql}
     filterable = {"order_state": FilterRule(ORDER_STATE_SQL, kind="text"),
                   "order_status": FilterRule(ORDER_STATUS_SQL, kind="text"),
                   "on_hold_reason": FilterRule(ON_HOLD_REASON_SQL, kind="text"),
@@ -163,14 +165,18 @@ class OrderRepository(Repository[Order]):
                   "total_amount": FilterRule(Order.total_amount_sql, kind="number", cast=lambda v: Decimal(str(v))),
                   "backordered_ea": FilterRule(BACKORDERED_SQL, kind="number", cast=int),
                   "returned_ea": FilterRule(Order.returned_ea_sql, kind="number", cast=int),
-                  "to_confirm": FilterRule(TO_CONFIRM_SQL, kind="bool", cast=lambda v: str(v).lower() == "true")}
+                  "to_confirm": FilterRule(TO_CONFIRM_SQL, kind="bool", cast=lambda v: str(v).lower() == "true"),
+                  "received_month": FilterRule(Order.received_month_sql, kind="date"),
+                  "ordered_ea": FilterRule(Order.ordered_ea_sql, kind="number", cast=int),
+                  "parent_reference": FilterRule(Order.parent_reference_sql, kind="text")}
     summable = ("total_amount", "net_amount", "total_refunded")
     sum_currency = "currency"
     money_fields = ("total_amount", "total", "subtotal", "tax", "shipping", "discount", "original_total", "total_refunded", "net_amount")
     default_sort = ("-order_number",)
     suggestable = ("partner_name", "source_order_number", "source_reference")
     groupable = ("order_status", "on_hold_reason", "order_state", "partner_name", "connection_name", "partner_code", "source_type", "fulfillment_status", "invoice_status", "hold_reason", "order_date",
-                 "currency", "historical", "archive_suppressed", "shopify_financial_status", "source_name")
+                 "currency", "historical", "archive_suppressed", "shopify_financial_status", "source_name", "manual_reason",
+                 "received_month")
     # System views (§13.19). Review reason is shown where it says something.
     presets = (
         # The first view is what Orders opens on (unless the person has a default of their own).
@@ -205,6 +211,17 @@ class OrderRepository(Repository[Order]):
                 "sort": [{"field": "delivery_due_date", "desc": False}], "hidden": ["review_reason"]}),
         Preset("manual_drafts", "Manual drafts", {"filters": [{"field": "source_type", "op": "eq", "value": "MANUAL"},
                                                                {"field": "order_status", "op": "eq", "value": "Draft"}]}),
+        # Finance (user 2026-11-19): what was given away — gifts, replacements, samples — by month and reason, with
+        # their EA (Sales has no cost; the lines show the items).
+        Preset("free_goods", "Free goods", {
+            "filters": [{"field": "manual_reason", "op": "in", "value": list(FREE_GOODS_REASONS)},
+                        {"field": "order_status", "op": "not_in", "value": ["Draft", "Cancelled"]}],
+            "group": [{"field": "received_month", "desc": True}, {"field": "manual_reason", "desc": False}],
+            "sort": [{"field": "first_received_at", "desc": True}],
+            "columns": ["source_reference", "first_received_at", "manual_reason", "parent_reference", "ordered_ea", "ship_to_place",
+                        "order_status"],
+            "hidden": ["order_number", "partner_name", "source_order_number", "order_date", "total_amount", "total_refunded",
+                       "net_amount", "returned_ea", "review_reason", "shopify", "status_detail"]}),
         Preset("all", "All", {"hidden": ["review_reason"]}),
     )
     historical_column = "historical"
@@ -329,9 +346,19 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             payment_gateways=o.payment_gateways, discount_codes=o.discount_codes, tax_lines=o.tax_lines,
             **await self._payments(id),
             dc_number=await self._dc_number(o), ship_to_flags=address_flags(o.ship_to),
-            timeline=[TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, before=a.before,
-                                    after=a.after, reason=a.reason) for a in trail],
+            timeline=sorted([TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, before=a.before,
+                                           after=a.after, reason=a.reason) for a in trail] + await self._reorders(id),
+                            key=lambda e: e.at, reverse=True),
         )
+
+    async def _reorders(self, id: int) -> list[TimelineEntry]:
+        """The orders made as a reorder of this one, in its Activity: "Reorder MAN-1043 (Gift)" (user 2026-11-19)."""
+        kids = (await self.uow.session.execute(select(Order).where(Order.parent_order_id == id).order_by(Order.id))).scalars()
+        return [TimelineEntry(at=k.created_at, user_name=k.created_by_name or "", entity="sales_orders", action="reorder",
+                              before=None, after={"order_id": k.id, "order_ref": k.source_reference, "reason": k.manual_reason,
+                                                  "status": k.fulfillment_status},
+                              reason=f"Reorder {k.source_reference}" + (f" ({k.manual_reason})" if k.manual_reason else ""))
+                for k in kids]
 
     @requires(INVOICE_MANAGE)
     async def set_invoice_prices(self, id: int, body: InvoicePricesIn) -> OrderDetail:
@@ -721,7 +748,7 @@ class ManualOrderService(Service):
         order = Order(partner_code=p.code, source_type="MANUAL", source_order_id=f"MANUAL-{uuid.uuid4().hex}",
                       source_order_number=data.customer_reference, requested_delivery_date=data.requested_delivery_date,
                       ship_to=data.ship_to.model_dump(exclude_none=True), notes=data.notes, fulfillment_status=F.DRAFT.value,
-                      shipping_method=data.carrier,
+                      shipping_method=data.carrier, manual_reason=data.reason,
                       invoice_status=(Inv.NOT_REQUIRED if p.invoice_method == "NONE" else Inv.PENDING).value,
                       first_received_at=datetime.now(timezone.utc), version=1,
                       shadow=await SETTINGS.get(self.s, SHADOW_MODE))
@@ -750,7 +777,7 @@ class ManualOrderService(Service):
         self.uow.set_reason("manual order: edit draft")
         o.partner_code, o.source_order_number = p.code, data.customer_reference
         o.requested_delivery_date, o.ship_to, o.notes = data.requested_delivery_date, data.ship_to.model_dump(exclude_none=True), data.notes
-        o.shipping_method = data.carrier
+        o.shipping_method, o.manual_reason = data.carrier, data.reason
         for ln in (await self.s.execute(select(OrderLine).where(OrderLine.order_id == o.id))).scalars():
             await self.s.delete(ln)
         await self.s.flush()
@@ -769,6 +796,13 @@ class ManualOrderService(Service):
                                {"field": "lines", "lines": [{"line_no": n, "problem": p} for n, p in bad]})
         if (o.shipping_method or "") not in ("Purolator", "Purolator Express", "LTL"):
             raise InvalidInput("order.carrier", "choose how it ships: Purolator, Purolator Express or LTL", {"field": "carrier"})
+        from app.services.settings import MANUAL_REASONS
+        reasons = await SETTINGS.get(self.s, MANUAL_REASONS)
+        if o.manual_reason not in reasons:
+            raise InvalidInput("order.reason", "choose why this order is made: " + ", ".join(reasons), {"field": "reason"})
+        if (await self.s.execute(select(func.count()).select_from(OrderLine).where(
+                OrderLine.order_id == o.id, OrderLine.removed.is_(False)))).scalar_one() == 0:
+            raise InvalidInput("order.no_lines", "add at least one line before submitting", {"field": "lines"})
         await self._express_allowed(o.shipping_method)
         p = await self._partner(o.partner_code)
         self.uow.set_reason("manual order: submit")
@@ -779,6 +813,47 @@ class ManualOrderService(Service):
         FULFILLMENT.transition(o, F.PENDING, actor=self.uow.actor, events=self.uow.events, reason="manual order submitted")
         await self.s.flush()
         return o
+
+    @requires(OPERATE)
+    async def reorder(self, source_id: int) -> Order:
+        """Reorder for this customer (user 2026-11-19): a Draft manual order copied from any order — its ship-to,
+        contact and carrier, its Order ref as the customer's reference, a note, a link back — with no lines; a person
+        adds the lines and a reason, then submits. The 945 of what it sends then matches it: no conflict on the source."""
+        src = (await self.s.execute(select(Order).where(Order.id == source_id))).scalar_one_or_none()
+        if src is None:
+            raise BusinessError("entity.not_found", f"order {source_id} not found", status_code=404)
+        p = await self._reorder_partner(src)
+        self.uow.set_reason(f"reorder of {src.source_reference}")
+        ref = src.source_reference or str(src.order_number)
+        carrier = src.shipping_method if src.shipping_method in ("Purolator", "Purolator Express", "LTL") else None
+        ship = dict(src.ship_to or {})
+        if not ship.get("phone"):  # a manual order's 940 needs one: the customer's, where the source has it
+            phone = (src.contact or {}).get("phone") or (src.bill_to or {}).get("phone")
+            if phone:
+                ship["phone"] = phone
+        order = Order(partner_code=p.code, source_type="MANUAL", source_order_id=f"MANUAL-{uuid.uuid4().hex}",
+                      source_order_number=ref[:50], ship_to=ship or None, contact=src.contact, notes=f"Reorder of {ref}",
+                      fulfillment_status=F.DRAFT.value, shipping_method=carrier, parent_order_id=src.id,
+                      invoice_status=(Inv.NOT_REQUIRED if p.invoice_method == "NONE" else Inv.PENDING).value,
+                      first_received_at=datetime.now(timezone.utc), version=1, shadow=await SETTINGS.get(self.s, SHADOW_MODE))
+        self.s.add(order)
+        await self.s.flush()
+        order.source_reference = order_ref(p, str(order.order_number))
+        await self.s.flush()
+        return order
+
+    async def _reorder_partner(self, src: Order) -> Partner:
+        """The source's own partner when it is a manual one; else the one active MANUAL partner (dev2: "Manual",
+        no invoice)."""
+        own = (await self.s.execute(select(Partner).where(Partner.code == src.partner_code))).scalar_one_or_none()
+        if own is not None and own.channel == "MANUAL" and own.active:
+            return await self._partner(own.code)
+        manual = list((await self.s.execute(select(Partner).where(Partner.channel == "MANUAL", Partner.active.is_(True))
+                                            .order_by(Partner.code))).scalars())
+        if len(manual) != 1:
+            raise InvalidInput("order.reorder_partner", "a reorder needs exactly one active MANUAL partner (Configuration → "
+                               f"Partners); there are {len(manual)}", {"field": "partner_code"})
+        return await self._partner(manual[0].code)
 
     @requires(OPERATE)
     async def cancel(self, id: int, version: int | None) -> Order:

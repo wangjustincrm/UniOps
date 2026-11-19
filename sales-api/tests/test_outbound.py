@@ -473,7 +473,7 @@ async def test_a_manual_order_with_its_ship_to_builds_a_valid_940(edi):
     ship = AddressIn(name="Staff shop", phone="613-555-0100", attention="J. Doe", address1="1680 Venture Dr", city="Kingston",
                      province="ON", zip="k7p0e9")
     async with edi.env.factory(OP) as u:
-        o = await ManualOrderService(u).create(ManualOrderIn(partner_code="MAN", customer_reference="Canada Royal Milk", ship_to=ship,
+        o = await ManualOrderService(u).create(ManualOrderIn(reason="Sample", partner_code="MAN", customer_reference="Canada Royal Milk", ship_to=ship,
                                                              lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]))
         await u.commit()
     async with edi.env.factory(OP) as u:
@@ -481,7 +481,7 @@ async def test_a_manual_order_with_its_ship_to_builds_a_valid_940(edi):
             await ManualOrderService(u).submit(o.id, o.version)
     assert e.value.code == "order.carrier"
     async with edi.env.factory(OP) as u:
-        o = await ManualOrderService(u).update(o.id, ManualOrderIn(partner_code="MAN", customer_reference="Canada Royal Milk", ship_to=ship,
+        o = await ManualOrderService(u).update(o.id, ManualOrderIn(reason="Sample", partner_code="MAN", customer_reference="Canada Royal Milk", ship_to=ship,
                                                carrier="Purolator", lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]), o.version)
         o = await ManualOrderService(u).submit(o.id, o.version)
         await u.commit()
@@ -596,7 +596,7 @@ async def test_purolator_express_and_the_ltl_weight_are_settings_the_owner_sets(
         await u.commit()
     async with edi.env.factory(OP) as u:
         assert (await EdiSettingsService(u).get()).ltl_from_lb == 400
-        o = await ManualOrderService(u).create(ManualOrderIn(partner_code="MAN", carrier="Purolator Express", ship_to=AddressIn(
+        o = await ManualOrderService(u).create(ManualOrderIn(reason="Sample", partner_code="MAN", carrier="Purolator Express", ship_to=AddressIn(
             name="Shop", phone="613-555-0100", address1="1 Rd", city="Kingston", province="ON", zip="K7P 0E9"),
             lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]))
         await u.commit()

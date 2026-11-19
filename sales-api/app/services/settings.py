@@ -14,7 +14,7 @@ def _uuid_or_none(v: Any) -> uuid.UUID | None:
     return None if v in (None, "") else uuid.UUID(str(v))
 
 
-def email_list(v: Any) -> list[str]:
+def text_list(v: Any) -> list[str]:
     """A list, or one string split on commas / semicolons; blanks dropped, order kept, no repeats."""
     items = v if isinstance(v, (list, tuple)) else str(v or "").replace(";", ",").split(",")
     out: list[str] = []
@@ -22,6 +22,16 @@ def email_list(v: Any) -> list[str]:
         if x and x.lower() not in (o.lower() for o in out):
             out.append(x)
     return out
+
+
+email_list = text_list  # internal invoice recipients
+
+
+def _reasons(v: list[str]) -> str | None:
+    if not v:
+        return "at least one reason"
+    return next((f"{x!r} is longer than 40 characters" for x in v if len(x) > 40), None) or (
+        None if len(v) <= 20 else "at most 20 reasons")
 
 
 def _addresses(v: list[str]) -> str | None:
@@ -100,6 +110,12 @@ MANUAL_EXPRESS_OFFERED = SETTINGS.declare(Setting(
 MANUAL_LTL_FROM_LB = SETTINGS.declare(Setting(
     "manual.ltl_from_lb", 150, int, validate=minimum(1), safe=150,
     description="Suggest LTL for a manual order above this weight (lb)"))
+# Why a manual order is made (user 2026-11-19): one is required to submit; Finance's Free goods are some of them.
+MANUAL_REASONS_DEFAULT = ["Gift", "Replacement", "Sample", "Staff purchase", "Phone order", "Other"]
+MANUAL_REASONS = SETTINGS.declare(Setting(
+    "manual.reasons", MANUAL_REASONS_DEFAULT, text_list, validate=_reasons, safe=MANUAL_REASONS_DEFAULT,
+    description="Why a manual order is made (one is required to submit)"))
+FREE_GOODS_REASONS = ("Gift", "Replacement", "Sample")  # Orders → Free goods
 
 
 async def automatic_runs_on(session, app_settings) -> bool:

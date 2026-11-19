@@ -17,10 +17,10 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, Sequence, String, Text,
-    UniqueConstraint, case, false, func, select, text,
+    UniqueConstraint, case, cast, false, func, select, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, column_property, mapped_column, undefer_group
+from sqlalchemy.orm import Mapped, aliased, column_property, mapped_column, undefer_group
 
 from app.db.base import Base
 from app.domain.orders import HOLD_REASONS, LINE_STATUSES, SOURCE_TYPES
@@ -70,6 +70,11 @@ class Order(Audited, Versioned, Base):
     bill_to: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     contact: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # sales34 (user 2026-11-19): why a manual order was made (a configurable list; required to submit), and the order
+    # it repeats ("Reorder for this customer").
+    manual_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    parent_order_id: Mapped[int | None] = mapped_column(ForeignKey("sales_orders.id", name="fk_sales_orders_parent_order"),
+                                                        nullable=True, index=True)
     shipping_method: Mapped[str | None] = mapped_column(String(255), nullable=True)  # sales08: W66 GND / EXP
     currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default="CAD")
     subtotal: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
@@ -155,6 +160,22 @@ class Order(Audited, Versioned, Base):
             v = self.__dict__.get("shadow_backordered_sql")  # the shadow run's 945: the same figure
         return None if v is None else int(v)
 
+
+    @property
+    def received_month(self) -> date | None:
+        """The month it came in, Toronto (`received_month_sql`): Free goods by month."""
+        return self.__dict__.get("received_month_sql")
+
+    @property
+    def ordered_ea(self) -> int | None:
+        """The order's EA over its lines (`ordered_ea_sql`)."""
+        v = self.__dict__.get("ordered_ea_sql")
+        return None if v is None else int(v)
+
+    @property
+    def parent_reference(self) -> str | None:
+        """The Order ref of the order this one repeats (`parent_reference_sql`)."""
+        return self.__dict__.get("parent_reference_sql")
 
     @property
     def returned_ea(self) -> int | None:
@@ -247,6 +268,14 @@ Order.total_amount_sql = order_fact(func.coalesce(Order.total, select(
 # What the customer returned of what shipped, over the order's lines (the list's Returned EA).
 Order.returned_ea_sql = order_fact(select(func.nullif(func.sum(OrderLine.returned_ea), 0)).where(
     OrderLine.order_id == Order.id, OrderLine.removed.is_(False)).correlate_except(OrderLine).scalar_subquery())
+
+# Free goods (user 2026-11-19): the month an order came in (Toronto), its EA, and the order it repeats.
+Order.received_month_sql = order_fact(cast(func.date_trunc("month", func.timezone("America/Toronto", Order.first_received_at)), Date))
+Order.ordered_ea_sql = order_fact(select(func.sum(OrderLine.qty_ea)).where(
+    OrderLine.order_id == Order.id, OrderLine.removed.is_(False)).correlate_except(OrderLine).scalar_subquery())
+_Parent = aliased(Order)
+Order.parent_reference_sql = order_fact(select(_Parent.source_reference).where(_Parent.id == Order.parent_order_id)
+                                        .correlate_except(_Parent).scalar_subquery())
 
 Order.backordered_ea_sql = order_fact(select(
     func.sum(func.greatest(OrderLine.qty_ea - OrderLine.shipped_ea, 0))).where(

@@ -24,6 +24,9 @@ TERMS: dict[str, Help] = {
                       "Set when the order is made; never changes."),
     "Internal no.": Help("Sales' own running number for the order."),
     "Customer PO / reference": Help("The customer's own number for the order."),
+    "Reason": Help("Why a manual order was made: Gift, Replacement, Sample, Staff purchase, Phone order, Other (the list is "
+                   "set under Connections → settings). Chosen before it is submitted; Gift, Replacement and Sample are "
+                   "Orders → Free goods."),
     "EA": Help("Each: the unit everything is counted in. Every other unit (CS…) has its EA factor per item in the "
                "Item Master."),
     "Delay": Help("How long a partner's orders wait before the 940 goes: from receipt (invoiced partners) or from "

@@ -117,6 +117,14 @@ async def manual_submit(u: UoW, id: int, version: Version = None):
     return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
 
 
+@router.post("/{id}/reorder", response_model=OrderRead)
+async def reorder(u: UoW, id: int):
+    """Reorder for this customer (user 2026-11-19): a Draft manual order copied from this one, no lines."""
+    o = await ManualOrderService(u).reorder(id)
+    await u.commit()
+    return await OrderService(u).get(o.id)
+
+
 @router.post("/manual/{id}/cancel", response_model=OrderRead)
 async def manual_cancel(u: UoW, id: int, version: Version = None):
     o = await ManualOrderService(u).cancel(id, version)
