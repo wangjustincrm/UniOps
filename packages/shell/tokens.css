@@ -86,8 +86,8 @@
   --color-neutral-100: #ECEEF0;
   --color-neutral-200: #D9DFE3;
   --color-neutral-300: #B3BEC9;
-  --color-neutral-400: #8C9AA8;   /* 2.9:1 — icons only */
-  --color-neutral-500: #667685;   /* 4.7:1 */
+  --color-neutral-400: #8895A3;   /* 3.05:1 — icons / placeholders only (was #8C9AA8, 2.9:1) */
+  --color-neutral-500: #647483;   /* 4.8:1 on white, 4.5:1 on surface-subtle (was #667685, 4.39) */
   --color-neutral-600: #4E6070;
   --color-neutral-700: #3A4D5C;
   --color-neutral-800: #263240;
