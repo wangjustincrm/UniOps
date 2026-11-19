@@ -39,7 +39,9 @@ export function useReturnFocus() {
       if (!k) return  // nothing known: Radix's own
       e.preventDefault()
       const back = () => {
-        const el = focusable(k.el) ? k.el : k.where ? document.querySelector<HTMLElement>(k.where) : null
+        // Found again: the first match that is shown (the same list may be open in a hidden keep-alive tab).
+        const el = focusable(k.el) ? k.el : k.where
+          ? [...document.querySelectorAll<HTMLElement>(k.where)].find((x) => x.getClientRects().length > 0) ?? null : null
         if (focusable(el)) el.focus({ preventScroll: true })
       }
       back()
