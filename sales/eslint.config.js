@@ -224,6 +224,13 @@ export default defineConfig([
       paths: [...SRC_WIDE_PATHS(), NO_RAW_QUERY_IMPORT, NO_RAW_ERROR_VIEW_IMPORT, NO_RAW_DIALOG_IMPORT],
     }] },
   },
+  // A page file stays readable (step 5, user 2026-11-18): at most 200 lines of code (blank lines and comments not
+  // counted). A longer one is split by what it holds: the list, the record's sheet, its forms, its tables, its rules.
+  {
+    files: ['src/features/**/*.{ts,tsx}', 'src/pages/**/*.{ts,tsx}'],
+    ignores: ['src/**/*.test.{ts,tsx}'],
+    rules: { 'max-lines': ['error', { max: 200, skipBlankLines: true, skipComments: true }] },
+  },
   // One block per file group for no-restricted-syntax (a later block would
   // replace, not add to, an earlier one's list).
   {

@@ -475,11 +475,26 @@ TS
       probe src/features/__eslint_probe__.ts "import { Dialog } from \"@/platform-ui\""
       # The src-wide bans reach the block of the pages too (one list, SRC_WIDE_PATHS): a raw open from a page is refused.
       probe src/pages/__eslint_probe__.ts "import { requestOpen } from \"@/platform-ui\""
+      # A page file is at most 200 lines of code (step 5): 201 is refused, 200 passes, comments and blank lines are not counted.
+      size_probe() {  # file, code lines, expect (fires | passes)
+        mkdir -p "$(dirname "$1")"
+        { echo "// planted"; for i in $(seq 1 "$2"); do echo "export const c$i = $i"; echo; done; } > "$1"
+        npx eslint "$1" >/tmp/p.log 2>&1
+        if [ "$3" = fires ]; then
+          grep -q "max-lines" /tmp/p.log || { echo "ESLint did NOT refuse a $2-line page file: $1"; tail -10 /tmp/p.log; exit 22; }
+        else
+          grep -q "max-lines" /tmp/p.log && { echo "ESLint refused a $2-line page file: $1"; tail -10 /tmp/p.log; exit 23; }
+        fi
+        rm "$1"
+      }
+      size_probe src/features/__eslint_probe__.ts 201 fires
+      size_probe src/pages/__eslint_probe__.tsx 201 fires
+      size_probe src/features/__eslint_probe__.ts 200 passes
       npx vite build >/tmp/b.log 2>&1 || { echo "build failed"; tail -10 /tmp/b.log; exit 16; }
       grep -q "radix-popover-trigger-width" dist/assets/*.css || { echo "platform-ui classes missing from the built CSS"; exit 17; }
       # As written in CSS: hover:x → .hover\:x
       grep -qF "$SHELL_SELECTOR" dist/assets/*.css || { echo "shell-only class $SHELL_SENTINEL missing from the built CSS"; exit 19; }
-      echo "probe reported; 0 other type errors; import + layer rules pass; 7 planted import violations, 4 raw form controls, 2 hand-made dates, 2 raw tables, 2 raw forms, 2 raw sheets, 1 direct refetch, 2 ad-hoc messages, 1 toast, 1 raw heading, 2 fixed widths, 3 raw reads / actions, 1 raw dialog, 1 src-wide ban in a page and 2 raw layout / text classes caught, primitives admitted; library and shell classes in CSS"
+      echo "probe reported; 0 other type errors; import + layer rules pass; 7 planted import violations, 4 raw form controls, 2 hand-made dates, 2 raw tables, 2 raw forms, 2 raw sheets, 1 direct refetch, 2 ad-hoc messages, 1 toast, 1 raw heading, 2 fixed widths, 3 raw reads / actions, 1 raw dialog, 1 src-wide ban in a page and 2 raw layout / text classes and 2 page files over 200 lines caught, primitives and a 200-line file admitted; library and shell classes in CSS"
     '
   rc=$?
   if [[ $rc == 0 ]]; then ok "sales: TS5101 trap, import + layer rules, ESLint probes (imports, raw controls, raw tables, raw forms, raw sheets, direct refetch, ad-hoc messages, toasts, raw headings), library + shell CSS"; else fail "sales checks (code $rc)"; fi
