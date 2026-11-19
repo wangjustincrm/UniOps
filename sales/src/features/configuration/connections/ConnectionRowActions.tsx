@@ -1,6 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Pause, Play, RefreshCw } from 'lucide-react'
-import { RowActions, businessErrorOf, queryKeys, useNotices } from '@/platform-ui'
+import {
+  RowActions, businessErrorOf, queryKeys, useNotices, Icon,
+} from '@/platform-ui'
 import { useRunFollower } from '@/features/operations/useRunFollower'
 import { connectionsClient, insideWindow, runConnectionNow, type ConnectionRead } from './connectionsApi'
 
@@ -40,13 +42,13 @@ export function ConnectionRowActions({ connection: c }: { connection: Connection
   return (
     <RowActions actions={[
       c.schedule_paused
-        ? { key: 'resume', label: 'Resume schedule', icon: <Play className="h-4 w-4" />, permission: 'sales.config',
+        ? { key: 'resume', label: 'Resume schedule', icon: <Icon icon={Play} />, permission: 'sales.config',
             onAction: () => setPaused(false),
             confirm: () => (insideWindow(c, Date.now()) ? null : { title: `Resume ${c.name}?`, confirmLabel: 'Resume',
               description: 'It is outside its active hours now: it runs when the window opens (Run now runs it at once).' }) }
-        : { key: 'pause', label: 'Pause schedule', icon: <Pause className="h-4 w-4" />, permission: 'sales.config',
+        : { key: 'pause', label: 'Pause schedule', icon: <Icon icon={Pause} />, permission: 'sales.config',
             onAction: () => setPaused(true) },
-      { key: 'run', label: 'Run now', icon: <RefreshCw className="h-4 w-4" />, permission: 'sales.file.retry',
+      { key: 'run', label: 'Run now', icon: <Icon icon={RefreshCw} />, permission: 'sales.file.retry',
         hidden: !c.active, onAction: runNow },
     ]} />
   )

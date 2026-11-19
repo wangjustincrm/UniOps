@@ -1,4 +1,6 @@
-import { ActionButton, formatTime, queryKeys, type ActionDone } from '@/platform-ui'
+import {
+  ActionButton, formatTime, queryKeys, type ActionDone, Stack, Text,
+} from '@/platform-ui'
 import { ordersClient, resolveReview, type OrderRead } from './ordersApi'
 
 /** Re-check a Review order against today's Item Master (FR-OB-15;
@@ -24,9 +26,9 @@ export function Recheck({ o, compact, bare, onResolved }: { o: OrderRead; compac
   if (bare) return button
   if (compact) return button  // in a row: the table never opens the order for a click on a button
   return (
-    <section aria-label="Resolve" className="flex flex-col gap-2 text-sm">
-      <p className="text-neutral-600">Fix the cause in the Item Master (an item, a unit, a partner code, a DC route), then re-check.</p>
+    <Stack aria-label="Resolve" as="section" gap={2} size="sm">
+      <Text as="p" tone="soft">Fix the cause in the Item Master (an item, a unit, a partner code, a DC route), then re-check.</Text>
       {button}
-    </section>
+    </Stack>
   )
 }

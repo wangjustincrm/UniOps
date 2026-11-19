@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Download } from 'lucide-react'
 import { z } from 'zod'
 import {
-  ActionButton, Button, Callout, IconButton, formatDate, formatNumber, ListPage, LocalTable, RecordSheet, SchemaForm, Section, columnsOf, useNotices, type ColumnDef, type FieldSpec, type QuerySpec, type RecordTab, useRecordList,
+  ActionButton, Button, Callout, IconButton, formatDate, formatNumber, ListPage, LocalTable, RecordSheet, SchemaForm, Section, columnsOf, useNotices, type ColumnDef, type FieldSpec, type QuerySpec, type RecordTab, useRecordList, Text, Cluster, Icon,
 } from '@/platform-ui'
 import {
   PLACE, SOURCE, adjustStock, exportStock, stockItemsClient, stockLotsClient, stockMovesClient,
@@ -37,7 +37,7 @@ const moveColumns: ColumnDef<StockMoveRead, unknown>[] = [
   { id: 'ref', header: 'Record', cell: ({ row: { original: m } }) => [
     m.order_id && `order #${m.order_id}`, m.transfer_id && `transfer #${m.transfer_id}`, m.document_id && `file #${m.document_id}`,
   ].filter(Boolean).join(' · ') || '—' },
-  { accessorKey: 'reason', header: 'Reason', cell: ({ row }) => <span className="text-xs">{row.original.reason ?? ''}</span> },
+  { accessorKey: 'reason', header: 'Reason', cell: ({ row }) => <Text size="xs">{row.original.reason ?? ''}</Text> },
 ]
 
 const adjustSchema = z.object({
@@ -83,10 +83,10 @@ function ItemSheet({ row }: { row: StockItemRead }) {
     ) },
     { id: 'moves', label: 'Stock card', count: movesQ.data?.total, render: () => (
       <Section title="Every move, newest first" plain>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+        <Cluster gap={2} align="center" size="xs" tone="muted">
           {(movesQ.data?.total ?? 0) > moves.length ? `The latest ${moves.length} of ${movesQ.data?.total}; the CSV has every one.` : 'Every move of this item.'}
           <ExportButton client={stockMovesClient} spec={{ ...spec, pageSize: 50 }} name={`stock-card-${row.item_code}.csv`} />
-        </div>
+        </Cluster>
         <LocalTable<StockMoveRead> ariaLabel="Moves" columns={moveColumns} rows={moves} rowKey={(m) => m.id} />
       </Section>
     ) },
@@ -122,7 +122,7 @@ function ItemSheet({ row }: { row: StockItemRead }) {
 function ExportButton({ client, spec, name }: { client: { exportPath: (s: QuerySpec) => string }; spec: QuerySpec; name: string }) {
   const notices = useNotices()
   return (
-    <IconButton label="Export CSV" icon={<Download className="h-4 w-4" />} className="h-8 w-8 rounded-lg border border-neutral-200 bg-white"
+    <IconButton label="Export CSV" icon={<Icon icon={Download} />} className="h-8 w-8 rounded-lg border border-neutral-200 bg-white"
       onClick={() => {
         exportStock(client, spec, name).then(() => notices.notify({ key: 'csv', tone: 'success', text: 'CSV exported' }),
           (e: unknown) => notices.notify({ key: 'csv', tone: 'error', text: `Export failed: ${e instanceof Error ? e.message : String(e)}` }))

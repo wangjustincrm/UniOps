@@ -1,8 +1,7 @@
 import { factTone } from '@/features/common/statusTones'
 import {
-  ActionButton, ListPage, LocalTable, PageHeader, RecordSheet, StatusCell, Tabs, formatDateTime,
-  type ColumnDef, type QuerySpec, Callout, Muted, columnsOf
- } from '@/platform-ui'
+  ActionButton, ListPage, LocalTable, PageHeader, RecordSheet, StatusCell, Tabs, formatDateTime, type ColumnDef, type QuerySpec, Callout, Muted, columnsOf, Text, Stack,
+} from '@/platform-ui'
 import { logClient, runFor, runNow, runsClient, type LogRead, type PassReport, type RunRead } from './operationsApi'
 import { EMPTY_TEXT } from '@/features/help/pageHelp'
 
@@ -39,7 +38,7 @@ const logColumns: ColumnDef<LogRead, unknown>[] = [
   colLogRead.datetime('at', 'At'),
   colLogRead.status('level', 'Level'),
   colLogRead.text('step', 'Step'),
-  { accessorKey: 'message', header: 'Message', cell: ({ row }) => <span className="break-words">{row.original.message}</span> },
+  { accessorKey: 'message', header: 'Message', cell: ({ row }) => <Text wrap="words">{row.original.message}</Text> },
   colLogRead.text('run_id', 'Run'),
   colLogRead.text('document_id', 'Document'),
 ]
@@ -52,7 +51,7 @@ function LogTable({ fixed, searchable = true }: { fixed?: QuerySpec['filters']; 
 type Pass = PassReport & { name: string }
 
 const passColumns: ColumnDef<Pass, unknown>[] = [
-  { accessorKey: 'name', header: 'Connection', cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
+  { accessorKey: 'name', header: 'Connection', cell: ({ row }) => <Text weight="medium">{row.original.name}</Text> },
   ...PASS_COLUMNS.map((k): ColumnDef<Pass, unknown> => ({ accessorKey: k, header: k.replace('_', ' ') })),
   colPass.text('status', 'State'),
 ]
@@ -75,7 +74,7 @@ function RunDetail({ run }: { run: RunRead }) {
       tabs={[
         { id: 'report', label: 'Pass report', count: passes.length, tone: run.error ? 'danger' : undefined, render: () => (
           <>
-            {run.summary?.text && <p className="text-sm">{run.summary.text}</p>}
+            {run.summary?.text && <Text as="p" size="sm">{run.summary.text}</Text>}
             {run.error && <Callout tone="danger" label="Run error">{run.error}</Callout>}
             {passes.length === 0 ? <Muted as="p" className="text-sm">{run.scope === 'system' ? 'The system job reads no connection.' : 'No connection was read.'}</Muted> : (
               <LocalTable<Pass> ariaLabel="Pass report" columns={passColumns} rows={passes} rowKey={(p) => p.name} />
@@ -114,9 +113,9 @@ function Runs() {
 /** Operations → Runs and log (FR-OB-07, -53, -76). */
 export default function RunsPage() {
   return (
-    <div className="flex flex-col gap-4">
+    <Stack gap={4}>
       <PageHeader title="Runs and log" description="Each connection's runs (its pass report) and the system job's, and everything the module logged. Run now runs every active connection, then the system job." />
       <Tabs items={[{ value: 'runs', label: 'Runs', content: <Runs /> }, { value: 'log', label: 'Log', content: <LogTable /> }]} />
-    </div>
+    </Stack>
   )
 }

@@ -1,4 +1,6 @@
-import { Badge, LocalTable, Section, TrackingLink, columnsOf, withHelp, type ColumnDef } from '@/platform-ui'
+import {
+  Badge, LocalTable, Section, TrackingLink, columnsOf, withHelp, type ColumnDef, Text, Cluster,
+} from '@/platform-ui'
 import { lineNumbers, type OrderDetail, type PackingRead } from '../ordersApi'
 import { Shipments } from '../Shipments'
 
@@ -11,15 +13,15 @@ const lotColumns: ColumnDef<LotRow, unknown>[] = [
   { accessorKey: 'item', header: 'Item' },
   withHelp(col.reference('lot', 'Lot'), 'term:Lot / Expiry'),
   col.date('expiry', 'Expiry'),
-  { accessorKey: 'qty_shipped_ea', header: 'Qty EA', cell: ({ row }) => <span className="tabular-nums">{row.original.qty_shipped_ea}</span> },
+  { accessorKey: 'qty_shipped_ea', header: 'Qty EA', cell: ({ row }) => <Text nums>{row.original.qty_shipped_ea}</Text> },
   { accessorKey: 'sscc', header: 'Pallet (SSCC)', meta: { help: 'term:SSCC' }, cell: ({ row }) => row.original.sscc ?? '—' },
   { accessorKey: 'tracking', header: 'Tracking', cell: ({ row: { original: p } }) => p.tracking
-    ? <span className="flex flex-wrap gap-1">{p.tracking.split(', ').map((t) => <TrackingLink key={t} number={t} url={p.links.get(t)} />)}</span> : '—' },
+    ? <Cluster as="span" gap={1} align="stretch">{p.tracking.split(', ').map((t) => <TrackingLink key={t} number={t} url={p.links.get(t)} />)}</Cluster> : '—' },
   col.date('ship_date', 'Ship date'),
   { id: 'doc', header: '945', cell: ({ row: { original: p } }) => (
-    <span className="inline-flex items-center gap-1">#{p.document_id}
+    <Cluster as="span" inline gap={1} align="center">#{p.document_id}
       {!p.shadow && !p.applied && <Badge variant="warning">Second 945</Badge>}
-    </span>) },
+    </Cluster>) },
 ]
 
 function Lots({ o }: { o: OrderDetail }) {

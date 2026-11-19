@@ -466,6 +466,11 @@ TS
       probe src/features/__eslint_probe__.ts "import { useQuery } from \"@tanstack/react-query\""
       probe src/pages/__eslint_probe__.ts "import { useMutation } from \"@tanstack/react-query\""
       probe src/features/__eslint_probe__.ts "import { ErrorView } from \"@/platform-ui\""
+      # Layout and the look of text come from the primitives (step 4): layout or text classes on a raw element are
+      # refused in features, written out or inside a template; a raw element with only other utilities passes.
+      control_probe src/features/__eslint_probe__.tsx "<div className=\"flex flex-col gap-2\" />" fires
+      control_probe src/features/__eslint_probe__.tsx "<span className={\`text-xs \${x}\`} />" fires
+      control_probe src/features/__eslint_probe__.tsx "<div className=\"mt-2 w-full\" />" passes
       # A dialog is a FormDialog or a ConfirmAction (step 2): a raw Dialog in a feature is refused.
       probe src/features/__eslint_probe__.ts "import { Dialog } from \"@/platform-ui\""
       # The src-wide bans reach the block of the pages too (one list, SRC_WIDE_PATHS): a raw open from a page is refused.
@@ -474,7 +479,7 @@ TS
       grep -q "radix-popover-trigger-width" dist/assets/*.css || { echo "platform-ui classes missing from the built CSS"; exit 17; }
       # As written in CSS: hover:x → .hover\:x
       grep -qF "$SHELL_SELECTOR" dist/assets/*.css || { echo "shell-only class $SHELL_SENTINEL missing from the built CSS"; exit 19; }
-      echo "probe reported; 0 other type errors; import + layer rules pass; 7 planted import violations, 4 raw form controls, 2 hand-made dates, 2 raw tables, 2 raw forms, 2 raw sheets, 1 direct refetch, 2 ad-hoc messages, 1 toast, 1 raw heading, 2 fixed widths, 3 raw reads / actions, 1 raw dialog and 1 src-wide ban in a page caught, primitives admitted; library and shell classes in CSS"
+      echo "probe reported; 0 other type errors; import + layer rules pass; 7 planted import violations, 4 raw form controls, 2 hand-made dates, 2 raw tables, 2 raw forms, 2 raw sheets, 1 direct refetch, 2 ad-hoc messages, 1 toast, 1 raw heading, 2 fixed widths, 3 raw reads / actions, 1 raw dialog, 1 src-wide ban in a page and 2 raw layout / text classes caught, primitives admitted; library and shell classes in CSS"
     '
   rc=$?
   if [[ $rc == 0 ]]; then ok "sales: TS5101 trap, import + layer rules, ESLint probes (imports, raw controls, raw tables, raw forms, raw sheets, direct refetch, ad-hoc messages, toasts, raw headings), library + shell CSS"; else fail "sales checks (code $rc)"; fi

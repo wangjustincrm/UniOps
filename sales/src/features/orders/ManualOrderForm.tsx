@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { z } from 'zod'
 import {
-  ADDRESS_FIELDS, ActionButton, Autocomplete, MasterDetailForm, formatNumber, Skeleton, addressSchema, cleanAddress, numberColumn, readColumn, selectColumn, type EditableColumn, type FieldSpec, useLookup, useLookups, ActionErrors,
+  ADDRESS_FIELDS, ActionButton, Autocomplete, MasterDetailForm, formatNumber, Skeleton, addressSchema, cleanAddress, numberColumn, readColumn, selectColumn, type EditableColumn, type FieldSpec, useLookup, useLookups, ActionErrors, Text, Stack,
 } from '@/platform-ui'
 import { itemOptions, itemUnits, manualPartnerOptions } from '../configuration/lookups'
 import { fetchEdiSettings } from '../configuration/connections/connectionsApi'
@@ -45,9 +45,9 @@ function WeightHint({ preview, ltlFromLb }: { preview: LinePreview[]; ltlFromLb:
   const lb = known.reduce((n, p) => n + Number(p.weight_lb), 0)
   const partial = known.length < preview.length
   return (
-    <p className="text-xs text-neutral-600">
+    <Text as="p" tone="soft" size="xs">
       About {formatNumber(Math.round(lb))} lb{partial ? ' (some items have no weight)' : ''}: suggested <strong>{lb > ltlFromLb ? 'LTL' : 'Purolator'}</strong> (LTL above {formatNumber(ltlFromLb)} lb).
-    </p>
+    </Text>
   )
 }
 
@@ -71,10 +71,10 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
   if (!draft && customers.isLoading) return <Skeleton className="h-40 w-full" />
   if (!draft && customers.data && customers.data.length === 0) {
     return (
-      <p className="text-sm text-neutral-700">
+      <Text as="p" tone="secondary" size="sm">
         No customer can take a manual order yet: manual orders use partners whose channel is Manual. Add one under{' '}
         <Link to="/config/partners" className="font-medium text-primary-700 underline">Configuration → Partners</Link>, then come back.
-      </p>
+      </Text>
     )
   }
   const single = !draft && customers.data?.length === 1 ? customers.data[0].value : ''
@@ -103,11 +103,11 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
       blocked={() => (preview === null ? 'Preview the EA conversion before saving.' : null)}
       preview={(st) => (
         <ActionErrors>
-        <div className="flex flex-col gap-1">
+        <Stack gap={1}>
           <ActionButton size="sm" variant="secondary" permission={OPERATE}
             refreshes={false} after={(r) => setPreview(r as LinePreview[])} onAction={() => previewManual(st.lines)}>Preview EA</ActionButton>
           {preview && <WeightHint preview={preview} ltlFromLb={settings.data?.ltl_from_lb ?? 150} />}
-        </div>
+        </Stack>
         </ActionErrors>
       )}
       submitLabel={draft ? 'Save changes' : 'Save draft'}

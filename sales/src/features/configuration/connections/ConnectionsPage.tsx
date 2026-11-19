@@ -1,6 +1,8 @@
 import { factTone } from '@/features/common/statusTones'
 import { Landmark, Server, ShoppingBag } from 'lucide-react'
-import { Badge, CrudPage, DateTimeCell, Hint, StatusCell, Tooltip, formatShortMoment, type ColumnDef } from '@/platform-ui'
+import {
+  Badge, CrudPage, DateTimeCell, Hint, StatusCell, Tooltip, formatShortMoment, type ColumnDef, Cluster, Stack, Text, Icon,
+} from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import { ConnectionFiles } from './ConnectionFiles'
 import { NextRun, SchedulerOffBanner } from './SchedulerState'
@@ -23,7 +25,7 @@ import {
 function FolderHint({ path, off = false }: { path: string; off?: boolean }) {
   return (
     <Tooltip tip={off ? `Would write to ${path} (Write is off)` : path}>
-      <span className={`block max-w-[11rem] truncate text-xs ${off ? 'text-neutral-400' : 'text-neutral-600'}`}>{path}</span>
+      <Text size="xs" wrap="truncate" tone={off ? 'faint' : 'soft'} className="block max-w-[11rem]">{path}</Text>
     </Tooltip>
   )
 }
@@ -31,36 +33,36 @@ function FolderHint({ path, off = false }: { path: string; off?: boolean }) {
 // Kind, Host and After read stay in the column chooser (fields of the list's /meta, hidden at first).
 const columns: ColumnDef<ConnectionRead, unknown>[] = [
   { accessorKey: 'name', header: 'Connection', cell: ({ row: { original: c } }) => (
-    <span className="flex items-center gap-2">
+    <Cluster as="span" gap={2} align="center">
       <Tooltip tip={KIND_LABEL[c.kind]}>
-        <span>{c.kind === 'SFTP' ? <Server aria-label="SFTP" className="h-4 w-4 text-primary-700" />
-          : c.kind === 'AUTHORIZE_NET' ? <Landmark aria-label="Authorize.Net" className="h-4 w-4 text-primary-700" />
-            : <ShoppingBag aria-label="Shopify" className="h-4 w-4 text-primary-700" />}</span>
+        <span>{c.kind === 'SFTP' ? <Icon icon={Server} tone="primary" label="SFTP" />
+          : c.kind === 'AUTHORIZE_NET' ? <Icon icon={Landmark} tone="primary" label="Authorize.Net" />
+            : <Icon icon={ShoppingBag} tone="primary" label="Shopify" />}</span>
       </Tooltip>
-      <span className="flex min-w-0 flex-col"><span className="font-medium">{c.name}</span>{c.host && <Hint className="break-all">{c.host}</Hint>}</span>
-    </span>
+      <Stack as="span" gap={0}><Text weight="medium">{c.name}</Text>{c.host && <Hint className="break-all">{c.host}</Hint>}</Stack>
+    </Cluster>
   ) },
   { id: 'health', header: 'Health', cell: ({ row }) => <HealthBadge c={row.original} /> },
   // What Sales may do on it, and where (the connection's two ticks; user 2026-11-12).
   { accessorKey: 'can_read', header: 'Read', cell: ({ row: { original: c } }) => (
-    <span className="flex flex-col items-start gap-0.5">
+    <Stack as="span" gap={0.5} align="start">
       <Badge variant={c.can_read ? 'success' : 'neutral'}>{c.can_read ? 'On' : 'Off'}</Badge>
       {c.can_read && c.kind === 'SFTP' && c.inbound_folder && <FolderHint path={c.inbound_folder} />}
-    </span>
+    </Stack>
   ) },
   { accessorKey: 'can_write', header: 'Write', cell: ({ row: { original: c } }) => (
-    <span className="flex flex-col items-start gap-0.5">
+    <Stack as="span" gap={0.5} align="start">
       <Badge variant={c.can_write ? 'success' : 'neutral'}>{c.can_write ? 'On' : 'Off'}</Badge>
       {c.kind === 'SFTP' && c.outbound_folder && <FolderHint path={c.outbound_folder} off={!c.can_write} />}
-    </span>
+    </Stack>
   ) },
   { id: 'schedule', header: 'Schedule', cell: ({ row: { original: c } }) => c.schedule_paused
     ? <Badge variant="warning">Paused</Badge> : scheduleLabel(c) },
   { accessorKey: 'last_run_at', header: 'Last run', cell: ({ row: { original: c } }) => !c.last_run_at ? '—' : (
-    <span className="flex flex-col">
-      <span className="flex items-center gap-1"><DateTimeCell value={c.last_run_at} />{c.last_run_status && <StatusCell value={c.last_run_status} />}</span>
+    <Stack as="span" gap={0}>
+      <Cluster as="span" gap={1} align="center"><DateTimeCell value={c.last_run_at} />{c.last_run_status && <StatusCell value={c.last_run_status} />}</Cluster>
       {c.last_run_summary && <Hint>{c.last_run_summary}</Hint>}
-    </span>
+    </Stack>
   ) },
   { accessorKey: 'next_run_at', header: 'Next run', cell: ({ row }) => <NextRun c={row.original} /> },
 ]
@@ -95,7 +97,7 @@ export default function ConnectionsPage() {
       csvImport
       errorMessages={errorMessages}
       fieldLabels={connectionFieldLabels}
-      notice={<div className="flex flex-col gap-2"><ConnectionSummary /><SchedulerOffBanner /></div>}
+      notice={<Stack gap={2}><ConnectionSummary /><SchedulerOffBanner /></Stack>}
       openAfterCreate="overview"
       detailSize="lg"
       recordActions={(c) => <RunNowButton connection={c} />}

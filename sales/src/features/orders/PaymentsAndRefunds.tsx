@@ -1,6 +1,6 @@
 import {
-  Badge, DetailList, LocalTable, MoneyCell, Section, StatusCell, formatMoney, type ColumnDef, Hint, columnsOf
- } from '@/platform-ui'
+  Badge, DetailList, LocalTable, MoneyCell, Section, StatusCell, formatMoney, type ColumnDef, Hint, columnsOf, Cluster, Text, Stack,
+} from '@/platform-ui'
 import type { OrderDetail, PaymentRead, RefundRead } from './ordersApi'
 
 const colPaymentRead = columnsOf<PaymentRead>()
@@ -11,14 +11,14 @@ const paymentColumns: ColumnDef<PaymentRead, unknown>[] = [
   { accessorKey: 'kind', header: 'Kind', cell: ({ row }) => <span className="capitalize">{row.original.kind}</span> },
   { accessorKey: 'gateway', header: 'Gateway', cell: ({ row }) => row.original.gateway ?? '—' },
   { accessorKey: 'status', header: 'Status', meta: { card: 'badge' }, cell: ({ row }) => (
-    <span className="inline-flex items-center gap-1"><StatusCell value={row.original.status}
+    <Cluster as="span" inline gap={1} align="center"><StatusCell value={row.original.status}
       tone={row.original.status === 'success' ? 'success' : row.original.status === 'pending' ? 'warning' : 'danger'} />
-      {row.original.error_code && <span className="text-xs text-danger-600">{row.original.error_code.replace(/_/g, ' ')}</span>}</span>) },
+      {row.original.error_code && <Text tone="danger" size="xs">{row.original.error_code.replace(/_/g, ' ')}</Text>}</Cluster>) },
   { accessorKey: 'amount', header: 'Amount', cell: ({ row }) => <MoneyCell amount={row.original.kind === 'refund' ? `-${row.original.amount}` : row.original.amount}
     currency={row.original.currency} /> },
   { accessorKey: 'authorization', header: 'Authorization', cell: ({ row }) => row.original.authorization ?? '—' },
   { accessorKey: 'payment_id', header: 'Payment ID', cell: ({ row }) => (
-    <span className="inline-flex items-center gap-1">{row.original.payment_id ?? '—'}{row.original.test && <Badge variant="neutral">Test</Badge>}</span>) },
+    <Cluster as="span" inline gap={1} align="center">{row.original.payment_id ?? '—'}{row.original.test && <Badge variant="neutral">Test</Badge>}</Cluster>) },
 ]
 
 const refundColumns = (currency: string): ColumnDef<RefundRead, unknown>[] => [
@@ -32,7 +32,7 @@ const refundColumns = (currency: string): ColumnDef<RefundRead, unknown>[] => [
 
 function RefundDetail({ r, currency }: { r: RefundRead; currency: string }) {
   return (
-    <div className="flex flex-col gap-1 text-xs">
+    <Stack gap={1} size="xs">
       {r.lines.length > 0 && (
         <ul aria-label="Refunded lines">
           {r.lines.map((ln, i) => (
@@ -47,7 +47,7 @@ function RefundDetail({ r, currency }: { r: RefundRead; currency: string }) {
             {Number(a.tax_amount) ? ` + ${formatMoney(a.tax_amount, currency)} tax` : ''}</li>)}
         </ul>
       )}
-    </div>
+    </Stack>
   )
 }
 
@@ -64,7 +64,7 @@ export function PaymentsAndRefunds({ o }: { o: OrderDetail }) {
     <Section title="Payments & refunds" label="Payments and refunds" plain>
       <DetailList items={[
         ['Payment status', o.shopify_financial_status?.replace(/_/g, ' ') ?? null], ['Sales channel', o.source_name],
-        ['Tags', tags.length ? <span key="t" className="flex flex-wrap gap-1">{tags.map((t) => <Badge key={t} variant="neutral">{t}</Badge>)}</span> : null],
+        ['Tags', tags.length ? <Cluster key="t" as="span" gap={1} align="stretch">{tags.map((t) => <Badge key={t} variant="neutral">{t}</Badge>)}</Cluster> : null],
         ['Gateways', (o.payment_gateways ?? []).join(', ') || null],
         ['Discount codes', (o.discount_codes ?? []).map((d) => `${d.code} (${formatMoney(d.amount, o.currency)})`).join(', ') || null],
         ['Subtotal', money(o.subtotal)], ['Discounts', money(o.discount)], ['Shipping', money(o.shipping)],

@@ -1,6 +1,8 @@
 import { isTestRunRefusal } from '@/features/common/testRun'
 import { useState } from 'react'
-import { ActionButton, ConfirmAction, DiffTable, FormSheet, Hint, queryKeys } from '@/platform-ui'
+import {
+  ActionButton, ConfirmAction, DiffTable, FormSheet, Hint, queryKeys, Stack,
+} from '@/platform-ui'
 import { cancelOrder, ordersClient, releaseHold, type OrderDetail } from './ordersApi'
 import { compare945 } from './orderStatus'
 
@@ -51,7 +53,7 @@ export function OrderHoldActions({ o }: { o: OrderDetail }) {
       <FormSheet open={sheet} onOpenChange={setSheet} title={conflict ? 'Two 945s for this order' : 'Release hold'}
         description={conflict ? 'The applied 945 set the quantities; the second is stored and changed nothing.'
           : 'This order was cancelled at source after its 940. Decide where it goes.'}>
-        <div className="flex flex-col gap-3">
+        <Stack gap={3}>
           {conflict && applied && second && (
             <DiffTable ariaLabel="The two 945s" leftLabel={`Applied: 945 #${applied.document_id}`} rightLabel={`Second: 945 #${second.document_id}`}
               rows={compare945(applied, second)} />
@@ -59,13 +61,13 @@ export function OrderHoldActions({ o }: { o: OrderDetail }) {
           {exits.map((to) => {
             const e = exitOf(to, conflict)
             return (
-              <div key={to} className="flex flex-col items-start gap-1">
+              <Stack key={to} gap={1} align="start">
                 <ActionButton size="sm" variant={e.destructive ? 'secondary' : undefined} permission={OPERATE} onAction={() => setChoice(to)}>{e.label}</ActionButton>
                 <Hint as="p">{e.text}</Hint>
-              </div>
+              </Stack>
             )
           })}
-        </div>
+        </Stack>
       </FormSheet>
       <ConfirmAction open={choice !== null} onOpenChange={(v) => { if (!v) setChoice(null) }} title={picked ? `${picked.label}?` : ''} description={picked?.text}
         destructive={picked?.destructive} confirmLabel={picked?.label} reason={{ label: 'Why' }} errorMessages={errorMessages}

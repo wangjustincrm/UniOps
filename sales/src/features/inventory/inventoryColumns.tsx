@@ -1,4 +1,6 @@
-import { columnsOf, startHidden, withHelp, type ColumnDef } from '@/platform-ui'
+import {
+  columnsOf, startHidden, withHelp, type ColumnDef, Text,
+} from '@/platform-ui'
 import type { StockItemRead, StockLotRead } from './inventoryApi'
 
 const colItem = columnsOf<StockItemRead>()
@@ -9,7 +11,7 @@ const colLot = columnsOf<StockLotRead>()
 // lot's, what Radiant's latest report shows picked for those orders (a 940 names no lot). The difference with Radiant's
 // history is on the Radiant reports page only; the rest is in the column menu.
 export const itemColumns: ColumnDef<StockItemRead, unknown>[] = [
-  { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => <span className="font-medium">{row.original.item_code}</span> },
+  { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => <Text weight="medium">{row.original.item_code}</Text> },
   colItem.text('description', 'Description'),
   colItem.number('received_ea', 'Received'),
   colItem.number('shipped_ea', 'Shipped'),
@@ -29,7 +31,7 @@ export const itemColumns: ColumnDef<StockItemRead, unknown>[] = [
 
 export const lotColumns: ColumnDef<StockLotRead, unknown>[] = [
   colLot.text('item_code', 'Item'),
-  { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => <span className="font-medium">{row.original.lot ?? '(no lot)'}</span> },
+  { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => <Text weight="medium">{row.original.lot ?? '(no lot)'}</Text> },
   colLot.date('expiry', 'Expiry'),
   colLot.number('days_to_expiry', 'Days to expiry'),
   colLot.number('received_ea', 'Received'),

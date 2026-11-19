@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { z } from 'zod'
 import {
-  ActionButton, Badge, CrudPage, DetailList, formatDateTime, queryKeys, type ColumnDef, type FieldSpec, Hint, useLookup,
+  ActionButton, Badge, CrudPage, DetailList, formatDateTime, queryKeys, type ColumnDef, type FieldSpec, Hint, useLookup, Stack,
 } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import {
@@ -20,10 +20,10 @@ const updateSchema = z.object(base)
 
 const columns: ColumnDef<NotificationRuleRead, unknown>[] = [
   { accessorKey: 'event_type', header: 'Event', cell: ({ row: { original: r } }) => (
-    <span className="flex flex-col">
+    <Stack as="span" gap={0}>
       <span>{r.event_label}</span>
       <Hint>{r.kind === 'action' ? 'needs someone to act: always a task' : 'notify only'}{r.gate ? ' · go-live gate' : ''}</Hint>
-    </span>
+    </Stack>
   ) },
   { accessorKey: 'channel', header: 'Channel', cell: ({ row }) => CHANNEL_LABELS[row.original.channel] },
   { id: 'recipients', header: 'Recipients', cell: ({ row: { original: r } }) =>
@@ -45,7 +45,7 @@ const errorMessages = {
 function TestRule({ rule }: { rule: NotificationRuleRead }) {
   const [result, setResult] = useState<string | null>(null)  // the test just sent, until the list reads it again
   return (
-    <div className="flex flex-col gap-2 text-sm">
+    <Stack gap={2} size="sm">
       <DetailList items={[
         ['Last test', rule.tested_at ? formatDateTime(rule.tested_at) : 'never'],
         ['Result', result ?? rule.test_result],
@@ -56,7 +56,7 @@ function TestRule({ rule }: { rule: NotificationRuleRead }) {
           after={(r) => setResult((r as Awaited<ReturnType<typeof sendTest>>).result)}
           onAction={() => sendTest(rule.id)}>Send test notification</ActionButton>
       </span>
-    </div>
+    </Stack>
   )
 }
 

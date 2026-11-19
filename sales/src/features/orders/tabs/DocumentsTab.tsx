@@ -1,4 +1,6 @@
-import { DownloadButton, Section, ViewFileButton } from '@/platform-ui'
+import {
+  DownloadButton, Section, ViewFileButton, Cluster, Text,
+} from '@/platform-ui'
 import { Attachments } from '@/features/common/Attachments'
 import { RecordFilesTable } from '@/features/common/RecordFilesTable'
 import { useOrderInvoice } from '../useOrderInvoice'
@@ -15,7 +17,7 @@ export function DocumentsTab({ o }: { o: OrderDetail }) {
   return (
     <>
       <Section title="Printable">
-        <div className="flex flex-wrap gap-2">
+        <Cluster gap={2} align="stretch">
           <ViewFileButton source={poPdf(o)}>Purchase order (PDF)</ViewFileButton>
           {shipped.map((s) => (
             <ViewFileButton key={s.id} source={packingListPdf(o.id, s.id, shipped.length > 1 ? String(s.ship_date ?? s.id) : '')}>
@@ -28,10 +30,10 @@ export function DocumentsTab({ o }: { o: OrderDetail }) {
             </ViewFileButton>
           )}
           <DownloadButton onAction={() => downloadPacket(o)}>Everything (zip)</DownloadButton>
-        </div>
-        <p className="mt-1 text-xs text-neutral-500">
+        </Cluster>
+        <Text as="p" tone="muted" size="xs" className="mt-1">
           {shipped.length ? '' : 'The packing list comes with the 945. '}{inv ? '' : 'The invoice comes at delivery confirmation.'}
-        </p>
+        </Text>
       </Section>
       <Attachments type="order" id={o.id} />
       <Section title="Files received and sent">

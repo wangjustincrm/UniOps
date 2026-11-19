@@ -1,4 +1,6 @@
-import { ListPage, MoneyCell, columnsOf, startHidden, withHelp, type ColumnDef, type HelpId, type ListCreate, type QuerySpec, type RecordTab } from '@/platform-ui'
+import {
+  ListPage, MoneyCell, columnsOf, startHidden, withHelp, type ColumnDef, type HelpId, type ListCreate, type QuerySpec, type RecordTab, Text,
+} from '@/platform-ui'
 import { OrderSheet } from './OrderDetailView'
 import { OrderStatusBadge, ShopifyCell, StatusDetail } from './OrderStatusCells'
 import { ReturnAfterShipment } from '@/features/invoices/ReturnAfterShipment'
@@ -12,7 +14,7 @@ import { EMPTY_TEXT } from '@/features/help/pageHelp'
 const col = columnsOf<OrderRead>()
 
 const orderColumns: ColumnDef<OrderRead, unknown>[] = [
-  { accessorKey: 'source_reference', header: 'Order ref', meta: { help: 'term:Order ref' }, cell: ({ row }) => <span className="font-medium">{row.original.source_reference ?? ''}</span> },
+  { accessorKey: 'source_reference', header: 'Order ref', meta: { help: 'term:Order ref' }, cell: ({ row }) => <Text weight="medium">{row.original.source_reference ?? ''}</Text> },
   withHelp(col.text('order_number', 'Internal no.'), 'term:Internal no.'),
   { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
   withHelp(col.text('source_order_number', 'Customer PO / ref.'), 'term:Customer PO / reference'),
@@ -22,12 +24,12 @@ const orderColumns: ColumnDef<OrderRead, unknown>[] = [
   { id: 'shopify', header: 'Shopify', cell: ({ row }) => <ShopifyCell o={row.original} /> },
   col.money('total_amount', 'Total', { currency: 'currency' }),
   { accessorKey: 'returned_ea', header: 'Returned EA', cell: ({ row }) => row.original.returned_ea
-    ? <span className="font-medium text-warning-700">{row.original.returned_ea}</span> : '' },
+    ? <Text tone="warning" weight="medium">{row.original.returned_ea}</Text> : '' },
   { accessorKey: 'total_refunded', header: 'Refunded', cell: ({ row }) => Number(row.original.total_refunded ?? 0)
     ? <MoneyCell amount={row.original.total_refunded} currency={row.original.currency} /> : '' },
   col.money('net_amount', 'Net', { currency: 'currency' }),
   { accessorKey: 'review_reason', header: 'Review reason', cell: ({ row }) => (
-    <span className="line-clamp-2 max-w-md whitespace-pre-line text-xs text-neutral-600">{row.original.review_reason ?? ''}</span>
+    <Text tone="soft" size="xs" wrap="clamp2" className="max-w-md whitespace-pre-line">{row.original.review_reason ?? ''}</Text>
   ) },
   // A channel's own columns (user 2026-11-09): shown where a view names them (Open Shopify, Open retailers).
   startHidden(col.datetime('first_received_at', 'Received')),

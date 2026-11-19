@@ -1,6 +1,8 @@
 import { isTestRunRefusal } from '@/features/common/testRun'
 import { useState } from 'react'
-import { ActionButton, ConfirmAction, queryKeys, type ActionDone } from '@/platform-ui'
+import {
+  ActionButton, ConfirmAction, queryKeys, type ActionDone, Stack, Text,
+} from '@/platform-ui'
 import { ordersClient, send940, type OrderDetail, type Send940Result } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
@@ -32,10 +34,10 @@ export function Send940({ o }: { o: OrderDetail }) {
   if (!o.send_940) return null
   const replace = o.send_940 === 'replace'
   return (
-    <section aria-label="Send 940" className="flex flex-col gap-2 text-sm">
+    <Stack aria-label="Send 940" as="section" gap={2} size="sm">
       {replace ? (
         <>
-          <p className="text-neutral-600">The warehouse has a live 940 for this order. A change is sent only as a confirmed replacement.</p>
+          <Text as="p" tone="soft">The warehouse has a live 940 for this order. A change is sent only as a confirmed replacement.</Text>
           <ActionButton size="sm" variant="secondary" permission={OPERATE} onAction={() => setConfirming(true)}>Replace 940</ActionButton>
           <ConfirmAction
             open={confirming}
@@ -51,6 +53,6 @@ export function Send940({ o }: { o: OrderDetail }) {
       ) : (
         <ActionButton size="sm" permission={OPERATE} errorMessages={errorMessages} {...sent} onAction={() => send940(o.id, false)}>Send 940 now</ActionButton>
       )}
-    </section>
+    </Stack>
   )
 }

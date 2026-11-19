@@ -1,7 +1,7 @@
 import { useContext, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, Badge, ConfirmAction, Hint, RecordSheet, RecordSheetHostContext, formatDate, formatMoney, queryKeys, type RecordFact, type RecordTab, compareRecord, useFileViewer, useRefresh, useRecord,
+  ActionButton, Badge, ConfirmAction, Hint, RecordSheet, RecordSheetHostContext, formatDate, formatMoney, queryKeys, type RecordFact, type RecordTab, compareRecord, useFileViewer, useRefresh, useRecord, Stack, Cluster,
 } from '@/platform-ui'
 import { SOURCE_LABEL, downloadPacket, fetchOrder, poPdf, ordersClient, type OrderRead } from './ordersApi'
 import { OrderHoldActions } from './OrderHoldActions'
@@ -153,11 +153,11 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
         subtitle={[...new Set([`Internal no. ${live.order_number}`, live.partner_name ?? live.partner_code,
           SOURCE_LABEL[live.source_type] ?? live.source_type])].concat(live.source_order_number ? [`PO ${live.source_order_number}`] : []).join(' · ')}
         badges={<>
-          <span className="flex flex-col gap-0.5">
+          <Stack as="span" gap={0.5}>
             <OrderStatusBadge o={live} />
-            {statusDetailText(live) && <span className="inline-flex items-center gap-0.5"><Hint>Detail: {statusDetailText(live)}</Hint><DetailHelp o={live} /></span>}
+            {statusDetailText(live) && <Cluster as="span" inline gap={0.5} align="center"><Hint>Detail: {statusDetailText(live)}</Hint><DetailHelp o={live} /></Cluster>}
             <NextStep o={live} />
-          </span>
+          </Stack>
           {live.historical && <Badge variant="neutral">Historical</Badge>}
         </>}
         size="xl" loading={q.isLoading} error={q.error}

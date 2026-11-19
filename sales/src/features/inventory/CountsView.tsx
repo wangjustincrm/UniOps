@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, Callout, Checkbox, ConfirmAction, StatusCell, ListPage, LocalTable, RecordSheet, Section, ViewFileButton, columnsOf, formatDate, formatDateTime, formatNumber, queryKeys, startHidden, type ColumnDef, type RecordTab, useLookup, FormDialog, SchemaForm, type FieldSpec,
+  ActionButton, Callout, Checkbox, ConfirmAction, StatusCell, ListPage, LocalTable, RecordSheet, Section, ViewFileButton, columnsOf, formatDate, formatDateTime, formatNumber, queryKeys, startHidden, type ColumnDef, type RecordTab, useLookup, FormDialog, SchemaForm, type FieldSpec, Text, Cluster,
 } from '@/platform-ui'
 import { api } from '@/lib/api'
 import {
@@ -34,20 +34,20 @@ const KIND_TONE = { match: 'success', differs: 'warning', sales_only: 'danger', 
 
 /** "Sep 8, 2028 · 665 days" (days counted by the server, Toronto day; past: "expired"). */
 function ExpiryCell({ value, days }: { value: string | null; days: number | null }) {
-  if (!value || days == null) return <span className="text-neutral-400">—</span>
+  if (!value || days == null) return <Text tone="faint">—</Text>
   return (
-    <span className="whitespace-nowrap">
+    <Text wrap="nowrap">
       {formatDate(value)}
-      <span className={days < 0 ? 'text-danger-600' : days <= 90 ? 'text-warning-700' : 'text-neutral-500'}>
+      <Text tone={days < 0 ? 'danger' : days <= 90 ? 'warning' : 'muted'}>
         {' · '}{days < 0 ? 'expired' : `${formatNumber(days)} days`}
-      </span>
-    </span>
+      </Text>
+    </Text>
   )
 }
 
-const strong = (v: number) => <span className="block text-right font-semibold tabular-nums">{formatNumber(v)}</span>
+const strong = (v: number) => <Text weight="semibold" nums className="block text-right">{formatNumber(v)}</Text>
 const signed = (v: number) => (
-  <span className={`block text-right font-semibold tabular-nums ${v ? 'text-warning-700' : 'text-neutral-400'}`}>{v > 0 ? `+${formatNumber(v)}` : formatNumber(v)}</span>
+  <Text weight="semibold" nums tone={v ? 'warning' : 'faint'} className="block text-right">{v > 0 ? `+${formatNumber(v)}` : formatNumber(v)}</Text>
 )
 
 /** The figures of a lot and of an item (the sum of its lots) — the same columns, in the same order (user 2026-11-13):
@@ -76,7 +76,7 @@ function radiantColumns<R extends ItemFigures>(): ColumnDef<R, unknown>[] {
 
 function compareColumns(): ColumnDef<CountCompareRow, unknown>[] {
   return [
-    { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => <span className="font-medium">{row.original.lot ?? '(no lot)'}</span> },
+    { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => <Text weight="medium">{row.original.lot ?? '(no lot)'}</Text> },
     { accessorKey: 'expiry', header: 'Expiry', cell: ({ row }) => <ExpiryCell value={row.original.expiry} days={row.original.days_to_expiry} /> },
     ...figureColumns<CountCompareRow>(),
     ...radiantColumns<CountCompareRow>(),
@@ -126,13 +126,13 @@ function Comparison({ count }: { count: StockCountRead }) {
   const groups = useMemo(() => group(all.filter((r) => (showClosed || r.open) && (!onlyDiff || r.kind !== 'match'))), [all, onlyDiff, showClosed])
   const lotCols = useMemo(() => compareColumns(), [])
   const itemCols = useMemo<ColumnDef<ItemGroup, unknown>[]>(() => [
-    { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => <span className="font-medium">{row.original.item_code}</span> },
+    { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => <Text weight="medium">{row.original.item_code}</Text> },
     startHidden(colGroup.text('description', 'Description')),
     { id: 'lots', header: 'Open lots', cell: ({ row: { original: g } }) => (
-      <span className="whitespace-nowrap">
-        {formatNumber(g.open)}{g.differing ? <span className="text-warning-700"> · {g.differing} differ</span> : null}
-        {g.closed ? <span className="block text-xs text-neutral-400">+ {g.closed} closed</span> : null}
-      </span>
+      <Text wrap="nowrap">
+        {formatNumber(g.open)}{g.differing ? <Text tone="warning"> · {g.differing} differ</Text> : null}
+        {g.closed ? <Text tone="faint" size="xs" className="block">+ {g.closed} closed</Text> : null}
+      </Text>
     ) },
     { id: 'first_expiry', header: 'First expiry', cell: ({ row }) => <ExpiryCell value={row.original.first_expiry} days={row.original.first_days} /> },
     ...figureColumns<ItemGroup>(),
@@ -143,14 +143,14 @@ function Comparison({ count }: { count: StockCountRead }) {
   return (
     <Section title="Per item and open lot, at the moment of the report" plain>
       {count.note && <Callout label="Note">{count.note}</Callout>}
-      <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-600">
+      <Cluster gap={3} align="center" size="xs" tone="soft">
         <span>
           {formatNumber(open.length)} open lots · {formatNumber(open.length - differ)} match · {formatNumber(differ)} differ
           {' · '}{formatNumber(all.length - open.length)} closed (not counted)
         </span>
         <Checkbox checked={onlyDiff} onCheckedChange={(v) => setOnlyDiff(v === true)} label="Only the lots that differ" />
         <Checkbox checked={showClosed} onCheckedChange={(v) => setShowClosed(v === true)} label="Show closed lots" />
-      </div>
+      </Cluster>
       <LocalTable<ItemGroup> ariaLabel="Comparison by item" columns={itemCols} rows={groups} rowKey={(g) => g.item_code}
         fetching={q.isFetching} emptyTitle={q.isLoading ? 'Loading…' : 'Nothing to compare'}
         expand={(g) => (

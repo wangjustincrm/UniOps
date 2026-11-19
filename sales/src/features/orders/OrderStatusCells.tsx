@@ -1,4 +1,6 @@
-import { Badge, CountdownCell, HelpTip, Hint, RelativeCell, StatusCell, TourMark, dateAndTime } from '@/platform-ui'
+import {
+  Badge, CountdownCell, HelpTip, Hint, RelativeCell, StatusCell, TourMark, dateAndTime, Cluster, Text,
+} from '@/platform-ui'
 import type { OrderRead } from './ordersApi'
 import { orderStatusColour, shopifyBadges, statusDetailText } from './orderStatus'
 
@@ -6,14 +8,14 @@ import { orderStatusColour, shopifyBadges, statusDetailText } from './orderStatu
  *  Each is a button: a tap says what it means (the API's status help; an On Hold order: its reason's). */
 export function OrderStatusBadge({ o }: { o: Pick<OrderRead, 'order_status' | 'order_status_label' | 'short_shipped' | 'on_hold_reason'> }) {
   return (
-    <span className="inline-flex flex-wrap items-center gap-1">
+    <Cluster as="span" inline gap={1} align="center">
       <HelpTip id={o.on_hold_reason ? `hold:${o.on_hold_reason}` : `status:${o.order_status}`} tourSlot="row.status" tourKey="status" label={`What "${o.order_status_label}" means`}>
         <StatusCell value={o.order_status_label} className={orderStatusColour(o.order_status)} />
       </HelpTip>
       {o.short_shipped && (
         <HelpTip id="detail:Short shipped" label='What "Short shipped" means'><Badge variant="warning">Short shipped</Badge></HelpTip>
       )}
-    </span>
+    </Cluster>
   )
 }
 
@@ -31,8 +33,8 @@ export function NextStep({ o }: { o: Pick<OrderRead, 'next_step' | 'next_step_wh
   const turn = TURN[o.next_step_who ?? 'nobody'] ?? TURN.nobody
   return (
     <TourMark help="record.next" slot="record.next" className="inline-flex max-w-prose flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs">
-      <span className={`rounded-full border px-1.5 font-medium ${turn.className}`}>{turn.label}</span>
-      <span className="text-neutral-700">{o.next_step}</span>
+      <Text weight="medium" className={`rounded-full border px-1.5 ${turn.className}`}>{turn.label}</Text>
+      <Text tone="secondary">{o.next_step}</Text>
     </TourMark>
   )
 }
@@ -51,12 +53,12 @@ export function StatusDetail({ o }: { o: Pick<OrderRead, 'status_detail' | 'stat
   const { day, time } = dateAndTime(at)
   return (
     <span className="block max-w-56 leading-tight" title={text}>
-      <span className="line-clamp-2 text-neutral-800">{o.status_detail}{at ? ` ${day}` : ''}</span>
+      <Text tone="body" wrap="clamp2">{o.status_detail}{at ? ` ${day}` : ''}</Text>
       {at && (
-        <span className="flex flex-wrap gap-x-1 whitespace-nowrap text-xs text-neutral-500">
+        <Cluster as="span" gap={0} align="stretch" size="xs" tone="muted" className="gap-x-1 whitespace-nowrap">
           {time && <span>{time} ·</span>}
           {o.status_detail_kind === 'countdown' ? <CountdownCell value={at} className="text-xs" /> : <RelativeCell value={at} />}
-        </span>
+        </Cluster>
       )}
     </span>
   )
@@ -66,8 +68,8 @@ export function StatusDetail({ o }: { o: Pick<OrderRead, 'status_detail' | 'stat
 export function ShopifyCell({ o }: { o: Parameters<typeof shopifyBadges>[0] }) {
   if (o.source_type !== 'SHOPIFY') return <Hint>—</Hint>
   return (
-    <span className="inline-flex flex-wrap items-center gap-1">
+    <Cluster as="span" inline gap={1} align="center">
       {shopifyBadges(o).map((b) => <Badge key={b.label} variant={b.tone}>{b.label}</Badge>)}
-    </span>
+    </Cluster>
   )
 }

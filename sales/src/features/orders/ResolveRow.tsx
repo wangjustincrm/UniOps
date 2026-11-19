@@ -1,6 +1,8 @@
 import { isTestRunRefusal } from '@/features/common/testRun'
 import { useState } from 'react'
-import { ActionButton, Autocomplete, ConfirmAction, FormSheet, Hint, queryKeys, type ComboOption } from '@/platform-ui'
+import {
+  ActionButton, Autocomplete, ConfirmAction, FormSheet, Hint, queryKeys, type ComboOption, Stack,
+} from '@/platform-ui'
 import { ordersClient, resolveRow, type LineRead, type ShipmentRowRead } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
@@ -30,13 +32,13 @@ export function ResolveRow({ r, shipmentId, orderId, lines }: { r: ShipmentRowRe
       <ActionButton size="sm" variant="secondary" permission={OPERATE} onAction={() => setOpen(true)}>Resolve</ActionButton>
       <FormSheet open={open} onOpenChange={setOpen} title={`945 row ${r.item_code ?? ''}: ${r.qty_shipped_ea} EA`}
         description="It matches no line of the order, so the invoice waits for your decision.">
-        <div className="flex flex-col gap-3">
+        <Stack gap={3}>
           {matching.length > 0 ? (
             <>
-              <label className="flex max-w-sm flex-col gap-1 text-sm">
+              <Stack as="label" gap={1} size="sm" className="max-w-sm">
                 Order line
                 <Autocomplete aria-label="Order line" value={line} onChange={setLine} loadOptions={options} />
-              </label>
+              </Stack>
               <Hint as="p">Linked: its quantity counts on that line and on the invoice.</Hint>
               <div>
                 <ActionButton size="sm" permission={OPERATE} disabled={!line} disabledReason="Choose the order line first." errorMessages={errorMessages}
@@ -44,11 +46,11 @@ export function ResolveRow({ r, shipmentId, orderId, lines }: { r: ShipmentRowRe
               </div>
             </>
           ) : <Hint as="p">No line of this order is the same item, so it can only be accepted.</Hint>}
-          <div className="flex flex-col items-start gap-1">
+          <Stack gap={1} align="start">
             <ActionButton size="sm" variant="secondary" permission={OPERATE} onAction={() => setAccepting(true)}>Accept without a line</ActionButton>
             <Hint as="p">Accepted: it stays on the 945 and adds nothing to the line or the invoice.</Hint>
-          </div>
-        </div>
+          </Stack>
+        </Stack>
       </FormSheet>
       <ConfirmAction open={accepting} onOpenChange={setAccepting} title="Accept this row without a line?" confirmLabel="Accept"
         reason={{ label: 'Why it is accepted' }} errorMessages={errorMessages} toStatusRow={isTestRunRefusal} {...resolved} onConfirm={(why) => resolveRow(shipmentId, r.id, null, why)} />

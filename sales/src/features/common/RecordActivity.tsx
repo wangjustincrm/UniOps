@@ -1,4 +1,6 @@
-import { Timeline, formatDateTime, type TimelineItem } from '@/platform-ui'
+import {
+  Timeline, formatDateTime, type TimelineItem, Text,
+} from '@/platform-ui'
 import type { TimelineEntry } from './recordFiles'
 
 const WARN = ['On Hold', 'Review', 'Blocked', 'Failed', '940 Rejected', '940 Failed', '940 Timeout', 'Discrepancy', 'Partially Received']
@@ -27,7 +29,7 @@ export function RecordActivity({ entries }: { entries: TimelineEntry[] }) {
         key: i, when: formatDateTime(e.at), who: e.user_name, tone: tone(e),
         title: e.reason ?? `${ENTITY[e.entity] ?? e.entity.replace('sales_', '').replace(/_/g, ' ')} ${ACTION[e.action] ?? e.action}`,
         body: e.action === 'update' && keys.length > 0 ? (
-          <ul>{keys.slice(0, 6).map((k) => <li key={k} className="break-all"><span className="font-medium">{k.replace(/_/g, ' ')}</span>: {show(e.before?.[k])} → {show(e.after?.[k])}</li>)}</ul>
+          <ul>{keys.slice(0, 6).map((k) => <Text key={k} as="li" wrap="break"><Text weight="medium">{k.replace(/_/g, ' ')}</Text>: {show(e.before?.[k])} → {show(e.after?.[k])}</Text>)}</ul>
         ) : undefined,
       }
     })} />

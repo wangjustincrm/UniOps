@@ -1,4 +1,6 @@
-import { AddressView, Badge, Callout, DetailList, Hint, Section, formatDate, formatDateTime, formatMoney } from '@/platform-ui'
+import {
+  AddressView, Badge, Callout, DetailList, Hint, Section, formatDate, formatDateTime, formatMoney, Text, Columns,
+} from '@/platform-ui'
 import { partnerLabel } from '@/features/common/labels'
 import { SOURCE_LABEL, type OrderDetail } from '../ordersApi'
 
@@ -23,8 +25,8 @@ export function OverviewTab({ o }: { o: OrderDetail }) {
     <>
       {o.review_reason && (
         <Callout label="Review reason" title="Needs review">
-          <pre className="whitespace-pre-wrap text-xs">{o.review_reason}</pre>
-          <p className="text-xs">Fix the cause in the Item Master (an item, a unit, a partner code, a DC route), then Re-check.</p>
+          <Text as="pre" size="xs" className="whitespace-pre-wrap">{o.review_reason}</Text>
+          <Text as="p" size="xs">Fix the cause in the Item Master (an item, a unit, a partner code, a DC route), then Re-check.</Text>
         </Callout>
       )}
       <Section title="Order">
@@ -49,13 +51,13 @@ export function OverviewTab({ o }: { o: OrderDetail }) {
           ]} />
         </Section>
       )}
-      <div className="grid gap-4 md:grid-cols-2">
+      <Columns gap={4} md={2}>
         <Section title="Ship to">
           <AddressView value={o.ship_to} note={shipToOrigin(o)} />
           {(o.ship_to_flags ?? []).map((f) => <Badge key={f} variant="warning">{f}</Badge>)}
         </Section>
         <Section title="Bill to"><AddressView value={o.bill_to} note={billToOrigin(o)} /></Section>
-      </div>
+      </Columns>
       <Section title="Internal status">
         <Hint as="p">The raw values, for diagnosis. The statuses at the top are worked out from these.</Hint>
         <DetailList items={[

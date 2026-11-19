@@ -1,4 +1,6 @@
-import { Badge, LocalTable, MoneyCell, StatusCell, formatMoney, type ColumnDef, Hint , columnsOf } from '@/platform-ui'
+import {
+  Badge, LocalTable, MoneyCell, StatusCell, formatMoney, type ColumnDef, Hint, columnsOf, Text, Cluster,
+} from '@/platform-ui'
 import { VsPo } from '../InvoicePrices'
 import { LineNo } from '../LineNo'
 import { lineNumbers, type LineRead, type OrderDetail, type PackingRead } from '../ordersApi'
@@ -25,7 +27,7 @@ const deliveredOf = (ln: LineRead) => ln.delivered_qty ?? (ln.shipped_ea == null
 
 const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<LineRead, unknown>[] => [
   { accessorKey: 'line_no', header: '#', cell: ({ row }) => <LineNo lineNo={row.original.line_no} numbers={numbers} />, meta: { hidden: true } },
-  { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => row.original.item_code ?? <span className="text-danger-600">unmatched</span> },
+  { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => row.original.item_code ?? <Text tone="danger">unmatched</Text> },
   { id: 'ordered', header: 'Ordered', cell: ({ row }) => `${Number(row.original.ordered_qty)} ${row.original.order_unit ?? '?'}` },
   { accessorKey: 'order_unit', header: 'Unit', cell: ({ row }) => row.original.order_unit ?? '?', meta: { hidden: true } },
   { accessorKey: 'unit_price', header: 'Unit price (PO)', cell: ({ row }) => row.original.unit_price == null ? '—'
@@ -42,22 +44,22 @@ const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<
   { accessorKey: 'shipped_ea', header: 'Shipped EA', cell: ({ row: { original: ln } }) => ea(ln.shipped_ea ?? ln.shipped_shadow_ea) },
   // Returned: entered by a person before the invoice goes (Edit returned); delivered = shipped − returned.
   { accessorKey: 'returned_ea', header: 'Returned EA', cell: ({ row: { original: ln } }) => ln.returned_ea
-    ? <span className="font-medium text-warning-700">{ln.returned_ea}</span> : (ln.shipped_ea == null ? '—' : '0') },
+    ? <Text tone="warning" weight="medium">{ln.returned_ea}</Text> : (ln.shipped_ea == null ? '—' : '0') },
   { accessorKey: 'delivered_qty', header: 'Delivered EA', cell: ({ row }) => ea(deliveredOf(row.original)) },
   { id: 'invoiced', header: 'Invoiced', cell: ({ row }) => row.original.invoiced_qty == null ? '—'
     : `${row.original.invoiced_qty} ${row.original.invoice_unit ?? ''}` },
   // Invoiced: the invoice's price per its unit (CA). Before: what the draft will take, per order unit.
   { accessorKey: 'invoice_price', header: 'Invoice price', meta: { help: 'term:Invoice price' }, cell: ({ row: { original: ln } }) => ln.invoice_price == null ? '—' : (
-    <span className="whitespace-nowrap"><MoneyCell amount={ln.invoice_price} currency={currency} />
+    <Text wrap="nowrap"><MoneyCell amount={ln.invoice_price} currency={currency} />
       <Hint> /{ln.invoiced_qty != null ? ln.invoice_unit : (ln.order_unit ?? '?')}</Hint>
       {ln.invoiced_qty == null && <VsPo price={ln.invoice_price} po={ln.unit_price} currency={currency} />}
-    </span>) },
+    </Text>) },
   { accessorKey: 'invoice_amount', header: 'Invoice amount', cell: ({ row }) => row.original.invoice_amount == null ? '—'
     : <MoneyCell amount={row.original.invoice_amount} currency={currency} /> },
   { accessorKey: 'state', header: 'Line status', meta: { card: 'badge' }, cell: ({ row }) => row.original.state
     ? <StatusCell value={row.original.state} tone={stateTones[row.original.state]} /> : '' },
   { accessorKey: 'problem', header: 'Note', cell: ({ row }) => (
-    <span className={row.original.problem && !row.original.removed ? 'text-danger-600' : ''}>{row.original.problem ?? ''}</span>
+    <Text tone={row.original.problem && !row.original.removed ? 'danger' : 'default'}>{row.original.problem ?? ''}</Text>
   ) },
 ]
 
@@ -69,9 +71,9 @@ const packingColumns: ColumnDef<PackingRead, unknown>[] = [
   { accessorKey: 'tracking', header: 'Tracking', cell: ({ row }) => row.original.tracking ?? '—' },
   colPackingRead.date('ship_date', 'Ship date'),
   { id: 'doc', header: '945', cell: ({ row: { original: p } }) => (
-    <span className="inline-flex items-center gap-1">#{p.document_id}
+    <Cluster as="span" inline gap={1} align="center">#{p.document_id}
       {!p.shadow && !p.applied && <Badge variant="warning">Second 945</Badge>}
-    </span>) },
+    </Cluster>) },
 ]
 
 function Packing({ rows }: { rows: PackingRead[] }) {

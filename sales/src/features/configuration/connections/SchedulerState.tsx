@@ -1,4 +1,6 @@
-import { Badge, DateTimeCell, Tooltip, Callout, Muted, formatShortMoment } from '@/platform-ui'
+import {
+  Badge, DateTimeCell, Tooltip, Callout, Muted, formatShortMoment, Cluster,
+} from '@/platform-ui'
 import type { ConnectionRead } from './connectionsApi'
 import { useAutomaticRuns } from './connectionSettings'
 
@@ -21,9 +23,9 @@ export function NextRun({ c, compact = false }: { c: ConnectionRead; compact?: b
   if (state === 'off' || state === 'unavailable') return <Tooltip tip={WORDS[state]}><Muted>Off</Muted></Tooltip>
   if (!c.next_run_at) return <Muted>{c.active ? 'at the next tick' : '—'}</Muted>
   return (
-    <span className="inline-flex flex-wrap items-center gap-1">
+    <Cluster as="span" inline gap={1} align="center">
       {compact ? <span title={c.next_run_at}>{formatShortMoment(c.next_run_at)}</span> : <DateTimeCell value={c.next_run_at} />}
       {c.overdue && <Badge variant="danger">Overdue</Badge>}
-    </span>
+    </Cluster>
   )
 }

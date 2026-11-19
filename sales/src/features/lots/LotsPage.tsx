@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { useState } from 'react'
 import { Download } from 'lucide-react'
 import {
-  Badge, Button, ListPage, type ColumnDef, type Filter, IconButton, Callout, useNotices, columnsOf, useRecordList, FormDialog, SchemaForm, type FieldSpec,
+  Badge, Button, ListPage, type ColumnDef, type Filter, IconButton, Callout, useNotices, columnsOf, useRecordList, FormDialog, SchemaForm, type FieldSpec, Text, Cluster, Icon,
 } from '@/platform-ui'
 import { PartnerCell } from '@/features/common/PartnerCell'
 import { exportLots, lotsClient, parseLots, type LotRead } from './lotsApi'
@@ -12,7 +12,7 @@ const colLotRead = columnsOf<LotRead>()
 const MAX_LOTS = 100  // the list query's limit on one filter's values
 
 const columns: ColumnDef<LotRead, unknown>[] = [
-  { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => <span className="font-medium">{row.original.lot ?? '—'}</span> },
+  { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => <Text weight="medium">{row.original.lot ?? '—'}</Text> },
   colLotRead.text('item_code', 'Item'),
   colLotRead.date('expiry', 'Expiry'),
   colLotRead.text('qty_shipped_ea', 'Qty EA'),
@@ -24,9 +24,9 @@ const columns: ColumnDef<LotRead, unknown>[] = [
   colLotRead.tracking('tracking', 'Tracking', { url: 'tracking_url' }),
   { accessorKey: 'sscc', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? '—' },
   { accessorKey: 'document_id', header: '945', cell: ({ row: { original: r } }) => (
-    <span className="inline-flex items-center gap-1">#{r.document_id}
+    <Cluster as="span" inline gap={1} align="center">#{r.document_id}
       {!r.shadow && !r.applied && <Badge variant="warning">Second 945</Badge>}
-    </span>) },
+    </Cluster>) },
 ]
 
 /** How far a recall reaches: the orders and customers its lots went to. */
@@ -66,7 +66,7 @@ function RecallDialog({ open, onOpenChange, onApply }: { open: boolean; onOpenCh
 function ExportLots({ spec }: { spec: Parameters<typeof exportLots>[0] }) {
   const notices = useNotices()
   return (
-    <IconButton label="Export CSV" icon={<Download className="h-4 w-4" />} className="h-8 w-8 rounded-lg border border-neutral-200 bg-white"
+    <IconButton label="Export CSV" icon={<Icon icon={Download} />} className="h-8 w-8 rounded-lg border border-neutral-200 bg-white"
       onClick={() => {
         exportLots(spec).then(() => notices.notify({ key: 'csv', tone: 'success', text: 'CSV exported' }),
           (e: unknown) => notices.notify({ key: 'csv', tone: 'error', text: `Export failed: ${e instanceof Error ? e.message : String(e)}` }))
@@ -90,11 +90,11 @@ export default function LotsPage() {
         emptyTitle={recall ? 'None of these lots has shipped' : 'No 945 rows yet'}
         notice={recall && (
           <Callout label="Recall">
-            <span className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">Recall: {recall.join(', ')}</span>
+            <Cluster as="span" gap={2} align="center">
+              <Text weight="medium">Recall: {recall.join(', ')}</Text>
               <span>—</span><RecallReach lots={recall} />
               <Button size="sm" variant="secondary" className="ml-auto" onClick={() => setRecall(null)}>Clear recall</Button>
-            </span>
+            </Cluster>
           </Callout>
         )}
         toolbar={(ctx) => (

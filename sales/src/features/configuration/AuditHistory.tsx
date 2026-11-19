@@ -1,5 +1,5 @@
 import {
-  EmptyState, Section, formatDateTime, queryKeys, Muted, useLookup, QueryState,
+  EmptyState, Section, formatDateTime, queryKeys, Muted, useLookup, QueryState, Text, Stack,
 } from '@/platform-ui'
 
 /** One entry of a record's audit history (sales-api schemas/audit.py). */
@@ -19,11 +19,11 @@ function Changes({ e }: { e: AuditEntry }) {
   if (e.action === 'create') return <Muted as="p">Created</Muted>
   const keys = Object.keys(e.after ?? e.before ?? {})
   return (
-    <ul className="text-neutral-600">
+    <Text as="ul" tone="soft">
       {keys.map((k) => (
-        <li key={k} className="break-all"><span className="font-medium">{k}</span>: {show(e.before?.[k])} → {show(e.after?.[k])}</li>
+        <Text key={k} as="li" wrap="break"><Text weight="medium">{k}</Text>: {show(e.before?.[k])} → {show(e.after?.[k])}</Text>
       ))}
-    </ul>
+    </Text>
   )
 }
 
@@ -41,17 +41,17 @@ export function AuditHistory({ resource, id, version, load }: {
       {!q.data ? <QueryState q={q} skeleton="h-16">{() => null}</QueryState> : !q.data.length ? (
         <EmptyState title="No changes recorded" className="py-4" />
       ) : (
-        <ol className="flex flex-col gap-2 text-xs">
+        <Stack as="ol" gap={2} size="xs">
           {q.data.map((e) => (
             <li key={e.id} className="rounded-md border border-neutral-100 p-2">
-              <p className="text-neutral-800">
+              <Text as="p" tone="body">
                 {formatDateTime(e.at)} · {e.user_name}
-                {e.reason && <span className="text-neutral-400"> · {e.reason}</span>}
-              </p>
+                {e.reason && <Text tone="faint"> · {e.reason}</Text>}
+              </Text>
               <Changes e={e} />
             </li>
           ))}
-        </ol>
+        </Stack>
       )}
     </Section>
   )

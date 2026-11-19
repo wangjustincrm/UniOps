@@ -1,7 +1,7 @@
 import { NEEDS_REVIEW } from '@/app/oldAddresses'
 import { useNavigate } from 'react-router-dom'
 import {
-  Button, LocalTable, PageHeader, Section, Skeleton, StatCard, useOpenView, type ColumnDef, useRefresh, Hint, Muted, columnsOf, useLookup, QueryState,
+  Button, LocalTable, PageHeader, Section, Skeleton, StatCard, useOpenView, type ColumnDef, useRefresh, Hint, Muted, columnsOf, useLookup, QueryState, Stack, Cluster, Columns,
 } from '@/platform-ui'
 import { fetchEvents } from '@/features/configuration/notifications/notificationsApi'
 import { fetchDashboard, fetchHealth, type DashboardRead } from './healthApi'
@@ -38,9 +38,9 @@ export function HomeDashboard() {
   const d = dash.data
   const h = health.data
   return (
-    <div className="flex flex-col gap-6">
+    <Stack gap={6}>
       <PageHeader title="Sales" description="Orders by state, what needs a person, the last runs and the health of the module." />
-      <section aria-label="Orders" className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <Columns as="section" aria-label="Orders" cols={2} md={5}>
         {d.cards.map((c) => (
           <StatCard key={c.key} label={c.label} count={c.count} tone={c.key === 'failed_files' && c.count ? 'danger' : 'neutral'}
             onOpen={() => openList(c.link, c.label)}>
@@ -49,9 +49,9 @@ export function HomeDashboard() {
             )}
           </StatCard>
         ))}
-      </section>
+      </Columns>
       <Section title="Needs a person" plain level={2}>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Columns cols={2} md={4}>
           <StatCard label="Orders in review" count={d.needs_review} tone={d.needs_review ? 'warning' : 'neutral'}
             onOpen={() => { openView('/orders', 'orders', NEEDS_REVIEW) }} />
           <StatCard label="Waiting for delivery confirmation" count={d.waiting_delivery} onOpen={() => go('/deliveries')} />
@@ -60,11 +60,11 @@ export function HomeDashboard() {
               <Hint>open in the Task Inbox</Hint>
             </StatCard>
           ))}
-        </div>
+        </Columns>
         {d.open_tasks.length === 0 && <Muted as="p" className="text-sm">No open Sales task.</Muted>}
       </Section>
       <Section title="Health" plain level={2}>
-        <div className="flex flex-wrap items-center gap-3 text-sm">
+        <Cluster gap={3} align="center" size="sm">
           {h ? (
             <>
               <HealthBadge result={h.result} />
@@ -72,11 +72,11 @@ export function HomeDashboard() {
             </>
           ) : <Skeleton className="h-5 w-40" />}
           <Button size="sm" variant="ghost" onClick={() => go('/health')}>Open the health page</Button>
-        </div>
+        </Cluster>
       </Section>
       <Section title="Last runs" plain level={2}>
         <LocalTable<RunRow> ariaLabel="Last runs" columns={runColumns} rows={d.runs} rowKey={(r) => r.id} emptyTitle="No run yet" />
       </Section>
-    </div>
+    </Stack>
   )
 }

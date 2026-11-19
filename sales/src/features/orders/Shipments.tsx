@@ -1,7 +1,6 @@
 import {
-  ActionButton, AddressView, Badge, Button, DateCell, DateTimeCell, Tooltip, LocalTable, StatusCell, TrackingLink, ViewFileButton, queryKeys, useOpenRecord,
-  type ColumnDef, Hint, columnsOf
- } from '@/platform-ui'
+  ActionButton, AddressView, Badge, Button, DateCell, DateTimeCell, Tooltip, LocalTable, StatusCell, TrackingLink, ViewFileButton, queryKeys, useOpenRecord, type ColumnDef, Hint, columnsOf, Text, Cluster, Stack, Columns,
+} from '@/platform-ui'
 import { LineNo } from './LineNo'
 import { ordersClient, packingListPdf, retryShopify, type LineRead, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
 import { ResolveRow } from './ResolveRow'
@@ -29,22 +28,22 @@ const colRow = columnsOf<ShipmentRowRead>()
 
 const rowColumns = (s: ShipmentRead, numbers: Map<number, number>, orderId: number, lines: LineRead[]): ColumnDef<ShipmentRowRead, unknown>[] => [
   { id: 'line', header: 'Line', cell: ({ row: { original: r } }) => r.line_no != null
-    ? <span className="whitespace-nowrap">#<LineNo lineNo={r.line_no} numbers={numbers} /> · {r.item_code ?? '?'}</span> : '—' },
+    ? <Text wrap="nowrap">#<LineNo lineNo={r.line_no} numbers={numbers} /> · {r.item_code ?? '?'}</Text> : '—' },
   { accessorKey: 'item_code', header: 'Item code', cell: ({ row }) => row.original.item_code ?? '—' },
-  { accessorKey: 'upc', header: 'UPC', cell: ({ row }) => <span className="tabular-nums">{row.original.upc ?? '—'}</span>, meta: { hidden: true } },
+  { accessorKey: 'upc', header: 'UPC', cell: ({ row }) => <Text nums>{row.original.upc ?? '—'}</Text>, meta: { hidden: true } },
   { accessorKey: 'description', header: 'Description', cell: ({ row }) => row.original.description ?? '—' },
   { accessorKey: 'qty_shipped_ea', header: 'Qty EA', cell: ({ row: { original: r } }) => (
-    <span className="whitespace-nowrap tabular-nums">{r.qty_shipped_ea}{cases(r) && <Hint> ({cases(r)})</Hint>}</span>) },
+    <Text nums wrap="nowrap">{r.qty_shipped_ea}{cases(r) && <Hint> ({cases(r)})</Hint>}</Text>) },
   { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => row.original.lot ?? '—' },
   colRow.date('expiry', 'Expiry'),
-  { accessorKey: 'sscc', header: 'SSCC', cell: ({ row }) => <span className="tabular-nums">{row.original.sscc ?? '—'}</span>, meta: { hidden: true } },
+  { accessorKey: 'sscc', header: 'SSCC', cell: ({ row }) => <Text nums>{row.original.sscc ?? '—'}</Text>, meta: { hidden: true } },
   { accessorKey: 'lx_number', header: 'LX no.', cell: ({ row }) => row.original.lx_number ?? row.original.lx_index },
   colRow.tracking('tracking', 'Tracking', { url: 'tracking_url' }),
   { id: 'match', header: 'Match', cell: ({ row }) => (
-    <span className="inline-flex flex-wrap items-center gap-1">
+    <Cluster as="span" inline gap={1} align="center">
       <Match r={row.original} />
       {row.original.needs_review && <ResolveRow r={row.original} shipmentId={s.id} orderId={orderId} lines={lines} />}
-    </span>
+    </Cluster>
   ) },
 ]
 
@@ -53,35 +52,35 @@ function LineItems({ s, numbers, orderId, lines }: { s: ShipmentRead; numbers: M
   const pallets = [...new Set(s.rows.map((r) => r.lx_index))]
   const columns = rowColumns(s, numbers, orderId, lines)
   return (
-    <div className="flex flex-col gap-2">
+    <Stack gap={2}>
       {pallets.map((lx) => {
         const rows = s.rows.filter((r) => r.lx_index === lx)
         const first = rows[0]
         const ea = rows.reduce((n, r) => n + r.qty_shipped_ea, 0)
         return (
-          <section key={lx} aria-label={`Pallet ${first.lx_number ?? lx}`} className="flex flex-col gap-1">
-            <h4 className="text-xs font-medium text-neutral-600">
-              Pallet LX {first.lx_number ?? lx}{first.sscc && <> · SSCC <span className="tabular-nums">{first.sscc}</span></>} · {ea} EA
-            </h4>
+          <Stack key={lx} aria-label={`Pallet ${first.lx_number ?? lx}`} as="section" gap={1}>
+            <Text as="h4" tone="soft" size="xs" weight="medium">
+              Pallet LX {first.lx_number ?? lx}{first.sscc && <> · SSCC <Text nums>{first.sscc}</Text></>} · {ea} EA
+            </Text>
             <LocalTable<ShipmentRowRead> ariaLabel={`Shipment ${s.id} pallet ${first.lx_number ?? lx} line items`} columns={columns} rows={rows}
               rowKey={(r) => `${r.lx_index}-${r.w12_index}`}
               rowAttrs={(r) => (r.needs_review ? { className: 'bg-danger-50' } : {})}
-              footer={[null, null, null, 'Pallet subtotal', <span key="ea" className="tabular-nums">{ea}</span>, null, null, null, null, null, null]} />
-          </section>
+              footer={[null, null, null, 'Pallet subtotal', <Text key="ea" nums>{ea}</Text>, null, null, null, null, null, null]} />
+          </Stack>
         )
       })}
-    </div>
+    </Stack>
   )
 }
 
 function Retry({ s, orderId }: { s: ShipmentRead; orderId: number }) {
   return (
-    <span className="inline-flex flex-col gap-1">
+    <Stack as="span" inline gap={1}>
       <ActionButton size="sm" variant="secondary" permission="sales.order.operate" errorMessages={errorMessages} done="Shopify write queued again"
         invalidates={[queryKeys.detail(ordersClient, orderId)]} onAction={() => retryShopify(s.id)}>
         Retry in Shopify
       </ActionButton>
-    </span>
+    </Stack>
   )
 }
 
@@ -91,10 +90,10 @@ const MODE: Record<string, string> = { U: 'Parcel', LT: 'LTL', M: 'Truck' }
 
 function Pair({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
+    <Stack gap={0.5}>
       <Hint as="dt">{label}</Hint>
-      <dd className="min-w-0 break-words text-neutral-800">{children}</dd>
-    </div>
+      <Text as="dd" tone="body" wrap="words" className="min-w-0">{children}</Text>
+    </Stack>
   )
 }
 
@@ -114,18 +113,18 @@ export function Shipments({ shipments, orderId, lineNumbers = new Map(), lines =
   const openRecord = useOpenRecord()
   if (shipments.length === 0) return null
   return (
-    <section aria-label="Shipments" className="flex flex-col gap-3">
+    <Stack aria-label="Shipments" as="section" gap={3}>
       {shipments.map((s) => (
-        <div key={s.id} aria-label={`Shipment ${s.id}`} role="group" className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-3 text-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium text-neutral-800">945 #{s.document_id}</span>
+        <Stack key={s.id} aria-label={`Shipment ${s.id}`} role="group" gap={3} size="sm" className="rounded-lg border border-neutral-200 bg-white p-3">
+          <Cluster gap={2} align="center">
+            <Text tone="body" weight="medium">945 #{s.document_id}</Text>
             {s.part && <Badge variant="info">Part {s.part}</Badge>}
             {!s.shadow && !s.applied && <Badge variant="warning">Not applied (second 945)</Badge>}
             <span className="ml-auto">
               <ViewFileButton source={packingListPdf(orderId, s.id, `945 #${s.document_id}`)}>Packing list (PDF)</ViewFileButton>
             </span>
-          </div>
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+          </Cluster>
+          <Columns as="dl" cols={2} sm={3} gapX={4} gapY={2}>
             <Pair label="Ship date">
               {s.ship_date ? <Tooltip tip={DATE_SOURCE[s.ship_date_source ?? ''] ?? 'From the 945'}><DateCell value={s.ship_date} /></Tooltip> : '—'}
             </Pair>
@@ -138,39 +137,39 @@ export function Shipments({ shipments, orderId, lineNumbers = new Map(), lines =
             </Pair>
             <Pair label="Tracking">
               {s.tracking_links?.length
-                ? <span className="flex flex-wrap gap-1">{s.tracking_links.map((t) => <TrackingLink key={t.number} number={t.number} url={t.url} />)}</span>
+                ? <Cluster as="span" gap={1} align="stretch">{s.tracking_links.map((t) => <TrackingLink key={t.number} number={t.number} url={t.url} />)}</Cluster>
                 : 'None'}
             </Pair>
             <Pair label="BOL">{s.bol ?? '—'}</Pair>
             <Pair label="940 ref">{s.our_reference ?? '—'}</Pair>
             <Pair label="Packed">{s.rows.length} {s.rows.length === 1 ? 'row' : 'rows'} · {s.rows.reduce((n, r) => n + r.qty_shipped_ea, 0)} EA</Pair>
             <Pair label="ISA13 / GS06 / ST02">
-              <span className="tabular-nums">{s.isa13 ?? '—'} / {s.gs06 ?? '—'} / {s.set_control ?? '—'}</span>
+              <Text nums>{s.isa13 ?? '—'} / {s.gs06 ?? '—'} / {s.set_control ?? '—'}</Text>
             </Pair>
             <Pair label="Received">{s.received_at ? <DateTimeCell value={s.received_at} /> : '—'}</Pair>
             <Pair label="Source file">
               <Button size="sm" variant="ghost" className="h-auto max-w-full px-0 text-left text-primary-700 underline-offset-2 hover:underline"
                 onClick={() => { openRecord('/documents', s.document_id) }}>
-                <span className="break-all">{s.document_name ?? `Document #${s.document_id}`}</span>
+                <Text wrap="break">{s.document_name ?? `Document #${s.document_id}`}</Text>
               </Button>
             </Pair>
             {s.ack_sent && <Pair label="997 sent back">{s.ack_sent}</Pair>}
             <Pair label="Shopify">
-              <span className="inline-flex flex-wrap items-center gap-1">
+              <Cluster as="span" inline gap={1} align="center">
                 <StatusCell value={s.shopify_status} />
                 {(s.shopify_status === 'Failed' || s.shopify_status === 'Suppressed') && <Retry s={s} orderId={orderId} />}
-              </span>
+              </Cluster>
             </Pair>
-          </dl>
-          {s.shopify_error && <p className="text-xs text-danger-600">{s.shopify_error}</p>}
+          </Columns>
+          {s.shopify_error && <Text as="p" tone="danger" size="xs">{s.shopify_error}</Text>}
           {s.checks && s.checks.length > 0 && (
-            <ul aria-label="945 checks" className="text-warning-700">
+            <Text aria-label="945 checks" as="ul" tone="warning">
               {s.checks.map((c, i) => <li key={i}>{c.check}: {c.message}</li>)}
-            </ul>
+            </Text>
           )}
           {s.rows.length > 0 && <LineItems s={s} numbers={lineNumbers} orderId={orderId} lines={lines} />}
-        </div>
+        </Stack>
       ))}
-    </section>
+    </Stack>
   )
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, ConfirmAction, Skeleton, queryKeys, useRecord,
+  ActionButton, ConfirmAction, Skeleton, queryKeys, useRecord, Stack, Cluster,
 } from '@/platform-ui'
 import { ManualOrderForm } from './ManualOrderForm'
 import { cancelManual, fetchOrder, ordersClient, submitManual, type OrderRead } from './ordersApi'
@@ -35,24 +35,24 @@ export function DraftActions({ o, close }: { o: OrderRead; close: () => void }) 
     )
   }
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex gap-2">
+    <Stack gap={2}>
+      <Cluster gap={2} align="stretch">
         <ActionButton size="sm" permission={OPERATE} errorMessages={SUBMIT_ERRORS} {...closes} onAction={() => submitManual(o.id, o.version)}>Submit</ActionButton>
         <ActionButton size="sm" variant="secondary" permission={OPERATE} onAction={() => setEditing(true)}>Edit draft</ActionButton>
         <ActionButton size="sm" variant="secondary" permission={OPERATE} onAction={() => setCancelling(true)}>Cancel draft</ActionButton>
-      </div>
+      </Cluster>
       <ConfirmAction open={cancelling} onOpenChange={setCancelling} title="Cancel this draft?" destructive confirmLabel="Cancel draft"
         description="The draft is kept as Cancelled; it is never sent." {...closes} onConfirm={() => cancelManual(o.id, o.version)} />
-    </div>
+    </Stack>
   )
 }
 
 /** Submit from the list row (a Draft). */
 export function SubmitDraft({ o }: { o: OrderRead }) {
   return (
-    <span className="inline-flex flex-col gap-1">
+    <Stack as="span" inline gap={1}>
       <ActionButton size="sm" variant="secondary" permission={OPERATE} errorMessages={SUBMIT_ERRORS} done={`${o.source_reference ?? `#${o.order_number}`} submitted`}
         invalidates={[queryKeys.list(ordersClient)]} onAction={() => submitManual(o.id, o.version)}>Submit</ActionButton>
-    </span>
+    </Stack>
   )
 }

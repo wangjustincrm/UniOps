@@ -1,5 +1,5 @@
 import {
-  Button, DetailList, ErrorMessage, ViewFileButton, formatDate, formatDateTime, formatMoney, Section, StatusCell, useOpenRecord,
+  Button, DetailList, ErrorMessage, ViewFileButton, formatDate, formatDateTime, formatMoney, Section, StatusCell, useOpenRecord, Cluster,
 } from '@/platform-ui'
 import { documentFile } from '@/features/operations/operationsApi'
 import { invoicePdf, type OrderDetail } from '../ordersApi'
@@ -21,7 +21,7 @@ export function InvoiceTab({ o }: { o: OrderDetail }) {
         ['Problem', inv?.error ?? null],
       ]} />
       {inv && (
-        <div className="flex flex-wrap gap-2">
+        <Cluster gap={2} align="stretch">
           <Button size="sm" variant="secondary" onClick={() => { openRecord('/invoices', inv.id) }}>Open invoice {inv.invoice_number}</Button>
           <ViewFileButton source={invoicePdf(inv.id, inv.invoice_number)}>Invoice PDF</ViewFileButton>
           {inv.document_id != null && (
@@ -29,7 +29,7 @@ export function InvoiceTab({ o }: { o: OrderDetail }) {
               The file sent ({inv.method === '810_JSON' ? '810' : inv.method})
             </ViewFileButton>
           )}
-        </div>
+        </Cluster>
       )}
       <ErrorMessage error={q.error} />
     </Section>

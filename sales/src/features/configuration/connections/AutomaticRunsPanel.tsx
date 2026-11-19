@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, ConfirmAction, ErrorMessage, Hint, SchemaForm, Skeleton, queryKeys, useCan, type FieldSpec, useRecordList,
+  ActionButton, ConfirmAction, ErrorMessage, Hint, SchemaForm, Skeleton, queryKeys, useCan, type FieldSpec, useRecordList, Text, Stack,
 } from '@/platform-ui'
 import { connectionsClient, describeSchedule, saveSchedulerSettings, type ConnectionRead } from './connectionsApi'
 import { SCHEDULER_KEY, useAutomaticRuns } from './connectionSettings'
@@ -44,13 +44,13 @@ export function AutomaticRunsPanel() {
   if (error) return <ErrorMessage error={error} />
   if (!state || !settings) return <Skeleton className="h-8 w-full" />
   if (state === 'unavailable') {
-    return <p className="text-sm">An administrator must allow automatic runs on this server. Until then a connection is read only with Run now.</p>
+    return <Text as="p" size="sm">An administrator must allow automatic runs on this server. Until then a connection is read only with Run now.</Text>
   }
   const on = state === 'on'
   return (
-    <div className="flex flex-col gap-4 text-sm">
-      <section aria-label="Automatic runs" className="flex flex-col gap-2">
-        <p className="font-medium">Automatic runs: {on ? 'On' : 'Off'}</p>
+    <Stack gap={4} size="sm">
+      <Stack aria-label="Automatic runs" as="section" gap={2}>
+        <Text as="p" weight="medium">Automatic runs: {on ? 'On' : 'Off'}</Text>
         <p>{on ? 'Each connection runs on its own schedule.' : 'No connection is read by itself. Run now still works.'}</p>
         <span>
           <ActionButton size="sm" variant={on ? 'secondary' : 'primary'} permission="sales.config" disabled={!on && !active.data}
@@ -60,16 +60,16 @@ export function AutomaticRunsPanel() {
             {on ? 'Turn automatic runs off' : 'Turn automatic runs on'}
           </ActionButton>
         </span>
-      </section>
+      </Stack>
       <ConfirmAction open={confirming} onOpenChange={setConfirming} title="Turn automatic runs on?"
         description={willStart(active.data?.items ?? [], settings.system_minutes)}
         confirmLabel="Turn on" onConfirm={() => save({ paused: false })} />
-      <div className="flex flex-col gap-2">
+      <Stack gap={2}>
         <SchemaForm key={settings.system_minutes} schema={minutesSchema} fields={minutesFields} readOnly={!canEdit}
           defaultValues={{ system_minutes: settings.system_minutes }} changesOnly
           onSubmit={async (v) => { if (v.system_minutes != null) await save({ system_minutes: Number(v.system_minutes) }) }} />
         <Hint as="p">Saving this changes only how often the system job runs.</Hint>
-      </div>
-    </div>
+      </Stack>
+    </Stack>
   )
 }

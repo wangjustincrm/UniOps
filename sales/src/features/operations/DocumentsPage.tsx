@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, ConfirmAction, DetailList, ListPage, LocalTable, RecordSheet, RefsCell, Section, StatusCell, formatDateTime, queryKeys,
-  useOpenRecord, type ColumnDef, type RecordRef, Muted, ViewFileButton, columnsOf,
+  ActionButton, ConfirmAction, DetailList, ListPage, LocalTable, RecordSheet, RefsCell, Section, StatusCell, formatDateTime, queryKeys, useOpenRecord, type ColumnDef, type RecordRef, Muted, ViewFileButton, columnsOf, Text,
 } from '@/platform-ui'
 import { documentFile, documentsClient, downloadOriginal, ignoreDocument, readAgain, sendAgain, type DocumentRead } from './operationsApi'
 import { EMPTY_TEXT } from '@/features/help/pageHelp'
@@ -108,9 +107,9 @@ function Detail({ d }: { d: DocumentRead }) {
         <Section title="File">
       <DetailList items={[
         ['Direction / origin', `${d.direction} · ${d.origin}`], ['System', d.system], ['Kind', d.kind],
-        ['Status', <StatusCell key="s" value={status(d)} />], ['File', <span key="f" className="break-all">{d.remote_name}</span>],
+        ['Status', <StatusCell key="s" value={status(d)} />], ['File', <Text key="f" wrap="break">{d.remote_name}</Text>],
         ['Bytes', d.size], ['Remote modified', formatDateTime(d.remote_mtime)],
-        ['Received', `${formatDateTime(d.created_at)} · ${d.created_by_name}`], ['SHA-256', <span key="h" className="break-all">{d.sha256}</span>],
+        ['Received', `${formatDateTime(d.created_at)} · ${d.created_by_name}`], ['SHA-256', <Text key="h" wrap="break">{d.sha256}</Text>],
         ['ISA13 / GS06 / ST02', [d.isa13, d.gs06, d.st02].filter(Boolean).join(' / ') || null], ['Note', d.error],
         ...(d.no_order_reason ? [['No order', d.no_order_reason] as [string, string]] : []),
       ]} />

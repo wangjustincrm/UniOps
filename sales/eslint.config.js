@@ -132,6 +132,16 @@ const NO_RAW_ERROR_VIEW_IMPORT = {
   name: '@/platform-ui', importNames: ['ErrorView'],
   message: "Show a read's loading and error with QueryState from @/platform-ui (or errors in the status row, the read hooks' default).",
 }
+// Layout and the look of text come from the primitives (step 4, 2026-11-18): Stack / Cluster / Columns / AutoGrid
+// and Text (tone, size, weight, figures, wrapping). A raw element may still carry other utilities (margin, width,
+// border); never these.
+const LAYOUT_TEXT = '\\b(flex|inline-flex|grid|gap-[\\w.]+|text-(xs|sm|base|neutral-\\d+|danger-\\d+|warning-\\d+|success-\\d+|primary-\\d+)|font-(medium|semibold)|tabular-nums|break-(all|words)|whitespace-nowrap|line-clamp-\\d|truncate)\\b'
+const RAW_LAYOUT = [
+  { selector: `JSXOpeningElement[name.name=/^[a-z]/] > JSXAttribute[name.name='className'] TemplateElement[value.raw=/${LAYOUT_TEXT}/]`,
+    message: 'Lay out with Stack / Cluster / Columns / AutoGrid and style text with Text (tone, size, weight, nums, wrap) from @/platform-ui.' },
+  { selector: `JSXOpeningElement[name.name=/^[a-z]/] > JSXAttribute[name.name='className'] Literal[value=/${LAYOUT_TEXT}/]`,
+    message: 'Lay out with Stack / Cluster / Columns / AutoGrid and style text with Text (tone, size, weight, nums, wrap) from @/platform-ui.' },
+]
 // A dialog with a form or buttons is a FormDialog (its errors inside it); a question is a ConfirmAction (step 2, 2026-11-18).
 const NO_RAW_DIALOG_IMPORT = {
   name: '@/platform-ui', importNames: ['Dialog'],
@@ -223,17 +233,17 @@ export default defineConfig([
   },
   {
     files: ['src/pages/**/*.tsx'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...FIXED_WIDTHS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...ROW_AND_PROMPT] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...FIXED_WIDTHS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...ROW_AND_PROMPT, ...RAW_LAYOUT] },
   },
   {
     files: ['src/features/**/*.{ts,tsx}'],
     ignores: ['src/features/**/*.test.{ts,tsx}'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...FIXED_WIDTHS, ...DATES, ...LIST_CELLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...AD_HOC_MESSAGES, ...RAW_HEADINGS, ...ROW_AND_PROMPT] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...FIXED_WIDTHS, ...DATES, ...LIST_CELLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...AD_HOC_MESSAGES, ...RAW_HEADINGS, ...ROW_AND_PROMPT, ...RAW_LAYOUT] },
   },
   {
     // Health is a dashboard (no list or sheet scope): its own result text may still be read aloud.
     files: ['src/features/health/**/*.{ts,tsx}'],
     ignores: ['src/features/**/*.test.{ts,tsx}'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...FIXED_WIDTHS, ...DATES, ...LIST_CELLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...RAW_HEADINGS, ...ROW_AND_PROMPT] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...FIXED_WIDTHS, ...DATES, ...LIST_CELLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...RAW_HEADINGS, ...ROW_AND_PROMPT, ...RAW_LAYOUT] },
   },
 ])

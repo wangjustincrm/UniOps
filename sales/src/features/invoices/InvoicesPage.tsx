@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, ConfirmAction, DetailList, ListPage, LocalTable, MasterDetailForm, MoneyCell, RecordSheet, Section, StatusCell, formatDate, formatDateTime, formatMoney, numberColumn, queryKeys, readColumn, textColumn, type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab, compareRecord, useRefresh, Callout, columnsOf, useRecord,
+  ActionButton, ConfirmAction, DetailList, ListPage, LocalTable, MasterDetailForm, MoneyCell, RecordSheet, Section, StatusCell, formatDate, formatDateTime, formatMoney, numberColumn, queryKeys, readColumn, textColumn, type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab, compareRecord, useRefresh, Callout, columnsOf, useRecord, Text,
 } from '@/platform-ui'
 import { editInvoice, fetchInvoice, invoicesClient, releaseInvoice, sendInvoice, type InvoiceDetail, type InvoiceRead } from './invoicesApi'
 import { PartnerCell } from '@/features/common/PartnerCell'
@@ -44,7 +44,7 @@ const differs = (a: string | null | undefined, b: string | null | undefined) =>
 function PriceVsPo({ price, po, currency }: { price: string; po: string | null; currency: string }) {
   if (!differs(price, po)) return null
   const d = Number(price) - Number(po)
-  return <span className="ml-1 text-xs font-medium text-warning-700">{d > 0 ? '+' : ''}{formatMoney(d.toFixed(2), currency)} vs PO</span>
+  return <Text tone="warning" size="xs" weight="medium" className="ml-1">{d > 0 ? '+' : ''}{formatMoney(d.toFixed(2), currency)} vs PO</Text>
 }
 
 const editColumns = (currency: string): EditableColumn<EditLine>[] => [

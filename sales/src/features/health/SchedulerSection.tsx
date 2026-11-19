@@ -1,8 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  ActionButton, Badge, Button, DateTimeCell, LocalTable, NoticeScope, RowActions, Section, StatusCell, businessErrorOf,
-  useOpenRecord, useNotices, type ColumnDef, Hint,
+  ActionButton, Badge, Button, DateTimeCell, LocalTable, NoticeScope, RowActions, Section, StatusCell, businessErrorOf, useOpenRecord, useNotices, type ColumnDef, Hint, Cluster, Stack, Text, Icon,
 } from '@/platform-ui'
 import { RefreshCw } from 'lucide-react'
 import { runConnectionNow } from '@/features/configuration/connections/connectionsApi'
@@ -44,32 +43,32 @@ function Scheduler({ health: h }: { health: HealthRead }) {
       </Button>
     ) },
     { accessorKey: 'schedule', header: 'Schedule', cell: ({ row: { original: j } }) => (
-      <span className="flex items-center gap-1">{j.schedule}{state === 'on' && j.paused && <Badge variant="warning">Paused</Badge>}</span>
+      <Cluster as="span" gap={1} align="center">{j.schedule}{state === 'on' && j.paused && <Badge variant="warning">Paused</Badge>}</Cluster>
     ) },
     { accessorKey: 'last_run_at', header: 'Last run', cell: ({ row: { original: j } }) => !j.last_run_at ? 'never' : (
-      <span className="flex flex-col">
-        <span className="flex items-center gap-1"><DateTimeCell value={j.last_run_at} />{j.last_run_status && <StatusCell value={j.last_run_status} />}</span>
+      <Stack as="span" gap={0}>
+        <Cluster as="span" gap={1} align="center"><DateTimeCell value={j.last_run_at} />{j.last_run_status && <StatusCell value={j.last_run_status} />}</Cluster>
         {j.last_run_summary && <Hint>{j.last_run_summary}</Hint>}
-      </span>
+      </Stack>
     ) },
     { accessorKey: 'next_run_at', header: 'Next run', cell: ({ row: { original: j } }) => state !== 'on' ? 'Off' : (
-      <span className="flex items-center gap-1">{j.next_run_at ? <DateTimeCell value={j.next_run_at} /> : 'at the next tick'}
-        {j.overdue && <Badge variant="danger">Overdue</Badge>}</span>
+      <Cluster as="span" gap={1} align="center">{j.next_run_at ? <DateTimeCell value={j.next_run_at} /> : 'at the next tick'}
+        {j.overdue && <Badge variant="danger">Overdue</Badge>}</Cluster>
     ) },
     { id: 'actions', header: '', cell: ({ row: { original: j } }) => (
-      <RowActions actions={[{ key: 'run', label: `Run now: ${j.label}`, icon: <RefreshCw className="h-4 w-4" />,
+      <RowActions actions={[{ key: 'run', label: `Run now: ${j.label}`, icon: <Icon icon={RefreshCw} />,
         permission: 'sales.file.retry', onAction: () => runJob(j) }]} />
     ) },
   ]
   return (
     <Section title="Scheduler" plain level={2}>
-      <p className="text-sm text-neutral-600">
+      <Text as="p" tone="soft" size="sm">
         {state === 'on' ? `Automatic runs: On. System job every ${h.system_minutes} min; each connection on its own schedule.`
           : state === 'off' ? 'Automatic runs: Off. Jobs run only with Run now.'
             : 'Automatic runs: not available on this server. Jobs run only with Run now.'}
-      </p>
+      </Text>
       <LocalTable<JobRead> ariaLabel="Scheduled jobs" columns={columns} rows={h.jobs} rowKey={(j) => j.scope} />
-      <div className="flex flex-wrap gap-2">
+      <Cluster gap={2} align="stretch">
         <ActionButton size="sm" permission="sales.file.retry" done={(r) => `System job: run ${(r as { run_id: number }).run_id} started`}
           errorMessages={{ 'run.already_running': 'The system job is running; wait for it to finish.' }}
           onAction={async () => {
@@ -78,7 +77,7 @@ function Scheduler({ health: h }: { health: HealthRead }) {
             return started
           }}>Run the system job now</ActionButton>
         <Button size="sm" variant="secondary" onClick={() => navigate('/config/connections')}>Open Connections</Button>
-      </div>
+      </Cluster>
     </Section>
   )
 }

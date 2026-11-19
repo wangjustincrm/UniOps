@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import {
-  MasterDetailForm, formatMoney, readColumn, textColumn,
-  type EditableColumn, type FieldSpec,
+  MasterDetailForm, formatMoney, readColumn, textColumn, type EditableColumn, type FieldSpec, Text,
 } from '@/platform-ui'
 import { lineNumbers, setInvoicePrices, type OrderDetail } from './ordersApi'
 
@@ -22,7 +21,7 @@ const differs = (a: string | null | undefined, b: string | null | undefined) =>
 export function VsPo({ price, po, currency }: { price: string | null | undefined; po: string | null; currency: string }) {
   if (!differs(price, po)) return null
   const d = Number(price) - Number(po)
-  return <span className="ml-1 text-xs font-medium text-warning-700">{d > 0 ? '+' : ''}{formatMoney(d.toFixed(2), currency)} vs PO</span>
+  return <Text tone="warning" size="xs" weight="medium" className="ml-1">{d > 0 ? '+' : ''}{formatMoney(d.toFixed(2), currency)} vs PO</Text>
 }
 
 const columns = (currency: string): EditableColumn<PriceLine>[] => [

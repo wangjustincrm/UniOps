@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ActionButton, Badge, Button, DetailList, LocalTable, PageHeader, Section, StatCard, TourScope, formatDateTime, useOpenRecord, type ColumnDef, useRefresh, columnsOf, useLookup, QueryState, ActionErrors,
+  ActionButton, Badge, Button, DetailList, LocalTable, PageHeader, Section, StatCard, TourScope, formatDateTime, useOpenRecord, type ColumnDef, useRefresh, columnsOf, useLookup, QueryState, ActionErrors, Stack, Cluster, Text, Columns,
 } from '@/platform-ui'
 import { testConnection, type ConnectionTest } from '@/features/configuration/connections/connectionsApi'
 import { fetchHealth, type CheckRead, type GateEventRead, type HealthRead } from './healthApi'
@@ -27,16 +27,16 @@ function TestConnection({ id }: { id: number }) {
   const ok = result && !result.error && result.folders.every((f) => f.ok) && (result.host_key?.matches ?? true)
   return (
     <ActionErrors>
-    <span className="flex flex-col gap-1">
+    <Stack as="span" gap={1}>
       <ActionButton size="sm" variant="secondary" permission="sales.config" refreshes={false} after={(r) => setResult(r as ConnectionTest)} onAction={() => testConnection(id)}>
         Test
       </ActionButton>
       {result && (
-        <span role="status" className={ok ? 'text-success-700' : 'text-danger-600'}>
+        <Text role="status" tone={ok ? 'success' : 'danger'}>
           {ok ? 'reachable' : (result.error ?? result.folders.find((f) => !f.ok)?.error ?? 'host key does not match the pinned one')}
-        </span>
+        </Text>
       )}
-    </span>
+    </Stack>
     </ActionErrors>
   )
 }
@@ -62,10 +62,10 @@ export default function HealthPage() {
     colCheckRead.text('label', 'Check'),
     colCheckRead.text('detail', 'Detail'),
     { id: 'open', header: '', cell: ({ row: { original: c } }) => (
-      <span className="flex gap-2">
+      <Cluster as="span" gap={2} align="stretch">
         {c.link && <Button size="sm" variant="secondary" onClick={() => open(c)}>Open</Button>}
         {c.key.startsWith('connection:') && <TestConnection id={Number(c.key.split(':')[1])} />}
-      </span>
+      </Cluster>
     ) },
   ]
   const gateColumns: ColumnDef<GateEventRead, unknown>[] = [
@@ -77,19 +77,19 @@ export default function HealthPage() {
   ]
   return (
     <TourScope id="health">
-    <div className="flex flex-col gap-6">
+    <Stack gap={6}>
       <PageHeader title="Health" description="Checks of the settings, connections, scheduler, files, ACKs and sends. Each one opens the records behind it." help="page:health" />
-      <div className="flex flex-wrap items-center gap-3 text-sm">
+      <Cluster gap={3} align="center" size="sm">
         <HealthBadge result={h.result} /><span>checked {formatDateTime(h.checked_at)}</span>
-      </div>
-      <section aria-label="Counts" className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      </Cluster>
+      <Columns as="section" aria-label="Counts" cols={2} md={5}>
         {CARDS.map(([key, label, check]) => {
           const n = h.cards[key] ?? 0
           const c = check ? byKey[check] : undefined
           return <StatCard key={key} label={label} count={n} tone={key === 'critical' && n ? 'danger' : n && key !== 'waiting_ack' ? 'warning' : 'neutral'}
             onOpen={c?.link ? () => open(c) : undefined} />
         })}
-      </section>
+      </Columns>
       <section aria-label="Switches">
         <DetailList items={[
           ['Partner writes (SALES_PARTNER_WRITES_ENABLED)', h.partner_writes_enabled ? 'On' : 'Off — files and Shopify writes are refused'],
@@ -103,13 +103,13 @@ export default function HealthPage() {
       </Section>
       <Section label="Go-live gate" plain level={2}
         title={<>Go-live gate {h.gate_ok ? <Badge variant="success">Ready</Badge> : <Badge variant="danger">Not ready</Badge>}</>}>
-        <p className="text-sm text-neutral-600">
+        <Text as="p" tone="soft" size="sm">
           Writing is turned on for a channel only when each of these events has recipients and a test notification was sent (Configuration → Notifications).
-        </p>
+        </Text>
         <LocalTable<GateEventRead> ariaLabel="Go-live gate" columns={gateColumns} rows={h.gate} rowKey={(g) => g.event_type} />
         <span><Button size="sm" variant="secondary" onClick={() => navigate('/config/notifications')}>Open the notification rules</Button></span>
       </Section>
-    </div>
+    </Stack>
     </TourScope>
   )
 }

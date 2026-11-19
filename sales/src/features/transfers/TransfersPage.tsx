@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, Autocomplete, ConfirmAction, DateCell, DetailList, ListPage, LocalTable, ViewFileButton, MasterDetailForm, RecordSheet, SchemaForm, Section, StatusCell, numberColumn, queryKeys, useFileViewer, type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab, compareRecord, useRefresh, Muted, columnsOf, useRecord,
+  ActionButton, Autocomplete, ConfirmAction, DateCell, DetailList, ListPage, LocalTable, ViewFileButton, MasterDetailForm, RecordSheet, SchemaForm, Section, StatusCell, numberColumn, queryKeys, useFileViewer, type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab, compareRecord, useRefresh, Muted, columnsOf, useRecord, Text, Cluster,
 } from '@/platform-ui'
 import { itemOptions, warehouseOptions } from '../configuration/lookups'
 import { Attachments } from '@/features/common/Attachments'
@@ -38,7 +38,7 @@ const columns: ColumnDef<TransferRead, unknown>[] = [
   colTransferRead.text('from_warehouse', 'From'),
   colTransferRead.text('to_warehouse', 'To'),
   colTransferRead.status('status', 'Status'),
-  { accessorKey: 'items', header: 'Items', cell: ({ row }) => <span className="line-clamp-1">{row.original.items ?? ''}</span> },
+  { accessorKey: 'items', header: 'Items', cell: ({ row }) => <Text wrap="clamp1">{row.original.items ?? ''}</Text> },
   colTransferRead.number('sent_ea', 'Sent EA'),
   colTransferRead.number('received_ea', 'Received EA'),
   colTransferRead.date('receipt_date', 'Received on'),
@@ -59,7 +59,7 @@ const rowColumns: ColumnDef<ReceiptRowRead, unknown>[] = [
   { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => row.original.item_code ?? row.original.upc ?? '—' },
   colReceiptRowRead.text('lot', 'Lot'),
   colReceiptRowRead.text('qty_ea', 'EA'),
-  { accessorKey: 'transfer_line_no', header: 'To line', cell: ({ row }) => row.original.transfer_line_no ?? <span className="text-danger-600">not on the transfer</span> },
+  { accessorKey: 'transfer_line_no', header: 'To line', cell: ({ row }) => row.original.transfer_line_no ?? <Text tone="danger">not on the transfer</Text> },
 ]
 
 type PackedRow = ReceiptRowRead & { file: string; receipt_date: string | null }
@@ -68,7 +68,7 @@ const packedColumns: ColumnDef<PackedRow, unknown>[] = [
   { accessorKey: 'lx_number', header: 'Pallet (LX)', cell: ({ row }) => row.original.lx_number ?? '—' },
   { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => row.original.item_code ?? row.original.upc ?? '—' },
   colPacked.text('lot', 'Lot'),
-  { accessorKey: 'description', header: 'Description', cell: ({ row }) => <span className="text-xs">{row.original.description ?? ''}</span> },
+  { accessorKey: 'description', header: 'Description', cell: ({ row }) => <Text size="xs">{row.original.description ?? ''}</Text> },
   colPacked.number('qty_ea', 'EA'),
   colPacked.date('receipt_date', 'Received on'),
   colPacked.text('file', '944'),
@@ -215,7 +215,7 @@ function Detail({ row }: { row: TransferRead }) {
     id: 'settle', label: 'Settle the difference', render: () => (
       <Section title="Settle the receipt difference">
         {t.receipts.flatMap((r) => r.discrepancies ?? []).length > 0 && (
-          <ul className="mb-3 text-xs text-danger-600">{t.receipts.flatMap((r) => r.discrepancies ?? []).map((x) => <li key={x}>{x}</li>)}</ul>)}
+          <Text as="ul" tone="danger" size="xs" className="mb-3">{t.receipts.flatMap((r) => r.discrepancies ?? []).map((x) => <li key={x}>{x}</li>)}</Text>)}
         <ResolveForm t={t} onCancel={() => setSettling(false)} onSaved={async (d) => { setSettling(false); await done(d) }} />
       </Section>),
   }] : [
@@ -230,7 +230,7 @@ function Detail({ row }: { row: TransferRead }) {
     ) },
     { id: 'lines', label: 'Lines', count: t.lines.length, tone: offTransfer.length ? 'warning' : undefined, render: () => (
       <>
-        <p className="mb-2 text-xs text-neutral-500">▸ shows what the warehouse's 944 received for a line: pallet, lot and quantity.</p>
+        <Text as="p" tone="muted" size="xs" className="mb-2">▸ shows what the warehouse's 944 received for a line: pallet, lot and quantity.</Text>
         <LocalTable<TransferLineRead> ariaLabel="Transfer lines" columns={lineColumns} rows={t.lines} rowKey={(l) => l.id}
           expand={(l) => { const rows = packedFor(l.line_no); return rows.length ? <Received rows={rows} /> : null }}
           footer={[null, 'Total', sent, received, null]} />
@@ -244,7 +244,7 @@ function Detail({ row }: { row: TransferRead }) {
     { id: 'receipts', label: 'Receipts (944)', count: t.receipts.length, tone: discrepant ? 'warning' : undefined,
       empty: t.receipts.length === 0 && 'No 944 yet', render: () => t.receipts.map((r) => (
         <Section key={r.id} title={<>944 {r.document_name} · <DateCell value={r.receipt_date} /> · {r.applied || r.shadow ? r.outcome : 'not applied (second 944)'}</>}>
-          {r.discrepancies && r.discrepancies.length > 0 && <ul className="text-xs text-danger-600">{r.discrepancies.map((x) => <li key={x}>{x}</li>)}</ul>}
+          {r.discrepancies && r.discrepancies.length > 0 && <Text as="ul" tone="danger" size="xs">{r.discrepancies.map((x) => <li key={x}>{x}</li>)}</Text>}
           <LocalTable<ReceiptRowRead> ariaLabel={`944 ${r.document_name ?? r.id} lines`} columns={rowColumns} rows={r.rows}
             rowKey={(x) => x.position} sortable={['item_code', 'lot', 'transfer_line_no']}
             footer={[null, null, 'Total', null, r.rows.reduce((n, x) => n + x.qty_ea, 0), null]} />
@@ -255,9 +255,9 @@ function Detail({ row }: { row: TransferRead }) {
       render: () => (
         <>
           <Section title="Printable">
-            <div className="flex flex-wrap gap-2">
+            <Cluster gap={2} align="stretch">
               <ViewFileButton source={transferPdf(t.id, t.transfer_number)}>Transfer order (PDF)</ViewFileButton>
-            </div>
+            </Cluster>
           </Section>
           <Attachments type="transfer" id={t.id} />
           <Section title="Files received and sent">

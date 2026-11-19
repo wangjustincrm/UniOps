@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Paperclip, Trash2 } from 'lucide-react'
 import { z } from 'zod'
 import {
-  Button, ConfirmAction, IconButton, LocalTable, Section, columnsOf, formatNumber, useCan, useFileViewer, useNotices, type ColumnDef, useLookup, FormDialog, SchemaForm, type FieldSpec,
+  Button, ConfirmAction, IconButton, LocalTable, Section, columnsOf, formatNumber, useCan, useFileViewer, useNotices, type ColumnDef, useLookup, FormDialog, SchemaForm, type FieldSpec, Text, Icon,
 } from '@/platform-ui'
 import {
   ATTACH_PERMISSION, attachFile, downloadRecordFile, listAttachments, recordFile, removeAttachment, type RecordDocument, type RecordType,
@@ -56,21 +56,21 @@ export function Attachments({ type, id }: { type: RecordType; id: number }) {
   const columns: ColumnDef<RecordDocument, unknown>[] = [
     col.file('remote_name', 'File', { label: (d) => `Download ${d.remote_name ?? 'file'}`, onDownload: (d) => { downloadRecordFile(d).catch(failed) },
       onView: (d) => view(recordFile(d)) }),
-    { accessorKey: 'note', header: 'Note', cell: ({ row }) => <span className="break-words text-xs">{row.original.note ?? ''}</span> },
+    { accessorKey: 'note', header: 'Note', cell: ({ row }) => <Text size="xs" wrap="words">{row.original.note ?? ''}</Text> },
     { accessorKey: 'size', header: 'Size', cell: ({ row }) => size(row.original.size) },
     { accessorKey: 'created_by_name', header: 'By', cell: ({ row }) => row.original.created_by_name ?? '' },
     col.datetime('created_at', 'Attached'),
     ...(can ? [{ id: 'remove', header: '', cell: ({ row }: { row: { original: RecordDocument } }) => (
-      <IconButton label={`Remove ${row.original.remote_name ?? 'file'}`} icon={<Trash2 className="h-4 w-4" />} onClick={() => setRemoving(row.original)} />
+      <IconButton label={`Remove ${row.original.remote_name ?? 'file'}`} icon={<Icon icon={Trash2} />} onClick={() => setRemoving(row.original)} />
     ) } as ColumnDef<RecordDocument, unknown>] : []),
   ]
   return (
     <Section title="Attachments" actions={can ? (
-      <Button size="sm" variant="secondary" onClick={() => setAttaching(true)}><Paperclip className="mr-1 h-4 w-4" aria-hidden />Attach file…</Button>
+      <Button size="sm" variant="secondary" onClick={() => setAttaching(true)}><Icon icon={Paperclip} className="mr-1" />Attach file…</Button>
     ) : undefined}>
       {rows.length
         ? <LocalTable<RecordDocument> ariaLabel="Attachments" columns={columns} rows={rows} rowKey={(d) => d.id} />
-        : <p className="text-sm text-neutral-500">{q.isLoading ? 'Loading…' : 'No file attached.'}</p>}
+        : <Text as="p" tone="muted" size="sm">{q.isLoading ? 'Loading…' : 'No file attached.'}</Text>}
       {viewer}
       <AttachDialog type={type} id={id} open={attaching} onOpenChange={setAttaching} />
       {removing && (

@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  Button, DetailList, LocalTable, SchemaForm, Section, formatDateTime, queryKeys, useOpenView, useCan, useNotices, type ColumnDef, columnsOf, useRecordList,
+  Button, DetailList, LocalTable, SchemaForm, Section, formatDateTime, queryKeys, useOpenView, useCan, useNotices, type ColumnDef, columnsOf, useRecordList, Cluster,
 } from '@/platform-ui'
 import { runsClient, type RunRead } from '@/features/operations/operationsApi'
 import { connectionsClient, type ConnectionRead } from './connectionsApi'
@@ -54,9 +54,9 @@ export function ConnectionSchedule({ connection: c }: { connection: ConnectionRe
           await qc.invalidateQueries({ queryKey: queryKeys.list(connectionsClient) })
           notify({ tone: 'success', text: 'Schedule saved' })
         }} />
-      <div className="flex flex-wrap items-center gap-2">
+      <Cluster gap={2} align="center">
         <RunNowButton connection={c} />
-      </div>
+      </Cluster>
       <LocalTable<RunRead> ariaLabel="Last runs" columns={runColumns} rows={runs.data?.items ?? []} rowKey={(r) => r.id}
         emptyTitle="No run yet" />
       <span>

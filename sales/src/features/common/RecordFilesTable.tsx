@@ -1,4 +1,6 @@
-import { LocalTable, StatusCell, columnsOf, useFileViewer, useNotices, type ColumnDef } from '@/platform-ui'
+import {
+  LocalTable, StatusCell, columnsOf, useFileViewer, useNotices, type ColumnDef, Text,
+} from '@/platform-ui'
 import { downloadRecordFile, recordFile, type RecordDocument } from './recordFiles'
 
 const col = columnsOf<RecordDocument>()
@@ -11,7 +13,7 @@ export function RecordFilesTable({ documents, empty }: { documents: RecordDocume
   const failed = (e: unknown) => notices.notify({ tone: 'error', text: `Download failed: ${e instanceof Error ? e.message : String(e)}` })
   const columns: ColumnDef<RecordDocument, unknown>[] = [
     col.datetime('created_at', 'Created'),
-    { accessorKey: 'kind', header: 'Kind', cell: ({ row: { original: d } }) => <span className="whitespace-nowrap">{d.kind}{d.direction === 'OUT' ? ' (sent)' : ''}</span> },
+    { accessorKey: 'kind', header: 'Kind', cell: ({ row: { original: d } }) => <Text wrap="nowrap">{d.kind}{d.direction === 'OUT' ? ' (sent)' : ''}</Text> },
     col.file('remote_name', 'File', { label: (d) => `Download ${d.remote_name ?? d.kind}`,
       onDownload: (d) => { downloadRecordFile(d).catch(failed) }, onView: (d) => view(recordFile(d)) }),
     { accessorKey: 'st02', header: 'Control', cell: ({ row }) => row.original.st02 ?? '', meta: { hidden: true } },
@@ -19,14 +21,14 @@ export function RecordFilesTable({ documents, empty }: { documents: RecordDocume
     { accessorKey: 'ack_status', header: '997', cell: ({ row: { original: d } }) => (
       d.direction !== 'OUT' ? '' : d.file_status === 'Sent' || d.ack_status !== 'Waiting' ? <StatusCell value={d.ack_status} /> : '—') },
     col.datetime('sent_at', 'Sent'),
-    { id: 'note', header: 'Note', cell: ({ row }) => <span className="break-words text-xs">{row.original.error ?? row.original.ack_detail ?? ''}</span> },
+    { id: 'note', header: 'Note', cell: ({ row }) => <Text size="xs" wrap="words">{row.original.error ?? row.original.ack_detail ?? ''}</Text> },
   ]
   const files = documents.filter((d) => d.kind !== 'ATTACHMENT')
   return (
     <>
       {files.length
         ? <LocalTable<RecordDocument> ariaLabel="Documents" columns={columns} rows={files} rowKey={(d) => d.id} />
-        : <p className="text-sm text-neutral-500">{empty}</p>}
+        : <Text as="p" tone="muted" size="sm">{empty}</Text>}
       {viewer}
     </>
   )
