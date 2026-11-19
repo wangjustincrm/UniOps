@@ -61,8 +61,8 @@ export function lineNumbers(o: Pick<OrderDetail, 'source_type' | 'lines'>): Map<
 }
 
 /** Manual order settings (user 2026-11-13 / 2026-11-19; Orders → Manual order settings): Express offered, the LTL
- *  suggestion weight, why a manual order is made, and which reasons are free goods. */
-export interface ManualOrderSettings { express_offered: boolean; ltl_from_lb: number; reasons: string[]; free_reasons: string[] }
+ *  suggestion weight, and why a manual order is made. */
+export interface ManualOrderSettings { express_offered: boolean; ltl_from_lb: number; reasons: string[] }
 export const MANUAL_SETTINGS_KEY = ['sales', 'config', 'manual-order-settings']
 export const fetchManualOrderSettings = () => api.get<ManualOrderSettings>('/config/manual-order-settings')
 export const saveManualOrderSettings = (s: ManualOrderSettings) => api.put<ManualOrderSettings>('/config/manual-order-settings', s)

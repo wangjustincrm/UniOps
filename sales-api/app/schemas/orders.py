@@ -88,9 +88,8 @@ class OrderRead(BaseModel):
     net_amount: Decimal | None = None
     returned_ea: int | None = None  # what the customer returned of what shipped (none when nothing)
     backordered_ea: int | None = None  # what the applied 945 left unshipped (none before a 945)
-    # A manual order's reason, the order it repeats, its month (Toronto) and EA (Free goods, user 2026-11-19)
+    # A manual order's reason, the order it repeats, its month (Toronto) and EA (Manual orders by reason, user 2026-11-19)
     manual_reason: str | None = None
-    free_goods: bool = False  # its reason is a free one (Manual order settings)
     parent_order_id: int | None = None
     parent_reference: str | None = None
     received_month: date | None = None
@@ -407,7 +406,6 @@ class ManualOrderSettings(BaseModel):
     ltl_from_lb: Annotated[int, Field(ge=1, le=100000)] = 150
     reasons: Annotated[list[_ReasonName], Field(min_length=1, max_length=20)] = [
         "Gift", "Replacement", "Sample", "Staff purchase", "Phone order", "Other"]
-    free_reasons: Annotated[list[_ReasonName], Field(max_length=20)] = ["Gift", "Replacement", "Sample"]
 
 
 class CancelOrderIn(BaseModel):

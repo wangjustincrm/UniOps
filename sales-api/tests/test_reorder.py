@@ -1,7 +1,7 @@
 """Reorder for this customer (user 2026-11-19): a gift, a replacement or a sample goes through Sales as a new order,
 not as a 945 the warehouse sends on its own. The reorder is a Draft manual order copied from the source (ship-to,
 contact, carrier, its Order ref, a note, a link back) with no lines; a reason is required to submit; its 940 goes
-like any manual order's; the source's Activity names it; Finance's Free goods view lists it."""
+like any manual order's; the source's Activity names it; Orders → Manual orders by reason lists it."""
 from datetime import timedelta
 from decimal import Decimal
 
@@ -66,17 +66,18 @@ async def test_reorder_copies_the_customer_as_a_draft_with_no_lines_and_a_reason
     w05 = [[s for s in segments(c) if s[0] == "W05"][0][2] for c in edi.store.files.values()]
     assert f"{o2.order_number:09d}" in w05
 
-    # The source's Activity names it; Finance's Free goods lists it
+    # The source's Activity names it; Manual orders by reason lists it
     async with env_.factory(OP) as u:
         detail = await OrderService(u).detail(source["id"])
-        free = await OrderRepository(u).list(QuerySpec(filters=[parse_filter("manual_reason:in:Gift|Replacement|Sample")], page_size=50))
         meta = await OrderService(u).meta()
+        view = next(v for v in meta["views"] if v["key"] == "manual_by_reason")
+        free = await OrderRepository(u).list(QuerySpec(filters=[parse_filter(f"{f['field']}:{f['op']}:" + (
+            "|".join(f["value"]) if isinstance(f["value"], list) else str(f["value"]))) for f in view["state"]["filters"]], page_size=50))
     [entry] = [t for t in detail.timeline if t.action == "reorder"]
     assert entry.reason == f"Reorder {o2.source_reference} (Gift)" and entry.after["order_id"] == o2.id
     [row] = free.items
     assert (row.id, row.manual_reason, row.ordered_ea, row.parent_reference) == (o2.id, "Gift", 6, source["source_reference"])
-    view = next(v for v in meta["views"] if v["key"] == "free_goods")
-    assert view["state"]["group"][0] == {"field": "received_month", "desc": True}
+    assert view["state"]["group"] == [{"field": "received_month", "desc": True}, {"field": "manual_reason", "desc": False}]
 
 
 async def test_a_reorder_of_a_manual_order_keeps_its_partner_and_a_draft_with_no_lines_cannot_be_submitted(edi):  # noqa: F811
@@ -101,28 +102,21 @@ async def test_a_reorder_of_a_manual_order_keeps_its_partner_and_a_draft_with_no
     assert e.value.code == "order.no_lines"
 
 
-
-async def test_free_goods_are_the_reasons_the_settings_call_free_and_a_free_reason_cannot_vanish(edi):  # noqa: F811
-    """Review 2026-11-19: one definition. Free goods follow Manual order settings; renaming a reason that is free goods
-    without changing Free goods too is refused (the view would silently drop those orders)."""
+async def test_the_reasons_are_a_setting_and_submit_takes_only_one_of_them(edi):  # noqa: F811
+    """User 2026-11-19: the reason list is configurable (Orders → Manual order settings); no separate "free" list."""
     from app.services.order_settings import ManualOrderSettingsService
     env_ = edi.env
     ship = AddressIn(name="Shop", phone="613-555-0100", address1="1 Rd", city="Kingston", province="ON", zip="K7P 0E9")
     async with env_.factory(OP) as u:
-        promo = await ManualOrderService(u).create(ManualOrderIn(reason="Phone order", partner_code="MAN", ship_to=ship, carrier="LTL",
-                                                                 lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]))
-        promo = await ManualOrderService(u).submit(promo.id, promo.version)
-        await u.commit()
-    free = lambda u: OrderRepository(u).list(QuerySpec(filters=[parse_filter("free_goods:eq:true")], page_size=50))  # noqa: E731
-    async with env_.factory(OP) as u:
-        assert (await free(u)).items == []  # "Phone order" is not free by default
         s = await ManualOrderSettingsService(u).get()
+        assert s.reasons == ["Gift", "Replacement", "Sample", "Staff purchase", "Phone order", "Other"]
+        await ManualOrderSettingsService(u).update(s.model_copy(update={"reasons": ["Promotion", "Gift"]}))
+        await u.commit()
+    async with env_.factory(OP) as u:
+        o = await ManualOrderService(u).create(ManualOrderIn(reason="Sample", partner_code="MAN", ship_to=ship, carrier="LTL",
+                                                             lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]))
+        await u.commit()
+    async with env_.factory(OP) as u:
         with pytest.raises(InvalidInput) as e:
-            await ManualOrderSettingsService(u).update(s.model_copy(update={"reasons": ["Gifts", "Replacement", "Sample", "Phone order"]}))
-        assert e.value.code == "manual.free_reason_unknown" and e.value.details["missing"] == ["Gift"]
-    async with env_.factory(OP) as u:
-        s = await ManualOrderSettingsService(u).get()
-        await ManualOrderSettingsService(u).update(s.model_copy(update={"free_reasons": ["Gift", "Replacement", "Sample", "Phone order"]}))
-        await u.commit()
-    async with env_.factory(OP) as u:
-        assert [x.id for x in (await free(u)).items] == [promo.id]  # now it is
+            await ManualOrderService(u).submit(o.id, o.version)
+    assert e.value.code == "order.reason" and "Promotion, Gift" in str(e.value)

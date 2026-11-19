@@ -31,7 +31,7 @@ const fieldsFor = (carriers: { value: string; label: string }[], reasons: string
   { name: 'carrier', label: 'Ships by', type: 'segmented', options: carriers,
     hint: 'Purolator (Ground or Express): a parcel, sent like a Shopify order (the ship-to phone goes with it). LTL: a pallet shipment, sent like a retailer order. Needed before it is submitted.' },
   { name: 'reason', label: 'Reason', type: 'select', options: reasons.map((r) => ({ value: r, label: r })),
-    hint: 'Why this order is made (Gift, Replacement, Sample …: Finance sees them under Orders → Free goods). Needed before it is submitted.' },
+    hint: 'Why this order is made (Gift, Replacement, Sample …): Orders → Manual orders by reason lists them. Needed before it is submitted.' },
   { name: 'requested_delivery_date', label: 'Requested delivery', type: 'date' },
   { name: 'notes', label: 'Notes', type: 'textarea' },
 ]

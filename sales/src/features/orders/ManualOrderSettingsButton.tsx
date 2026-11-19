@@ -9,18 +9,13 @@ const schema = z.object({
   express_offered: z.boolean(),
   ltl_from_lb: z.number({ message: 'Required' }).int().min(1, 'At least 1 lb').max(100000),
   reasons: reasonList.min(1, 'At least one reason'),
-  free_reasons: reasonList,
-}).refine((v) => v.free_reasons.every((r) => v.reasons.includes(r)), {
-  message: 'Each free reason must be one of the reasons', path: ['free_reasons'],
 })
 const errorMessages: Record<string, string> = {
-  'manual.free_reason_unknown': 'A free reason is not one of the reasons: change Free goods too.',
   'auth.forbidden': 'You do not have permission to change the manual order settings.',
 }
 const fields: FieldSpec[] = [
-  { name: 'reasons', label: 'Reasons', type: 'tags', hint: 'Why a manual order is made: one is chosen before it is submitted.' },
-  { name: 'free_reasons', label: 'Free goods', type: 'tags',
-    hint: 'The reasons that are goods given away: Orders → Free goods lists them for Finance. Each must be one of the reasons.' },
+  { name: 'reasons', label: 'Reasons', type: 'tags',
+    hint: 'Why a manual order is made: one is chosen before it is submitted. Orders → Manual orders by reason lists them.' },
   { name: 'express_offered', label: 'Offer Purolator Express', type: 'checkbox', hint: 'Off: a manual order ships by Purolator (Ground) or LTL only.' },
   { name: 'ltl_from_lb', label: 'Suggest LTL above (lb)', type: 'number', required: true,
     hint: 'After Preview EA: an order heavier than this suggests LTL, else Purolator. A suggestion only.' },

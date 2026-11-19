@@ -143,7 +143,7 @@ class OrderRepository(Repository[Order]):
               "source_name": "Sales channel", "connection_name": "Connection", "tags": "Tags", "original_total": "Original total",
               "total_refunded": "Refunded", "net_amount": "Net", "returned_ea": "Returned EA",
               "delivery_due_date": "Delivery due", "manual_reason": "Reason", "parent_order_id": "Reorder of (no.)",
-              "parent_reference": "Reorder of", "received_month": "Month", "ordered_ea": "EA", "free_goods": "Free goods"}
+              "parent_reference": "Reorder of", "received_month": "Month", "ordered_ea": "EA"}
     enums = {"source_type": SOURCE_TYPES, "fulfillment_status": tuple(s.value for s in F),
              "invoice_status": tuple(s.value for s in Inv), "hold_reason": HOLD_REASONS,
              "order_state": ORDER_STATES, "order_status": ORDER_STATUSES, "on_hold_reason": ON_HOLD_REASONS}
@@ -156,7 +156,7 @@ class OrderRepository(Repository[Order]):
     sortable = {"order_state": ORDER_STATE_SQL, "order_status": ORDER_STATUS_SQL, "on_hold_reason": ON_HOLD_REASON_SQL, "partner_name": Order.partner_name_sql,
                 "connection_name": Order.connection_name_sql, "total_amount": Order.total_amount_sql, "backordered_ea": BACKORDERED_SQL, "returned_ea": Order.returned_ea_sql,
                 "delivery_due_date": Order.delivery_due_sql, "received_month": Order.received_month_sql,
-                "ordered_ea": Order.ordered_ea_sql, "parent_reference": Order.parent_reference_sql, "free_goods": Order.free_goods_sql}
+                "ordered_ea": Order.ordered_ea_sql, "parent_reference": Order.parent_reference_sql}
     filterable = {"order_state": FilterRule(ORDER_STATE_SQL, kind="text"),
                   "order_status": FilterRule(ORDER_STATUS_SQL, kind="text"),
                   "on_hold_reason": FilterRule(ON_HOLD_REASON_SQL, kind="text"),
@@ -168,8 +168,7 @@ class OrderRepository(Repository[Order]):
                   "to_confirm": FilterRule(TO_CONFIRM_SQL, kind="bool", cast=lambda v: str(v).lower() == "true"),
                   "received_month": FilterRule(Order.received_month_sql, kind="date"),
                   "ordered_ea": FilterRule(Order.ordered_ea_sql, kind="number", cast=int),
-                  "parent_reference": FilterRule(Order.parent_reference_sql, kind="text"),
-                  "free_goods": FilterRule(Order.free_goods_sql, kind="bool", cast=lambda v: str(v).lower() == "true")}
+                  "parent_reference": FilterRule(Order.parent_reference_sql, kind="text")}
     summable = ("total_amount", "net_amount", "total_refunded")
     sum_currency = "currency"
     money_fields = ("total_amount", "total", "subtotal", "tax", "shipping", "discount", "original_total", "total_refunded", "net_amount")
@@ -212,10 +211,10 @@ class OrderRepository(Repository[Order]):
                 "sort": [{"field": "delivery_due_date", "desc": False}], "hidden": ["review_reason"]}),
         Preset("manual_drafts", "Manual drafts", {"filters": [{"field": "source_type", "op": "eq", "value": "MANUAL"},
                                                                {"field": "order_status", "op": "eq", "value": "Draft"}]}),
-        # Finance (user 2026-11-19): what was given away — the reasons Manual order settings call free (Gift,
-        # Replacement, Sample by default) — by month and reason, with their EA (Sales has no cost; the lines show items).
-        Preset("free_goods", "Free goods", {
-            "filters": [{"field": "free_goods", "op": "eq", "value": True},
+        # Manual orders by reason (user 2026-11-19: every reason, no separate "free" list): month, then reason, with
+        # their EA; Finance narrows it with a filter or a saved view (Sales has no cost; the lines show the items).
+        Preset("manual_by_reason", "Manual orders by reason", {
+            "filters": [{"field": "source_type", "op": "eq", "value": "MANUAL"},
                         {"field": "order_status", "op": "not_in", "value": ["Draft", "Cancelled"]}],
             "group": [{"field": "received_month", "desc": True}, {"field": "manual_reason", "desc": False}],
             "sort": [{"field": "first_received_at", "desc": True}],

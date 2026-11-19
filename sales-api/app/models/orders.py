@@ -11,14 +11,13 @@ rounded.
 """
 from __future__ import annotations
 
-import json
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
     BigInteger, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, Sequence, String, Text,
-    UniqueConstraint, case, cast, false, func, literal, select, text,
+    UniqueConstraint, case, cast, false, func, select, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, aliased, column_property, mapped_column, undefer_group
@@ -164,7 +163,7 @@ class Order(Audited, Versioned, Base):
 
     @property
     def received_month(self) -> date | None:
-        """The month it came in, Toronto (`received_month_sql`): Free goods by month."""
+        """The month it came in, Toronto (`received_month_sql`): manual orders by month."""
         return self.__dict__.get("received_month_sql")
 
     @property
@@ -172,11 +171,6 @@ class Order(Audited, Versioned, Base):
         """The order's EA over its lines (`ordered_ea_sql`)."""
         v = self.__dict__.get("ordered_ea_sql")
         return None if v is None else int(v)
-
-    @property
-    def free_goods(self) -> bool:
-        """Its reason is one of the free reasons (`free_goods_sql`): Orders → Free goods."""
-        return bool(self.__dict__.get("free_goods_sql"))
 
     @property
     def parent_reference(self) -> str | None:
@@ -275,21 +269,10 @@ Order.total_amount_sql = order_fact(func.coalesce(Order.total, select(
 Order.returned_ea_sql = order_fact(select(func.nullif(func.sum(OrderLine.returned_ea), 0)).where(
     OrderLine.order_id == Order.id, OrderLine.removed.is_(False)).correlate_except(OrderLine).scalar_subquery())
 
-# Free goods (user 2026-11-19): the month an order came in (Toronto), its EA, and the order it repeats.
+# Manual orders by reason (user 2026-11-19): the month an order came in (Toronto), its EA, and the order it repeats.
 Order.received_month_sql = order_fact(cast(func.date_trunc("month", func.timezone("America/Toronto", Order.first_received_at)), Date))
 Order.ordered_ea_sql = order_fact(select(func.sum(OrderLine.qty_ea)).where(
     OrderLine.order_id == Order.id, OrderLine.removed.is_(False)).correlate_except(OrderLine).scalar_subquery())
-# Free goods: the order's reason is one of the free reasons of Orders → Manual order settings (one definition, review
-# 2026-11-19), the default list until it is set.
-def _free_reasons():
-    from app.models.config import Setting as SettingRow
-    from app.services.settings import MANUAL_FREE_REASONS
-    stored = select(SettingRow.value).where(SettingRow.key == MANUAL_FREE_REASONS.key).scalar_subquery()
-    listed = func.coalesce(stored, cast(literal(json.dumps(MANUAL_FREE_REASONS.default)), JSONB))
-    return select(func.jsonb_array_elements_text(listed)).scalar_subquery()
-
-
-Order.free_goods_sql = order_fact(func.coalesce(Order.manual_reason.in_(_free_reasons()), false()))
 _Parent = aliased(Order)
 Order.parent_reference_sql = order_fact(select(_Parent.source_reference).where(_Parent.id == Order.parent_order_id)
                                         .correlate_except(_Parent).scalar_subquery())

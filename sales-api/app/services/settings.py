@@ -110,18 +110,11 @@ MANUAL_EXPRESS_OFFERED = SETTINGS.declare(Setting(
 MANUAL_LTL_FROM_LB = SETTINGS.declare(Setting(
     "manual.ltl_from_lb", 150, int, validate=minimum(1), safe=150,
     description="Suggest LTL for a manual order above this weight (lb)"))
-# Why a manual order is made (user 2026-11-19): one is required to submit; Finance's Free goods are some of them.
+# Why a manual order is made (user 2026-11-19): one is required to submit; Orders → Manual orders by reason.
 MANUAL_REASONS_DEFAULT = ["Gift", "Replacement", "Sample", "Staff purchase", "Phone order", "Other"]
 MANUAL_REASONS = SETTINGS.declare(Setting(
     "manual.reasons", MANUAL_REASONS_DEFAULT, text_list, validate=_reasons, safe=MANUAL_REASONS_DEFAULT,
     description="Why a manual order is made (one is required to submit)"))
-# Which of those reasons are goods given away (Orders → Free goods, Finance): a subset of the reasons, checked on save.
-MANUAL_FREE_REASONS_DEFAULT = ["Gift", "Replacement", "Sample"]
-MANUAL_FREE_REASONS = SETTINGS.declare(Setting(
-    "manual.free_reasons", MANUAL_FREE_REASONS_DEFAULT, text_list, validate=lambda v: None if len(v) <= 20 else "at most 20",
-    safe=MANUAL_FREE_REASONS_DEFAULT, description="The manual order reasons that are free goods (Orders → Free goods)"))
-
-
 async def automatic_runs_on(session, app_settings) -> bool:
     """Automatic runs happen: the server allows them (SALES_SCHEDULER_ENABLED) and the master switch is
     on (not SCHEDULER_PAUSED). The one answer for Connections, Health and an order's next step."""

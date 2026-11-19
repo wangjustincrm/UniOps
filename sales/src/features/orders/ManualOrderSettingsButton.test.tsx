@@ -8,7 +8,7 @@ vi.mock('./ordersApi', async (orig) => ({ ...(await orig<typeof import('./orders
   fetchManualOrderSettings: api.get, saveManualOrderSettings: api.save }))
 const { ManualOrderSettingsButton } = await import('./ManualOrderSettingsButton')
 
-const SETTINGS = { express_offered: true, ltl_from_lb: 150, reasons: ['Gift', 'Sample', 'Other'], free_reasons: ['Gift', 'Sample'] }
+const SETTINGS = { express_offered: true, ltl_from_lb: 150, reasons: ['Gift', 'Sample', 'Other'] }
 
 function renderAs(keys: string[]) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -17,13 +17,13 @@ function renderAs(keys: string[]) {
 }
 
 describe('Orders → Manual order settings (review 2026-11-19)', () => {
-  it('shows the reasons and which are free goods; saving sends them (sales.config)', async () => {
+  it('shows the reasons and the carrier settings; saving sends them (sales.config)', async () => {
     api.get.mockResolvedValue(SETTINGS)
     api.save.mockImplementation(async (s) => s)
     renderAs(['sales.read', 'sales.config'])
     fireEvent.click(screen.getByRole('button', { name: 'Manual order settings' }))
     const dialog = await screen.findByRole('dialog', { name: 'Manual order settings' })
-    expect(await within(dialog).findByText('Free goods')).toBeInTheDocument()
+    expect(await within(dialog).findByText('Reasons')).toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Offer Purolator Express' }))
     fireEvent.click(within(dialog).getByRole('button', { name: /Save/ }))
     await waitFor(() => expect(api.save).toHaveBeenCalledWith({ ...SETTINGS, express_offered: false }))
@@ -34,7 +34,7 @@ describe('Orders → Manual order settings (review 2026-11-19)', () => {
     renderAs(['sales.read'])
     fireEvent.click(screen.getByRole('button', { name: 'Manual order settings' }))
     const dialog = await screen.findByRole('dialog', { name: 'Manual order settings' })
-    await within(dialog).findByText('Free goods')
+    await within(dialog).findByText('Reasons')
     expect(within(dialog).queryByRole('button', { name: /Save/ })).toBeNull()
   })
 })
