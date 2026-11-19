@@ -294,7 +294,8 @@ async def test_each_transfer_to_the_bank_is_a_settlement_with_its_period_and_the
                            "processed_at": "2026-10-02T10:00:00-04:00", **kw}
     env.shop.orders = [shopify_order(1, 9301), shopify_order(2, 9302), shopify_order(3, 9303)]
     env.shop.transactions_by_order |= {
-        "1": [tx(101, amount="100.00", authorization="1SALE00000000001")],
+        "1": [tx(101, amount="100.00", authorization="1SALE00000000001"),
+              tx(102, kind="refund", amount="5.00", authorization="5REFUNDPEND00005", processed_at="2026-10-06T06:00:00-04:00")],
         "2": [tx(201, amount="50.00", authorization="2SALE00000000002"),
               tx(202, kind="refund", amount="10.00", authorization="2REFUND000000002", processed_at="2026-10-04T10:00:00-04:00")],
         "3": [tx(301, amount="40.00", authorization="3SALE00000000003", processed_at="2026-10-12T10:00:00-04:00")],
@@ -308,29 +309,33 @@ async def test_each_transfer_to_the_bank_is_a_settlement_with_its_period_and_the
         item("9HOLD0000000000H", "T1110", "-20.00", "2026-10-05T14:00:00+0000", status="P"),
         item("9HOLD0000000000H", "T1111", "20.00", "2026-10-05T16:00:00+0000", status="D"),
         item("8DEPOSIT00000008", "T0300", "5.00", "2026-10-06T10:00:00+0000"),
-        # first transfer: the period's net is 100 + 50 − 10 − (3.20 + 1.75 − 0.35) = 135.40; 130.00 went
+        # a refund the balance could not pay: PayPal keeps it pending; the bank deposit that funded it names it
+        item("5REFUNDPEND00005", "T1107", "-5.00", "2026-10-06T10:00:00+0000", status="P", ref="1SALE00000000001"),
+        item("5DEPOSIT0000005B", "T0300", "5.00", "2026-10-06T10:00:00+0000", ref="5REFUNDPEND00005"),
+        # first transfer: the period's net is 100 + 50 − 10 − 5 − (3.20 + 1.75 − 0.35) = 130.40; 130.00 went
         item("7TRANSFER0000001", "T0400", "-130.00", "2026-10-07T12:00:00+0000"),
         item("3SALE00000000003", "T0006", "40.00", "2026-10-12T14:00:00+0000", fee="-1.46"),
-        # second transfer: net 38.54, the 5.40 left from before goes too
-        item("7TRANSFER0000002", "T0400", "-43.94", "2026-10-13T12:00:00+0000"),
+        # second transfer: net 38.54, the 0.40 left from before goes too
+        item("7TRANSFER0000002", "T0400", "-38.94", "2026-10-13T12:00:00+0000"),
         item("4AFTER0000000004", "T0006", "12.00", "2026-10-15T14:00:00+0000", fee="-0.65"),  # still in the balance
     ]
     cid = await paypal_connection(env, datetime(2026, 10, 1, tzinfo=timezone.utc))
     clock = lambda: datetime(2026, 10, 20, 6, tzinfo=timezone.utc)  # noqa: E731
     intake = PayPalIntake(uow_factory=env.factory, gateway=fake, clock=clock)
     r = await intake.run_pass(await snap(env, cid))
-    assert (r.status, r.batches, r.matched) == ("ok", 2, 4)
+    assert (r.status, r.batches, r.matched) == ("ok", 2, 5)  # the bank-funded refund too (user 2026-11-19)
 
     async with env.factory(OP) as u:
         page = await SettlementRowRepository(u).list(QuerySpec(page_size=50))
     rows = {x.batch_id: x for x in page.items}
     first, second, balance = rows["7TRANSFER0000001"], rows["7TRANSFER0000002"], rows["BALANCE-CAD"]
     assert (first.gateway, first.state, first.sales_amount, first.sales_count, first.refund_amount, first.fee_amount, first.net_amount) == (
-        "PayPal", "Transferred to the bank", Decimal("150.00"), 2, Decimal("10.00"), Decimal("4.60"), Decimal("135.40"))
-    assert (first.transfer_amount, first.carried_amount, first.issue) == (Decimal("130.00"), Decimal("-5.40"), "Differs from the transfer")
+        "PayPal", "Transferred to the bank", Decimal("150.00"), 2, Decimal("15.00"), Decimal("4.60"), Decimal("130.40"))
+    assert (first.transfer_amount, first.carried_amount, first.issue) == (Decimal("130.00"), Decimal("-0.40"), "Differs from the transfer")
     assert "hold" in first.notes and "hold released" in first.notes and "deposit from the bank" in first.notes
-    assert (first.matched_net, first.difference) == (Decimal("140.00"), Decimal("0.00"))  # Shopify's sales − refunds: all matched
-    assert (second.net_amount, second.transfer_amount, second.carried_amount) == (Decimal("38.54"), Decimal("43.94"), Decimal("5.40"))
+    assert (first.matched_net, first.difference) == (Decimal("135.00"), Decimal("0.00"))  # Shopify's sales − refunds: all matched
+    assert "2 × deposit from the bank (10.00)" in first.notes
+    assert (second.net_amount, second.transfer_amount, second.carried_amount) == (Decimal("38.54"), Decimal("38.94"), Decimal("0.40"))
     assert (balance.state, balance.transfer_amount, balance.net_amount, balance.issue) == (
         "In PayPal balance", None, Decimal("11.35"), "Unmatched transactions")  # 4AFTER… is no Shopify payment
 

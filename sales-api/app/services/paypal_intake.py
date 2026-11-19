@@ -23,12 +23,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.orm import aliased
 
 from app.domain.gateways import paypal_kind, paypal_settled
 from app.integrations.paypal import MAX_DAYS, PayPalAuthFailed, PayPalRequestRefused, readable
 from app.models.gateways import GatewayTransaction
 from app.models.payments import OrderPayment
+from app.platform.actors import SYSTEM_ACTOR
 from app.platform.pipeline import isolated
 from app.services.gateway_base import GatewayIntake, GatewayReport, money, when
 from app.services.intake import ConnectionSnapshot
@@ -95,7 +97,22 @@ class PayPalIntake(GatewayIntake):
         else:
             if start < now:
                 report.status = "more_to_read"
+        await self._funded_refunds(conn.id)
         return cursor
+
+    async def _funded_refunds(self, connection_id: int) -> None:
+        """A refund PayPal still calls pending (P) whose money came from the bank — a successful deposit (T03xx) that
+        names the refund as its reference, same time, same amount: the balance was short — is done (user 2026-11-19:
+        three on dev2, 90.77). Run after every read, since a re-read sets the refund's own status again."""
+        T, D = GatewayTransaction, aliased(GatewayTransaction)
+        funded = select(D.id).where(D.connection_id == connection_id, D.gateway == GATEWAY, D.kind == "other",
+                                    D.raw["transaction_event_code"].astext.like("T03%"), D.status == "S",
+                                    D.raw["paypal_reference_id"].astext == T.external_id, D.amount == T.amount).exists()
+        async with self.uow_factory(SYSTEM_ACTOR, reason="PayPal refund funded from the bank") as uow:
+            await uow.session.execute(update(T).where(
+                T.connection_id == connection_id, T.gateway == GATEWAY, T.kind == "refund", T.settled.is_(False),
+                T.status == "P", funded).values(settled=True))
+            await uow.commit()
 
     async def _window(self, conn: ConnectionSnapshot, start: datetime, end: datetime, report: GatewayReport, run_id):
         """All pages of one window, upserted in one unit. Returns the time PayPal has everything up to (or the
