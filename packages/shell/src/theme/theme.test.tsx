@@ -94,8 +94,8 @@ describe('UserMenu theme picker', () => {
     } finally { list.push(...saved) }
   })
 
-  it('CRM is registered next to the default', () => {
-    expect(THEMES.map((t) => t.id)).toEqual([DEFAULT_THEME, 'crm'])
+  it('CRM and Fresh are registered next to the default', () => {
+    expect(THEMES.map((t) => t.id)).toEqual([DEFAULT_THEME, 'crm', 'fresh'])
   })
 
   it('offers "System default (<name>)" + each theme; picking one sets the own choice', () => {

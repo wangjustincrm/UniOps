@@ -28,6 +28,7 @@ export interface ThemeDef {
 export const THEMES: readonly ThemeDef[] = [
   { id: DEFAULT_THEME, label: 'UniOps', scheme: 'light' },
   { id: 'crm', label: 'CRM', scheme: 'light' },
+  { id: 'fresh', label: 'Fresh', scheme: 'light' },
 ]
 
 const listeners = new Set<() => void>()

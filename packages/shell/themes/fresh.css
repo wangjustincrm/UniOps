@@ -1,0 +1,77 @@
+/**
+ * Theme "Fresh" — light, airy, mist aqua + cool grey.
+ *
+ * Built from the user's pair #75C1C4 (mist aqua) and #B2BBBE (cool grey).
+ * - Primary ramp on the aqua hue (400 = #75C1C4); 600 #2F7C80 carries buttons /
+ *   focus with white text (4.87:1), 700 #286C70 links.
+ * - Neutral ramp anchored on #B2BBBE (= neutral-300: input / card borders,
+ *   strong lines), cool and clean.
+ * - Light sidebar: #A6D6D8 (the aqua one step lighter) with dark text and a
+ *   white active pill — the main difference from UniOps / CRM's dark sidebar.
+ *   The sign-in brand panel keeps a dark aqua (hero) so its photo and white
+ *   headline still read.
+ * - Softer geometry: radii one step rounder; shadows wider and softer.
+ * Checked with: node scripts/theme-contrast.mjs fresh
+ */
+:root[data-theme="fresh"] {
+  color-scheme: light;
+
+  /* ── Primary — mist aqua (400 = #75C1C4) ──────────────────────── */
+  --color-primary-50: #EEF8F8;
+  --color-primary-100: #D6EEEF;
+  --color-primary-200: #B0DDDF;
+  --color-primary-300: #8ED0D2;
+  --color-primary-400: #75C1C4;
+  --color-primary-500: #4FA6AA;
+  --color-primary-600: #2F7C80;
+  --color-primary-700: #286C70;
+  --color-primary-800: #22585B;
+  --color-primary-900: #1C484A;
+
+  /* ── Neutral — cool grey (300 = #B2BBBE) ─────────────────────── */
+  --color-neutral-50: #F6F7F8;
+  --color-neutral-100: #ECEFF0;
+  --color-neutral-200: #D8DDDF;
+  --color-neutral-300: #B2BBBE;
+  --color-neutral-400: #8A9599;
+  --color-neutral-500: #626D72;
+  --color-neutral-600: #4C565A;
+  --color-neutral-700: #384145;
+  --color-neutral-800: #252C2F;
+  --color-neutral-900: #161B1D;
+
+  /* ── Surfaces ──────────────────────────────────────────────────── */
+  --color-canvas: #F3F7F7;
+
+  /* ── Accent: links one step deeper than buttons ────────────────── */
+  --color-accent-fg: var(--color-primary-700);
+
+  /* ── Sidebar — light mist aqua (#75C1C4 one step lighter) ──────── */
+  --color-nav:             #A6D6D8;
+  --color-nav-fg:          var(--color-neutral-900);
+  --color-nav-fg-active:   var(--color-primary-900);
+  --color-nav-item-hover:  rgb(22 27 29 / 0.08);
+  --color-nav-item-active: #FFFFFF;
+  --color-nav-line:        rgb(22 27 29 / 0.12);
+  --color-nav-indicator:   var(--color-primary-800);
+  --color-nav-edge:        transparent;
+
+  /* ── Sign-in brand panel stays dark ────────────────────────────── */
+  --color-hero:    var(--color-primary-800);
+  --color-hero-fg: #FFFFFF;
+
+  /* ── Softer geometry ───────────────────────────────────────────── */
+  --radius-sm: 0.3125rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+
+  /* ── Elevation — wide, soft ────────────────────────────────────── */
+  --shadow-xs: 0 1px 3px rgb(21 32 28 / 0.05);
+  --shadow-sm: 0 2px 6px rgb(21 32 28 / 0.06), 0 1px 2px rgb(21 32 28 / 0.04);
+  --shadow-md: 0 6px 18px rgb(21 32 28 / 0.08), 0 2px 4px rgb(21 32 28 / 0.04);
+  --shadow-lg: 0 16px 40px rgb(21 32 28 / 0.12), 0 4px 10px rgb(21 32 28 / 0.05);
+  --shadow-focus: 0 0 0 3px rgb(47 124 128 / 0.24);
+  --shadow-up: 0 -2px 10px rgb(21 32 28 / 0.06);
+}

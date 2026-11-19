@@ -1,9 +1,13 @@
 # UniOps Portal — Product Requirements Document
 
-**Version:** 2.11
-**Date:** 2026-11-18
+**Version:** 2.12
+**Date:** 2026-11-19
 **Status:** In Production
 **Scope:** Portal web app (sign-in, launcher, Task Inbox, platform administration) and the platform services it administers: identity service (sign-in, MFA, password policy, users, roles, access control), approval engine (workflows, routing, delegation, re-sync), task-notification outbox, master-data service (MDM), file service, Data Maintenance and the AI Assistant panel.
+
+**What changed in version 2.12** (2026-11-19)
+
+- A third theme, **Fresh** (mist aqua and cool grey, a light aqua sidebar, softer corners), joins UniOps and CRM in the user menu and the Default Theme setting.
 
 **What changed in version 2.11** (2026-11-18)
 
@@ -190,7 +194,7 @@ The top header shows the user's initials and name. *The search box in the header
 - **Change Password** — opens in place, using the same form as §2.3.
 - **Sign Out** — global sign-out (§2.6).
 
-The same user menu appears in every module (Shell). When more than one theme exists it starts with a **Theme** group: **System default (<name>)** — follow what the System Admin set in Company Settings (§5.2), the initial state — and one entry per theme (UniOps, CRM). A pick applies at once and to every module, and is remembered for that browser for a year; *it is not stored on the user account, so another computer or browser starts from the system default* (**By design**). Choosing *System default* again drops the personal pick.
+The same user menu appears in every module (Shell). When more than one theme exists it starts with a **Theme** group: **System default (<name>)** — follow what the System Admin set in Company Settings (§5.2), the initial state — and one entry per theme (UniOps, CRM, Fresh). A pick applies at once and to every module, and is remembered for that browser for a year; *it is not stored on the user account, so another computer or browser starts from the system default* (**By design**). Choosing *System default* again drops the personal pick.
 
 ---
 

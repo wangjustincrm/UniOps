@@ -11,6 +11,7 @@
 |---|---|---|
 | `uniops` | UniOps | 默认主题(青绿主色),定义在 `tokens.css` 的 `@theme` |
 | `crm` | CRM | Canada Royal Milk:牛奶白底色、Logo 石板海军蓝(`#202C5C`,取自最新版 Logo)作侧栏和主色色阶、枫叶红(`#C20F2F` 提亮为 `#E8475F`)只作侧栏当前项指示条;信息色改青蓝以区别于海军蓝。`themes/crm.css` |
+| `fresh` | Fresh | 清新：用户给定的雾青 `#75C1C4` + 冷灰 `#B2BBBE`。主色色阶以雾青为 400(按钮 600 `#2F7C80`、链接 700 `#286C70`),冷灰为中性 300;**浅雾青侧栏**(`#A6D6D8` 底、深色字、白色圆角选中块);圆角整体大一档、阴影更柔;登录页品牌区保持深青(`hero`)。`themes/fresh.css` |
 
 ---
 
@@ -86,7 +87,9 @@
 ### 2.5 其他
 
 - `canvas`(页面底)、`surface`(卡片、表格、输入框底)
-- 侧栏：`nav`、`nav-fg`、`nav-fg-active`、`nav-item-hover`、`nav-item-active`、`nav-line`、`nav-indicator`(当前项左侧的竖条，可放品牌点缀色)
+- 侧栏：`nav`、`nav-fg`、`nav-fg-active`、`nav-item-hover`、`nav-item-active`、`nav-line`、`nav-indicator`(当前项左侧的竖条，可放品牌点缀色)、`nav-edge`(侧栏右侧细线，深色侧栏为透明，浅色侧栏要给线色)
+- 登录页品牌区：`hero`、`hero-fg`(默认跟随侧栏;浅色侧栏的主题要给它一个深色，照片上的白字才看得清)
+- 圆角:`--radius-sm/md/lg/xl/2xl`(想更圆润或更方正时整体调)
 - 反色区(PDF 查看器、提示框):`inverse*`、`fg-on-inverse*`
 - 阴影 `shadow-xs … lg`、`shadow-focus`(焦点环颜色跟主色走)
 - 字体 `font-sans`、`font-mono`(换字体要确认已加载)
