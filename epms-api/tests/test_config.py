@@ -422,3 +422,27 @@ async def test_other_config_saves_do_not_resync(admin_client, monkeypatch):
     r = await admin_client.patch(CONFIG_URL, json={"tagline": "x"})
     assert r.status_code == 200
     assert calls == [] and r.json()["over_budget_resync"] is None
+
+
+@pytest.mark.asyncio
+async def test_default_theme_round_trips_and_reaches_public_branding(admin_client, client):
+    r = await admin_client.get(CONFIG_URL)
+    assert r.status_code == 200
+    assert r.json()["default_theme"] == "uniops"
+    assert (await client.get(BRANDING_URL)).json()["default_theme"] == "uniops"
+
+    r = await admin_client.patch(CONFIG_URL, json={"default_theme": "crm"})
+    assert r.status_code == 200, r.text
+    assert r.json()["default_theme"] == "crm"
+    # anonymous: the web apps apply it before sign-in
+    assert (await client.get(BRANDING_URL)).json()["default_theme"] == "crm"
+
+    await admin_client.patch(CONFIG_URL, json={"default_theme": "uniops"})
+
+
+@pytest.mark.asyncio
+async def test_default_theme_must_be_an_id(admin_client):
+    for bad in ("CRM", "crm theme", "", "x" * 33, "<b>"):
+        r = await admin_client.patch(CONFIG_URL, json={"default_theme": bad})
+        assert r.status_code == 422, bad
+    assert (await admin_client.get(CONFIG_URL)).json()["default_theme"] == "uniops"

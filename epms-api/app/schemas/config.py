@@ -143,6 +143,18 @@ class ConfigUpdate(BaseModel):
             raise ValueError(f"Unknown time zone: {v!r} (use an IANA name such as America/Toronto)")
         return v
 
+    default_theme: str | None = None
+
+    @field_validator("default_theme")
+    @classmethod
+    def _valid_theme_id(cls, v: str | None) -> str | None:
+        # The ids live in packages/shell (THEMES); the server only checks the
+        # shape. An id the web apps do not know falls back to the default there.
+        import re
+        if v is not None and not re.fullmatch(r"[a-z0-9-]{1,32}", v):
+            raise ValueError("Theme id must be 1-32 lowercase letters, digits or dashes")
+        return v
+
     default_currency: str | None = None
     enabled_currencies: list[str] | None = None
     custom_currencies: list[dict[str, Any]] | None = None
@@ -238,6 +250,7 @@ class ConfigResponse(BaseModel):
     delivery_address: str
     timezone: str = "America/Toronto"
     timezone_choices: list[str] = []
+    default_theme: str = "uniops"
 
     default_currency: str
     enabled_currencies: list[str]

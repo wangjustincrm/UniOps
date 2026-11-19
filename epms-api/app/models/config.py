@@ -42,6 +42,13 @@ class CompanyConfig(Base):
         String(64), nullable=False, default="America/Toronto", server_default="America/Toronto"
     )
 
+    # ── UI theme ────────────────────────────────────────────────────────────
+    # The Shell theme (packages/shell/themes) shown to users who have not
+    # picked their own in the user menu. Public via /config/public/branding.
+    default_theme: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="uniops", server_default="uniops"
+    )
+
     # ── Currency ────────────────────────────────────────────────────────────
     default_currency: Mapped[str] = mapped_column(String(10), nullable=False, default="CAD")
     enabled_currencies: Mapped[list] = mapped_column(

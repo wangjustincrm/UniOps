@@ -40,6 +40,8 @@ class PublicBrandingResponse(BaseModel):
     # The plant's IANA zone: every web app formats times in it (UI-DATE-002),
     # so a reader in another zone still sees plant time.
     timezone: str = "America/Toronto"
+    # Shell theme for users who have not picked one (packages/shell/themes).
+    default_theme: str = "uniops"
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -108,6 +110,7 @@ async def get_public_branding(db: SessionDep, module: str | None = None):
         logo_data_url=cfg.logo_data_url,
         module=module,
         timezone=cfg.timezone,
+        default_theme=cfg.default_theme,
     )
 
 
