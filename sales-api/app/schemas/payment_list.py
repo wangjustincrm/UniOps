@@ -26,6 +26,7 @@ class PaymentRowRead(BaseModel):
     sales_amount: Decimal
     refund_amount: Decimal
     net_amount: Decimal
+    net_after_fee: Decimal | None = None  # Net less the gateway's fee (PayPal reports it; Authorize.Net does not)
     gateway_ref: str | None = None
     shopify_payment_id: str | None = None
     order_source: str | None = None
@@ -40,6 +41,7 @@ class PaymentRowRead(BaseModel):
     gateway_status: str | None = None
     card_type: str | None = None
     match_method: str | None = None
+    gateway_fee: Decimal | None = None
     settlement_id: int | None = None
     settlement_ref: str | None = None
     settled_at: datetime | None = None

@@ -62,7 +62,8 @@ async def test_the_list_rows_methods_ids_totals_and_issues(env):  # noqa: F811
                                                           "Failed on an open order"} <= set(ISSUES)
     assert (by[501].issue, by[601].issue, by[701].issue) == ("Pending over 7 days", "Cancelled, not fully refunded", "Failed on an open order")
     assert [(t.currency, t.sums) for t in page.totals] == [
-        ("CAD", {"sales_amount": "400.00", "refund_amount": "30.00", "net_amount": "370.00"})]
+        ("CAD", {"sales_amount": "400.00", "refund_amount": "30.00", "net_amount": "370.00", "gateway_fee": "0",
+                 "net_after_fee": "370.00"})]  # no gateway data here: no fee, Net after fee = Net
     # no card data in any row
     async with env.factory(OP) as u:
         served = (await PaymentRowService(u).list(QuerySpec(page_size=200))).model_dump_json()

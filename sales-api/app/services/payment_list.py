@@ -18,13 +18,13 @@ class PaymentRowRepository(Repository[PaymentRow]):
     search_fields = ("order_ref", "customer", "gateway_ref", "shopify_payment_id")
     suggestable = ("order_ref",)  # never a personal field (tests/test_suggestions.py)
     list_fields = ("id", "order_id", "order_ref", "customer", "processed_at", "processed_week", "processed_month", "method", "gateway",
-                   "kind", "status", "amount", "currency", "sales_amount", "refund_amount", "net_amount", "gateway_ref",
+                   "kind", "status", "amount", "currency", "sales_amount", "refund_amount", "net_amount", "net_after_fee", "gateway_ref",
                    "shopify_payment_id", "order_source", "financial_status", "order_cancelled", "issue", "discount", "shipping",
-                   "order_total", "test", "gateway_status", "card_type", "match_method", "settlement_id", "settlement_ref",
-                   "settled_at", "settled_date", "voided")
+                   "order_total", "test", "gateway_status", "card_type", "match_method", "gateway_fee", "settlement_id",
+                   "settlement_ref", "settled_at", "settled_date", "voided")
     labels = {"order_ref": "Order ref", "processed_at": "Processed", "processed_week": "Week", "processed_month": "Month",
               "method": "Method", "gateway": "Shopify gateway", "kind": "Kind", "sales_amount": "Sales", "refund_amount": "Refunds",
-              "net_amount": "Net", "gateway_ref": "Gateway transaction ID", "shopify_payment_id": "Shopify payment ID",
+              "net_amount": "Net", "net_after_fee": "Net after fee", "gateway_fee": "Gateway fee", "gateway_ref": "Gateway transaction ID", "shopify_payment_id": "Shopify payment ID",
               "order_source": "Order source", "financial_status": "Order financial status", "order_cancelled": "Order cancelled",
               "issue": "Issue", "order_total": "Order total", "gateway_status": "Gateway status", "card_type": "Card type",
               "match_method": "Matched by", "settlement_id": "Settlement no.", "settlement_ref": "Batch ID", "settled_at": "Settled",
@@ -34,9 +34,9 @@ class PaymentRowRepository(Repository[PaymentRow]):
     default_sort = ("-processed_at", "-id")
     groupable = ("method", "processed_week", "processed_month", "kind", "status", "order_source", "issue", "currency",
                  "settlement_id", "settlement_ref", "settled_date", "match_method", "card_type")
-    summable = ("sales_amount", "refund_amount", "net_amount")
+    summable = ("sales_amount", "refund_amount", "net_amount", "gateway_fee", "net_after_fee")
     sum_currency = "currency"
-    money_fields = ("amount", "sales_amount", "refund_amount", "net_amount", "discount", "shipping", "order_total")
+    money_fields = ("amount", "sales_amount", "refund_amount", "net_amount", "gateway_fee", "net_after_fee", "discount", "shipping", "order_total")
     # Amount: a refund is not negative here, so its sum mixes signs; the order's values repeat on each payment.
     unsummed = ("amount", "discount", "shipping", "order_total")
     presets = (

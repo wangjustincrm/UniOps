@@ -9,6 +9,14 @@ from app.platform.errors import InvalidInput
 SFTP_REQUIRED = ("host", "username", "secret_name")
 
 
+
+def read_only_gateways() -> dict[str, tuple[str, tuple[str, ...], str]]:
+    """The payment gateways a connection reads: kind → (its label in a message, its hosts, the host error code)."""
+    from app.integrations import authorize_net, paypal  # the hosts are the clients' own
+    return {"AUTHORIZE_NET": ("an Authorize.Net", authorize_net.HOSTS, "connection.authorize_net_host"),
+            "PAYPAL": ("a PayPal", paypal.HOSTS, "connection.paypal_host")}
+
+
 def _same_folder(a: Any, b: Any) -> bool:
     return "/" + str(a or "").strip().strip("/") == "/" + str(b or "").strip().strip("/")
 
@@ -54,23 +62,24 @@ def check_connection(values: dict[str, Any]) -> None:
         raise InvalidInput("connection.partner_shopify_only",
                            "partner_code is for SHOPIFY connections only; an SFTP channel's partner comes from each file",
                            {"field": "partner_code"})
-    # Authorize.Net (Finance, user 2026-11-17): its reporting API only. The API Login ID is the user
-    # name, the Transaction Key the server secret; it never writes, and has no folder or host key.
-    if values.get("kind") == "AUTHORIZE_NET":
-        from app.integrations.authorize_net import HOSTS
-        if str(values.get("host") or "").strip().lower() not in HOSTS:
-            raise InvalidInput("connection.authorize_net_host", "host must be api.authorize.net (or apitest.authorize.net)",
-                               {"field": "host"})
+    # A payment gateway (Finance: Authorize.Net 2026-11-17, PayPal 2026-11-19): its reporting API only. The
+    # user name is its login id (Authorize.Net's API Login ID, PayPal's Client ID), the secret its key (Transaction
+    # Key, Secret) in the server environment; it never writes, and has no folder or host key.
+    gateway = read_only_gateways().get(str(values.get("kind") or ""))
+    if gateway is not None:
+        label, hosts, host_code = gateway
+        if str(values.get("host") or "").strip().lower() not in hosts:
+            raise InvalidInput(host_code, f"host must be {hosts[0]} (or {hosts[1]})", {"field": "host"})
         for field in ("username", "secret_name"):
             if not values.get(field):
-                raise InvalidInput("connection.field_required", f"{field} is required for an Authorize.Net connection",
+                raise InvalidInput("connection.field_required", f"{field} is required for {label} connection",
                                    {"field": field})
         if values.get("can_write"):
-            raise InvalidInput("connection.read_only_kind", "an Authorize.Net connection only reads: Write stays off",
+            raise InvalidInput("connection.read_only_kind", f"{label} connection only reads: Write stays off",
                                {"field": "can_write"})
         for field in ("host_key", "inbound_folder", "outbound_folder", "processed_folder", "error_folder"):
             if values.get(field):
-                raise InvalidInput("connection.not_for_kind", f"{field} must be empty for an Authorize.Net connection. "
+                raise InvalidInput("connection.not_for_kind", f"{field} must be empty for {label} connection. "
                                    "Passwords and keys never go in the CSV; put them in the server environment under "
                                    "secret_name.", {"field": field})
     # After-read Move needs somewhere to move to (FR-OB-74).

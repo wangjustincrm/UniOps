@@ -30,6 +30,7 @@ from sqlalchemy import Date, DateTime, Integer, Numeric, String, case, cast, fun
 from sqlalchemy.orm import aliased
 
 from app.db.base import Base
+from app.domain.gateways import LABELS
 from app.models.gateways import GatewaySettlement, GatewayTransaction, details_attempts
 from app.models.orders import Order
 from app.models.payments import OrderPayment
@@ -75,13 +76,14 @@ def _source(o):
 def _gateway_columns(t, s):
     words = case(*((t.match_method == k, v) for k, v in MATCH_WORDS.items()), else_=t.match_method)
     return (t.status.label("gateway_status"), t.card_type.label("card_type"), words.label("match_method"),
+            t.fee_amount.label("gateway_fee"),
             s.id.label("settlement_id"), s.external_id.label("settlement_ref"), s.settled_at.label("settled_at"),
             _local(s.settled_at, "day").label("settled_date"))
 
 
 def _no_gateway_columns():
     return (cast(null(), String).label("gateway_status"), cast(null(), String).label("card_type"),
-            cast(null(), String).label("match_method"), cast(null(), Integer).label("settlement_id"),
+            cast(null(), String).label("match_method"), cast(null(), Numeric(14, 2)).label("gateway_fee"), cast(null(), Integer).label("settlement_id"),
             cast(null(), String).label("settlement_ref"), cast(null(), DateTime(timezone=True)).label("settled_at"),
             cast(null(), Date).label("settled_date"))
 
@@ -96,9 +98,14 @@ _at = func.coalesce(_P.processed_at, _P.created_at)
 _ok_in = _P.kind.in_(_SUCCESS_IN) & (_P.status == "success")
 _ok_refund = (_P.kind == "refund") & (_P.status == "success")
 _is_anet = func.lower(func.coalesce(_P.gateway, "")).in_(("authorize_net", "authorize.net"))
-# The stretch the gateway's settlements cover (none read: no issue is raised).
+_is_paypal = func.lower(func.coalesce(_P.gateway, "")) == "paypal"
+# The stretch the gateway's data covers (none read: no issue is raised): Authorize.Net's settlements; PayPal's
+# transactions (it reports each one, settled into the balance at once).
 _covered_from = select(func.min(_S.settled_at)).where(_S.gateway == "AUTHORIZE_NET").scalar_subquery()
 _covered_to = select(func.max(_S.settled_at)).where(_S.gateway == "AUTHORIZE_NET").scalar_subquery()
+_T3 = aliased(GatewayTransaction)
+_paypal_from = select(func.min(_T3.submitted_at)).where(_T3.gateway == "PAYPAL").scalar_subquery()
+_paypal_to = select(func.max(_T3.submitted_at)).where(_T3.gateway == "PAYPAL").scalar_subquery()
 # Voided in the gateway (see the module text): the old gateway's "#void" pair, or the new app's sale
 # matched to a voided transaction and the refund of the same amount on its order.
 _P2, _T2 = aliased(OrderPayment), aliased(GatewayTransaction)
@@ -108,8 +115,9 @@ _old_void = (func.lower(func.coalesce(_P.gateway, "")) == "authorize_net") & sel
 _new_void_refund = (_P.kind == "refund") & select(_P2.id).join(_T2, _T2.payment_row_id == _P2.id).where(
     _P2.order_id == _P.order_id, _P2.kind.in_(_SUCCESS_IN), _T2.kind == "void", _P2.amount == _P.amount).exists()
 _voided = func.coalesce((_P.status == "success") & or_(_old_void, _T.kind == "void", _new_void_refund), False)
-_not_settled = (_is_anet & (_ok_in | _ok_refund) & _T.id.is_(None) & ~_P.test & ~_voided & (_at >= _covered_from)
-                & (_at < _covered_to - func.make_interval(0, 0, 0, SETTLE_GRACE_DAYS)))
+_not_settled = ((_ok_in | _ok_refund) & _T.id.is_(None) & ~_P.test & ~_voided & or_(
+    _is_anet & (_at >= _covered_from) & (_at < _covered_to - func.make_interval(0, 0, 0, SETTLE_GRACE_DAYS)),
+    _is_paypal & (_at >= _paypal_from) & (_at < _paypal_to - func.make_interval(0, 0, 0, SETTLE_GRACE_DAYS))))
 _money_in = _ok_in & ~_voided
 _money_back = _ok_refund & ~_voided
 
@@ -121,6 +129,7 @@ _PAYMENTS = (
         case((_money_in, _P.amount), else_=0).label("sales_amount"),
         case((_money_back, _P.amount), else_=0).label("refund_amount"),
         case((_money_in, _P.amount), (_money_back, -_P.amount), else_=0).label("net_amount"),
+        (case((_money_in, _P.amount), (_money_back, -_P.amount), else_=0) - func.coalesce(_T.fee_amount, 0)).label("net_after_fee"),
         _at.label("processed_at"), _local(_at, "week").label("processed_week"), _local(_at, "month").label("processed_month"),
         func.coalesce(
             case((func.lower(_P.gateway) == "authorize_net", func.nullif(func.split_part(_P.authorization, "#", 1), "")),
@@ -151,6 +160,7 @@ _NO_PAYMENT = (
         literal("none").label("kind"), cast(null(), String).label("status"), cast(literal(0), Numeric(14, 2)).label("amount"),
         _O.currency.label("currency"), cast(literal(0), Numeric(14, 2)).label("sales_amount"),
         cast(literal(0), Numeric(14, 2)).label("refund_amount"), cast(literal(0), Numeric(14, 2)).label("net_amount"),
+        cast(literal(0), Numeric(14, 2)).label("net_after_fee"),
         _O.first_received_at.label("processed_at"), _local(_O.first_received_at, "week").label("processed_week"),
         _local(_O.first_received_at, "month").label("processed_month"),
         cast(null(), String).label("gateway_ref"), cast(null(), String).label("shopify_payment_id"), _source(_O).label("order_source"),
@@ -169,11 +179,14 @@ _GATEWAY_ONLY = (
     select(
         (-(_T.id + GATEWAY_ROW_OFFSET)).label("id"), cast(null(), Integer).label("payment_row_id"),
         cast(null(), Integer).label("order_id"), cast(null(), String).label("order_ref"), cast(null(), String).label("customer"),
-        literal("Authorize.Net").label("method"), cast(null(), String).label("gateway"), _T.kind.label("kind"),
+        case(*((_T.gateway == k, v) for k, v in LABELS.items()), else_=_T.gateway).label("method"),
+        cast(null(), String).label("gateway"), _T.kind.label("kind"),
         literal("success").label("status"), _T.amount.label("amount"), _T.currency.label("currency"),
         case((_T.kind == "sale", _T.amount), else_=0).label("sales_amount"),
         case((_T.kind == "refund", _T.amount), else_=0).label("refund_amount"),
         case((_T.kind == "sale", _T.amount), (_T.kind == "refund", -_T.amount), else_=0).label("net_amount"),
+        (case((_T.kind == "sale", _T.amount), (_T.kind == "refund", -_T.amount), else_=0)
+         - func.coalesce(_T.fee_amount, 0)).label("net_after_fee"),
         func.coalesce(_T.submitted_at, _S.settled_at).label("processed_at"),
         _local(func.coalesce(_T.submitted_at, _S.settled_at), "week").label("processed_week"),
         _local(func.coalesce(_T.submitted_at, _S.settled_at), "month").label("processed_month"),

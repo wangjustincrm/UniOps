@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 READ = "sales.read"
 CONFIG = "sales.config"
 FILE_RETRY = "sales.file.retry"
-DEFAULT_MINUTES = {"SFTP": 5, "SHOPIFY": 10, "AUTHORIZE_NET": 60}  # a new connection's schedule (user 2026-11-02; batches settle daily)
+DEFAULT_MINUTES = {"SFTP": 5, "SHOPIFY": 10, "AUTHORIZE_NET": 60, "PAYPAL": 60}  # a new connection's schedule (user 2026-11-02; batches settle daily)
 
 
 _RULE_FIELDS = ("kind", "host", "username", "inbound_folder", "outbound_folder", "error_folder", "secret_name",
@@ -178,10 +178,10 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
     async def reset_cursor(self, id: int, cursor) -> ConnectionRead:
         """FR-OB-10: where the next pull starts (inclusive); null pulls nothing.
         The only way a person changes the cursor — audited. Shopify: orders updated from then;
-        Authorize.Net: batches settled from then."""
+        Authorize.Net: batches settled from then; PayPal: transactions from then."""
         entity = await self.repo.get(id, for_update=True)
-        if entity.kind not in ("SHOPIFY", "AUTHORIZE_NET"):
-            raise InvalidInput("connection.cursor_shopify_only", "only a Shopify or Authorize.Net connection has a cursor",
+        if entity.kind not in ("SHOPIFY", "AUTHORIZE_NET", "PAYPAL"):
+            raise InvalidInput("connection.cursor_shopify_only", "only a Shopify, Authorize.Net or PayPal connection has a cursor",
                                {"field": "cursor_updated_at"})
         self.uow.set_reason("reset cursor")
         entity.cursor_updated_at = cursor
@@ -189,7 +189,7 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
         return await self._read_one(entity)
 
     @requires(CONFIG)
-    async def test(self, id: int, sftp, shopify=None, authorize_net=None) -> ConnectionTestRead:
+    async def test(self, id: int, sftp, shopify=None, authorize_net=None, paypal=None) -> ConnectionTestRead:
         """Reads only (FR-OB-74). SFTP: the host key is read without logging
         in; the folders are listed only when the server's key is the pinned
         one. Shopify: the store's shop info, through its own gateway."""
@@ -202,6 +202,14 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
             except Exception as e:  # noqa: BLE001
                 logger.warning("connection test %s: authorize.net: %r", entity.name, e)
                 return ConnectionTestRead(host_key=None, folders=[], error=anet.readable(e))
+            return ConnectionTestRead(host_key=None, folders=[], gateway=info)
+        if entity.kind == "PAYPAL":  # the sign-in and the balances (Transaction Search's own permission)
+            from app.integrations import paypal as pp
+            try:
+                info = await paypal.test(snap)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("connection test %s: paypal: %r", entity.name, e)
+                return ConnectionTestRead(host_key=None, folders=[], error=pp.readable(e))
             return ConnectionTestRead(host_key=None, folders=[], gateway=info)
         if entity.kind == "SHOPIFY":  # never SSH against a Shopify host
             try:

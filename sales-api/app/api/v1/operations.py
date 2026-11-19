@@ -34,7 +34,8 @@ async def connection_audit(u: UoW, id: int):
 
 @connections.post("/{id}/test", response_model=ConnectionTestRead)
 async def connection_test(u: UoW, rt: Rt, id: int):
-    return await ConnectionService(u).test(id, rt.container.sftp, rt.container.shopify, rt.container.authorize_net)  # reads only
+    return await ConnectionService(u).test(id, rt.container.sftp, rt.container.shopify, rt.container.authorize_net,
+                                               rt.container.paypal)  # reads only
 
 
 @connections.post("/{id}/run-now", response_model=RunStarted, status_code=202)

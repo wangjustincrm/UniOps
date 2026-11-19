@@ -17,6 +17,7 @@ from __future__ import annotations
 from sqlalchemy import Date, Integer, Numeric, case, cast, func, select
 
 from app.db.base import Base
+from app.domain.gateways import LABELS
 from app.models.gateways import GatewaySettlement, GatewayTransaction, details_attempts
 from app.models.payments import OrderPayment
 
@@ -55,7 +56,7 @@ _diff = _S.net_amount - _matched
 _ROWS = (
     select(
         _S.id.label("id"), _S.connection_id.label("connection_id"),
-        case((_S.gateway == "AUTHORIZE_NET", "Authorize.Net"), else_=_S.gateway).label("gateway"),
+        case(*((_S.gateway == k, v) for k, v in LABELS.items()), else_=_S.gateway).label("gateway"),
         _S.external_id.label("batch_id"), _S.settled_at.label("settled_at"),
         cast(func.date_trunc("day", func.timezone(_TZ, _S.settled_at)), Date).label("settled_date"),
         cast(func.date_trunc("week", func.timezone(_TZ, _S.settled_at)), Date).label("settled_week"),

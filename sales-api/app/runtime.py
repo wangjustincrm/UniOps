@@ -14,6 +14,7 @@ from app.integrations.sftp import AsyncsshSftp
 from app.integrations.email import SmtpEmail
 from app.integrations.shopify import HttpShopify
 from app.integrations.authorize_net import HttpAuthorizeNet
+from app.integrations.paypal import HttpPayPal
 from app.models.documents import Run
 from app.models.records import OutboxRecord
 from app.platform.jobs import Background
@@ -29,6 +30,7 @@ from app.services.transfers import SEND_943, Transfers
 from app.services.shipments import CLOSE, CLOSE_AT_997, FULFILL, Shipments
 from app.services.shopify_intake import ShopifyIntake
 from app.services.gateway_intake import AuthorizeNetIntake
+from app.services.paypal_intake import PayPalIntake
 from app.services.notifications import NOTIFY_EMAIL, email_kind
 from app.services.problems import hook_failed, task_service
 
@@ -48,10 +50,11 @@ class Runtime:
     transfers: Transfers | None = None
     tasks: Any = None
     gateway_intake: AuthorizeNetIntake | None = None
+    paypal_intake: PayPalIntake | None = None
 
 
 def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify: Any = None,
-                  authorize_net: Any = None) -> Runtime:
+                  authorize_net: Any = None, paypal: Any = None) -> Runtime:
     async def refusal_sink(r: RefusalRecord) -> None:  # the "would have written" row (§5.5)
         await oplog.write_alone(uow_factory, "WARNING", "guard", r.message, context=r.context)
 
@@ -60,6 +63,7 @@ def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify:
         real_sftp=lambda: AsyncsshSftp(allowed_hosts=settings.sftp_allowed_hosts, secret=os.environ.get),
         real_shopify=lambda: HttpShopify(secret=os.environ.get),
         real_authorize_net=lambda: HttpAuthorizeNet(secret=os.environ.get),
+        real_paypal=lambda: HttpPayPal(secret=os.environ.get),
         real_email=lambda: SmtpEmail(
             host=getattr(settings, "SALES_SMTP_HOST", ""), port=getattr(settings, "SALES_SMTP_PORT", 587),
             username=getattr(settings, "SALES_SMTP_USER", "") or None,
@@ -73,11 +77,14 @@ def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify:
         container.shopify = shopify
     if authorize_net is not None:
         container.authorize_net = authorize_net
+    if paypal is not None:
+        container.paypal = paypal
     tasks = task_service(container.notify_tasks)
     intake = Intake(uow_factory=uow_factory, sftp=container.sftp, tasks=tasks)
     shopify_intake = ShopifyIntake(uow_factory=uow_factory, shopify=container.shopify, tasks=tasks)
     edi_intake = EdiIntake(uow_factory=uow_factory, tasks=tasks)
     gateway_intake = AuthorizeNetIntake(uow_factory=uow_factory, gateway=container.authorize_net)
+    paypal_intake = PayPalIntake(uow_factory=uow_factory, gateway=container.paypal)
     outbound = Outbound940(uow_factory=uow_factory, tasks=tasks, sftp=container.sftp)
     shadow = ShadowRun(uow_factory=uow_factory, outbound=outbound,
                        reference_dir=getattr(settings, "SALES_ZOHO_REFERENCE_DIR", "") or None)
@@ -96,9 +103,9 @@ def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify:
                                # the steps stay until step 2 (after go-live), off.
                                shopify_intake=shopify_intake, edi_intake=edi_intake, outbound=outbound, shadow=None,
                                shipments=shipments, invoicing=invoicing, transfers=transfers, tasks=tasks,
-                               gateway_intake=gateway_intake)
+                               gateway_intake=gateway_intake, paypal_intake=paypal_intake)
     return Runtime(container, uow_factory, intake, shopify_intake, edi_intake, scheduler, Background(), outbound, shipments,
-                   invoicing, transfers, tasks, gateway_intake)
+                   invoicing, transfers, tasks, gateway_intake, paypal_intake)
 
 
 _runtime: Runtime | None = None

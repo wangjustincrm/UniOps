@@ -77,7 +77,7 @@ def test_amounts_are_totalled_unless_repeated_per_row():
     from app.services.order_views import OrderRepository
     from app.services.payment_list import PaymentRowRepository
     assert {"subtotal", "tax", "shipping", "discount", "total_amount"} <= set(OrderRepository.totalled)
-    assert set(PaymentRowRepository.totalled) == {"sales_amount", "refund_amount", "net_amount"}  # order values repeat per payment
+    assert set(PaymentRowRepository.totalled) == {"sales_amount", "refund_amount", "net_amount", "gateway_fee", "net_after_fee"}  # order values repeat per payment
     assert all(f in r.sortable for r in (OrderRepository, PaymentRowRepository) for f in r.totalled)
 
 
