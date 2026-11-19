@@ -108,3 +108,21 @@ async def test_a_pending_payment_that_went_through_later_is_no_issue(env):  # no
     ids = {x["shopify_id"]: x["id"] for x in await env.q("SELECT id, shopify_id FROM sales_order_payments")}
     issue = {sid: r.issue for r in page.items for sid, i in ids.items() if r.id == i}
     assert (issue[102], issue[202]) == (None, "Pending over 7 days")
+
+
+
+async def test_a_pending_charge_on_a_cancelled_order_with_nothing_in_the_gateway_is_no_issue(env):  # noqa: F811
+    """User 2026-11-19: no money moved and none will. A pending refund on a cancelled order stays an issue."""
+    env.shop.orders = [order(1, financial="pending", cancelled_at="2026-06-02T10:00:00-04:00"),
+                       order(2, financial="refunded", cancelled_at="2026-06-02T10:00:00-04:00")]
+    env.shop.transactions_by_order |= {
+        "1": [tx(101, gateway="authorize.net", amount="244.15", status="pending", processed_at="2026-06-01T10:00:00-04:00")],
+        "2": [tx(201, gateway="alphapay", amount="15.00"),
+              tx(202, gateway="alphapay", kind="refund", amount="15.00", status="pending", processed_at="2026-06-03T10:00:00-04:00")],
+    }
+    await env.pull()
+    page = await rows(env)
+    ids = {x["shopify_id"]: x["id"] for x in await env.q("SELECT id, shopify_id FROM sales_order_payments")}
+    issue = {sid: r.issue for r in page.items for sid, i in ids.items() if r.id == i}
+    assert issue[101] != "Pending over 7 days"
+    assert issue[202] == "Pending over 7 days"
