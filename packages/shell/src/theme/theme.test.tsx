@@ -45,10 +45,17 @@ describe('setTheme / useTheme', () => {
 
 describe('UserMenu theme picker', () => {
   it('is hidden while only one theme is registered', () => {
-    expect(THEMES.length).toBe(1)
-    render(<MemoryRouter><UserMenu name="Ann Lee" /></MemoryRouter>)
-    fireEvent.click(screen.getByRole('button', { name: /Ann Lee/ }))
-    expect(screen.queryByRole('group', { name: 'Theme' })).toBeNull()
+    const list = THEMES as ThemeDefList
+    const saved = list.splice(1)
+    try {
+      render(<MemoryRouter><UserMenu name="Ann Lee" /></MemoryRouter>)
+      fireEvent.click(screen.getByRole('button', { name: /Ann Lee/ }))
+      expect(screen.queryByRole('group', { name: 'Theme' })).toBeNull()
+    } finally { list.push(...saved) }
+  })
+
+  it('CRM is registered next to the default', () => {
+    expect(THEMES.map((t) => t.id)).toEqual([DEFAULT_THEME, 'crm'])
   })
 
   it('lists every theme and switches when there are two', () => {

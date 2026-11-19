@@ -1,0 +1,76 @@
+/**
+ * Theme "CRM" — Canada Royal Milk.
+ *
+ * Milk-white surfaces, royal navy from the wordmark (#001B72), maple red from
+ * the crown leaf (#C20009) as a brand mark only.
+ *
+ * - Primary ramp ends in the logo navy: 900 = #001B72 (the sidebar), 600 is the
+ *   brighter royal blue for buttons / links / focus.
+ * - Maple red appears only as the active-item bar in the sidebar. Never on
+ *   buttons, text or status: it sits too close to danger red and would read
+ *   as "error".
+ * - Neutrals are a cool, faintly blue "milk" grey; canvas is near-white.
+ * - Info moves from blue to a cyan-teal so it stays distinct from the navy
+ *   accent (Badge "blue" / Alert info).
+ * Checked with: node scripts/theme-contrast.mjs crm
+ */
+:root[data-theme="crm"] {
+  color-scheme: light;
+
+  /* ── Primary — royal navy (logo wordmark) ─────────────────────── */
+  --color-primary-50:  #EEF2FB;
+  --color-primary-100: #DCE3F6;
+  --color-primary-200: #B7C5EC;
+  --color-primary-300: #889FDC;
+  --color-primary-400: #5373C6;
+  --color-primary-500: #2F52B2;
+  --color-primary-600: #1D3F9E;
+  --color-primary-700: #122F86;
+  --color-primary-800: #0A247B;
+  --color-primary-900: #001B72;   /* logo navy */
+
+  /* ── Neutral — cool milk grey ─────────────────────────────────── */
+  --color-neutral-50:  #F5F7FB;
+  --color-neutral-100: #EBEFF6;
+  --color-neutral-200: #D7DEE9;
+  --color-neutral-300: #B2BCCC;
+  --color-neutral-400: #8490A4;
+  --color-neutral-500: #5D697E;
+  --color-neutral-600: #475268;
+  --color-neutral-700: #333D53;
+  --color-neutral-800: #222A3E;
+  --color-neutral-900: #131A2C;
+
+  /* ── Info — cyan-teal (distinct from the navy accent) ─────────── */
+  --color-info-50:  #ECFAFC;
+  --color-info-100: #CFF2F7;
+  --color-info-200: #A2E3EE;
+  --color-info-300: #67CBDD;
+  --color-info-400: #2FAEC6;
+  --color-info-500: #1591AB;
+  --color-info-600: #0E7590;
+  --color-info-700: #0E5E74;
+  --color-info-800: #114D5E;
+  --color-info-900: #123F4D;
+
+  /* ── Surfaces — milk white ────────────────────────────────────── */
+  --color-canvas: #F6F8FC;
+
+  /* ── Accent: button royal blue, links one step deeper ─────────── */
+  --color-accent-fg: var(--color-primary-700);
+
+  /* ── Sidebar: the logo navy, maple-red active bar ─────────────── */
+  --color-nav:           var(--color-primary-900);
+  --color-nav-fg:        rgb(255 255 255 / 0.74);
+  --color-nav-item-hover:  rgb(255 255 255 / 0.08);
+  --color-nav-item-active: rgb(255 255 255 / 0.13);
+  --color-nav-indicator: #E8323B;   /* maple red, lifted to read on navy */
+
+  /* ── Elevation — navy-tinted, soft ────────────────────────────── */
+  --shadow-xs: 0 1px 2px rgb(19 26 44 / 0.05);
+  --shadow-sm: 0 1px 3px rgb(19 26 44 / 0.08), 0 1px 2px rgb(19 26 44 / 0.04);
+  --shadow-md: 0 4px 12px rgb(19 26 44 / 0.08), 0 1px 3px rgb(19 26 44 / 0.05);
+  --shadow-lg: 0 12px 32px rgb(19 26 44 / 0.12), 0 2px 6px rgb(19 26 44 / 0.06);
+  --shadow-focus: 0 0 0 3px rgb(29 63 158 / 0.22);
+  --shadow-up: 0 -1px 8px rgb(19 26 44 / 0.06);
+}

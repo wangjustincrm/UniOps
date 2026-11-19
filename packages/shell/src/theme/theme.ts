@@ -21,6 +21,7 @@ export interface ThemeDef {
 /** Registered themes. The first is the default (what @theme in tokens.css defines). */
 export const THEMES: readonly ThemeDef[] = [
   { id: DEFAULT_THEME, label: 'UniOps', scheme: 'light' },
+  { id: 'crm', label: 'CRM', scheme: 'light' },
 ]
 
 const listeners = new Set<() => void>()

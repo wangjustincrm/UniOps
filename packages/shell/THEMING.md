@@ -5,6 +5,15 @@
 
 ---
 
+## 已有主题
+
+| id | 显示名 | 说明 |
+|---|---|---|
+| `uniops` | UniOps | 默认主题(青绿主色),定义在 `tokens.css` 的 `@theme` |
+| `crm` | CRM | Canada Royal Milk:牛奶白底色、Logo 海军蓝(`#001B72`)侧栏和主色、枫叶红(`#C20009` 提亮为 `#E8323B`)只作侧栏当前项指示条;信息色改青蓝以区别于海军蓝。`themes/crm.css` |
+
+---
+
 ## 1. 原理
 
 **两层 token**(全部在 `tokens.css` 的 `@theme` 里，这就是默认主题 `uniops`):
@@ -73,7 +82,7 @@
 ### 2.5 其他
 
 - `canvas`(页面底)、`surface`(卡片、表格、输入框底)
-- 侧栏：`nav`、`nav-fg`、`nav-fg-active`、`nav-item-hover`、`nav-item-active`、`nav-line`
+- 侧栏：`nav`、`nav-fg`、`nav-fg-active`、`nav-item-hover`、`nav-item-active`、`nav-line`、`nav-indicator`(当前项左侧的竖条，可放品牌点缀色)
 - 反色区(PDF 查看器、提示框):`inverse*`、`fg-on-inverse*`
 - 阴影 `shadow-xs … lg`、`shadow-focus`(焦点环颜色跟主色走)
 - 字体 `font-sans`、`font-mono`(换字体要确认已加载)

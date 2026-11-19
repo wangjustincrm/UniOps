@@ -4,3 +4,4 @@
  * and the same <id> in src/theme/theme.ts → THEMES. The default theme
  * ("uniops") is the @theme block in ../tokens.css and needs no file.
  */
+@import "./crm.css";
