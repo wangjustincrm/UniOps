@@ -23,6 +23,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
+from sqlalchemy import select
+
 from app.domain.gateways import paypal_kind, paypal_settled
 from app.integrations.paypal import MAX_DAYS, PayPalAuthFailed, PayPalRequestRefused, readable
 from app.models.gateways import GatewayTransaction
@@ -36,6 +38,13 @@ GATEWAY = "PAYPAL"
 MAX_WINDOWS = 40           # per pass (~3 years at 31 days): a first history read arrives in a pass or two
 MIN_WINDOW = timedelta(hours=1)  # a window is halved down to this when PayPal says it has too many results
 HISTORY_DAYS = 3 * 365 - 7  # PayPal answers for about three years
+
+
+def external_id(transaction_id: str, event_code: str, kind: str) -> str:
+    """PayPal lists several events under one transaction id (a hold T1110 and its release T1111, seen on dev2
+    2026-11-19): a sale or refund keeps PayPal's id (what Shopify has, what matching looks for); any other event
+    is "<id>:<event code>", so each is its own row."""
+    return transaction_id if kind in ("sale", "refund") else f"{transaction_id}:{event_code}"[:64]
 
 
 def _value(m: Any) -> str | None:
@@ -116,13 +125,20 @@ class PayPalIntake(GatewayIntake):
                             error_type=type(e).__name__)
             return None
 
+        # One row per event: a repeat in the window (a page read twice, an event updated) is its latest.
+        latest: dict[tuple[str, str], dict[str, Any]] = {}
+        for t in txs:
+            key = (str(t.get("transaction_id") or ""), str(t.get("transaction_event_code") or ""))
+            if key not in latest or str(t.get("transaction_updated_date") or "") >= str(latest[key].get("transaction_updated_date") or ""):
+                latest[key] = t
+
         async def write(uow) -> int:
             s = uow.session
             uow.set_reason("PayPal transactions")
-            for t in txs:
+            for t in latest.values():
                 await self._upsert_tx(s, conn, t)
-            await s.flush()
-            return len(txs)
+                await s.flush()  # the next event of the same id sees this one
+            return len(latest)
 
         outcome = await isolated(f"{conn.name}:paypal {start.date()}", write, uow_factory=self.uow_factory,
                                  log=self._failed(conn, f"storing {start.date()}..{end.date()}", run_id))
@@ -133,13 +149,22 @@ class PayPalIntake(GatewayIntake):
         return refreshed or end
 
     async def _upsert_tx(self, s, conn: ConnectionSnapshot, t: dict[str, Any]) -> GatewayTransaction | None:
-        ext = str(t.get("transaction_id") or "")
-        if not ext:
+        tid = str(t.get("transaction_id") or "")
+        if not tid:
             return None
+        code = str(t.get("transaction_event_code") or "")
         value = _value(t.get("transaction_amount"))
-        kind = paypal_kind(t.get("transaction_event_code"), value)
+        kind = paypal_kind(code, value)
         currency = ((t.get("transaction_amount") or {}).get("currency_code") or "CAD")[:3]
         amount = abs(money(value))
+        ext = external_id(tid, code, kind)
+        if ext != tid:  # stored under the bare id by an earlier version: renamed, never a second row
+            old = (await s.execute(select(GatewayTransaction).where(
+                GatewayTransaction.gateway == GATEWAY, GatewayTransaction.external_id == tid,
+                GatewayTransaction.kind == "other"))).scalar_one_or_none()
+            if old is not None and (old.raw or {}).get("transaction_event_code") == code:
+                old.external_id = ext
+                await s.flush()
         row = await self._transaction(s, conn, ext, kind=kind, amount=amount, currency=currency, raw=t)
         status = t.get("transaction_status")
         row.kind, row.status, row.settled = kind, status, paypal_settled(status, kind)

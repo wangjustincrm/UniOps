@@ -230,19 +230,23 @@ async def test_a_pass_reads_transactions_with_fees_matches_by_paypal_s_id_and_fe
         item("8WITHDRAW0000005", "T0403", "-150.00", "2026-10-10T15:00:00+0000"),           # to the bank
         item("2CONVERT00000006", "T0200", "-10.00", "2026-10-11T15:00:00+0000"),            # CAD → USD
         item("3PENDING00000007", "T0006", "60.00", "2026-10-12T15:00:00+0000", status="P"),
+        # one id, two events (a hold and its release, as on dev2 2026-11-19): two rows, neither a sale
+        item("3FVHOLD000000008", "T1110", "-81.24", "2026-10-13T15:00:00+0000", status="P", ref="5D158248WR160752Y"),
+        item("3FVHOLD000000008", "T1111", "81.24", "2026-10-13T15:04:00+0000", status="D", ref="5D158248WR160752Y"),
     ]
     cid = await paypal_connection(env, datetime(2026, 10, 1, tzinfo=timezone.utc))
     clock = lambda: datetime(2026, 10, 20, 6, tzinfo=timezone.utc)  # noqa: E731
     r = await PayPalIntake(uow_factory=env.factory, gateway=fake, clock=clock).run_pass(await snap(env, cid))
-    assert (r.status, r.transactions, r.matched) == ("ok", 7, 3)
+    assert (r.status, r.transactions, r.matched) == ("ok", 9, 3)
     assert r.cursor_after == "2026-10-20T00:00:00+00:00"  # PayPal's own "has everything up to", not the clock
 
     rows = {x["external_id"]: x for x in await env.q(
         "SELECT external_id, kind, settled, amount, fee_amount, match_method, payment_row_id, raw::text AS raw FROM sales_gateway_transactions")}
     assert {k: (v["kind"], v["settled"]) for k, v in rows.items()} == {
         "5D158248WR160752Y": ("sale", True), "7RF00000AA000001X": ("refund", True), "9XX00000BB000002Z": ("sale", True),
-        "4TYPEDINPAYPAL004": ("sale", True), "8WITHDRAW0000005": ("other", False), "2CONVERT00000006": ("other", False),
-        "3PENDING00000007": ("sale", False)}
+        "4TYPEDINPAYPAL004": ("sale", True), "8WITHDRAW0000005:T0403": ("other", False), "2CONVERT00000006:T0200": ("other", False),
+        "3PENDING00000007": ("sale", False), "3FVHOLD000000008:T1110": ("other", False),
+        "3FVHOLD000000008:T1111": ("other", False)}
     assert (rows["5D158248WR160752Y"]["fee_amount"], rows["7RF00000AA000001X"]["fee_amount"]) == (Decimal("3.78"), Decimal("-0.90"))
     assert {k for k, v in rows.items() if v["match_method"] == "TRANSACTION_ID"} == {
         "5D158248WR160752Y", "7RF00000AA000001X", "9XX00000BB000002Z"}
@@ -258,7 +262,7 @@ async def test_a_pass_reads_transactions_with_fees_matches_by_paypal_s_id_and_fe
     assert by_ref["7RF00000AA000001X"].net_after_fee == Decimal("-29.10")  # the fee given back with the refund
     assert by_ref["4TYPEDINPAYPAL004"].issue == "In the gateway, not in Shopify"
     assert by_ref["1NOTINPAYPAL00003"].issue == "Not settled in the gateway"
-    assert "8WITHDRAW0000005" not in by_ref and "2CONVERT00000006" not in by_ref  # neither a sale nor a refund
+    assert not any(k and ("8WITHDRAW" in k or "2CONVERT" in k or "3FVHOLD" in k) for k in by_ref)  # neither a sale nor a refund
 
 
 async def test_a_refused_secret_latches_and_a_window_too_large_is_read_in_halves(env):  # noqa: F811
