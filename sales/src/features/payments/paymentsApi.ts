@@ -25,6 +25,9 @@ export interface PaymentRowRead {
   sales_amount: string
   refund_amount: string
   net_amount: string
+  /** The gateway's fee for this payment (PayPal reports it; Authorize.Net bills monthly: none), and Net less it. */
+  gateway_fee: string | null
+  net_after_fee: string | null
   /** The processor's own transaction id: from Shopify (old Authorize.Net gateway, PayPal) or from the gateway once matched. */
   gateway_ref: string | null
   shopify_payment_id: string | null

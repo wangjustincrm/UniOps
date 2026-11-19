@@ -13,6 +13,13 @@ _SUCCESS = {"field": "status", "op": "eq", "value": "success"}
 _NEWEST = [{"field": "processed_at", "desc": True}]
 
 
+def _by_settlement(key: str, method: str) -> Preset:
+    """A gateway's payments by the deposit they were paid out in (an Authorize.Net batch, a PayPal transfer)."""
+    return Preset(key, f"{method} — by settlement", {
+        "filters": [{"field": "method", "op": "eq", "value": method}, {"field": "settlement_id", "op": "not_null", "value": None}],
+        "group": [{"field": "settled_date", "desc": True}, {"field": "settlement_id", "desc": True}], "sort": _NEWEST})
+
+
 class PaymentRowRepository(Repository[PaymentRow]):
     model = PaymentRow
     search_fields = ("order_ref", "customer", "gateway_ref", "shopify_payment_id")
@@ -27,7 +34,7 @@ class PaymentRowRepository(Repository[PaymentRow]):
               "net_amount": "Net", "net_after_fee": "Net after fee", "gateway_fee": "Gateway fee", "gateway_ref": "Gateway transaction ID", "shopify_payment_id": "Shopify payment ID",
               "order_source": "Order source", "financial_status": "Order financial status", "order_cancelled": "Order cancelled",
               "issue": "Issue", "order_total": "Order total", "gateway_status": "Gateway status", "card_type": "Card type",
-              "match_method": "Matched by", "settlement_id": "Settlement no.", "settlement_ref": "Batch ID", "settled_at": "Settled",
+              "match_method": "Matched by", "settlement_id": "Settlement no.", "settlement_ref": "Batch / transfer ID", "settled_at": "Settled",
               "settled_date": "Settlement date", "voided": "Voided in the gateway"}
     enums = {"method": METHODS, "kind": KINDS, "status": STATUSES, "order_source": SOURCES, "issue": ISSUES, "match_method": MATCHES,
              "financial_status": ("paid", "partially_paid", "partially_refunded", "refunded", "pending", "authorized", "voided")}
@@ -43,9 +50,8 @@ class PaymentRowRepository(Repository[PaymentRow]):
         Preset("all", "All"),
         Preset("authorize_net", "Authorize.Net — transactions", {
             "filters": [{"field": "method", "op": "eq", "value": "Authorize.Net"}, _SUCCESS], "sort": _NEWEST}),
-        Preset("authorize_net_settlements", "Authorize.Net — by settlement", {
-            "filters": [{"field": "method", "op": "eq", "value": "Authorize.Net"}, {"field": "settlement_id", "op": "not_null", "value": None}],
-            "group": [{"field": "settled_date", "desc": True}, {"field": "settlement_id", "desc": True}], "sort": _NEWEST}),
+        _by_settlement("authorize_net_settlements", "Authorize.Net"),
+        _by_settlement("paypal_settlements", "PayPal"),
         Preset("paypal_weekly", "PayPal — weekly", {
             "filters": [{"field": "method", "op": "eq", "value": "PayPal"}, _SUCCESS],
             "group": [{"field": "processed_week", "desc": True}], "sort": _NEWEST}),

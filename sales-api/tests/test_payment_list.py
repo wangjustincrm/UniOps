@@ -81,7 +81,7 @@ async def test_the_system_views_fit_the_list_and_are_served(env):  # noqa: F811
     async with env.factory(OP) as u:
         meta = await PaymentRowService(u).meta()
     names = [v["name"] for v in meta["views"]]
-    assert names == ["All", "Authorize.Net — transactions", "Authorize.Net — by settlement", "PayPal — weekly",
+    assert names == ["All", "Authorize.Net — transactions", "Authorize.Net — by settlement", "PayPal — by settlement", "PayPal — weekly",
                      "AlphaPay / Manual — monthly", "Exceptions"]
     for v in meta["views"]:
         assert check_state(v["state"], PaymentRowRepository) == v["state"]

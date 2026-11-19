@@ -24,7 +24,7 @@ class SettlementRowRepository(Repository[SettlementRow]):
                    "returned_count", "other_count", "pending_count", "transaction_count", "matched_net", "difference",
                    "unmatched_count", "probable_count", "transactions_read_at", "transfer_amount", "carried_amount", "notes",
                    "issue")
-    labels = {"id": "Settlement no.", "batch_id": "Batch ID", "settled_at": "Settled", "settled_date": "Date", "settled_week": "Week",
+    labels = {"id": "Settlement no.", "batch_id": "Batch / transfer ID", "settled_at": "Settled", "settled_date": "Date", "settled_week": "Week",
               "settled_month": "Month", "state": "State", "payment_method": "Payment method", "sales_amount": "Sales",
               "sales_count": "Sales (count)", "refund_amount": "Refunds", "refund_count": "Refunds (count)",
               "fee_amount": "Fees", "net_amount": "Net", "declined_count": "Declined", "voided_count": "Voided",
