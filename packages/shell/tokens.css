@@ -202,6 +202,8 @@
   --color-nav-item-hover:  rgb(255 255 255 / 0.08);
   --color-nav-item-active: rgb(255 255 255 / 0.14);
   --color-nav-line:      rgb(255 255 255 / 0.10);
+  /* The bar beside the active sidebar item — a theme's brand mark can go here. */
+  --color-nav-indicator: rgb(255 255 255 / 0.80);
 
   /* ── Type ─────────────────────────────────────────────────────── */
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;

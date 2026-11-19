@@ -102,7 +102,7 @@ export function Sidebar({ brand, sections, collapsed, onToggleCollapse, mobileOp
         {!collapsed && <span className="truncate">{item.label}</span>}
         {!collapsed && item.external && !item.sameTab && <ExternalLink aria-hidden className="ml-auto h-3.5 w-3.5 opacity-60" />}
         {!!item.badge && <Count n={item.badge} collapsed={collapsed} />}
-        {active && <span aria-hidden className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-nav-fg-active/80" />}
+        {active && <span aria-hidden className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-nav-indicator" />}
       </>
     )
     const cls = (active: boolean) => cn(
