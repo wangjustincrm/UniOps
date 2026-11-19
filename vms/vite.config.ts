@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
+import { uniopsTheme } from '@uniops/shell/vite'
 
 // @uniops/shell is consumed as a workspace package (file: dep). On the host the
 // monorepo root node_modules resolves its transitive deps; in the Docker dev
@@ -9,7 +10,7 @@ import path from 'path'
 // dir under /app/node_modules and its bare imports (zustand, clsx…) resolve from
 // the app's own node_modules. No Vite alias needed in either environment.
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), uniopsTheme()],
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },

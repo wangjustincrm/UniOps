@@ -2,9 +2,10 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
+import { uniopsTheme } from '@uniops/shell/vite'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), uniopsTheme()],
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
     // One React for the app and @uniops/shell: this app's own node_modules can
