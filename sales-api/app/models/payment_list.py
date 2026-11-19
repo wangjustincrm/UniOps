@@ -118,6 +118,13 @@ _voided = func.coalesce((_P.status == "success") & or_(_old_void, _T.kind == "vo
 _not_settled = ((_ok_in | _ok_refund) & _T.id.is_(None) & ~_P.test & ~_voided & or_(
     _is_anet & (_at >= _covered_from) & (_at < _covered_to - func.make_interval(0, 0, 0, SETTLE_GRACE_DAYS)),
     _is_paypal & (_at >= _paypal_from) & (_at < _paypal_to - func.make_interval(0, 0, 0, SETTLE_GRACE_DAYS))))
+# A pending payment that went through later (user 2026-11-19: SHP-1004, SHP-1013): the same order has a later
+# successful payment of the same kind, amount and gateway id — no customer is waiting, so it is no issue.
+_P4 = aliased(OrderPayment)
+_superseded = select(_P4.id).where(
+    _P4.order_id == _P.order_id, _P4.id != _P.id, _P4.status == "success", _P4.kind == _P.kind, _P4.amount == _P.amount,
+    func.coalesce(_P4.authorization, "") == func.coalesce(_P.authorization, ""),
+    func.coalesce(_P4.processed_at, _P4.created_at) >= _at).exists()
 _money_in = _ok_in & ~_voided
 _money_back = _ok_refund & ~_voided
 
@@ -138,7 +145,7 @@ _PAYMENTS = (
         _P.payment_id.label("shopify_payment_id"), _source(_O).label("order_source"),
         _O.shopify_financial_status.label("financial_status"), _cancelled.label("order_cancelled"),
         _O.discount.label("discount"), _O.shipping.label("shipping"), _O.original_total.label("order_total"), _P.test.label("test"),
-        case(((_P.status == "pending") & (_at < func.now() - func.make_interval(0, 0, 0, 7)), "Pending over 7 days"),
+        case(((_P.status == "pending") & (_at < func.now() - func.make_interval(0, 0, 0, 7)) & ~_superseded, "Pending over 7 days"),
              (_cancelled & _ok_in & func.coalesce(_O.shopify_financial_status, "").not_in(("refunded", "voided")),
               "Cancelled, not fully refunded"),
              ((_O.shopify_financial_status == "partially_paid") & _P.kind.in_(_SUCCESS_IN), "Partially paid"),

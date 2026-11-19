@@ -86,3 +86,25 @@ async def test_the_system_views_fit_the_list_and_are_served(env):  # noqa: F811
     for v in meta["views"]:
         assert check_state(v["state"], PaymentRowRepository) == v["state"]
     assert PaymentRowRepository.unknown_view_columns() == []
+
+
+
+async def test_a_pending_payment_that_went_through_later_is_no_issue(env):  # noqa: F811
+    """User 2026-11-19 (SHP-1004 / SHP-1013): a pending refund, then the same refund successful a week later (same
+    amount, same gateway id) — no customer is waiting; one still pending alone stays an issue."""
+    env.shop.orders = [order(1, financial="refunded"), order(2, financial="partially_refunded")]
+    env.shop.transactions_by_order |= {
+        "1": [tx(101, gateway="paypal", amount="100.00", authorization="1SALE"),
+              tx(102, gateway="paypal", kind="refund", amount="49.89", status="pending", authorization="4EE40382GE049603N",
+                 processed_at="2026-06-12T10:00:00-04:00"),
+              tx(103, gateway="paypal", kind="refund", amount="49.89", authorization="4EE40382GE049603N",
+                 processed_at="2026-06-19T10:00:00-04:00")],
+        "2": [tx(201, gateway="paypal", amount="100.00", authorization="2SALE"),
+              tx(202, gateway="paypal", kind="refund", amount="20.00", status="pending", authorization="2REFUND",
+                 processed_at="2026-06-12T10:00:00-04:00")],
+    }
+    await env.pull()
+    page = await rows(env)
+    ids = {x["shopify_id"]: x["id"] for x in await env.q("SELECT id, shopify_id FROM sales_order_payments")}
+    issue = {sid: r.issue for r in page.items for sid, i in ids.items() if r.id == i}
+    assert (issue[102], issue[202]) == (None, "Pending over 7 days")
