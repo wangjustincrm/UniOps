@@ -42,5 +42,5 @@ export function ErrorState({
 /** Inline error line for forms and actions. */
 export function ErrorLine({ message }: { message: string | null | undefined }) {
   if (!message) return null
-  return <p role="alert" className="text-sm text-danger-600">{message}</p>
+  return <p role="alert" className="text-sm text-danger-700">{message}</p>
 }

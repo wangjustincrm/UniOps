@@ -1,7 +1,7 @@
 import { NEEDS_REVIEW } from '@/app/oldAddresses'
 import { useNavigate } from 'react-router-dom'
 import {
-  Button, LocalTable, PageHeader, Section, Skeleton, StatCard, useOpenView, type ColumnDef, useRefresh, Hint, Muted, columnsOf, useLookup, QueryState, Stack, Cluster, Columns,
+  Button, LocalTable, PageHeader, Section, Skeleton, StatCard, useOpenView, type ColumnDef, useRefresh, Hint, Muted, columnsOf, useLookup, QueryState, Stack, Cluster, Columns, Text,
 } from '@/platform-ui'
 import { fetchEvents } from '@/features/configuration/notifications/notificationsApi'
 import { fetchDashboard, fetchHealth, type DashboardRead } from './healthApi'
@@ -57,7 +57,7 @@ export function HomeDashboard() {
           <StatCard label="Waiting for delivery confirmation" count={d.waiting_delivery} onOpen={() => go('/deliveries')} />
           {d.open_tasks.map((t) => (
             <StatCard key={t.type} label={label(t.type)} count={t.count} tone="warning">
-              <Hint>open in the Task Inbox</Hint>
+              <Text tone="soft" size="xs">open in the Task Inbox</Text>
             </StatCard>
           ))}
         </Columns>

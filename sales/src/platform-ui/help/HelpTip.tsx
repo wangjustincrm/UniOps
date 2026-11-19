@@ -31,7 +31,7 @@ export function HelpTip({ id, entry, label, children, className, tourSlot, tourK
           </button>
         ) : (
           <button type="button" data-help={id} aria-label={name}
-            className={cx('inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full align-middle text-neutral-400 hover:text-neutral-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600', className)}>
+            className={cx('-m-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full align-middle text-neutral-500 hover:text-neutral-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600', className)}>
             <CircleHelp className="h-3.5 w-3.5" aria-hidden />
           </button>
         )}

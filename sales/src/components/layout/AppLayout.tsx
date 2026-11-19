@@ -113,7 +113,7 @@ function Sidebar({
             )}
             <div className="min-w-0">
               <p className="text-sm font-bold text-white/95 leading-tight truncate">{brandName}</p>
-              <p className="text-[10px] text-white/45 leading-tight truncate">{brandTagline}</p>
+              <p className="text-[10px] text-white/70 leading-tight truncate">{brandTagline}</p>
             </div>
           </div>
         )}
@@ -143,7 +143,7 @@ function Sidebar({
         {nav.map(({ label, href, icon: Icon, section }, i) => (
           <div key={href}>
           {!collapsed && section !== nav[i - 1]?.section && (
-            <p className={cn('mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-white/40', i > 0 && 'mt-4')}>
+            <p className={cn('mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-white/70', i > 0 && 'mt-4')}>
               {section}
             </p>
           )}
@@ -167,7 +167,7 @@ function Sidebar({
         <div className="border-t border-white/10 p-3">
           <a
             href={PORTAL_URL}
-            className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-white/60 hover:bg-white/10 hover:text-white/90 transition-colors"
+            className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-white/75 hover:bg-white/10 hover:text-white/90 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
             <span>Back to UniOps Portal</span>
@@ -226,7 +226,7 @@ function Header({ onMobileMenuToggle }: { onMobileMenuToggle: () => void }) {
             {initials}
           </div>
           <span className="hidden sm:block font-medium">{fullName}</span>
-          <ChevronDown className={cn('h-3.5 w-3.5 text-neutral-400 transition-transform', menuOpen && 'rotate-180')} />
+          <ChevronDown className={cn('h-3.5 w-3.5 text-neutral-500 transition-transform', menuOpen && 'rotate-180')} />
         </button>
 
         {menuOpen && (
@@ -346,7 +346,7 @@ export default function AppLayout() {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-3 px-4 text-center text-sm text-neutral-500">
         <p>You don't have access to Sales.</p>
-        <p className="max-w-md text-xs text-neutral-400">
+        <p className="max-w-md text-xs text-neutral-500">
           Ask an administrator to grant one of the sales.* permissions in Portal → Access Control.
         </p>
         <a href={PORTAL_URL} className="font-medium text-primary-600 hover:underline">Back to UniOps Portal</a>
@@ -417,7 +417,7 @@ export default function AppLayout() {
           <Header onMobileMenuToggle={() => setMobileOpen(v => !v)} />
           <TabRouterSync routes={moduleRoutes} />
           <RecoverFailedQueries />
-          <TabBar />
+          <div data-shell-tabbar className="contents"><TabBar /></div>
           <main className="relative flex-1 overflow-hidden">
             <TabHost routes={moduleRoutes} pageClassName="mx-auto max-w-[1440px] p-6" />
           </main>

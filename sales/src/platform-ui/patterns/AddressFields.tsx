@@ -58,7 +58,7 @@ export function AddressFields({ form, name, legend, readOnly, phoneRequired }: {
             <Checkbox checked={!!field.value} onCheckedChange={field.onChange} disabled={readOnly}
               aria-invalid={err('po_box_ok') ? true : undefined} label="Ship to this PO box anyway" />
           )} />
-          {err('po_box_ok') && <span role="alert" className="text-danger-600">{err('po_box_ok')}</span>}
+          {err('po_box_ok') && <span role="alert" className="text-danger-700">{err('po_box_ok')}</span>}
         </div>
       )}
     </fieldset>

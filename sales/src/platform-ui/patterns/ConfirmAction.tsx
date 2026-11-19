@@ -96,7 +96,7 @@ export function ConfirmAction({
           <Textarea id={reasonId} rows={2} value={text} disabled={pending} onChange={(e) => setText(e.target.value)} />
         </FormField>
       )}
-      {error && <p role="alert" className="text-sm text-danger-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-danger-700">{error}</p>}
     </Dialog>
   )
 }

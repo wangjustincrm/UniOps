@@ -45,13 +45,13 @@ export function Select({
         className={cn(
           'flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-white px-3 text-left text-sm text-neutral-900',
           'focus:outline-none focus:border-primary-600 focus:shadow-[0_0_0_3px_rgba(10,124,124,0.10)]',
-          'disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-400 data-[placeholder]:text-neutral-400',
+          'disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500 data-[placeholder]:text-neutral-600',
           aria['aria-invalid'] && 'border-danger-600 bg-danger-50',
           className,
         )}
       >
         <RS.Value placeholder={placeholder} />
-        <RS.Icon><ChevronDown className="h-4 w-4 text-neutral-400" /></RS.Icon>
+        <RS.Icon><ChevronDown className="h-4 w-4 text-neutral-500" /></RS.Icon>
       </RS.Trigger>
       <RS.Portal>
         <RS.Content position="popper" sideOffset={4}

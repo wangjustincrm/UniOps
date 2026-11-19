@@ -58,12 +58,19 @@ describe('PermissionGate / ActionButton', () => {
       </PermissionProvider>,
     )
     const btn = screen.getByText('Send').closest('button')!
+    btn.focus()
     fireEvent.click(btn)
     fireEvent.click(btn)
     expect(onAction).toHaveBeenCalledTimes(1)
-    expect(screen.getByText('Sending…').closest('button')).toBeDisabled()
+    // aria-disabled while pending, not disabled: it keeps the focus (a dialog it opens can give it back, step 6)
+    const busy = screen.getByText('Sending…').closest('button')!
+    expect(busy).toHaveAttribute('aria-disabled', 'true')
+    expect(busy).not.toBeDisabled()
+    expect(busy).toHaveFocus()
+    fireEvent.click(busy)
+    expect(onAction).toHaveBeenCalledTimes(1)
     await act(async () => { release() })
-    expect(screen.getByText('Send').closest('button')).not.toBeDisabled()
+    expect(screen.getByText('Send').closest('button')).not.toHaveAttribute('aria-disabled')
   })
 })
 

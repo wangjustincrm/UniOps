@@ -58,13 +58,13 @@ export function EditableTable<T>({
   if (errors) {
     defs.push({ id: '__problem', header: () => <span className="sr-only">Problem</span>, cell: ({ row: { original: x } }) => {
       const p = problem(x)
-      return p ? <span id={`${errId}-${x.index}`} role="alert" className="text-danger-600">{p}</span> : null
+      return p ? <span id={`${errId}-${x.index}`} role="alert" className="text-danger-700">{p}</span> : null
     } })
   }
   if (removable) {
     defs.push({ id: '__remove', meta: { card: 'badge' }, header: () => <span className="sr-only">Remove</span>, cell: ({ row: { original: x } }) => (
       <button type="button" aria-label={`Remove line ${x.index + 1}`} disabled={disabled || rows.length <= minRows}
-        onClick={() => remove(x.index)} className="rounded p-1 text-neutral-400 hover:text-danger-600 disabled:opacity-30">
+        onClick={() => remove(x.index)} className="rounded p-1 text-neutral-500 hover:text-danger-600 disabled:opacity-30">
         <X className="h-3.5 w-3.5" />
       </button>
     ) })

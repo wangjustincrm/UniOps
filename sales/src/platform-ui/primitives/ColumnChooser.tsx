@@ -100,11 +100,11 @@ export function ColumnChooser({ columns, hidden, onChange, onMove, groups, locki
         {onMove && !q && (
           <>
             <button type="button" aria-label={`Move ${c.label} up`} disabled={i === 0} onClick={() => onMove(c.id, -1)}
-              className="rounded p-0.5 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700 disabled:opacity-30">
+              className="rounded p-0.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700 disabled:opacity-30">
               <ArrowUp className="h-3.5 w-3.5" />
             </button>
             <button type="button" aria-label={`Move ${c.label} down`} disabled={i === columns.length - 1} onClick={() => onMove(c.id, 1)}
-              className="rounded p-0.5 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700 disabled:opacity-30">
+              className="rounded p-0.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700 disabled:opacity-30">
               <ArrowDown className="h-3.5 w-3.5" />
             </button>
           </>
@@ -121,7 +121,7 @@ export function ColumnChooser({ columns, hidden, onChange, onMove, groups, locki
       align="start"
       className="max-h-96 w-72 overflow-y-auto"
       trigger={
-        <button type="button" aria-label="Show, hide or move columns" className="rounded p-0.5 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700">
+        <button type="button" aria-label="Show, hide or move columns" className="inline-flex h-6 w-6 items-center justify-center rounded text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700">
           <Eye className="h-3.5 w-3.5" />
         </button>
       }

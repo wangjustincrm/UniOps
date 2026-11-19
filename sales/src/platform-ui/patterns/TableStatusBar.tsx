@@ -69,13 +69,13 @@ export function TableStatusBar({ store, right, className }: { store: NoticeStore
             <button type="button" onClick={() => store.clearHistory()} disabled={history.length === 0}
               className="rounded px-1.5 text-xs text-primary-700 hover:underline disabled:opacity-40">Clear</button>
           </div>
-          {history.length === 0 ? <p className="py-3 text-center text-xs text-neutral-400">Nothing yet in this session</p> : (
+          {history.length === 0 ? <p className="py-3 text-center text-xs text-neutral-500">Nothing yet in this session</p> : (
             <ol aria-label="Notification history" className="flex max-h-72 flex-col divide-y divide-neutral-100 overflow-y-auto">
               {history.map((n) => (
                 <li key={n.id} className="flex items-start gap-2 py-1.5 text-xs">
                   <span className="mt-0.5">{ICON[n.tone]}</span>
                   <span className="min-w-0 flex-1 break-words text-neutral-700">{n.text}</span>
-                  <span className="shrink-0 tabular-nums text-neutral-400">{formatTime(n.at)}</span>
+                  <span className="shrink-0 tabular-nums text-neutral-500">{formatTime(n.at)}</span>
                 </li>
               ))}
             </ol>

@@ -89,7 +89,7 @@ function LifecycleTable({ o }: { o: OrderDetail }) {
   const hasNotes = o.lines.some((ln) => ln.problem && !ln.removed)
   return (
     <LocalTable<LineRead> ariaLabel="Order lines" columns={lineColumns(o.currency, lineNumbers(o))} rows={o.lines} rowKey={(ln) => ln.id}
-      rowAttrs={(ln) => (ln.removed ? { className: 'text-neutral-400', 'data-removed': true } : {})}
+      rowAttrs={(ln) => (ln.removed ? { className: 'text-neutral-500', 'data-removed': true } : {})}
       defaultHidden={hasNotes ? [] : ['problem']}
       expand={(ln) => (ln.packing?.length ? <Packing rows={ln.packing} /> : null)}
       footer={[null, 'Total', null, null, null, money(sum(o.lines, lineAmount)), null, null, sum(o.lines, (ln) => ln.qty_ea),

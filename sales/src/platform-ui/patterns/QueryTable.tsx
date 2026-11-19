@@ -279,7 +279,7 @@ function QueryTableView<T>({
           {totals.filter((t) => id in t.sums).map((t) => <span key={t.currency ?? ''}>{formatSum(t.sums[id], t.currency)}</span>)}
         </span>
       }
-      return i === 0 ? <span className="text-neutral-500">Total · {rowsCounted} {rowsCounted === 1 ? 'row' : 'rows'}</span> : null
+      return i === 0 ? <span className="text-neutral-600">Total · {rowsCounted} {rowsCounted === 1 ? 'row' : 'rows'}</span> : null
     })
     : undefined
 

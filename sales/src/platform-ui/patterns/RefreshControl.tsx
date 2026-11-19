@@ -41,7 +41,7 @@ export function RefreshControl({ state }: { state: RefreshState }) {
               icon: <Check aria-hidden className={cn('h-3.5 w-3.5', s === auto ? 'opacity-100' : 'opacity-0')} />,
             }))}
             trigger={
-              <button type="button" aria-label="Auto-refresh" className={cn('inline-flex w-5 items-center justify-center rounded-r-lg border-l text-neutral-500 hover:text-neutral-900',
+              <button type="button" aria-label="Auto-refresh" className={cn('inline-flex w-6 items-center justify-center rounded-r-lg border-l text-neutral-500 hover:text-neutral-900',
                 auto ? 'border-primary-200' : 'border-neutral-200', 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600')}>
                 <ChevronDown aria-hidden className="h-3.5 w-3.5" />
               </button>

@@ -16,7 +16,7 @@ export function StatusBadge({
   map: Record<string, StatusStyle>
   className?: string
 }) {
-  if (!status) return <span className="text-neutral-400">—</span>
+  if (!status) return <span className="text-neutral-500">—</span>
   const style = map[status]
   return (
     <Badge variant={style?.variant ?? 'neutral'} className={className}>

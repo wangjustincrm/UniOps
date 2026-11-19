@@ -36,9 +36,9 @@ export function Textarea({ className, ref, rows = 4, ...props }: TextareaProps) 
   return (
     <textarea ref={ref} rows={rows} {...props}
       className={cn(
-        'w-full rounded-lg border border-neutral-200 bg-neutral-100 px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400',
+        'w-full rounded-lg border border-neutral-200 bg-neutral-100 px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-500',
         'focus:outline-none focus:bg-white focus:border-primary-600 focus:shadow-[0_0_0_3px_rgba(10,124,124,0.10)]',
-        'disabled:cursor-not-allowed disabled:text-neutral-400 aria-[invalid=true]:border-danger-600',
+        'disabled:cursor-not-allowed disabled:text-neutral-500 aria-[invalid=true]:border-danger-600',
         className,
       )} />
   )

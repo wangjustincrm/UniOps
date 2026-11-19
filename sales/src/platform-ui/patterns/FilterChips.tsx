@@ -75,7 +75,7 @@ export function FilterChips({ spec, onSpecChange, fields, locked = [], labelOf, 
             else if (dragging && !refusal) groupDrop.onGroup(dragging)
           } : undefined}
         >
-          <span className="w-16 font-medium uppercase tracking-wide text-neutral-400">Grouping</span>
+          <span className="w-16 font-medium uppercase tracking-wide text-neutral-500">Grouping</span>
           {group.map((g, level) => (
             <span
               key={g.field}
@@ -139,7 +139,7 @@ export function FilterChips({ spec, onSpecChange, fields, locked = [], labelOf, 
       {overlay && groupRow}
       {sort.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="w-16 font-medium uppercase tracking-wide text-neutral-400">Sorting</span>
+          <span className="w-16 font-medium uppercase tracking-wide text-neutral-500">Sorting</span>
           {sort.map((s) => (
             <Chip
               key={s.field}
@@ -157,7 +157,7 @@ export function FilterChips({ spec, onSpecChange, fields, locked = [], labelOf, 
       {(group.length > 0 && !overlay) && groupRow}
       {(filters.length > 0 || search) && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="w-16 font-medium uppercase tracking-wide text-neutral-400">Search</span>
+          <span className="w-16 font-medium uppercase tracking-wide text-neutral-500">Search</span>
           {search && (
             <Chip onRemove={() => onSpecChange({ ...spec, page: 1, search: undefined })} removeLabel="Clear the quick search">
               Any field contains "{search}"

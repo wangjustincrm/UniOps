@@ -61,12 +61,12 @@ export function Combobox({
           className={cn(
             'flex h-10 w-full items-center justify-between rounded-lg border border-neutral-200 bg-white px-3 text-left text-sm',
             'disabled:opacity-50',
-            !selected && 'text-neutral-400',
+            !selected && 'text-neutral-500',
             className,
           )}
         >
           <span className="truncate">{selected ? selected.label : placeholder}</span>
-          <ChevronsUpDown className="h-4 w-4 shrink-0 text-neutral-400" />
+          <ChevronsUpDown className="h-4 w-4 shrink-0 text-neutral-500" />
         </button>
       }
     >
@@ -80,7 +80,7 @@ export function Combobox({
         className="mb-1 h-9 w-full rounded-md border border-neutral-200 px-2 text-sm outline-none focus:border-primary-600"
       />
       <ul role="listbox" className="max-h-64 overflow-y-auto">
-        {shown.length === 0 && <li className="px-2 py-2 text-sm text-neutral-400">{emptyText}</li>}
+        {shown.length === 0 && <li className="px-2 py-2 text-sm text-neutral-500">{emptyText}</li>}
         {shown.map((o, i) => (
           <li
             key={o.value}
@@ -95,7 +95,7 @@ export function Combobox({
           >
             <Check className={cn('h-4 w-4', o.value === value ? 'opacity-100' : 'opacity-0')} />
             <span className="truncate">{o.label}</span>
-            {o.hint && <span className="ml-auto truncate text-xs text-neutral-400">{o.hint}</span>}
+            {o.hint && <span className="ml-auto truncate text-xs text-neutral-500">{o.hint}</span>}
           </li>
         ))}
       </ul>

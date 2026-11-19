@@ -199,7 +199,7 @@ export function RecordSheet(props: RecordSheetProps) {
             <>
               <IconButton label="Previous record (K)" icon={<ChevronUp className="h-4 w-4" />} disabled={!host.prev} onClick={() => host.prev?.()} />
               <IconButton label="Next record (J)" icon={<ChevronDown className="h-4 w-4" />} disabled={!host.next} onClick={() => host.next?.()} />
-              {host.position && <span className="hidden px-1 text-xs tabular-nums text-neutral-400 sm:inline">{host.position}</span>}
+              {host.position && <span className="hidden px-1 text-xs tabular-nums text-neutral-500 sm:inline">{host.position}</span>}
             </>
           )}
           <IconButton label={expanded ? 'Narrower' : 'Full width'} className="hidden sm:inline-flex"

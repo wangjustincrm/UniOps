@@ -155,7 +155,7 @@ function ValueInput({ field, draft, set, autoFocus, suggest }: {
     return (
       <div className="flex flex-wrap items-center gap-2">
         {one(`${field.label}: from`, draft.low, (low) => set({ low }), autoFocus)}
-        <span className="text-neutral-400">and</span>
+        <span className="text-neutral-500">and</span>
         {one(`${field.label}: to`, draft.high, (high) => set({ high }), false)}
       </div>
     )

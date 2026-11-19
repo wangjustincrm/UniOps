@@ -1,7 +1,7 @@
 // The few looks text has (2026-11-18): defined once, used by Text and the layout boxes, never written by a page.
 export const TONE = {
   default: '', strong: 'text-neutral-900', body: 'text-neutral-800', secondary: 'text-neutral-700', soft: 'text-neutral-600',
-  muted: 'text-neutral-500', faint: 'text-neutral-400',
+  muted: 'text-neutral-600', faint: 'text-neutral-500',
   danger: 'text-danger-600', dangerStrong: 'text-danger-700', warning: 'text-warning-700', success: 'text-success-700', primary: 'text-primary-700',
 } as const
 export type TextTone = keyof typeof TONE

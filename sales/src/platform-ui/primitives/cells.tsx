@@ -49,14 +49,14 @@ export function BooleanCell({ value }: { value: boolean | null | undefined }) {
 /** How long ago, or how long until: "3d ago", "in 2h 33m". The exact time is in the tooltip. */
 export function RelativeCell({ value }: { value: string | null | undefined }) {
   const t = timeFromNow(value, useNow())
-  if (!t) return <span className="text-neutral-400">—</span>
+  if (!t) return <span className="text-neutral-500">—</span>
   return <span className="whitespace-nowrap" title={formatDateTime(value)}>{t.text}</span>
 }
 
 /** A time still to come: "in 2h 33m", and red once it has passed ("2h late"). */
 export function CountdownCell({ value, className }: { value: string | null | undefined; className?: string }) {
   const t = timeFromNow(value, useNow())
-  if (!t) return <span className="text-neutral-400">—</span>
+  if (!t) return <span className="text-neutral-500">—</span>
   return (
     <span title={formatDateTime(value)} className={cn('whitespace-nowrap', t.past ? 'font-medium text-danger-600' : 'text-primary-700', className)}>
       {t.past ? t.text.replace(/ ago$/, ' late') : t.text}
@@ -72,13 +72,13 @@ export function TagsCell({ values }: { values: (string | null | undefined)[] | n
 
 /** A code a person copies: a lot, a reference. */
 export function ReferenceCell({ value }: { value: string | number | null | undefined }) {
-  if (value === null || value === undefined || value === '') return <span className="text-neutral-400">—</span>
+  if (value === null || value === undefined || value === '') return <span className="text-neutral-500">—</span>
   return <CopyChip text={String(value)} />
 }
 
 /** A tracking number with the carrier's link when there is one. */
 export function TrackingCell({ value, url }: { value: string | null | undefined; url?: string | null }) {
-  if (!value) return <span className="text-neutral-400">—</span>
+  if (!value) return <span className="text-neutral-500">—</span>
   return <TrackingLink number={value} url={url} />
 }
 
@@ -86,7 +86,7 @@ export function TrackingCell({ value, url }: { value: string | null | undefined;
 export function DurationCell({ from, to }: { from: string | null | undefined; to: string | null | undefined }) {
   const start = instant(from)
   const end = instant(to)
-  if (start === null || end === null) return <span className="text-neutral-400">—</span>
+  if (start === null || end === null) return <span className="text-neutral-500">—</span>
   return <span className="whitespace-nowrap tabular-nums">{formatDuration(end - start)}</span>
 }
 
@@ -104,7 +104,7 @@ export function FileCell({ name, label, onDownload, onView }:
 
 /** A status as a badge; `tone` overrides the shared map (e.g. a derived order state). */
 export function StatusCell({ value, tone, className }: { value: string | null | undefined; tone?: BadgeVariant; className?: string }) {
-  if (!value) return <span className="text-neutral-400">—</span>
+  if (!value) return <span className="text-neutral-500">—</span>
   return <Badge variant={tone ?? statusTone(value)} className={className}>{value}</Badge>
 }
 
@@ -148,7 +148,7 @@ export function PlaceCell({ address, withName }: { address: Record<string, unkno
   const text = (k: string) => (typeof a[k] === 'string' ? (a[k] as string).trim() : '')
   const where = [text('city'), text('province_code') || text('province')].filter(Boolean).join(', ')
   const name = withName ? text('name') : ''
-  if (!where && !name) return <span className="text-neutral-400">—</span>
+  if (!where && !name) return <span className="text-neutral-500">—</span>
   return (
     <span className="inline-flex flex-col leading-tight" title={[name, where, text('zip')].filter(Boolean).join(' · ')}>
       {name && <span className="line-clamp-1">{name}</span>}

@@ -87,7 +87,7 @@ export function MultiSelect({
             aria-activedescendant={open && shown[row] ? `${id}-${row}` : undefined} disabled={disabled} value={query}
             placeholder={values.length ? '' : placeholder} onKeyDown={onKey}
             onChange={(e) => { type(e.target.value); setActive(0); show() }}
-            className="h-7 min-w-[5rem] flex-1 bg-transparent px-1 outline-none placeholder:text-neutral-400" />
+            className="h-7 min-w-[5rem] flex-1 bg-transparent px-1 outline-none placeholder:text-neutral-500" />
         </div>
       </RP.Anchor>
       <RP.Portal>
@@ -96,13 +96,13 @@ export function MultiSelect({
           onEscapeKeyDown={(e) => { e.preventDefault(); close() }}
           className="z-50 w-[var(--radix-popover-trigger-width)] min-w-[12rem] rounded-lg border border-neutral-200 bg-white p-1 shadow-lg focus:outline-none">
           <ul id={listId} role="listbox" aria-multiselectable aria-label={label} className="max-h-64 overflow-y-auto">
-            {shown.length === 0 && <li className="px-2 py-2 text-sm text-neutral-400">{waiting ? 'Searching…' : q ? 'No match' : loadOptions ? 'Nothing to suggest' : 'All chosen'}</li>}
+            {shown.length === 0 && <li className="px-2 py-2 text-sm text-neutral-500">{waiting ? 'Searching…' : q ? 'No match' : loadOptions ? 'Nothing to suggest' : 'All chosen'}</li>}
             {shown.map((o, i) => (
               <li key={o.value} id={`${id}-${i}`} role="option" aria-selected={i === row} onMouseEnter={() => setActive(i)}
                 onMouseDown={(e) => e.preventDefault()} onClick={() => add(o.value)}
                 className={cn('flex cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-sm', i === row && 'bg-primary-50')}>
                 <span className="truncate">{o.label}</span>
-                {o.hint && <span className="ml-auto truncate text-xs text-neutral-400">{o.hint}</span>}
+                {o.hint && <span className="ml-auto truncate text-xs text-neutral-500">{o.hint}</span>}
               </li>
             ))}
           </ul>

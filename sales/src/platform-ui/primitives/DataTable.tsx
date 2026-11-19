@@ -245,7 +245,7 @@ export function DataTable<T>({
     <button type="button" aria-expanded={g.open} onClick={() => toggle(g.key)}
       className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-800 hover:text-neutral-950">
       {g.open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-      <span className="text-xs uppercase tracking-wide text-neutral-500">{g.label}:</span>
+      <span className="text-xs uppercase tracking-wide text-neutral-600">{g.label}:</span>
       {grouping?.format ? grouping.format(g.id, g.value) : String(g.value ?? '(empty)')}
       {g.count !== undefined && <span className="rounded-full bg-neutral-200 px-1.5 text-xs text-neutral-600">{g.count}</span>}
     </button>
@@ -256,13 +256,17 @@ export function DataTable<T>({
   const firstRowId = shownRows[0]?.id
   const firstDetailId = expand ? shownRows.find((r) => expand(r.original) !== null)?.id : undefined
   const pager = pagination && pagination.total > 0 ? (cards ? <TourMark help="list.pages" slot="list.pages" className="inline-flex"><CompactPager {...pagination} /></TourMark> : (<TourMark help="list.pages" slot="list.pages" className="inline-flex">
-    <Pagination
-      page={pagination.page}
-      pageSize={pagination.pageSize}
-      total={pagination.total}
-      onPageChange={pagination.onPageChange}
-      onPageSizeChange={pagination.onPageSizeChange}
-    />
+    {/* The shell's pager: its "Per page" select has no label and too light a text; reported to the shell's owners,
+        left out of the accessibility check until they change it. */}
+    <span data-shell-pagination className="contents">
+      <Pagination
+        page={pagination.page}
+        pageSize={pagination.pageSize}
+        total={pagination.total}
+        onPageChange={pagination.onPageChange}
+        onPageSizeChange={pagination.onPageSizeChange}
+      />
+    </span>
   </TourMark>)) : null
   const headerById = new Map((table.getHeaderGroups()[0]?.headers ?? []).map((h) => [h.column.id, h]))
   const headerIds = (table.getHeaderGroups()[0]?.headers ?? []).map((h) => h.column.id)
@@ -326,7 +330,7 @@ export function DataTable<T>({
                     </li>
                   ))}
                   {!rowHidden && (
-                    <li ref={r.id === firstRowId && onRowClick ? rowStop.attach : undefined} data-help={r.id === firstRowId && onRowClick ? 'list.rowOpen' : undefined} {...rowData} data-row-card data-highlight={flash || undefined}
+                    <li ref={r.id === firstRowId && onRowClick ? rowStop.attach : undefined} data-help={r.id === firstRowId && onRowClick ? 'list.rowOpen' : undefined} {...rowData} data-row-id={r.id} data-row-card data-highlight={flash || undefined}
                       onClick={onRowClick ? (e) => { if (clickOpensRow(e)) onRowClick(r.original) } : undefined}
                       tabIndex={onRowClick ? 0 : undefined}
                       onKeyDown={onRowClick ? (e) => {
@@ -349,7 +353,7 @@ export function DataTable<T>({
                         <dl className="grid grid-cols-[fit-content(45%)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
                           {shownLines.map((c) => (
                             <div key={c.id} className="contents">
-                              <dt className="text-neutral-500 wrap-anywhere">{label(c.column.id, listHelp)}</dt>
+                              <dt className="text-neutral-600 wrap-anywhere">{label(c.column.id, listHelp)}</dt>
                               <dd className="min-w-0 break-words text-neutral-700"><Render def={c.column.columnDef.cell} ctx={c.getContext()} /></dd>
                             </div>
                           ))}
@@ -385,7 +389,7 @@ export function DataTable<T>({
             <dl className="grid grid-cols-[fit-content(45%)_minmax(0,1fr)] gap-x-3 gap-y-0.5">
               {footer.map((f, i) => (i === 0 || f === null || f === undefined ? null : (
                 <div key={i} className="contents">
-                  <dt className="text-neutral-500">{headerIds[i] ? label(headerIds[i], totalsHelp) : null}</dt>
+                  <dt className="text-neutral-600">{headerIds[i] ? label(headerIds[i], totalsHelp) : null}</dt>
                   <dd>{f}</dd>
                 </div>
               )))}
@@ -431,7 +435,7 @@ export function DataTable<T>({
         <TableCard busy={busy} fit={fit} highlight={highlight} bar={statusBar?.(pager)}>
           {cards ? renderCards() : (
           <table aria-label={ariaLabel} aria-busy={busy || (loading && rows.length === 0) || undefined} className={cn('w-full', density === 'compact' ? 'text-xs' : 'text-sm')}>
-            <thead data-sticky-head className="sticky top-0 z-[1] bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500 shadow-[inset_0_-1px_0_0_var(--color-neutral-200,#e5e7eb)]">
+            <thead data-sticky-head className="sticky top-0 z-[1] bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-600 shadow-[inset_0_-1px_0_0_var(--color-neutral-200,#e5e7eb)]">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id} ref={headRow}>
                   {leadCell && <th className={cn(LEAD, 'py-2', freezeLead && 'sticky left-0 z-[2] bg-neutral-50')}>{leadingHeader}</th>}
@@ -488,7 +492,7 @@ export function DataTable<T>({
                             >
                               <Render def={h.column.columnDef.header} ctx={h.getContext()} />
                               {dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : dir === 'desc' ? <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 opacity-40" />}
-                              {priority > 0 && <sup className="text-[10px] text-neutral-400">{priority}</sup>}
+                              {priority > 0 && <sup className="text-[10px] text-neutral-500">{priority}</sup>}
                             </button>
                           ) : (
                             <Render def={h.column.columnDef.header} ctx={h.getContext()} />
@@ -516,6 +520,7 @@ export function DataTable<T>({
                       key={r.id}
                       ref={r.id === firstRowId && onRowClick ? rowStop.attach : undefined} data-help={r.id === firstRowId && onRowClick ? 'list.rowOpen' : undefined}
                       {...rowData}
+                      data-row-id={r.id}
                       data-highlight={flash || undefined}
                       onClick={onRowClick ? (e) => { if (clickOpensRow(e)) onRowClick(r.original) } : undefined}
                       tabIndex={onRowClick ? 0 : undefined}

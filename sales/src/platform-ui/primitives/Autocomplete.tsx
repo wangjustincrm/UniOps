@@ -95,11 +95,11 @@ export function Autocomplete({
         <button type="button" id={id} role="combobox" aria-expanded={open} aria-controls={listId} disabled={disabled} {...aria}
           className={cn(
             'flex h-10 w-full items-center justify-between rounded-lg border border-neutral-200 bg-white px-3 text-left text-sm',
-            'disabled:cursor-not-allowed disabled:opacity-50', !value && 'text-neutral-400',
+            'disabled:cursor-not-allowed disabled:opacity-50', !value && 'text-neutral-600',
             aria['aria-invalid'] && 'border-danger-600 bg-danger-50', className,
           )}>
           <span className="truncate">{value ? shownLabel : placeholder}</span>
-          <ChevronsUpDown className="h-4 w-4 shrink-0 text-neutral-400" />
+          <ChevronsUpDown className="h-4 w-4 shrink-0 text-neutral-500" />
         </button>
       }
     >
@@ -108,17 +108,17 @@ export function Autocomplete({
         onChange={(e) => setQuery(e.target.value)}
         className="mb-1 h-9 w-full rounded-md border border-neutral-200 px-2 text-sm outline-none focus:border-primary-600" />
       <ul id={listId} role="listbox" className="max-h-64 overflow-y-auto">
-        {!enough && <li className="px-2 py-2 text-sm text-neutral-400">Type at least {minChars} character{minChars === 1 ? '' : 's'}</li>}
-        {q.length === 0 && !loading && shown.length > 0 && <li aria-hidden className="px-2 py-1 text-xs text-neutral-400">Type to search…</li>}
-        {enough && loading && <li className="px-2 py-2 text-sm text-neutral-400">Searching…</li>}
+        {!enough && <li className="px-2 py-2 text-sm text-neutral-500">Type at least {minChars} character{minChars === 1 ? '' : 's'}</li>}
+        {q.length === 0 && !loading && shown.length > 0 && <li aria-hidden className="px-2 py-1 text-xs text-neutral-500">Type to search…</li>}
+        {enough && loading && <li className="px-2 py-2 text-sm text-neutral-500">Searching…</li>}
         {enough && !loading && state.error && <li className="px-2 py-2 text-sm text-danger-600">Could not load the options</li>}
-        {enough && !loading && !state.error && shown.length === 0 && <li className="px-2 py-2 text-sm text-neutral-400">{emptyText}</li>}
+        {enough && !loading && !state.error && shown.length === 0 && <li className="px-2 py-2 text-sm text-neutral-500">{emptyText}</li>}
         {!loading && shown.map((o, i) => (
           <li key={o.value} role="option" aria-selected={o.value === value} onMouseEnter={() => setActive(i)} onClick={() => pick(o)}
             className={cn('flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm', i === active && 'bg-neutral-100')}>
             <Check className={cn('h-4 w-4', o.value === value ? 'opacity-100' : 'opacity-0')} />
             <span className="truncate">{o.label}</span>
-            {o.hint && <span className="ml-auto truncate text-xs text-neutral-400">{o.hint}</span>}
+            {o.hint && <span className="ml-auto truncate text-xs text-neutral-500">{o.hint}</span>}
           </li>
         ))}
       </ul>

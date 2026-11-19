@@ -21,7 +21,7 @@ export function Chip({ children, onClick, onRemove, removeLabel = 'Remove', clas
         ? <button type="button" onClick={onClick} className="truncate hover:text-neutral-900">{children}</button>
         : <span className="truncate">{children}</span>}
       {onRemove && (
-        <button type="button" aria-label={removeLabel} onClick={onRemove} className="rounded-full p-0.5 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700">
+        <button type="button" aria-label={removeLabel} onClick={onRemove} className="rounded-full p-0.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700">
           <X className="h-3 w-3" />
         </button>
       )}

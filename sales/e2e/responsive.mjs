@@ -11,7 +11,10 @@
 //
 //   docker run --rm --network host --user "$(id -u)" -e HOME=/tmp -e BASE=http://10.10.50.64:5382 \
 //     -v "$PWD/sales":/w -w /w mcr.microsoft.com/playwright:v1.50.0-noble \
-//     sh -c 'npm i --prefix /tmp/pw --no-save --no-audit --no-fund playwright-core@1.50.0 >/dev/null && PW=/tmp/pw/node_modules npm run -s e2e:responsive'
+//     sh -c 'npm i --prefix /tmp/pw --no-save --no-audit --no-fund playwright-core@1.50.0 axe-core@4.10.2 >/dev/null && \
+//       PW=/tmp/pw/node_modules A11Y_AXE=/tmp/pw/node_modules/axe-core/axe.min.js npm run -s e2e:responsive'
+//
+// With A11Y_AXE every page and every kind of dialog is also checked by axe (WCAG A/AA; see e2e/a11y.mjs).
 //
 // About 40 s (most of it the npm install of playwright-core). Not in vitest or the default gates:
 // it needs a running front end and a browser. Screenshots: SHOTS=<dir> (in the container, e.g. /tmp/shots).
@@ -21,6 +24,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as F from './fixtures/data.mjs'
+import { axeReady, axeViolations, focusInDialog } from './a11y.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(process.env.PW ? path.join(process.env.PW, 'x.js') : import.meta.url)
@@ -108,6 +112,8 @@ async function run(name, viewport) {
     try { await fn() } catch (e) { failures.push(`${name} ${what}: ${String(e.message ?? e).split('\n')[0]}`) }
   }
   const listChecks = async (what) => {
+    // The rows first (a card on a phone, a table row on a desktop): measured before they render, a phone has no cards.
+    await page.locator(phone ? '[data-row-card]' : 'table tbody tr').first().waitFor({ timeout: 10000 }).catch(() => {})
     const m = await measure(page)
     check(m.page <= 0, `${name} ${what}: page sideways overflow ${m.page}px`)
     check(m.statusBar, `${name} ${what}: status row present`)
@@ -323,9 +329,56 @@ async function run(name, viewport) {
       check(m.page <= 0, `${name} ${route}: page sideways overflow ${m.page}px`)
       const broken = await page.getByText(/failed to render/i).locator('visible=true').count()
       check(broken === 0, `${name} ${route}: renders (no error boundary)`)
+      if (axeReady) {
+        const v = await axeViolations(page)
+        check(v.length === 0, `${name} ${route}: accessibility (axe, WCAG A/AA)${v.length ? `: ${v.slice(0, 6).join(' | ')}` : ''}`)
+      }
       await shot(`page${route.replaceAll('/', '-')}`)
     })
   }
+  // Every kind of dialog (a create form, a record sheet, a confirmation), at both widths (step 6): the focus goes in and
+  // comes back to what opened it, Esc closes it, nothing scrolls sideways, axe passes (its target-size is WCAG 2.5.8: 24 px).
+  const dialogChecks = async (what, trigger) => {
+    const under = await page.getByRole('dialog').count()  // a confirmation opens over a sheet; Esc closes only it
+    await trigger.evaluate((el) => el.setAttribute('data-e2e-trigger', ''))
+    await trigger.click()
+    await page.getByRole('dialog').last().waitFor({ timeout: 10000 })
+    await page.waitForTimeout(500)
+    check(await focusInDialog(page), `${name} ${what}: the focus goes into the dialog`)
+    const m = await measure(page)
+    check(m.sheet <= 0, `${name} ${what}: sideways overflow ${m.sheet}px`)
+    if (axeReady) {
+      const v = await axeViolations(page, '[role="dialog"]')
+      check(v.length === 0, `${name} ${what}: accessibility (axe, WCAG A/AA)${v.length ? `: ${v.slice(0, 6).join(' | ')}` : ''}`)
+    }
+    await shot(`dialog-${what.replaceAll(' ', '-')}`)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(400)
+    // Back on what opened it, or on the row it sits in (a row opens its record; the row takes the focus).
+    const back = await page.evaluate(() => { const a = document.activeElement; const t = document.querySelector('[data-e2e-trigger]')
+      return !!a && !!t && a !== document.body && (a === t || a.contains(t) || t.contains(a)) })
+    check(await page.getByRole('dialog').count() === under && back, `${name} ${what}: Esc closes it and the focus goes back to what opened it`)
+    await page.evaluate(() => document.querySelectorAll('[data-e2e-trigger]').forEach((e) => e.removeAttribute('data-e2e-trigger')))
+  }
+  await step('dialog new manual order', async () => {
+    await open('/orders')
+    await dialogChecks('new manual order', page.getByRole('button', { name: 'New manual order' }).first())
+  })
+  await step('dialog new transfer', async () => {
+    await open('/transfers')
+    await dialogChecks('new transfer', page.getByRole('button', { name: 'New transfer' }).first())
+  })
+  await step('dialog order sheet', async () => {
+    await open('/orders')
+    await dialogChecks('order sheet', page.getByText('SMP-1030').first())
+  })
+  await step('dialog confirmation', async () => {
+    await open('/orders')
+    await page.getByText('SMP-1030').first().click()
+    await page.getByRole('dialog').waitFor({ timeout: 10000 })
+    await page.waitForTimeout(400)
+    await dialogChecks('confirmation', page.getByRole('dialog').getByRole('button', { name: 'Cancel order' }).first())
+  })
   if (phone) {
     await step('new order form', async () => {
       await open('/orders')

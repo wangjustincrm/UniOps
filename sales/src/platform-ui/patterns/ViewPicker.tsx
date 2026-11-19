@@ -48,7 +48,7 @@ export function ViewPicker({ model }: { model: ViewPickerModel }) {
             className="inline-flex h-10 max-w-[16rem] items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-800 hover:bg-neutral-50">
             <span className="truncate">{current?.name ?? 'Views'}</span>
             {dirty && <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-warning-500" />}
-            <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
+            <ChevronDown className="h-4 w-4 shrink-0 text-neutral-500" />
           </button>
         }
       >
@@ -59,7 +59,7 @@ export function ViewPicker({ model }: { model: ViewPickerModel }) {
           })}
         </Section>
         <Section title="My views">
-          {model.mine.length === 0 && <p className="px-2 py-1.5 text-xs text-neutral-400">None yet: change the list, then Save as new.</p>}
+          {model.mine.length === 0 && <p className="px-2 py-1.5 text-xs text-neutral-500">None yet: change the list, then Save as new.</p>}
           {model.mine.map((m) => {
             const v: CurrentView = { kind: 'mine', id: m.id, name: m.name }
             return (
@@ -76,7 +76,7 @@ export function ViewPicker({ model }: { model: ViewPickerModel }) {
                       { label: 'Delete', opensDialog: true, separated: true, onSelect: () => { setOpen(false); setDeleting({ id: m.id, name: m.name }) } },
                     ]}
                     trigger={
-                      <button type="button" aria-label={`${m.name}: more`} className="rounded p-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700">
+                      <button type="button" aria-label={`${m.name}: more`} className="rounded p-1 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700">
                         <MoreHorizontal className="h-3.5 w-3.5" />
                       </button>
                     }
@@ -104,7 +104,7 @@ export function ViewPicker({ model }: { model: ViewPickerModel }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div role="group" aria-label={title} className="py-1">
-      <p className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-neutral-400">{title}</p>
+      <p className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-neutral-500">{title}</p>
       <ul className="flex flex-col">{children}</ul>
     </div>
   )
@@ -153,7 +153,7 @@ function NameDialog({ title, initial, done, onClose }: {
       </>}>
       <form onSubmit={(e) => { e.preventDefault(); void submit() }} className="flex flex-col gap-2">
         <Input aria-label="View name" value={name} autoFocus maxLength={80} onChange={(e) => setName(e.target.value)} />
-        {error != null && <p role="alert" className="text-sm text-danger-600">{errorText(error, ERRORS)}</p>}
+        {error != null && <p role="alert" className="text-sm text-danger-700">{errorText(error, ERRORS)}</p>}
       </form>
     </Dialog>
   )
@@ -219,7 +219,7 @@ function SaveAsNew({ busy, save }: { busy: boolean; save: (name: string) => Prom
       <form onSubmit={(e) => { e.preventDefault(); void submit() }}>
         <Input aria-label="View name" placeholder="Name of the view" value={name} autoFocus maxLength={80} onChange={(e) => setName(e.target.value)} />
       </form>
-      {error != null && <p role="alert" className="text-sm text-danger-600">{errorText(error, ERRORS)}</p>}
+      {error != null && <p role="alert" className="text-sm text-danger-700">{errorText(error, ERRORS)}</p>}
     </ToolbarPopover>
   )
 }

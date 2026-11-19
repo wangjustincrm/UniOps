@@ -175,7 +175,7 @@ export function SchemaForm({
       {edit.changedElsewhere && <ChangedElsewhere onReload={edit.takeTheirs} />}
       <SchemaFields form={form} fields={fields} readOnly={readOnly} />
       {typeof errors.root?.message === 'string' && (
-        <p role="alert" className="text-sm text-danger-600">{errors.root.message}</p>
+        <p role="alert" className="text-sm text-danger-700">{errors.root.message}</p>
       )}
       <ErrorMessage error={error} messages={errorMessages} fieldLabels={fieldLabels} />
       <ActionBar>

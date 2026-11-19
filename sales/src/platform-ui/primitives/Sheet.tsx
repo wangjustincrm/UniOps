@@ -3,6 +3,7 @@ import * as RD from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { cn } from '../lib/cn'
+import { useReturnFocus } from './focusReturn'
 import { SHEET_SIZES, type SheetSize } from './sheetSizes'
 
 export type { SheetSize } from './sheetSizes'
@@ -47,12 +48,14 @@ export function Sheet({
 }: SheetProps) {
   const own = useUnsavedScope()  // closing asks only about the forms in this sheet
   const unsaved = given ?? own
+  const returnFocus = useReturnFocus()
   return (
     <RD.Root open={open} onOpenChange={(next) => { if (next) onOpenChange?.(true); else whenDiscarded(unsaved, () => onOpenChange?.(false)) }}>
       <RD.Portal>
         <RD.Overlay className="fixed inset-0 z-50 bg-black/30" />
         <RD.Content
           onKeyDown={onKeyDown}
+          {...returnFocus}
           className={cn(
             'fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-neutral-200 bg-white shadow-2xl focus:outline-none',
             SHEET_SIZES[size],

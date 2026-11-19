@@ -10,7 +10,7 @@ export function AddressView({ value, note }: { value: Record<string, unknown> | 
   ].filter(Boolean) as string[]
   return (
     <span className="flex flex-col">
-      {lines.length === 0 ? <span className="text-neutral-400">—</span> : lines.map((l, i) => <span key={i}>{l}</span>)}
+      {lines.length === 0 ? <span className="text-neutral-500">—</span> : lines.map((l, i) => <span key={i}>{l}</span>)}
       {note && <span className="text-xs text-neutral-500">{note}</span>}
     </span>
   )

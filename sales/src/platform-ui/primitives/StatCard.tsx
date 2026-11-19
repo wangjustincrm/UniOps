@@ -17,7 +17,7 @@ export function StatCard({ label, count, tone = 'neutral', onOpen, children, cla
 }) {
   const body = (
     <>
-      <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">{label}</span>
+      <span className="text-xs font-medium uppercase tracking-wide text-neutral-600">{label}</span>
       <span className={cn('font-semibold text-neutral-900', compact ? 'truncate text-sm' : 'text-2xl')}>{count}</span>
       {children}
     </>

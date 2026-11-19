@@ -41,7 +41,7 @@ export function ColumnMenu({ field, onSearch, onSort, onGroup, canGroup = true, 
       label={`${field.label} column`}
       items={items}
       trigger={
-        <button type="button" aria-label={`${field.label} column menu`} className="rounded p-0.5 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700">
+        <button type="button" aria-label={`${field.label} column menu`} className="-m-0.5 inline-flex h-6 w-6 items-center justify-center rounded text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700">
           <ChevronDown className="h-3 w-3" />
         </button>
       }

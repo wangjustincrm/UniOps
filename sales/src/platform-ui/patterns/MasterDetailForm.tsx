@@ -134,7 +134,7 @@ export function MasterDetailForm<L>({
         rowKey={spec.rowKey} errors={spec.problem ? (_, i) => lineProblems[i] : undefined}
         onAdd={readOnly ? undefined : spec.add} addLabel={spec.addLabel} removable={!readOnly && spec.removable}
         minRows={spec.minRows} footer={spec.footer} disabled={readOnly || isSubmitting} />
-      {tooFew && <p role="alert" className="text-sm text-danger-600">Add at least {spec.minRows ?? 1} line.</p>}
+      {tooFew && <p role="alert" className="text-sm text-danger-700">Add at least {spec.minRows ?? 1} line.</p>}
       {preview?.(state)}
       {waiting && <p className="text-sm text-neutral-600">{waiting}</p>}
       <ErrorMessage error={error} messages={errorMessages} />

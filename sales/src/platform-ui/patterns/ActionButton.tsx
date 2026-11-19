@@ -29,7 +29,7 @@ export interface ActionButtonProps extends Omit<ButtonProps, 'onClick'> {
   disabledReason?: string | null
 }
 
-/** A button that cannot fire twice: disabled while its action is pending, and
+/** A button that cannot fire twice: aria-disabled while its action is pending (it keeps the focus), and
  *  guarded by a ref too, so two clicks in the same tick (before React has
  *  re-rendered it disabled) still run the action once. `type="button"` unless
  *  given, so it never submits a surrounding form. Inside a list or a sheet, a
@@ -54,9 +54,13 @@ export function ActionButton({
     <Button
       type="button"
       {...rest}
-      disabled={disabled || pending || !allowed}
+      // Pending is aria-disabled, not disabled: a disabled button drops the focus (to the page, or out of the dialog it
+      // opens, which then cannot give it back); useAction's guard already runs it once.
+      disabled={disabled || !allowed}
+      aria-disabled={pending || undefined}
       aria-busy={pending || undefined}
-      onClick={() => { void run(onAction) }}
+      className={cn(rest.className, pending && 'cursor-wait opacity-70')}
+      onClick={() => { if (!pending) void run(onAction) }}
     >
       {pending && pendingLabel ? pendingLabel : children}
     </Button>

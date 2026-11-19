@@ -90,7 +90,7 @@ export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sec
     <RD.Root open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setQ(''); setView('page') } }}>
       <RD.Trigger asChild>
         <button ref={trigger} type="button" data-help={id} aria-label={`Help: ${page}`} aria-keyshortcuts="?"
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
           <CircleHelp className="h-4 w-4" aria-hidden />
         </button>
       </RD.Trigger>
@@ -107,9 +107,9 @@ export function PageHelp({ id, page, sections }: { id: HelpId; page: string; sec
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 text-sm text-neutral-700">
             <label className="relative block">
               <span className="sr-only">Search help</span>
-              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-neutral-400" aria-hidden />
+              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-neutral-500" aria-hidden />
               <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search help (a word, a status, a document…)"
-                className="h-9 w-full rounded-md border border-neutral-200 bg-white pl-8 pr-2 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                className="h-9 w-full rounded-md border border-neutral-200 bg-white pl-8 pr-2 text-sm placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary-500" />
             </label>
             {q.trim() ? (
               <section aria-label="Search results" className="flex flex-col gap-2">
