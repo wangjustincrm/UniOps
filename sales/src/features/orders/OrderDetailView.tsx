@@ -1,9 +1,9 @@
 import { useContext, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, Badge, ConfirmAction, Hint, RecordSheet, RecordSheetHostContext, formatDate, formatMoney, queryKeys, type RecordFact, type RecordTab, compareRecord, useFileViewer, useRefresh, useRecord, Stack, Cluster,
+  ActionButton, Badge, ConfirmAction, Hint, RecordSheet, RecordSheetHostContext, formatDate, formatMoney, queryKeys, type RecordFact, type RecordTab, compareRecord, useFileViewer, useOpenRecord, useRefresh, useRecord, Stack, Cluster,
 } from '@/platform-ui'
-import { SOURCE_LABEL, downloadPacket, fetchOrder, poPdf, ordersClient, type OrderRead } from './ordersApi'
+import { SOURCE_LABEL, downloadPacket, fetchOrder, poPdf, ordersClient, reorderOrder, type OrderRead } from './ordersApi'
 import { OrderHoldActions } from './OrderHoldActions'
 import { DetailHelp, NextStep, OrderStatusBadge } from './OrderStatusCells'
 import { statusDetailText } from './orderStatus'
@@ -107,6 +107,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
       render: () => <ActivityTab o={d} /> },
   ]
 
+  const openRecord = useOpenRecord()
   const facts: RecordFact[] = !d ? [] : [
     { label: 'Total', value: formatMoney(d.total_amount ?? d.total, d.currency), hint: `${open.length} ${open.length === 1 ? 'line' : 'lines'}` },
     ...(d.source_type === 'SHOPIFY' && d.net_amount != null ? [{
@@ -116,6 +117,8 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
     { label: 'Shipped EA', value: shippedEa == null ? '—' : shippedEa, hint: shippedEa == null ? 'no 945 yet' : `of ${orderedEa} ordered` },
     ...(returned ? [{ label: 'Returned EA', value: returned, tone: 'warning' as const, hint: 'by the customer: not invoiced' }] : []),
     { label: 'Requested delivery', value: d.requested_delivery_date ? formatDate(d.requested_delivery_date) : '—' },
+    ...(d.manual_reason ? [{ label: 'Reason', value: d.manual_reason, help: 'term:Reason' as const }] : []),
+    ...(d.parent_reference ? [{ label: 'Reorder of', value: d.parent_reference }] : []),
   ]
 
   const isDraft = live.source_type === 'MANUAL' && live.fulfillment_status === 'Draft'
@@ -166,6 +169,10 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
         more={[
           { label: 'Purchase order (PDF)', onSelect: () => view(poPdf(live)), opensDialog: true },
           { label: 'Audit packet: every file and PDF (zip)', onSelect: () => downloadPacket(live), failPrefix: 'Download failed' },
+          // A gift, a replacement or a sample goes through Sales as its own order (user 2026-11-19): a Draft copy, no lines.
+          { label: 'Reorder for this customer', permission: 'sales.order.operate',
+            done: 'Draft made: add the lines and a reason, then submit',
+            onSelect: async () => { const n = await reorderOrder(live.id); openRecord('/orders', n.id) } },
         ]}
       />
       {d && (

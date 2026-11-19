@@ -20,6 +20,8 @@ export const createManual = (data: ManualOrderIn) => api.post<OrderRead>('/order
 export const updateManual = (id: number, data: ManualOrderIn, version: number) => api.put<OrderRead>(`/orders/manual/${id}?version=${version}`, data)
 export const submitManual = (id: number, version: number) => api.post<OrderRead>(`/orders/manual/${id}/submit?version=${version}`)
 export const cancelManual = (id: number, version: number) => api.post<OrderRead>(`/orders/manual/${id}/cancel?version=${version}`)
+/** Reorder for this customer (user 2026-11-19): a Draft manual order copied from this one, no lines. */
+export const reorderOrder = (id: number) => api.post<OrderRead>(`/orders/${id}/reorder`)
 
 export interface Send940Result { order: OrderRead; document_id: number; file_status: string; control: string; errors: string[] }
 export const send940 = (id: number, replace = false) => api.post<Send940Result>(`/orders/${id}/send-940${replace ? '?replace=true' : ''}`)

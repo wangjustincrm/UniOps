@@ -37,6 +37,11 @@ const orderColumns: ColumnDef<OrderRead, unknown>[] = [
   startHidden(col.date('delivery_due_date', 'Delivery due')),
   startHidden(col.date('cancel_date', 'Cancel by')),  // the PO's cancel date; do-not-deliver-after is in Delivery due
   startHidden(col.place('ship_to_place', 'Ship to', (o) => o.ship_to, { withName: (o) => o.source_type !== 'SHOPIFY' })),
+  // Free goods (user 2026-11-19): a manual order's reason, the order it repeats, its month and EA.
+  startHidden(withHelp(col.text('manual_reason', 'Reason'), 'term:Reason')),
+  startHidden(col.text('parent_reference', 'Reorder of')),
+  startHidden(col.date('received_month', 'Month')),
+  startHidden(col.number('ordered_ea', 'EA')),
 ]
 
 /** A list of orders with the order's detail in a sheet; Review orders carry

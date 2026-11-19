@@ -152,5 +152,7 @@ export interface ManualOrderIn {
   lines: ManualLine[]
   /** How it ships (user 2026-11-13): Purolator (parcel) or LTL; required to submit. */
   carrier?: Carrier | null
+  /** Why it is made (user 2026-11-19): one of Configuration's reasons; required to submit. */
+  reason?: string | null
 }
 export interface LinePreview { item_code: string; quantity: string; unit: string; qty_ea: number | null; problem: string | null; weight_lb?: string | null }

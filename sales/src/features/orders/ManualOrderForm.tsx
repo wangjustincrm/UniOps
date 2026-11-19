@@ -18,6 +18,7 @@ const schema = z.object({
   partner_code: z.string().min(1, 'Choose the customer'),
   customer_reference: z.string().trim().max(50).nullable().optional(),
   carrier: z.string().nullable().optional(),
+  reason: z.string().nullable().optional(),
   requested_delivery_date: z.string().nullable().optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
   ship_to: addressSchema({ phone: true }),
@@ -25,12 +26,14 @@ const schema = z.object({
 // The form's ship-to: a draft's own, else blank in Canada (every part a string for the inputs).
 const shipToDefaults = (a: Record<string, string | null> | null | undefined) =>
   Object.fromEntries(ADDRESS_FIELDS.map((k) => [k, a?.[k] ?? (k === 'country' ? 'CA' : '')]))
-const fieldsFor = (carriers: { value: string; label: string }[]): FieldSpec[] => [
+const fieldsFor = (carriers: { value: string; label: string }[], reasons: string[]): FieldSpec[] => [
   { name: 'partner_code', label: 'Customer', type: 'reference', required: true, loadOptions: (q) => manualPartnerOptions(q),
     hint: 'Who the order is for. Manual orders use partners whose channel is Manual (Configuration → Partners).' },
   { name: 'customer_reference', label: 'Customer PO / reference', hint: "The customer's own number for this order, if they gave one." },
   { name: 'carrier', label: 'Ships by', type: 'segmented', options: carriers,
     hint: 'Purolator (Ground or Express): a parcel, sent like a Shopify order (the ship-to phone goes with it). LTL: a pallet shipment, sent like a retailer order. Needed before it is submitted.' },
+  { name: 'reason', label: 'Reason', type: 'select', options: reasons.map((r) => ({ value: r, label: r })),
+    hint: 'Why this order is made (Gift, Replacement, Sample …: Finance sees them under Orders → Free goods). Needed before it is submitted.' },
   { name: 'requested_delivery_date', label: 'Requested delivery', type: 'date' },
   { name: 'notes', label: 'Notes', type: 'textarea' },
 ]
@@ -58,15 +61,17 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
   draft?: OrderDetail; onSaved: (order: OrderRead) => void; onCancel: () => void
 }) {
   const [preview, setPreview] = useState<LinePreview[] | null>(null)
-  const [lines, setLines] = useState<ManualLine[]>(() => draft
-    ? draft.lines.filter((l) => !l.removed).map((l) => ({ item_code: l.item_code ?? '', quantity: Number(l.ordered_qty), unit: l.order_unit ?? 'EA' }))
-    : [{ ...blank }])
+  const [lines, setLines] = useState<ManualLine[]>(() => {
+    const own = (draft?.lines ?? []).filter((l) => !l.removed)
+      .map((l) => ({ item_code: l.item_code ?? '', quantity: Number(l.ordered_qty), unit: l.order_unit ?? 'EA' }))
+    return own.length ? own : [{ ...blank }]  // a reorder starts with no lines: one empty line to fill
+  })
   const customers = useLookup(['sales', 'lookup', 'manual-customers'], () => manualPartnerOptions(''), { enabled: !draft })
   const codes = [...new Set(lines.map((l) => l.item_code).filter(Boolean))]
   const unitQueries = useLookups(codes.map((c) => ['sales', 'lookup', 'units', c]), (k) => itemUnits(String(k[3])), { staleTime: 60_000 })
   const units: Record<string, { value: string; label: string }[]> = Object.fromEntries(codes.map((c, i) => [c, unitQueries[i]?.data ?? []]))
   const settings = useLookup(EDI_KEY, fetchEdiSettings)
-  const fields = fieldsFor(carriersFor(settings.data?.express_offered ?? true))
+  const fields = fieldsFor(carriersFor(settings.data?.express_offered ?? true), settings.data?.manual_reasons ?? [])
 
   if (!draft && customers.isLoading) return <Skeleton className="h-40 w-full" />
   if (!draft && customers.data && customers.data.length === 0) {
@@ -94,7 +99,7 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
       schema={schema}
       fields={fields}
       defaultValues={{ partner_code: draft?.partner_code ?? single, customer_reference: draft?.source_order_number ?? '', carrier: draft?.shipping_method ?? '',
-        requested_delivery_date: draft?.requested_delivery_date ?? '', notes: draft?.notes ?? '', ship_to: shipToDefaults(draft?.ship_to) }}
+        reason: draft?.manual_reason ?? '', requested_delivery_date: draft?.requested_delivery_date ?? '', notes: draft?.notes ?? '', ship_to: shipToDefaults(draft?.ship_to) }}
       addresses={[{ name: 'ship_to', legend: 'Ship to', phoneRequired: true }]}
       lines={{ label: 'Order lines', columns, initial: lines, add: () => ({ ...blank }), removable: true,
         problem: (l, i) => lineProblem(l) ?? preview?.[i]?.problem ?? null }}
@@ -116,7 +121,7 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
         const body: ManualOrderIn = { partner_code: String(v.partner_code), customer_reference: (v.customer_reference as string) ?? null,
           requested_delivery_date: (v.requested_delivery_date as string) ?? null, notes: (v.notes as string) ?? null,
           ship_to: cleanAddress(v.ship_to as Record<string, unknown>), lines: ls,
-          carrier: isCarrier(v.carrier) ? v.carrier : null }
+          carrier: isCarrier(v.carrier) ? v.carrier : null, reason: (v.reason as string) || null }
         onSaved(draft ? await updateManual(draft.id, body, draft.version) : await createManual(body))
       }}
     />

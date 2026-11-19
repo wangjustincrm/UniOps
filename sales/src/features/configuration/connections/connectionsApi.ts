@@ -130,7 +130,11 @@ export interface EdiSettings {
   /** Manual orders (set by the product owner): Purolator Express offered; LTL suggested above this weight. */
   express_offered?: boolean
   ltl_from_lb?: number
+  /** Why a manual order is made (user 2026-11-19): one is required to submit. */
+  manual_reasons?: string[]
 }
+/** The server's own default reasons (app/services/settings.py MANUAL_REASONS_DEFAULT), for a form before it has them. */
+export const DEFAULT_MANUAL_REASONS = ['Gift', 'Replacement', 'Sample', 'Staff purchase', 'Phone order', 'Other']
 export const fetchEdiSettings = () => api.get<EdiSettings>('/config/edi-settings')
 export const saveEdiSettings = (data: EdiSettings) => api.put<EdiSettings>('/config/edi-settings', data)
 

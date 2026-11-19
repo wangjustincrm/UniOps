@@ -45,13 +45,13 @@ const meta: ListMeta = {
 }
 
 const api = vi.hoisted(() => ({ resolve: vi.fn(), fetchOrder: vi.fn(), list: vi.fn(), send: vi.fn(),
-  preview: vi.fn(), create: vi.fn(), submit: vi.fn(), update: vi.fn(), prices: vi.fn(), amend: vi.fn() }))
+  preview: vi.fn(), create: vi.fn(), submit: vi.fn(), update: vi.fn(), prices: vi.fn(), amend: vi.fn(), reorder: vi.fn(), get: vi.fn() }))
 vi.mock('./ordersApi', async (orig) => {
   const real = await orig<typeof import('./ordersApi')>()
-  return { ...real, ordersClient: { ...real.ordersClient, list: api.list, meta: async () => meta },
+  return { ...real, ordersClient: { ...real.ordersClient, list: api.list, meta: async () => meta, get: api.get },
     fetchOrder: api.fetchOrder, resolveReview: api.resolve, send940: api.send,
     previewManual: api.preview, createManual: api.create, submitManual: api.submit, updateManual: api.update,
-    setInvoicePrices: api.prices, amendOrder: api.amend }
+    setInvoicePrices: api.prices, amendOrder: api.amend, reorderOrder: api.reorder }
 })
 const look = vi.hoisted(() => ({ customers: vi.fn() }))
 vi.mock('../configuration/lookups', () => ({
@@ -202,6 +202,28 @@ describe('Orders: 940s (P4)', () => {
     api.list.mockReset(); api.list.mockImplementation(async () => ({ items: [pending, sentOrder], total: 2 }))
   })
 
+  it('Reorder for this customer (More) makes a draft copy and opens it; it needs sales.order.operate', async () => {
+    api.fetchOrder.mockResolvedValue({ ...detail, ...pending, documents: [] })
+    const { unmount } = renderAs(['sales.read'])
+    fireEvent.click(await screen.findByText('9303'))
+    let dialog = await screen.findByRole('dialog')
+    await within(dialog).findByRole('tab', { name: /^Activity/ })
+    fireEvent.keyDown(within(dialog).getByRole('button', { name: 'More actions' }), { key: 'Enter' })
+    expect(screen.queryByRole('menuitem', { name: 'Reorder for this customer' })).toBeNull()
+    unmount()
+    const made = { ...pending, id: 77, source_reference: 'MAN-77', source_type: 'MANUAL', fulfillment_status: 'Draft' }
+    api.reorder.mockResolvedValue(made)
+    api.get.mockResolvedValue(made)
+    renderAs(['sales.read', 'sales.order.operate'])
+    fireEvent.click(await screen.findByText('9303'))
+    dialog = await screen.findByRole('dialog')
+    await within(dialog).findByRole('tab', { name: /^Activity/ })
+    fireEvent.keyDown(within(dialog).getByRole('button', { name: 'More actions' }), { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Reorder for this customer' }))
+    await waitFor(() => expect(api.reorder).toHaveBeenCalledWith(5))
+    await waitFor(() => expect(api.fetchOrder).toHaveBeenCalledWith(77))  // the new draft opens
+  })
+
   it('Send 940 now needs sales.order.operate and says the 940 is queued', async () => {
     api.fetchOrder.mockResolvedValue({ ...detail, ...pending, documents: [], send_940: 'send' })
     const { unmount } = renderAs(['sales.read'])
@@ -318,7 +340,7 @@ describe('Orders: manual orders (FR-OB-19a) — New in the standard sheet, draft
     await fillShipTo(form)
     fireEvent.click(within(form).getByRole('button', { name: 'Save draft' }))
     await waitFor(() => expect(api.create).toHaveBeenCalledWith({ partner_code: 'MAN', customer_reference: null,
-      requested_delivery_date: null, notes: null, ship_to: { ...shipTo, zip: 'm5h1a1' }, lines: [{ item_code: 'CF0092', quantity: 1, unit: 'CASE' }], carrier: null }))
+      requested_delivery_date: null, notes: null, ship_to: { ...shipTo, zip: 'm5h1a1' }, lines: [{ item_code: 'CF0092', quantity: 1, unit: 'CASE' }], carrier: null, reason: null }))
     expect(await screen.findByRole('dialog', { name: 'MAN-110' })).toBeInTheDocument()  // the new draft opens
   })
 

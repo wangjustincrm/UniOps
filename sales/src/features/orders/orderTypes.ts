@@ -74,6 +74,13 @@ export interface OrderRead {
   backordered_ea?: number | null
   /** What the customer returned (or refused) of what shipped, over the lines; none when nothing. */
   returned_ea?: number | null
+  /** A manual order's reason (Gift, Replacement, …; required to submit), the order it repeats, the month it came
+   *  in (Toronto) and its EA (Free goods, user 2026-11-19). */
+  manual_reason?: string | null
+  parent_order_id?: number | null
+  parent_reference?: string | null
+  received_month?: string | null
+  ordered_ea?: number | null
   source_updated_at: string | null
   version: number
   created_at: string
