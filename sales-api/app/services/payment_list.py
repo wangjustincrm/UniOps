@@ -2,7 +2,7 @@
 no page per method. Read-only; sales.read to look."""
 from __future__ import annotations
 
-from app.models.payment_list import ISSUES, KINDS, MATCHES, METHODS, SOURCES, STATUSES, PaymentRow
+from app.models.payment_list import INFO_ISSUES, ISSUES, KINDS, MATCHES, METHODS, SOURCES, STATUSES, PaymentRow
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
@@ -59,7 +59,8 @@ class PaymentRowRepository(Repository[PaymentRow]):
             "filters": [{"field": "method", "op": "in", "value": ["AlphaPay", "Manual"]}, _SUCCESS],
             "group": [{"field": "processed_month", "desc": True}], "sort": _NEWEST}),
         Preset("exceptions", "Exceptions", {
-            "filters": [{"field": "issue", "op": "not_null", "value": None}],
+            "filters": [{"field": "issue", "op": "not_null", "value": None},
+                        {"field": "issue", "op": "not_in", "value": list(INFO_ISSUES)}],
             "group": [{"field": "issue", "desc": False}], "sort": _NEWEST}),
     )
 

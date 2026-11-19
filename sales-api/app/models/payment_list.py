@@ -37,7 +37,9 @@ from app.models.payments import OrderPayment
 
 ISSUES = ("Pending over 7 days", "Cancelled, not fully refunded", "Partially paid", "Failed on an open order",
           "Paid, no payment", "Not settled in the gateway", "In the gateway, not in Shopify",
-          "Details not available from the gateway")
+          "Details not available from the gateway", "Waiting for the gateway")
+# Shown, but not something Finance acts on (user 2026-11-19: "pending means nothing for us"): not in Exceptions.
+INFO_ISSUES = ("Waiting for the gateway",)
 DETAILS_ATTEMPTS = 3  # services/gateway_intake.py: then its details are given up on
 # How the gateway transaction was matched, in words (domain/gateway_match.py's methods).
 MATCH_WORDS = {"TRANSACTION_ID": "Transaction ID", "SHOPIFY_PAYMENT_ID": "Shopify payment ID", "ORDER_NUMBER": "Order number",
@@ -125,9 +127,11 @@ _superseded = select(_P4.id).where(
     _P4.order_id == _P.order_id, _P4.id != _P.id, _P4.status == "success", _P4.kind == _P.kind, _P4.amount == _P.amount,
     func.coalesce(_P4.authorization, "") == func.coalesce(_P.authorization, ""),
     func.coalesce(_P4.processed_at, _P4.created_at) >= _at).exists()
-# A charge that never happened (user 2026-11-19: 21 Authorize.Net sales of Nov 2025): pending, on an order cancelled at
-# source, and no gateway transaction for it — no money moved and none will. A pending refund stays an issue.
-_never_captured = _P.kind.in_(("sale", "authorization")) & _cancelled & _T.id.is_(None)
+# A charge that never happened (user 2026-11-19: 21 Authorize.Net sales of Nov 2025; SHP-5603, expired, cancelled in
+# Sales only): pending, on an order cancelled at source or in Sales, and no gateway transaction for it — no money moved
+# and none will.
+_never_captured = (_P.kind.in_(("sale", "authorization")) & (_cancelled | (_O.fulfillment_status == "Cancelled"))
+                   & _T.id.is_(None))
 _money_in = _ok_in & ~_voided
 _money_back = _ok_refund & ~_voided
 
@@ -148,7 +152,8 @@ _PAYMENTS = (
         _P.payment_id.label("shopify_payment_id"), _source(_O).label("order_source"),
         _O.shopify_financial_status.label("financial_status"), _cancelled.label("order_cancelled"),
         _O.discount.label("discount"), _O.shipping.label("shipping"), _O.original_total.label("order_total"), _P.test.label("test"),
-        case(((_P.status == "pending") & (_at < func.now() - func.make_interval(0, 0, 0, 7)) & ~_superseded & ~_never_captured,
+        case(((_P.status == "pending") & (_P.kind == "refund") & ~_superseded, "Waiting for the gateway"),  # user 2026-11-19
+             ((_P.status == "pending") & (_at < func.now() - func.make_interval(0, 0, 0, 7)) & ~_superseded & ~_never_captured,
               "Pending over 7 days"),
              (_cancelled & _ok_in & func.coalesce(_O.shopify_financial_status, "").not_in(("refunded", "voided")),
               "Cancelled, not fully refunded"),

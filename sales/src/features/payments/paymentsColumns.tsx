@@ -9,7 +9,7 @@ const col = columnsOf<PaymentRowRead>()
 export const hiddenPaymentColumns = ['processed_week', 'processed_month', 'gateway', 'shopify_payment_id', 'discount', 'shipping',
   'order_total', 'order_cancelled', 'test', 'gateway_status', 'card_type', 'settled_at', 'voided', 'settlement_ref']
 
-const issueTone = (v: string): Tone => (v === 'Pending over 7 days' ? 'warning' : 'danger')
+const issueTone = (v: string): Tone => (v === 'Pending over 7 days' || v === 'Waiting for the gateway' ? 'warning' : 'danger')
 const matchTone = (v: string): Tone => (v.endsWith('(probable)') ? 'warning' : 'success')
 const statusTone = (v: string): Tone => (v === 'success' ? 'success' : v === 'pending' ? 'warning' : 'danger')
 

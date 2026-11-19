@@ -107,7 +107,7 @@ async def test_a_pending_payment_that_went_through_later_is_no_issue(env):  # no
     page = await rows(env)
     ids = {x["shopify_id"]: x["id"] for x in await env.q("SELECT id, shopify_id FROM sales_order_payments")}
     issue = {sid: r.issue for r in page.items for sid, i in ids.items() if r.id == i}
-    assert (issue[102], issue[202]) == (None, "Pending over 7 days")
+    assert (issue[102], issue[202]) == (None, "Waiting for the gateway")  # a refund still pending: shown, nothing to do
 
 
 
@@ -125,4 +125,23 @@ async def test_a_pending_charge_on_a_cancelled_order_with_nothing_in_the_gateway
     ids = {x["shopify_id"]: x["id"] for x in await env.q("SELECT id, shopify_id FROM sales_order_payments")}
     issue = {sid: r.issue for r in page.items for sid, i in ids.items() if r.id == i}
     assert issue[101] != "Pending over 7 days"
-    assert issue[202] == "Pending over 7 days"
+    assert issue[202] == "Waiting for the gateway"  # user 2026-11-19: "pending means nothing for us"
+    # Exceptions leaves out what only waits for the gateway
+    async with env.factory(OP) as u:
+        meta = await PaymentRowService(u).meta()
+    exc = next(v for v in meta["views"] if v["name"] == "Exceptions")["state"]["filters"]
+    assert {"field": "issue", "op": "not_in", "value": ["Waiting for the gateway"]} in exc
+
+
+async def test_a_pending_charge_on_an_order_cancelled_in_sales_only_is_no_issue(env):  # noqa: F811
+    """SHP-5603 (user 2026-11-19): the payment expired, the order was cancelled in Sales (not at source)."""
+    env.shop.orders = [order(1, financial="pending")]
+    env.shop.transactions_by_order |= {
+        "1": [tx(101, gateway="authorize.net", amount="31.95", status="pending", processed_at="2026-06-01T10:00:00-04:00")]}
+    await env.pull()
+    import sqlalchemy as sa
+    async with env.factory(OP) as u:
+        await u.session.execute(sa.text("UPDATE sales_orders SET fulfillment_status = 'Cancelled'"))
+        await u.commit()
+    page = await rows(env)
+    assert [r.issue for r in page.items if r.kind == "sale"] == [None]
