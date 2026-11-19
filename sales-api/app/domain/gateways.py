@@ -5,7 +5,7 @@ which direction; `kind_of` / `settled_of` turn them into the one shape every gat
 """
 from __future__ import annotations
 
-GATEWAYS = ("AUTHORIZE_NET",)
+GATEWAYS = ("AUTHORIZE_NET", "PAYPAL")
 TX_KINDS = ("sale", "refund", "void", "other")
 # How a gateway transaction was found to be a Shopify payment, strongest first. AMOUNT_TIME is a
 # probable match only (same amount, same kind, within minutes, the only candidate).

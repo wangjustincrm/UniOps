@@ -114,3 +114,23 @@ def test_sales32_downgrade_refuses_while_an_authorize_net_connection_exists_and_
             c.execute(sa.text("DELETE FROM sales_connections WHERE name = 'schema-test-anet'"))
         assert run_alembic("upgrade", "head").returncode == 0
         eng.dispose()
+
+
+def test_sales33_downgrade_refuses_while_a_paypal_connection_exists_and_changes_nothing(migrated_db):
+    """PayPal (user 2026-11-19): the same guard as sales32 — never a half-run downgrade."""
+    eng = sa.create_engine(SYNC_URL)
+    with eng.begin() as c:
+        c.execute(sa.text("INSERT INTO sales_connections (name, kind, host, username, secret_name, after_read, version, "
+                          "created_by_name) VALUES ('schema-test-paypal', 'PAYPAL', 'api-m.paypal.com', 'x', "
+                          "'SALES_SECRET_PAYPAL', 'LEAVE', 1, 'test')"))
+    try:
+        r = run_alembic("downgrade", "sales32_gateway_settlements")
+        assert r.returncode != 0 and "sales33 downgrade refused" in ((r.stdout or "") + (r.stderr or ""))
+        with eng.begin() as c:  # nothing changed: the row is there and PAYPAL is still allowed
+            assert c.execute(sa.text("SELECT count(*) FROM sales_connections WHERE kind = 'PAYPAL'")).scalar() == 1
+    finally:
+        with eng.begin() as c:
+            c.execute(sa.text("DELETE FROM sales_connections WHERE name = 'schema-test-paypal'"))
+        assert run_alembic("downgrade", "sales32_gateway_settlements").returncode == 0  # nothing left: it runs
+        assert run_alembic("upgrade", "head").returncode == 0
+        eng.dispose()
