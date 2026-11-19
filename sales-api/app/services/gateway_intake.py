@@ -22,37 +22,29 @@ SFTP login: it is skipped until someone clears it on the Connections page.
 """
 from __future__ import annotations
 
-import hashlib
-import json
-import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, or_, select, update
 
-from app.domain import gateway_match as gm
 from app.domain.gateways import kind_of, settled_of
-from app.domain.status import InboundFile
 from app.integrations.authorize_net import MAX_DAYS, AuthorizeNetAuthFailed, AuthorizeNetError, readable
-from app.models.config import Connection
-from app.models.documents import Document
 from app.models.gateways import GatewaySettlement, GatewayTransaction, details_attempts, details_failed_at
-from app.models.orders import Order
 from app.models.payments import OrderPayment
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.pipeline import isolated
 from app.services import oplog
+from app.services.gateway_base import MATCHABLE, OVERLAP, GatewayIntake, GatewayReport, money as _money, when as _when
 from app.services.intake import ConnectionSnapshot
-from app.services.settings import SETTINGS, SHADOW_MODE
+
+__all__ = ["AuthorizeNetIntake", "GatewayReport", "batch_totals", "old_gateway_id"]
 
 STEP = "authorize_net"
 GATEWAY = "AUTHORIZE_NET"
 SHOPIFY_GATEWAYS = ("authorize_net", "authorize.net")  # the old gateway and the new app
 CURRENCY = "CAD"           # the merchant account's currency (its batches carry none); said on the Connections form
-OVERLAP = timedelta(days=1)  # each pass reads the last day again: a batch is never missed
 MAX_BATCHES = 400          # per pass (~3–4 minutes; user 2026-11-17)
 # The batch list answers nothing before Jan 1 of two years back (E00013, seen 2026-11-17: "First
 # Settlement Date can not be older than the year of 2024"): a start before it is moved up to it.
@@ -65,42 +57,6 @@ DETAILS_BUDGET_SECONDS = 600
 # again after DETAILS_RETRY, at most DETAILS_ATTEMPTS times; then "Details not available".
 DETAILS_ATTEMPTS = 3
 DETAILS_RETRY = timedelta(hours=24)
-
-
-@dataclass
-class GatewayReport:
-    windows: int = 0
-    batches: int = 0
-    batches_read: int = 0      # transaction lists read whole this pass
-    transactions: int = 0
-    details_read: int = 0
-    matched: int = 0
-    failed: int = 0
-    status: str = "ok"         # ok | read_off | cursor_not_set | latched | fetch_failed | more_to_read
-    cursor_before: str | None = None
-    cursor_after: str | None = None
-
-    def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-    @property
-    def text(self) -> str:
-        return (f"{self.batches} batches, {self.transactions} transactions, {self.matched} matched, {self.failed} errors"
-                + ("" if self.status == "ok" else f" ({self.status})"))
-
-
-def _money(v: Any) -> Decimal:
-    try:
-        return Decimal(str(v if v not in (None, "") else 0)).quantize(Decimal("0.01"))
-    except Exception:  # noqa: BLE001
-        return Decimal("0.00")
-
-
-def _when(v: Any) -> datetime | None:
-    if not v:
-        return None
-    t = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
-    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
 
 
 def batch_totals(b: dict[str, Any]) -> dict[str, Any]:
@@ -117,11 +73,6 @@ def batch_totals(b: dict[str, Any]) -> dict[str, Any]:
             "returned_amount": total("returnedItemAmount"), "returned_count": count("returnedItemCount")}
 
 
-# What is matched to Shopify: money that moved (settled sales and refunds), and voids (the sale they undid).
-MATCHABLE = or_(GatewayTransaction.settled.is_(True) & GatewayTransaction.kind.in_(("sale", "refund")),
-                GatewayTransaction.kind == "void")
-
-
 def _about_this_one(e: BaseException) -> bool:
     """Authorize.Net answered and refused this request with its own code (not transport, not login)."""
     from app.integrations.authorize_net import AuthorizeNetRequestRefused
@@ -136,41 +87,30 @@ def old_gateway_id(p: OrderPayment) -> str | None:
     return p.authorization.split("#")[0] or None
 
 
-def _bytes(value: Any) -> bytes:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True).encode()
+class AuthorizeNetIntake(GatewayIntake):
+    GATEWAY, SYSTEM, STEP, LABEL = GATEWAY, "AUTHORIZE_NET", STEP, "Authorize.Net"
+    SHOPIFY_GATEWAYS = SHOPIFY_GATEWAYS
+    AUTH_FAILED = AuthorizeNetAuthFailed
+    MAX_DAYS = MAX_DAYS
+    HISTORY = staticmethod(lambda now: datetime(now.year - HISTORY_YEARS, 1, 1, tzinfo=timezone.utc))
+    readable = staticmethod(readable)
 
-
-class AuthorizeNetIntake:
     def __init__(self, *, uow_factory, gateway, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
-                 timer: Callable[[], float] = time.monotonic, budget_seconds: float = DETAILS_BUDGET_SECONDS):
-        self.uow_factory = uow_factory
-        self.gateway = gateway
-        self.clock = clock
-        self.timer, self.budget_seconds = timer, budget_seconds
+                 timer: Callable[[], float] | None = None, budget_seconds: float = DETAILS_BUDGET_SECONDS):
+        super().__init__(uow_factory=uow_factory, gateway=gateway, clock=clock, **({"timer": timer} if timer else {}))
+        self.budget_seconds = budget_seconds
 
-    async def _log(self, level: str, message: str, conn, run_id, **context) -> None:
-        await oplog.write_alone(self.uow_factory, level, STEP, message, run_id=run_id, connection_id=conn.id,
-                                context=context or None)
+    def shopify_gateway_id(self, p: OrderPayment) -> str | None:
+        return old_gateway_id(p)
 
-    async def run_pass(self, conn: ConnectionSnapshot, *, run_id: int | None = None) -> GatewayReport:
-        report = GatewayReport(cursor_before=conn.cursor_updated_at.isoformat() if conn.cursor_updated_at else None)
-        report.cursor_after = report.cursor_before
-        if conn.auth_failed_at is not None:
-            report.status = "latched"
-            return report
-        if not conn.can_read:
-            report.status = "read_off"
-            return report
-        if conn.cursor_updated_at is None:
-            report.status = "cursor_not_set"
-            return report
+    def final(self, t: GatewayTransaction) -> bool:
+        return t.details_read_at is not None  # its details were read: nothing stronger can come
+
+    async def read(self, conn: ConnectionSnapshot, report: GatewayReport, run_id) -> datetime:
+        """The settled batches from the cursor, oldest first, each with its transactions."""
         now = self.clock()
         cursor = conn.cursor_updated_at
-        earliest = datetime(now.year - HISTORY_YEARS, 1, 1, tzinfo=timezone.utc)
-        start = max(cursor - OVERLAP, earliest)
-        if cursor - OVERLAP < earliest:
-            await self._log("INFO", f"{conn.name}: Authorize.Net keeps batches from {earliest.date()}; reading from there",
-                            conn, run_id)
+        start = await self.start(conn, run_id)
         while start < now:
             end = min(start + timedelta(days=MAX_DAYS - 1), now)
             report.windows += 1
@@ -209,20 +149,18 @@ class AuthorizeNetIntake:
             if end < now - OVERLAP and end > cursor:  # an empty stretch fully in the past is done
                 cursor = end
             start = end
-        if cursor > conn.cursor_updated_at:
-            await self._advance(conn, cursor, run_id)
-            report.cursor_after = cursor.isoformat()
-        if report.status != "latched":
-            report.matched += await self.match(conn.id)
-            started = self.timer()
-            while self.timer() - started < self.budget_seconds:
-                read, tried, stopped = await self._read_details(conn, run_id)
-                report.details_read += read
-                if read:
-                    report.matched += await self.match(conn.id)
-                if stopped or tried < DETAILS_PER_PASS:  # none left, or Authorize.Net is unreachable: next pass
-                    break
-        return report
+        return cursor
+
+    async def after_match(self, conn: ConnectionSnapshot, report: GatewayReport, run_id) -> None:
+        """The details of what is still unmatched, round after round, matching after each, within the budget."""
+        started = self.timer()
+        while self.timer() - started < self.budget_seconds:
+            read, tried, stopped = await self._read_details(conn, run_id)
+            report.details_read += read
+            if read:
+                report.matched += await self.match(conn.id)
+            if stopped or tried < DETAILS_PER_PASS:  # none left, or Authorize.Net is unreachable: next pass
+                break
 
     async def _batch(self, conn: ConnectionSnapshot, b: dict[str, Any], report: GatewayReport, run_id) -> bool | None:
         """Upsert one batch; read its transactions unless they were read whole before. False: failed;
@@ -284,13 +222,9 @@ class AuthorizeNetIntake:
 
     async def _upsert_tx(self, s, conn: ConnectionSnapshot, settlement_id: int | None, t: dict[str, Any]) -> GatewayTransaction:
         ext = str(t.get("transId") or "")
-        row = (await s.execute(select(GatewayTransaction).where(
-            GatewayTransaction.gateway == GATEWAY, GatewayTransaction.external_id == ext))).scalar_one_or_none()
         status = t.get("transactionStatus")
-        if row is None:
-            row = GatewayTransaction(connection_id=conn.id, gateway=GATEWAY, external_id=ext, kind=kind_of(status),
-                                     amount=_money(t.get("settleAmount")), currency=CURRENCY, raw=t)
-            s.add(row)
+        row = await self._transaction(s, conn, ext, kind=kind_of(status), amount=_money(t.get("settleAmount")),
+                                      currency=CURRENCY, raw=t)
         row.settlement_id = settlement_id if settlement_id is not None else row.settlement_id
         row.kind, row.status, row.settled = kind_of(status), status, settled_of(status)
         row.amount = _money(t.get("settleAmount"))
@@ -360,78 +294,5 @@ class AuthorizeNetIntake:
             failed = {"at": self.clock().isoformat(), "attempts": int(prev.get("attempts") or 0) + 1, "error": why[:300]}
             await uow.session.execute(update(G).where(G.c.id == row_id).values(raw={**raw, "details_failed": failed}))
             await oplog.write(uow.session, "WARNING", STEP, f"{conn.name}: details of transaction {ext} refused: {why}"[:1000],
-                              run_id=run_id, connection_id=conn.id)
-            await uow.commit()
-
-    async def match(self, connection_id: int) -> int:
-        """Link the connection's unmatched settled (or voided) transactions to the unmatched Shopify payments."""
-        async with self.uow_factory(SYSTEM_ACTOR) as uow:
-            s = uow.session
-            txs = (await s.execute(select(GatewayTransaction).where(
-                GatewayTransaction.connection_id == connection_id, MATCHABLE,
-                GatewayTransaction.payment_row_id.is_(None)))).scalars().all()
-            if not txs:
-                return 0
-            taken = select(GatewayTransaction.payment_row_id).where(GatewayTransaction.payment_row_id.is_not(None))
-            rows = (await s.execute(select(OrderPayment, Order.source_order_number).join(Order, Order.id == OrderPayment.order_id).where(
-                func.lower(OrderPayment.gateway).in_(SHOPIFY_GATEWAYS), OrderPayment.status == "success",
-                OrderPayment.kind.in_(("sale", "capture", "refund")), OrderPayment.test.is_(False),
-                OrderPayment.id.not_in(taken)))).all()
-            payments = [gm.ShopifyPayment(
-                id=p.id, kind="refund" if p.kind == "refund" else "sale", amount=p.amount, processed_at=p.processed_at,
-                gateway_id=old_gateway_id(p), payment_id=p.payment_id, order_number=number) for p, number in rows]
-            # A voided transaction is the Shopify sale it voided (kind "sale" for matching).
-            found = gm.match([gm.GatewayTx(key=t.id, kind="sale" if t.kind == "void" else t.kind, amount=t.amount,
-                                           submitted_at=t.submitted_at,
-                                           texts=(t.invoice_number or "", t.description or ""), external_id=t.external_id,
-                                           final=t.details_read_at is not None, void=t.kind == "void")
-                              for t in txs], payments)
-            if not found:
-                return 0
-            uow.set_reason("match gateway transactions to Shopify payments")
-            by_id = {t.id: t for t in txs}
-            now = self.clock()
-            for m in found:
-                t = by_id[m.tx]
-                t.payment_row_id, t.match_method, t.matched_at = m.payment, m.method, now
-            await s.flush()
-            await uow.commit()
-            return len(found)
-
-    async def _store(self, conn: ConnectionSnapshot, value: Any, name: str) -> int | None:
-        """A response as received (minus card and personal data): identical bytes kept once."""
-        data = _bytes(value)
-        sha = hashlib.sha256(data).hexdigest()
-        async with self.uow_factory(SYSTEM_ACTOR) as uow:
-            s = uow.session
-            found = (await s.execute(select(Document.id).where(Document.sha256 == sha, Document.content.is_not(None))
-                                     )).scalar_one_or_none()
-            if found is not None:
-                return found
-            doc = Document(direction="IN", origin="PARTNER", system="AUTHORIZE_NET", connection_id=conn.id,
-                           kind="GATEWAY_JSON", remote_name=name[:255], size=len(data), sha256=sha, content=data,
-                           processing_status=InboundFile.PROCESSED.value, shadow=await SETTINGS.get(s, SHADOW_MODE))
-            s.add(doc)
-            await s.flush()
-            await uow.commit()
-            return doc.id
-
-    async def _advance(self, conn: ConnectionSnapshot, cursor: datetime, run_id) -> None:
-        async with self.uow_factory(SYSTEM_ACTOR) as uow:
-            await uow.session.execute(update(Connection).where(Connection.id == conn.id).values(cursor_updated_at=cursor))
-            await oplog.write(uow.session, "INFO", STEP, f"{conn.name}: read through {cursor.isoformat()}",
-                              run_id=run_id, connection_id=conn.id)
-            await uow.commit()
-
-    def _failed(self, conn, what: str, run_id):
-        async def log(outcome) -> None:
-            await self._log("ERROR", f"{conn.name}: {what} failed: {outcome.error_type}: {outcome.message}"[:1000], conn, run_id)
-        return log
-
-    async def _latch(self, conn, reason: str, run_id) -> None:
-        async with self.uow_factory(SYSTEM_ACTOR, reason="authorize.net auth failed") as uow:
-            c = await uow.session.get(Connection, conn.id, with_for_update=True)
-            c.auth_failed_at, c.auth_failed_reason = self.clock(), reason[:2000]
-            await oplog.write(uow.session, "ERROR", STEP, f"{conn.name}: login refused; connection latched: {reason}",
                               run_id=run_id, connection_id=conn.id)
             await uow.commit()

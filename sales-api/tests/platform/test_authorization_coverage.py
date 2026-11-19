@@ -27,6 +27,7 @@ ENGINES = {
     "intake.Intake": "the scheduler (SFTP intake)",
     "shopify_intake.ShopifyIntake": "the scheduler (Shopify intake)",
     "gateway_intake.AuthorizeNetIntake": "the scheduler (Authorize.Net settlements, read only)",
+    "gateway_base.GatewayIntake": "the base of the gateway intakes (the scheduler, read only)",
     "invoicing.Invoicing": "InvoiceService / DeliveryService check first; the scheduler advances",
     "transfers.Transfers": "TransferService checks first; the scheduler queues and reads 997 / 944",
     "outbound.Outbound940": "OrderService.send_940_now checks first; the scheduler queues; the outbox sends",
