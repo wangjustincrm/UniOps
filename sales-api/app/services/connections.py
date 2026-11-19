@@ -32,7 +32,7 @@ from app.services.cycle import window_of
 from app.services.intake import ConnectionSnapshot
 from app.services.problems import SFTP_AUTH_FAILED
 from app.services.settings import (
-    ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, INVOICE_CONNECTION_ID, INVOICE_INTERNAL_EMAILS, MANUAL_EXPRESS_OFFERED, MANUAL_LTL_FROM_LB, MANUAL_REASONS,
+    ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, INVOICE_CONNECTION_ID, INVOICE_INTERNAL_EMAILS,
     OPERATOR_USER_ID, SCHEDULER_PAUSED, SETTINGS, automatic_runs_on,
     SHADOW_MODE, SYSTEM_MINUTES,
 )
@@ -261,8 +261,7 @@ class EdiSettingsService(SettingsGroup):
     read_schema = EdiSettings
     fields = {"connection_id": EDI_CONNECTION_ID, "ack_timeout_minutes": ACK_TIMEOUT_MINUTES,
               "invoice_connection_id": INVOICE_CONNECTION_ID, "internal_emails": INVOICE_INTERNAL_EMAILS,
-              "operator_user_id": OPERATOR_USER_ID, "express_offered": MANUAL_EXPRESS_OFFERED, "ltl_from_lb": MANUAL_LTL_FROM_LB,
-              "manual_reasons": MANUAL_REASONS}
+              "operator_user_id": OPERATOR_USER_ID}
     read_permission, write_permission = READ, CONFIG
     reason = "EDI settings"
 

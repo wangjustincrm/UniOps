@@ -99,3 +99,30 @@ async def test_a_reorder_of_a_manual_order_keeps_its_partner_and_a_draft_with_no
         with pytest.raises(InvalidInput) as e:
             await ManualOrderService(u).submit(again.id, version)
     assert e.value.code == "order.no_lines"
+
+
+
+async def test_free_goods_are_the_reasons_the_settings_call_free_and_a_free_reason_cannot_vanish(edi):  # noqa: F811
+    """Review 2026-11-19: one definition. Free goods follow Manual order settings; renaming a reason that is free goods
+    without changing Free goods too is refused (the view would silently drop those orders)."""
+    from app.services.order_settings import ManualOrderSettingsService
+    env_ = edi.env
+    ship = AddressIn(name="Shop", phone="613-555-0100", address1="1 Rd", city="Kingston", province="ON", zip="K7P 0E9")
+    async with env_.factory(OP) as u:
+        promo = await ManualOrderService(u).create(ManualOrderIn(reason="Phone order", partner_code="MAN", ship_to=ship, carrier="LTL",
+                                                                 lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]))
+        promo = await ManualOrderService(u).submit(promo.id, promo.version)
+        await u.commit()
+    free = lambda u: OrderRepository(u).list(QuerySpec(filters=[parse_filter("free_goods:eq:true")], page_size=50))  # noqa: E731
+    async with env_.factory(OP) as u:
+        assert (await free(u)).items == []  # "Phone order" is not free by default
+        s = await ManualOrderSettingsService(u).get()
+        with pytest.raises(InvalidInput) as e:
+            await ManualOrderSettingsService(u).update(s.model_copy(update={"reasons": ["Gifts", "Replacement", "Sample", "Phone order"]}))
+        assert e.value.code == "manual.free_reason_unknown" and e.value.details["missing"] == ["Gift"]
+    async with env_.factory(OP) as u:
+        s = await ManualOrderSettingsService(u).get()
+        await ManualOrderSettingsService(u).update(s.model_copy(update={"free_reasons": ["Gift", "Replacement", "Sample", "Phone order"]}))
+        await u.commit()
+    async with env_.factory(OP) as u:
+        assert [x.id for x in (await free(u)).items] == [promo.id]  # now it is

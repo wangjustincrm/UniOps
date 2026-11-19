@@ -15,6 +15,7 @@ from app.schemas.connections import (
     ConnectionRead, ConnectionTestRead, CursorReset, EdiSettings, SchedulerSettings, SchedulerUpdate,
 )
 from app.schemas.operations import DocumentRead, RunStarted
+from app.schemas.orders import ManualOrderSettings
 from app.services import audit
 from app.services.connections import (
     READ, ConnectionService, EdiSettingsService, SchedulerSettingsService,
@@ -140,3 +141,18 @@ async def put_edi_settings(u: UoW, body: EdiSettings):
     return out
 
 
+manual_order_settings = APIRouter(prefix="/config/manual-order-settings", tags=["orders"])
+
+
+@manual_order_settings.get("", response_model=ManualOrderSettings)
+async def get_manual_order_settings(u: UoW):
+    from app.services.order_settings import ManualOrderSettingsService
+    return await ManualOrderSettingsService(u).get()
+
+
+@manual_order_settings.put("", response_model=ManualOrderSettings)
+async def put_manual_order_settings(u: UoW, body: ManualOrderSettings):
+    from app.services.order_settings import ManualOrderSettingsService
+    out = await ManualOrderSettingsService(u).update(body)
+    await u.commit()
+    return out

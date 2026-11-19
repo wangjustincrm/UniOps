@@ -115,7 +115,11 @@ MANUAL_REASONS_DEFAULT = ["Gift", "Replacement", "Sample", "Staff purchase", "Ph
 MANUAL_REASONS = SETTINGS.declare(Setting(
     "manual.reasons", MANUAL_REASONS_DEFAULT, text_list, validate=_reasons, safe=MANUAL_REASONS_DEFAULT,
     description="Why a manual order is made (one is required to submit)"))
-FREE_GOODS_REASONS = ("Gift", "Replacement", "Sample")  # Orders → Free goods
+# Which of those reasons are goods given away (Orders → Free goods, Finance): a subset of the reasons, checked on save.
+MANUAL_FREE_REASONS_DEFAULT = ["Gift", "Replacement", "Sample"]
+MANUAL_FREE_REASONS = SETTINGS.declare(Setting(
+    "manual.free_reasons", MANUAL_FREE_REASONS_DEFAULT, text_list, validate=lambda v: None if len(v) <= 20 else "at most 20",
+    safe=MANUAL_FREE_REASONS_DEFAULT, description="The manual order reasons that are free goods (Orders → Free goods)"))
 
 
 async def automatic_runs_on(session, app_settings) -> bool:

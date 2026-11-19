@@ -90,6 +90,7 @@ class OrderRead(BaseModel):
     backordered_ea: int | None = None  # what the applied 945 left unshipped (none before a 945)
     # A manual order's reason, the order it repeats, its month (Toronto) and EA (Free goods, user 2026-11-19)
     manual_reason: str | None = None
+    free_goods: bool = False  # its reason is a free one (Manual order settings)
     parent_order_id: int | None = None
     parent_reference: str | None = None
     received_month: date | None = None
@@ -393,6 +394,20 @@ class ManualOrderIn(BaseModel):
     carrier: Literal["Purolator", "Purolator Express", "LTL"] | None = None
     # Why it is made (user 2026-11-19): one of Configuration's reasons; required to submit.
     reason: Annotated[str, StringConstraints(strip_whitespace=True, max_length=40)] | None = None
+
+
+_ReasonName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+
+
+class ManualOrderSettings(BaseModel):
+    """Manual order settings (services/order_settings.py)."""
+    model_config = ConfigDict(extra="forbid")
+
+    express_offered: bool = True
+    ltl_from_lb: Annotated[int, Field(ge=1, le=100000)] = 150
+    reasons: Annotated[list[_ReasonName], Field(min_length=1, max_length=20)] = [
+        "Gift", "Replacement", "Sample", "Staff purchase", "Phone order", "Other"]
+    free_reasons: Annotated[list[_ReasonName], Field(max_length=20)] = ["Gift", "Replacement", "Sample"]
 
 
 class CancelOrderIn(BaseModel):

@@ -585,17 +585,16 @@ async def test_purolator_express_and_the_ltl_weight_are_settings_the_owner_sets(
     """User 2026-11-13: nothing hard-coded — Express offered or not, and the LTL suggestion weight."""
     import pytest
     from app.platform.errors import InvalidInput
-    from app.schemas.connections import EdiSettings
     from app.schemas.orders import AddressIn, ManualLineIn, ManualOrderIn
-    from app.services.connections import EdiSettingsService
+    from app.services.order_settings import ManualOrderSettingsService
     from app.services.order_views import ManualOrderService
     async with edi.env.factory(OP) as u:
-        s = await EdiSettingsService(u).get()
+        s = await ManualOrderSettingsService(u).get()
         assert (s.express_offered, s.ltl_from_lb) == (True, 150)  # the defaults
-        await EdiSettingsService(u).update(s.model_copy(update={"express_offered": False, "ltl_from_lb": 400}))
+        await ManualOrderSettingsService(u).update(s.model_copy(update={"express_offered": False, "ltl_from_lb": 400}))
         await u.commit()
     async with edi.env.factory(OP) as u:
-        assert (await EdiSettingsService(u).get()).ltl_from_lb == 400
+        assert (await ManualOrderSettingsService(u).get()).ltl_from_lb == 400
         o = await ManualOrderService(u).create(ManualOrderIn(reason="Sample", partner_code="MAN", carrier="Purolator Express", ship_to=AddressIn(
             name="Shop", phone="613-555-0100", address1="1 Rd", city="Kingston", province="ON", zip="K7P 0E9"),
             lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]))
