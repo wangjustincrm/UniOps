@@ -1,0 +1,6 @@
+/**
+ * Theme registry (CSS side). One line per extra theme:
+ *   @import "./<id>.css";
+ * and the same <id> in src/theme/theme.ts → THEMES. The default theme
+ * ("uniops") is the @theme block in ../tokens.css and needs no file.
+ */

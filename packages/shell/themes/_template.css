@@ -1,0 +1,182 @@
+/**
+ * THEME TEMPLATE — not imported. Copy to themes/<id>.css, rename the selector,
+ * change values, then add `@import "./<id>.css";` to themes/index.css and
+ * register <id> in src/theme/theme.ts (THEMES). See ../THEMING.md.
+ *
+ * Every line below is the default (uniops) value. Delete the lines you keep;
+ * a theme only needs to list what it changes. Semantic roles that point at a
+ * ramp step (var(--color-…)) follow the ramp automatically — override the role
+ * only when it should point elsewhere (e.g. dark themes flip surfaces).
+ */
+:root[data-theme="my-theme"] {
+  color-scheme: light; /* or dark */
+
+  /* ── Primary — Professional Teal ──────────────────────────────── */
+  --color-primary-50:  #E5F2F2;
+  --color-primary-100: #C4E0E0;
+  --color-primary-200: #94C5C5;
+  --color-primary-300: #64A6A6;
+  --color-primary-400: #2FAAAA;
+  --color-primary-500: #0F9999;
+  --color-primary-600: #0A7C7C;   /* 5.0:1 on white */
+  --color-primary-700: #085E5E;
+  --color-primary-800: #064A4A;
+  --color-primary-900: #053838;
+
+  /* ── Success — emerald. 600 was #10B981 (= 500, 2.5:1); now 5.5:1 ── */
+  --color-success-50:  #ECFDF5;
+  --color-success-100: #D1FAE5;
+  --color-success-200: #A7F3D0;
+  --color-success-300: #6EE7B7;
+  --color-success-400: #34D399;
+  --color-success-500: #10B981;
+  --color-success-600: #047857;
+  --color-success-700: #065F46;
+  --color-success-800: #064E3B;
+  --color-success-900: #022C22;
+
+  /* ── Warning — amber. 600 was #D97706 (3.2:1); now 5.0:1 ────────── */
+  --color-warning-50:  #FFFBEB;
+  --color-warning-100: #FEF3C7;
+  --color-warning-200: #FDE68A;
+  --color-warning-300: #FCD34D;
+  --color-warning-400: #FBBF24;
+  --color-warning-500: #F59E0B;
+  --color-warning-600: #B45309;
+  --color-warning-700: #92400E;
+  --color-warning-800: #78350F;
+  --color-warning-900: #451A03;
+
+  /* ── Danger — red ──────────────────────────────────────────────── */
+  --color-danger-50:  #FEF2F2;
+  --color-danger-100: #FEE2E2;
+  --color-danger-200: #FECACA;
+  --color-danger-300: #FCA5A5;
+  --color-danger-400: #F87171;
+  --color-danger-500: #EF4444;
+  --color-danger-600: #DC2626;    /* 4.8:1 */
+  --color-danger-700: #B91C1C;
+  --color-danger-800: #991B1B;
+  --color-danger-900: #7F1D1D;
+
+  /* ── Info — blue ───────────────────────────────────────────────── */
+  --color-info-50:  #EFF6FF;
+  --color-info-100: #DBEAFE;
+  --color-info-200: #BFDBFE;
+  --color-info-300: #93C5FD;
+  --color-info-400: #60A5FA;
+  --color-info-500: #3B82F6;
+  --color-info-600: #2563EB;      /* 5.2:1 */
+  --color-info-700: #1D4ED8;
+  --color-info-800: #1E40AF;
+  --color-info-900: #1E3A8A;
+
+  /* ── Neutral — cool-tinted grays ──────────────────────────────── */
+  --color-neutral-50:  #F7F8F9;
+  --color-neutral-100: #ECEEF0;
+  --color-neutral-200: #D9DFE3;
+  --color-neutral-300: #B3BEC9;
+  --color-neutral-400: #8895A3;   /* 2.9:1 — icons only */
+  --color-neutral-500: #647483;   /* 4.7:1 */
+  --color-neutral-600: #4E6070;
+  --color-neutral-700: #3A4D5C;
+  --color-neutral-800: #263240;
+  --color-neutral-900: #1A2730;
+
+  /* ══ Semantic roles ═══════════════════════════════════════════════ */
+  --color-fg:           var(--color-neutral-900);
+  --color-fg-secondary: var(--color-neutral-600);
+  --color-fg-muted:     var(--color-neutral-500);
+  --color-fg-faint:     var(--color-neutral-400);
+  --color-fg-on-accent: #FFFFFF;
+  --color-canvas:          #FAFBFC;   /* page background */
+  --color-surface:         #FFFFFF;   /* cards, tables, inputs */
+  --color-surface-subtle:  var(--color-neutral-50);   /* hover rows, headers */
+  --color-surface-sunken:  var(--color-neutral-100);  /* insets, disabled */
+  --color-surface-strong:  var(--color-neutral-200);  /* tracks, dividers as fill */
+  --color-inverse:         var(--color-neutral-800);  /* tooltips, dark chips */
+  --color-inverse-sunken:      var(--color-neutral-900);
+  --color-inverse-raised:      var(--color-neutral-700);
+  --color-inverse-hover:       var(--color-neutral-600);
+  --color-fg-on-inverse:       var(--color-neutral-100);
+  --color-fg-on-inverse-muted: var(--color-neutral-300);
+  --color-fg-on-inverse-faint: var(--color-neutral-500);
+  --color-line-on-inverse:     var(--color-neutral-700);
+  --color-line-subtle: var(--color-neutral-100);
+  --color-line:        var(--color-neutral-200);
+  --color-line-strong: var(--color-neutral-300);
+  --color-accent:        var(--color-primary-600);
+  --color-accent-hover:  var(--color-primary-700);
+  --color-accent-active: var(--color-primary-800);
+  --color-accent-fg:     var(--color-primary-700);
+  --color-accent-soft:   var(--color-primary-50);
+  --color-accent-line:   var(--color-primary-200);
+  --color-success-fg:    var(--color-success-700);
+  --color-success-soft:  var(--color-success-50);
+  --color-success-line:  var(--color-success-200);
+  --color-success-solid: var(--color-success-600);
+  --color-warning-fg:    var(--color-warning-700);
+  --color-warning-soft:  var(--color-warning-50);
+  --color-warning-line:  var(--color-warning-200);
+  --color-warning-solid: var(--color-warning-600);
+  --color-danger-fg:     var(--color-danger-700);
+  --color-danger-soft:   var(--color-danger-50);
+  --color-danger-line:   var(--color-danger-200);
+  --color-danger-solid:  var(--color-danger-600);
+  --color-info-fg:       var(--color-info-700);
+  --color-info-soft:     var(--color-info-50);
+  --color-info-line:     var(--color-info-200);
+  --color-info-solid:    var(--color-info-600);
+  --color-cat1: #0F9999;  /* teal */
+  --color-cat1-soft: #E6F5F5;
+  --color-cat1-fg: #0B6B6B;
+  --color-cat1-line: #9ED6D6;
+  --color-cat2: #3B82F6;  /* blue */
+  --color-cat2-soft: #EFF6FF;
+  --color-cat2-fg: #1D4ED8;
+  --color-cat2-line: #BFDBFE;
+  --color-cat3: #F59E0B;  /* amber */
+  --color-cat3-soft: #FFFBEB;
+  --color-cat3-fg: #92400E;
+  --color-cat3-line: #FDE68A;
+  --color-cat4: #8B5CF6;  /* violet */
+  --color-cat4-soft: #F5F3FF;
+  --color-cat4-fg: #6D28D9;
+  --color-cat4-line: #DDD6FE;
+  --color-cat5: #F43F5E;  /* rose */
+  --color-cat5-soft: #FFF1F2;
+  --color-cat5-fg: #BE123C;
+  --color-cat5-line: #FECDD3;
+  --color-cat6: #10B981;  /* emerald */
+  --color-cat6-soft: #ECFDF5;
+  --color-cat6-fg: #047857;
+  --color-cat6-line: #A7F3D0;
+  --color-cat7: #F97316;  /* orange */
+  --color-cat7-soft: #FFF7ED;
+  --color-cat7-fg: #C2410C;
+  --color-cat7-line: #FED7AA;
+  --color-cat8: #6366F1;  /* indigo */
+  --color-cat8-soft: #EEF2FF;
+  --color-cat8-fg: #4338CA;
+  --color-cat8-line: #C7D2FE;
+  --color-nav:           var(--color-primary-700);
+  --color-nav-fg:        rgb(255 255 255 / 0.72);
+  --color-nav-fg-active: #FFFFFF;
+  --color-nav-item-hover:  rgb(255 255 255 / 0.08);
+  --color-nav-item-active: rgb(255 255 255 / 0.14);
+  --color-nav-line:      rgb(255 255 255 / 0.10);
+
+  /* ── Type ─────────────────────────────────────────────────────── */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+
+  /* ── Elevation — neutral, soft, small ─────────────────────────── */
+  --shadow-xs: 0 1px 2px rgb(26 39 48 / 0.05);
+  --shadow-sm: 0 1px 3px rgb(26 39 48 / 0.08), 0 1px 2px rgb(26 39 48 / 0.04);
+  --shadow-md: 0 4px 12px rgb(26 39 48 / 0.08), 0 1px 3px rgb(26 39 48 / 0.05);
+  --shadow-lg: 0 12px 32px rgb(26 39 48 / 0.12), 0 2px 6px rgb(26 39 48 / 0.06);
+  --shadow-focus: 0 0 0 3px rgb(10 124 124 / 0.18);
+  --shadow-up: 0 -1px 8px rgb(26 39 48 / 0.06);
+
+  /* ── Motion ───────────────────────────────────────────────────── */
+}

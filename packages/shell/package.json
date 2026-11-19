@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./tokens.css": "./tokens.css"
+    "./tokens.css": "./tokens.css",
+    "./vite": "./vite-plugin.js"
   },
   "scripts": {
     "test": "vitest run",

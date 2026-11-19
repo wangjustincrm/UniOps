@@ -5,9 +5,10 @@
  * its nav sections (already filtered by permission), branding and user; the
  * look lives here. Re-skinning the sidebar for all modules = edit this file.
  */
+import { THEMES, useTheme } from '../theme/theme'
 import React, { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, LogOut, Menu, User } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, LogOut, Menu, User, Check } from 'lucide-react'
 import { cn } from '../lib/cn'
 
 export interface NavItem {
@@ -250,6 +251,7 @@ export interface UserMenuProps {
 
 export function UserMenu({ name, subtitle, items = [], onSignOut }: UserMenuProps) {
   const [open, setOpen] = useState(false)
+  const [theme, setTheme] = useTheme()
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
@@ -278,6 +280,19 @@ export function UserMenu({ name, subtitle, items = [], onSignOut }: UserMenuProp
       </button>
       {open && (
         <div role="menu" className="absolute right-0 z-40 mt-1 w-56 rounded-lg border border-line-subtle bg-surface p-1 shadow-md animate-[modal-in_120ms_var(--ease-standard)]">
+          {THEMES.length > 1 && (
+            <div role="group" aria-label="Theme" className="mb-1 border-b border-line-subtle pb-1">
+              <p className="px-2.5 pb-1 pt-1.5 text-2xs font-medium text-fg-muted">Theme</p>
+              {THEMES.map((t) => (
+                <button key={t.id} role="menuitemradio" aria-checked={t.id === theme} type="button"
+                  className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm text-fg-secondary transition-colors hover:bg-surface-subtle hover:text-fg"
+                  onClick={() => setTheme(t.id)}>
+                  <Check aria-hidden className={cn('h-4 w-4', t.id === theme ? 'text-accent' : 'invisible')} />
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          )}
           {all.map((it) => {
             const cls = cn(
               'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors [&>svg]:h-4 [&>svg]:w-4',

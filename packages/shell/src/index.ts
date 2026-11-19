@@ -34,3 +34,5 @@ export {
   zonedParts, toLocalDate, formatDate, formatDateTime, formatTime, timeZoneAbbrev,
   isoDateInZone, todayISO, currentMonthISO, wallClockToISO,
 } from './lib/date'
+
+export { THEMES, getTheme, setTheme, useTheme, DEFAULT_THEME, THEME_COOKIE, type ThemeDef } from './theme/theme'
