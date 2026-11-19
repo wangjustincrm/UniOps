@@ -22,7 +22,8 @@ class SettlementRowRepository(Repository[SettlementRow]):
                    "payment_method", "currency", "sales_amount", "sales_count", "refund_amount", "refund_count", "fee_amount",
                    "net_amount", "declined_count", "voided_count", "chargeback_amount", "chargeback_count", "returned_amount",
                    "returned_count", "other_count", "pending_count", "transaction_count", "matched_net", "difference",
-                   "unmatched_count", "probable_count", "transactions_read_at", "issue")
+                   "unmatched_count", "probable_count", "transactions_read_at", "transfer_amount", "carried_amount", "notes",
+                   "issue")
     labels = {"id": "Settlement no.", "batch_id": "Batch ID", "settled_at": "Settled", "settled_date": "Date", "settled_week": "Week",
               "settled_month": "Month", "state": "State", "payment_method": "Payment method", "sales_amount": "Sales",
               "sales_count": "Sales (count)", "refund_amount": "Refunds", "refund_count": "Refunds (count)",
@@ -32,13 +33,16 @@ class SettlementRowRepository(Repository[SettlementRow]):
               "transactions_read_at": "Transactions read", "issue": "Issue", "chargeback_amount": "Chargebacks",
               "chargeback_count": "Chargebacks (count)", "returned_amount": "Returned items",
               "returned_count": "Returned items (count)", "other_count": "Other transactions",
-              "pending_count": "Still matching"}
+              "pending_count": "Still matching", "transfer_amount": "Transferred to the bank",
+              "carried_amount": "Carried balance", "notes": "Other events"}
     enums = {"gateway": GATEWAY_NAMES, "issue": ISSUES}
     default_sort = ("-settled_at", "-id")
     groupable = ("gateway", "settled_week", "settled_month", "state", "issue", "currency")
-    summable = ("sales_amount", "refund_amount", "net_amount", "matched_net", "difference")
+    summable = ("sales_amount", "refund_amount", "fee_amount", "net_amount", "matched_net", "difference", "transfer_amount",
+                "carried_amount")
     sum_currency = "currency"
-    money_fields = ("sales_amount", "refund_amount", "fee_amount", "net_amount", "chargeback_amount", "returned_amount", "matched_net", "difference")
+    money_fields = ("sales_amount", "refund_amount", "fee_amount", "net_amount", "chargeback_amount", "returned_amount", "matched_net", "difference",
+                    "transfer_amount", "carried_amount")
     presets = (
         Preset("all", "All"),
         Preset("monthly", "By month", {"group": [{"field": "settled_month", "desc": True}], "sort": _NEWEST}),

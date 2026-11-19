@@ -40,4 +40,7 @@ class SettlementRowRead(BaseModel):
     unmatched_count: int
     probable_count: int
     transactions_read_at: datetime | None = None
+    transfer_amount: Decimal | None = None   # PayPal: what went to the bank
+    carried_amount: Decimal | None = None    # PayPal: the transfer less the period's Net
+    notes: str | None = None                 # PayPal: the period's other events
     issue: str | None = None

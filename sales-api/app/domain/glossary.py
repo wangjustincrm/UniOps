@@ -52,9 +52,14 @@ TERMS: dict[str, Help] = {
                                    "Shopify: it comes from Authorize.Net once the payment is matched there."),
     # gateways (Finance, 2026-11-17)
     "Settlement": Help("A deposit the payment provider paid to the bank: for Authorize.Net, one settled batch, about one a "
-                       "day. The payments in it are the money in that deposit."),
+                       "day; for PayPal, one transfer to the bank, with everything since the previous one (what has not "
+                       "been transferred yet is the In PayPal balance row). The payments in it are the money in that deposit."),
     "Matched by": Help("How the provider's transaction was found to be this Shopify payment: its transaction ID, the "
                        "Shopify payment ID, the order number, or only the same amount and time (probable: check it)."),
-    "Difference": Help("The deposit's net − the Shopify payments matched to it. Not zero: some money in the deposit is no "
-                       "Shopify payment, or a transaction is not matched yet."),
+    "Difference": Help("The deposit's sales − refunds − the Shopify payments matched to it (fees aside). Not zero: some "
+                       "money in the deposit is no Shopify payment, or a transaction is not matched yet."),
+    # PayPal (Finance, 2026-11-19)
+    "Carried balance": Help("PayPal: what went to the bank − the period's net after fees. Not zero when the transfer took "
+                            "only part of the balance (or more, from before), a hold kept money back, or a deposit from the "
+                            "bank funded refunds: Other events says which."),
 }

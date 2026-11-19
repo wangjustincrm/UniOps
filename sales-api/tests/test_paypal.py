@@ -284,3 +284,62 @@ async def test_a_refused_secret_latches_and_a_window_too_large_is_read_in_halves
     r2 = await PayPalIntake(uow_factory=env.factory, gateway=halving, clock=clock).run_pass(await snap(env, cid2))
     assert r2.status == "ok" and r2.transactions == 1 and any(c[0] == "too_large" for c in halving.calls)
     assert r2.cursor_after == "2026-10-20T00:00:00+00:00"  # read to the end, in smaller windows
+
+
+async def test_each_transfer_to_the_bank_is_a_settlement_with_its_period_and_the_rest_is_in_the_balance(env):  # noqa: F811
+    """Option A (user 2026-11-19): transfers T0400 close their period; a hold and its release and a deposit from the bank
+    are in the notes; the transfer's difference from the period's net is the carried balance, not forced to zero."""
+    from app.services.settlement_list import SettlementRowRepository, SettlementRowService
+    tx = lambda id, **kw: {"id": id, "kind": "sale", "status": "success", "currency": "CAD", "test": False, "gateway": "paypal",  # noqa: E731
+                           "processed_at": "2026-10-02T10:00:00-04:00", **kw}
+    env.shop.orders = [shopify_order(1, 9301), shopify_order(2, 9302), shopify_order(3, 9303)]
+    env.shop.transactions_by_order |= {
+        "1": [tx(101, amount="100.00", authorization="1SALE00000000001")],
+        "2": [tx(201, amount="50.00", authorization="2SALE00000000002"),
+              tx(202, kind="refund", amount="10.00", authorization="2REFUND000000002", processed_at="2026-10-04T10:00:00-04:00")],
+        "3": [tx(301, amount="40.00", authorization="3SALE00000000003", processed_at="2026-10-12T10:00:00-04:00")],
+    }
+    await env.pull()
+    fake = FakePayPal(refreshed_at="2026-10-20T00:00:00+0000")
+    fake.items = [
+        item("1SALE00000000001", "T0006", "100.00", "2026-10-02T14:00:00+0000", fee="-3.20"),
+        item("2SALE00000000002", "T0006", "50.00", "2026-10-02T15:00:00+0000", fee="-1.75"),
+        item("2REFUND000000002", "T1107", "-10.00", "2026-10-04T14:00:00+0000", fee="0.35", ref="2SALE00000000002"),
+        item("9HOLD0000000000H", "T1110", "-20.00", "2026-10-05T14:00:00+0000", status="P"),
+        item("9HOLD0000000000H", "T1111", "20.00", "2026-10-05T16:00:00+0000", status="D"),
+        item("8DEPOSIT00000008", "T0300", "5.00", "2026-10-06T10:00:00+0000"),
+        # first transfer: the period's net is 100 + 50 − 10 − (3.20 + 1.75 − 0.35) = 135.40; 130.00 went
+        item("7TRANSFER0000001", "T0400", "-130.00", "2026-10-07T12:00:00+0000"),
+        item("3SALE00000000003", "T0006", "40.00", "2026-10-12T14:00:00+0000", fee="-1.46"),
+        # second transfer: net 38.54, the 5.40 left from before goes too
+        item("7TRANSFER0000002", "T0400", "-43.94", "2026-10-13T12:00:00+0000"),
+        item("4AFTER0000000004", "T0006", "12.00", "2026-10-15T14:00:00+0000", fee="-0.65"),  # still in the balance
+    ]
+    cid = await paypal_connection(env, datetime(2026, 10, 1, tzinfo=timezone.utc))
+    clock = lambda: datetime(2026, 10, 20, 6, tzinfo=timezone.utc)  # noqa: E731
+    intake = PayPalIntake(uow_factory=env.factory, gateway=fake, clock=clock)
+    r = await intake.run_pass(await snap(env, cid))
+    assert (r.status, r.batches, r.matched) == ("ok", 2, 4)
+
+    async with env.factory(OP) as u:
+        page = await SettlementRowRepository(u).list(QuerySpec(page_size=50))
+    rows = {x.batch_id: x for x in page.items}
+    first, second, balance = rows["7TRANSFER0000001"], rows["7TRANSFER0000002"], rows["BALANCE-CAD"]
+    assert (first.gateway, first.state, first.sales_amount, first.sales_count, first.refund_amount, first.fee_amount, first.net_amount) == (
+        "PayPal", "Transferred to the bank", Decimal("150.00"), 2, Decimal("10.00"), Decimal("4.60"), Decimal("135.40"))
+    assert (first.transfer_amount, first.carried_amount, first.issue) == (Decimal("130.00"), Decimal("-5.40"), "Differs from the transfer")
+    assert "hold" in first.notes and "hold released" in first.notes and "deposit from the bank" in first.notes
+    assert (first.matched_net, first.difference) == (Decimal("140.00"), Decimal("0.00"))  # Shopify's sales − refunds: all matched
+    assert (second.net_amount, second.transfer_amount, second.carried_amount) == (Decimal("38.54"), Decimal("43.94"), Decimal("5.40"))
+    assert (balance.state, balance.transfer_amount, balance.net_amount, balance.issue) == (
+        "In PayPal balance", None, Decimal("11.35"), "Unmatched transactions")  # 4AFTER… is no Shopify payment
+
+    # A second pass moves nothing: the same settlements, the same totals
+    r2 = await intake.run_pass(await snap(env, cid))
+    async with env.factory(OP) as u:
+        again = {x.batch_id: (x.id, x.net_amount, x.transfer_amount) for x in (await SettlementRowRepository(u).list(QuerySpec(page_size=50))).items}
+    assert r2.batches == 2 and again == {k: (v.id, v.net_amount, v.transfer_amount) for k, v in rows.items()}
+
+    async with env.factory(OP) as u:
+        name, pdf = await SettlementRowService(u).statement_pdf(first.id)
+    assert pdf.startswith(b"%PDF") and name == f"settlement-{first.id}.pdf"

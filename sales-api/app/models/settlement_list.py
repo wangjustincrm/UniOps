@@ -21,9 +21,9 @@ from app.domain.gateways import LABELS
 from app.models.gateways import GatewaySettlement, GatewayTransaction, details_attempts
 from app.models.payments import OrderPayment
 
-ISSUES = ("Transactions not read yet", "Chargebacks or returns", "Unmatched transactions", "Differs from Shopify",
-          "Still matching")
-GATEWAY_NAMES = ("Authorize.Net",)
+ISSUES = ("Transactions not read yet", "Chargebacks or returns", "Unmatched transactions", "Differs from the transfer",
+          "Differs from Shopify", "Still matching")
+GATEWAY_NAMES = tuple(LABELS.values())
 
 _TZ = "America/Toronto"
 _S, _T, _P = GatewaySettlement, GatewayTransaction, OrderPayment
@@ -35,7 +35,9 @@ _per_batch = (
                             & (_T.details_read_at.is_not(None) | (details_attempts(_T) >= 3))).label("unmatched_count"),
         func.count().filter(_T.settled.is_(True) & _T.payment_row_id.is_(None) & _T.kind.in_(("sale", "refund"))
                             & _T.details_read_at.is_(None) & (details_attempts(_T) < 3)).label("pending_count"),
-        func.count().filter(_T.kind == "other").label("other_count"),
+        # Authorize.Net's other transactions are chargebacks / returned items; PayPal's other events (holds, deposits
+        # from the bank, the transfer itself) are in the settlement's notes, its chargebacks in its own columns.
+        func.count().filter((_T.kind == "other") & (_T.gateway == "AUTHORIZE_NET")).label("other_count"),
         func.count().filter(_T.match_method == "AMOUNT_TIME").label("probable_count"),
         func.count().filter(_T.settled.is_(True)).label("transaction_count"),
         func.coalesce(func.sum(case((_T.kind == "sale", _P.amount), (_T.kind == "refund", -_P.amount), else_=0))
@@ -51,7 +53,10 @@ _matched = func.coalesce(_B.matched_net, 0)
 _unmatched = func.coalesce(_B.unmatched_count, 0)
 _pending = func.coalesce(_B.pending_count, 0)
 _other = func.coalesce(_B.other_count, 0)
-_diff = _S.net_amount - _matched
+_diff = _S.sales_amount - _S.refund_amount - _matched  # gateway sales − refunds against Shopify's (fees aside)
+# PayPal (option A): what went to the bank, and that less the period's Net (a part of the balance, holds, a deposit …).
+_transfer = cast(_S.raw["transfer_amount"].astext, Numeric(14, 2))
+_carried = cast(_S.raw["carried_amount"].astext, Numeric(14, 2))
 
 _ROWS = (
     select(
@@ -71,12 +76,14 @@ _ROWS = (
         cast(_other, Integer).label("other_count"), cast(_pending, Integer).label("pending_count"),
         cast(func.coalesce(_B.transaction_count, 0), Integer).label("transaction_count"),
         cast(_matched, Numeric(14, 2)).label("matched_net"), cast(_diff, Numeric(14, 2)).label("difference"),
+        _transfer.label("transfer_amount"), _carried.label("carried_amount"), _S.raw["notes"].astext.label("notes"),
         cast(_unmatched, Integer).label("unmatched_count"),
         cast(func.coalesce(_B.probable_count, 0), Integer).label("probable_count"),
         _S.transactions_read_at.label("transactions_read_at"),
         case((_S.transactions_read_at.is_(None), "Transactions not read yet"),
              ((_S.chargeback_count + _S.returned_count + _other) > 0, "Chargebacks or returns"),
              (_unmatched > 0, "Unmatched transactions"), (_pending > 0, "Still matching"),
+             (func.coalesce(_carried, 0) != 0, "Differs from the transfer"),
              (_diff != 0, "Differs from Shopify"), else_=None).label("issue"),
     )
     .select_from(_S).outerjoin(_per_batch, _B.settlement_id == _S.id)

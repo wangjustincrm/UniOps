@@ -342,22 +342,32 @@ async def settlement_pdf(s, row) -> bytes:
         issues.append("This batch has chargebacks or returned items (not in Net).")
     if row.pending_count:
         issues.append(f"{row.pending_count} transaction(s) are still being matched.")
+    # A transfer to the bank (PayPal): what left, and what the period's net did not explain.
+    transfer = getattr(row, "transfer_amount", None)
+    if transfer is not None and getattr(row, "carried_amount", None):
+        issues.append(f"The transfer differs from the period's net by {L.money(row.carried_amount)} (carried balance)"
+                      + (f": other events — {row.notes}." if row.notes else "."))
+    ref = ("Transfer ID", row.batch_id) if transfer is not None else ("Batch ID", row.batch_id)
+    fees = row.fee_amount is not None
+    reconciliation = [("Net after fees" if fees else "Net (gateway)", L.money(row.net_amount))]
+    if transfer is not None:
+        reconciliation += [("Transferred to the bank", L.money(transfer)), ("Carried balance", L.money(row.carried_amount))]
+    reconciliation += [("Matched in Shopify", L.money(row.matched_net)), ("Difference", L.money(row.difference)),
+                       ("Unmatched", str(row.unmatched_count)), ("Probable matches", str(row.probable_count))]
     story = [
         L.header(company, th, "Settlement statement", f"Settlement {row.id}",
-                 [("Settled", _when(row.settled_at)), ("Gateway", row.gateway), ("Batch ID", row.batch_id), ("Currency", cur)]),
+                 [("Settled", _when(row.settled_at)), ("Gateway", row.gateway), ref, ("Currency", cur)]),
         L.gap(4), L.section("Deposit", "As the payment provider reports it", th), L.gap(2.5),
         L.cards([
-            Card("Deposit", f"Settlement {row.id}", facts=[("Gateway", row.gateway), ("Batch ID", row.batch_id),
+            Card("Deposit", f"Settlement {row.id}", facts=[("Gateway", row.gateway), ref,
                 ("Settled", _when(row.settled_at)), ("State", row.state), ("Payment method", row.payment_method)]),
             Card("Gateway figures", None, facts=[
                 ("Sales", f"{L.money(row.sales_amount)} ({row.sales_count})"),
                 ("Refunds", f"{L.money(row.refund_amount)} ({row.refund_count})"),
+                *([("Fees", L.money(row.fee_amount))] if fees else []),
                 ("Declined / voided", f"{row.declined_count} / {row.voided_count}"),
                 ("Chargebacks / returns", f"{L.money(row.chargeback_amount)} / {L.money(row.returned_amount)}")]),
-            Card("Reconciliation", None, facts=[
-                ("Net (gateway)", L.money(row.net_amount)), ("Matched in Shopify", L.money(row.matched_net)),
-                ("Difference", L.money(row.difference)), ("Unmatched", str(row.unmatched_count)),
-                ("Probable matches", str(row.probable_count))]),
+            Card("Reconciliation", None, facts=reconciliation),
         ], th),
         L.gap(5), L.section("Transactions", f"Settled, voided and other transactions in the batch · amounts in {cur}, refunds negative", th),
         L.gap(2.5),
@@ -370,10 +380,13 @@ async def settlement_pdf(s, row) -> bytes:
                 table, th, foot=["Total settled", "", "", "", "", "", L.money(settled_net)]),
         L.gap(5),
         L.closing("Notes", [f"Read from {row.gateway}'s reporting API; matched to Shopify payments in Sales.",
-                            "The gateway reports no fees per deposit: they are billed monthly.",
+                            ("Fees are the provider's own, per transaction; Net is after them." if fees
+                             else "The gateway reports no fees per deposit: they are billed monthly."),
                             "Declined transactions moved no money and are not listed."],
                   [("Sales", L.money(row.sales_amount)), ("Refunds", L.money(-row.refund_amount)),
-                   ("Difference with Shopify", L.money(row.difference)), (f"Net deposit ({cur})", L.money(row.net_amount))], th),
+                   *([("Fees", L.money(-row.fee_amount))] if fees else []),
+                   ("Difference with Shopify", L.money(row.difference)), (f"Net deposit ({cur})", L.money(row.net_amount)),
+                   *([(f"Transferred to the bank ({cur})", L.money(transfer))] if transfer is not None else [])], th),
     ]
     return L.build(story, company=company, title=f"Settlement statement {row.id}", theme=th)
 
