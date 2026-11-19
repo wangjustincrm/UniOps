@@ -92,6 +92,7 @@ const PAIRS = [
   ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => [`cat${n}-fg`, `cat${n}-soft`, TEXT, `category ${n} badge`]),
   ['nav-fg', 'nav', TEXT, 'sidebar item'], ['nav-fg-active', 'nav', TEXT, 'sidebar active'],
   ['nav-fg-active', 'nav-item-active@nav', TEXT, 'sidebar active on highlight'],
+  ['hero-fg', 'hero', TEXT, 'sign-in brand panel'],
   ['fg-on-inverse', 'inverse', TEXT, 'tooltip'], ['fg-on-inverse-muted', 'inverse-sunken', TEXT, 'viewer muted text'],
 ]
 

@@ -145,7 +145,7 @@ export function Sidebar({ brand, sections, collapsed, onToggleCollapse, mobileOp
       {mobileOpen && <div className="fixed inset-0 z-20 bg-inverse/40 md:hidden" onClick={onMobileClose} aria-hidden />}
       <aside
         className={cn(
-          'flex h-screen shrink-0 flex-col bg-nav transition-[width,transform] duration-200 print:hidden',
+          'flex h-screen shrink-0 flex-col bg-nav shadow-[inset_-1px_0_0_var(--color-nav-edge)] transition-[width,transform] duration-200 print:hidden',
           collapsed ? 'w-16' : 'w-60',
           'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:w-60',
           mobileOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full',

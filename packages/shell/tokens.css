@@ -204,6 +204,12 @@
   --color-nav-line:      rgb(255 255 255 / 0.10);
   /* The bar beside the active sidebar item — a theme's brand mark can go here. */
   --color-nav-indicator: rgb(255 255 255 / 0.80);
+  /* Hairline on the sidebar's right edge — none on a dark sidebar; a light one needs it. */
+  --color-nav-edge: transparent;
+  /* Sign-in brand panel (photo + headline). Follows the sidebar by default; a
+     theme with a light sidebar gives it its own dark colour. */
+  --color-hero:    var(--color-nav);
+  --color-hero-fg: var(--color-nav-fg-active);
 
   /* ── Type ─────────────────────────────────────────────────────── */
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;

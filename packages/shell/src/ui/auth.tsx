@@ -42,7 +42,7 @@ function Mark({ brand }: { brand: Branding }) {
       <img src={brand.logoUrl} alt="" className="h-full w-full object-contain p-1" />
     </span>
   ) : (
-    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-nav-fg-active/15 text-sm font-semibold">
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-hero-fg/15 text-sm font-semibold">
       {brand.name.split(/\s+/).map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
     </span>
   )
@@ -55,7 +55,7 @@ function BrandRow({ brand, product }: { brand: Branding; product?: string }) {
       <div className="min-w-0">
         <p className="truncate text-[15px] font-semibold leading-5">{brand.name}</p>
         {/* Hide the product line when the company name already is the product. */}
-        {product && product !== brand.name && <p className="truncate text-xs text-nav-fg-active/80">{product}</p>}
+        {product && product !== brand.name && <p className="truncate text-xs text-hero-fg/80">{product}</p>}
       </div>
     </div>
   )
@@ -93,49 +93,49 @@ export function AuthLayout({
   return (
     <div className="grid min-h-screen bg-surface lg:grid-cols-[minmax(0,900fr)_minmax(400px,540fr)]">
       {/* Desktop brand panel */}
-      <section className="relative hidden overflow-hidden bg-nav text-nav-fg-active lg:block">
+      <section className="relative hidden overflow-hidden bg-hero text-hero-fg lg:block">
         <Photo url={photoUrl} position={photoPosition} />
         <div className="relative flex h-full min-h-screen flex-col justify-between px-16 py-12">
           <BrandRow brand={brand} product={product} />
 
           <div className="flex max-w-xl flex-col gap-3">
             <h2 className="text-[40px] font-semibold leading-[48px] tracking-[-0.01em]">{headline}</h2>
-            {description && <p className="text-base text-nav-fg-active/85">{description}</p>}
+            {description && <p className="text-base text-hero-fg/85">{description}</p>}
           </div>
 
           <div className="flex flex-col gap-6">
             {modules && modules.length > 0 && (
               <div className="flex flex-col gap-3">
-                <p className="text-xs font-medium text-nav-fg-active/80">Modules</p>
+                <p className="text-xs font-medium text-hero-fg/80">Modules</p>
                 <ul className="grid grid-cols-2 gap-x-8 gap-y-3.5">
                   {modules.map((m) => (
                     <li key={m.key} className="flex items-start gap-3">
                       {m.icon && (
-                        <span className="mt-px flex shrink-0 text-nav-fg-active/80 [&>svg]:h-[18px] [&>svg]:w-[18px] [&>svg]:stroke-[1.5]">{m.icon}</span>
+                        <span className="mt-px flex shrink-0 text-hero-fg/80 [&>svg]:h-[18px] [&>svg]:w-[18px] [&>svg]:stroke-[1.5]">{m.icon}</span>
                       )}
                       <span className="min-w-0">
                         <span className="block text-sm font-medium">{m.label}</span>
-                        <span className="block text-[13px] leading-[18px] text-nav-fg-active/80">{m.summary}</span>
+                        <span className="block text-[13px] leading-[18px] text-hero-fg/80">{m.summary}</span>
                       </span>
                     </li>
                   ))}
                 </ul>
               </div>
             )}
-            <p className="text-xs text-nav-fg-active/80">Internal system · {brand.name}</p>
+            <p className="text-xs text-hero-fg/80">Internal system · {brand.name}</p>
           </div>
         </div>
       </section>
 
       {/* Form column (and the short header on small screens) */}
       <div className="flex min-h-screen flex-col">
-        <header className="relative overflow-hidden bg-nav text-nav-fg-active lg:hidden">
+        <header className="relative overflow-hidden bg-hero text-hero-fg lg:hidden">
           <Photo url={photoUrl} position={photoPosition ?? '35% 50%'} mobile />
           <div className="relative flex flex-col gap-5 px-6 pb-7 pt-8">
             <BrandRow brand={brand} product={product} />
             <div className="flex flex-col gap-1.5">
               <p className="text-xl font-semibold leading-7">{headline}</p>
-              {description && <p className="text-[13px] leading-[18px] text-nav-fg-active/85">{description}</p>}
+              {description && <p className="text-[13px] leading-[18px] text-hero-fg/85">{description}</p>}
             </div>
           </div>
         </header>
