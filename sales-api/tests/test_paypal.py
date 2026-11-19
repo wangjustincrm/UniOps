@@ -362,3 +362,23 @@ async def test_each_transfer_to_the_bank_is_a_settlement_with_its_period_and_the
     from app.platform.views import check_state
     for state in views.values():
         assert check_state(state, SettlementRowRepository) == state
+
+
+async def test_an_other_event_stored_under_the_bare_id_takes_its_suffix(env):  # noqa: F811
+    """The first version kept a transfer under PayPal's bare id; a later pass renames it, never doubles it (2026-11-19)."""
+    from app.models.gateways import GatewayTransaction
+    cid = await paypal_connection(env, datetime(2026, 10, 1, tzinfo=timezone.utc))
+    async with env.factory(SYSTEM_ACTOR) as u:
+        u.session.add(GatewayTransaction(connection_id=cid, gateway="PAYPAL", external_id="6OLDTRANSFER0001", kind="other",
+                                         amount=Decimal("10.00"), currency="CAD", settled=False,
+                                         submitted_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+                                         raw={"transaction_id": "6OLDTRANSFER0001", "transaction_event_code": "T0400",
+                                              "transaction_status": "S"}))
+        await u.commit()
+    clock = lambda: datetime(2026, 10, 5, tzinfo=timezone.utc)  # noqa: E731
+    for _ in range(2):  # twice: the same one row
+        await PayPalIntake(uow_factory=env.factory, gateway=FakePayPal(), clock=clock).run_pass(await snap(env, cid))
+    ids = [x["external_id"] for x in await env.q("SELECT external_id FROM sales_gateway_transactions WHERE gateway = 'PAYPAL'")]
+    assert ids == ["6OLDTRANSFER0001:T0400"]
+    batches = [x["external_id"] for x in await env.q("SELECT external_id FROM sales_gateway_settlements WHERE gateway = 'PAYPAL'")]
+    assert batches == ["6OLDTRANSFER0001"]  # the settlement keeps the transfer's own id

@@ -97,8 +97,25 @@ class PayPalIntake(GatewayIntake):
         else:
             if start < now:
                 report.status = "more_to_read"
+        await self._suffix_bare_others(conn.id)
         await self._funded_refunds(conn.id)
         return cursor
+
+    async def _suffix_bare_others(self, connection_id: int) -> None:
+        """An "other" event the first version stored under PayPal's bare id (dev2: 5, read before 6a722b76, never read
+        again) takes its "<id>:<event code>" too (user 2026-11-19), unless that row already exists: one shape for all."""
+        T = GatewayTransaction
+        async with self.uow_factory(SYSTEM_ACTOR, reason="PayPal: one id shape for other events") as uow:
+            s = uow.session
+            bare = (await s.execute(select(T).where(T.connection_id == connection_id, T.gateway == GATEWAY, T.kind == "other",
+                                                    ~T.external_id.contains(":")))).scalars().all()
+            for t in bare:
+                code = str((t.raw or {}).get("transaction_event_code") or "")
+                new = external_id(t.external_id, code, "other")
+                if code and not (await s.execute(select(T.id).where(T.gateway == GATEWAY, T.external_id == new))).first():
+                    t.external_id = new
+            await s.flush()
+            await uow.commit()
 
     async def _funded_refunds(self, connection_id: int) -> None:
         """A refund PayPal still calls pending (P) whose money came from the bank — a successful deposit (T03xx) that
