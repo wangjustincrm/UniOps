@@ -32,7 +32,8 @@ async def test_reorder_copies_the_customer_as_a_draft_with_no_lines_and_a_reason
     assert draft.fulfillment_status == F.DRAFT and o.partner_code == "MAN"
     assert (o.source_order_number, o.parent_order_id, o.parent_reference) == (source["source_reference"], source["id"],
                                                                             source["source_reference"])
-    assert o.ship_to == source["ship_to"]
+    from app.services.order_views import manual_address
+    assert o.ship_to == manual_address(source["ship_to"])  # in a manual order's shape (no company, codes)
     lines = await env_.q(f"SELECT id FROM sales_order_lines WHERE order_id = {draft.id}")
     assert lines == []  # the lines are the person's to add
 
@@ -120,3 +121,34 @@ async def test_the_reasons_are_a_setting_and_submit_takes_only_one_of_them(edi):
         with pytest.raises(InvalidInput) as e:
             await ManualOrderService(u).submit(o.id, o.version)
     assert e.value.code == "order.reason" and "Promotion, Gift" in str(e.value)
+
+
+
+async def test_a_reorder_of_a_shopify_order_saves_and_submits_with_the_address_in_a_manual_order_s_shape(edi):  # noqa: F811
+    """Review 2026-11-19: Shopify's ship-to has company, country_code, province_code (and may name the country and
+    province in full); the reorder keeps AddressIn's shape, so the draft's own address saves and submits as it is."""
+    from app.models.orders import Order
+    from app.services.order_views import manual_address
+    env_ = edi.env
+    env_.shop.orders = [shopify_order(1, 9501)]
+    await env_.pull()
+    [src] = await env_.q("SELECT id FROM sales_orders")
+    async with env_.factory(OP) as u:
+        o = await u.session.get(Order, src["id"])
+        o.ship_to = {"name": "Jane Doe", "company": "Acme", "phone": "416-555-0100", "address1": "1 Main St", "address2": None,
+                     "city": "Toronto", "province": "Ontario", "province_code": "ON", "country": "Canada", "country_code": "CA",
+                     "zip": "M5H 1A1"}
+        await u.commit()
+    async with env_.factory(OP) as u:
+        draft = await ManualOrderService(u).reorder(src["id"])
+        await u.commit()
+    assert draft.ship_to == {"name": "Jane Doe", "attention": "Acme", "phone": "416-555-0100", "address1": "1 Main St",
+                             "city": "Toronto", "zip": "M5H 1A1", "country": "CA", "province": "ON"}
+    assert manual_address(None) == {}
+    async with env_.factory(OP) as u:
+        d = await ManualOrderService(u).update(draft.id, ManualOrderIn(
+            reason="Gift", partner_code="MAN", ship_to=AddressIn(**draft.ship_to), carrier="Purolator",
+            lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]), draft.version)
+        d = await ManualOrderService(u).submit(d.id, d.version)
+        await u.commit()
+    assert d.fulfillment_status == F.PENDING

@@ -688,6 +688,23 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         return BarcodeLookup(shopify, ConnectionSnapshot.of(conn)) if conn else None
 
 
+def manual_address(a: dict | None) -> dict:
+    """Any order's address in a manual order's shape (AddressIn): Shopify's country_code / province_code are the codes
+    (its country / province may be full names), its company the attention line; any other key dropped (review
+    2026-11-19: a Reorder from a Shopify order could not be saved: AddressIn forbids extra keys)."""
+    a = dict(a or {})
+    out = {k: a[k] for k in ("name", "attention", "phone", "address1", "address2", "city", "zip") if a.get(k) not in (None, "")}
+    country = a.get("country_code") or a.get("country")
+    if country and len(str(country).strip()) == 2:
+        out["country"] = str(country).strip().upper()
+    province = a.get("province_code") or a.get("province")
+    if province:
+        out["province"] = str(province).strip()
+    if not out.get("attention") and a.get("company"):
+        out["attention"] = a["company"]
+    return out
+
+
 class ManualOrderService(Service):
     """FR-OB-19a. Draft is never eligible; Submit makes it Pending and it
     follows the same flows as any other order. Every step is audited."""
@@ -826,7 +843,7 @@ class ManualOrderService(Service):
         self.uow.set_reason(f"reorder of {src.source_reference}")
         ref = src.source_reference or str(src.order_number)
         carrier = src.shipping_method if src.shipping_method in ("Purolator", "Purolator Express", "LTL") else None
-        ship = dict(src.ship_to or {})
+        ship = manual_address(src.ship_to)
         if not ship.get("phone"):  # a manual order's 940 needs one: the customer's, where the source has it
             phone = (src.contact or {}).get("phone") or (src.bill_to or {}).get("phone")
             if phone:
