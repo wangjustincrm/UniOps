@@ -5,11 +5,11 @@ type Tone = 'success' | 'warning' | 'danger'
 const col = columnsOf<SettlementRowRead>()
 
 /** Shown where a view names them (or from the column menu). */
-export const hiddenSettlementColumns = ['batch_id', 'settled_week', 'settled_month', 'settled_at', 'state', 'payment_method', 'fee_amount',
+export const hiddenSettlementColumns = ['batch_id', 'settled_week', 'settled_month', 'settled_at', 'state', 'payment_method', 'notes',
   'sales_count', 'refund_count', 'declined_count', 'voided_count', 'transactions_read_at', 'chargeback_count', 'returned_count',
   'other_count', 'pending_count']
 
-const issueTone = (v: string): Tone => (v === 'Transactions not read yet' || v === 'Still matching' ? 'warning' : 'danger')
+const issueTone = (v: string): Tone => (['Transactions not read yet', 'Still matching', 'Differs from the transfer'].includes(v) ? 'warning' : 'danger')
 
 /** The Settlements list's columns (a row opens the batch with its payments). */
 export function settlementColumns(): ColumnDef<SettlementRowRead, unknown>[] {
@@ -17,10 +17,13 @@ export function settlementColumns(): ColumnDef<SettlementRowRead, unknown>[] {
     withHelp(col.date('settled_date', 'Date'), 'term:Settlement'),
     col.text('gateway', 'Gateway'),
     col.reference('id', 'Settlement no.'),
-    col.reference('batch_id', 'Batch ID'),
+    col.reference('batch_id', 'Batch / transfer ID'),
     col.money('sales_amount', 'Sales', { currency: 'currency' }),
     col.money('refund_amount', 'Refunds', { currency: 'currency' }),
+    col.money('fee_amount', 'Fees', { currency: 'currency' }),
     col.money('net_amount', 'Net', { currency: 'currency' }),
+    col.money('transfer_amount', 'Transferred to the bank', { currency: 'currency' }),
+    withHelp(col.money('carried_amount', 'Carried balance', { currency: 'currency' }), 'term:Carried balance'),
     col.money('matched_net', 'Matched in Shopify', { currency: 'currency' }),
     withHelp(col.money('difference', 'Difference', { currency: 'currency' }), 'term:Difference'),
     col.number('transaction_count', 'Transactions'),
@@ -34,7 +37,7 @@ export function settlementColumns(): ColumnDef<SettlementRowRead, unknown>[] {
     col.datetime('settled_at', 'Settled'),
     col.text('state', 'State'),
     col.text('payment_method', 'Payment method'),
-    col.money('fee_amount', 'Fees', { currency: 'currency' }),
+    col.text('notes', 'Other events'),
     col.number('sales_count', 'Sales (count)'),
     col.number('refund_count', 'Refunds (count)'),
     col.number('declined_count', 'Declined'),

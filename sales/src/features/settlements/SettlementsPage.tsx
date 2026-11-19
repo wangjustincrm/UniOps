@@ -8,10 +8,11 @@ import { hiddenSettlementColumns, settlementColumns } from './settlementsColumns
 
 const NOTE = (
   <Callout label="Where these come from">
-    Each deposit a payment provider paid to the bank, read from the provider (Authorize.Net: one settled batch, about one a
-    day). Sales, Refunds and Net are the provider's own figures; Matched in Shopify adds up the Shopify payments matched to
-    the deposit's transactions. Chargebacks and returned items are shown on their own, not in Net. Authorize.Net reports no
-    fees per deposit: it bills them monthly.
+    Each deposit a payment provider paid to the bank, read from the provider. Authorize.Net: one settled batch, about one a
+    day; it reports no fees per deposit (it bills them monthly). PayPal: one transfer to the bank, with everything since the
+    previous one; Net is after PayPal's fees, and what has not been transferred yet is the "In PayPal balance" row. Matched in
+    Shopify adds up the Shopify payments matched to the deposit's transactions. Chargebacks and returned items are shown on
+    their own, not in Net.
   </Callout>
 )
 
@@ -23,11 +24,20 @@ function SettlementDetail({ s }: { s: SettlementRowRead }) {
   return (
     <RecordSheet
       title={`Settlement ${s.id}`}
-      subtitle={`${s.gateway} · Batch ID ${s.batch_id} · settled ${formatDateTime(s.settled_at)}`}
+      subtitle={s.transfer_amount != null ? `${s.gateway} · transfer ${s.batch_id} · ${formatDateTime(s.settled_at)}`
+        : s.state === 'In PayPal balance' ? `${s.gateway} · in the balance, not transferred yet · last ${formatDateTime(s.settled_at)}`
+          : `${s.gateway} · Batch ID ${s.batch_id} · settled ${formatDateTime(s.settled_at)}`}
       badges={<StatusCell value={s.issue} />}
       actions={<ViewFileButton source={settlementPdf(s)}>Settlement statement (PDF)</ViewFileButton>}
       facts={[
-        { label: 'Net', value: money(s.net_amount) },
+        ...(s.fee_amount != null ? [{ label: 'Fees', value: money(s.fee_amount) }] : []),
+        { label: s.fee_amount != null ? 'Net after fees' : 'Net', value: money(s.net_amount) },
+        ...(s.transfer_amount != null ? [
+          { label: 'Transferred to the bank', value: money(s.transfer_amount) },
+          { label: 'Carried balance', value: money(s.carried_amount), tone: Number(s.carried_amount) === 0 ? 'neutral' as const : 'warning' as const,
+            help: 'term:Carried balance' as const },
+        ] : []),
+        ...(s.notes ? [{ label: 'Other events', value: s.notes }] : []),
         { label: 'Matched in Shopify', value: money(s.matched_net) },
         { label: 'Difference', value: money(s.difference), tone: Number(s.difference) === 0 ? 'neutral' : 'danger' },
         { label: 'Transactions', value: s.transaction_count },

@@ -42,6 +42,11 @@ export interface SettlementRowRead {
   unmatched_count: number
   probable_count: number
   transactions_read_at: string | null
+  /** PayPal (a settlement is a transfer to the bank): what went to the bank, that less the period's Net (a part of
+   *  the balance, a hold, a deposit from the bank …), and the period's other events in words. */
+  transfer_amount: string | null
+  carried_amount: string | null
+  notes: string | null
   /** Why Finance should look at it. */
   issue: string | null
 }
