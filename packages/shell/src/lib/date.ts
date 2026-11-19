@@ -1,3 +1,4 @@
+import { setSystemTheme } from '../theme/theme'
 // Dates and times for every UniOps web app — the one implementation; each
 // app's src/lib/utils.ts re-exports it.
 //
@@ -70,7 +71,12 @@ export async function loadDisplayTimeZone(brandingUrl: string, timeoutMs = 1500)
   const timer = setTimeout(() => ctrl?.abort(), timeoutMs)
   try {
     const res = await fetch(brandingUrl, { signal: ctrl?.signal, credentials: 'omit' })
-    if (res.ok) setDisplayTimeZone((await res.json())?.timezone)
+    if (res.ok) {
+      const b = await res.json()
+      setDisplayTimeZone(b?.timezone)
+      // Same public payload carries the admin's default theme (Shell themes).
+      setSystemTheme(b?.default_theme)
+    }
   } catch { /* keep the cached / default zone */ } finally {
     clearTimeout(timer)
   }

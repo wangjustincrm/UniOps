@@ -1,45 +1,85 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { THEME_BOOT_SCRIPT } from '../../theme-boot.js'
-import { DEFAULT_THEME, THEMES, getTheme, setTheme, useTheme } from './theme'
+import { DEFAULT_THEME, THEMES, getTheme, getThemeChoice, getSystemTheme, setSystemTheme, setTheme, useTheme } from './theme'
 import { UserMenu } from '../ui/chrome'
+import { loadDisplayTimeZone } from '../lib/date'
 
-function clearCookie() { document.cookie = 'uniops-theme=; path=/; max-age=0' }
+type ThemeDefList = { id: string; label: string; scheme: 'light' | 'dark' }[]
+
+function reset() {
+  document.cookie = 'uniops-theme=; path=/; max-age=0'
+  document.cookie = 'uniops-theme-default=; path=/; max-age=0'
+  document.documentElement.removeAttribute('data-theme')
+}
+afterEach(reset)
 
 describe('theme boot script', () => {
-  afterEach(() => { clearCookie(); document.documentElement.removeAttribute('data-theme') })
-
-  it('sets data-theme from the cookie, or the default without one', () => {
+  it('own choice, else the system default, else uniops', () => {
     new Function(THEME_BOOT_SCRIPT)()
     expect(document.documentElement.getAttribute('data-theme')).toBe(DEFAULT_THEME)
-    document.cookie = 'uniops-theme=night; path=/'
+    document.cookie = 'uniops-theme-default=crm; path=/'
     new Function(THEME_BOOT_SCRIPT)()
-    expect(document.documentElement.getAttribute('data-theme')).toBe('night')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('crm')
+    document.cookie = 'uniops-theme=uniops; path=/'
+    new Function(THEME_BOOT_SCRIPT)()
+    expect(document.documentElement.getAttribute('data-theme')).toBe('uniops')
   })
 })
 
-describe('setTheme / useTheme', () => {
-  afterEach(() => { clearCookie(); document.documentElement.removeAttribute('data-theme') })
+describe('system default vs own choice', () => {
+  it('the system default applies to users without a choice', () => {
+    setSystemTheme('crm')
+    expect(getSystemTheme()).toBe('crm')
+    expect(getThemeChoice()).toBeNull()
+    expect(getTheme()).toBe('crm')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('crm')
+  })
 
-  it('applies a known theme to <html>, remembers it in the cookie, sets color-scheme', () => {
-    setTheme(DEFAULT_THEME)
-    expect(document.documentElement.getAttribute('data-theme')).toBe(DEFAULT_THEME)
+  it('an own choice wins over the system default; null goes back to following it', () => {
+    setSystemTheme('crm')
+    setTheme('uniops')
+    expect(getTheme()).toBe('uniops')
+    setSystemTheme('crm')                       // e.g. the next branding fetch
+    expect(document.documentElement.getAttribute('data-theme')).toBe('uniops')
+    setTheme(null)
+    expect(getThemeChoice()).toBeNull()
+    expect(document.documentElement.getAttribute('data-theme')).toBe('crm')
+  })
+
+  it('unknown ids fall back to uniops (a removed theme cannot strand anyone)', () => {
+    setSystemTheme('no-such-theme')
+    expect(getTheme()).toBe(DEFAULT_THEME)
+    setTheme('gone')
+    expect(getTheme()).toBe(DEFAULT_THEME)
     expect(document.documentElement.style.colorScheme).toBe('light')
-    expect(document.cookie).toContain(`uniops-theme=${DEFAULT_THEME}`)
   })
 
-  it('an unknown id falls back to the default (a removed theme cannot strand anyone)', () => {
-    setTheme('no-such-theme')
-    expect(getTheme()).toBe(DEFAULT_THEME)
-    document.documentElement.setAttribute('data-theme', 'gone')
-    expect(getTheme()).toBe(DEFAULT_THEME)
+  it('an empty system value from an old server changes nothing', () => {
+    setSystemTheme('crm')
+    setSystemTheme(undefined)
+    expect(getSystemTheme()).toBe('crm')
   })
 
-  it('useTheme re-renders on change', () => {
-    function Probe() { const [t] = useTheme(); return <span data-testid="t">{t}</span> }
+  it('useTheme re-renders with theme / choice / system', () => {
+    function Probe() { const s = useTheme(); return <span data-testid="t">{`${s.theme}|${s.choice}|${s.system}`}</span> }
     render(<Probe />)
-    act(() => setTheme(DEFAULT_THEME))
-    expect(screen.getByTestId('t').textContent).toBe(DEFAULT_THEME)
+    act(() => setSystemTheme('crm'))
+    expect(screen.getByTestId('t').textContent).toBe('crm|null|crm')
+    act(() => setTheme('uniops'))
+    expect(screen.getByTestId('t').textContent).toBe('uniops|uniops|crm')
+  })
+})
+
+describe('branding fetch carries the system default', () => {
+  it('loadDisplayTimeZone adopts default_theme from the public branding payload', async () => {
+    const orig = globalThis.fetch
+    globalThis.fetch = (async () => new Response(JSON.stringify({ timezone: 'America/Toronto', default_theme: 'crm' }))) as typeof fetch
+    try {
+      await loadDisplayTimeZone('/branding')
+      expect(getSystemTheme()).toBe('crm')
+      expect(document.documentElement.getAttribute('data-theme')).toBe('crm')
+    } finally { globalThis.fetch = orig }
   })
 })
 
@@ -58,21 +98,18 @@ describe('UserMenu theme picker', () => {
     expect(THEMES.map((t) => t.id)).toEqual([DEFAULT_THEME, 'crm'])
   })
 
-  it('lists every theme and switches when there are two', () => {
-    const list = THEMES as ThemeDefList
-    list.push({ id: 'night', label: 'Night', scheme: 'dark' })
-    try {
-      render(<MemoryRouter><UserMenu name="Ann Lee" /></MemoryRouter>)
-      fireEvent.click(screen.getByRole('button', { name: /Ann Lee/ }))
-      const night = screen.getByRole('menuitemradio', { name: 'Night' })
-      expect(night).toHaveAttribute('aria-checked', 'false')
-      fireEvent.click(night)
-      expect(document.documentElement.getAttribute('data-theme')).toBe('night')
-      expect(document.documentElement.style.colorScheme).toBe('dark')
-    } finally {
-      list.pop(); clearCookie(); document.documentElement.removeAttribute('data-theme')
-    }
+  it('offers "System default (<name>)" + each theme; picking one sets the own choice', () => {
+    setSystemTheme('crm')
+    render(<MemoryRouter><UserMenu name="Ann Lee" /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: /Ann Lee/ }))
+    const sys = screen.getByRole('menuitemradio', { name: 'System default (CRM)' })
+    expect(sys).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'UniOps' }))
+    expect(getThemeChoice()).toBe('uniops')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('uniops')
+    expect(screen.getByRole('menuitemradio', { name: 'UniOps' })).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'System default (CRM)' }))
+    expect(getThemeChoice()).toBeNull()
+    expect(document.documentElement.getAttribute('data-theme')).toBe('crm')
   })
 })
-
-type ThemeDefList = { id: string; label: string; scheme: 'light' | 'dark' }[]

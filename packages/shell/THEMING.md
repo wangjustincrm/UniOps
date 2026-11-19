@@ -10,7 +10,7 @@
 | id | 显示名 | 说明 |
 |---|---|---|
 | `uniops` | UniOps | 默认主题(青绿主色),定义在 `tokens.css` 的 `@theme` |
-| `crm` | CRM | Canada Royal Milk:牛奶白底色、Logo 海军蓝(`#001B72`)侧栏和主色、枫叶红(`#C20009` 提亮为 `#E8323B`)只作侧栏当前项指示条;信息色改青蓝以区别于海军蓝。`themes/crm.css` |
+| `crm` | CRM | Canada Royal Milk:牛奶白底色、Logo 石板海军蓝(`#202C5C`,取自最新版 Logo)作侧栏和主色色阶、枫叶红(`#C20F2F` 提亮为 `#E8475F`)只作侧栏当前项指示条;信息色改青蓝以区别于海军蓝。`themes/crm.css` |
 
 ---
 
@@ -26,8 +26,12 @@
 页面里的 `bg-surface`、`text-fg-muted`、`rounded-lg` 打包后都是 `var(--color-surface)` 这类变量，
 所以只要在 `<html data-theme="<id>">` 下重新给变量赋值，全站跟着变。
 
-**切换**:用户菜单里选(登记的主题 ≥ 2 套时才出现)。选择存在 `.canadaroyalmilk.com` 的 cookie
-`uniops-theme` 里，所有模块共用。每个模块的 `index.html` 由 Shell 的 Vite 插件在 `<head>` 最前面
+**谁决定显示哪套**:个人选择 → 系统默认 → `uniops`。
+- **系统默认**:System Admin 在 Portal → Admin → Company Settings → **Default Theme** 设(存在 epms-api
+  `company_config.default_theme`)。每个模块打开时都会调公开品牌接口(取时区那次),顺带拿到它，
+  写进 cookie `uniops-theme-default`。
+- **个人选择**:用户菜单(右上角头像)里的 Theme 组，选「System default」= 跟随系统。存在 cookie
+  `uniops-theme`。两个 cookie 都在 `.canadaroyalmilk.com` 上，所有模块共用;按浏览器记，不跟账号走。每个模块的 `index.html` 由 Shell 的 Vite 插件在 `<head>` 最前面
 注入一段启动脚本，页面第一次绘制前就用上主题，不会闪默认色。
 
 ---

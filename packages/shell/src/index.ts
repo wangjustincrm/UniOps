@@ -35,4 +35,4 @@ export {
   isoDateInZone, todayISO, currentMonthISO, wallClockToISO,
 } from './lib/date'
 
-export { THEMES, getTheme, setTheme, useTheme, DEFAULT_THEME, THEME_COOKIE, type ThemeDef } from './theme/theme'
+export { THEMES, getTheme, getThemeChoice, getSystemTheme, setTheme, setSystemTheme, useTheme, DEFAULT_THEME, THEME_COOKIE, THEME_DEFAULT_COOKIE, type ThemeDef, type ThemeState } from './theme/theme'

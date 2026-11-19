@@ -251,7 +251,7 @@ export interface UserMenuProps {
 
 export function UserMenu({ name, subtitle, items = [], onSignOut }: UserMenuProps) {
   const [open, setOpen] = useState(false)
-  const [theme, setTheme] = useTheme()
+  const { choice, system, setTheme } = useTheme()
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
@@ -283,11 +283,11 @@ export function UserMenu({ name, subtitle, items = [], onSignOut }: UserMenuProp
           {THEMES.length > 1 && (
             <div role="group" aria-label="Theme" className="mb-1 border-b border-line-subtle pb-1">
               <p className="px-2.5 pb-1 pt-1.5 text-2xs font-medium text-fg-muted">Theme</p>
-              {THEMES.map((t) => (
-                <button key={t.id} role="menuitemradio" aria-checked={t.id === theme} type="button"
+              {[{ id: null, label: `System default (${THEMES.find((t) => t.id === system)?.label ?? system})` }, ...THEMES].map((t) => (
+                <button key={t.id ?? 'system'} role="menuitemradio" aria-checked={t.id === choice} type="button"
                   className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm text-fg-secondary transition-colors hover:bg-surface-subtle hover:text-fg"
                   onClick={() => setTheme(t.id)}>
-                  <Check aria-hidden className={cn('h-4 w-4', t.id === theme ? 'text-accent' : 'invisible')} />
+                  <Check aria-hidden className={cn('h-4 w-4', t.id === choice ? 'text-accent' : 'invisible')} />
                   {t.label}
                 </button>
               ))}
