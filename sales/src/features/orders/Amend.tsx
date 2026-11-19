@@ -3,9 +3,7 @@ import {
   Autocomplete, MasterDetailForm, readColumn, textColumn, type EditableColumn, type FieldSpec, useLookup,
 } from '@/platform-ui'
 import { itemOptions } from '@/features/configuration/lookups'
-import { fetchEdiSettings } from '@/features/configuration/connections/connectionsApi'
-import { EDI_KEY } from '@/features/configuration/connections/connectionSettings'
-import { amendOrder, carriersFor, isCarrier, lineNumbers, type OrderDetail } from './ordersApi'
+import { MANUAL_SETTINGS_KEY, amendOrder, carriersFor, fetchManualOrderSettings, isCarrier, lineNumbers, type OrderDetail } from './ordersApi'
 
 const errorMessages: Record<string, string> = {
   'order.amend': 'This order can no longer be amended: the warehouse has shipped it, or it is not waiting for its 940.',
@@ -48,7 +46,7 @@ const fields: FieldSpec[] = [
 export function AmendForm({ o, onSaved, onCancel }: { o: OrderDetail; onSaved: () => void; onCancel: () => void }) {
   const numbers = lineNumbers(o)
   const open = o.lines.filter((ln) => !ln.removed)
-  const settings = useLookup(EDI_KEY, fetchEdiSettings)
+  const settings = useLookup(MANUAL_SETTINGS_KEY, fetchManualOrderSettings)
   return (
     <MasterDetailForm<AmendLine>
       schema={schema} fields={o.source_type === 'MANUAL' ? [carrierField(carriersFor(settings.data?.express_offered ?? true)), ...fields] : fields}

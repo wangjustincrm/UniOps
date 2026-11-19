@@ -6,6 +6,7 @@ import { OrderStatusBadge, ShopifyCell, StatusDetail } from './OrderStatusCells'
 import { ReturnAfterShipment } from '@/features/invoices/ReturnAfterShipment'
 import { SubmitDraft } from './DraftActions'
 import { ManualOrderForm } from './ManualOrderForm'
+import { ManualOrderSettingsButton } from './ManualOrderSettingsButton'
 import { Recheck } from './Recheck'
 import { ordersClient, type OrderRead } from './ordersApi'
 import { PartnerCell } from '@/features/common/PartnerCell'
@@ -98,5 +99,6 @@ export default function OrdersPage() {
     emptyText={EMPTY_TEXT.orders} help="page:orders"
     create={{ label: 'New manual order', permission: 'sales.order.operate', className: 'max-w-3xl',
       render: (done, cancel) => <ManualOrderForm onSaved={done} onCancel={cancel} /> }}
+    toolbar={<ManualOrderSettingsButton />}
     detailActions={(o) => <ReturnAfterShipment o={o} />} />
 }

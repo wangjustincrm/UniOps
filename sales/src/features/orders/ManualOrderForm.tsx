@@ -5,10 +5,8 @@ import {
   ADDRESS_FIELDS, ActionButton, Autocomplete, MasterDetailForm, formatNumber, Skeleton, addressSchema, cleanAddress, numberColumn, readColumn, selectColumn, type EditableColumn, type FieldSpec, useLookup, useLookups, ActionErrors, Text, Stack,
 } from '@/platform-ui'
 import { itemOptions, itemUnits, manualPartnerOptions } from '../configuration/lookups'
-import { fetchEdiSettings } from '../configuration/connections/connectionsApi'
-import { EDI_KEY } from '../configuration/connections/connectionSettings'
 import {
-  carriersFor, isCarrier, createManual, previewManual, updateManual, type LinePreview, type ManualLine, type ManualOrderIn, type OrderDetail, type OrderRead,
+  MANUAL_SETTINGS_KEY, carriersFor, fetchManualOrderSettings, isCarrier, createManual, previewManual, updateManual, type LinePreview, type ManualLine, type ManualOrderIn, type OrderDetail, type OrderRead,
 } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
@@ -70,8 +68,8 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
   const codes = [...new Set(lines.map((l) => l.item_code).filter(Boolean))]
   const unitQueries = useLookups(codes.map((c) => ['sales', 'lookup', 'units', c]), (k) => itemUnits(String(k[3])), { staleTime: 60_000 })
   const units: Record<string, { value: string; label: string }[]> = Object.fromEntries(codes.map((c, i) => [c, unitQueries[i]?.data ?? []]))
-  const settings = useLookup(EDI_KEY, fetchEdiSettings)
-  const fields = fieldsFor(carriersFor(settings.data?.express_offered ?? true), settings.data?.manual_reasons ?? [])
+  const settings = useLookup(MANUAL_SETTINGS_KEY, fetchManualOrderSettings)
+  const fields = fieldsFor(carriersFor(settings.data?.express_offered ?? true), settings.data?.reasons ?? [])
 
   if (!draft && customers.isLoading) return <Skeleton className="h-40 w-full" />
   if (!draft && customers.data && customers.data.length === 0) {
