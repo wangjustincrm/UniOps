@@ -1,11 +1,12 @@
 /**
  * Theme "CRM" — Canada Royal Milk.
  *
- * Milk-white surfaces, royal navy from the wordmark (#001B72), maple red from
- * the crown leaf (#C20009) as a brand mark only.
+ * Milk-white surfaces, slate navy from the wordmark (#202C5C), maple red from
+ * the crown leaf (#C20F2F) as a brand mark only. Colours sampled from the
+ * current logo (CRM LOGO.pdf, 2026-11-18).
  *
- * - Primary ramp ends in the logo navy: 900 = #001B72 (the sidebar), 600 is the
- *   brighter royal blue for buttons / links / focus.
+ * - Primary ramp ends in the logo navy: 900 = #202C5C (the sidebar); 600 is a
+ *   brighter step of the same slate navy for buttons / focus, 700 for links.
  * - Maple red appears only as the active-item bar in the sidebar. Never on
  *   buttons, text or status: it sits too close to danger red and would read
  *   as "error".
@@ -17,17 +18,17 @@
 :root[data-theme="crm"] {
   color-scheme: light;
 
-  /* ── Primary — royal navy (logo wordmark) ─────────────────────── */
-  --color-primary-50:  #EEF2FB;
-  --color-primary-100: #DCE3F6;
-  --color-primary-200: #B7C5EC;
-  --color-primary-300: #889FDC;
-  --color-primary-400: #5373C6;
-  --color-primary-500: #2F52B2;
-  --color-primary-600: #1D3F9E;
-  --color-primary-700: #122F86;
-  --color-primary-800: #0A247B;
-  --color-primary-900: #001B72;   /* logo navy */
+  /* ── Primary — slate navy (logo wordmark) ─────────────────────── */
+  --color-primary-50:  #EFF1F7;
+  --color-primary-100: #DEE2EE;
+  --color-primary-200: #BDC5DC;
+  --color-primary-300: #96A2C4;
+  --color-primary-400: #6F7EAA;
+  --color-primary-500: #526293;
+  --color-primary-600: #3D4D82;
+  --color-primary-700: #2F3E71;
+  --color-primary-800: #273464;
+  --color-primary-900: #202C5C;   /* logo navy */
 
   /* ── Neutral — cool milk grey ─────────────────────────────────── */
   --color-neutral-50:  #F5F7FB;
@@ -56,7 +57,7 @@
   /* ── Surfaces — milk white ────────────────────────────────────── */
   --color-canvas: #F6F8FC;
 
-  /* ── Accent: button royal blue, links one step deeper ─────────── */
+  /* ── Accent: button navy, links one step deeper ───────────────── */
   --color-accent-fg: var(--color-primary-700);
 
   /* ── Sidebar: the logo navy, maple-red active bar ─────────────── */
@@ -64,13 +65,13 @@
   --color-nav-fg:        rgb(255 255 255 / 0.74);
   --color-nav-item-hover:  rgb(255 255 255 / 0.08);
   --color-nav-item-active: rgb(255 255 255 / 0.13);
-  --color-nav-indicator: #E8323B;   /* maple red, lifted to read on navy */
+  --color-nav-indicator: #E8475F;   /* logo maple red #C20F2F, lifted to read on navy */
 
   /* ── Elevation — navy-tinted, soft ────────────────────────────── */
   --shadow-xs: 0 1px 2px rgb(19 26 44 / 0.05);
   --shadow-sm: 0 1px 3px rgb(19 26 44 / 0.08), 0 1px 2px rgb(19 26 44 / 0.04);
   --shadow-md: 0 4px 12px rgb(19 26 44 / 0.08), 0 1px 3px rgb(19 26 44 / 0.05);
   --shadow-lg: 0 12px 32px rgb(19 26 44 / 0.12), 0 2px 6px rgb(19 26 44 / 0.06);
-  --shadow-focus: 0 0 0 3px rgb(29 63 158 / 0.22);
+  --shadow-focus: 0 0 0 3px rgb(61 77 130 / 0.24);
   --shadow-up: 0 -1px 8px rgb(19 26 44 / 0.06);
 }
