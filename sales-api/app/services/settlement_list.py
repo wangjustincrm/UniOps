@@ -14,9 +14,18 @@ READ = "sales.read"
 _NEWEST = [{"field": "settled_at", "desc": True}]
 
 
+def _gateway_by_month(gateway: str) -> Preset:
+    return Preset(f"{gateway.lower().replace('.', '_')}_monthly", f"{gateway} — by month", {
+        "filters": [{"field": "gateway", "op": "eq", "value": gateway}],
+        "group": [{"field": "settled_month", "desc": True}], "sort": _NEWEST})
+
+
 class SettlementRowRepository(Repository[SettlementRow]):
     model = SettlementRow
-    search_fields = ("batch_id",)
+    # The gateway ("PayPal"), the batch / transfer id and the state ("In PayPal balance") by any part; the
+    # settlement number exactly (user 2026-11-19: "I can not search for it").
+    search_fields = ("batch_id", "gateway", "state")
+    search_numbers = ("id",)
     suggestable = ("batch_id",)
     list_fields = ("id", "gateway", "batch_id", "settled_at", "settled_date", "settled_week", "settled_month", "state",
                    "payment_method", "currency", "sales_amount", "sales_count", "refund_amount", "refund_count", "fee_amount",
@@ -46,6 +55,9 @@ class SettlementRowRepository(Repository[SettlementRow]):
     presets = (
         Preset("all", "All"),
         Preset("monthly", "By month", {"group": [{"field": "settled_month", "desc": True}], "sort": _NEWEST}),
+        # One gateway's deposits by month (user 2026-11-19): PayPal's monthly transfers are not lost among
+        # Authorize.Net's daily batches.
+        *(_gateway_by_month(g) for g in GATEWAY_NAMES),
         Preset("issues", "Needs a look", {
             "filters": [{"field": "issue", "op": "not_null", "value": None}],
             "group": [{"field": "issue", "desc": False}], "sort": _NEWEST}),

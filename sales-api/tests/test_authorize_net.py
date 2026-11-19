@@ -292,7 +292,7 @@ async def test_a_pass_reads_batches_matches_payments_and_feeds_both_lists(env): 
     assert (rows["902"].net_amount, rows["902"].matched_net, rows["902"].probable_count, rows["902"].issue) == (
         Decimal("-25.00"), Decimal("-25.00"), 1, None)
     assert rows["900"].issue is None and rows["900"].transaction_count == 0
-    assert [v["name"] for v in meta["views"]] == ["All", "By month", "Needs a look"]
+    assert [v["name"] for v in meta["views"]] == ["All", "By month", "Authorize.Net — by month", "PayPal — by month", "Needs a look"]
 
     # the PDFs: one deposit's statement, and the list as a report
     from tests.test_order_ref import pdf_text

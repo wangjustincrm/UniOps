@@ -348,3 +348,17 @@ async def test_each_transfer_to_the_bank_is_a_settlement_with_its_period_and_the
     async with env.factory(OP) as u:
         name, pdf = await SettlementRowService(u).statement_pdf(first.id)
     assert pdf.startswith(b"%PDF") and name == f"settlement-{first.id}.pdf"
+
+    # Found by the gateway, the state or the settlement number; a view per gateway, by month (user 2026-11-19)
+    async with env.factory(OP) as u:
+        repo = SettlementRowRepository(u)
+        assert {x.batch_id for x in (await repo.list(QuerySpec(search="paypal", page_size=50))).items} == set(rows)
+        assert [x.batch_id for x in (await repo.list(QuerySpec(search="in paypal balance", page_size=50))).items] == ["BALANCE-CAD"]
+        assert [x.id for x in (await repo.list(QuerySpec(search=str(second.id), page_size=50))).items] == [second.id]
+        meta = await SettlementRowService(u).meta()
+    views = {v["name"]: v["state"] for v in meta["views"]}
+    assert {"PayPal — by month", "Authorize.Net — by month"} <= set(views)
+    assert views["PayPal — by month"]["filters"] == [{"field": "gateway", "op": "eq", "value": "PayPal"}]
+    from app.platform.views import check_state
+    for state in views.values():
+        assert check_state(state, SettlementRowRepository) == state
