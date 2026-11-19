@@ -37,7 +37,7 @@ export function TabBar() {
             className={cn(
               'group flex items-center gap-1.5 self-center rounded-md px-3 py-1.5 text-sm transition-colors',
               active
-                ? 'bg-primary-50 text-primary-700 font-medium'
+                ? 'bg-accent-soft text-accent-fg font-medium'
                 : 'text-fg-secondary hover:bg-surface-subtle',
             )}
           >

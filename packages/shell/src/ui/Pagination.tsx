@@ -40,7 +40,7 @@ export function Pagination({ page, pageSize, total, onPageChange, onPageSizeChan
           <select
             value={pageSize}
             onChange={(e) => { onPageSizeChange(Number(e.target.value)); onPageChange(1) }}
-            className="h-7 rounded border border-line bg-surface px-1.5 text-xs text-fg-secondary focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="h-7 rounded border border-line bg-surface px-1.5 text-xs text-fg-secondary focus:outline-none focus:ring-1 focus:ring-accent"
           >
             {PAGE_SIZE_OPTIONS.map((s) => (
               <option key={s} value={s}>{s}</option>
@@ -68,7 +68,7 @@ export function Pagination({ page, pageSize, total, onPageChange, onPageSizeChan
                 className={cn(
                   'flex h-7 w-7 items-center justify-center rounded text-xs font-medium transition-colors',
                   p === page
-                    ? 'bg-primary-600 text-white'
+                    ? 'bg-accent text-fg-on-accent'
                     : 'text-fg-secondary hover:bg-surface-sunken',
                 )}
               >

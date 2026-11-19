@@ -183,7 +183,7 @@ export function Assistant({
       <div className="flex h-full w-full max-w-[26rem] flex-col border-l border-line bg-surface shadow-xl">
         <header className="flex items-center justify-between border-b border-line px-4 py-3">
           <div className="flex items-center gap-2">
-            <MessageSquare className="h-4 w-4 text-primary-600" aria-hidden />
+            <MessageSquare className="h-4 w-4 text-accent" aria-hidden />
             <span className="text-sm font-semibold text-fg">Assistant</span>
           </div>
           <div className="flex items-center gap-1">
@@ -249,7 +249,7 @@ export function Assistant({
                     key={s}
                     type="button"
                     onClick={() => send(s)}
-                    className="block w-full rounded-lg border border-line px-3 py-2 text-left text-xs text-fg-secondary transition-colors hover:border-primary-600 hover:bg-primary-600/5"
+                    className="block w-full rounded-lg border border-line px-3 py-2 text-left text-xs text-fg-secondary transition-colors hover:border-accent hover:bg-accent-soft"
                   >
                     {s}
                   </button>
@@ -298,13 +298,13 @@ export function Assistant({
               }}
               rows={2}
               placeholder="Ask a question…"
-              className="flex-1 resize-none rounded-lg border border-line px-3 py-2 text-sm text-fg placeholder:text-fg-faint focus-visible:border-primary-600 focus-visible:outline-none"
+              className="flex-1 resize-none rounded-lg border border-line px-3 py-2 text-sm text-fg placeholder:text-fg-faint focus-visible:border-accent focus-visible:outline-none"
             />
             <button
               type="submit"
               disabled={busy || !draft.trim()}
               aria-label="Send"
-              className="mb-0.5 rounded-lg bg-primary-600 p-2 text-white transition-colors hover:bg-primary-700 disabled:pointer-events-none disabled:opacity-40"
+              className="mb-0.5 rounded-lg bg-accent p-2 text-fg-on-accent transition-colors hover:bg-accent-hover disabled:pointer-events-none disabled:opacity-40"
             >
               <Send className="h-4 w-4" aria-hidden />
             </button>
@@ -321,7 +321,7 @@ export function Assistant({
         onClick={() => setOpen(true)}
         aria-label="Open assistant"
         className={cn(
-          'fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-primary-600 text-white shadow-lg transition-colors hover:bg-primary-700 focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(10,124,124,0.25)]',
+          'fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-fg-on-accent shadow-lg transition-colors hover:bg-accent-hover focus-visible:outline-none focus-visible:shadow-[0_0_0_3px_rgba(10,124,124,0.25)]',
           open && 'hidden',
           className
         )}
@@ -350,7 +350,7 @@ function MessageRow({
       <div className="space-y-1">
         <div className="flex items-start justify-end gap-1">
           {marked && <MarkToggle marked={marked} question={message.text} />}
-          <div className="max-w-[85%] rounded-lg rounded-br-sm bg-primary-600 px-3 py-2 text-sm text-white">
+          <div className="max-w-[85%] rounded-lg rounded-br-sm bg-accent px-3 py-2 text-sm text-fg-on-accent">
             {message.text}
           </div>
         </div>
@@ -441,7 +441,7 @@ function ExportButton({
             setBusy(false)
           }
         }}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 text-xs text-fg-secondary transition-colors hover:border-primary-600 hover:text-primary-600 disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 text-xs text-fg-secondary transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
       >
         {busy ? (
           <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
@@ -494,7 +494,7 @@ function GateGroup({
       <p
         className={cn(
           'text-2xs font-semibold uppercase tracking-wide',
-          tone === 'fixable' ? 'text-primary-600' : 'text-danger-fg'
+          tone === 'fixable' ? 'text-accent' : 'text-danger-fg'
         )}
       >
         {title}
@@ -505,7 +505,7 @@ function GateGroup({
             <span
               className={cn(
                 'mt-0.5 shrink-0',
-                tone === 'fixable' ? 'text-primary-600' : 'text-danger-fg'
+                tone === 'fixable' ? 'text-accent' : 'text-danger-fg'
               )}
               aria-hidden
             >
@@ -519,7 +519,7 @@ function GateGroup({
               {c.fix_route && (
                 <a
                   href={c.fix_route}
-                  className="ml-1 break-all text-primary-600 underline underline-offset-2"
+                  className="ml-1 break-all text-accent underline underline-offset-2"
                 >
                   open
                 </a>
@@ -553,7 +553,7 @@ function Chain({ workflow }: { workflow: NonNullable<AssistantReply['workflow']>
       )}
       {current && (
         <div>
-          <p className="text-2xs font-semibold uppercase tracking-wide text-primary-600">
+          <p className="text-2xs font-semibold uppercase tracking-wide text-accent">
             Waiting on
           </p>
           <p className="mt-0.5 text-fg">
@@ -827,7 +827,7 @@ function MarkedList({
           <button
             type="button"
             onClick={marked.reload}
-            className="text-primary-600 underline underline-offset-2"
+            className="text-accent underline underline-offset-2"
           >
             Try again
           </button>
@@ -846,7 +846,7 @@ function MarkedList({
               disabled={disabled}
               onClick={() => onAsk(i.question)}
               title="Ask this again"
-              className="block min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-left text-xs text-fg-secondary transition-colors hover:border-primary-600 hover:bg-primary-600/5 disabled:opacity-50"
+              className="block min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-left text-xs text-fg-secondary transition-colors hover:border-accent hover:bg-accent-soft disabled:opacity-50"
             >
               {i.question}
             </button>

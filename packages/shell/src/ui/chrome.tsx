@@ -55,7 +55,7 @@ function BrandMark({ brand, size = 'md' }: { brand: Branding; size?: 'md' | 'lg'
       <img src={brand.logoUrl} alt="" className="h-full w-full object-contain p-0.5" />
     </span>
   ) : (
-    <span className={cn('flex shrink-0 items-center justify-center rounded-md bg-white/15 text-xs font-semibold text-white', box)}>
+    <span className={cn('flex shrink-0 items-center justify-center rounded-md bg-nav-fg-active/15 text-xs font-semibold text-nav-fg-active', box)}>
       {initials(brand.name)}
     </span>
   )
@@ -102,7 +102,7 @@ export function Sidebar({ brand, sections, collapsed, onToggleCollapse, mobileOp
         {!collapsed && <span className="truncate">{item.label}</span>}
         {!collapsed && item.external && !item.sameTab && <ExternalLink aria-hidden className="ml-auto h-3.5 w-3.5 opacity-60" />}
         {!!item.badge && <Count n={item.badge} collapsed={collapsed} />}
-        {active && <span aria-hidden className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-white/80" />}
+        {active && <span aria-hidden className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-nav-fg-active/80" />}
       </>
     )
     const cls = (active: boolean) => cn(

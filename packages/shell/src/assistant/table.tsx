@@ -110,7 +110,7 @@ export function AnswerTable({
         type="button"
         onClick={() => setOpen(true)}
         aria-expanded={false}
-        className="inline-flex items-center gap-1 rounded border border-line bg-surface px-2 py-1 text-xs text-fg-secondary hover:border-primary-600 hover:text-primary-600"
+        className="inline-flex items-center gap-1 rounded border border-line bg-surface px-2 py-1 text-xs text-fg-secondary hover:border-accent hover:text-accent"
       >
         <ChevronRight className="h-3 w-3" aria-hidden />
         {rowsLabel} — show table
@@ -125,7 +125,7 @@ export function AnswerTable({
           type="button"
           onClick={() => setOpen(false)}
           aria-expanded
-          className="inline-flex items-center gap-0.5 hover:text-primary-600"
+          className="inline-flex items-center gap-0.5 hover:text-accent"
         >
           <ChevronDown className="h-3 w-3" aria-hidden />
           {rowsLabel} — hide table
@@ -137,7 +137,7 @@ export function AnswerTable({
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter rows"
             aria-label="Filter rows"
-            className="h-6 min-w-0 flex-1 rounded border border-line bg-surface px-1.5 text-2xs text-fg focus:border-primary-600 focus:outline-none"
+            className="h-6 min-w-0 flex-1 rounded border border-line bg-surface px-1.5 text-2xs text-fg focus:border-accent focus:outline-none"
           />
         )}
       </div>
