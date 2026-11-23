@@ -30,6 +30,8 @@ export interface TimelineEntry {
   before: Record<string, unknown> | null
   after: Record<string, unknown> | null
   reason: string | null
+  /** sales36: the audit log (request / background scope) it was made in. */
+  audit_log_id?: string | null
 }
 
 const base = (t: RecordType, id: number) => `/attachments/${t}/${id}`

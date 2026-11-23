@@ -6,6 +6,7 @@ import DocumentsPage from '@/features/operations/DocumentsPage'
 import LotsPage from '@/features/lots/LotsPage'
 import InventoryPage from '@/features/inventory/InventoryPage'
 import RunsPage from '@/features/operations/RunsPage'
+import AuditLogPage from '@/features/auditLog/AuditLogPage'
 import DeliveryPage from '@/features/invoices/DeliveryPage'
 import InvoicesPage from '@/features/invoices/InvoicesPage'
 import PaymentsPage from '@/features/payments/PaymentsPage'
@@ -53,6 +54,7 @@ export const moduleRoutes: RouteDef[] = [
     element: <RunsPage />,
     tab: { title: 'Runs and log', icon: 'Activity', keyStrategy: 'static' },
   },
+  { path: '/audit-log', element: <AuditLogPage />, tab: { title: 'Audit log', icon: 'ScrollText', keyStrategy: 'static' } },
   { path: '/lots', element: <LotsPage />, tab: { title: 'Lots', icon: 'Boxes', keyStrategy: 'static' } },
   { path: '/inventory', element: <InventoryPage />, tab: { title: 'Inventory', icon: 'Warehouse', keyStrategy: 'static' } },
   { path: '/deliveries', element: <DeliveryPage />, tab: { title: 'Delivery confirmation', icon: 'Truck', keyStrategy: 'static' } },

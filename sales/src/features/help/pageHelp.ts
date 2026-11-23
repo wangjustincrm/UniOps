@@ -18,6 +18,15 @@ export const PAGE_HELP: Record<string, HelpEntry> = {
       'Payment (Finance): the To settle view; tick orders → Mark settled, or an order\'s ⋯ menu.',
     ],
   },
+  'page:auditLog': {
+    title: 'Audit log',
+    body: 'Every change made through Sales (by a person or a run) and every failed request: who, when, what, how long, the outcome. Reads that work are not kept.',
+    tasks: [
+      'Narrow it with When, Kind, Method and Outcome, or search a user, a route or a correlation id.',
+      'Open a row: Overall, the Actions it ran (with what was sent) and the Entity changes it made.',
+      'Entity changes: every change to one record — search its id.',
+    ],
+  },
   'page:delivery': {
     title: 'Delivery confirmation',
     body: 'Shipped orders whose delivery is due. Confirming a delivery makes its invoice.',
