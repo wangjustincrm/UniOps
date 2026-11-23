@@ -94,6 +94,14 @@ class OrderRead(BaseModel):
     parent_reference: str | None = None
     received_month: date | None = None
     ordered_ea: int | None = None
+    # Payment (app/domain/order_payment.py): Settled by a finance user, with the date, the reference and who marked it
+    payment_status: str | None = None
+    settled_on: date | None = None
+    settled_reference: str | None = None
+    settled_amount: Decimal | None = None
+    settled_note: str | None = None
+    settled_at: datetime | None = None
+    settled_by_name: str | None = None
     source_updated_at: datetime | None
     version: int
     created_at: datetime
@@ -524,3 +532,34 @@ class LinePreview(BaseModel):
 class ReviewResult(BaseModel):
     order: OrderRead
     remaining: list[str]
+
+
+# ── Payment: Settled by hand (sales.settle; app/services/order_payment.py) ─────────────────────────
+Reference = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+
+
+class SettleIn(BaseModel):
+    """The money came: when, under which reference (bank / cheque / remittance no.), optionally how much and a note."""
+    model_config = ConfigDict(extra="forbid")
+
+    settled_on: date
+    reference: Reference
+    amount: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)] | None = None
+    note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] | None = None
+
+
+class SettleBulkIn(SettleIn):
+    order_ids: Annotated[list[int], Field(min_length=1, max_length=200)]
+
+
+class UnsettleIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: Reason
+
+
+class SettleResult(BaseModel):
+    order_id: int
+    ok: bool
+    payment_status: str | None = None
+    error: str | None = None

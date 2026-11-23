@@ -11,6 +11,8 @@ rounded.
 """
 from __future__ import annotations
 
+import uuid
+
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
@@ -19,7 +21,7 @@ from sqlalchemy import (
     BigInteger, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, Sequence, String, Text,
     UniqueConstraint, case, cast, false, func, select, text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, aliased, column_property, mapped_column, undefer_group
 
 from app.db.base import Base
@@ -114,6 +116,16 @@ class Order(Audited, Versioned, Base):
     shopify_fulfillment_id: Mapped[str | None] = mapped_column(String(40), nullable=True)  # AC-OB-72
     warehouse_order_number_received: Mapped[str | None] = mapped_column(String(40), nullable=True)  # FR-OB-28
     zoho_order_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # sales35 (user 2026-11-19 / 11-23): Payment — Settled by hand by a finance user (sales.settle): the date the money
+    # came, a reference (bank / cheque / remittance no.), an optional amount and note, who marked it and when. A derived
+    # source (Shopify from the gateway settlements) comes later beside these; the manual mark wins (order_payment.py).
+    settled_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    settled_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    settled_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    settled_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    settled_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    settled_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     @property
     def ref(self) -> str:
@@ -171,6 +183,11 @@ class Order(Audited, Versioned, Base):
         """The order's EA over its lines (`ordered_ea_sql`)."""
         v = self.__dict__.get("ordered_ea_sql")
         return None if v is None else int(v)
+
+    @property
+    def payment_status(self) -> str | None:
+        """Settled / Not settled / Due / Overdue / Not needed (`payment_status_sql`, app/domain/order_payment.py)."""
+        return self.__dict__.get("payment_status_sql")
 
     @property
     def parent_reference(self) -> str | None:

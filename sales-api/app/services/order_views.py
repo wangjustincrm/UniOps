@@ -38,6 +38,7 @@ from app.domain.order_status import (
     send_time,
     status_detail,
 )
+from app.domain.order_payment import PAYMENT_STATUSES
 from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
 from app.domain.row_matching import identifiers, line_identifiers
 from app.domain.status import FULFILLMENT
@@ -134,7 +135,8 @@ class OrderRepository(Repository[Order]):
                    "review_reason", "historical", "first_received_at", "paid_at", "source_updated_at",
                    "source_cancelled_at", "archived_in_shopify_at", "archive_suppressed", "shopify_financial_status",
                    "shopify_fulfillment_status", "source_name", "tags", "original_total", "total_refunded", "net_amount",
-                   "manual_reason", "parent_order_id", "created_at", "updated_at")
+                   "manual_reason", "parent_order_id", "settled_on", "settled_reference", "settled_amount", "settled_note",
+                   "settled_at", "settled_by_name", "created_at", "updated_at")
     labels = {"order_number": "Internal no.", "source_reference": "Order ref", "partner_name": "Partner",
               "partner_code": "Partner code", "total_amount": "Total", "total": "Source total", "source_order_number": "Source no.", "source_order_id": "Source ID",
               "order_status": "Status", "on_hold_reason": "On Hold reason", "first_received_at": "Received", "paid_at": "Paid",
@@ -143,10 +145,14 @@ class OrderRepository(Repository[Order]):
               "source_name": "Sales channel", "connection_name": "Connection", "tags": "Tags", "original_total": "Original total",
               "total_refunded": "Refunded", "net_amount": "Net", "returned_ea": "Returned EA",
               "delivery_due_date": "Delivery due", "manual_reason": "Reason", "parent_order_id": "Reorder of (no.)",
-              "parent_reference": "Reorder of", "received_month": "Month", "ordered_ea": "EA"}
+              "parent_reference": "Reorder of", "received_month": "Month", "ordered_ea": "EA",
+              "payment_status": "Payment", "settled_on": "Settled on", "settled_reference": "Settlement ref",
+              "settled_amount": "Settled amount", "settled_note": "Settlement note", "settled_at": "Marked settled",
+              "settled_by_name": "Settled by"}
     enums = {"source_type": SOURCE_TYPES, "fulfillment_status": tuple(s.value for s in F),
              "invoice_status": tuple(s.value for s in Inv), "hold_reason": HOLD_REASONS,
-             "order_state": ORDER_STATES, "order_status": ORDER_STATUSES, "on_hold_reason": ON_HOLD_REASONS}
+             "order_state": ORDER_STATES, "order_status": ORDER_STATUSES, "on_hold_reason": ON_HOLD_REASONS,
+             "payment_status": PAYMENT_STATUSES}
     # The internal lines stay filterable and sortable, so a saved view on them still lists,
     # but no list offers them any more: they show on the order page, for diagnosis.
     meta_hidden = ("connection_id", "order_status_label", "short_shipped", "status_detail", "status_detail_at", "next_step", "next_step_who", "delay_starts_at", "delay_minutes", "settlement_mode", "shadow", "to_confirm",
@@ -156,7 +162,8 @@ class OrderRepository(Repository[Order]):
     sortable = {"order_state": ORDER_STATE_SQL, "order_status": ORDER_STATUS_SQL, "on_hold_reason": ON_HOLD_REASON_SQL, "partner_name": Order.partner_name_sql,
                 "connection_name": Order.connection_name_sql, "total_amount": Order.total_amount_sql, "backordered_ea": BACKORDERED_SQL, "returned_ea": Order.returned_ea_sql,
                 "delivery_due_date": Order.delivery_due_sql, "received_month": Order.received_month_sql,
-                "ordered_ea": Order.ordered_ea_sql, "parent_reference": Order.parent_reference_sql}
+                "ordered_ea": Order.ordered_ea_sql, "parent_reference": Order.parent_reference_sql,
+                "payment_status": Order.payment_status_sql}
     filterable = {"order_state": FilterRule(ORDER_STATE_SQL, kind="text"),
                   "order_status": FilterRule(ORDER_STATUS_SQL, kind="text"),
                   "on_hold_reason": FilterRule(ON_HOLD_REASON_SQL, kind="text"),
@@ -168,15 +175,17 @@ class OrderRepository(Repository[Order]):
                   "to_confirm": FilterRule(TO_CONFIRM_SQL, kind="bool", cast=lambda v: str(v).lower() == "true"),
                   "received_month": FilterRule(Order.received_month_sql, kind="date"),
                   "ordered_ea": FilterRule(Order.ordered_ea_sql, kind="number", cast=int),
-                  "parent_reference": FilterRule(Order.parent_reference_sql, kind="text")}
-    summable = ("total_amount", "net_amount", "total_refunded")
+                  "parent_reference": FilterRule(Order.parent_reference_sql, kind="text"),
+                  "payment_status": FilterRule(Order.payment_status_sql, kind="text")}
+    summable = ("total_amount", "net_amount", "total_refunded", "settled_amount")
     sum_currency = "currency"
-    money_fields = ("total_amount", "total", "subtotal", "tax", "shipping", "discount", "original_total", "total_refunded", "net_amount")
+    money_fields = ("total_amount", "total", "subtotal", "tax", "shipping", "discount", "original_total", "total_refunded", "net_amount",
+                    "settled_amount")
     default_sort = ("-order_number",)
     suggestable = ("partner_name", "source_order_number", "source_reference")
     groupable = ("order_status", "on_hold_reason", "order_state", "partner_name", "connection_name", "partner_code", "source_type", "fulfillment_status", "invoice_status", "hold_reason", "order_date",
                  "currency", "historical", "archive_suppressed", "shopify_financial_status", "source_name", "manual_reason",
-                 "received_month")
+                 "received_month", "payment_status")
     # System views (§13.19). Review reason is shown where it says something.
     presets = (
         # The first view is what Orders opens on (unless the person has a default of their own).
@@ -222,6 +231,14 @@ class OrderRepository(Repository[Order]):
                         "order_status"],
             "hidden": ["order_number", "partner_name", "source_order_number", "order_date", "total_amount", "total_refunded",
                        "net_amount", "returned_ea", "review_reason", "shopify", "status_detail"]}),
+        # Payment (user 2026-11-23): what Finance has not marked settled yet, Overdue / Due / Not settled, oldest first.
+        Preset("to_settle", "To settle", {
+            "filters": [{"field": "payment_status", "op": "in", "value": ["Overdue", "Due", "Not settled"]}],
+            "group": [{"field": "payment_status", "desc": True}],
+            "sort": [{"field": "order_date", "desc": False}],
+            "columns": ["source_reference", "partner_name", "order_date", "order_status", "payment_status", "total_amount"],
+            "hidden": ["order_number", "source_order_number", "total_refunded", "net_amount", "returned_ea", "review_reason",
+                       "shopify", "status_detail"]}),
         Preset("all", "All", {"hidden": ["review_reason"]}),
     )
     historical_column = "historical"

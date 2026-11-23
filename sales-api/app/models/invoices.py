@@ -10,11 +10,15 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import DateTime, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, select
+from sqlalchemy import (
+    Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, and_, case, cast, exists, func, not_, null, select,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, column_property, mapped_column
 
 from app.db.base import Base
+from app.domain.order_payment import DUE, NOT_NEEDED, NOT_SETTLED, OVERDUE, SETTLED, TERMS_SQL_PATTERN
+from app.domain.status import Fulfillment as F
 from app.models.config import Partner, one_of
 from app.models.orders import Order, order_fact
 from app.platform.entities import Audited, CreationAudited, Versioned
@@ -108,3 +112,24 @@ class OrderReturn(CreationAudited, Base):
 # The Detail of an order whose invoice failed (app/domain/order_status.py).
 Order.invoice_error_sql = order_fact(
     select(Invoice.error).where(Invoice.order_id == Order.id).correlate_except(Invoice).scalar_subquery())
+
+
+# An order's Payment (app/domain/order_payment.py, the same rule): Settled by hand; Not needed when cancelled and never
+# invoiced; Due / Overdue when the sent invoice's terms (else the partner's) say "Net N"; otherwise Not settled.
+def _payment_status_sql():
+    partner_terms = select(Partner.payment_terms).where(Partner.code == Order.partner_code).correlate_except(Partner).scalar_subquery()
+    days = cast(func.substring(func.lower(func.coalesce(Invoice.payment_terms, partner_terms)), TERMS_SQL_PATTERN), Integer)
+    due = (select(Invoice.invoice_date + days).where(Invoice.order_id == Order.id, Invoice.sent_at.is_not(None))
+           .order_by(Invoice.id.desc()).limit(1).correlate_except(Invoice).scalar_subquery())
+    sent = exists(select(Invoice.id).where(Invoice.order_id == Order.id, Invoice.sent_at.is_not(None)).correlate_except(Invoice))
+    today = cast(func.timezone("America/Toronto", func.now()), Date)
+    return case(
+        (Order.settled_on.is_not(None), SETTLED),
+        (Order.fulfillment_status == F.DRAFT.value, null()),
+        (and_(Order.fulfillment_status == F.CANCELLED.value, not_(sent)), NOT_NEEDED),
+        (due < today, OVERDUE),
+        (due.is_not(None), DUE),
+        else_=NOT_SETTLED)
+
+
+Order.payment_status_sql = order_fact(_payment_status_sql())

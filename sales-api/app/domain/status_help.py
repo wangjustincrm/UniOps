@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from app.domain.order_payment import DUE, NOT_NEEDED, NOT_SETTLED, OVERDUE, SETTLED
 from app.domain.order_status import (
     ARCHIVED, CANCELLED, CANCELLED_AT_SOURCE, COMPLETED, CONFLICT_945, DELIVERY_DUE, DRAFT, FAILED_940, INVOICE_BLOCKED,
     INVOICE_FAILED, NEEDS_REVIEW, ON_HOLD, PAYMENT_REQUIRED, REJECTED_940, SENDS, SHOPIFY_FAILED, TIMEOUT_997, WAITING_945,
@@ -78,6 +79,19 @@ HOLD_HELP: dict[str, Help] = {
                           ("Edit invoice", "Release")),
 }
 
+# Payment (app/domain/order_payment.py, user 2026-11-23): beside the Status; Settled is a finance user's mark.
+PAYMENT_HELP: dict[str, Help] = {
+    NOT_SETTLED: Help("Finance hasn't marked the money received yet. A finance user uses Mark settled with the date it came "
+                      "and a reference (bank, cheque or remittance no.).", ("Mark settled",)),
+    DUE: Help("Invoiced; the terms (Net N days from the invoice date) are not up yet. Mark settled when the money comes.",
+              ("Mark settled",)),
+    OVERDUE: Help("Invoiced and past its terms (the invoice date + Net N days). Follow up with the partner; Mark settled "
+                  "when the money comes.", ("Mark settled",)),
+    SETTLED: Help("Finance marked the money received; the date, the reference and who marked it are on the order. Undo "
+                  "settled if it was a mistake (with a reason).", ("Undo settled",)),
+    NOT_NEEDED: Help("Cancelled and never invoiced: no money is expected."),
+}
+
 DETAIL_HELP: dict[str, Help] = {
     SENDS: Help("When the 940 goes to the warehouse by itself, after the partner's delay."),
     DELIVERY_DUE: Help("The requested delivery date (for DC-routed partners, the do-not-deliver-after date). Confirm "
@@ -88,12 +102,13 @@ DETAIL_HELP: dict[str, Help] = {
 
 
 def payload() -> dict[str, dict[str, dict[str, str]]]:
-    """GET /help/texts: {statuses | holds | details | terms: {label: {body}}} (terms: glossary.py)."""
+    """GET /help/texts: {statuses | holds | details | payments | terms: {label: {body}}} (terms: glossary.py)."""
     from app.domain.glossary import TERMS  # glossary imports Help from here
 
     def part(d: dict[str, Help]) -> dict[str, dict[str, str]]:
         return {k: {"body": h.body} for k, h in d.items()}
-    return {"statuses": part(STATUS_HELP), "holds": part(HOLD_HELP), "details": part(DETAIL_HELP), "terms": part(TERMS)}
+    return {"statuses": part(STATUS_HELP), "holds": part(HOLD_HELP), "details": part(DETAIL_HELP), "payments": part(PAYMENT_HELP),
+            "terms": part(TERMS)}
 
 
 # ── the next step of one order (the user, 2026-11-16: approved table) ─────────────────────────────

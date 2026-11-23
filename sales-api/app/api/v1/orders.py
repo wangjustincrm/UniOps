@@ -10,9 +10,10 @@ from app.platform.query import QuerySpec, query_spec
 from app.runtime import Runtime, get_runtime
 from app.schemas.orders import (
     AmendOrderIn, CancelOrderIn, InvoicePricesIn, ReturnedIn, LinePreview, ManualLineIn, ManualOrderIn, OrderDetail, OrderRead,
-    ReleaseHoldIn, ResolveRowIn, ReviewResult,
+    ReleaseHoldIn, ResolveRowIn, ReviewResult, SettleBulkIn, SettleIn, SettleResult, UnsettleIn,
 )
 from app.services.order_holds import OrderActions
+from app.services.order_payment import OrderPaymentService
 from app.services.order_views import ManualOrderService, OrderService
 
 UoW = Annotated[Any, Depends(get_uow)]
@@ -130,6 +131,28 @@ async def manual_cancel(u: UoW, id: int, version: Version = None):
     o = await ManualOrderService(u).cancel(id, version)
     await u.commit()
     return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
+
+
+@router.post("/settle-bulk", response_model=list[SettleResult])
+async def settle_bulk(u: UoW, body: SettleBulkIn):
+    """Mark settled in bulk (sales.settle): one result per order."""
+    out = await OrderPaymentService(u).settle_bulk(body)
+    await u.commit()
+    return out
+
+
+@router.post("/{id}/settle", response_model=OrderRead)
+async def settle_order(u: UoW, id: int, body: SettleIn, version: Version = None):
+    o = await OrderPaymentService(u).settle(id, body, version)
+    await u.commit()
+    return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
+
+
+@router.post("/{id}/unsettle", response_model=OrderRead)
+async def unsettle_order(u: UoW, id: int, body: UnsettleIn, version: Version = None):
+    o = await OrderPaymentService(u).unsettle(id, body.reason, version)
+    await u.commit()
+    return await OrderService(u).get(o.id)
 
 
 @router.get("/{id}", response_model=OrderDetail)

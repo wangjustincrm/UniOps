@@ -5,7 +5,8 @@ import re
 from pathlib import Path
 
 from app.domain.order_status import DELIVERY_DUE, HOLD_REASONS, ORDER_STATUSES, SENDS
-from app.domain.status_help import DETAIL_HELP, HOLD_HELP, MAX_BODY, SHORT_SHIPPED, STATUS_HELP, payload
+from app.domain.order_payment import PAYMENT_STATUSES
+from app.domain.status_help import DETAIL_HELP, HOLD_HELP, MAX_BODY, PAYMENT_HELP, SHORT_SHIPPED, STATUS_HELP, payload
 from tests.test_orders_api import READER, NOBODY, api  # noqa: F401 — api is a fixture
 from tests.test_orders import env  # noqa: F401
 
@@ -16,10 +17,11 @@ def test_every_status_reason_and_detail_has_a_text():
     assert set(STATUS_HELP) == set(ORDER_STATUSES)
     assert set(HOLD_HELP) == set(HOLD_REASONS)
     assert set(DETAIL_HELP) == {SENDS, DELIVERY_DUE, SHORT_SHIPPED}
+    assert set(PAYMENT_HELP) == set(PAYMENT_STATUSES)
 
 
 def test_texts_are_short_and_plain():
-    for key, h in {**STATUS_HELP, **HOLD_HELP, **DETAIL_HELP}.items():
+    for key, h in {**STATUS_HELP, **HOLD_HELP, **DETAIL_HELP, **PAYMENT_HELP}.items():
         assert 20 <= len(h.body) <= MAX_BODY, (key, len(h.body))
         assert "WAITING_" not in h.body and "_940" not in h.body, key  # the label users see, never a constant
 
@@ -39,7 +41,7 @@ def is_button(label: str, src: str) -> bool:
 
 def test_every_named_button_is_a_real_label():
     src = _front_labels()
-    for key, h in {**STATUS_HELP, **HOLD_HELP, **DETAIL_HELP}.items():
+    for key, h in {**STATUS_HELP, **HOLD_HELP, **DETAIL_HELP, **PAYMENT_HELP}.items():
         for b in h.buttons:
             assert b in h.body, (key, b)  # declared because the text names it
             assert is_button(b, src), f"{key}: the button {b!r} is not a button's words in sales/src/features"
