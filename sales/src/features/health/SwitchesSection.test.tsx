@@ -26,7 +26,7 @@ describe('Health → Switches (user 2026-11-23)', () => {
     const rows = screen.getAllByRole('row')
     expect(within(rows[2]).queryByRole('button')).toBeNull()  // External email: off on the server, nothing to turn on
     fireEvent.click(within(rows[1]).getByRole('button', { name: 'Turn off' }))
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await screen.findByRole('alertdialog')  // turning a switch off: a destructive confirm
     fireEvent.change(within(dialog).getByLabelText(/Why/), { target: { value: 'Radiant is down' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Turn off' }))
     await waitFor(() => expect(api.set).toHaveBeenCalledWith('SALES_PARTNER_WRITES_ENABLED', false, 'Radiant is down'))

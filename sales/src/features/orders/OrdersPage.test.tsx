@@ -254,7 +254,7 @@ describe('Orders: 940s (P4)', () => {
     expect(within(row).getByText('Waiting')).toBeInTheDocument()  // sent, not accepted
     expect(within(dialog).queryByText('Send 940 now')).toBeNull()
     fireEvent.click(within(dialog).getByText('Replace 940'))
-    const confirm = await screen.findByRole('dialog', { name: 'Replace the live 940?' })
+    const confirm = await screen.findByRole('alertdialog', { name: 'Replace the live 940?' })
     expect(api.send).not.toHaveBeenCalled()
     fireEvent.click(within(confirm).getByRole('button', { name: 'Replace 940' }))
     await waitFor(() => expect(api.send).toHaveBeenCalledWith(6, true))

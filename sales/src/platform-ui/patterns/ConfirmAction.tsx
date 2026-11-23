@@ -1,6 +1,7 @@
 import { useId, useRef, useState } from 'react'
 import { Button, FormField } from '../primitives/shell'
 import { Textarea } from '../primitives/FieldInputs'
+import { AlertDialog } from '../primitives/AlertDialog'
 import { Dialog } from '../primitives/Dialog'
 import { errorText } from '../resource/businessError'
 import { DisabledReason } from '../help'
@@ -70,13 +71,8 @@ export function ConfirmAction({
     }
   }
 
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => { if (!pending) { setError(null); onOpenChange(o) } }}
-      title={title}
-      description={description}
-      footer={
+  const change = (o: boolean) => { if (!pending) { setError(null); onOpenChange(o) } }
+  const footer = (
         <>
           <Button type="button" variant="secondary" disabled={pending} onClick={() => onOpenChange(false)}>Cancel</Button>
           {missing && !pending ? (
@@ -89,14 +85,25 @@ export function ConfirmAction({
             </Button>
           )}
         </>
-      }
-    >
+  )
+  const body = (
+    <>
       {reason && (
         <FormField label={reason.label} htmlFor={reasonId} required>
           <Textarea id={reasonId} rows={2} value={text} disabled={pending} onChange={(e) => setText(e.target.value)} />
         </FormField>
       )}
       {error && <p role="alert" className="text-sm text-danger-700">{error}</p>}
-    </Dialog>
+    </>
   )
+  // A destructive confirm interrupts (shadcn's AlertDialog: role="alertdialog", no outside-click close); others are a Dialog.
+  if (destructive) {
+    return (
+      <AlertDialog open={open} onOpenChange={change} title={title} description={description}>
+        {body}
+        <div className="mt-2 flex justify-end gap-2">{footer}</div>
+      </AlertDialog>
+    )
+  }
+  return <Dialog open={open} onOpenChange={change} title={title} description={description} footer={footer}>{body}</Dialog>
 }

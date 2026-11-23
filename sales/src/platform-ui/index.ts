@@ -26,6 +26,11 @@ export {
 } from './primitives/cells'
 export { columnsOf } from './primitives/columns'
 export { Checkbox } from './primitives/Checkbox'
+export { AlertDialog, AlertDialogAction, AlertDialogCancel } from './primitives/AlertDialog'
+export { Collapsible } from './primitives/Collapsible'
+export { DateRangeField, type DateRangeValue } from './primitives/DateRangeField'
+export { FacetFilter, type Facet } from './primitives/FacetFilter'
+export { Kbd } from './primitives/Kbd'
 export {
   dateAndTime, formatShortMoment, formatDateTime, formatDate, formatDuration, formatTime, formatMoney, formatNumber, registerStatusTones, statusTone, timeFromNow,
 } from './primitives/format'

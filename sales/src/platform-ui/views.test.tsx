@@ -93,7 +93,7 @@ describe('view picker', () => {
     expect(await within(screen.getByRole('group', { name: 'My views' })).findByLabelText('default')).toBeInTheDocument()
 
     fireEvent.click(within(await moreOf('Under 10')).getByText('Delete'))
-    const confirm = await screen.findByRole('dialog', { name: /Delete the view "Under 10"/ })
+    const confirm = await screen.findByRole('alertdialog', { name: /Delete the view "Under 10"/ })
     fireEvent.click(within(confirm).getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(views.remove).toHaveBeenCalledWith(3))
     expect(await screen.findByRole('button', { name: 'View: All' })).toBeInTheDocument()  // back to the first system view
