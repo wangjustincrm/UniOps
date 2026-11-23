@@ -260,7 +260,7 @@ class ShopifyIntake:
     async def _latch(self, conn, reason: str, run_id) -> None:
         async with self.uow_factory(SYSTEM_ACTOR, reason="shopify auth failed") as uow:
             c = await uow.session.get(Connection, conn.id, with_for_update=True)  # audited, like the SFTP latch
-            c.auth_failed_at, c.auth_failed_reason = self.clock(), reason[:2000]
+            c.auth_failed_at, c.auth_failed_reason = self.clock(), reason
             await oplog.write(uow.session, "ERROR", STEP, f"{conn.name}: login refused; connection latched: {reason}",
                               run_id=run_id, connection_id=conn.id)
             await self.tasks.raise_problem(uow.session, SHOPIFY_AUTH_FAILED, conn.id, problem(

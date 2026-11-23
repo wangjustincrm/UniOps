@@ -206,7 +206,7 @@ class SystemJob(ScheduledJob):
             from app.services.stock import sync_all
             out["stock"] = await sync_all(self.uow_factory)
         except Exception as e:  # noqa: BLE001 — the ledger never stops the sends; it catches up next run
-            await oplog.write_alone(self.uow_factory, "ERROR", "cycle", f"inventory sync failed: {type(e).__name__}: {e}"[:500], run_id=run.id)
+            await oplog.write_alone(self.uow_factory, "ERROR", "cycle", f"inventory sync failed: {type(e).__name__}: {e}", run_id=run.id)
             trouble += 1
         if self.shadow:  # the shadow run (§5.4): Zoho's reference files in, then the comparison
             try:

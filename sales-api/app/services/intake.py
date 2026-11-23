@@ -303,7 +303,7 @@ class Intake:
         async with self.uow_factory(SYSTEM_ACTOR, reason="sftp auth failed") as uow:
             row = await uow.session.get(Connection, conn.id, with_for_update=True)
             row.auth_failed_at = self.clock()
-            row.auth_failed_reason = reason[:2000]
+            row.auth_failed_reason = reason
             await oplog.write(uow.session, "ERROR", STEP, f"{conn.name}: login refused; connection latched: {reason}",
                               run_id=run_id, connection_id=conn.id)
             await self.tasks.raise_problem(uow.session, SFTP_AUTH_FAILED, conn.id, problem(

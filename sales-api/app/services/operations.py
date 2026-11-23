@@ -252,8 +252,8 @@ class DocumentActions(Service):
         self.uow.set_reason(f"ignored: {reason.strip()}")
         if doc.processing_status == InboundFile.PENDING.value:
             INBOUND_FILE.transition(doc, InboundFile.PROCESSING, actor=self.uow.actor, events=self.uow.events, reason="ignored")
-        INBOUND_FILE.transition(doc, InboundFile.SKIPPED, actor=self.uow.actor, events=self.uow.events, reason=reason.strip()[:200])
-        doc.error = f"Ignored by {self.uow.actor.name}: {reason.strip()}"[:2000]
+        INBOUND_FILE.transition(doc, InboundFile.SKIPPED, actor=self.uow.actor, events=self.uow.events, reason=reason.strip())
+        doc.error = f"Ignored by {self.uow.actor.name}: {reason.strip()}"
         await self._resolve(tasks, doc)
         await self.s.flush()
         return doc

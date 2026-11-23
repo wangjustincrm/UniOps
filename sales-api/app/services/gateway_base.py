@@ -230,13 +230,13 @@ class GatewayIntake:
 
     def _failed(self, conn, what: str, run_id):
         async def log(outcome) -> None:
-            await self._log("ERROR", f"{conn.name}: {what} failed: {outcome.error_type}: {outcome.message}"[:1000], conn, run_id)
+            await self._log("ERROR", f"{conn.name}: {what} failed: {outcome.error_type}: {outcome.message}", conn, run_id)
         return log
 
     async def _latch(self, conn, reason: str, run_id) -> None:
         async with self.uow_factory(SYSTEM_ACTOR, reason=f"{self.LABEL.lower()} auth failed") as uow:
             c = await uow.session.get(Connection, conn.id, with_for_update=True)
-            c.auth_failed_at, c.auth_failed_reason = self.clock(), reason[:2000]
+            c.auth_failed_at, c.auth_failed_reason = self.clock(), reason
             await oplog.write(uow.session, "ERROR", self.STEP, f"{conn.name}: login refused; connection latched: {reason}",
                               run_id=run_id, connection_id=conn.id)
             await uow.commit()

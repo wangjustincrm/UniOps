@@ -394,7 +394,7 @@ async def mark_open_orders(uow, *, run_id: int | None = None) -> int:
         o.shadow = True
     await s.flush()
     await oplog.write(s, "INFO", STEP, f"shadow run on: {len(orders)} open order(s) marked as Zoho's (never sent a 940 by Sales)",
-                      run_id=run_id, context={"orders": [o.id for o in orders][:500]})
+                      run_id=run_id, context={"orders": [o.id for o in orders]})
     return len(orders)
 
 

@@ -468,7 +468,7 @@ class Invoicing:
     async def _file_outcome(self, uow, inv: Invoice, to: OutboundFile, reason: str) -> None:
         doc = await uow.session.get(Document, inv.document_id, with_for_update=True) if inv.document_id else None
         if doc is not None and doc.file_status == OutboundFile.SENDING.value:
-            OUTBOUND_FILE.transition(doc, to, actor=uow.actor, events=uow.events, reason=reason[:200])
+            OUTBOUND_FILE.transition(doc, to, actor=uow.actor, events=uow.events, reason=reason)
 
     async def _email(self, s, inv: Invoice, order: Order, partner: Partner, lines: list[InvoiceLine]):
         """The partner's invoice email (its cc from the partner); the company's copy goes on its own."""
@@ -541,9 +541,9 @@ class Invoicing:
     async def _failed(self, row, exc, uow) -> None:
         inv, order = await self._pair(row, uow)
         await self._file_outcome(uow, inv, OutboundFile.FAILED, str(exc))
-        inv.error = str(exc)[:2000]
+        inv.error = str(exc)
         if order.invoice_status == Inv.QUEUED.value:
-            INVOICE.transition(order, Inv.FAILED, actor=uow.actor, events=uow.events, reason=str(exc)[:200])
+            INVOICE.transition(order, Inv.FAILED, actor=uow.actor, events=uow.events, reason=str(exc))
         await self.tasks.raise_problem(uow.session, INVOICE_FAILED, order.id, problem(
             INVOICE_FAILED, f"Invoice not sent: {inv.invoice_number}",
             f"Invoice {inv.invoice_number} (order {order.label}, {inv.method}) was not sent: {exc}. "
@@ -552,7 +552,7 @@ class Invoicing:
     async def _suppressed(self, row, exc, uow) -> None:
         inv, order = await self._pair(row, uow)
         await self._file_outcome(uow, inv, OutboundFile.SUPPRESSED, f"refused by the guard: {exc}")
-        inv.error = f"not sent: {exc}"[:2000]
+        inv.error = f"not sent: {exc}"
         if order.invoice_status == Inv.QUEUED.value:
             INVOICE.transition(order, Inv.FAILED, actor=uow.actor, events=uow.events, reason="refused by the outbound guard")
         await oplog.write(uow.session, "INFO", STEP, f"invoice {inv.invoice_number} refused by the guard: {exc}", order_id=order.id)

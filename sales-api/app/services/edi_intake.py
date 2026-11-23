@@ -71,8 +71,8 @@ class EdiIntake:
                 if doc.processing_status == InboundFile.PENDING.value:
                     INBOUND_FILE.transition(doc, InboundFile.PROCESSING, actor=uow.actor, events=uow.events)
                 if doc.processing_status == InboundFile.PROCESSING.value:
-                    INBOUND_FILE.transition(doc, InboundFile.FAILED, actor=uow.actor, events=uow.events, reason=why[:200])
-                    doc.error = why[:2000]
+                    INBOUND_FILE.transition(doc, InboundFile.FAILED, actor=uow.actor, events=uow.events, reason=why)
+                    doc.error = why
                 await oplog.write(uow.session, "ERROR", STEP, f"{doc.remote_name}: {why}", run_id=run_id, document_id=doc_id)
                 await self.tasks.raise_problem(uow.session, ORDER_FILE_UNREADABLE, doc_id, problem(
                     ORDER_FILE_UNREADABLE, f"850 could not be applied: {doc.remote_name}"[:255],

@@ -189,7 +189,7 @@ class HttpPayPal:
         if r.status_code == 200 and isinstance(data, dict):
             return data
         name = str(data.get("name") or "") if isinstance(data, dict) else ""
-        text = str(data.get("message") or "no detail")[:300] if isinstance(data, dict) else "no detail"
+        text = str(data.get("message") or "no detail") if isinstance(data, dict) else "no detail"
         if r.status_code == 401:
             raise PayPalAuthFailed(f"PayPal refused the token ({name or 'HTTP 401'}: {text})")
         if r.status_code == 403:

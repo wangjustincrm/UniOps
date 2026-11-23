@@ -717,7 +717,7 @@ class Shipments:
         why = shopify_readable(exc) if exc is not None else "unknown"
         hint = (" The app lacks a Shopify permission (scope) — e.g. write_orders for archiving; grant it, then Retry."
                 if isinstance(exc, ShopifyForbidden) else " Check the order in Shopify, then Retry.")
-        sh.shopify_status, sh.shopify_error = "Failed", f"{what}: {why}"[:2000]
+        sh.shopify_status, sh.shopify_error = "Failed", f"{what}: {why}"
         await self.tasks.raise_problem(s, SHOPIFY_WRITE_FAILED, sh.id, problem(
             SHOPIFY_WRITE_FAILED, f"Shopify {what} failed: order {order.label}"[:255],
             f"Order {order.label}: {what} failed: {why}.{hint} "
@@ -725,7 +725,7 @@ class Shipments:
 
     async def _suppressed(self, row, exc, uow) -> None:
         sh = await uow.session.get(Shipment, row.payload["shipment_id"], with_for_update=True)
-        sh.shopify_status, sh.shopify_error = "Suppressed", str(exc)[:2000] if exc else None
+        sh.shopify_status, sh.shopify_error = "Suppressed", str(exc) if exc else None
         await oplog.write(uow.session, "INFO", STEP, f"Shopify write for shipment {sh.id} refused by the guard: {exc}",
                           order_id=sh.order_id)
         await send_refused(self.tasks, uow.session, row, f"the Shopify write for shipment {sh.id}", exc)

@@ -235,11 +235,11 @@ class Transfers:
         await s.flush()
         live = await s.get(Document, t.document_id, with_for_update=True) if t.document_id else None
         if live is not None and live.file_status == OutboundFile.SENT.value:
-            OUTBOUND_FILE.transition(live, OutboundFile.REPLACED, actor=uow.actor, events=uow.events, reason=f"amended: {reason}"[:200])
+            OUTBOUND_FILE.transition(live, OutboundFile.REPLACED, actor=uow.actor, events=uow.events, reason=f"amended: {reason}")
         elif live is not None and live.file_status in (OutboundFile.READY_TO_SEND.value, OutboundFile.SUPPRESSED.value):
             await OUTBOX.cancel_for(s, t, "transfer amended")
-            OUTBOUND_FILE.transition(live, OutboundFile.CANCELLED, actor=uow.actor, events=uow.events, reason=f"amended: {reason}"[:200])
-        doc = await self.generate(uow, t, reason=f"amended: {reason}"[:200])
+            OUTBOUND_FILE.transition(live, OutboundFile.CANCELLED, actor=uow.actor, events=uow.events, reason=f"amended: {reason}")
+        doc = await self.generate(uow, t, reason=f"amended: {reason}")
         if live is not None:
             live.replaced_by_id = doc.id
         for event in (EDI_943_TIMEOUT, EDI_943_REJECTED, TRANSFER_FAILED):
@@ -286,7 +286,7 @@ class Transfers:
                 r.transfer_line_no = order.get(r.item_code)
             for rec in (await s.execute(select(Receipt).where(Receipt.transfer_id == t.id, Receipt.applied.is_(True)))).scalars():
                 rec.outcome, rec.discrepancies = T.RECEIVED.value, None
-        TRANSFER.transition(t, T.RECEIVED, actor=uow.actor, events=uow.events, reason=f"{how}: {reason}"[:200])
+        TRANSFER.transition(t, T.RECEIVED, actor=uow.actor, events=uow.events, reason=f"{how}: {reason}")
         t.resolution, t.resolution_reason = how, reason
         t.resolved_at, t.resolved_by_name = datetime.now(timezone.utc), uow.actor.name
         for event in (TRANSFER_DISCREPANCY, PARTIAL_RECEIPT):
@@ -342,7 +342,7 @@ class Transfers:
 
     async def _fail(self, uow, t: Transfer, description: str, *, task: bool = True) -> None:
         if t.status != T.FAILED.value:
-            TRANSFER.transition(t, T.FAILED, actor=uow.actor, events=uow.events, reason=description[:200])
+            TRANSFER.transition(t, T.FAILED, actor=uow.actor, events=uow.events, reason=description)
         if task:
             await self.tasks.raise_problem(uow.session, TRANSFER_FAILED, t.id, problem(
                 TRANSFER_FAILED, f"Transfer {t.transfer_number}: 943 not sent", description))
@@ -423,16 +423,16 @@ class Transfers:
     async def _failed(self, row, exc, uow) -> None:
         doc, t = await self._pair(row.payload, uow)
         if doc.file_status == OutboundFile.SENDING.value:
-            OUTBOUND_FILE.transition(doc, OutboundFile.FAILED, actor=uow.actor, events=uow.events, reason=str(exc)[:200])
-        doc.error = t.error = str(exc)[:2000]
+            OUTBOUND_FILE.transition(doc, OutboundFile.FAILED, actor=uow.actor, events=uow.events, reason=str(exc))
+        doc.error = t.error = str(exc)
         await self._fail(uow, t, f"The 943 for transfer {t.transfer_number} could not be sent: {exc}. "
                          "It is not retried automatically — check, then Resend.")
 
     async def _suppressed(self, row, exc, uow) -> None:
         doc, t = await self._pair(row.payload, uow)
         if doc.file_status in (OutboundFile.READY_TO_SEND.value, OutboundFile.SENDING.value):
-            OUTBOUND_FILE.transition(doc, OutboundFile.SUPPRESSED, actor=uow.actor, events=uow.events, reason=str(exc)[:200])
-        t.error = f"not sent: {exc}"[:2000]
+            OUTBOUND_FILE.transition(doc, OutboundFile.SUPPRESSED, actor=uow.actor, events=uow.events, reason=str(exc))
+        t.error = f"not sent: {exc}"
         await self._fail(uow, t, "", task=False)
         await oplog.write(uow.session, "INFO", STEP, f"943 {doc.remote_name} refused by the guard: {exc}", document_id=doc.id)
         await send_refused(self.tasks, uow.session, row, f"the 943 for transfer {t.transfer_number}", exc)

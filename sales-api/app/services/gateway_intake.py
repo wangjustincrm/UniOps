@@ -291,8 +291,8 @@ class AuthorizeNetIntake(GatewayIntake):
         async with self.uow_factory(SYSTEM_ACTOR) as uow:
             raw = (await uow.session.execute(select(G.c.raw).where(G.c.id == row_id))).scalar_one()
             prev = raw.get("details_failed") if isinstance(raw.get("details_failed"), dict) else {}
-            failed = {"at": self.clock().isoformat(), "attempts": int(prev.get("attempts") or 0) + 1, "error": why[:300]}
+            failed = {"at": self.clock().isoformat(), "attempts": int(prev.get("attempts") or 0) + 1, "error": why}
             await uow.session.execute(update(G).where(G.c.id == row_id).values(raw={**raw, "details_failed": failed}))
-            await oplog.write(uow.session, "WARNING", STEP, f"{conn.name}: details of transaction {ext} refused: {why}"[:1000],
+            await oplog.write(uow.session, "WARNING", STEP, f"{conn.name}: details of transaction {ext} refused: {why}",
                               run_id=run_id, connection_id=conn.id)
             await uow.commit()

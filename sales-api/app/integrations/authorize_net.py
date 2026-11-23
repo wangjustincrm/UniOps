@@ -179,7 +179,7 @@ class HttpAuthorizeNet:
         messages = data.get("messages") or {}
         if messages.get("resultCode") != "Ok":
             first = (messages.get("message") or [{}])[0]
-            code, text = str(first.get("code") or ""), str(first.get("text") or "no detail")[:300]
+            code, text = str(first.get("code") or ""), str(first.get("text") or "no detail")
             if code in AUTH_CODES:
                 raise AuthorizeNetAuthFailed(f"Authorize.Net refused the login ({code}: {text})")
             if code in NOT_ENABLED_CODES:

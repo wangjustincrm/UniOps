@@ -370,7 +370,7 @@ class OutboxWorker:
                 await hook(row, exc, uow)
         except Exception as e:  # noqa: BLE001
             logger.exception("outbox %s (%s): hook %s failed", row.id, row.kind, getattr(hook, "__name__", hook))
-            row.last_error = f"result not recorded: {_describe(e)}"[:2000]
+            row.last_error = f"result not recorded: {_describe(e)}"
             if self.on_hook_failed is not None:
                 try:
                     async with uow.session.begin_nested():

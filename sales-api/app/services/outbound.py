@@ -175,7 +175,7 @@ class Outbound940:
     async def _on_failed(self, row, exc, uow) -> None:
         doc, order = await self._pair(row, uow)
         if doc.file_status in (OutboundFile.SENDING,):
-            OUTBOUND_FILE.transition(doc, OutboundFile.FAILED, actor=uow.actor, events=uow.events, reason=str(exc)[:200])
+            OUTBOUND_FILE.transition(doc, OutboundFile.FAILED, actor=uow.actor, events=uow.events, reason=str(exc))
         doc.error = str(exc)
         if order.fulfillment_status == F.GENERATED_940:
             FULFILLMENT.transition(order, F.FAILED_940, actor=uow.actor, events=uow.events, reason="940 not sent (FR-OB-24)")

@@ -380,7 +380,7 @@ def _errors(r: httpx.Response) -> str:
         e = r.json().get("errors")
     except ValueError:
         return "no detail"
-    return str(e)[:300] if e else "no detail"
+    return str(e) if e else "no detail"
 
 
 def summary(method: str, args: tuple, kwargs: dict) -> dict[str, Any]:
