@@ -24,6 +24,7 @@ like a person without the key. HTTP routers enforce nothing of their own.
 from __future__ import annotations
 
 import functools
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
@@ -44,13 +45,35 @@ class PermissionDenied(BusinessError):
         super().__init__("auth.forbidden", f"{who} may not do this (needs {key})", {"permission": key})
 
 
+# Who hears of a refusal (≈ ABP SecurityLog): the module registers its listener (e.g. a security log row). A listener
+# failing never changes the answer; it runs before the refusal is raised, outside the caller's unit of work.
+DeniedListener = Callable[[Any, str], Awaitable[None]]
+_denied_listeners: list[DeniedListener] = []
+_log = logging.getLogger(__name__)
+
+
+def on_denied(listener: DeniedListener) -> DeniedListener:
+    if listener not in _denied_listeners:
+        _denied_listeners.append(listener)
+    return listener
+
+
+async def _refuse(uow: Any, key: str, actor: Actor) -> PermissionDenied:
+    for listener in _denied_listeners:
+        try:
+            await listener(uow, key)
+        except Exception:  # noqa: BLE001 — the refusal stands whatever the log does
+            _log.exception("a refusal listener failed")
+    return PermissionDenied(key, actor)
+
+
 async def authorize(uow: Any, key: str, *, system: bool = False) -> None:
     """Raises PermissionDenied unless the unit of work's actor may use `key`."""
     actor: Actor = uow.actor
     if actor.is_system:
         if system:
             return
-        raise PermissionDenied(key, actor)
+        raise await _refuse(uow, key, actor)
     checker: PermissionChecker | None = getattr(uow, "permissions", None)
     if checker is None:
         raise RuntimeError("no permission checker is wired into the unit of work factory")
@@ -62,7 +85,7 @@ async def authorize(uow: Any, key: str, *, system: bool = False) -> None:
     else:
         ok = granted[key] = await checker(uow.session, actor, key)
     if not ok:
-        raise PermissionDenied(key, actor)
+        raise await _refuse(uow, key, actor)
 
 
 def requires(key: str, *, system: bool = False) -> Callable[[F], F]:

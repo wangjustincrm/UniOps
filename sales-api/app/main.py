@@ -19,7 +19,10 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
         "Starting up %s v%s [%s]",
         settings.APP_NAME, settings.APP_VERSION, settings.ENVIRONMENT,
     )
+    from app.db.session import AsyncSessionLocal
     from app.runtime import get_runtime
+    from app.services.security_log import log_startup
+    await log_startup(settings, AsyncSessionLocal)  # the switches (values) and the secrets set (names only)
     runtime = get_runtime()
     if settings.SALES_SCHEDULER_ENABLED:
         runtime.background.spawn(runtime.scheduler.loop(runtime.background.stop), name="sales-scheduler")
