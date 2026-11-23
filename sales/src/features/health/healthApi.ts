@@ -62,6 +62,8 @@ export interface HealthRead {
   system_minutes: number
   /** Health → Log levels (user 2026-11-23). */
   log_levels?: LogLevelsRead | null
+  /** The switches as features (user 2026-11-23): the server's value is the ceiling; a person may turn one off. */
+  features?: FeatureRead[]
 }
 
 export interface CardRead {
@@ -107,3 +109,7 @@ export interface LogLevelsRead {
 export const raiseLogLevel = (body: { logger: string; level: string; minutes: number | null; reason: string }) =>
   api.post<LogLevelsRead>('/config/log-levels', body)
 export const clearLogLevel = (logger: string, reason: string) => api.post<LogLevelsRead>('/config/log-levels/clear', { logger, reason })
+
+export interface FeatureRead { name: string; display_name: string; description: string; env: boolean; stored: boolean | null; effective: boolean; env_is_ceiling: boolean }
+/** value false: off; null: back to the server's value. */
+export const setFeature = (name: string, value: boolean | null, reason: string) => api.post<FeatureRead[]>('/config/features', { name, value, reason })

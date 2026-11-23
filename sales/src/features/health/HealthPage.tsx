@@ -9,6 +9,7 @@ import { HealthBadge } from './HealthBadge'
 import { useOpenList } from './openList'
 import { SchedulerSection } from './SchedulerSection'
 import { LogLevelsSection } from './LogLevelsSection'
+import { SwitchesSection } from './SwitchesSection'
 
 const colCheckRead = columnsOf<CheckRead>()
 const colGateEventRead = columnsOf<GateEventRead>()
@@ -99,6 +100,7 @@ export default function HealthPage() {
         ]} />
       </section>
       <SchedulerSection health={h} />
+      <SwitchesSection health={h} />
       <LogLevelsSection health={h} />
       <Section title="Checks" plain level={2}>
         <LocalTable<CheckRead> ariaLabel="Health checks" columns={columns} rows={h.checks} rowKey={(c) => c.key} />
