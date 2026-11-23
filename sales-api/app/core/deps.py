@@ -15,6 +15,7 @@ from app.db.session import AsyncSessionLocal, get_session
 from uniops_authz import has_permission
 
 from app.models.records import AuditRecord
+from app.platform.request_log import note_actor
 from app.platform.actors import Actor, actor_from_token
 from app.platform.audit import AuditTrail
 from app.platform.uow import SqlAlchemyUnitOfWork, UnitOfWorkFactory
@@ -84,7 +85,9 @@ async def named(actor: Actor) -> Actor:
 
 def make_get_uow(factory: UnitOfWorkFactory):
     async def get_uow(payload: CurrentUserPayload) -> AsyncGenerator[SqlAlchemyUnitOfWork, None]:
-        async with factory(await named(actor_from_token(payload))) as uow:
+        actor = await named(actor_from_token(payload))
+        note_actor(actor)  # the request log names the person
+        async with factory(actor) as uow:
             yield uow
     return get_uow
 
@@ -103,7 +106,9 @@ async def get_uow(
     payload: CurrentUserPayload,
     factory: Annotated[UnitOfWorkFactory, Depends(get_uow_factory)],
 ) -> AsyncGenerator[SqlAlchemyUnitOfWork, None]:
-    async with factory(await named(actor_from_token(payload))) as uow:
+    actor = await named(actor_from_token(payload))
+    note_actor(actor)  # the request log names the person
+    async with factory(actor) as uow:
         yield uow
 
 

@@ -1,9 +1,8 @@
 """sales-api FastAPI application factory."""
 import logging
-import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import api_router
@@ -51,37 +50,9 @@ def create_app() -> FastAPI:
         allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
     )
 
-    # Pure ASGI request logger (avoids BaseHTTPMiddleware task spawn)
-    from starlette.types import ASGIApp, Receive, Scope, Send
-
-    class _LoggingMiddleware:
-        def __init__(self, app: ASGIApp) -> None:
-            self.app = app
-
-        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-            if scope["type"] != "http":
-                await self.app(scope, receive, send)
-                return
-            request = Request(scope)
-            start = time.perf_counter()
-            status_code = 500
-
-            async def _send_wrapper(message):
-                nonlocal status_code
-                if message["type"] == "http.response.start":
-                    status_code = message["status"]
-                await send(message)
-
-            try:
-                await self.app(scope, receive, _send_wrapper)
-            finally:
-                duration_ms = (time.perf_counter() - start) * 1000
-                logger.info(
-                    "%s %s %d %.1fms",
-                    request.method, request.url.path, status_code, duration_ms,
-                )
-
-    app.add_middleware(_LoggingMiddleware)
+    # The request log (≈ ABP AuditLog, user 2026-11-23): one JSON line per request with its id (platform/request_log.py).
+    from app.platform.request_log import RequestLogMiddleware
+    app.add_middleware(RequestLogMiddleware, logger="sales.request")
 
     # BusinessError → {"error": {code, message, details}} with 409/422;
     # anything else → 500 with a correlation id (platform README).

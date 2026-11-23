@@ -5,12 +5,17 @@ from typing import Any
 
 from app.models.documents import LogEntry
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.request_log import current_request_id
 
 
 async def write(session, level: str, step: str, message: str, *, run_id: int | None = None,
                 connection_id: int | None = None, document_id: int | None = None, order_id: int | None = None,
                 transfer_id: int | None = None, context: dict[str, Any] | None = None) -> None:
-    """In the caller's unit of work (it commits with the unit's own writes)."""
+    """In the caller's unit of work (it commits with the unit's own writes). Inside a request its id goes into the
+    context (the request log's and a 500's id: one id finds them all)."""
+    rid = current_request_id()
+    if rid:
+        context = {**(context or {}), "request_id": rid}
     session.add(LogEntry(level=level, step=step, message=message[:4000], run_id=run_id,
                          connection_id=connection_id, document_id=document_id, order_id=order_id, transfer_id=transfer_id,
                          context=context))

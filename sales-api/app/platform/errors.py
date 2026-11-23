@@ -22,6 +22,8 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from app.platform.request_log import current_request_id, note_error
+
 logger = logging.getLogger(__name__)
 
 
@@ -63,6 +65,7 @@ class NotFound(BusinessError):
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(BusinessError)
     async def _business(request: Request, exc: BusinessError):  # noqa: ARG001
+        note_error(exc.code)
         return JSONResponse(status_code=exc.status_code, content=exc.to_body())
 
     @app.exception_handler(RequestValidationError)
@@ -70,13 +73,14 @@ def install_error_handlers(app: FastAPI) -> None:
         errors = [{"field": _field(e.get("loc", ())), "message": e.get("msg", "invalid")} for e in exc.errors()]
         first = next((e["field"] for e in errors if e["field"]), None)
         message = "; ".join(f"{e['field']}: {e['message']}" if e["field"] else e["message"] for e in errors)
+        note_error("request.invalid")
         return JSONResponse(status_code=422, content=InvalidInput(
             "request.invalid", message or "the request is not valid", {"field": first, "errors": errors},
         ).to_body())
 
     @app.exception_handler(Exception)
     async def _unexpected(request: Request, exc: Exception):  # noqa: ARG001
-        correlation_id = uuid.uuid4().hex
+        correlation_id = current_request_id() or uuid.uuid4().hex  # the request log's id: one id finds both
         logger.exception(
             "Unhandled error %s on %s %s", correlation_id, request.method, request.url.path,
         )
