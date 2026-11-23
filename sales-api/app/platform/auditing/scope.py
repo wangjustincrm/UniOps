@@ -24,6 +24,7 @@ from app.platform.options import AuditingOptions, options
 
 log = logging.getLogger(__name__)
 KINDS = ("request", "job", "outbox", "intake", "cli")
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 
 
 @dataclass
@@ -118,7 +119,7 @@ def should_save(info: AuditLogInfo, o: AuditingOptions | None = None) -> bool:
         return True
     if _matches(info.route, o.always_log_routes):
         return True
-    if (info.http_method or "").upper() in ("GET", "HEAD"):
+    if (info.http_method or "").upper() in SAFE_METHODS:  # ≈ ABP: GET / HEAD (and a CORS preflight) are not saved
         return o.is_enabled_for_get_requests
     return True
 

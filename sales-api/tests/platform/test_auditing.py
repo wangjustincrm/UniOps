@@ -32,6 +32,7 @@ def test_the_rules_abp_s_defaults_and_ours():
     req = lambda **k: AuditLogInfo(kind="request", user_id="u", **k)  # noqa: E731
     assert should_save(req(http_method="POST", route="/api/v1/orders/{id}/settle", http_status=200), o)
     assert not should_save(req(http_method="GET", route="/api/v1/orders", http_status=200), o)       # GET: no (ABP)
+    assert not should_save(req(http_method="OPTIONS", route=None, http_status=200), o)               # a CORS preflight: no
     assert should_save(req(http_method="GET", route="/api/v1/orders/{id}", http_status=404), o)       # …unless it fails
     assert should_save(req(http_method="GET", route="/api/v1/orders/export.csv", http_status=200), o)  # bulk data out
     assert not should_save(req(http_method="GET", route="/health", http_status=500), o)              # the probe: never
