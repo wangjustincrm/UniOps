@@ -172,6 +172,15 @@ class AuditTrail:
         session.connection().execute(insert(self.model.__table__), rows)
 
 
+def audit_also(session: Any, action: str, obj: Any) -> None:
+    """Record a row the trail does not audit by itself — a link, a derived ledger row — with the session's actor and
+    reason at the next flush ("record more, never less", user 2026-11-23). `action`: "create" (snapshot after the
+    flush, so its id is known) or "delete" (snapshot now, before the row goes, e.g. by a Core DELETE)."""
+    _require_actor(session.info.get("actor"), obj)
+    pending = session.info.setdefault("_audit_pending", [])
+    pending.append((action, obj, None if action == "create" else {"before": _snapshot(obj), "after": None}))
+
+
 def _require_actor(actor: Any, obj: Any) -> None:
     if actor is None:
         raise RuntimeError(

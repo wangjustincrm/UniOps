@@ -182,6 +182,11 @@ async def test_the_report_compares_each_lot_and_apply_starts_from_radiant(p7):  
     assert c.applied_at is None
     lots = await _lots(p7)
     assert lots[("CF0092", "26C253125110231")] == 8400 - 100 - 30 and ("CHEP", None) not in lots
+    # each count move taken away is in the audit, as it was, with the undo's reason (user 2026-11-23: record more)
+    gone = await p7.q("SELECT before, reason FROM sales_audit WHERE entity = 'sales_stock_moves' AND action = 'delete'")
+    assert gone and all(g["reason"] == "Radiant count undone: wrong moment" and g["before"]["source_type"] == "count" for g in gone)
+    [log] = await p7.q("SELECT context FROM sales_log WHERE step = 'stock' AND message LIKE '%undone%'")
+    assert len(log["context"]["moves"]) == len(gone)
 
 
 async def test_a_report_from_the_future_is_refused(p7):  # noqa: F811

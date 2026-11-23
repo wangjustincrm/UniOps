@@ -23,7 +23,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import aliased
 
 from app.domain.gateways import paypal_kind, paypal_settled
@@ -126,9 +126,11 @@ class PayPalIntake(GatewayIntake):
                                     D.raw["transaction_event_code"].astext.like("T03%"), D.status == "S",
                                     D.raw["paypal_reference_id"].astext == T.external_id, D.amount == T.amount).exists()
         async with self.uow_factory(SYSTEM_ACTOR, reason="PayPal refund funded from the bank") as uow:
-            await uow.session.execute(update(T).where(
-                T.connection_id == connection_id, T.gateway == GATEWAY, T.kind == "refund", T.settled.is_(False),
-                T.status == "P", funded).values(settled=True))
+            # One by one through the ORM: each change is in the audit (user 2026-11-23: record more, never less).
+            for t in (await uow.session.execute(select(T).where(
+                    T.connection_id == connection_id, T.gateway == GATEWAY, T.kind == "refund", T.settled.is_(False),
+                    T.status == "P", funded))).scalars():
+                t.settled = True
             await uow.commit()
 
     async def _window(self, conn: ConnectionSnapshot, start: datetime, end: datetime, report: GatewayReport, run_id):

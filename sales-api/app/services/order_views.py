@@ -39,6 +39,7 @@ from app.domain.order_status import (
     status_detail,
 )
 from app.domain.order_payment import PAYMENT_STATUSES
+from app.services.record_files import link_audit
 from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
 from app.domain.row_matching import identifiers, line_identifiers
 from app.domain.status import FULFILLMENT
@@ -346,6 +347,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         trail = (await s.execute(select(AuditRecord).where(or_(
             (AuditRecord.entity == "sales_orders") & (AuditRecord.entity_id == str(id)),
             (AuditRecord.entity == "sales_order_lines") & (AuditRecord.entity_id.in_(line_ids) if line_ids else False),
+            link_audit("order", id),  # its attachments, added and removed
         )).order_by(AuditRecord.at.desc(), AuditRecord.id.desc()).limit(200))).scalars()
         base = self.to_read(o).model_dump()
         shipments = await self._shipments(id)

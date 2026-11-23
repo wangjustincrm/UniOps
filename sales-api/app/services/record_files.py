@@ -23,6 +23,7 @@ from app.platform.services import Service
 from app.platform.errors import BusinessError
 from app.schemas.orders import TimelineEntry
 from app.schemas.records import AttachmentRead, RecordDocumentRead
+from app.platform.audit import audit_also
 from app.services import oplog
 
 MAX_BYTES = 20 * 1024 * 1024
@@ -70,6 +71,14 @@ async def documents_of(s, entity_type: str, entity_id: int) -> list[RecordDocume
     return out
 
 
+def link_audit(entity_type: str, entity_id: int):
+    """The audit rows of a record's file links (attached, removed): the link's own row names the record."""
+    def names(row):
+        return (row["entity_type"].astext == entity_type) & (row["entity_id"].astext == str(entity_id))
+    # a delete's `after` is JSON null, not SQL NULL: look in both
+    return (AuditRecord.entity == DocumentLink.__tablename__) & or_(names(AuditRecord.after), names(AuditRecord.before))
+
+
 async def timeline_of(s, entity_type: str, entity_id: int, *, limit: int = 200) -> list[TimelineEntry]:
     """The record's audit, its lines' and its attachments', newest first."""
     k = kind_of(entity_type)
@@ -78,6 +87,7 @@ async def timeline_of(s, entity_type: str, entity_id: int, *, limit: int = 200) 
     trail = (await s.execute(select(AuditRecord).where(or_(
         (AuditRecord.entity == table) & (AuditRecord.entity_id == str(entity_id)),
         (AuditRecord.entity == line_table) & (AuditRecord.entity_id.in_(line_ids) if line_ids else False),
+        link_audit(entity_type, entity_id),
     )).order_by(AuditRecord.at.desc(), AuditRecord.id.desc()).limit(limit))).scalars()
     return [TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, before=a.before, after=a.after,
                           reason=a.reason) for a in trail]
@@ -125,7 +135,9 @@ class Attachments(Service):
                                                                     DocumentLink.entity_id == entity_id))).first()
         if linked:
             raise BusinessError("attachment.already", f"this file is already on this {k.label} ({doc.remote_name})")
-        self.s.add(DocumentLink(document_id=doc.id, entity_type=k.entity_type, entity_id=entity_id))
+        new_link = DocumentLink(document_id=doc.id, entity_type=k.entity_type, entity_id=entity_id)
+        self.s.add(new_link)
+        audit_also(self.s, "create", new_link)  # in the record's Activity (timeline_of)
         label = getattr(rec, "label", None) or getattr(rec, "transfer_number", entity_id)
         self.uow.set_reason(f"file attached: {name}" + (f" — {note}" if note else ""))
         await oplog.write(self.s, "INFO", "attachment", f"{k.label} {label}: {name} attached by {self.uow.actor.name}" + (f" — {note}" if note else ""),
@@ -145,6 +157,7 @@ class Attachments(Service):
             raise BusinessError("entity.not_found", "this file is not on this record", status_code=404)
         if doc.kind != "ATTACHMENT":
             raise BusinessError("attachment.not_attachment", "only a file a person attached can be removed; EDI files stay with their record")
+        audit_also(self.s, "delete", link)  # in the record's Activity (timeline_of); the file itself stays
         await self.s.delete(link)
         label = getattr(rec, "label", None) or getattr(rec, "transfer_number", entity_id)
         self.uow.set_reason(f"attachment removed: {doc.remote_name} — {reason}")

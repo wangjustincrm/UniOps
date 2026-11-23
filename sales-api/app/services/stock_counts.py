@@ -29,6 +29,7 @@ from app.platform.errors import BusinessError
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.schemas.stock import CountCompareRow, StockCountLineRead, StockCountRead
+from app.platform.audit import audit_also
 from app.services import oplog
 from app.services.outbound import TORONTO
 from app.services.record_files import MAX_BYTES
@@ -181,12 +182,18 @@ class StockCountService(ReadOnlyService[StockCount, StockCountRead]):
             raise BusinessError("entity.stale", "someone changed this count: reload it", status_code=409)
         if c.applied_at is None:
             raise BusinessError("stock_count.not_applied", "this count is not applied")
+        # Each move taken away is in the audit (its row as it was) with this reason (user 2026-11-23: record more).
+        moves = list((await s.execute(select(StockMove).where(_own(c.id)))).scalars())
+        for m in moves:
+            audit_also(s, "delete", m)
         gone = (await s.execute(delete(StockMove).where(_own(c.id)))).rowcount
         c.applied_at = c.applied_by_name = None
         self.uow.set_reason(f"Radiant count undone: {reason}")
         await s.flush()
         await oplog.write(s, "WARNING", "stock", f"Radiant count of {c.counted_at:%Y-%m-%d %H:%M} UTC undone by {self.uow.actor.name} "
-                          f"({gone} count moves taken away): {reason}", document_id=c.document_id)
+                          f"({gone} count moves taken away): {reason}", document_id=c.document_id,
+                          context={"count_id": c.id, "moves": [{"id": m.id, "item_code": m.item_code, "lot": m.lot, "qty_ea": m.qty_ea}
+                                                               for m in moves]})
         return await self.get(c.id)
 
     async def lines(self, count_id: int) -> list[StockCountLineRead]:

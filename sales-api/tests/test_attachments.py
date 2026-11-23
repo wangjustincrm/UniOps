@@ -40,6 +40,9 @@ async def test_a_file_attached_to_a_transfer_is_listed_viewed_and_removed_with_a
     async with p7.factory(OP) as u:
         assert await Attachments(u).list("transfer", x.id) == []
     assert await p7.q("SELECT count(*) n FROM sales_documents WHERE id = :i", i=a.id) == [{"n": 1}]  # kept, only unlinked
+    async with p7.factory(OP) as u:  # attached and removed are in the transfer's Activity (user 2026-11-23)
+        reasons = [t.reason for t in (await TransferService(u).detail(x.id)).timeline if t.entity == "sales_document_links"]
+    assert reasons == ["attachment removed: BOL scan.pdf — wrong transfer", "file attached: BOL scan.pdf — signed BOL"]
 
 
 async def test_the_same_bytes_on_two_records_are_one_document(p6):  # noqa: F811
