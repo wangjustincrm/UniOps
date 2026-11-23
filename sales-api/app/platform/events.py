@@ -48,6 +48,14 @@ class EventBuffer:
     def raise_(self, event: DomainEvent) -> None:
         self._pending.append(event)
 
+    def mark(self) -> int:
+        """Where the pending events are now: a savepoint's start (truncate to it when the savepoint rolls back)."""
+        return len(self._pending)
+
+    def truncate(self, mark: int) -> None:
+        """Forget the events raised since `mark`: their writes were rolled back (platform/bulk_actions.py)."""
+        del self._pending[mark:]
+
     def drain(self) -> list[DomainEvent]:
         out, self._pending = self._pending, []
         return out

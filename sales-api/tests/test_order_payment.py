@@ -2,7 +2,9 @@
 user's mark (sales.settle) with a date and a reference, for every source; its undo needs a reason; both are audited;
 Mark settled in bulk gives one result per order. Finance only: an operator is refused, a finance user admitted.
 The order's state (Completed) does not change."""
+import uuid
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 import pytest
 import sqlalchemy as sa
@@ -235,3 +237,49 @@ async def test_the_sql_rule_reads_the_terms_as_the_python_one(api, terms):
     o = (await _orders(api, 9641))["9641"]
     await _invoice(api, o["id"], days_ago=30, terms=terms)
     assert (await _status(api, o["id"]))["payment_status"] == DUE  # due today, not yet overdue
+
+
+async def test_a_failed_skipped_or_dry_run_record_leaves_no_event_behind(api):
+    """Review 2026-11-23: a record's events go with its writes. An action whose run raises an event and then fails
+    (or is skipped, or a dry run) must not have that event dispatched at commit; the done records' events stay."""
+    from app.platform.bulk_actions import ActionIn, ActionRegistry, BulkAction, run_action
+    from app.platform.errors import BusinessError
+    from app.platform.events import StatusChanged
+    from app.services.order_views import OrderRepository
+
+    o = await _orders(api, 9671, 9672, 9673)
+    fail_id, skip_id = o["9672"]["id"], o["9673"]["id"]
+
+    async def check(uow, rec):  # noqa: ARG001
+        return "skip me" if rec.id == skip_id else None
+
+    async def run(uow, rec, data):  # noqa: ARG001
+        uow.events.raise_(StatusChanged(actor=uow.actor, machine="test", entity="order", entity_id=rec.id, old="a", new="b"))
+        rec.notes = "touched"
+        if rec.id == fail_id:
+            raise BusinessError("test.fail", "this one fails after raising its event")
+
+    registry = ActionRegistry(OrderRepository, [BulkAction("touch", permission="sales.settle", check=check, run=run)])
+    ids = {o[n]["id"]: o[n]["version"] for n in ("9671", "9672", "9673")}
+    finance = SimpleNamespace(user_id=uuid.uuid4(), name="Fin", role="finance", is_system=False)
+    async with api.env.factory(finance) as u:
+        dry = await run_action(u, registry, "touch", ActionIn(ids=ids, dry_run=True))
+        assert dry.counts == {"done": 2, "skipped": 1, "failed": 0} and len(u.events) == 0  # a dry run keeps nothing
+        out = await run_action(u, registry, "touch", ActionIn(ids=ids))
+        assert [r.status for r in out.results] == ["done", "failed", "skipped"]
+        pending = u.events.drain()
+        assert [e.entity_id for e in pending] == [o["9671"]["id"]]  # only the done record's event
+        for e in pending:
+            u.events.raise_(e)
+        await u.commit()
+    rows = {r["id"]: r["notes"] for r in await api.env.q("SELECT id, notes FROM sales_orders")}
+    assert rows[o["9671"]["id"]] == "touched" and rows[fail_id] != "touched" and rows[skip_id] != "touched"
+
+
+async def test_a_future_settled_date_is_refused_once_before_any_order(api):
+    o = await _orders(api, 9681, 9682)
+    ids = {str(o[n]["id"]): o[n]["version"] for n in ("9681", "9682")}
+    future = (date.today() + timedelta(days=3)).isoformat()
+    r = await api.post(ACT + "settle", json={"ids": ids, "input": {"settled_on": future, "reference": "EFT 9"}}, headers=FINANCE)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "order.settled_future"  # one answer, not one per order
+    assert [(await _status(api, o[n]["id"]))["payment_status"] for n in ("9681", "9682")] == [NOT_SETTLED, NOT_SETTLED]

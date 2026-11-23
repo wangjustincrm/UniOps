@@ -59,9 +59,13 @@ async def unsettle_check(uow, o: Order) -> str | None:  # noqa: ARG001
     return None if o.settled_on is not None else "not settled"
 
 
-async def settle_run(uow, o: Order, body: SettleIn) -> None:
+def settle_validate(body: SettleIn) -> None:
+    """The input alone: once, before any order (a 422), and shown by the form."""
     if body.settled_on > datetime.now(TORONTO).date():
         raise InvalidInput("order.settled_future", "the settled date cannot be in the future", {"field": "settled_on"})
+
+
+async def settle_run(uow, o: Order, body: SettleIn) -> None:
     actor = uow.actor
     o.settled_on, o.settled_reference, o.settled_amount = body.settled_on, body.reference, body.amount
     o.settled_note = body.note or None
@@ -84,7 +88,7 @@ async def unsettle_run(uow, o: Order, body: UnsettleIn) -> None:
 def _order_actions() -> ActionRegistry:
     from app.services.order_views import OrderRepository  # order_views imports this module's neighbours
     return ActionRegistry(OrderRepository, [
-        BulkAction("settle", permission=SETTLE, input=SettleIn, check=settle_check, run=settle_run),
+        BulkAction("settle", permission=SETTLE, input=SettleIn, validate=settle_validate, check=settle_check, run=settle_run),
         BulkAction("unsettle", permission=SETTLE, input=UnsettleIn, check=unsettle_check, run=unsettle_run),
     ])
 
@@ -108,6 +112,7 @@ class OrderPaymentService(Service):
 
     @requires(SETTLE)
     async def settle(self, id: int, body: SettleIn, version: VersionArg = ANY_VERSION) -> Order:
+        settle_validate(body)
         return await self._one(id, version, settle_check, settle_run, body)
 
     @requires(SETTLE)

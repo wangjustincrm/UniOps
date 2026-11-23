@@ -12,7 +12,9 @@ as the list's own query string with the count the person saw (at most MAX_RECORD
 - each record in a savepoint of its own: missing → failed; `check` gives a reason → skipped (the rule first, so a
   second run of a done action is skipped whatever the version, never a second write); a version that moved → failed
   ("changed since you selected it"); `run` raises a BusinessError → failed; else done;
-- dry_run: the same, without `run` and without the input (the confirm step's preview: "10 will …, 2 skipped").
+- dry_run: the same, without `run` and without the input (the confirm step's preview: "10 will …, 2 skipped");
+- a record's domain events go with its writes: every rollback (skipped, failed, stale, dry run) also drops the events
+  it raised, so commit dispatches only those of the records done.
 
 Each record's audit reason and log entry are its own (`run` sets them). The single-record endpoints keep their routes
 and call the same `run`.
@@ -43,6 +45,8 @@ class BulkAction:
     run: Run
     check: Check | None = None
     input: type[BaseModel] | None = None
+    # Checks of the input alone (not of a record), e.g. a date not in the future: once, before any record (a 422).
+    validate: Callable[[Any], None] | None = None
 
 
 class ActionRegistry:
@@ -114,11 +118,19 @@ async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: A
             raise InvalidInput("request.invalid", "the action's input is not valid",
                                {"errors": [{"field": ".".join(str(x) for x in err["loc"]), "message": err["msg"]}
                                            for err in e.errors()]}) from None
+        if action.validate:
+            action.validate(data)
     s = uow.session
     model = registry.repo_cls.model
     out: list[ActionResult] = []
+    events = uow.events
     for rid, version in (await _targets(uow, registry, body)).items():
         sp = await s.begin_nested()
+        mark = events.mark()  # a record's events go with its writes: dropped on every rollback below
+
+        async def undo() -> None:
+            await sp.rollback()
+            events.truncate(mark)  # noqa: B023 — called in this iteration only
         try:
             record = await s.get(model, rid, with_for_update=True, populate_existing=True)
             if record is None:
@@ -126,7 +138,7 @@ async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: A
             # The rule first: what is already done (a double click, someone else) is skipped whatever its version.
             why = await action.check(uow, record) if action.check else None
             if why:
-                await sp.rollback()
+                await undo()
                 out.append(ActionResult(id=rid, status="skipped", reason=why, version=record.version))
                 continue
             if version is not None:
@@ -136,14 +148,14 @@ async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: A
                 await s.flush()
             out.append(ActionResult(id=rid, status="done", version=record.version))
             if body.dry_run:
-                await sp.rollback()
+                await undo()
             else:
                 await sp.commit()
         except Stale:
-            await sp.rollback()
+            await undo()
             out.append(ActionResult(id=rid, status="failed", reason="changed since you selected it: reload and look again"))
         except BusinessError as e:
-            await sp.rollback()
+            await undo()
             out.append(ActionResult(id=rid, status="failed", reason=e.message))
     counts = {k: sum(1 for r in out if r.status == k) for k in ("done", "skipped", "failed")}
     return ActionOut(action=action_id, dry_run=body.dry_run, results=out, counts=counts)
