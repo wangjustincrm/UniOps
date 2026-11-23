@@ -60,6 +60,8 @@ export interface HealthRead {
   jobs: JobRead[]
   scheduler_paused: boolean
   system_minutes: number
+  /** Health → Log levels (user 2026-11-23). */
+  log_levels?: LogLevelsRead | null
 }
 
 export interface CardRead {
@@ -90,3 +92,18 @@ export const fetchHealth = () => api.get<HealthRead>('/operations/health')
 export const fetchDashboard = () => api.get<DashboardRead>('/operations/dashboard')
 export const resolveInbox = (key: string) => api.get<InboxTarget>(`/inbox/${encodeURIComponent(key)}`)
 
+
+/** Log levels raised for a while (user 2026-11-23): each expires by itself (at most 24 h). "" is the root. */
+export interface LogOverride { logger: string; level: string; until: string; by?: string | null; reason?: string | null }
+export interface LogLevelsRead {
+  default_level: string
+  overrides: LogOverride[]
+  suggested: Record<string, string>
+  effective: Record<string, string>
+  max_minutes: number
+  default_minutes: number
+  levels: string[]
+}
+export const raiseLogLevel = (body: { logger: string; level: string; minutes: number | null; reason: string }) =>
+  api.post<LogLevelsRead>('/config/log-levels', body)
+export const clearLogLevel = (logger: string, reason: string) => api.post<LogLevelsRead>('/config/log-levels/clear', { logger, reason })
