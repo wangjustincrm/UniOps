@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "UniOps Sales API"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
+    # The process's log level at startup (≈ Serilog MinimumLevel); raised for a while from Health → Log levels.
+    LOG_LEVEL: str = "INFO"
     # "test" makes the composition root use in-memory fakes for every gateway.
     ENVIRONMENT: str = "development"
 

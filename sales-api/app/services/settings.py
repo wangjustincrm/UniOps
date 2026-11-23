@@ -119,3 +119,12 @@ async def automatic_runs_on(session, app_settings) -> bool:
     """Automatic runs happen: the server allows them (SALES_SCHEDULER_ENABLED) and the master switch is
     on (not SCHEDULER_PAUSED). The one answer for Connections, Health and an order's next step."""
     return bool(getattr(app_settings, "SALES_SCHEDULER_ENABLED", False)) and not await SETTINGS.get(session, SCHEDULER_PAUSED)
+
+
+# Log levels raised for a while (user 2026-11-23; platform/log_levels.py): [{logger, level, until, by, reason}].
+# Each expires by itself (at most 24 hours). A bad stored value reads as none (the server's own levels).
+from app.platform import log_levels as _log_levels  # noqa: E402
+
+LOG_OVERRIDES = SETTINGS.declare(Setting(
+    "logging.overrides", [], _log_levels.parse, safe=[],
+    description="Loggers raised for a while (Health → Log levels); each expires by itself"))

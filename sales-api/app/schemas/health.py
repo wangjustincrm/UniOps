@@ -50,6 +50,8 @@ class HealthRead(BaseModel):
     jobs: list[JobRead] = []
     scheduler_paused: bool = False
     system_minutes: int = 1
+    # Health → Log levels (user 2026-11-23): the server's level, the overrides running and the levels now
+    log_levels: dict[str, Any] | None = None
 
 
 class CardRead(BaseModel):

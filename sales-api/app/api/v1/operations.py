@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Response
 
 from pydantic import ConfigDict, BaseModel, Field
 
+from app.core.config import settings
 from app.core.deps import get_uow
 from app.models.config import Connection
 from app.platform.crud_router import crud_router, read_router
@@ -156,5 +157,45 @@ async def get_manual_order_settings(u: UoW):
 async def put_manual_order_settings(u: UoW, body: ManualOrderSettings):
     from app.services.order_settings import ManualOrderSettingsService
     out = await ManualOrderSettingsService(u).update(body)
+    await u.commit()
+    return out
+
+
+# Health → Log levels (user 2026-11-23): raise a logger for a while; it goes back by itself.
+log_levels = APIRouter(prefix="/config/log-levels", tags=["settings"])
+
+
+class LogLevelIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    logger: str = Field("", max_length=100)
+    level: str
+    minutes: int | None = None  # default 60; 1 to 1440 (it always expires)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class LogLevelClearIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    logger: str = Field("", max_length=100)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+@log_levels.get("")
+async def get_log_levels(u: UoW) -> dict:
+    from app.services.log_levels import LogLevelService
+    return await LogLevelService(u, settings).get()
+
+
+@log_levels.post("")
+async def raise_log_level(u: UoW, body: LogLevelIn) -> dict:
+    from app.services.log_levels import LogLevelService
+    out = await LogLevelService(u, settings).raise_level(body.logger, body.level.upper(), body.minutes, body.reason)
+    await u.commit()
+    return out
+
+
+@log_levels.post("/clear")
+async def clear_log_level(u: UoW, body: LogLevelClearIn) -> dict:
+    from app.services.log_levels import LogLevelService
+    out = await LogLevelService(u, settings).clear(body.logger, body.reason)
     await u.commit()
     return out

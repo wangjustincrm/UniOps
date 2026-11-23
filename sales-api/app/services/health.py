@@ -43,7 +43,9 @@ from app.services.notifications import gate
 from app.services.operations import DocumentRepository
 from app.services.order_views import OrderRepository
 from app.services.problems import DOCUMENT_TYPE
+from app.services.log_levels import view as log_view
 from app.services.settings import (
+    LOG_OVERRIDES,
     EDI_CONNECTION_ID, OPERATOR_USER_ID, OUTBOX_BACKLOG_MINUTES,
     SCHEDULER_PAUSED, SETTINGS, SHADOW_MODE, SYSTEM_MINUTES, TASK_AGE_HOURS, automatic_runs_on,
 )
@@ -239,7 +241,8 @@ class Health:
             result=result, checked_at=now, checks=out, cards=cards, shadow_mode=shadow,
             partner_writes_enabled=bool(getattr(self.settings, "SALES_PARTNER_WRITES_ENABLED", False)),
             external_email_enabled=bool(getattr(self.settings, "SALES_EXTERNAL_EMAIL_ENABLED", False)),
-            scheduler_enabled=enabled, gate=gate_rows, gate_ok=all(g.ok for g in gate_rows))
+            scheduler_enabled=enabled, gate=gate_rows, gate_ok=all(g.ok for g in gate_rows),
+            log_levels=log_view(await SETTINGS.get(self.s, LOG_OVERRIDES), str(getattr(self.settings, "LOG_LEVEL", "INFO")).upper()))
 
     async def jobs(self, now: datetime) -> list[JobRead]:
         """Every job with its last and next run. Overdue: more than 3 intervals

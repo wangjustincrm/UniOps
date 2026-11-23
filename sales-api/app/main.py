@@ -24,6 +24,8 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     from app.services.security_log import log_startup
     await log_startup(settings, AsyncSessionLocal)  # the switches (values) and the secrets set (names only)
     runtime = get_runtime()
+    from app.services.log_levels import watch
+    runtime.background.spawn(watch(AsyncSessionLocal, runtime.background.stop), name="sales-log-levels")
     if settings.SALES_SCHEDULER_ENABLED:
         runtime.background.spawn(runtime.scheduler.loop(runtime.background.stop), name="sales-scheduler")
         logger.info("scheduler started")
@@ -36,6 +38,12 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
 
 
 def create_app() -> FastAPI:
+    # One logging setup (user 2026-11-23): JSON lines on stdout at LOG_LEVEL; loud third-party loggers quiet;
+    # Health → Log levels raises one for a while (platform/log_levels.py). DEBUG's SQL echo keeps its own output.
+    from app.platform.log_levels import configure
+    configure(str(settings.LOG_LEVEL).upper())
+    if settings.DEBUG:
+        logging.getLogger("sqlalchemy.engine.Engine").propagate = False  # echo prints it already: no second copy
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
