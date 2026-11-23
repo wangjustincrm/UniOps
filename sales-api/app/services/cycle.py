@@ -153,7 +153,7 @@ class ConnectionJob(ScheduledJob):
                 return
             await uow.session.execute(update(t).where(t.c.id == self.conn_id).values(
                 last_run_at=run.finished_at, last_run_status=run.status,
-                last_run_summary=((run.summary or {}).get("text") or run.error or "")[:255] or None,
+                last_run_summary=((run.summary or {}).get("text") or run.error or "") or None,
                 last_error=run.error, next_run_at=next_run(run.started_at, minutes)))
             await uow.commit()
 

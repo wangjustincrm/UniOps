@@ -40,6 +40,7 @@ ENGINES = {
     "problems.SalesTasks": "the task gateway every engine raises problems through",
     "health.Health": "HealthService checks first",
     "security_log.SalesLogSecurityStore": "the refusal listener's store: it records a refusal the check already made",
+    "audit_logs.SqlAuditingStore": "the audit log store: the auditing scope saves through it (no request calls it)",
 }
 
 

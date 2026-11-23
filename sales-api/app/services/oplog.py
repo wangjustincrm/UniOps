@@ -5,6 +5,7 @@ from typing import Any
 
 from app.models.documents import LogEntry
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.auditing.scope import current_scope
 from app.platform.request_log import current_request_id
 
 
@@ -16,7 +17,8 @@ async def write(session, level: str, step: str, message: str, *, run_id: int | N
     rid = current_request_id()
     if rid:
         context = {**(context or {}), "request_id": rid}
-    session.add(LogEntry(level=level, step=step, message=message, run_id=run_id,
+    scope = current_scope()  # sales36: the audit log (request / background scope) it was written in
+    session.add(LogEntry(audit_log_id=scope.log.id if scope else None, level=level, step=step, message=message, run_id=run_id,
                          connection_id=connection_id, document_id=document_id, order_id=order_id, transfer_id=transfer_id,
                          context=context))
     await session.flush()

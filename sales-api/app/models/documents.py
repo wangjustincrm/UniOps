@@ -15,6 +15,8 @@
 """
 from __future__ import annotations
 
+import uuid
+
 from datetime import datetime
 from typing import Any
 
@@ -22,7 +24,7 @@ from sqlalchemy import (
     Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint,
     false, func, text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, column_property, mapped_column
 
 from app.db.base import Base
@@ -126,6 +128,8 @@ class LogEntry(Base):
     run_id: Mapped[int | None] = mapped_column(ForeignKey("sales_runs.id"), nullable=True, index=True)
     level: Mapped[str] = mapped_column(String(10), nullable=False)
     step: Mapped[str] = mapped_column(String(40), nullable=False)
+    # sales36: the audit log (request / background scope) it was written in.
+    audit_log_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     connection_id: Mapped[int | None] = mapped_column(ForeignKey("sales_connections.id"), nullable=True)
     document_id: Mapped[int | None] = mapped_column(ForeignKey("sales_documents.id"), nullable=True, index=True)
     order_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)

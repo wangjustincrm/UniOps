@@ -47,6 +47,7 @@ from sqlalchemy import Boolean, DateTime, Integer, String, Text, func, inspect, 
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.platform import correlation
 from app.platform.auditing.scope import begin_scope
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.errors import BusinessError, NotFound
@@ -173,6 +174,8 @@ class Outbox:
         etype, eid = entity_ref(entity) if entity is not None else (None, None)
         row = self.model(kind=kind, payload=payload, status=PENDING, attempts=0, manual=False,
                          entity_type=etype, entity_id=eid)
+        if hasattr(self.model, "correlation_id"):  # the request that queued it: its send carries the same id
+            row.correlation_id = correlation.current()
         session.add(row)
         return row
 
@@ -251,6 +254,7 @@ class _Claim:
     kind: str
     payload: dict[str, Any]
     ctx: OutboxContext
+    correlation_id: str | None = None
 
 
 class OutboxWorker:
@@ -293,7 +297,7 @@ class OutboxWorker:
             return outcome
         kind = self.kinds[claim.kind]
         # A send is an audit scope (≈ ABP's IAuditingManager.BeginScope): saved when it changed data or failed.
-        async with begin_scope("outbox", claim.kind) as audit:
+        async with begin_scope("outbox", claim.kind, correlation_id=claim.correlation_id) as audit:
             try:
                 await kind.effect(claim.payload, claim.ctx)
             except asyncio.CancelledError:
@@ -337,7 +341,8 @@ class OutboxWorker:
                     row.status = IN_FLIGHT
                     row.next_attempt_at = now + self.lease
                     claim = _Claim(row.id, row.kind, dict(row.payload),
-                                   OutboxContext(row_id=row.id, kind=row.kind, attempt=row.attempts, manual=row.manual))
+                                   OutboxContext(row_id=row.id, kind=row.kind, attempt=row.attempts, manual=row.manual),
+                                   getattr(row, "correlation_id", None))
                     await uow.commit()
                     return None, claim
             await uow.commit()

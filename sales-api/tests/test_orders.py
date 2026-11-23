@@ -45,7 +45,7 @@ async def env(db_engine):
     async with db_engine.begin() as c:
         await c.run_sync(lambda sc: shared_tasks_table(sa.MetaData()).metadata.create_all(sc, checkfirst=True))
         await c.execute(sa.text(
-            "TRUNCATE sales_order_lines, sales_orders, sales_log, sales_document_links, sales_documents, sales_runs, "
+            "TRUNCATE sales_audit_log_actions, sales_audit_logs, sales_order_lines, sales_orders, sales_log, sales_document_links, sales_documents, sales_runs, "
             "sales_item_partner_codes, sales_dc_routing, sales_item_units, sales_items, sales_connections, "
             "sales_partners, sales_audit, sales_settings RESTART IDENTITY CASCADE"))
         await c.execute(sa.text("DELETE FROM tasks"))

@@ -202,7 +202,7 @@ class Connection(Audited, Versioned, Deactivatable, Base):
     # Written by the scheduler only.
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_run_status: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    last_run_summary: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_run_summary: Mapped[str | None] = mapped_column(Text, nullable=True)  # sales36: whole (was varchar 255)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

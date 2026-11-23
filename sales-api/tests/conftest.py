@@ -82,7 +82,10 @@ def migrated_db():
 
 @pytest_asyncio.fixture
 async def db_engine(migrated_db):
-    engine = create_async_engine(migrated_db, echo=False, connect_args=CONNECT_ARGS)
+    # The append-only tables (sales36) are emptied between tests: the tests' connections carry the break-glass
+    # setting (TRUNCATE of sales_audit / sales_log). Production never sets it outside sales_break_glass().
+    test_args = {**CONNECT_ARGS, "server_settings": {**CONNECT_ARGS.get("server_settings", {}), "sales.break_glass": "test reset"}}
+    engine = create_async_engine(migrated_db, echo=False, connect_args=test_args)
     from app.services.settings import SETTINGS
     SETTINGS.invalidate()  # each test truncates sales_settings: never read the last test's cached values
     yield engine

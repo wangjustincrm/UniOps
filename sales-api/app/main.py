@@ -20,7 +20,10 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
         settings.APP_NAME, settings.APP_VERSION, settings.ENVIRONMENT,
     )
     from app.db.session import AsyncSessionLocal
+    from app.platform.auditing import use_store
     from app.runtime import get_runtime
+    from app.services.audit_logs import SqlAuditingStore
+    use_store(SqlAuditingStore(AsyncSessionLocal))  # sales36: the audit logs are saved (own session, ≈ ABP requiresNew)
     from app.services.security_log import log_startup
     await log_startup(settings, AsyncSessionLocal)  # the switches (values) and the secrets set (names only)
     runtime = get_runtime()
@@ -48,8 +51,8 @@ def create_app() -> FastAPI:
     # One logging setup (user 2026-11-23): JSON lines on stdout at LOG_LEVEL; loud third-party loggers quiet;
     # Health → Log levels raises one for a while (platform/log_levels.py). DEBUG's SQL echo keeps its own output.
     # The platform's options, once (the composition root ≈ ABP's Configure<…Options>): ABP's defaults except where a
-    # user rule says otherwise (platform/options.py). The audit logs are not saved yet (NullAuditingStore) until the
-    # module's tables exist (sales36); the stdout request line, the correlation id and the scopes run already.
+    # user rule says otherwise (platform/options.py). The audit logs' store is set at startup (lifespan:
+    # SqlAuditingStore on sales_audit_logs); before that, and in tests, nothing is saved (NullAuditingStore).
     from app.platform.options import AuditingOptions, LoggingOptions, configure as configure_options
     configure_options(
         AuditingOptions(application_name="sales-api",

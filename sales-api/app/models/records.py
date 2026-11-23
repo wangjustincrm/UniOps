@@ -15,12 +15,13 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, Integer, String, Text, func, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.platform.audit import AuditRecordMixin
+from app.platform.auditing.models import AuditLogActionMixin, AuditLogMixin
 from app.platform.outbox import OutboxRecordMixin
 from app.platform.views import UserViewMixin
 
@@ -29,10 +30,34 @@ class AuditRecord(AuditRecordMixin, Base):
     __tablename__ = "sales_audit"
     # The history of one record (the detail views' audit panel).
     __table_args__ = (Index("ix_sales_audit_entity", "entity", "entity_id", "at"),)
+    # sales36: the audit log (request / background scope) the change was made in; no FK (the header is written after).
+    audit_log_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
 
 
 class OutboxRecord(OutboxRecordMixin, Base):
     __tablename__ = "sales_outbox"
+    # sales36: the correlation id of the request that queued it, restored when it is sent.
+    correlation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class AuditLog(AuditLogMixin, Base):
+    """≈ ABP's AbpAuditLogs (sales36; platform/auditing): one per request and per saved background scope."""
+    __tablename__ = "sales_audit_logs"
+    __table_args__ = (
+        CheckConstraint("kind IN ('request', 'job', 'outbox', 'intake', 'cli')", name="ck_sales_audit_logs_kind"),
+        Index("ix_sales_audit_logs_execution_time", text("execution_time DESC")),
+        Index("ix_sales_audit_logs_user_time", "user_id", "execution_time"),
+        Index("ix_sales_audit_logs_failed", "http_status", postgresql_where=text("http_status >= 400")),
+    )
+
+
+class AuditLogAction(AuditLogActionMixin, Base):
+    """≈ ABP's AbpAuditLogActions (sales36): a service action of an audit log, its parameters whole."""
+    __tablename__ = "sales_audit_log_actions"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    audit_log_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sales_audit_logs.id", name="fk_sales_audit_log_actions_log"), nullable=False)
+    __table_args__ = (Index("ix_sales_audit_log_actions_log", "audit_log_id"),)
 
 
 class UserView(UserViewMixin, Base):
