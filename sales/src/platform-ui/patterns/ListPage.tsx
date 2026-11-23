@@ -1,5 +1,5 @@
 import { UnsavedBoundary, useUnsavedScope, whenDiscarded } from '../primitives/unsaved'
-import { Fragment, useEffect, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '../primitives/DataTable'
 import { PageHeader } from '../primitives/PageHeader'
@@ -24,6 +24,9 @@ import { storeAutoRefresh, storedAutoRefresh } from './autoRefresh'
 import { QueryTable } from './QueryTable'
 import { RecordSheetHostContext, type RecordSheetHost, type RecordSheetSize } from './recordSheetHost'
 import { useListView } from './views'
+import type { ResourceClient } from '../resource/ResourceClient'
+import { ActionHostContext, type ActionHost, type RecordAction } from './recordActions'
+import { useRowSelection } from './useRowSelection'
 
 /** What a list needs from its resource client. */
 export interface ListResource<T> {
@@ -32,6 +35,8 @@ export interface ListResource<T> {
   meta: () => Promise<ListMeta>
   /** One record by id: a record asked for from elsewhere opens with its data. */
   get?: (id: number) => Promise<T>
+  /** A record action on one record or many (needed for `actions`). */
+  action?: ResourceClient<T, unknown, unknown>['action']
   /** The CSV of every row a query selects (the server's export.csv): needed for `onExport`. `columns`:
    *  only those, in that order (the visible columns); none: the list's full export. */
   exportPath?: (spec: QuerySpec, file?: string, columns?: string[]) => string
@@ -63,6 +68,11 @@ export interface ListPageProps<T extends { id: number }> {
   expand?: (row: T) => ReactNode | null
   /** Per-row buttons in a last column (a click there never opens the row). */
   rowActions?: (row: T) => ReactNode
+  /** The list's record actions (defineActions): 'row' in a "⋯" menu, 'bulk' on selected rows (a checkbox column
+   *  only for those who hold a group action), 'sheet' in the record sheet (RecordActionButtons). */
+  actions?: RecordAction<T & { version: number }>[]
+  /** How a record is named in an action's results (default "#id"). */
+  recordName?: (row: T) => string
   /** Filters the page sets itself (a record's own list): kept, not removable; no views. */
   fixed?: Filter[]
   /** Whether a record asked for from elsewhere (openRecord, a Task Inbox link) opens here. Default:
@@ -189,12 +199,20 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   const ctx: ListContext<T> = {
     spec, rows, refresh: () => qc.invalidateQueries({ queryKey: queryKeys.list(resource) }),
   }
+  const actionHost = useMemo<ActionHost<T>>(() => ({
+    run: (id, body) => { if (!resource.action) throw new Error('this list has no record actions'); return resource.action(id, body) },
+    name: props.recordName ?? ((r: T) => `#${r.id}`),
+  }), [resource, props.recordName])
+  const selection = useRowSelection({ actions: props.actions as RecordAction<T & { version: number }>[] | undefined,
+    rows: rows as (T & { version: number })[], spec, total: list.data?.total ?? 0, host: actionHost as ActionHost<T & { version: number }> })
+  const ownColumns = [...(selection.lead as ColumnDef<T, unknown>[]), ...columns,
+    ...(selection.menuColumn ? [selection.menuColumn as ColumnDef<T, unknown>] : [])]
   const allColumns: ColumnDef<T, unknown>[] = rowActions
-    ? [...columns, {
+    ? [...ownColumns, {
         id: 'actions', header: 'Actions',
         cell: ({ row }) => <div className="flex gap-1">{rowActions(row.original)}</div>,
       }]
-    : columns
+    : ownColumns
   const close = () => setOpen(null)
   const at = current ? rows.findIndex((r) => r.id === current.id) : -1
   const host: RecordSheetHost = {
@@ -240,10 +258,11 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
 
   return (
     <NoticesContext.Provider value={notices}>
+    <ActionHostContext.Provider value={actionHost as ActionHost<unknown>}>
     <TourScope id={props.title ?? 'list'}>
     <div className="flex flex-col gap-4">
       {props.title && <PageHeader title={props.title} description={props.description} help={props.help}
-        helpSections={[{ title: 'Using lists', ids: listTools({ search: props.searchable ?? true, panel: hasPanel, views: !!view.tableProps.picker, export: !!(props.onExport && resource.exportPath) }) }]} />}
+        helpSections={[{ title: 'Using lists', ids: listTools({ search: props.searchable ?? true, panel: hasPanel, views: !!view.tableProps.picker, export: !!(props.onExport && resource.exportPath), select: selection.lead.length > 0 }) }]} />}
       {props.notice}
       <QueryTable<T>
         ariaLabel={props.title}
@@ -275,7 +294,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
         expand={props.expand}
         emptyTitle={props.emptyTitle}
         emptyText={props.emptyText}
-        toolbar={toolbar}
+        toolbar={selection.bar ?? toolbar}
       />
       {renderDetail && current && (
         <RecordSheetHostContext.Provider value={host}>
@@ -290,6 +309,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
       {props.children?.({ ...ctx, open: current, setOpen })}
     </div>
     </TourScope>
+    </ActionHostContext.Provider>
     </NoticesContext.Provider>
   )
 }

@@ -1,0 +1,73 @@
+import { createContext, useContext } from 'react'
+import type { z } from 'zod'
+import type { FieldValues } from 'react-hook-form'
+import type { HelpId } from '../help'
+import type { ActionRunBody, ActionOut } from '../resource/ResourceClient'
+import { PermissionContext } from './permissions'
+import type { FieldSpec } from './SchemaForm'
+
+/** Where an action shows: the row's "⋯" menu, the selection bar, the record sheet's header. */
+export type ActionPlacement = 'row' | 'bulk' | 'sheet'
+
+/** What the person gives an action: a form (SchemaForm fields), or only a reason. None: a plain confirm. */
+export type ActionInput =
+  | { schema: z.ZodType<FieldValues, FieldValues>; fields: FieldSpec[]; defaults: () => Record<string, unknown>; toBody?: (v: Record<string, unknown>) => unknown }
+  | { reason: { label: string } }
+
+/** THE record action (user 2026-11-23): defined once — its words, permission, rule, form and where it shows — and
+ *  rendered by the row menu, the selection bar and the record sheet. The server (POST <list>/actions/<id>) checks
+ *  the permission and decides which records it fits: `eligible` here is a hint for the counts and the greyed
+ *  items only. */
+export interface RecordAction<T> {
+  /** The server's action id (platform/bulk_actions.py registry). */
+  id: string
+  label: string
+  /** Shown only to those who hold it (hidden, never greyed). */
+  permission: string
+  /** 'group': also on a selection; 'single': one record at a time. */
+  scope: 'single' | 'group'
+  placement: ActionPlacement[]
+  tone?: 'default' | 'destructive'
+  /** true, or why it does not fit this record (the greyed item's reason). */
+  eligible?: (row: T) => true | string
+  input?: ActionInput
+  /** The dialog's title for n records (default: the label and the count). */
+  title?: (n: number) => string
+  description?: string
+  /** What the status row says when n were done, e.g. n => `${n} marked settled`. */
+  done: (n: number) => string
+  /** What the preview says of the n that will be done, e.g. n => `${n} will be marked settled`. */
+  will: (n: number) => string
+  help?: HelpId
+}
+
+export function defineActions<T>(actions: RecordAction<T>[]): RecordAction<T>[] {
+  return actions
+}
+
+/** The actions this person may use, for one placement. */
+export function useActionsFor<T>(actions: RecordAction<T>[] | undefined, placement: ActionPlacement): RecordAction<T>[] {
+  const can = useContext(PermissionContext)
+  return (actions ?? []).filter((a) => a.placement.includes(placement) && can(a.permission)
+    && (placement !== 'bulk' || a.scope === 'group'))
+}
+
+export const fits = <T,>(a: RecordAction<T>, row: T): true | string => a.eligible?.(row) ?? true
+
+/** Who runs an action: the list or sheet it is in (its resource) and how a record is named in a result. */
+export interface ActionHost<T> {
+  run: (actionId: string, body: ActionRunBody) => Promise<ActionOut>
+  name: (row: T) => string
+}
+export const ActionHostContext = createContext<ActionHost<unknown> | null>(null)
+export function useActionHost<T>(): ActionHost<T> | null {
+  return useContext(ActionHostContext) as ActionHost<T> | null
+}
+
+/** The status row's words for a run: done, skipped, failed (with each failure's record and reason). */
+export function resultText(a: { done: (n: number) => string }, out: ActionOut, nameOf: (id: number) => string): string {
+  const { done, skipped, failed } = out.counts
+  const fails = out.results.filter((r) => r.status === 'failed').map((r) => `${nameOf(r.id)}: ${r.reason ?? 'failed'}`)
+  return [a.done(done), skipped ? `${skipped} skipped` : '', failed ? `${failed} failed (${fails.join('; ')})` : '']
+    .filter(Boolean).join(' · ')
+}

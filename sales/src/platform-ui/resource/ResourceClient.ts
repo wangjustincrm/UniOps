@@ -50,7 +50,21 @@ export interface ResourceClient<TRead, TCreate, TUpdate> {
    *  CSV export; e.g. "report/settlements.pdf"): the list's filters and sort, no paging. */
   exportPath: (spec: QuerySpec, file?: string, columns?: string[]) => string
   importCsv: (file: File, dryRun: boolean) => Promise<ImportReport>
+  /** A record action on one record or many (`POST <resource>/actions/<id>`, platform/bulk_actions.py). */
+  action: (actionId: string, body: ActionRunBody) => Promise<ActionOut>
 }
+
+/** What a record action is run on: {id: version} as the person saw them, or "all matching" (the list's query
+ *  string, with how many the person was told match). `dry_run`: what would happen, nothing written. */
+export interface ActionRunBody {
+  ids?: Record<string, number>
+  query?: string
+  expected?: number
+  input?: unknown
+  dry_run?: boolean
+}
+export interface ActionResultRow { id: number; status: 'done' | 'skipped' | 'failed'; reason?: string | null; version?: number | null }
+export interface ActionOut { action: string; dry_run: boolean; results: ActionResultRow[]; counts: Record<'done' | 'skipped' | 'failed', number> }
 
 /** A client for one resource served by the back end's `crud_router`. The
  *  types come from the business code (generated from the OpenAPI schema). */
@@ -78,6 +92,7 @@ export function createResourceClient<TRead, TCreate, TUpdate = TCreate>(
       const path = `${base}/${file.replace(/^\/+/, '')}`
       return qs ? `${path}?${qs}` : path
     },
+    action: (actionId, body) => http.post<ActionOut>(`${base}/actions/${actionId}`, body),
     importCsv: (file, dryRun) => {
       if (!http.upload) throw new Error('this API client cannot upload files')
       const form = new FormData()

@@ -10,8 +10,8 @@ declare module '@tanstack/react-table' {
     hidden?: boolean
     /** In the card view (a narrow table: a phone, a narrow sheet): the card's title, a badge
      *  at its top right, or left out. Unset: a "label: value" line (the first such column is
-     *  the title when no column claims it). */
-    card?: 'title' | 'badge' | 'hide'
+     *  the title when no column claims it); 'select': the row's selection box, before the title. */
+    card?: 'title' | 'badge' | 'hide' | 'select'
     /** A column the user chose to add (a field beyond the page's own): on a card it is always a line,
      *  never folded under "N more fields" — they asked for it. */
     chosen?: boolean

@@ -316,6 +316,7 @@ export function DataTable<T>({
               const role = (c: (typeof cells)[number]) => c.column.columnDef.meta?.card
               const title = cells.find((c) => role(c) === 'title') ?? cells.find((c) => !role(c))
               const badges = cells.filter((c) => role(c) === 'badge')
+              const lead = cells.find((c) => role(c) === 'select')
               const lines = cells.filter((c) => c !== title && !role(c))
               const showAll = !onRowClick || lines.length <= cardLines + 1 || allLines.has(r.id)
               let kept = 0  // a column the user added is always a line; the page's own fold after cardLines
@@ -340,6 +341,7 @@ export function DataTable<T>({
                         onRowClick && 'cursor-pointer hover:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary-500',
                         rowClass, flash && 'bg-primary-50 animate-[platform-flash_2s_ease-out_forwards] motion-reduce:animate-none')}>
                       <div className="flex min-w-0 items-start justify-between gap-2">
+                        {lead && <div data-card-select className="pt-0.5"><Render def={lead.column.columnDef.cell} ctx={lead.getContext()} /></div>}
                         <div data-card-title className="min-w-0 flex-1 break-words font-medium text-neutral-900">
                           {title && <Render def={title.column.columnDef.cell} ctx={title.getContext()} />}
                         </div>
