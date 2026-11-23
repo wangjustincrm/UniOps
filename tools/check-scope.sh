@@ -91,6 +91,7 @@ CONFIG_FILES=(
   portal/src/lib/api.ts portal/src/pages/admin/AdminPanel.tsx
   identity-api/alembic/versions/0023_sales_perms.py
   identity-api/alembic/versions/0024_merge_sales_freight.py identity-api/alembic/versions/0026_merge_sales_hr.py
+  identity-api/alembic/versions/0027_sales_settle.py
   epms/src/lib/taskTypes.ts epms/src/services/tasks.ts epms-api/app/crud/task.py
   epms/src/lib/api.ts epms/Dockerfile
   epms-api/app/knowledge/modules.yaml epms-api/tests/test_module_guide.py

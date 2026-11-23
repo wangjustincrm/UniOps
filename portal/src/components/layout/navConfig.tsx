@@ -53,12 +53,12 @@ export const FINANCE_ACCESS_PERMS = ['view_finance', 'view_budget_dashboard', 'v
 /** Permissions that grant access to the Booking module. */
 export const BOOKING_ACCESS_PERMS = ['view_booking', 'manage_meeting_rooms']
 
-/** Permissions that grant access to the Sales module — any one of its seven
- *  keys (design 2026-10-23-order-bridge-design.md §6); the module gates each
- *  page by its own key. */
+/** Permissions that grant access to the Sales module — any one of its keys
+ *  (design 2026-10-23-order-bridge-design.md §6; sales.settle, Finance's, 2026-11-23);
+ *  the module gates each page by its own key. */
 export const SALES_ACCESS_PERMS = [
   'sales.read', 'sales.order.operate', 'sales.file.retry', 'sales.transfer.manage',
-  'sales.inventory.adjust', 'sales.invoice.manage', 'sales.config',
+  'sales.inventory.adjust', 'sales.invoice.manage', 'sales.config', 'sales.settle',
 ]
 
 export interface NavSectionDef {
