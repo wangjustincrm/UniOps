@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.deps import get_uow_factory
 from app.domain.order_payment import DUE, NOT_NEEDED, NOT_SETTLED, OVERDUE, SETTLED, payment_status, terms_days
 from app.main import app
+from app.services.order_payment import ORDER_ACTIONS
 from app.platform.actors import SYSTEM_ACTOR
 from app.runtime import build_runtime, get_runtime
 from tests.conftest import make_token
@@ -133,32 +134,100 @@ async def test_a_finance_user_marks_settled_with_a_date_and_a_reference_and_undo
         "entity.version_required")  # the version check, as on other edits
 
 
+# ── the record actions (platform/bulk_actions.py): one rule and one run, on one order or many ──────────────
+ACT = "/api/v1/orders/actions/"
+SETTLE_INPUT = {"settled_on": "2026-11-22", "reference": "REM 77"}
+
+
+@pytest.mark.parametrize("action_id", sorted(ORDER_ACTIONS.actions))
+async def test_every_order_action_refuses_without_its_permission_and_admits_with_it(api, action_id):
+    """Generated from the registry: a new action gets both tests (the UI's hiding is not security)."""
+    o = (await _orders(api, 9621))["9621"]
+    perm = ORDER_ACTIONS[action_id].permission
+    GRANTS["without"] = (set().union(*GRANTS.values()) | {"sales.file.retry", "sales.transfer.manage"}) - {perm}
+    GRANTS["with"] = {"sales.read", perm}
+    body = {"ids": {str(o["id"]): o["version"]}, "dry_run": True}
+    r = await api.post(ACT + action_id, json=body, headers={"Authorization": f"Bearer {make_token('without')}"})
+    assert r.status_code == 403, r.text
+    r = await api.post(ACT + action_id, json=body, headers={"Authorization": f"Bearer {make_token('with')}"})
+    assert r.status_code == 200 and r.json()["dry_run"] is True, r.text
+
+
 async def test_only_finance_settles_an_operator_is_refused(api):
     o = (await _orders(api, 9621))["9621"]
     body = {"settled_on": "2026-11-20", "reference": "CHQ 1001"}
     for path, b in ((f"/api/v1/orders/{o['id']}/settle", body), (f"/api/v1/orders/{o['id']}/unsettle", {"reason": "test"}),
-                    ("/api/v1/orders/settle-bulk", {**body, "order_ids": [o["id"]]})):
+                    (ACT + "settle", {"ids": {str(o["id"]): o["version"]}, "input": body})):
         assert (await api.post(path, json=b, headers=OPERATOR)).status_code == 403, path  # operate, invoice, config: no
     assert (await _status(api, o["id"]))["payment_status"] == NOT_SETTLED
     r = await api.post(f"/api/v1/orders/{o['id']}/settle?version={o['version']}", json=body, headers=FINANCE)
     assert r.status_code == 200 and r.json()["payment_status"] == SETTLED  # admitted
 
 
-async def test_mark_settled_in_bulk_gives_one_result_per_order(api):
-    o = await _orders(api, 9631, 9632, 9633)
+async def test_mark_settled_on_many_one_result_each_its_own_activity_and_a_second_run_writes_nothing(api):
+    o = await _orders(api, 9631, 9632, 9633, 9634)
     first = {"settled_on": "2026-11-21", "reference": "EFT 1"}
     assert (await api.post(f"/api/v1/orders/{o['9632']['id']}/settle?version={o['9632']['version']}", json=first,
                            headers=FINANCE)).status_code == 200
-    ids = [o[n]["id"] for n in ("9631", "9632", "9633")] + [999999]
-    r = await api.post("/api/v1/orders/settle-bulk", json={"order_ids": ids, "settled_on": "2026-11-22", "reference": "REM 77"},
-                       headers=FINANCE)
-    assert r.status_code == 200
-    res = {x["order_id"]: x for x in r.json()}
-    assert [res[i]["ok"] for i in ids] == [True, False, True, False]
-    assert "already settled on 2026-11-21" in res[o["9632"]["id"]]["error"]  # the earlier mark stays
+    await _exec(api, f"UPDATE sales_orders SET version = version + 1 WHERE id = {o['9634']['id']}")  # changed meanwhile
+    ids = {str(o[n]["id"]): o[n]["version"] for n in ("9631", "9632", "9633", "9634")} | {"999999": 1}
+    # the confirm step: a dry run, no input needed, nothing written
+    r = (await api.post(ACT + "settle", json={"ids": ids, "dry_run": True}, headers=FINANCE)).json()
+    assert r["counts"] == {"done": 2, "skipped": 1, "failed": 2} and r["dry_run"] is True
+    assert (await _status(api, o["9631"]["id"]))["payment_status"] == NOT_SETTLED
+    r = await api.post(ACT + "settle", json={"ids": ids, "input": SETTLE_INPUT}, headers=FINANCE)
+    assert r.status_code == 200, r.text
+    res = {x["id"]: x for x in r.json()["results"]}
+    assert [res[o[n]["id"]]["status"] for n in ("9631", "9632", "9633", "9634")] + [res[999999]["status"]] == [
+        "done", "skipped", "done", "failed", "failed"]
+    assert "already settled on 2026-11-21" in res[o["9632"]["id"]]["reason"]  # the earlier mark stays
+    assert res[o["9634"]["id"]]["reason"].startswith("changed since you selected it")
     rows = await api.env.q("SELECT source_order_number, settled_reference FROM sales_orders ORDER BY id")
     assert [(x["source_order_number"], x["settled_reference"]) for x in rows] == [
-        ("9631", "REM 77"), ("9632", "EFT 1"), ("9633", "REM 77")]
+        ("9631", "REM 77"), ("9632", "EFT 1"), ("9633", "REM 77"), ("9634", None)]
+    for n in ("9631", "9633"):  # each order's own Activity entry, with its date and reference
+        assert "settled on 2026-11-22, REM 77" in [t["reason"] for t in (await _status(api, o[n]["id"]))["timeline"]]
+    # run again with the versions seen before (a double click): skipped, never a second write and never "changed"
+    r = (await api.post(ACT + "settle", json={"ids": {k: ids[k] for k in (str(o["9631"]["id"]), str(o["9633"]["id"]))},
+                                              "input": SETTLE_INPUT}, headers=FINANCE)).json()
+    assert r["counts"] == {"done": 0, "skipped": 2, "failed": 0}
+    again = {str(o[n]["id"]): res[o[n]["id"]]["version"] for n in ("9631", "9633")}
+    # the input is checked once, before any order
+    r = await api.post(ACT + "settle", json={"ids": ids, "input": {"reference": "x"}}, headers=FINANCE)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "request.invalid"
+    # Undo settled on many: the reason is required; one not settled is skipped
+    r = await api.post(ACT + "unsettle", json={"ids": again | {str(o["9634"]["id"]): o["9634"]["version"] + 1},
+                                               "input": {"reason": "wrong remittance"}}, headers=FINANCE)
+    assert [x["status"] for x in r.json()["results"]] == ["done", "done", "skipped"]
+
+
+async def test_all_matching_the_list_with_the_count_the_person_saw(api):
+    o = await _orders(api, 9651, 9652, 9653)
+    query = "filter=payment_status:in:Not settled|Due|Overdue&filter=source_order_number:in:9651|9652"
+    r = await api.post(ACT + "settle", json={"query": query, "expected": 3, "input": SETTLE_INPUT}, headers=FINANCE)
+    assert r.status_code == 409 and r.json()["error"]["code"] == "action.list_changed"  # 2 match now, not 3
+    r = await api.post(ACT + "settle", json={"query": query, "expected": 2, "input": SETTLE_INPUT}, headers=FINANCE)
+    assert sorted(x["id"] for x in r.json()["results"]) == sorted([o["9651"]["id"], o["9652"]["id"]])
+    assert r.json()["counts"]["done"] == 2
+    r = await api.post(ACT + "settle", json={"input": SETTLE_INPUT}, headers=FINANCE)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "action.targets"
+
+
+async def test_historical_and_cancelled_orders_need_no_payment_and_are_not_settled(api):
+    o = await _orders(api, 9661, 9662)
+    await _exec(api, f"UPDATE sales_orders SET historical = true WHERE id = {o['9661']['id']}")
+    await _exec(api, f"UPDATE sales_orders SET fulfillment_status = 'Cancelled' WHERE id = {o['9662']['id']}")
+    assert [(await _status(api, o[n]["id"]))["payment_status"] for n in ("9661", "9662")] == [NOT_NEEDED, NOT_NEEDED]
+    view = next(v for v in (await api.get("/api/v1/orders/meta", headers=FINANCE)).json()["views"] if v["key"] == "to_settle")
+    assert NOT_NEEDED not in view["state"]["filters"][0]["value"]  # so To settle leaves them out
+    r = (await api.post(ACT + "settle", json={"ids": {str(o[n]["id"]): o[n]["version"] for n in ("9661", "9662")},
+                                              "input": SETTLE_INPUT}, headers=FINANCE)).json()
+    assert [x["status"] for x in r["results"]] == ["skipped", "skipped"] and "Not needed" in r["results"][0]["reason"]
+    r = await api.post(f"/api/v1/orders/{o['9661']['id']}/settle?version={o['9661']['version']}", json=SETTLE_INPUT,
+                       headers=FINANCE)
+    assert r.status_code == 409 and r.json()["error"]["code"] == "order.not_settleable"
+    assert payment_status(draft=False, cancelled=False, settled=False, invoice_sent=False, invoice_date=None, terms=None,
+                          today=TODAY, historical=True) == NOT_NEEDED
 
 
 @pytest.mark.parametrize("terms", ["Net 30", "net30"])

@@ -27,8 +27,9 @@ def test_texts_are_short_and_plain():
 
 
 def _front_labels() -> str:
-    """The screens' code (features/**, not tests): where a button's words are written."""
-    return "\n".join(p.read_text(encoding="utf-8") for p in (FRONT / "features").rglob("*.tsx") if ".test." not in p.name)
+    """The screens' code (features/**, not tests): where a button's words are written (also a record action's label)."""
+    return "\n".join(p.read_text(encoding="utf-8") for ext in ("*.tsx", "*.ts") for p in (FRONT / "features").rglob(ext)
+                     if ".test." not in p.name)  # .ts too: a record action's words live in its definition (orderActions.ts)
 
 
 def is_button(label: str, src: str) -> bool:

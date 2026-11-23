@@ -8,7 +8,7 @@ decided whether it should wait for Settled).
 What a list shows (the rule, as SQL, is Order.payment_status_sql in models/invoices.py; tests hold them together):
 - Settled: the mark is set (a later derived source, e.g. Shopify from the gateway settlements, goes beside it; the
   manual mark wins);
-- Not needed: cancelled and never invoiced;
+- Not needed: cancelled and never invoiced, or historical (the history replay; uniops-3d 2026-11-23, easy to reverse);
 - Due / Overdue: invoiced (sent) and the terms say "Net N": due on the invoice date + N days. No terms, or terms in
   other words: plain Not settled (terms are never guessed);
 - Not settled: everything else. A Draft has none.
@@ -37,12 +37,14 @@ def terms_days(terms: str | None) -> int | None:
 
 
 def payment_status(*, draft: bool, cancelled: bool, settled: bool, invoice_sent: bool, invoice_date: date | None,
-                   terms: str | None, today: date) -> str | None:
+                   terms: str | None, today: date, historical: bool = False) -> str | None:
     """The rule in Python (what the SQL does, for tests and the help)."""
     if settled:
         return SETTLED
     if draft:
         return None
+    if historical:
+        return NOT_NEEDED
     if cancelled and not invoice_sent:
         return NOT_NEEDED
     days = terms_days(terms)

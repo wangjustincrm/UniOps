@@ -115,7 +115,7 @@ Order.invoice_error_sql = order_fact(
 
 
 # An order's Payment (app/domain/order_payment.py, the same rule): Settled by hand; Not needed when cancelled and never
-# invoiced; Due / Overdue when the sent invoice's terms (else the partner's) say "Net N"; otherwise Not settled.
+# invoiced, or historical; Due / Overdue when the sent invoice's terms (else the partner's) say "Net N"; otherwise Not settled.
 def _payment_status_sql():
     partner_terms = select(Partner.payment_terms).where(Partner.code == Order.partner_code).correlate_except(Partner).scalar_subquery()
     days = cast(func.substring(func.lower(func.coalesce(Invoice.payment_terms, partner_terms)), TERMS_SQL_PATTERN), Integer)
@@ -126,6 +126,7 @@ def _payment_status_sql():
     return case(
         (Order.settled_on.is_not(None), SETTLED),
         (Order.fulfillment_status == F.DRAFT.value, null()),
+        (Order.historical.is_(True), NOT_NEEDED),  # the history replay (uniops-3d 2026-11-23): no payment is chased
         (and_(Order.fulfillment_status == F.CANCELLED.value, not_(sent)), NOT_NEEDED),
         (due < today, OVERDUE),
         (due.is_not(None), DUE),

@@ -548,18 +548,7 @@ class SettleIn(BaseModel):
     note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] | None = None
 
 
-class SettleBulkIn(SettleIn):
-    order_ids: Annotated[list[int], Field(min_length=1, max_length=200)]
-
-
 class UnsettleIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reason: Reason
-
-
-class SettleResult(BaseModel):
-    order_id: int
-    ok: bool
-    payment_status: str | None = None
-    error: str | None = None

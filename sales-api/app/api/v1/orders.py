@@ -10,10 +10,11 @@ from app.platform.query import QuerySpec, query_spec
 from app.runtime import Runtime, get_runtime
 from app.schemas.orders import (
     AmendOrderIn, CancelOrderIn, InvoicePricesIn, ReturnedIn, LinePreview, ManualLineIn, ManualOrderIn, OrderDetail, OrderRead,
-    ReleaseHoldIn, ResolveRowIn, ReviewResult, SettleBulkIn, SettleIn, SettleResult, UnsettleIn,
+    ReleaseHoldIn, ResolveRowIn, ReviewResult, SettleIn, UnsettleIn,
 )
 from app.services.order_holds import OrderActions
-from app.services.order_payment import OrderPaymentService
+from app.platform.bulk_actions import action_router
+from app.services.order_payment import ORDER_ACTIONS, OrderPaymentService
 from app.services.order_views import ManualOrderService, OrderService
 
 UoW = Annotated[Any, Depends(get_uow)]
@@ -22,6 +23,8 @@ Spec = Annotated[QuerySpec, Depends(query_spec)]
 Version = Annotated[int | None, Query()]
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+# Record actions on one order or many (Mark settled…): before every /{id}/… route.
+router.include_router(action_router(ORDER_ACTIONS, get_uow))
 
 
 @router.get("")
@@ -131,14 +134,6 @@ async def manual_cancel(u: UoW, id: int, version: Version = None):
     o = await ManualOrderService(u).cancel(id, version)
     await u.commit()
     return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
-
-
-@router.post("/settle-bulk", response_model=list[SettleResult])
-async def settle_bulk(u: UoW, body: SettleBulkIn):
-    """Mark settled in bulk (sales.settle): one result per order."""
-    out = await OrderPaymentService(u).settle_bulk(body)
-    await u.commit()
-    return out
 
 
 @router.post("/{id}/settle", response_model=OrderRead)
