@@ -39,6 +39,7 @@ ENGINES = {
     "orders.BarcodeLookup": "a read helper of OrderSync",
     "problems.SalesTasks": "the task gateway every engine raises problems through",
     "health.Health": "HealthService checks first",
+    "security_log.SalesLogSecurityStore": "the refusal listener's store: it records a refusal the check already made",
 }
 
 

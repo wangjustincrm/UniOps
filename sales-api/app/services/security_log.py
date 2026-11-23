@@ -14,7 +14,9 @@ import os
 from typing import Any
 
 from app.platform.authorization import on_denied
+from app.platform import correlation
 from app.platform.request_log import current_route
+from app.platform.security import SecurityEvent, SecurityLogStore
 from app.services import oplog
 
 STEP = "security"
@@ -22,17 +24,32 @@ SWITCHES = ("SALES_PARTNER_WRITES_ENABLED", "SALES_EXTERNAL_EMAIL_ENABLED", "SAL
 logger = logging.getLogger("sales.security")
 
 
+class SalesLogSecurityStore:
+    """The Sales-local store: a `sales_log` row, step "security", in a session of its own (the refused request's unit
+    of work rolls back). The refusal is also on the request's audit log (its error code and message, platform/exceptions).
+    Swap for identity's security log only when the project decides it (nothing shared is written)."""
+
+    async def save(self, e: SecurityEvent, uow: Any) -> None:
+        factory = getattr(uow, "_session_factory", None)
+        if factory is None:
+            return
+        async with factory() as s:
+            await oplog.write(s, "WARNING", STEP, f"refused: {e.user_name} ({e.role or 'no role'}) needs {e.permission}"
+                              + (f" on {e.route}" if e.route else ""),
+                              context={"user_id": e.user_id, "user_name": e.user_name, "role": e.role,
+                                       "permission": e.permission, "route": e.route})
+            await s.commit()
+
+
+STORE: SecurityLogStore = SalesLogSecurityStore()
+
+
 @on_denied
 async def log_refusal(uow: Any, key: str) -> None:
-    factory = getattr(uow, "_session_factory", None)
-    if factory is None:
-        return
-    a, route = uow.actor, current_route()
-    async with factory() as s:
-        await oplog.write(s, "WARNING", STEP, f"refused: {a.name} ({a.role or 'no role'}) needs {key}" + (f" on {route}" if route else ""),
-                          context={"user_id": str(a.user_id) if a.user_id else None, "user_name": a.name, "role": a.role,
-                                   "permission": key, "route": route})
-        await s.commit()
+    a = uow.actor
+    await STORE.save(SecurityEvent(action="permission_denied", user_id=str(a.user_id) if a.user_id else None,
+                                   user_name=a.name, role=a.role, permission=key, route=current_route(),
+                                   correlation_id=correlation.current()), uow)
 
 
 def switches(settings: Any, environ: dict[str, str] | None = None) -> dict[str, Any]:
