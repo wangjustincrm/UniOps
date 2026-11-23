@@ -50,4 +50,14 @@ describe('Payment: Mark settled as a record action (user 2026-11-23)', () => {
     expect(screen.getByText('Not settled')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /settled/i })).toBeNull()
   })
+
+  it('settled by the gateway: the badge says (auto); Mark settled names the settlement; Undo has nothing to undo', () => {
+    const auto = order({ payment_status: 'Settled', settled_on: null, auto_settlement_id: 12, auto_settlement_label: 'PayPal settlement 4X1', auto_settled_on: '2026-11-20' })
+    renderAs(['sales.read', 'sales.settle'], <>
+      <PaymentBadge o={auto} /><RecordActionButtons record={auto} actions={ORDER_ACTIONS} host={{ run: vi.fn(), name: () => '' }} /></>)
+    expect(screen.getByText('Settled (auto)')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mark settled' })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('button', { name: 'Mark settled' })).toHaveAccessibleDescription('Unavailable: Already settled by PayPal settlement 4X1')
+    expect(screen.getByRole('button', { name: 'Undo settled' })).toHaveAttribute('aria-disabled', 'true')
+  })
 })

@@ -5,7 +5,7 @@ import {
 } from '@/platform-ui'
 import { SOURCE_LABEL, downloadPacket, fetchOrder, poPdf, ordersClient, reorderOrder, type OrderRead } from './ordersApi'
 import { OrderHoldActions } from './OrderHoldActions'
-import { PaymentBadge } from './OrderPayment'
+import { PaymentBadge, SettlementLink } from './OrderPayment'
 import { ORDER_ACTIONS, ORDER_ACTION_HOST } from './orderActions'
 import { settledFacts } from './orderPaymentFacts'
 import { DetailHelp, NextStep, OrderStatusBadge } from './OrderStatusCells'
@@ -122,7 +122,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
     { label: 'Requested delivery', value: d.requested_delivery_date ? formatDate(d.requested_delivery_date) : '—' },
     ...(d.manual_reason ? [{ label: 'Reason', value: d.manual_reason, help: 'term:Reason' as const }] : []),
     ...(d.parent_reference ? [{ label: 'Reorder of', value: d.parent_reference }] : []),
-    ...settledFacts(d),
+    ...settledFacts(d, <SettlementLink o={d} />),
   ]
 
   const isDraft = live.source_type === 'MANUAL' && live.fulfillment_status === 'Draft'

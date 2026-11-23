@@ -32,6 +32,7 @@ export const ORDER_ACTIONS = defineActions<OrderRead>([
     id: 'settle', label: 'Mark settled', permission: SETTLE, scope: 'group', placement: ['row', 'bulk', 'sheet'],
     eligible: (o) => (o.shadow ? 'A test-run order'
       : o.settled_on ? `Already settled on ${o.settled_on}`
+        : o.auto_settlement_id != null ? `Already settled by ${o.auto_settlement_label}`
         : !o.payment_status ? 'A draft is not an order yet'
           : o.payment_status === NOT_NEEDED ? 'No payment is expected (Not needed)' : true),
     input: settleInput, help: 'term:Payment',
@@ -41,7 +42,7 @@ export const ORDER_ACTIONS = defineActions<OrderRead>([
   },
   {
     id: 'unsettle', label: 'Undo settled', permission: SETTLE, scope: 'group', placement: ['row', 'bulk', 'sheet'], tone: 'destructive',
-    eligible: (o) => (o.settled_on ? true : 'Not settled'),
+    eligible: (o) => (o.settled_on ? true : o.auto_settlement_id != null ? 'Settled by the gateway, not by hand: nothing to undo' : 'Not settled'),
     input: { reason: { label: 'Why it is undone' } },
     title: (n) => (n === 1 ? 'Undo settled' : `Undo settled on ${n} orders`),
     description: 'Back to not settled; the undo and its reason are kept in each order\'s Activity.',

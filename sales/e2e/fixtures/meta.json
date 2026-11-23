@@ -1058,6 +1058,7 @@
     "type": "enum",
     "enum_values": [
      "Not settled",
+     "Waiting for the gateway",
      "Due",
      "Overdue",
      "Settled",
@@ -1212,6 +1213,39 @@
      "is_null",
      "not_null"
     ],
+    "in_row": true
+   },
+   {
+    "name": "auto_settlement_id",
+    "label": "Auto settlement ID",
+    "type": "text",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": [],
+    "in_row": true
+   },
+   {
+    "name": "auto_settlement_label",
+    "label": "Auto settlement label",
+    "type": "text",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": [],
+    "in_row": true
+   },
+   {
+    "name": "auto_settled_on",
+    "label": "Auto settled on",
+    "type": "text",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": [],
     "in_row": true
    },
    {
@@ -3742,10 +3776,13 @@
     "body": "Invoiced and past its terms (the invoice date + Net N days). Follow up with the partner; Mark settled when the money comes."
    },
    "Settled": {
-    "body": "Finance marked the money received; the date, the reference and who marked it are on the order. Undo settled if it was a mistake (with a reason)."
+    "body": "The money came. Settled (auto): a Shopify order whose payments are in a gateway settlement (named on the order). Otherwise Finance marked it, with the date and reference; Undo settled (with a reason) undoes only that mark."
+   },
+   "Waiting for the gateway": {
+    "body": "Shopify order: its payments are with the gateway (Authorize.Net, or in the PayPal balance) but in no settlement yet. It becomes Settled (auto) by itself; nothing to do."
    },
    "Not needed": {
-    "body": "Cancelled and never invoiced: no money is expected."
+    "body": "No money is expected: cancelled and never invoiced, a Shopify order with nothing left to receive (fully refunded or free), or historical."
    }
   },
   "terms": {
@@ -3783,7 +3820,7 @@
     "body": "Why a manual order was made: Gift, Replacement, Sample, Staff purchase, Phone order, Other (the list is set under Orders \u2192 Manual order settings). Chosen before it is submitted; Orders \u2192 Manual orders by reason lists them by month and reason."
    },
    "Payment": {
-    "body": "Whether the money for the order came, beside its Status: Not settled, Due / Overdue (invoiced, from its Net N terms), Settled (a finance user marked it, with the date and a reference) or Not needed. Orders \u2192 To settle lists what is open. It does not change the Status."
+    "body": "Whether the money for the order came, beside its Status: Not settled, Due / Overdue (invoiced, Net N terms), Waiting for the gateway (Shopify), Settled (by Finance, or auto: in a gateway settlement) or Not needed. Orders \u2192 To settle lists what is open. It does not change the Status."
    },
    "EA": {
     "body": "Each: the unit everything is counted in. Every other unit (CS\u2026) has its EA factor per item in the Item Master."

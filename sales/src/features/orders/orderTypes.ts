@@ -90,6 +90,10 @@ export interface OrderRead {
   settled_note?: string | null
   settled_at?: string | null
   settled_by_name?: string | null
+  /** Derived (user 2026-11-23): the gateway settlement that settled a Shopify order; the manual mark above wins. */
+  auto_settlement_id?: number | null
+  auto_settlement_label?: string | null
+  auto_settled_on?: string | null
   source_updated_at: string | null
   version: number
   created_at: string
