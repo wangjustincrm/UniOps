@@ -174,6 +174,8 @@ class FolderCheckRead(BaseModel):
 
 class CursorReset(BaseModel):
     """The inclusive updated_at to pull from next (FR-OB-10); null = pull nothing."""
+    model_config = ConfigDict(extra="forbid")
+
     cursor_updated_at: datetime | None
 
 

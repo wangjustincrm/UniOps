@@ -4,7 +4,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Response
 
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, BaseModel, Field
 
 from app.core.deps import get_uow
 from app.models.config import Connection
@@ -71,6 +71,8 @@ async def document_raw(u: UoW, id: int) -> Response:
 
 
 class DocumentReason(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     reason: str = Field(min_length=3, max_length=500)
 
 

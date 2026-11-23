@@ -1,7 +1,7 @@
 """What an order and a transfer share (record_files): their files and attachments."""
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, BaseModel, Field
 
 from app.schemas.orders import OrderDocumentRead
 
@@ -18,4 +18,6 @@ class AttachmentRead(RecordDocumentRead):
 
 
 class RemoveAttachmentIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     reason: str = Field(min_length=3, max_length=500)
