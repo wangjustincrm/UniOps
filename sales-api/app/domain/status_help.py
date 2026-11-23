@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from app.domain.order_payment import DUE, NOT_NEEDED, NOT_SETTLED, OVERDUE, SETTLED
+from app.domain.order_payment import DUE, NOT_NEEDED, NOT_SETTLED, OVERDUE, SETTLED, WAITING
 from app.domain.order_status import (
     ARCHIVED, CANCELLED, CANCELLED_AT_SOURCE, COMPLETED, CONFLICT_945, DELIVERY_DUE, DRAFT, FAILED_940, INVOICE_BLOCKED,
     INVOICE_FAILED, NEEDS_REVIEW, ON_HOLD, PAYMENT_REQUIRED, REJECTED_940, SENDS, SHOPIFY_FAILED, TIMEOUT_997, WAITING_945,
@@ -87,9 +87,13 @@ PAYMENT_HELP: dict[str, Help] = {
               ("Mark settled",)),
     OVERDUE: Help("Invoiced and past its terms (the invoice date + Net N days). Follow up with the partner; Mark settled "
                   "when the money comes.", ("Mark settled",)),
-    SETTLED: Help("Finance marked the money received; the date, the reference and who marked it are on the order. Undo "
-                  "settled if it was a mistake (with a reason).", ("Undo settled",)),
-    NOT_NEEDED: Help("Cancelled and never invoiced: no money is expected."),
+    SETTLED: Help("The money came. Settled (auto): a Shopify order whose payments are in a gateway settlement (named on "
+                  "the order). Otherwise Finance marked it, with the date and reference; Undo settled (with a reason) "
+                  "undoes only that mark.", ("Undo settled",)),
+    WAITING: Help("Shopify order: its payments are with the gateway (Authorize.Net, or in the PayPal balance) but in no "
+                  "settlement yet. It becomes Settled (auto) by itself; nothing to do."),
+    NOT_NEEDED: Help("No money is expected: cancelled and never invoiced, a Shopify order with nothing left to receive "
+                     "(fully refunded or free), or historical."),
 }
 
 DETAIL_HELP: dict[str, Help] = {

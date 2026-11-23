@@ -11,7 +11,8 @@ sales.settle only — a finance key, not on sales.read or sales.order.operate. T
 record actions (ORDER_ACTIONS, platform/bulk_actions.py): a draft, a shadow order, one already settled, or one whose
 Payment is Not needed (cancelled with nothing invoiced, or historical — uniops-3d 2026-11-23, easy to reverse here)
 is not settled. A later derived source (Shopify from the gateway settlements) goes beside the manual columns; the
-manual mark wins (app/domain/order_payment.py).
+manual mark wins (app/domain/order_payment.py). An order the gateway settled (derived, user 2026-11-23) is not marked
+again ("already settled by PayPal settlement …"), and Undo applies only to a manual mark.
 """
 from __future__ import annotations
 
@@ -36,8 +37,11 @@ SETTLE = "sales.settle"
 STEP = "payment"
 
 
-async def _payment(uow, o: Order) -> str | None:
-    return (await uow.session.execute(select(Order.payment_status_sql).where(Order.id == o.id))).scalar()
+async def _payment(uow, o: Order) -> tuple[str | None, str | None]:
+    """Its Payment and, when the gateway settled it, that settlement's name."""
+    row = (await uow.session.execute(select(Order.payment_status_sql, Order.auto_settlement_label_sql)
+                                     .where(Order.id == o.id))).one()
+    return row[0], row[1]
 
 
 async def settle_check(uow, o: Order) -> str | None:
@@ -48,15 +52,22 @@ async def settle_check(uow, o: Order) -> str | None:
         return "a draft is not an order yet: submit it first"
     if o.settled_on is not None:
         return f"already settled on {o.settled_on:%Y-%m-%d} ({o.settled_reference})"
-    if await _payment(uow, o) == NOT_NEEDED:
-        return "no payment is expected (Not needed: cancelled with nothing invoiced, or historical)"
+    status, auto = await _payment(uow, o)
+    if auto:
+        return f"already settled by {auto}"
+    if status == NOT_NEEDED:
+        return "no payment is expected (Not needed: cancelled with nothing invoiced, nothing left to receive, or historical)"
     return None
 
 
-async def unsettle_check(uow, o: Order) -> str | None:  # noqa: ARG001
+async def unsettle_check(uow, o: Order) -> str | None:
+    """Only a manual mark is undone (it then falls back to what the gateway says)."""
     if o.shadow:
         return TEST_RUN_REFUSAL
-    return None if o.settled_on is not None else "not settled"
+    if o.settled_on is not None:
+        return None
+    _, auto = await _payment(uow, o)
+    return f"settled by {auto}, not by hand: nothing to undo" if auto else "not settled"
 
 
 def settle_validate(body: SettleIn) -> None:
@@ -105,7 +116,7 @@ class OrderPaymentService(Service):
         why = await check(self.uow, o)
         if why:
             code = ("order.not_settled" if check is unsettle_check else
-                    "order.settled" if o.settled_on is not None else "order.not_settleable")
+                    "order.settled" if why.startswith("already settled") else "order.not_settleable")
             raise BusinessError(code, why)
         await run(self.uow, o, body)
         return o

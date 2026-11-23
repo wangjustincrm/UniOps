@@ -17,9 +17,13 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, column_property, mapped_column
 
 from app.db.base import Base
-from app.domain.order_payment import DUE, NOT_NEEDED, NOT_SETTLED, OVERDUE, SETTLED, TERMS_SQL_PATTERN
+from app.domain.gateways import LABELS as GATEWAY_LABELS
+from app.domain.gateways import PAYPAL_IN_BALANCE, SHOPIFY_GATEWAYS
+from app.domain.order_payment import DUE, NOT_NEEDED, NOT_SETTLED, OVERDUE, SETTLED, TERMS_SQL_PATTERN, WAITING
 from app.domain.status import Fulfillment as F
 from app.models.config import Partner, one_of
+from app.models.gateways import GatewaySettlement, GatewayTransaction
+from app.models.payments import OrderPayment
 from app.models.orders import Order, order_fact
 from app.platform.entities import Audited, CreationAudited, Versioned
 
@@ -114,8 +118,36 @@ Order.invoice_error_sql = order_fact(
     select(Invoice.error).where(Invoice.order_id == Order.id).correlate_except(Invoice).scalar_subquery())
 
 
-# An order's Payment (app/domain/order_payment.py, the same rule): Settled by hand; Not needed when cancelled and never
-# invoiced, or historical; Due / Overdue when the sent invoice's terms (else the partner's) say "Net N"; otherwise Not settled.
+# ── an order's Payment (app/domain/order_payment.py, the same rule; tests hold them together) ──────────────────────
+# A Shopify order's captured payments and, through the matches Payments made (GatewayTransaction.payment_row_id),
+# whether each is in a closed gateway settlement: the derived Settled (user 2026-11-23).
+_CAPTURED = (OrderPayment.order_id == Order.id, OrderPayment.kind.in_(("sale", "capture")), OrderPayment.status == "success",
+             OrderPayment.test.is_(False))
+_MATCH = (GatewayTransaction.payment_row_id == OrderPayment.id, GatewayTransaction.kind == "sale")
+_CLOSED = (*_MATCH, GatewayTransaction.settled.is_(True), GatewaySettlement.id == GatewayTransaction.settlement_id,
+           GatewaySettlement.state.is_distinct_from(PAYPAL_IN_BALANCE))
+
+
+def _count(*where):
+    return (select(func.count(OrderPayment.id)).where(*_CAPTURED, *where)
+            .correlate_except(OrderPayment, GatewayTransaction, GatewaySettlement).scalar_subquery())
+
+
+CAPTURED_N = _count()
+OTHER_N = _count(func.lower(func.coalesce(OrderPayment.gateway, "")).not_in(SHOPIFY_GATEWAYS))
+MATCHED_N = _count(exists(select(GatewayTransaction.id).where(*_MATCH)))
+CLOSED_N = _count(exists(select(GatewayTransaction.id).select_from(GatewayTransaction).join(
+    GatewaySettlement, GatewaySettlement.id == GatewayTransaction.settlement_id).where(*_CLOSED)))
+AUTO = and_(CAPTURED_N > 0, OTHER_N == 0, CLOSED_N == CAPTURED_N)
+# The latest closed settlement holding one of its payments: the derived Settled's date and reference.
+_LATEST = (select(GatewaySettlement.id).select_from(OrderPayment).join(GatewayTransaction, and_(*_MATCH))
+           .join(GatewaySettlement, GatewaySettlement.id == GatewayTransaction.settlement_id)
+           .where(*_CAPTURED, *_CLOSED).order_by(GatewaySettlement.settled_at.desc(), GatewaySettlement.id.desc()).limit(1)
+           .correlate_except(OrderPayment, GatewayTransaction, GatewaySettlement).scalar_subquery())
+AUTO_SETTLEMENT_ID = case((and_(Order.settled_on.is_(None), Order.fulfillment_status != F.DRAFT.value,
+                                Order.historical.is_(False), Order.source_type == "SHOPIFY", AUTO), _LATEST), else_=null())
+
+
 def _payment_status_sql():
     partner_terms = select(Partner.payment_terms).where(Partner.code == Order.partner_code).correlate_except(Partner).scalar_subquery()
     days = cast(func.substring(func.lower(func.coalesce(Invoice.payment_terms, partner_terms)), TERMS_SQL_PATTERN), Integer)
@@ -123,14 +155,27 @@ def _payment_status_sql():
            .order_by(Invoice.id.desc()).limit(1).correlate_except(Invoice).scalar_subquery())
     sent = exists(select(Invoice.id).where(Invoice.order_id == Order.id, Invoice.sent_at.is_not(None)).correlate_except(Invoice))
     today = cast(func.timezone("America/Toronto", func.now()), Date)
+    shopify = Order.source_type == "SHOPIFY"
     return case(
-        (Order.settled_on.is_not(None), SETTLED),
+        (Order.settled_on.is_not(None), SETTLED),                      # the manual mark always wins
         (Order.fulfillment_status == F.DRAFT.value, null()),
         (Order.historical.is_(True), NOT_NEEDED),  # the history replay (uniops-3d 2026-11-23): no payment is chased
+        (and_(shopify, AUTO), SETTLED),                                # derived: the gateway settled it
         (and_(Order.fulfillment_status == F.CANCELLED.value, not_(sent)), NOT_NEEDED),
+        (and_(shopify, func.coalesce(Order.net_amount, Order.total) == 0), NOT_NEEDED),  # nothing left to receive
+        (and_(shopify, CAPTURED_N > 0, OTHER_N == 0, MATCHED_N == CAPTURED_N, CLOSED_N == 0), WAITING),
         (due < today, OVERDUE),
         (due.is_not(None), DUE),
         else_=NOT_SETTLED)
 
 
 Order.payment_status_sql = order_fact(_payment_status_sql())
+# The derived Settled's settlement: its id (Settlements opens it), "PayPal settlement <id>" and its date (Toronto).
+Order.auto_settlement_id_sql = order_fact(AUTO_SETTLEMENT_ID)
+Order.auto_settlement_label_sql = order_fact(
+    select(case(*[(GatewaySettlement.gateway == g, f"{label} settlement ") for g, label in GATEWAY_LABELS.items()],
+                else_=GatewaySettlement.gateway + " settlement ") + GatewaySettlement.external_id)
+    .where(GatewaySettlement.id == AUTO_SETTLEMENT_ID).correlate_except(GatewaySettlement).scalar_subquery())
+Order.auto_settled_on_sql = order_fact(
+    select(cast(func.timezone("America/Toronto", GatewaySettlement.settled_at), Date))
+    .where(GatewaySettlement.id == AUTO_SETTLEMENT_ID).correlate_except(GatewaySettlement).scalar_subquery())

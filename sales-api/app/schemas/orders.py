@@ -102,6 +102,10 @@ class OrderRead(BaseModel):
     settled_note: str | None = None
     settled_at: datetime | None = None
     settled_by_name: str | None = None
+    # Derived (a Shopify order the gateway settled, user 2026-11-23): its settlement; the manual mark above wins
+    auto_settlement_id: int | None = None
+    auto_settlement_label: str | None = None
+    auto_settled_on: date | None = None
     source_updated_at: datetime | None
     version: int
     created_at: datetime

@@ -185,6 +185,19 @@ class Order(Audited, Versioned, Base):
         return None if v is None else int(v)
 
     @property
+    def auto_settlement_id(self) -> int | None:
+        """The gateway settlement that settled this Shopify order (derived; `auto_settlement_id_sql`)."""
+        return self.__dict__.get("auto_settlement_id_sql")
+
+    @property
+    def auto_settlement_label(self) -> str | None:
+        return self.__dict__.get("auto_settlement_label_sql")
+
+    @property
+    def auto_settled_on(self) -> date | None:
+        return self.__dict__.get("auto_settled_on_sql")
+
+    @property
     def payment_status(self) -> str | None:
         """Settled / Not settled / Due / Overdue / Not needed (`payment_status_sql`, app/domain/order_payment.py)."""
         return self.__dict__.get("payment_status_sql")

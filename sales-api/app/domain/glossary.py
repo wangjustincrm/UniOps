@@ -27,9 +27,9 @@ TERMS: dict[str, Help] = {
     "Reason": Help("Why a manual order was made: Gift, Replacement, Sample, Staff purchase, Phone order, Other (the list is "
                    "set under Orders → Manual order settings). Chosen before it is submitted; Orders → Manual orders by reason "
                    "lists them by month and reason."),
-    "Payment": Help("Whether the money for the order came, beside its Status: Not settled, Due / Overdue (invoiced, from its "
-                    "Net N terms), Settled (a finance user marked it, with the date and a reference) or Not needed. Orders → "
-                    "To settle lists what is open. It does not change the Status."),
+    "Payment": Help("Whether the money for the order came, beside its Status: Not settled, Due / Overdue (invoiced, Net N "
+                    "terms), Waiting for the gateway (Shopify), Settled (by Finance, or auto: in a gateway settlement) or "
+                    "Not needed. Orders → To settle lists what is open. It does not change the Status."),
     "EA": Help("Each: the unit everything is counted in. Every other unit (CS…) has its EA factor per item in the "
                "Item Master."),
     "Delay": Help("How long a partner's orders wait before the 940 goes: from receipt (invoiced partners) or from "

@@ -22,12 +22,12 @@ from typing import Any
 
 from sqlalchemy import select
 
-from app.domain.gateways import paypal_withdrawal
+from app.domain.gateways import PAYPAL_IN_BALANCE, paypal_withdrawal
 from app.models.gateways import GatewaySettlement, GatewayTransaction
 from app.platform.actors import SYSTEM_ACTOR
 
 GATEWAY = "PAYPAL"
-IN_BALANCE = "In PayPal balance"
+IN_BALANCE = PAYPAL_IN_BALANCE
 TRANSFERRED = "Transferred to the bank"
 # Other events, in words, for a settlement's notes (anything else by its code).
 EVENT_WORDS = {"T03": "deposit from the bank", "T1110": "hold", "T1111": "hold released", "T02": "currency conversion",
