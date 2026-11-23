@@ -167,6 +167,15 @@ class AuditTrail:
                 "after": after,
                 "reason": reason,
             })
+        # The audit log of the work running now (platform/auditing): its id on each row — once the table has the
+        # column (the module's migration) — and its count of entity changes (≈ ABP's AuditLog.EntityChanges).
+        from app.platform.auditing.scope import current_scope
+        scope = current_scope()
+        if scope is not None:
+            scope.entity_changed(len(rows))
+            if "audit_log_id" in self.model.__table__.c:
+                for r in rows:
+                    r["audit_log_id"] = scope.log.id
         # Core insert on the flush's own connection: adding ORM objects is not
         # allowed while a flush is finishing.
         session.connection().execute(insert(self.model.__table__), rows)

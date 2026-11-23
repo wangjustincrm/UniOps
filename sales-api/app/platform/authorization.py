@@ -88,6 +88,13 @@ async def authorize(uow: Any, key: str, *, system: bool = False) -> None:
         raise await _refuse(uow, key, actor)
 
 
+def _note_action(service: str, method: str) -> None:
+    from app.platform.auditing.scope import current_scope
+    scope = current_scope()
+    if scope is not None:
+        scope.add_action(service, method)
+
+
 def requires(key: str, *, system: bool = False) -> Callable[[F], F]:
     """Method decorator for application services (`self.uow` is the unit of
     work): checks `key` before the method body runs."""
@@ -95,6 +102,7 @@ def requires(key: str, *, system: bool = False) -> Callable[[F], F]:
         @functools.wraps(fn)
         async def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
             await authorize(self.uow, key, system=system)
+            _note_action(type(self).__name__, fn.__name__)  # ≈ AuditLogAction: the service method that runs
             return await fn(self, *args, **kwargs)
         wrapper.__requires__ = (key, system)  # type: ignore[attr-defined]
         return wrapper  # type: ignore[return-value]

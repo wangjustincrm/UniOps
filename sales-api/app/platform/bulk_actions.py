@@ -110,6 +110,9 @@ async def _targets(uow: Any, registry: ActionRegistry, body: ActionIn) -> dict[i
 async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: ActionIn) -> ActionOut:
     action = registry[action_id]
     await authorize(uow, action.permission)
+    from app.platform.auditing.scope import current_scope
+    if (scope := current_scope()) is not None:  # ≈ AuditLogAction: the record action that runs
+        scope.add_action(f"{registry.repo_cls.model.__name__}Actions", action_id)
     data = None
     if action.input is not None and not body.dry_run:
         try:

@@ -40,6 +40,15 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
 def create_app() -> FastAPI:
     # One logging setup (user 2026-11-23): JSON lines on stdout at LOG_LEVEL; loud third-party loggers quiet;
     # Health → Log levels raises one for a while (platform/log_levels.py). DEBUG's SQL echo keeps its own output.
+    # The platform's options, once (the composition root ≈ ABP's Configure<…Options>): ABP's defaults except where a
+    # user rule says otherwise (platform/options.py). The audit logs are not saved yet (NullAuditingStore) until the
+    # module's tables exist (sales36); the stdout request line, the correlation id and the scopes run already.
+    from app.platform.options import AuditingOptions, LoggingOptions, configure as configure_options
+    configure_options(
+        AuditingOptions(application_name="sales-api",
+                        ignored_routes=("/health", "/health/db", "/api/v1/health", "/api/v1/health/db"),
+                        always_log_routes=("*/export.csv", "*.pdf", "*.zip")),  # bulk data handed out: who took it
+        LoggingOptions(level=str(settings.LOG_LEVEL).upper(), request_logger="sales.request"))
     from app.platform.log_levels import configure
     configure(str(settings.LOG_LEVEL).upper())
     if settings.DEBUG:
@@ -62,8 +71,8 @@ def create_app() -> FastAPI:
     )
 
     # The request log (≈ ABP AuditLog, user 2026-11-23): one JSON line per request with its id (platform/request_log.py).
-    from app.platform.request_log import RequestLogMiddleware
-    app.add_middleware(RequestLogMiddleware, logger="sales.request")
+    from app.platform.auditing import AuditingMiddleware
+    app.add_middleware(AuditingMiddleware, logger="sales.request")
 
     # BusinessError → {"error": {code, message, details}} with 409/422;
     # anything else → 500 with a correlation id (platform README).

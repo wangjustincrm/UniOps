@@ -19,11 +19,13 @@ import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from app.platform.options import LoggingOptions, options
+
 LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
-MIN_MINUTES, MAX_MINUTES, DEFAULT_MINUTES = 1, 24 * 60, 60
-# Third-party loggers that are very loud at DEBUG / INFO: WARNING unless an override names them.
-QUIET = ("httpx", "httpcore", "asyncssh", "paramiko", "urllib3", "aiosmtplib", "asyncio", "multipart",
-         "sqlalchemy.pool", "sqlalchemy.dialects", "sqlalchemy.orm")
+# The defaults (LoggingOptions; a composition root may configure others): read through options() at run time.
+_D = LoggingOptions()
+MIN_MINUTES, MAX_MINUTES, DEFAULT_MINUTES = _D.min_override_minutes, _D.max_override_minutes, _D.default_override_minutes
+QUIET = _D.quiet_loggers  # third-party loggers very loud at DEBUG / INFO: WARNING unless an override names them
 _NAME = re.compile(r"^[A-Za-z0-9_.]{0,100}$")
 _baseline: dict[str, int] = {}  # a logger's own level before an override first touched it
 _configured = False
@@ -57,7 +59,7 @@ def configure(level: str = "INFO", *, stream: Any = None) -> None:
         root.addHandler(handler)
         _configured = True
     root.setLevel(level if level in LEVELS else "INFO")
-    for name in QUIET:
+    for name in options(LoggingOptions).quiet_loggers:
         logging.getLogger(name).setLevel(logging.WARNING)
 
 
@@ -67,8 +69,9 @@ def check(logger: str, level: str, minutes: int) -> str | None:
         return "a logger is a dotted name (letters, digits, _ and .), or empty for everything"
     if level not in LEVELS:
         return f"the level is one of {', '.join(LEVELS)}"
-    if not MIN_MINUTES <= minutes <= MAX_MINUTES:
-        return f"an override lasts {MIN_MINUTES} minute to {MAX_MINUTES // 60} hours (it always expires)"
+    o = options(LoggingOptions)
+    if not o.min_override_minutes <= minutes <= o.max_override_minutes:
+        return f"an override lasts {o.min_override_minutes} minute to {o.max_override_minutes // 60} hours (it always expires)"
     return None
 
 

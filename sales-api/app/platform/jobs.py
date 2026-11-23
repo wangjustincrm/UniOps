@@ -29,6 +29,7 @@ from sqlalchemy import DateTime, Integer, String, Text, select, text, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.platform.auditing.scope import begin_scope
 from app.platform.actors import SYSTEM_ACTOR
 
 logger = logging.getLogger(__name__)
@@ -207,7 +208,9 @@ class ScheduledJob(ABC):
         try:
             async with self.uow_factory(SYSTEM_ACTOR) as uow:
                 run = await uow.session.get(self.run_model, run_id)
-            summary = await self.run_once(run)
+            # A run is an audit scope (≈ ABP's IAuditingManager.BeginScope): saved when it changed data or failed.
+            async with begin_scope("job", self.name):
+                summary = await self.run_once(run)
             status = PARTIAL if summary.partial else SUCCEEDED
         except asyncio.CancelledError:
             error = "interrupted: the service stopped during the run"

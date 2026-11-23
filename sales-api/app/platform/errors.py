@@ -22,6 +22,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from app.platform.exceptions import ExceptionNotification, notify
 from app.platform.request_log import current_request_id, note_error
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 class BusinessError(Exception):
     """An expected refusal with a stable machine-readable `code`."""
+    log_level = "WARNING"  # ≈ ABP IHasLogLevel: a business error is a warning (platform/exceptions.py)
 
     status_code: int = 409
 
@@ -66,6 +68,7 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(BusinessError)
     async def _business(request: Request, exc: BusinessError):  # noqa: ARG001
         note_error(exc.code)
+        await notify(ExceptionNotification(exc, exc.status_code, exc.code, exc.message))
         return JSONResponse(status_code=exc.status_code, content=exc.to_body())
 
     @app.exception_handler(RequestValidationError)
@@ -74,6 +77,7 @@ def install_error_handlers(app: FastAPI) -> None:
         first = next((e["field"] for e in errors if e["field"]), None)
         message = "; ".join(f"{e['field']}: {e['message']}" if e["field"] else e["message"] for e in errors)
         note_error("request.invalid")
+        await notify(ExceptionNotification(exc, 422, "request.invalid", message or "the request is not valid"))
         return JSONResponse(status_code=422, content=InvalidInput(
             "request.invalid", message or "the request is not valid", {"field": first, "errors": errors},
         ).to_body())
@@ -84,6 +88,7 @@ def install_error_handlers(app: FastAPI) -> None:
         logger.exception(
             "Unhandled error %s on %s %s", correlation_id, request.method, request.url.path,
         )
+        await notify(ExceptionNotification(exc, 500, "internal", str(exc), unexpected=True))
         return JSONResponse(
             status_code=500,
             content={"error": {

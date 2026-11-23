@@ -47,6 +47,7 @@ from sqlalchemy import Boolean, DateTime, Integer, String, Text, func, inspect, 
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.platform.auditing.scope import begin_scope
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.errors import BusinessError, NotFound
 from app.platform.guard import Suppressed
@@ -291,15 +292,18 @@ class OutboxWorker:
         if claim is None:
             return outcome
         kind = self.kinds[claim.kind]
-        try:
-            await kind.effect(claim.payload, claim.ctx)
-        except asyncio.CancelledError:
-            # Shutting down mid-call: whether it happened is unknown.
-            await self._record(claim, OutcomeUnknown("interrupted during the call"))
-            raise
-        except Exception as e:  # noqa: BLE001 — every failure is recorded on the row
-            return await self._record(claim, e)
-        return await self._record(claim, None)
+        # A send is an audit scope (≈ ABP's IAuditingManager.BeginScope): saved when it changed data or failed.
+        async with begin_scope("outbox", claim.kind) as audit:
+            try:
+                await kind.effect(claim.payload, claim.ctx)
+            except asyncio.CancelledError:
+                # Shutting down mid-call: whether it happened is unknown.
+                await self._record(claim, OutcomeUnknown("interrupted during the call"))
+                raise
+            except Exception as e:  # noqa: BLE001 — every failure is recorded on the row
+                audit.add_exception(f"{type(e).__name__}: {e}")
+                return await self._record(claim, e)
+            return await self._record(claim, None)
 
     # ── phase 1: claim ───────────────────────────────────────────────────────
     async def _claim(self) -> tuple[str | None, _Claim | None]:
