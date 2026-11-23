@@ -43,6 +43,7 @@ from app.services.notifications import gate
 from app.services.operations import DocumentRepository
 from app.services.order_views import OrderRepository
 from app.services.problems import DOCUMENT_TYPE
+from app.services.features import FEATURES, refresh as refresh_features
 from app.services.log_levels import view as log_view
 from app.services.settings import (
     LOG_OVERRIDES,
@@ -163,7 +164,7 @@ class Health:
             Run.status.in_(("SUCCEEDED", "PARTIAL"))))).scalar_one()
         paused = await SETTINGS.get(self.s, SCHEDULER_PAUSED)
         stale = [r for r in running if (r.heartbeat_at or r.started_at) < now - timedelta(minutes=30)]
-        enabled = bool(getattr(self.settings, "SALES_SCHEDULER_ENABLED", False))
+        enabled = FEATURES.effective("SALES_SCHEDULER_ENABLED", self.settings)
         last = f"last successful run {last_ok:%Y-%m-%d %H:%M} UTC" if last_ok else "no successful run yet"
         twice = [k for k, n in _counts(f"{r.job}|{r.scope}" for r in running).items() if n > 1]
         overdue = [j.label for j in jobs if j.overdue]
@@ -231,6 +232,7 @@ class Health:
             TASKS.c.created_at < now - timedelta(hours=age)))
         add("old_tasks", f"Open tasks older than {age} hours", WARNING if old else PASSED, f"{old}", count=old)
 
+        await refresh_features(self.s)
         shadow = await SETTINGS.get(self.s, SHADOW_MODE)
         gate_rows = await gate(self.s)
         result = max((c.result for c in out), key=_RANK.__getitem__, default=PASSED)
@@ -239,8 +241,9 @@ class Health:
         return HealthRead(
             jobs=jobs, scheduler_paused=paused, system_minutes=await SETTINGS.get(self.s, SYSTEM_MINUTES),
             result=result, checked_at=now, checks=out, cards=cards, shadow_mode=shadow,
-            partner_writes_enabled=bool(getattr(self.settings, "SALES_PARTNER_WRITES_ENABLED", False)),
-            external_email_enabled=bool(getattr(self.settings, "SALES_EXTERNAL_EMAIL_ENABLED", False)),
+            partner_writes_enabled=FEATURES.effective("SALES_PARTNER_WRITES_ENABLED", self.settings),
+            external_email_enabled=FEATURES.effective("SALES_EXTERNAL_EMAIL_ENABLED", self.settings),
+            features=FEATURES.state(self.settings),
             scheduler_enabled=enabled, gate=gate_rows, gate_ok=all(g.ok for g in gate_rows),
             log_levels=log_view(await SETTINGS.get(self.s, LOG_OVERRIDES), str(getattr(self.settings, "LOG_LEVEL", "INFO")).upper()))
 

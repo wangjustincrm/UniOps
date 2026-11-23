@@ -52,6 +52,8 @@ class HealthRead(BaseModel):
     system_minutes: int = 1
     # Health → Log levels (user 2026-11-23): the server's level, the overrides running and the levels now
     log_levels: dict[str, Any] | None = None
+    # The switches as features (user 2026-11-23): the server's value, a person's (off only) and the effective one
+    features: list[dict[str, Any]] = []
 
 
 class CardRead(BaseModel):

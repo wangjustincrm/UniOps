@@ -118,7 +118,8 @@ MANUAL_REASONS = SETTINGS.declare(Setting(
 async def automatic_runs_on(session, app_settings) -> bool:
     """Automatic runs happen: the server allows them (SALES_SCHEDULER_ENABLED) and the master switch is
     on (not SCHEDULER_PAUSED). The one answer for Connections, Health and an order's next step."""
-    return bool(getattr(app_settings, "SALES_SCHEDULER_ENABLED", False)) and not await SETTINGS.get(session, SCHEDULER_PAUSED)
+    from app.services.features import FEATURES  # the switch's effective value: the server's, unless a person turned it off
+    return FEATURES.effective("SALES_SCHEDULER_ENABLED", app_settings) and not await SETTINGS.get(session, SCHEDULER_PAUSED)
 
 
 # Log levels raised for a while (user 2026-11-23; platform/log_levels.py): [{logger, level, until, by, reason}].

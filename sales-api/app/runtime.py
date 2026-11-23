@@ -117,5 +117,8 @@ def get_runtime() -> Runtime:
     if _runtime is None:
         from app.core.config import settings
         from app.core.deps import uow_factory
-        _runtime = build_runtime(settings, uow_factory)
+        # The switches as features (services/features.py): the guards read their effective value (env is the ceiling).
+        from app.platform.features import FeatureSettingsView
+        from app.services.features import FEATURES
+        _runtime = build_runtime(FeatureSettingsView(settings, FEATURES), uow_factory)
     return _runtime

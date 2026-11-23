@@ -199,3 +199,28 @@ async def clear_log_level(u: UoW, body: LogLevelClearIn) -> dict:
     out = await LogLevelService(u, settings).clear(body.logger, body.reason)
     await u.commit()
     return out
+
+
+# Health → Switches (user 2026-11-23): partner writes, external email, the scheduler — a person may turn one off.
+features = APIRouter(prefix="/config/features", tags=["settings"])
+
+
+class FeatureIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(max_length=100)
+    value: bool | None = None  # False: off; None / True: back to the server's value (it is the ceiling)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+@features.get("")
+async def get_features(u: UoW) -> list[dict]:
+    from app.services.features import FeatureService
+    return await FeatureService(u, settings).get()
+
+
+@features.post("")
+async def set_feature(u: UoW, body: FeatureIn) -> list[dict]:
+    from app.services.features import FeatureService
+    out = await FeatureService(u, settings).set(body.name, body.value, body.reason)
+    await u.commit()
+    return out

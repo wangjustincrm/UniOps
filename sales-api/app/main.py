@@ -26,6 +26,13 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     runtime = get_runtime()
     from app.services.log_levels import watch
     runtime.background.spawn(watch(AsyncSessionLocal, runtime.background.stop), name="sales-log-levels")
+    from app.services.features import refresh as refresh_features, watch as watch_features
+    try:
+        async with AsyncSessionLocal() as s:
+            await refresh_features(s)  # a switch a person turned off stays off from the first request
+    except Exception:  # noqa: BLE001 — the tick tries again
+        logger.exception("could not read the switches at startup")
+    runtime.background.spawn(watch_features(AsyncSessionLocal, runtime.background.stop), name="sales-features")
     if settings.SALES_SCHEDULER_ENABLED:
         runtime.background.spawn(runtime.scheduler.loop(runtime.background.stop), name="sales-scheduler")
         logger.info("scheduler started")
