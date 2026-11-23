@@ -81,6 +81,15 @@ export interface OrderRead {
   parent_reference?: string | null
   received_month?: string | null
   ordered_ea?: number | null
+  /** Payment (user 2026-11-23): Not settled, Due, Overdue, Settled or Not needed (none for a draft); Settled is a
+   *  finance user's mark (sales.settle) with the date, a reference, an optional amount and note, who and when. */
+  payment_status?: string | null
+  settled_on?: string | null
+  settled_reference?: string | null
+  settled_amount?: string | null
+  settled_note?: string | null
+  settled_at?: string | null
+  settled_by_name?: string | null
   source_updated_at: string | null
   version: number
   created_at: string

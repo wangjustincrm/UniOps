@@ -5,6 +5,8 @@ import {
 } from '@/platform-ui'
 import { SOURCE_LABEL, downloadPacket, fetchOrder, poPdf, ordersClient, reorderOrder, type OrderRead } from './ordersApi'
 import { OrderHoldActions } from './OrderHoldActions'
+import { PaymentBadge, SettleActions } from './OrderPayment'
+import { settledFacts } from './orderPaymentFacts'
 import { DetailHelp, NextStep, OrderStatusBadge } from './OrderStatusCells'
 import { statusDetailText } from './orderStatus'
 import { PaymentsAndRefunds } from './PaymentsAndRefunds'
@@ -119,6 +121,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
     { label: 'Requested delivery', value: d.requested_delivery_date ? formatDate(d.requested_delivery_date) : '—' },
     ...(d.manual_reason ? [{ label: 'Reason', value: d.manual_reason, help: 'term:Reason' as const }] : []),
     ...(d.parent_reference ? [{ label: 'Reorder of', value: d.parent_reference }] : []),
+    ...settledFacts(d),
   ]
 
   const isDraft = live.source_type === 'MANUAL' && live.fulfillment_status === 'Draft'
@@ -129,6 +132,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
       <Send940 o={d} />
       <FulfilInShopify o={d} />
       <OrderHoldActions o={d} />
+      <SettleActions o={d} />
       {amendable && !amending && (
         <ActionButton size="sm" variant="secondary" permission="sales.order.operate"
           onAction={() => { setReturning(false); setPricing(false); setAmending(true); host?.onTabChange?.('lines') }}>Amend and send again…</ActionButton>
@@ -161,6 +165,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
             {statusDetailText(live) && <Cluster as="span" inline gap={0.5} align="center"><Hint>Detail: {statusDetailText(live)}</Hint><DetailHelp o={live} /></Cluster>}
             <NextStep o={live} />
           </Stack>
+          <PaymentBadge o={live} />
           {live.historical && <Badge variant="neutral">Historical</Badge>}
         </>}
         size="xl" loading={q.isLoading} error={q.error}

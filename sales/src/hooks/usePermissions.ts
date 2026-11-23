@@ -17,7 +17,7 @@ export interface MyPermissions {
 
 // The module's permission keys. The module is reachable with ANY of them;
 // each nav item is gated by its own key (design §7, the Finance pattern).
-export const MODULE_PERMS = ['sales.read', 'sales.order.operate', 'sales.file.retry', 'sales.transfer.manage', 'sales.inventory.adjust', 'sales.invoice.manage', 'sales.config'] as const
+export const MODULE_PERMS = ['sales.read', 'sales.order.operate', 'sales.file.retry', 'sales.transfer.manage', 'sales.inventory.adjust', 'sales.invoice.manage', 'sales.config', 'sales.settle'] as const
 
 export function usePermissions() {
   const role = useModuleAuth((s) => s.user?.role ?? null)

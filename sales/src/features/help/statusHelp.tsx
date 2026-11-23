@@ -8,13 +8,15 @@ import { fetchStatusHelp } from './statusHelpApi'
 
 // The Sales help (the user, 2026-11-16). What a Status, an On Hold reason or a Detail means comes
 // from the API (sales-api app/domain/status_help.py, beside the rules); texts only the screens need
-// are a layer (pageHelp.ts). Ids: status:<Status>, hold:<reason>, detail:<Detail>, term:<glossary term>, page:<page>.
+// are a layer (pageHelp.ts). Ids: status:<Status>, hold:<reason>, detail:<Detail>, payment:<Payment>, term:<glossary term>,
+// page:<page>.
 
 declare module '@/platform-ui/help/types' {
   interface HelpRegistry {
     [status: `status:${string}`]: true
     [hold: `hold:${string}`]: true
     [detail: `detail:${string}`]: true
+    [payment: `payment:${string}`]: true
     [term: `term:${string}`]: true
     [page: `page:${string}`]: true
   }
@@ -25,9 +27,9 @@ declare module '@/platform-ui/help/types' {
 /** The text layers: the component library's (the list tools), then Sales' screens'; a later one overrides by id. */
 const LAYERS = [PLATFORM_HELP, PAGE_HELP]
 
-const PART = { status: 'statuses', hold: 'holds', detail: 'details', term: 'terms' } as const
+const PART = { status: 'statuses', hold: 'holds', detail: 'details', payment: 'payments', term: 'terms' } as const
 /** What a search result says it is. */
-const KIND = { status: 'order status', hold: 'On Hold reason', detail: 'order detail', term: 'term' } as const
+const KIND = { status: 'order status', hold: 'On Hold reason', detail: 'order detail', payment: 'order payment', term: 'term' } as const
 
 export function SalesHelpProvider({ children }: { children: ReactNode }) {
   const q = useLookup(['sales', 'help', 'texts'], fetchStatusHelp, { staleTime: Infinity, gcTime: Infinity, enabled: hasSession(), retry: 1, errors: 'inline' })

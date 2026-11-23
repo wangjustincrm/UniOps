@@ -7,6 +7,7 @@ import { ReturnAfterShipment } from '@/features/invoices/ReturnAfterShipment'
 import { SubmitDraft } from './DraftActions'
 import { ManualOrderForm } from './ManualOrderForm'
 import { ManualOrderSettingsButton } from './ManualOrderSettingsButton'
+import { PaymentBadge, SettleShown } from './OrderPayment'
 import { Recheck } from './Recheck'
 import { ordersClient, type OrderRead } from './ordersApi'
 import { PartnerCell } from '@/features/common/PartnerCell'
@@ -21,6 +22,7 @@ const orderColumns: ColumnDef<OrderRead, unknown>[] = [
   withHelp(col.text('source_order_number', 'Customer PO / ref.'), 'term:Customer PO / reference'),
   col.date('order_date', 'Ordered'),
   { accessorKey: 'order_status', header: 'Status', meta: { card: 'badge' }, cell: ({ row }) => <OrderStatusBadge o={row.original} /> },
+  { accessorKey: 'payment_status', header: 'Payment', meta: { help: 'term:Payment' }, cell: ({ row }) => <PaymentBadge o={row.original} /> },
   { id: 'status_detail', header: 'Detail', cell: ({ row }) => <StatusDetail o={row.original} /> },
   { id: 'shopify', header: 'Shopify', cell: ({ row }) => <ShopifyCell o={row.original} /> },
   col.money('total_amount', 'Total', { currency: 'currency' }),
@@ -34,7 +36,7 @@ const orderColumns: ColumnDef<OrderRead, unknown>[] = [
   ) },
   // A channel's own columns (user 2026-11-09): shown where a view names them (Open Shopify, Open retailers).
   startHidden(col.datetime('first_received_at', 'Received')),
-  startHidden(col.status('shopify_financial_status', 'Payment')),
+  startHidden(col.status('shopify_financial_status', 'Shopify payment')),
   startHidden(col.date('delivery_due_date', 'Delivery due')),
   startHidden(col.date('cancel_date', 'Cancel by')),  // the PO's cancel date; do-not-deliver-after is in Delivery due
   startHidden(col.place('ship_to_place', 'Ship to', (o) => o.ship_to, { withName: (o) => o.source_type !== 'SHOPIFY' })),
@@ -99,6 +101,6 @@ export default function OrdersPage() {
     emptyText={EMPTY_TEXT.orders} help="page:orders"
     create={{ label: 'New manual order', permission: 'sales.order.operate', className: 'max-w-3xl',
       render: (done, cancel) => <ManualOrderForm onSaved={done} onCancel={cancel} /> }}
-    toolbar={<ManualOrderSettingsButton />}
+    toolbar={(ctx) => <><SettleShown rows={ctx.rows} refresh={ctx.refresh} /><ManualOrderSettingsButton /></>}
     detailActions={(o) => <ReturnAfterShipment o={o} />} />
 }

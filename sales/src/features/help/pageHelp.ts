@@ -10,11 +10,12 @@ export const PAGE_HELP: Record<string, HelpEntry> = {
     body: 'Every order: from the Shopify store, retailer 850s and manual entry, or a warehouse 945 with no order. Each order shows its Status, and on the order, whose turn it is.',
     tasks: [
       'Find an order: search its Order ref, Internal no., PO, partner or a tag.',
-      'Use a view: Open, To fulfill, On hold, To invoice, Manual drafts, Manual orders by reason.',
+      'Use a view: Open, To fulfill, On hold, To invoice, To settle, Manual drafts, Manual orders by reason.',
       'Open an order to act on it: Send 940 now, Release hold, Confirm delivery.',
       'New manual order: a customer order typed in by hand, with its reason (Gift, Replacement, Sample …).',
       'A gift or replacement: on their order, More → Reorder for this customer; add lines and a reason, then submit.',
       'Manual orders by reason: gifts, replacements, samples … by month and reason, with the EA.',
+      'Payment (Finance): the To settle view; on an order Mark settled, or Mark shown settled for the list.',
     ],
   },
   'page:delivery': {
