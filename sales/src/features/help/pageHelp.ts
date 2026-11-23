@@ -15,7 +15,7 @@ export const PAGE_HELP: Record<string, HelpEntry> = {
       'New manual order: a customer order typed in by hand, with its reason (Gift, Replacement, Sample …).',
       'A gift or replacement: on their order, More → Reorder for this customer; add lines and a reason, then submit.',
       'Manual orders by reason: gifts, replacements, samples … by month and reason, with the EA.',
-      'Payment (Finance): the To settle view; on an order Mark settled, or Mark shown settled for the list.',
+      'Payment (Finance): the To settle view; tick orders → Mark settled, or an order\'s ⋯ menu.',
     ],
   },
   'page:delivery': {

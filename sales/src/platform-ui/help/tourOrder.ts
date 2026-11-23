@@ -31,6 +31,7 @@ export const DEFAULT_SLOTS: Record<string, SlotDef> = {
   'list.rowDetails': { order: 50, group: 'lists', tour: false }, 'list.groups': { order: 52, group: 'lists', tour: false },
   'list.totals': { order: 54, group: 'lists', tour: false }, 'list.moreColumns': { order: 56, group: 'lists', tour: false },
   'list.refresh': { order: 60, group: 'lists', tour: false }, 'list.export': { order: 70, group: 'lists', tour: false },
+  'list.select': { order: 36, group: 'lists', tour: false },
   'list.pages': { order: 80, group: 'lists', tour: false }, 'list.notices': { order: 85, group: 'lists', tour: false },
   // a record's sheet: what it is, what to do, its figures, its actions, its sections (its status badge: row.status)
   'record.header': { order: 10, group: 'records' }, 'record.next': { order: 20, group: 'page' }, 'record.facts': { order: 30, group: 'records' },

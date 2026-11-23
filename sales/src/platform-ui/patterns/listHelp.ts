@@ -23,6 +23,8 @@ export const PLATFORM_HELP: Record<string, HelpEntry> = {
     buttons: ['Search', 'Sort ascending', 'Group ascending', 'Hide column'] },
   'list.statusFind': { title: 'Find by status', body: "To see only some statuses: Search on any field → Status, tick the ones you want; or a status column's arrow menu → Search. A view (e.g. Open, On hold) already does this for you.",
     buttons: ['Search on any field', 'Search'] },
+  'list.select': { title: 'Act on several rows', body: "Tick rows (the box in the header ticks this page; then Select all N matching takes every row of the view, up to 500). The bar shows what you can do and how many each action fits. Before it runs you see which are left out and why; after, the result per row. Esc or Clear unticks. A row's ⋯ menu does the same for one row.",
+    buttons: ['Clear'] },
   'list.chips': { title: 'Active filters', body: 'The chips show everything that narrows the list (filters, search, sort, grouping). × removes one; Reset to the saved view removes your changes.',
     buttons: ['Reset to the saved view'] },
   'list.rowOpen': { title: 'Open a row', body: 'Click a row (or press Enter) to open it. In the record, J / K (or Alt+↑ / Alt+↓) move to the next or previous one.' },
@@ -46,11 +48,12 @@ export const PLATFORM_HELP: Record<string, HelpEntry> = {
 }
 
 /** The tools a list has, in the order "Using lists" explains them. */
-export function listTools(has: { search: boolean; panel: boolean; views: boolean; export: boolean }): string[] {
+export function listTools(has: { search: boolean; panel: boolean; views: boolean; export: boolean; select?: boolean }): string[] {
   return [
     ...(has.search ? ['list.search'] : []),
     ...(has.panel ? ['list.statusFind', 'list.searchPanel'] : []),
     ...(has.views ? ['list.views', 'list.defaultView', 'list.saveView'] : []),
+    ...(has.select ? ['list.select'] : []),
     'list.columns', 'list.sortGroup', 'list.refresh',
     ...(has.export ? ['list.export'] : []),
     'list.phone',
