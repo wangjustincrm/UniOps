@@ -154,6 +154,13 @@ class Repository(Generic[T]):
         items = list((await self.session.execute(q)).scalars().all())
         return Page[Any](items=items, total=total, groups=groups, groups_truncated=truncated, totals=totals)
 
+    async def matching_ids(self, spec: QuerySpec, limit: int) -> list[int]:
+        """The ids the list's query selects (its filters and search; no paging), at most `limit`, in its order:
+        a record action's "all matching" (platform/bulk_actions.py)."""
+        pk = self.model.__mapper__.primary_key[0]
+        q = self._order(self._apply(self.base_query(), spec, open_work=False), spec)
+        return [r[0] for r in (await self.session.execute(self._only(q, pk).limit(limit))).all()]
+
     async def suggest(self, field: str, text: str = "") -> list[str]:
         """The values of a field already in the list, most used first; the same rows the list reads."""
         if field not in self.suggestable:
