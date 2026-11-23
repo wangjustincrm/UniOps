@@ -35,7 +35,10 @@ STATUS_HELP: dict[str, Help] = {
     WAITING_TO_SEND: Help(
         "Waiting to go to the warehouse. \"Sends at …\" counts down the partner's delay (a Shopify order waits so the "
         "customer can still change it). \"This partner sends by hand\": use Send 940 now.", ("Send 940 now",)),
-    WAITING_997: Help("The 940 is with the warehouse; waiting for its 997 to accept it."),
+    WAITING_997: Help(
+        "The 940 is with the warehouse; waiting for its 997 to accept it. To stop it now, ask the warehouse to cancel "
+        "the 940: Cancel order opens once no 997 comes in time (997 Timeout). Don't Send 940 now meanwhile.",
+        ("Cancel order", "Send 940 now")),
     WAITING_945: Help(
         "The warehouse accepted it and is picking; waiting for the 945. A Shopify order is already fulfilled and "
         "archived in Shopify; the 945 adds the tracking and tells the customer. \"Writing the tracking to Shopify\": "
@@ -58,8 +61,9 @@ HOLD_HELP: dict[str, Help] = {
                    "was intended."),
     REJECTED_940: Help("The warehouse's 997 rejected the 940. Fix the cause, then Send 940 now.", ("Send 940 now",)),
     FAILED_940: Help("The 940 couldn't be sent (connection or file). Send 940 now once fixed.", ("Send 940 now",)),
-    TIMEOUT_997: Help("No 997 from the warehouse in time. Check with the warehouse; Send 940 now sends it again.",
-                      ("Send 940 now",)),
+    TIMEOUT_997: Help("No 997 from the warehouse in time. Check with the warehouse: Send 940 now sends it again; if "
+                      "the order should not go (refunded, or the warehouse cancelled it), Cancel order with the reason.",
+                      ("Send 940 now", "Cancel order")),
     CANCELLED_AT_SOURCE: Help(
         "Cancelled by the customer or in Shopify after the 940 reached the warehouse. Check with the warehouse, then "
         "Release hold: Cancel the order, Mark as shipped (if a 945 came), or Back to the status it held.",
@@ -130,7 +134,8 @@ HOLD_STEPS: dict[str, Step] = {
     ARCHIVED: Step(YOU, "Un-archive it in Shopify to send it, or leave it."),
     REJECTED_940: Step(YOU, "Fix the cause shown, then Send 940 now.", ("Send 940 now",)),
     FAILED_940: Step(YOU, "Send 940 now once the connection works.", ("Send 940 now",)),
-    TIMEOUT_997: Step(YOU, "Check with the warehouse, then Send 940 now.", ("Send 940 now",)),
+    TIMEOUT_997: Step(YOU, "Check with the warehouse, then Send 940 now, or Cancel order if it should not go.",
+                      ("Send 940 now", "Cancel order")),
     CANCELLED_AT_SOURCE: Step(YOU, "Check with the warehouse, then Release hold.", ("Release hold",)),
     CONFLICT_945: Step(YOU, "Compare the 945s and choose.", ("Compare the 945s",)),
     SHOPIFY_FAILED: Step(YOU, "Retry in Shopify on the shipment.", ("Retry in Shopify",)),

@@ -140,7 +140,7 @@ def test_every_step_is_reachable():
                             seen.add(step(status, fulfillment.value, invoice=invoice.value, runs_on=runs_on, delay_over=delay_over, **detail))
     assert set(STEPS) <= seen, set(STEPS) - seen
     st = next_step(Display(ON_HOLD, "997 Timeout", False), StatusFacts(fulfillment=F.TIMEOUT_940.value), DetailFacts(), TODAY)
-    assert (st.who, st.text) == (YOU, "Check with the warehouse, then Send 940 now.")
+    assert (st.who, st.text) == (YOU, "Check with the warehouse, then Send 940 now, or Cancel order if it should not go.")
 
 
 async def test_the_order_carries_its_next_step(api):  # noqa: F811

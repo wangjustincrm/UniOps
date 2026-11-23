@@ -940,6 +940,119 @@
     "in_row": true
    },
    {
+    "name": "manual_reason",
+    "label": "Reason",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true
+   },
+   {
+    "name": "parent_order_id",
+    "label": "Reorder of (no.)",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true
+   },
+   {
+    "name": "parent_reference",
+    "label": "Reorder of",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true
+   },
+   {
+    "name": "received_month",
+    "label": "Month",
+    "type": "date",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true
+   },
+   {
+    "name": "ordered_ea",
+    "label": "EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true
+   },
+   {
     "name": "source_updated_at",
     "label": "Source updated at",
     "type": "datetime",
@@ -1243,6 +1356,66 @@
        "op": "eq",
        "value": "Draft"
       }
+     ]
+    }
+   },
+   {
+    "key": "manual_by_reason",
+    "name": "Manual orders by reason",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "source_type",
+       "op": "eq",
+       "value": "MANUAL"
+      },
+      {
+       "field": "order_status",
+       "op": "not_in",
+       "value": [
+        "Draft",
+        "Cancelled"
+       ]
+      }
+     ],
+     "group": [
+      {
+       "field": "received_month",
+       "desc": true
+      },
+      {
+       "field": "manual_reason",
+       "desc": false
+      }
+     ],
+     "sort": [
+      {
+       "field": "first_received_at",
+       "desc": true
+      }
+     ],
+     "columns": [
+      "source_reference",
+      "first_received_at",
+      "manual_reason",
+      "parent_reference",
+      "ordered_ea",
+      "ship_to_place",
+      "order_status"
+     ],
+     "hidden": [
+      "order_number",
+      "partner_name",
+      "source_order_number",
+      "order_date",
+      "total_amount",
+      "total_refunded",
+      "net_amount",
+      "returned_ea",
+      "review_reason",
+      "shopify",
+      "status_detail"
      ]
     }
    },
@@ -1651,6 +1824,32 @@
     "currency_field": "currency"
    },
    {
+    "name": "net_after_fee",
+    "label": "Net after fee",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "summable": true,
+    "money": true,
+    "currency_field": "currency"
+   },
+   {
     "name": "gateway_ref",
     "label": "Gateway transaction ID",
     "type": "text",
@@ -1769,7 +1968,8 @@
      "Paid, no payment",
      "Not settled in the gateway",
      "In the gateway, not in Shopify",
-     "Details not available from the gateway"
+     "Details not available from the gateway",
+     "Waiting for the gateway"
     ],
     "filterable": true,
     "sortable": true,
@@ -1943,6 +2143,32 @@
     "in_row": true
    },
    {
+    "name": "gateway_fee",
+    "label": "Gateway fee",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "in_row": true,
+    "summable": true,
+    "money": true,
+    "currency_field": "currency"
+   },
+   {
     "name": "settlement_id",
     "label": "Settlement no.",
     "type": "number",
@@ -1967,7 +2193,7 @@
    },
    {
     "name": "settlement_ref",
-    "label": "Batch ID",
+    "label": "Batch / transfer ID",
     "type": "text",
     "enum_values": [],
     "filterable": true,
@@ -2125,6 +2351,41 @@
     }
    },
    {
+    "key": "paypal_settlements",
+    "name": "PayPal \u2014 by settlement",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "method",
+       "op": "eq",
+       "value": "PayPal"
+      },
+      {
+       "field": "settlement_id",
+       "op": "not_null",
+       "value": null
+      }
+     ],
+     "group": [
+      {
+       "field": "settled_date",
+       "desc": true
+      },
+      {
+       "field": "settlement_id",
+       "desc": true
+      }
+     ],
+     "sort": [
+      {
+       "field": "processed_at",
+       "desc": true
+      }
+     ]
+    }
+   },
+   {
     "key": "paypal_weekly",
     "name": "PayPal \u2014 weekly",
     "state": {
@@ -2199,6 +2460,13 @@
        "field": "issue",
        "op": "not_null",
        "value": null
+      },
+      {
+       "field": "issue",
+       "op": "not_in",
+       "value": [
+        "Waiting for the gateway"
+       ]
       }
      ],
      "group": [
@@ -3186,7 +3454,7 @@
     "body": "Waiting to go to the warehouse. \"Sends at \u2026\" counts down the partner's delay (a Shopify order waits so the customer can still change it). \"This partner sends by hand\": use Send 940 now."
    },
    "Sent": {
-    "body": "The 940 is with the warehouse; waiting for its 997 to accept it."
+    "body": "The 940 is with the warehouse; waiting for its 997 to accept it. To stop it now, ask the warehouse to cancel the 940: Cancel order opens once no 997 comes in time (997 Timeout). Don't Send 940 now meanwhile."
    },
    "Fulfilling": {
     "body": "The warehouse accepted it and is picking; waiting for the 945. A Shopify order is already fulfilled and archived in Shopify; the 945 adds the tracking and tells the customer. \"Writing the tracking to Shopify\": the 945 arrived and the tracking is being written."
@@ -3224,7 +3492,7 @@
     "body": "The 940 couldn't be sent (connection or file). Send 940 now once fixed."
    },
    "997 Timeout": {
-    "body": "No 997 from the warehouse in time. Check with the warehouse; Send 940 now sends it again."
+    "body": "No 997 from the warehouse in time. Check with the warehouse: Send 940 now sends it again; if the order should not go (refunded, or the warehouse cancelled it), Cancel order with the reason."
    },
    "Cancelled at Source": {
     "body": "Cancelled by the customer or in Shopify after the 940 reached the warehouse. Check with the warehouse, then Release hold: Cancel the order, Mark as shipped (if a 945 came), or Back to the status it held."
@@ -3284,6 +3552,9 @@
    "Customer PO / reference": {
     "body": "The customer's own number for the order."
    },
+   "Reason": {
+    "body": "Why a manual order was made: Gift, Replacement, Sample, Staff purchase, Phone order, Other (the list is set under Orders \u2192 Manual order settings). Chosen before it is submitted; Orders \u2192 Manual orders by reason lists them by month and reason."
+   },
    "EA": {
     "body": "Each: the unit everything is counted in. Every other unit (CS\u2026) has its EA factor per item in the Item Master."
    },
@@ -3333,13 +3604,16 @@
     "body": "The payment provider's own ID. Authorize.Net payments since Sep 18, 2025 have none in Shopify: it comes from Authorize.Net once the payment is matched there."
    },
    "Settlement": {
-    "body": "A deposit the payment provider paid to the bank: for Authorize.Net, one settled batch, about one a day. The payments in it are the money in that deposit."
+    "body": "A deposit the payment provider paid to the bank: for Authorize.Net, one settled batch, about one a day; for PayPal, one transfer to the bank, with everything since the previous one (what has not been transferred yet is the In PayPal balance row). The payments in it are the money in that deposit."
    },
    "Matched by": {
     "body": "How the provider's transaction was found to be this Shopify payment: its transaction ID, the Shopify payment ID, the order number, or only the same amount and time (probable: check it)."
    },
    "Difference": {
-    "body": "The deposit's net \u2212 the Shopify payments matched to it. Not zero: some money in the deposit is no Shopify payment, or a transaction is not matched yet."
+    "body": "The deposit's sales \u2212 refunds \u2212 the Shopify payments matched to it (fees aside). Not zero: some money in the deposit is no Shopify payment, or a transaction is not matched yet."
+   },
+   "Carried balance": {
+    "body": "PayPal: what went to the bank \u2212 the period's net after fees. Not zero when the transfer took only part of the balance (or more, from before), a hold kept money back, or a deposit from the bank funded refunds: Other events says which."
    }
   }
  }
