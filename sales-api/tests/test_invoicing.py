@@ -307,7 +307,7 @@ async def test_a_line_not_shipped_stays_on_the_810_with_zero_as_zoho_sends_it(p6
     import json
     inv = json.loads(data)["Invoice"][0]
     assert [(i["Line"], i["VendorPart"], i["QuantityShipped"], i["QuantityOrdered"], i["UnitPrice"]) for i in inv["Items"]] == [
-        (1, "CF0092", 10, 10, 50.0), (2, "CF0010", 0, 2, 70.0)]
+        (1, "CF0092", 10, 10, 50.0)]  # CF0010 not shipped: left out (user 2026-11-23)
     assert inv["TotalCasesShipped"] == 10.0 and inv["PO"] == "PO-Z" and inv["ShipTo"]["ShipToCode"] == "0012345000011"
 
 

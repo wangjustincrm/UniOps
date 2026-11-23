@@ -46,11 +46,28 @@ def test_the_810_names_what_a9_names():
     assert (inv["ShipTo"]["ShipToCode"], inv["ShipTo"]["ShipToZipcode"], inv["ShipTo"]["ShiptoCountry"]) == ("28", "M1M 1M1", "CA")
     assert (inv["BillTo"]["BilltoCode"], inv["BillTo"]["BilltoCity"], inv["BillTo"]["BilltoCountry"]) == ("99", "Ottawa", "CA")
     assert inv["TotalCasesShipped"] == 10.0
-    one, two = inv["Items"]  # a line not shipped stays on the invoice with 0
+    [one] = inv["Items"]  # a line not shipped is left out (user 2026-11-23)
     assert (one["Line"], one["VendorPart"], one["UPC"], one["GTIN#"], one["QuantityShipped"], one["QuantityOrdered"],
             one["UOM"], one["UnitPrice"], one["PackSize"], one["ofInnerPacks"]) == (
         1, "CF0092", "10062639300019", "10062639300019", 10, 10, "CA", 108.6, 1, 6)
-    assert (two["Line"], two["QuantityShipped"], two["QuantityOrdered"]) == (2, 0, 60)
+
+
+def _810_lines(items):
+    ship = {"name": "DC", "address1": "1 Road", "city": "Toronto", "province": "ON", "zip": "M1M 1M1", "country": "CA"}
+    [inv] = json.loads(build_810(Header810("Walmart", 1, "PO-1", date(2026, 11, 23), None, ship, ship), items))["Invoice"]
+    return [(i["Line"], i["VendorPart"], i["QuantityShipped"]) for i in inv["Items"]], inv["TotalCasesShipped"]
+
+
+def test_a_line_not_shipped_is_left_out_of_the_810_and_the_others_keep_their_line():
+    """User 2026-11-23: TrueCommerce imports a QuantityShipped 0 line as an empty row. No renumbering."""
+    it = lambda code, shipped: Item810(code, None, None, code, shipped, 5, Decimal("10"), 6)  # noqa: E731
+    assert _810_lines([it("CF0092", 5), it("S0156", 0), it("CF0010", 3)]) == ([(1, "CF0092", 5), (3, "CF0010", 3)], 8.0)
+
+
+def test_an_810_with_every_line_shipped_is_unchanged():
+    it = lambda code, shipped: Item810(code, None, None, code, shipped, 5, Decimal("10"), 6)  # noqa: E731
+    assert _810_lines([it("CF0092", 5), it("S0156", 2), it("CF0010", 3)]) == (
+        [(1, "CF0092", 5), (2, "S0156", 2), (3, "CF0010", 3)], 10.0)
 
 
 def test_the_810_goes_back_to_the_mailbox_the_850_named_and_only_then():

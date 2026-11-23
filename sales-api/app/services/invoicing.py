@@ -422,7 +422,8 @@ class Invoicing:
             raise RuntimeError(f"invoice method {inv.method} sends nothing")
 
     async def _810(self, s, inv: Invoice, order: Order, lines: list[InvoiceLine]) -> bytes:
-        """Every line of the order: one not invoiced goes out with QuantityShipped 0, as Zoho's do."""
+        """Every line of the order, numbered by its place in it; build_810 leaves out the ones not shipped (QuantityShipped
+        0, user 2026-11-23), the others keep their Line."""
         ordered = list((await s.execute(select(OrderLine).where(OrderLine.order_id == order.id, OrderLine.removed.is_(False))
                                         .order_by(OrderLine.line_no))).scalars())
         codes = [ln.item_code for ln in ordered if ln.item_code]

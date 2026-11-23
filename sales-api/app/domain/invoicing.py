@@ -8,9 +8,14 @@ Price: per case at the 850 unit price; a line ordered in another unit is
 scaled by the two factors (price × case factor ÷ order-unit factor).
 
 The 810 JSON has the shape of the 102 archived Zoho 810s (AC-OB-44, replayed
-2026-11-05): every line of the order, also those not shipped (QuantityShipped
-0); UPC carries the GTIN; terms are "NA" with no days, as Zoho has sent since
-August; the empty fields are sent empty.
+2026-11-05), except for lines not shipped: Zoho sent every line of the order,
+also those with QuantityShipped 0, and TrueCommerce imports such a line as an
+empty row (IN-1008632 / WM-4550827977, S0156: 50 ordered, 0 shipped). Since
+2026-11-23 (user: "if the value is zero please remove to generate json 810")
+a line with QuantityShipped 0 is left out; every other line keeps the Line it
+had (its place in the order, which the retailer matches to the PO): no
+renumbering. UPC carries the GTIN; terms are "NA" with no days, as Zoho has
+sent since August; the empty fields are sent empty.
 """
 from __future__ import annotations
 
@@ -152,7 +157,8 @@ def build_810(h: Header810, items: list[Item810]) -> bytes:
                    "Description": i.description or "", "QuantityShipped": i.shipped_cases, "UOM": "CA",
                    "UnitPrice": float(i.unit_price), "QuantityOrdered": i.ordered_cases, "PackSize": 1,
                    "ofInnerPacks": i.inner_packs or "", "ItemAllowancePercent": "", "ItemAllowanceAmount": "",
-                   "GTIN#": i.gtin or ""} for n, i in enumerate(items, start=1)],
+                   "GTIN#": i.gtin or ""} for n, i in enumerate(items, start=1)
+                  if i.shipped_cases != 0],  # not shipped: left out, the others keep their Line (2026-11-23)
     }]}
     # UTF-8 with the accents taken off (user 2026-11-13: as the 940 / 943; é → e), every text value.
     return json.dumps(_plain(body), ensure_ascii=False, indent=1).encode("utf-8")
