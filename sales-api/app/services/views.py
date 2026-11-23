@@ -7,6 +7,7 @@ from app.models.records import UserView
 from app.platform.views import ViewService
 from app.services.connections import ConnectionService
 from app.services.items import DcRoutingService, ItemService, PartnerCodeService
+from app.services.audit_logs import AuditLogService, EntityChangeService
 from app.services.operations import DocumentService, LogService, RunService
 from app.services.order_views import OrderService
 from app.services.partners import PartnerService
@@ -22,7 +23,7 @@ LISTS = {
     "config/dc-routing": DcRoutingService, "config/connections": ConnectionService, "orders": OrderService,
     "documents": DocumentService, "runs": RunService, "log": LogService, "shadow-matches": ShadowMatchService,
     "invoices": InvoiceService, "config/warehouses": WarehouseService, "transfers": TransferService, "payments": PaymentRowService,
-    "settlements": SettlementRowService,
+    "settlements": SettlementRowService, "audit-logs": AuditLogService, "entity-changes": EntityChangeService,
 }
 
 

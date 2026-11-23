@@ -15,6 +15,7 @@ from app.models.records import AuditLog, AuditLogAction, AuditRecord
 from app.platform.authorization import requires
 from app.platform.errors import NotFound
 from app.platform.query import FilterRule
+from app.platform.views import Preset
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.schemas.audit_logs import AuditLogActionRead, AuditLogDetail, AuditLogRead, EntityChangeRead
@@ -68,8 +69,15 @@ class AuditLogRepository(Repository[AuditLog]):
     enums = {"kind": ("request", "job", "outbox", "intake", "cli"), "http_method": ("GET", "POST", "PUT", "PATCH", "DELETE")}
     filterable = {"has_exception": FilterRule(AuditLog.exceptions.is_not(None), kind="bool", cast=lambda v: str(v).lower() == "true")}
     default_sort = ("-execution_time",)
+    meta_hidden = ("id", "user_id")  # UUIDs: the rows carry them (the page opens a log by its id), never a column
     groupable = ("kind", "user_name", "route", "http_status", "http_method", "error_code")
     suggestable = ("user_name", "route", "error_code")
+    presets = (
+        Preset("all", "All"),
+        Preset("failed", "Failed", {"filters": [{"field": "http_status", "op": "gte", "value": 400}]}),
+        Preset("changed", "Changed records", {"filters": [{"field": "entity_changes", "op": "gt", "value": 0}]}),
+        Preset("background", "Runs and sends", {"filters": [{"field": "kind", "op": "in", "value": ["job", "outbox", "intake"]}]}),
+    )
 
 
 class AuditLogService(ReadOnlyService[AuditLog, AuditLogRead]):
@@ -102,8 +110,10 @@ class EntityChangeRepository(Repository[AuditRecord]):
     labels = {"at": "Time", "user_name": "User", "entity": "Entity", "entity_id": "Id", "audit_log_id": "Audit log"}
     enums = {"action": ("create", "update", "delete")}
     default_sort = ("-at",)
+    meta_hidden = ("audit_log_id",)  # a UUID: the row carries it (Open its request), never a column
     groupable = ("entity", "action", "user_name")
     suggestable = ("entity", "user_name")
+    presets = (Preset("all", "All"), Preset("orders", "Orders", {"filters": [{"field": "entity", "op": "eq", "value": "sales_orders"}]}))
 
 
 class EntityChangeService(ReadOnlyService[AuditRecord, EntityChangeRead]):

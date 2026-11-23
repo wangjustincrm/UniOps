@@ -24,8 +24,7 @@ def _fingerprint(conn) -> dict[str, tuple]:
 
 
 def _seed(conn) -> None:
-    for t in ("sales_audit", "sales_log", "sales_outbox", "sales_connections"):
-        conn.execute(sa.text(f"DELETE FROM {t}"))
+    """Rows of every shape the migration touches, beside whatever the database already holds (all are compared)."""
     conn.execute(sa.text("""
         INSERT INTO sales_audit (at, user_name, action, entity, entity_id, before, after, reason) VALUES
           (now(), 'Op', 'create', 'sales_orders', '1', NULL, '{"a": 1, "b": "x"}', 'made'),
@@ -57,7 +56,7 @@ def test_sales36_keeps_every_row_and_value_and_then_is_append_only(migrated_db):
         run_alembic("upgrade", "sales36_audit_logs", check=True)
         with eng.begin() as c:
             assert _fingerprint(c) == before  # nothing changed, nothing lost
-            assert c.execute(sa.text("SELECT last_run_summary FROM sales_connections")).scalar() == LONG
+            assert c.execute(sa.text("SELECT last_run_summary FROM sales_connections WHERE name = 'c'")).scalar() == LONG
         with eng.connect() as c:
             with c.begin():  # a header and an action to refuse changes to
                 c.execute(sa.text("INSERT INTO sales_audit_logs (id, kind, correlation_id, execution_time) "
@@ -75,13 +74,13 @@ def test_sales36_keeps_every_row_and_value_and_then_is_append_only(migrated_db):
                 c.execute(sa.text("DELETE FROM sales_log WHERE message = 'appended'"))
             with c.begin():
                 assert _refused(c, "DELETE FROM sales_log")  # the next transaction refuses again
-                [row] = c.execute(sa.text("SELECT message, context FROM sales_log WHERE step = 'security'")).all()
+                [row] = c.execute(sa.text("SELECT message, context FROM sales_log WHERE step = 'security' AND message LIKE '%pytest%'")).all()
                 assert "pytest" in row[0] and row[1]["reason"] == "test the glass"
                 props = c.execute(sa.text("SELECT property_name, original_value, new_value FROM sales_audit_property_changes "
-                                          "WHERE change_type = 'update'")).all()
+                                          "WHERE change_type = 'update' AND entity_type = 'sales_orders' AND entity_id = '1' AND original_value = '1'")).all()
                 assert [(p[0], p[1], p[2]) for p in props] == [("a", 1, 2)]
             with c.begin():  # a long summary: the downgrade refuses to cut it
-                c.execute(sa.text("UPDATE sales_connections SET last_run_summary = :s"), {"s": "y" * 300})
+                c.execute(sa.text("UPDATE sales_connections SET last_run_summary = :s WHERE name = 'c'"), {"s": "y" * 300})
         r = run_alembic("downgrade", "sales35_order_settled")
         assert r.returncode != 0 and "longer than 255" in ((r.stdout or "") + (r.stderr or ""))
     finally:
