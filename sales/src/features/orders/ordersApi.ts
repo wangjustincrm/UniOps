@@ -23,12 +23,6 @@ export const cancelManual = (id: number, version: number) => api.post<OrderRead>
 /** Reorder for this customer (user 2026-11-19): a Draft manual order copied from this one, no lines. */
 export const reorderOrder = (id: number) => api.post<OrderRead>(`/orders/${id}/reorder`)
 
-/** Payment: Settled by a finance user (sales.settle) — one order, its undo, or many (one result each). */
-export interface SettleBody { settled_on: string; reference: string; amount?: string | null; note?: string | null }
-export interface SettleResult { order_id: number; ok: boolean; payment_status?: string | null; error?: string | null }
-export const settleOrder = (id: number, version: number, body: SettleBody) => api.post<OrderRead>(`/orders/${id}/settle?version=${version}`, body)
-export const unsettleOrder = (id: number, version: number, reason: string) => api.post<OrderRead>(`/orders/${id}/unsettle?version=${version}`, { reason })
-export const settleBulk = (order_ids: number[], body: SettleBody) => api.post<SettleResult[]>('/orders/settle-bulk', { order_ids, ...body })
 
 export interface Send940Result { order: OrderRead; document_id: number; file_status: string; control: string; errors: string[] }
 export const send940 = (id: number, replace = false) => api.post<Send940Result>(`/orders/${id}/send-940${replace ? '?replace=true' : ''}`)

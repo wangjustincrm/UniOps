@@ -1,11 +1,12 @@
 import { useContext, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, Badge, ConfirmAction, Hint, RecordSheet, RecordSheetHostContext, formatDate, formatMoney, queryKeys, type RecordFact, type RecordTab, compareRecord, useFileViewer, useOpenRecord, useRefresh, useRecord, Stack, Cluster,
+  ActionButton, Badge, ConfirmAction, RecordActionButtons, Hint, RecordSheet, RecordSheetHostContext, formatDate, formatMoney, queryKeys, type RecordFact, type RecordTab, compareRecord, useFileViewer, useOpenRecord, useRefresh, useRecord, Stack, Cluster,
 } from '@/platform-ui'
 import { SOURCE_LABEL, downloadPacket, fetchOrder, poPdf, ordersClient, reorderOrder, type OrderRead } from './ordersApi'
 import { OrderHoldActions } from './OrderHoldActions'
-import { PaymentBadge, SettleActions } from './OrderPayment'
+import { PaymentBadge } from './OrderPayment'
+import { ORDER_ACTIONS, ORDER_ACTION_HOST } from './orderActions'
 import { settledFacts } from './orderPaymentFacts'
 import { DetailHelp, NextStep, OrderStatusBadge } from './OrderStatusCells'
 import { statusDetailText } from './orderStatus'
@@ -132,7 +133,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
       <Send940 o={d} />
       <FulfilInShopify o={d} />
       <OrderHoldActions o={d} />
-      <SettleActions o={d} />
+      <RecordActionButtons record={d} actions={ORDER_ACTIONS} host={ORDER_ACTION_HOST} />
       {amendable && !amending && (
         <ActionButton size="sm" variant="secondary" permission="sales.order.operate"
           onAction={() => { setReturning(false); setPricing(false); setAmending(true); host?.onTabChange?.('lines') }}>Amend and send again…</ActionButton>

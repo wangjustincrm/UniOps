@@ -7,7 +7,8 @@ import { ReturnAfterShipment } from '@/features/invoices/ReturnAfterShipment'
 import { SubmitDraft } from './DraftActions'
 import { ManualOrderForm } from './ManualOrderForm'
 import { ManualOrderSettingsButton } from './ManualOrderSettingsButton'
-import { PaymentBadge, SettleShown } from './OrderPayment'
+import { PaymentBadge } from './OrderPayment'
+import { ORDER_ACTIONS, orderName } from './orderActions'
 import { Recheck } from './Recheck'
 import { ordersClient, type OrderRead } from './ordersApi'
 import { PartnerCell } from '@/features/common/PartnerCell'
@@ -55,7 +56,7 @@ const dueColumn = orderColumns[dueColumnIndex]
 const dueOrderColumns = [...orderColumns.slice(0, 5), { ...dueColumn, meta: { ...dueColumn.meta, hidden: false } },
   ...orderColumns.slice(5).filter((_, i) => i + 5 !== dueColumnIndex)]
 
-export function OrderList({ fixed, title, description, emptyTitle, emptyText, help, detailActions, detailTabs, toolbar, create, showDue }: {
+export function OrderList({ fixed, title, description, emptyTitle, emptyText, help, detailActions, detailTabs, toolbar, create, showDue, actions }: {
   fixed?: QuerySpec['filters']; title: string; description: string; emptyTitle: string
   emptyText?: string
   help?: HelpId
@@ -67,6 +68,8 @@ export function OrderList({ fixed, title, description, emptyTitle, emptyText, he
   create?: ListCreate<OrderRead>
   /** The Delivery due column (the delivery list). */
   showDue?: boolean
+  /** Record actions in the row menu and on selected rows (Orders: Mark settled…). */
+  actions?: typeof ORDER_ACTIONS
 }) {
   return (
     <ListPage<OrderRead>
@@ -80,6 +83,8 @@ export function OrderList({ fixed, title, description, emptyTitle, emptyText, he
       columns={showDue ? dueOrderColumns : orderColumns}
       toolbar={toolbar ? (ctx) => (typeof toolbar === 'function' ? toolbar(ctx) : toolbar) : undefined}
       create={create}
+      actions={actions}
+      recordName={orderName}
       rowActions={(o) => (o.fulfillment_status === 'Review' ? <Recheck o={o} compact />
         : isDraft(o) ? <SubmitDraft o={o} /> : null)}
       detailSize="xl"
@@ -101,6 +106,6 @@ export default function OrdersPage() {
     emptyText={EMPTY_TEXT.orders} help="page:orders"
     create={{ label: 'New manual order', permission: 'sales.order.operate', className: 'max-w-3xl',
       render: (done, cancel) => <ManualOrderForm onSaved={done} onCancel={cancel} /> }}
-    toolbar={(ctx) => <><SettleShown rows={ctx.rows} refresh={ctx.refresh} /><ManualOrderSettingsButton /></>}
+    toolbar={<ManualOrderSettingsButton />} actions={ORDER_ACTIONS}
     detailActions={(o) => <ReturnAfterShipment o={o} />} />
 }
