@@ -2,6 +2,8 @@
 manual orders (FR-OB-19a)."""
 from __future__ import annotations
 
+import uuid
+
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
@@ -189,6 +191,8 @@ class TimelineEntry(BaseModel):
     before: dict[str, Any] | None
     after: dict[str, Any] | None
     reason: str | None
+    # sales36: the audit log (request / background scope) it was made in — Activity links to it (Operations → Audit log)
+    audit_log_id: uuid.UUID | None = None
 
 
 class ShipmentRowRead(BaseModel):

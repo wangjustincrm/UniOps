@@ -2,6 +2,8 @@
 bytes are never in a list or a detail; they have their own download."""
 from __future__ import annotations
 
+import uuid
+
 from datetime import datetime
 from typing import Any
 
@@ -79,6 +81,7 @@ class LogRead(BaseModel):
     transfer_id: int | None
     message: str
     context: dict[str, Any] | None
+    audit_log_id: uuid.UUID | None = None  # sales36: the request / background scope it was written in
 
 
 class RunStarted(BaseModel):

@@ -1,5 +1,5 @@
 """Sales' audit logs (sales36, ≈ ABP's AbpAuditLogs / AbpAuditLogActions; platform/auditing): the SQL store and the read
-side of Operations → Audit log.
+side of Operations → Audit log (sales.config for now — the user, 2026-11-23: no new identity key yet).
 
 SqlAuditingStore (the Strategy the composition root sets) writes a log and its actions in a session of its own
 (≈ ABP's UnitOfWorkManager.Begin(true)), so the log of a failed request is kept although the request rolled back.
@@ -11,7 +11,13 @@ from typing import Any
 
 from sqlalchemy import select
 
-from app.models.records import AuditLog, AuditLogAction
+from app.models.records import AuditLog, AuditLogAction, AuditRecord
+from app.platform.authorization import requires
+from app.platform.errors import NotFound
+from app.platform.query import FilterRule
+from app.platform.repository import Repository
+from app.platform.services import ReadOnlyService
+from app.schemas.audit_logs import AuditLogActionRead, AuditLogDetail, AuditLogRead, EntityChangeRead
 from app.platform.auditing.scope import AuditLogInfo
 
 
@@ -47,3 +53,60 @@ class SqlAuditingStore:
 async def actions_of(session, audit_log_id: uuid.UUID) -> list[AuditLogAction]:
     return list((await session.execute(select(AuditLogAction).where(AuditLogAction.audit_log_id == audit_log_id)
                                        .order_by(AuditLogAction.id))).scalars())
+
+
+AUDIT = "sales.config"  # the Audit Log's permission until the user decides on one of its own
+
+class AuditLogRepository(Repository[AuditLog]):
+    model = AuditLog
+    search_fields = ("correlation_id", "user_name", "route", "url", "error_code", "name")
+    list_fields = ("id", "kind", "name", "correlation_id", "user_name", "role", "client_ip", "http_method", "route",
+                   "http_status", "execution_time", "execution_duration_ms", "error_code", "entity_changes")
+    labels = {"execution_time": "Time", "execution_duration_ms": "Duration (ms)", "http_method": "Method",
+              "http_status": "Status", "user_name": "User", "correlation_id": "Correlation id", "error_code": "Error",
+              "entity_changes": "Changes", "kind": "Kind", "route": "Route", "client_ip": "IP"}
+    enums = {"kind": ("request", "job", "outbox", "intake", "cli"), "http_method": ("GET", "POST", "PUT", "PATCH", "DELETE")}
+    filterable = {"has_exception": FilterRule(AuditLog.exceptions.is_not(None), kind="bool", cast=lambda v: str(v).lower() == "true")}
+    default_sort = ("-execution_time",)
+    groupable = ("kind", "user_name", "route", "http_status", "http_method", "error_code")
+    suggestable = ("user_name", "route", "error_code")
+
+
+class AuditLogService(ReadOnlyService[AuditLog, AuditLogRead]):
+    repo_cls = AuditLogRepository
+    read_schema = AuditLogRead
+    read_permission = AUDIT
+
+    def to_read(self, e: AuditLog) -> AuditLogRead:
+        out = AuditLogRead.model_validate(e, from_attributes=True)
+        out.has_exception = e.exceptions is not None
+        return out
+
+    @requires(AUDIT)
+    async def detail(self, id: uuid.UUID) -> AuditLogDetail:
+        s = self.uow.session
+        log = await s.get(AuditLog, id)
+        if log is None:
+            raise NotFound("AuditLog", id)
+        changes = (await s.execute(select(AuditRecord).where(AuditRecord.audit_log_id == id).order_by(AuditRecord.id))).scalars()
+        return AuditLogDetail(**self.to_read(log).model_dump(), exceptions=log.exceptions, comments=log.comments, extra=log.extra,
+                              actions=[AuditLogActionRead.model_validate(a) for a in await actions_of(s, id)],
+                              changes=[EntityChangeRead.model_validate(c) for c in changes])
+
+
+class EntityChangeRepository(Repository[AuditRecord]):
+    """≈ ABP Pro's Entity changes tab: every change, by entity type and id."""
+    model = AuditRecord
+    search_fields = ("entity", "entity_id", "user_name", "reason")
+    list_fields = ("id", "at", "user_name", "action", "entity", "entity_id", "reason", "audit_log_id")
+    labels = {"at": "Time", "user_name": "User", "entity": "Entity", "entity_id": "Id", "audit_log_id": "Audit log"}
+    enums = {"action": ("create", "update", "delete")}
+    default_sort = ("-at",)
+    groupable = ("entity", "action", "user_name")
+    suggestable = ("entity", "user_name")
+
+
+class EntityChangeService(ReadOnlyService[AuditRecord, EntityChangeRead]):
+    repo_cls = EntityChangeRepository
+    read_schema = EntityChangeRead
+    read_permission = AUDIT

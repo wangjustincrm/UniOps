@@ -89,7 +89,7 @@ async def timeline_of(s, entity_type: str, entity_id: int, *, limit: int = 200) 
         (AuditRecord.entity == line_table) & (AuditRecord.entity_id.in_(line_ids) if line_ids else False),
         link_audit(entity_type, entity_id),
     )).order_by(AuditRecord.at.desc(), AuditRecord.id.desc()).limit(limit))).scalars()
-    return [TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, before=a.before, after=a.after,
+    return [TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, audit_log_id=a.audit_log_id, before=a.before, after=a.after,
                           reason=a.reason) for a in trail]
 
 

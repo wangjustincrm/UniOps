@@ -365,7 +365,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             payment_gateways=o.payment_gateways, discount_codes=o.discount_codes, tax_lines=o.tax_lines,
             **await self._payments(id),
             dc_number=await self._dc_number(o), ship_to_flags=address_flags(o.ship_to),
-            timeline=sorted([TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, before=a.before,
+            timeline=sorted([TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, audit_log_id=a.audit_log_id, before=a.before,
                                            after=a.after, reason=a.reason) for a in trail] + await self._reorders(id),
                             key=lambda e: e.at, reverse=True),
         )
