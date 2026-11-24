@@ -47,6 +47,7 @@ OVERLAP = timedelta(days=1)  # each pass reads the last day again: nothing is mi
 class GatewayReport:
     windows: int = 0
     batches: int = 0           # settlements seen (Authorize.Net batches, PayPal transfers to the bank)
+    settlements_changed: int = 0  # settlements whose own data changed this pass (the others are not written)
     batches_read: int = 0      # transaction lists read whole this pass
     transactions: int = 0
     details_read: int = 0
@@ -249,3 +250,15 @@ class GatewayIntake:
             row = GatewayTransaction(connection_id=conn.id, gateway=self.GATEWAY, external_id=ext, **new)
             s.add(row)
         return row
+
+
+def apply_changes(row: Any, values: dict[str, Any]) -> bool:
+    """Write only what differs (≈ ABP: an unchanged property is no change; user 2026-11-24). A gateway pass reads the
+    same settlements again and again: assigning their unchanged values would still be a write, and setting a "read
+    at" time on each would be an audit row per settlement per pass. Returns whether anything changed."""
+    changed = False
+    for k, v in values.items():
+        if getattr(row, k) != v:
+            setattr(row, k, v)
+            changed = True
+    return changed

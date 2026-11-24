@@ -11,7 +11,10 @@ Per settlement, in the shared columns:
   transfer of part of the balance, a hold, a deposit from the bank (T0300) funding refunds, or a balance from
   before the first transfer read all make it differ; raw.notes says which other events the period had.
 
-Rebuilt whole from the connection's transactions after every pass (idempotent: a re-read moves nothing twice).
+Rebuilt whole from the connection's transactions after every pass (idempotent: a re-read moves nothing twice). A
+settlement row is written only when its own data changes (gateway_base.apply_changes); its transactions_read_at is
+then when its content last changed. The pass's own read time is the run's (sales_runs, and the connection's last run),
+with how many settlements changed in its summary (user 2026-11-24: one "read at" per run, not one per settlement).
 """
 from __future__ import annotations
 
@@ -23,6 +26,7 @@ from typing import Any
 from sqlalchemy import select
 
 from app.domain.gateways import PAYPAL_IN_BALANCE, paypal_withdrawal
+from app.services.gateway_base import apply_changes
 from app.models.gateways import GatewaySettlement, GatewayTransaction
 from app.platform.actors import SYSTEM_ACTOR
 
@@ -75,9 +79,9 @@ def figures(txs: list[GatewayTransaction], transfer: Decimal | None) -> dict[str
     return out | {"raw": raw}
 
 
-async def rebuild(uow_factory, connection_id: int, now: datetime) -> int:
+async def rebuild(uow_factory, connection_id: int, now: datetime, report: Any = None) -> int:
     """Every transfer of the connection a settlement, with its period's transactions; the rest in the balance row.
-    Returns the number of transfers."""
+    Returns the number of transfers; `report.settlements_changed` counts the settlements written."""
     async with uow_factory(SYSTEM_ACTOR, reason="PayPal settlements") as uow:
         s = uow.session
         txs = list((await s.execute(select(GatewayTransaction).where(
@@ -86,14 +90,28 @@ async def rebuild(uow_factory, connection_id: int, now: datetime) -> int:
         existing = {r.external_id: r for r in (await s.execute(select(GatewaySettlement).where(
             GatewaySettlement.connection_id == connection_id, GatewaySettlement.gateway == GATEWAY))).scalars()}
 
-        def row(ext: str, currency: str, at: datetime) -> GatewaySettlement:
+        changed = 0
+
+        def row(ext: str, currency: str, at: datetime) -> tuple[GatewaySettlement, bool]:
             r = existing.get(ext)
             if r is None:
                 r = GatewaySettlement(connection_id=connection_id, gateway=GATEWAY, external_id=ext, currency=currency,
                                       settled_at=at, raw={})
                 s.add(r)
                 existing[ext] = r
-            return r
+                return r, True
+            return r, False
+
+        def write(r: GatewaySettlement, new: bool, values: dict[str, Any]) -> None:
+            """Only what differs; its read time moves only when it changed (nothing else is written for it)."""
+            nonlocal changed
+            if apply_changes(r, values) or new:
+                r.transactions_read_at = now
+                changed += 1
+
+        def assign(items: list[GatewayTransaction], settlement_id: int) -> None:
+            for x in items:
+                apply_changes(x, {"settlement_id": settlement_id})
 
         transfers = 0
         by_currency: dict[str, list[GatewayTransaction]] = collections.defaultdict(list)
@@ -107,30 +125,23 @@ async def rebuild(uow_factory, connection_id: int, now: datetime) -> int:
                     continue
                 transfers += 1
                 tid = t.external_id.split(":")[0]
-                r = row(tid, currency, t.submitted_at or now)
+                r, new = row(tid, currency, t.submitted_at or now)
                 f = figures(period, t.amount)
-                r.raw = f.pop("raw")
-                for k, v in f.items():
-                    setattr(r, k, v)
-                r.settled_at, r.state, r.payment_method = t.submitted_at or now, TRANSFERRED, "Bank transfer"
-                r.transactions_read_at = now
+                write(r, new, {**f, "settled_at": t.submitted_at or now, "state": TRANSFERRED, "payment_method": "Bank transfer"})
                 await s.flush()
-                for x in period + [t]:
-                    x.settlement_id = r.id
+                assign(period + [t], r.id)
                 period = []
             # What has not left: the balance row (kept, at zero, once it existed).
             ext = f"BALANCE-{currency}"
             if period or ext in existing:
-                r = row(ext, currency, period[-1].submitted_at if period and period[-1].submitted_at else now)
+                r, new = row(ext, currency, period[-1].submitted_at if period and period[-1].submitted_at else now)
                 f = figures(period, None)
-                r.raw = f.pop("raw")
-                for k, v in f.items():
-                    setattr(r, k, v)
-                r.settled_at = (period[-1].submitted_at if period and period[-1].submitted_at else r.settled_at)
-                r.state, r.payment_method, r.transactions_read_at = IN_BALANCE, None, now
+                write(r, new, {**f, "settled_at": period[-1].submitted_at if period and period[-1].submitted_at else r.settled_at,
+                               "state": IN_BALANCE, "payment_method": None})
                 await s.flush()
-                for x in period:
-                    x.settlement_id = r.id
+                assign(period, r.id)
         await s.flush()
         await uow.commit()
+        if report is not None:
+            report.settlements_changed = changed
         return transfers

@@ -339,11 +339,26 @@ async def test_each_transfer_to_the_bank_is_a_settlement_with_its_period_and_the
     assert (balance.state, balance.transfer_amount, balance.net_amount, balance.issue) == (
         "In PayPal balance", None, Decimal("11.35"), "Unmatched transactions")  # 4AFTER… is no Shopify payment
 
-    # A second pass moves nothing: the same settlements, the same totals
-    r2 = await intake.run_pass(await snap(env, cid))
+    # A second pass moves nothing: the same settlements, the same totals — and writes nothing (user 2026-11-24: an
+    # unchanged settlement is no row written, no audit row; the pass's read time is the run's, with its count)
+    assert r.settlements_changed == 3
+    q_audit = "SELECT count(*) n FROM sales_audit WHERE entity IN ('sales_gateway_settlements', 'sales_gateway_transactions')"
+    q_read = "SELECT external_id, transactions_read_at FROM sales_gateway_settlements ORDER BY external_id"
+    [audits_before], read_before = await env.q(q_audit), await env.q(q_read)
+    later = PayPalIntake(uow_factory=env.factory, gateway=fake, clock=lambda: datetime(2026, 10, 20, 7, tzinfo=timezone.utc))
+    r2 = await later.run_pass(await snap(env, cid))
     async with env.factory(OP) as u:
         again = {x.batch_id: (x.id, x.net_amount, x.transfer_amount) for x in (await SettlementRowRepository(u).list(QuerySpec(page_size=50))).items}
     assert r2.batches == 2 and again == {k: (v.id, v.net_amount, v.transfer_amount) for k, v in rows.items()}
+    assert r2.settlements_changed == 0 and (await env.q(q_audit))[0] == audits_before
+    assert await env.q(q_read) == read_before  # each settlement's read time is when its own data last changed
+    # new money in the balance: only that settlement is written, its read time moves
+    fake.items.append(item("4LATER0000000005", "T0006", "8.00", "2026-10-20T03:00:00+0000", fee="-0.50"))
+    fake.refreshed_at = "2026-10-20T06:30:00+0000"  # PayPal's data now reaches past the cursor
+    r3 = await later.run_pass(await snap(env, cid))
+    moved = {x["external_id"]: x["transactions_read_at"] for x in await env.q(q_read)}
+    assert r3.settlements_changed == 1
+    assert {k for k, v in moved.items() if v != {x["external_id"]: x["transactions_read_at"] for x in read_before}[k]} == {"BALANCE-CAD"}
 
     async with env.factory(OP) as u:
         name, pdf = await SettlementRowService(u).statement_pdf(first.id)

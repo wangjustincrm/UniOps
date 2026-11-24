@@ -64,7 +64,7 @@ class PayPalIntake(GatewayIntake):
     async def after_match(self, conn: ConnectionSnapshot, report: GatewayReport, run_id) -> None:
         """Option A (user 2026-11-19): each transfer to the bank a settlement, the rest in the PayPal balance."""
         from app.services import paypal_settlements
-        report.batches = await paypal_settlements.rebuild(self.uow_factory, conn.id, self.clock())
+        report.batches = await paypal_settlements.rebuild(self.uow_factory, conn.id, self.clock(), report)
 
     def shopify_gateway_id(self, p: OrderPayment) -> str | None:
         """Shopify keeps PayPal's own transaction id (17 letters and digits) as the payment's authorization."""

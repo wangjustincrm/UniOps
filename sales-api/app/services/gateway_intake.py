@@ -36,7 +36,7 @@ from app.models.payments import OrderPayment
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.pipeline import isolated
 from app.services import oplog
-from app.services.gateway_base import MATCHABLE, OVERLAP, GatewayIntake, GatewayReport, money as _money, when as _when
+from app.services.gateway_base import apply_changes, MATCHABLE, OVERLAP, GatewayIntake, GatewayReport, money as _money, when as _when
 from app.services.intake import ConnectionSnapshot
 
 __all__ = ["AuthorizeNetIntake", "GatewayReport", "batch_totals", "old_gateway_id"]
@@ -199,10 +199,9 @@ class AuthorizeNetIntake(GatewayIntake):
                 row = GatewaySettlement(connection_id=conn.id, gateway=GATEWAY, external_id=batch_id, currency=CURRENCY,
                                         settled_at=_when(b.get("settlementTimeUTC")) or self.clock(), raw=b)
                 s.add(row)
-            row.settled_at = _when(b.get("settlementTimeUTC")) or row.settled_at
-            row.state, row.payment_method, row.raw = b.get("settlementState"), b.get("paymentMethod"), b
-            for k, v in batch_totals(b).items():
-                setattr(row, k, v)
+            # Only what differs (gateway_base.apply_changes): a batch read again unchanged is no write.
+            apply_changes(row, {"settled_at": _when(b.get("settlementTimeUTC")) or row.settled_at, "state": b.get("settlementState"),
+                                "payment_method": b.get("paymentMethod"), "raw": b, **batch_totals(b)})
             await s.flush()
             if txs is None:
                 return 0
