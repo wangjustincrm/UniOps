@@ -52,6 +52,8 @@ export interface ListCapabilities {
   /** Null: the list has no export. `computed`: the page's own columns the export can write. */
   export: { allowed: boolean; computed: { id: string; label: string }[] } | null
   suggest: boolean
+  /** A record's audit history. */
+  history?: boolean
   actions: { id: string; allowed: boolean }[]
 }
 

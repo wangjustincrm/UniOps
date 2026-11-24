@@ -1,6 +1,5 @@
 import { createResourceClient } from '@/platform-ui'
 import { api } from '@/lib/api'
-import type { AuditEntry } from '../AuditHistory'
 
 // Mirrors sales-api app/schemas/partners.py (hand-written: the OpenAPI type
 // generation of design §13.15 is not set up yet).
@@ -40,4 +39,3 @@ export type PartnerUpdate = Omit<Editable, 'code'>
 
 export const PARTNERS_PATH = '/config/partners'
 export const partnersClient = createResourceClient<PartnerRead, PartnerCreate, PartnerUpdate>(api, PARTNERS_PATH)
-export const fetchPartnerAudit = (id: number) => api.get<AuditEntry[]>(`${PARTNERS_PATH}/${id}/audit`)

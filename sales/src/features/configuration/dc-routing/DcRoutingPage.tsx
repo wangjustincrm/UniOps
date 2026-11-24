@@ -1,10 +1,8 @@
 import { z } from 'zod'
 import { Badge, CrudPage, type ColumnDef, type FieldSpec , columnsOf } from '@/platform-ui'
-import { historyTab } from '../historyTab'
 import { partnerOptions } from '../lookups'
 import {
-  dcRoutingClient, fetchDcRoutingAudit,
-  type DcRoutingCreate, type DcRoutingRead, type DcRoutingUpdate,
+  dcRoutingClient, type DcRoutingCreate, type DcRoutingRead, type DcRoutingUpdate,
 } from './dcRoutingApi'
 
 const colDcRoutingRead = columnsOf<DcRoutingRead>()
@@ -43,7 +41,6 @@ export default function DcRoutingPage() {
       errorMessages={{ 'dc_routing.taken': 'This partner already routes this ship-to GLN.' }}
       recordTitle={(r) => `GLN ${r.ship_to_gln}`}
       recordSubtitle={(r) => `${r.partner_code} → DC ${r.dc_number}`}
-      detailTabs={(r, details) => [details, historyTab('dc-routing', r.id, r.version, fetchDcRoutingAudit)]}
     />
   )
 }

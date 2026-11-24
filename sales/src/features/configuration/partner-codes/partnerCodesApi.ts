@@ -1,6 +1,5 @@
 import { createResourceClient } from '@/platform-ui'
 import { api } from '@/lib/api'
-import type { AuditEntry } from '../AuditHistory'
 
 export interface PartnerCodeRead {
   id: number
@@ -18,4 +17,3 @@ export type PartnerCodeUpdate = Pick<PartnerCodeRead, 'item_code'>
 
 export const PARTNER_CODES_PATH = '/config/partner-codes'
 export const partnerCodesClient = createResourceClient<PartnerCodeRead, PartnerCodeCreate, PartnerCodeUpdate>(api, PARTNER_CODES_PATH)
-export const fetchPartnerCodeAudit = (id: number) => api.get<AuditEntry[]>(`${PARTNER_CODES_PATH}/${id}/audit`)

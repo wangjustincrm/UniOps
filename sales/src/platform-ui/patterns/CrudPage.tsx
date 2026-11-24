@@ -9,6 +9,8 @@ import { Upload } from 'lucide-react'
 import { ActionButton } from './ActionButton'
 import { ConfirmAction } from './ConfirmAction'
 import { ListPage } from './ListPage'
+import { RecordHistory } from './RecordHistory'
+import { useListMeta } from '../resource/listMeta'
 import { SchemaForm, type FieldSpec, type SchemaFormProps } from './SchemaForm'
 import { useNotices } from './notices'
 import { useCrudResource } from '../resource/useCrudResource'
@@ -51,7 +53,7 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
   recordTitle?: (row: T) => string
   recordSubtitle?: (row: T) => ReactNode
   recordFacts?: (row: T) => RecordFact[]
-  /** The sheet's tabs, given "Details" (the form): e.g. [details, history]. Default [details]. */
+  /** The sheet's tabs, given "Details" (the form). Default [details]; the record's History comes last where the list has one. */
   detailTabs?: (row: T, details: RecordTab) => RecordTab[]
   /** Buttons in the record sheet's header. */
   recordActions?: (row: T) => ReactNode
@@ -206,6 +208,7 @@ function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, pro
   deactivate: () => Promise<unknown>
 }) {
   const [confirm, setConfirm] = useState(false)
+  const kept = useListMeta(props.client).data?.capabilities?.history
   const fields = (props.editFields ?? props.fields).map((f) => (props.immutableOnEdit?.includes(f.name) ? { ...f, readOnly: true } : f))
   const singular = props.singular ?? props.title
   const details: RecordTab = {
@@ -215,6 +218,9 @@ function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, pro
           readOnly: !canWrite, errorMessages: props.errorMessages, fieldLabels: props.fieldLabels }} />
     ),
   }
+  // The server says whether the list keeps one (/meta capabilities).
+  const history: RecordTab = { id: 'history', label: 'History',
+    render: () => <RecordHistory resource={props.client} id={row.id} version={row.version ?? undefined} /> }
   return (
     <>
       <RecordSheet
@@ -229,7 +235,7 @@ function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, pro
         // Only a record that has `active` can be deactivated: one without it (a buyer part number) offers no Deactivate.
         more={canWrite && row.active === true
           ? [{ label: 'Deactivate', onSelect: () => setConfirm(true), opensDialog: true }] : undefined}
-        tabs={props.detailTabs ? props.detailTabs(row, details) : [details]}
+        tabs={[...(props.detailTabs ? props.detailTabs(row, details) : [details]), ...(kept ? [history] : [])]}
       />
       <ConfirmAction
         open={confirm}

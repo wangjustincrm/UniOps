@@ -37,6 +37,16 @@ export interface ImportReport {
   counts: Record<'create' | 'update' | 'unchanged', number>
 }
 
+export interface AuditEntry {
+  id: number
+  at: string
+  user_name: string
+  action: 'create' | 'update' | 'delete'
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+  reason: string | null
+}
+
 export interface ResourceClient<TRead, TCreate, TUpdate> {
   basePath: string
   list: (spec: QuerySpec) => Promise<Page<TRead>>
@@ -57,6 +67,8 @@ export interface ResourceClient<TRead, TCreate, TUpdate> {
   importCsv: (file: File, dryRun: boolean) => Promise<ImportReport>
   /** A record action on one record or many (`POST <resource>/actions/<id>`, platform/bulk_actions.py). */
   action: (actionId: string, body: ActionRunBody) => Promise<ActionOut>
+  /** A record's audit history, newest first (`GET <resource>/<id>/audit`, where the list offers it). */
+  history: (id: number) => Promise<AuditEntry[]>
 }
 
 /** What a record action is run on: {id: version} as the person saw them, or "all matching" (the list's query
@@ -103,6 +115,7 @@ export function createResourceClient<TRead, TCreate, TUpdate = TCreate>(
       const fallback = `${base.replace(/^\/+/, '').replace(/\//g, '-')}.csv`
       return http.download(exportPath(spec, undefined, columns), name ?? fallback, name !== undefined)
     },
+    history: (id) => http.get<AuditEntry[]>(`${base}/${id}/audit`),
     action: (actionId, body) => http.post<ActionOut>(`${base}/actions/${actionId}`, body),
     importCsv: (file, dryRun) => {
       if (!http.upload) throw new Error('this API client cannot upload files')

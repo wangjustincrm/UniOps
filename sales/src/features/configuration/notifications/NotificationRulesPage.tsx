@@ -3,9 +3,8 @@ import { z } from 'zod'
 import {
   ActionButton, Badge, CrudPage, DetailList, formatDateTime, queryKeys, type ColumnDef, type FieldSpec, Hint, useLookup, Stack,
 } from '@/platform-ui'
-import { historyTab } from '../historyTab'
 import {
-  CHANNELS, fetchEvents, fetchRuleAudit, fetchUsers, rulesClient, sendTest,
+  CHANNELS, fetchEvents, fetchUsers, rulesClient, sendTest,
   type NotificationRuleCreate, type NotificationRuleRead, type NotificationRuleUpdate,
 } from './notificationsApi'
 
@@ -91,8 +90,7 @@ export default function NotificationRulesPage() {
       errorMessages={errorMessages}
       recordTitle={(r) => r.event_label}
       recordSubtitle={(r) => `${r.event_type} · ${r.channel}`}
-      detailTabs={(r, details) => [details, { id: 'test', label: 'Send a test', render: () => <TestRule rule={r} /> },
-        historyTab('notification-rules', r.id, r.version, fetchRuleAudit)]}
+      detailTabs={(r, details) => [details, { id: 'test', label: 'Send a test', render: () => <TestRule rule={r} /> }]}
     />
   )
 }

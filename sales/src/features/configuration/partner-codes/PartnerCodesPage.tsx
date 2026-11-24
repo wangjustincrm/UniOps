@@ -1,9 +1,8 @@
 import { z } from 'zod'
 import { CrudPage, type ColumnDef, type FieldSpec , columnsOf } from '@/platform-ui'
-import { historyTab } from '../historyTab'
 import { itemOptions, partnerOptions } from '../lookups'
 import {
-  fetchPartnerCodeAudit, partnerCodesClient,
+  partnerCodesClient,
   type PartnerCodeCreate, type PartnerCodeRead, type PartnerCodeUpdate,
 } from './partnerCodesApi'
 
@@ -38,7 +37,6 @@ export default function PartnerCodesPage() {
       errorMessages={{ 'partner_code.taken': 'This partner already uses this buyer part.' }}
       recordTitle={(r) => `${r.partner_code} ${r.buyer_part}`}
       recordSubtitle={(r) => `→ ${r.item_code}`}
-      detailTabs={(r, details) => [details, historyTab('partner-codes', r.id, r.version, fetchPartnerCodeAudit)]}
     />
   )
 }

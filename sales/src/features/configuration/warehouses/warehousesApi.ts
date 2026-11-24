@@ -1,6 +1,5 @@
 import { createResourceClient } from '@/platform-ui'
 import { api } from '@/lib/api'
-import type { AuditEntry } from '../AuditHistory'
 
 // Mirrors sales-api app/schemas/warehouses.py (hand-written, see partnersApi.ts).
 export const WAREHOUSE_ROLES = ['SHIPPER', 'WAREHOUSE', 'TRANSFER_SOURCE'] as const
@@ -30,4 +29,3 @@ export type WarehouseUpdate = Pick<WarehouseRead, Editable>
 
 export const WAREHOUSES_PATH = '/config/warehouses'
 export const warehousesClient = createResourceClient<WarehouseRead, WarehouseCreate, WarehouseUpdate>(api, WAREHOUSES_PATH)
-export const fetchWarehouseAudit = (id: number) => api.get<AuditEntry[]>(`${WAREHOUSES_PATH}/${id}/audit`)

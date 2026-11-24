@@ -48,4 +48,3 @@ export const historyClient = createResourceClient<NotificationRead, never>(api, 
 export const fetchEvents = () => api.get<EventTypeRead[]>('/config/notification-events')
 export const fetchUsers = (q = '') => api.get<UserOption[]>(`/config/notification-users?q=${encodeURIComponent(q)}`)
 export const sendTest = (id: number) => api.post<{ rule: NotificationRuleRead; result: string }>(`${RULES_PATH}/${id}/test`)
-export const fetchRuleAudit = (id: number) => api.get<import('../AuditHistory').AuditEntry[]>(`${RULES_PATH}/${id}/audit`)

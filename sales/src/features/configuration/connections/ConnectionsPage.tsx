@@ -3,7 +3,6 @@ import { Landmark, Server, ShoppingBag } from 'lucide-react'
 import {
   Badge, CrudPage, DateTimeCell, Hint, StatusCell, Tooltip, formatShortMoment, type ColumnDef, Cluster, Stack, Text, Icon,
 } from '@/platform-ui'
-import { historyTab } from '../historyTab'
 import { ConnectionFiles } from './ConnectionFiles'
 import { NextRun, SchedulerOffBanner } from './SchedulerState'
 import { ConnectionRowActions } from './ConnectionRowActions'
@@ -14,7 +13,7 @@ import { HealthBadge } from './HealthBadge'
 import { RunNowButton } from './RunNowButton'
 import { connectionHealth } from './connectionHealth'
 import {
-  KIND_LABEL, gatewayOf, connectionsClient, fetchConnectionAudit, scheduleLabel,
+  KIND_LABEL, gatewayOf, connectionsClient, scheduleLabel,
   type ConnectionCreate, type ConnectionRead, type ConnectionUpdate,
 } from './connectionsApi'
 import {
@@ -120,7 +119,6 @@ export default function ConnectionsPage() {
         { id: 'schedule', label: 'Schedule', tone: c.last_run_status === 'FAILED' ? 'danger' : undefined,
           render: () => <><SchedulerOffBanner /><ConnectionSchedule connection={c} /></> },
         { id: 'files', label: 'Files', render: () => <ConnectionFiles connection={c} /> },
-        historyTab('connections', c.id, c.version, fetchConnectionAudit),
       ]}
     />
   )

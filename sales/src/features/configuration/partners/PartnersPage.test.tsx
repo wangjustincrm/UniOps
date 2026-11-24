@@ -19,13 +19,13 @@ vi.mock('./partnersApi', async (orig) => {
     partnersClient: {
       ...real.partnersClient,
       list: vi.fn(async () => ({ items: [partner], total: 1 })),
-      meta: async () => ({ version: 1, fields: [], searchable: false, default_sort: [], views: [], capabilities: { export: { allowed: true, computed: [] }, suggest: false, actions: [] } }),
+      meta: async () => ({ version: 1, fields: [], searchable: false, default_sort: [], views: [], capabilities: { export: { allowed: true, computed: [] }, suggest: false, history: true, actions: [] } }),
       update: vi.fn(),
+      history: vi.fn(async () => [
+        { id: 2, at: '2026-10-29T13:00:00Z', user_name: 'Op', action: 'update', before: { name: 'Walmart' }, after: { name: 'Walmart Canada' }, reason: 'update' },
+        { id: 1, at: '2026-10-29T12:00:00Z', user_name: 'Op', action: 'create', before: null, after: { code: 'WMT' }, reason: 'create' },
+      ]),
     },
-    fetchPartnerAudit: vi.fn(async () => [
-      { id: 2, at: '2026-10-29T13:00:00Z', user_name: 'Op', action: 'update', before: { name: 'Walmart' }, after: { name: 'Walmart Canada' }, reason: 'update' },
-      { id: 1, at: '2026-10-29T12:00:00Z', user_name: 'Op', action: 'create', before: null, after: { code: 'WMT' }, reason: 'create' },
-    ]),
   }
 })
 

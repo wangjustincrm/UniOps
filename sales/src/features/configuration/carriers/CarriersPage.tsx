@@ -1,9 +1,7 @@
 import { z } from 'zod'
 import { Badge, CrudPage, type ColumnDef, type FieldSpec , columnsOf } from '@/platform-ui'
-import { historyTab } from '../historyTab'
 import {
-  carriersClient, fetchCarrierAudit,
-  type CarrierCreate, type CarrierRead, type CarrierUpdate,
+  carriersClient, type CarrierCreate, type CarrierRead, type CarrierUpdate,
 } from './carriersApi'
 
 const colCarrierRead = columnsOf<CarrierRead>()
@@ -45,7 +43,6 @@ export default function CarriersPage() {
       errorMessages={{ 'carrier.scac_taken': 'A carrier with this SCAC already exists.' }}
       recordTitle={(r) => r.name}
       recordSubtitle={(r) => r.scac}
-      detailTabs={(r, details) => [details, historyTab('carriers', r.id, r.version, fetchCarrierAudit)]}
     />
   )
 }

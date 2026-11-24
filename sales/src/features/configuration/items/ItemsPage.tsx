@@ -1,6 +1,5 @@
 import { Badge, CrudPage, type ColumnDef , columnsOf } from '@/platform-ui'
-import { historyTab } from '../historyTab'
-import { fetchItemAudit, itemsClient, unitsText, type ItemCreate, type ItemRead, type ItemUpdate } from './itemsApi'
+import { itemsClient, unitsText, type ItemCreate, type ItemRead, type ItemUpdate } from './itemsApi'
 import { itemCreateSchema, itemEmptyValues, itemFields, itemToFormValues, itemUpdateSchema } from './itemSchema'
 
 const colItemRead = columnsOf<ItemRead>()
@@ -33,7 +32,6 @@ export default function ItemsPage() {
       csvImport errorMessages={errorMessages}
       recordTitle={(i) => i.item_code}
       recordSubtitle={(i) => [i.description, i.units.map((u) => `${u.unit} ${Number(u.factor_ea)} EA`).join(' · ')].filter(Boolean).join(' — ')}
-      detailTabs={(i, details) => [details, historyTab('items', i.id, i.version, fetchItemAudit)]}
     />
   )
 }

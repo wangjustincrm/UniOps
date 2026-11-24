@@ -19,7 +19,7 @@ vi.mock('./notificationsApi', async (orig) => {
       { key: 'cancel_after_940', label: 'Cancelled at source after the 940', kind: 'action', gate: true, rule_id: 3 },
       { key: '940_failed', label: '940 failed', kind: 'action', gate: true, rule_id: null }]),
     fetchUsers: vi.fn(async () => [{ id: 'u-ann', name: 'Ann Owner', email: 'ann@x.example' }, { id: 'u-bob', name: 'Bob', email: 'bob@x.example' }]),
-    sendTest: api.test, fetchRuleAudit: vi.fn(async () => []) }
+    sendTest: api.test }
 })
 const { default: NotificationRulesPage } = await import('./NotificationRulesPage')
 

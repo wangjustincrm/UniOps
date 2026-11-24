@@ -1,6 +1,5 @@
 import { createResourceClient } from '@/platform-ui'
 import { api } from '@/lib/api'
-import type { AuditEntry } from '../AuditHistory'
 
 // Mirrors sales-api app/schemas/connections.py (hand-written, see partnersApi.ts).
 export const KINDS = ['SFTP', 'SHOPIFY', 'AUTHORIZE_NET', 'PAYPAL'] as const
@@ -111,7 +110,6 @@ export interface ConnectionTest {
 
 export const CONNECTIONS_PATH = '/config/connections'
 export const connectionsClient = createResourceClient<ConnectionRead, ConnectionCreate, ConnectionUpdate>(api, CONNECTIONS_PATH)
-export const fetchConnectionAudit = (id: number) => api.get<AuditEntry[]>(`${CONNECTIONS_PATH}/${id}/audit`)
 export const testConnection = (id: number) => api.post<ConnectionTest>(`${CONNECTIONS_PATH}/${id}/test`)
 export const clearAuthLatch = (id: number) => api.post<ConnectionRead>(`${CONNECTIONS_PATH}/${id}/clear-auth-latch`)
 export const resetCursor = (id: number, cursor: string | null) =>

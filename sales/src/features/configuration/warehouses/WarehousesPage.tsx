@@ -1,8 +1,7 @@
 import { z } from 'zod'
 import { Badge, CrudPage, type ColumnDef, type FieldSpec , columnsOf } from '@/platform-ui'
-import { historyTab } from '../historyTab'
 import {
-  WAREHOUSE_ROLES, fetchWarehouseAudit, warehousesClient,
+  WAREHOUSE_ROLES, warehousesClient,
   type WarehouseCreate, type WarehouseRead, type WarehouseUpdate,
 } from './warehousesApi'
 
@@ -57,7 +56,6 @@ export default function WarehousesPage() {
       errorMessages={{ 'warehouse.code_taken': 'A warehouse with this code already exists.' }}
       recordTitle={(r) => r.name}
       recordSubtitle={(r) => r.code}
-      detailTabs={(r, details) => [details, historyTab('warehouses', r.id, r.version, fetchWarehouseAudit)]}
     />
   )
 }

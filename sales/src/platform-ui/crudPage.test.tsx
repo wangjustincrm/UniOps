@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { CrudPage, PermissionProvider, ViewsProvider, type ColumnDef, type FieldSpec } from './index'
 import type { ResourceClient } from './resource/ResourceClient'
+import { openTab } from './testing'
 
 // CrudPage's own behaviour, on a two-field record: rendering a real page's form
 // three times over (open, re-key on the new version, save) made this test
@@ -59,5 +60,29 @@ describe('CrudPage keeps the open record current', () => {
     expect(screen.getByRole('dialog')).toBe(sheet)                                           // still open
     await waitFor(() => expect(within(sheet).getByLabelText('Terms')).toHaveValue('Net 45'))  // the saved value
     await waitFor(() => expect(screen.getAllByText('A').length).toBeGreaterThan(0))
+  })
+})
+
+describe("a record's History", () => {
+  it.each([{ kept: true }, { kept: false }, { kept: undefined }])('comes last where the server offers it, not where it does not or is older ($kept)', async ({ kept }: { kept?: boolean }) => {
+    const history = vi.fn(async () => [{ id: 1, at: '2026-11-24T12:00:00Z', user_name: 'Op', action: 'update' as const, before: { name: 'A' }, after: { name: 'B' }, reason: 'why' }])
+    const client = { basePath: `/crud-h-${kept}`, list: async () => ({ items: [rec], total: 1 }), history,
+      meta: async () => ({ version: 1, searchable: true, default_sort: [], fields: [], views: [],
+        ...(kept === undefined ? {} : { capabilities: { export: null, suggest: false, history: kept, actions: [] } }) }),
+    } as unknown as ResourceClient<Rec, Rec, Rec>
+    render(<QueryClientProvider client={new QueryClient()}><ViewsProvider client={views}><PermissionProvider can={() => true}>
+      <CrudPage<Rec, Rec, Rec> title="Things" client={client} columns={columns} writePermission="w" createSchema={schema} updateSchema={schema}
+        fields={fields} emptyValues={{ name: '', terms: '' }} toFormValues={(r) => ({ ...r })}
+        detailTabs={(_r, details) => [details, { id: 'own', label: 'Own', render: () => 'x' }]} />
+    </PermissionProvider></ViewsProvider></QueryClientProvider>)
+    fireEvent.click(await screen.findByText('A'))
+    const sheet = await screen.findByRole('dialog')
+    const tabs = () => within(sheet).getAllByRole('tab').map((t) => t.textContent)
+    await waitFor(() => expect(tabs()).toEqual(kept ? ['Details', 'Own', 'History'] : ['Details', 'Own']))
+    expect(history).not.toHaveBeenCalled()  // read when the tab opens
+    if (!kept) return
+    await openTab(sheet, 'History')
+    expect(await within(sheet).findByText(/why/)).toBeInTheDocument()
+    expect(history).toHaveBeenCalledWith(rec.id)
   })
 })

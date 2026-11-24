@@ -33,7 +33,6 @@ vi.mock('./connectionsApi', async (orig) => {
     connectionsClient: { ...real.connectionsClient, list: api.list, importCsv: api.importCsv, update: api.update, meta: api.meta, create: api.create, get: api.get },
     fetchSchedulerSettings: api.scheduler, saveSchedulerSettings: api.saveScheduler,
     runConnectionNow: api.runNow,
-    fetchConnectionAudit: vi.fn(async () => []),
     testConnection: api.test, pinHostKey: api.pin, clearAuthLatch: api.clear,
     fetchEdiSettings: api.edi, saveEdiSettings: api.saveEdi,
   }

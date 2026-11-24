@@ -1,6 +1,5 @@
 import { Badge, CrudPage, type ColumnDef , columnsOf } from '@/platform-ui'
-import { historyTab } from '../historyTab'
-import { fetchPartnerAudit, partnersClient, type PartnerCreate, type PartnerRead, type PartnerUpdate } from './partnersApi'
+import { partnersClient, type PartnerCreate, type PartnerRead, type PartnerUpdate } from './partnersApi'
 import {
   partnerCreateSchema, partnerEmptyValues, partnerFields, partnerToFormValues, partnerUpdateSchema,
 } from './partnerSchema'
@@ -47,7 +46,6 @@ export default function PartnersPage() {
       errorMessages={errorMessages}
       recordTitle={(p) => p.name}
       recordSubtitle={(p) => `${p.code} · ${p.channel}`}
-      detailTabs={(p, details) => [details, historyTab('partners', p.id, p.version, fetchPartnerAudit)]}
     />
   )
 }

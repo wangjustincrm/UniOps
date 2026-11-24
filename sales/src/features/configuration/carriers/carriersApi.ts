@@ -1,6 +1,5 @@
 import { createResourceClient } from '@/platform-ui'
 import { api } from '@/lib/api'
-import type { AuditEntry } from '../AuditHistory'
 
 // Mirrors sales-api app/schemas/carriers.py (hand-written, see partnersApi.ts).
 export interface CarrierRead {
@@ -22,4 +21,3 @@ export type CarrierUpdate = Pick<CarrierRead, Editable>
 
 export const CARRIERS_PATH = '/config/carriers'
 export const carriersClient = createResourceClient<CarrierRead, CarrierCreate, CarrierUpdate>(api, CARRIERS_PATH)
-export const fetchCarrierAudit = (id: number) => api.get<AuditEntry[]>(`${CARRIERS_PATH}/${id}/audit`)

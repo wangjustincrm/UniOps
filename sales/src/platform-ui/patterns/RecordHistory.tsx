@@ -1,17 +1,12 @@
-import {
-  EmptyState, Section, formatDateTime, queryKeys, Muted, useLookup, QueryState, Text, Stack,
-} from '@/platform-ui'
-
-/** One entry of a record's audit history (sales-api schemas/audit.py). */
-export interface AuditEntry {
-  id: number
-  at: string
-  user_name: string
-  action: 'create' | 'update' | 'delete'
-  before: Record<string, unknown> | null
-  after: Record<string, unknown> | null
-  reason: string | null
-}
+import { EmptyState } from '../primitives/States'
+import { Stack } from '../primitives/Layout'
+import { Muted, Text } from '../primitives/Text'
+import { formatDateTime } from '../primitives/format'
+import { queryKeys } from '../resource/queryKeys'
+import type { AuditEntry } from '../resource/ResourceClient'
+import { QueryState } from './QueryState'
+import { Section } from './Section'
+import { useLookup } from './useRecord'
 
 const show = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v))
 
@@ -27,15 +22,14 @@ function Changes({ e }: { e: AuditEntry }) {
   )
 }
 
-/** Who changed what and when (FR-OB-53), newest first, for one configuration
- *  record. `version` in the key refreshes it after a save. */
-export function AuditHistory({ resource, id, version, load }: {
-  resource: string
+/** Who changed what and when (FR-OB-53), newest first, for one record of a resource.
+ *  `version` in the key refreshes it after a save. */
+export function RecordHistory({ resource, id, version }: {
+  resource: { basePath: string; history: (id: number) => Promise<AuditEntry[]> }
   id: number
   version?: number
-  load: (id: number) => Promise<AuditEntry[]>
 }) {
-  const q = useLookup([...queryKeys.audit({ basePath: resource }, id), version], () => load(id), { errors: 'inline' })
+  const q = useLookup([...queryKeys.audit(resource, id), version], () => resource.history(id), { errors: 'inline' })
   return (
     <Section title="History" plain className="text-sm">
       {!q.data ? <QueryState q={q} skeleton="h-16">{() => null}</QueryState> : !q.data.length ? (

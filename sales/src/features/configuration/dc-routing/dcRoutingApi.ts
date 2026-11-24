@@ -1,6 +1,5 @@
 import { createResourceClient } from '@/platform-ui'
 import { api } from '@/lib/api'
-import type { AuditEntry } from '../AuditHistory'
 
 export interface DcRoutingRead {
   id: number
@@ -20,4 +19,3 @@ export type DcRoutingUpdate = Pick<DcRoutingRead, 'dc_number' | 'notes' | 'activ
 
 export const DC_ROUTING_PATH = '/config/dc-routing'
 export const dcRoutingClient = createResourceClient<DcRoutingRead, DcRoutingCreate, DcRoutingUpdate>(api, DC_ROUTING_PATH)
-export const fetchDcRoutingAudit = (id: number) => api.get<AuditEntry[]>(`${DC_ROUTING_PATH}/${id}/audit`)
