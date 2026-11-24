@@ -14,6 +14,7 @@ export const PAGE_HELP: Record<string, HelpEntry> = {
       'Open an order to act on it: Send 940 now, Release hold, Confirm delivery.',
       'New manual order: a customer order typed in by hand, with its reason (Gift, Replacement, Sample …).',
       'A gift or replacement: on their order, More → Reorder for this customer; add lines and a reason, then submit.',
+      'Export CSV: every order the list selects, with ship-to as the list shows it. Who exported what is kept in the Audit log.',
       'Manual orders by reason: gifts, replacements, samples … by month and reason, with the EA.',
       'Payment (Finance): the To settle view; tick orders → Mark settled, or an order\'s ⋯ menu.',
     ],
