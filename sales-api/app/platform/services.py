@@ -30,11 +30,12 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.platform.actors import Actor
-from app.platform.audit import jsonable
+from app.platform.audit import AuditEntryRead, jsonable
 from app.platform.authorization import authorize, may, note_action
 from app.platform.commands import check_version
 from app.platform.entities import Deactivatable, Versioned
 from app.platform.errors import BusinessError, InvalidInput
+from app.platform.options import ResourceOptions, options
 from app.platform.query import Page, QuerySpec
 from app.platform.repository import Repository, _humanise
 from app.platform.resource import ResolvedResource, Resource, resolve
@@ -224,6 +225,15 @@ class ReadOnlyService(Service, Generic[T, R]):
         return Page[Any](items=await self._read_all(list(page.items)), total=page.total,
                          groups=page.groups, groups_truncated=page.groups_truncated, totals=page.totals)
 
+    async def history(self, id: int) -> list[AuditEntryRead]:
+        """A record's audit history, newest first, read with the permission that reads the record."""
+        await self._authorize(self.read_permission)
+        trail = self.uow.audit.model
+        rows = (await self.s.execute(
+            select(trail).where(trail.entity == self.repo_cls.model.__tablename__, trail.entity_id == str(id))
+            .order_by(trail.at.desc(), trail.id.desc()).limit(options(ResourceOptions).history_entries))).scalars().all()
+        return [AuditEntryRead.model_validate(r) for r in rows]
+
     async def suggest(self, field: str, text: str = "") -> list[str]:
         await self._authorize(self.read_permission)
         return await self.repo.suggest(field, text)
@@ -250,6 +260,7 @@ class ReadOnlyService(Service, Generic[T, R]):
         return {
             "export": {"allowed": await may(self.uow, res.export_permission or self.read_permission),
                        "computed": [{"id": k, "label": c.label} for k, c in res.computed.items()]} if res.export else None,
+            "history": res.history,
             "suggest": res.suggest and bool(self.repo_cls.suggestable),
             "actions": [{"id": a.id, "allowed": await may(self.uow, a.permission)} for a in registry.actions.values()]
             if registry is not None else []}

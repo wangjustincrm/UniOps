@@ -94,7 +94,7 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
     create_schema = ConnectionCreate
     update_schema = ConnectionUpdate
     read_permission = READ
-    resource = Resource(path="/config/connections", tags=("connections",))
+    resource = Resource(path="/config/connections", tags=("connections",), history=True)
     write_permission = CONFIG
     csv_key = "name"
     csv_columns = ("name", "kind", "host", "port", "username", *_FOLDERS, "after_read", "stable_seconds", "can_read", "can_write",

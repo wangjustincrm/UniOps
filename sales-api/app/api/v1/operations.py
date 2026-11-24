@@ -8,19 +8,16 @@ from pydantic import ConfigDict, BaseModel, Field
 
 from app.core.config import settings
 from app.core.deps import get_uow
-from app.models.config import Connection
 from app.platform.crud_router import resource_router
 from app.platform.files import FileResult
 from app.runtime import Runtime, get_runtime
-from app.schemas.audit import AuditEntryRead
 from app.schemas.connections import (
     ConnectionRead, ConnectionTestRead, CursorReset, EdiSettings, SchedulerSettings, SchedulerUpdate,
 )
 from app.schemas.operations import DocumentRead, RunStarted
 from app.schemas.orders import ManualOrderSettings
-from app.services import audit
 from app.services.connections import (
-    READ, ConnectionService, EdiSettingsService, SchedulerSettingsService,
+    ConnectionService, EdiSettingsService, SchedulerSettingsService,
 )
 from app.services.operations import DocumentActions, DocumentService, LogService, RunService
 
@@ -28,11 +25,6 @@ UoW = Annotated[Any, Depends(get_uow)]
 Rt = Annotated[Runtime, Depends(get_runtime)]
 
 connections = resource_router(ConnectionService, uow=get_uow)
-
-
-@connections.get("/{id}/audit", response_model=list[AuditEntryRead])
-async def connection_audit(u: UoW, id: int):
-    return await audit.history(u, Connection, id, permission=READ)
 
 
 @connections.post("/{id}/test", response_model=ConnectionTestRead)

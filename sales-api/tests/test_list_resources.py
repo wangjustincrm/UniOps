@@ -29,12 +29,13 @@ def lists():
 
 LISTS = [c for c in lists() if c not in NOT_MOUNTED]
 ROUTES = {(m, r.path.removeprefix(PREFIX)) for r in app.routes for m in getattr(r, "methods", ())}
-CAPABILITIES = {"suggest": "/suggest", "export": "/export.csv", "get": "/{id}", "actions": "/actions/{action_id}", "import": "/import.csv"}
+CAPABILITIES = {"suggest": "/suggest", "export": "/export.csv", "get": "/{id}", "actions": "/actions/{action_id}", "import": "/import.csv",
+                "history": "/{id}/audit"}
 
 
 def declared(svc) -> set[str]:
     r = svc.resolved()
-    return {name for name, on in {"suggest": r.suggest, "export": r.export, "get": r.get, "actions": r.actions is not None,
+    return {name for name, on in {"suggest": r.suggest, "export": r.export, "get": r.get, "actions": r.actions is not None, "history": r.history,
                                   "import": issubclass(svc, CrudService) and bool(svc.csv_columns and svc.csv_key)}.items() if on}
 
 
@@ -92,6 +93,13 @@ def test_all_fields_never_says_less_than_a_view_shows(svc):
     assert (named & exportable(svc)) - set(full_export(svc)) == set()
     labels = svc.export_labels(full_export(svc))
     assert sorted({x for x in labels if labels.count(x) > 1}) == []
+
+
+def test_the_lists_with_a_history_are_the_configuration_tables():
+    """The eight that had one before it was declared; a record's history names values of every field of it."""
+    assert {c.__name__ for c in LISTS if c.resolved().history} == {
+        "PartnerService", "ItemService", "PartnerCodeService", "DcRoutingService", "WarehouseService", "CarrierService",
+        "ConnectionService", "NotificationRuleService"}
 
 
 def test_every_labelled_list_has_its_page_compared():

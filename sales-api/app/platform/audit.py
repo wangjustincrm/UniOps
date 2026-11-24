@@ -24,6 +24,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import DateTime, Integer, String, Text, event, inspect, insert
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, Session, mapped_column
@@ -43,6 +44,18 @@ class AuditRecordMixin:
     before: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     after: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AuditEntryRead(BaseModel):  # one entry of a record's history (GET /{id}/audit)
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    at: datetime
+    user_name: str
+    action: str
+    before: dict[str, Any] | None
+    after: dict[str, Any] | None
+    reason: str | None
 
 
 # Columns the trail fills itself; recording them as "changes" is noise.

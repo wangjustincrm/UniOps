@@ -62,7 +62,7 @@ class ItemService(CrudService[Item, ItemRead, ItemCreate, ItemUpdate]):
     create_schema = ItemCreate
     update_schema = ItemUpdate
     read_permission = READ
-    resource = Resource(path="/config/items", tags=("items",))
+    resource = Resource(path="/config/items", tags=("items",), history=True)
     write_permission = CONFIG
     csv_key = "item_code"
     csv_columns = ("item_code", "description", "sku", "upc", "gtin", "gross_weight_lb_per_ea", "warehouse_held",
@@ -142,7 +142,7 @@ class PartnerCodeService(CrudService[ItemPartnerCode, PartnerCodeRead, PartnerCo
     create_schema = PartnerCodeCreate
     update_schema = PartnerCodeUpdate
     read_permission = READ
-    resource = Resource(path="/config/partner-codes", tags=("partner-codes",))
+    resource = Resource(path="/config/partner-codes", tags=("partner-codes",), history=True)
     write_permission = CONFIG
     csv_key = ("partner_code", "buyer_part")
     csv_columns = ("partner_code", "buyer_part", "item_code")
@@ -176,7 +176,7 @@ class DcRoutingService(CrudService[DcRouting, DcRoutingRead, DcRoutingCreate, Dc
     create_schema = DcRoutingCreate
     update_schema = DcRoutingUpdate
     read_permission = READ
-    resource = Resource(path="/config/dc-routing", tags=("dc-routing",))
+    resource = Resource(path="/config/dc-routing", tags=("dc-routing",), history=True)
     write_permission = CONFIG
     csv_key = ("partner_code", "ship_to_gln")
     csv_columns = ("partner_code", "ship_to_gln", "dc_number", "notes", "active")

@@ -8,26 +8,18 @@ from fastapi import APIRouter, Depends
 
 from app.core.config import settings
 from app.core.deps import get_uow
-from app.models.config import NotificationRule
 from app.platform.crud_router import resource_router
 from app.runtime import Runtime, get_runtime
-from app.schemas.audit import AuditEntryRead
 from app.schemas.health import DashboardRead, HealthRead, InboxTarget
 from app.schemas.notifications import EventTypeRead, GateEventRead, RuleTestResult, UserOption
-from app.services import audit
 from app.services.health import HealthService
 from app.services.inbox import InboxService
-from app.services.notifications import READ, NotificationRuleService, NotificationService
+from app.services.notifications import NotificationRuleService, NotificationService
 
 UoW = Annotated[Any, Depends(get_uow)]
 Rt = Annotated[Runtime, Depends(get_runtime)]
 
 rules = resource_router(NotificationRuleService, uow=get_uow)
-
-
-@rules.get("/{id}/audit", response_model=list[AuditEntryRead])
-async def rule_audit(u: UoW, id: int):
-    return await audit.history(u, NotificationRule, id, permission=READ)
 
 
 @rules.post("/{id}/test", response_model=RuleTestResult)

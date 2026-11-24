@@ -48,7 +48,7 @@ class PartnerService(CrudService[Partner, PartnerRead, PartnerCreate, PartnerUpd
     create_schema = PartnerCreate
     update_schema = PartnerUpdate
     read_permission = READ
-    resource = Resource(path="/config/partners", tags=("partners",))
+    resource = Resource(path="/config/partners", tags=("partners",), history=True)
     write_permission = CONFIG
     csv_key = "code"
     unique_constraints = {"uq_sales_partners_code_ci": ("partner.code_taken", "code"),

@@ -46,6 +46,7 @@ class Resource:
     export_headers: Literal["fields", "labels"] = INHERIT  # the full export's; "fields" is the shape an import reads back
     export_fields: tuple[str, ...] | None = INHERIT        # the full export's columns; None: the list's fields
     computed: Mapping[str, Computed] = INHERIT             # the page's own columns, by column id
+    history: bool = INHERIT                  # GET /{id}/audit: what changed, when, by whom and why
     actions: Any = INHERIT                   # an ActionRegistry, or a function that gives it (import order)
 
 
@@ -61,6 +62,7 @@ class ResolvedResource:
     export_headers: str = "fields"
     export_fields: tuple[str, ...] | None = None
     computed: Mapping[str, Computed] = field(default_factory=dict)
+    history: bool = False
     actions: Any = None
 
     @property
@@ -75,7 +77,8 @@ class ResolvedResource:
 
 def resolve(service_cls: type) -> ResolvedResource:
     o = options(ResourceOptions)
-    values: dict[str, Any] = {"get": o.get, "suggest": o.suggest, "export": o.export, "export_headers": o.export_headers}
+    values: dict[str, Any] = {"get": o.get, "suggest": o.suggest, "export": o.export, "export_headers": o.export_headers,
+                              "history": o.history}
     for cls in reversed(service_cls.__mro__):
         declared = cls.__dict__.get("resource")
         if declared is not None:

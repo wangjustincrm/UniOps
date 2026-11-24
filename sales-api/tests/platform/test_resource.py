@@ -14,7 +14,7 @@ from app.platform.crud_router import resource_router
 from app.platform.options import ResourceOptions, configure, restore, snapshot
 from app.platform.query import QuerySpec
 from app.platform.resource import Computed, Resource, resolve
-from tests.platform.conftest import WidgetCreate, WidgetService, actor_with
+from tests.platform.conftest import WidgetCreate, WidgetService, WidgetUpdate, actor_with
 
 RW = actor_with("pt.read", "pt.config")
 
@@ -67,7 +67,7 @@ async def test_meta_says_what_the_list_offers_and_whether_this_person_may(uow_fa
     svc = type("Kept", (WidgetService,), {"resource": Resource(export_permission="pt.config", computed={"shout": Computed("Shout", lambda r: r.name.upper())})})
     async with uow_factory(RW) as u:
         m = await svc(u).meta()
-        assert m["capabilities"] == {"export": {"allowed": True, "computed": [{"id": "shout", "label": "Shout"}]}, "suggest": False, "actions": []}
+        assert m["capabilities"] == {"export": {"allowed": True, "computed": [{"id": "shout", "label": "Shout"}]}, "history": False, "suggest": False, "actions": []}
     async with uow_factory(actor_with("pt.read")) as u:
         assert (await svc(u).meta())["capabilities"]["export"]["allowed"] is False
         with pytest.raises(PermissionDenied):
@@ -109,3 +109,23 @@ async def test_may_asks_without_a_security_event_and_a_later_refusal_is_still_on
         assert await may(system, "x.read") is False
     finally:
         authorization._denied_listeners.remove(listener)
+
+
+async def test_a_record_s_history_newest_first_needs_the_permission_that_reads_it(uow_factory):
+    kept = type("Kept", (WidgetService,), {"resource": Resource(history=True)})
+    async with uow_factory(RW) as u:
+        w = await kept(u).create(WidgetCreate(code="H", name="One"))
+        await u.commit()
+    async with uow_factory(RW) as u:
+        await kept(u).update(w.id, WidgetUpdate(name="Two"), w.version)
+        await u.commit()
+    async with uow_factory(actor_with("pt.read")) as u:
+        h = await kept(u).history(w.id)
+        assert [(e.action, (e.after or {}).get("name")) for e in h] == [("update", "Two"), ("create", "One")]
+        assert await kept(u).history(999_999) == [] and (await kept(u).capabilities())["history"] is True
+        configure(ResourceOptions(history_entries=1))
+        assert [e.action for e in await kept(u).history(w.id)] == ["update"]
+    async with uow_factory(actor_with("pt.config")) as u:
+        with pytest.raises(PermissionDenied):
+            await kept(u).history(w.id)
+    assert ("GET", "/widgets/{id}/audit") in paths(kept) and ("GET", "/widgets/{id}/audit") not in paths(WidgetService)

@@ -35,7 +35,7 @@ class WarehouseService(CrudService[Warehouse, WarehouseRead, WarehouseCreate, Wa
     create_schema = WarehouseCreate
     update_schema = WarehouseUpdate
     read_permission = READ
-    resource = Resource(path="/config/warehouses", tags=("warehouses",))
+    resource = Resource(path="/config/warehouses", tags=("warehouses",), history=True)
     write_permission = CONFIG
     csv_key = ("code",)
     csv_columns = ("code", "name", "role", "edi_id_qualifier", "edi_id", "address1", "city", "province", "zip", "country",

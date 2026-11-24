@@ -95,6 +95,8 @@ class ResourceOptions:
     suggest: bool = True
     export: bool = True
     export_headers: str = "fields"  # the full export's header row: the field names (an import reads them back)
+    history: bool = False           # a record's audit history: a list says so
+    history_entries: int = 200      # the newest shown
 
 
 _options: dict[type, Any] = {}

@@ -177,7 +177,7 @@ class NotificationRuleService(CrudService[NotificationRule, NotificationRuleRead
     create_schema = NotificationRuleCreate
     update_schema = NotificationRuleUpdate
     read_permission = READ
-    resource = Resource(path="/config/notification-rules", tags=("notifications",), export=False)  # who is notified: not handed out in bulk until the user decides (2026-11-24)
+    resource = Resource(path="/config/notification-rules", tags=("notifications",), history=True, export=False)  # who is notified: not handed out in bulk until the user decides (2026-11-24)
     write_permission = CONFIG
     unique_constraints = {"sales_notification_rules_event_type_key": ("notification.event_taken", "event_type")}
 

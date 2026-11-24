@@ -33,7 +33,7 @@ class CarrierService(CrudService[Carrier, CarrierRead, CarrierCreate, CarrierUpd
     create_schema = CarrierCreate
     update_schema = CarrierUpdate
     read_permission = READ
-    resource = Resource(path="/config/carriers", tags=("carriers",))
+    resource = Resource(path="/config/carriers", tags=("carriers",), history=True)
     write_permission = CONFIG
     csv_key = ("scac",)
     csv_columns = ("scac", "name", "tracking_url", "active")

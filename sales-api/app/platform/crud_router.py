@@ -3,7 +3,7 @@ declares (platform/resource.py).
 
     router = resource_router(PartnerService, uow=get_uow)
 
-list · meta · suggest · export.csv · actions · get, and for a CrudService create · update (`?version=`) · deactivate ·
+list · meta · suggest · export.csv · actions · history · get, and for a CrudService create · update (`?version=`) · deactivate ·
 import.csv (`?dry_run=`). Deactivate is mounted only for a Deactivatable model, and the CSV import only for a service
 that declares its CSV columns and key: a route that can only fail is never offered. The router enforces no permission
 of its own: the service checks the keys it declares (app/platform/authorization.py), so the same rule holds for any
@@ -18,6 +18,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 
+from app.platform.audit import AuditEntryRead
 from app.platform.bulk_actions import action_router
 from app.platform.entities import Deactivatable
 from app.platform.files import FileResult
@@ -74,6 +75,10 @@ def resource_router(
         _import_route(r, service_cls, UoW)
     if (registry := res.action_registry()) is not None:
         r.include_router(action_router(registry, uow))
+    if res.history:
+        @r.get("/{id}/audit", response_model=list[AuditEntryRead])
+        async def history(u: UoW, id: int):
+            return await service_cls(u).history(id)
 
     if custom is not None:
         if custom.prefix != r.prefix:
