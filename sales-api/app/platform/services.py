@@ -219,6 +219,21 @@ class ReadOnlyService(Service, Generic[T, R]):
         await self._authorize(self.read_permission)
         return await self._read_one(await self.repo.get(id))
 
+    async def detail(self, id: int) -> Any:
+        """The record with its parts (Resource.detail): checked here, read by the list's own `_detail`."""
+        await self._authorize(self.read_permission)
+        note_action(type(self).__name__, "detail")
+        return await self._detail(id)
+
+    async def _detail(self, id: int) -> Any:
+        """The record with its parts; the caller has checked (`detail`, or an operation that answers with it)."""
+        raise NotImplementedError(f"{type(self).__name__} has no detail")
+
+    async def _detail_after(self, id: int) -> Any:
+        """What an operation answers with, its own permission checked: the record as it now is."""
+        await self.uow.session.flush()
+        return await self._detail(id)
+
     async def list(self, spec: QuerySpec) -> Page[R]:
         await self._authorize(self.read_permission)
         page = await self.repo.list(spec)

@@ -344,8 +344,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         out.next_step, out.next_step_who = (step.text, step.who) if step else (None, None)
         return out
 
-    @requires(READ)
-    async def detail(self, id: int) -> OrderDetail:
+    async def _detail(self, id: int) -> OrderDetail:
         s = self.uow.session
         o = await self.repo.get(id)
         await self._load_runs_on()

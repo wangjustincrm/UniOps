@@ -64,8 +64,7 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
         for i in items:
             i.from_warehouse, i.to_warehouse = codes.get(i.from_warehouse_id), codes.get(i.to_warehouse_id)
 
-    @requires(READ)
-    async def detail(self, id: int) -> TransferDetail:
+    async def _detail(self, id: int) -> TransferDetail:
         s = self.uow.session
         t = await self.repo.get(id)
         base = await self._read_one(t)
@@ -85,47 +84,43 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
             control=doc.st02 if doc else None, status_before_hold=t.status_before_hold,
             documents=await documents_of(s, "transfer", id), timeline=await timeline_of(s, "transfer", id))
 
-    async def _after(self, id: int) -> TransferDetail:
-        await self.uow.session.flush()
-        return await TransferService.detail.__wrapped__(self, id)  # already authorised
-
     @requires(MANAGE)
     async def create(self, transfers, body) -> TransferDetail:
         t = await transfers.create(self.uow, from_id=body.from_warehouse_id, to_id=body.to_warehouse_id,
                                    lines=[x.model_dump() for x in body.lines], notes=body.notes)
-        return await self._after(t.id)
+        return await self._detail_after(t.id)
 
     @requires(MANAGE)
     async def update(self, transfers, id: int, body, version: int | None) -> TransferDetail:
         await transfers.update(self.uow, id, version=version, from_id=body.from_warehouse_id, to_id=body.to_warehouse_id,
                                lines=[x.model_dump() for x in body.lines], notes=body.notes)
-        return await self._after(id)
+        return await self._detail_after(id)
 
     @requires(MANAGE)
     async def ready(self, transfers, id: int, version: int | None) -> TransferDetail:
         await transfers.ready(self.uow, id, version)
-        return await self._after(id)
+        return await self._detail_after(id)
 
     @requires(MANAGE)
     async def cancel(self, transfers, id: int, version: int | None, reason: str) -> TransferDetail:
         await transfers.cancel(self.uow, id, version, reason)
-        return await self._after(id)
+        return await self._detail_after(id)
 
     @requires(MANAGE)
     async def resend(self, transfers, id: int, version: int | None) -> TransferDetail:
         await transfers.resend(self.uow, id, version)
-        return await self._after(id)
+        return await self._detail_after(id)
 
     @requires(MANAGE)
     async def amend(self, transfers, id: int, body, version: int | None) -> TransferDetail:
         await transfers.amend(self.uow, id, version=version, lines=[x.model_dump() for x in body.lines], notes=body.notes,
                               reason=body.reason)
-        return await self._after(id)
+        return await self._detail_after(id)
 
     @requires(MANAGE)
     async def resolve(self, transfers, id: int, body, version: int | None) -> TransferDetail:
         await transfers.resolve(self.uow, id, version=version, how=body.how, reason=body.reason)
-        return await self._after(id)
+        return await self._detail_after(id)
 
     @requires(MANAGE)
     async def release(self, id: int, reason: str, version: VersionArg = ANY_VERSION) -> TransferDetail:
@@ -139,4 +134,4 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
         TRANSFER.transition(t, back, actor=self.uow.actor, events=self.uow.events, reason=reason)
         await oplog.write(self.uow.session, "INFO", "transfer", f"transfer {t.transfer_number} released to {back.value}: {reason}",
                           transfer_id=t.id)
-        return await self._after(id)
+        return await self._detail_after(id)

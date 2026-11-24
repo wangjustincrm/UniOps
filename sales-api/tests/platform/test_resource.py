@@ -129,3 +129,35 @@ async def test_a_record_s_history_newest_first_needs_the_permission_that_reads_i
         with pytest.raises(PermissionDenied):
             await kept(u).history(w.id)
     assert ("GET", "/widgets/{id}/audit") in paths(kept) and ("GET", "/widgets/{id}/audit") not in paths(WidgetService)
+
+
+async def test_a_detail_is_checked_once_and_an_operation_answers_with_it_without_another_check(uow_factory):
+    class Detailed(WidgetService):
+        async def _detail(self, id):
+            return {"id": id, "parts": []}
+
+        async def touch(self, id):
+            await self._authorize("pt.config")
+            return await self._detail_after(id)
+    asked = []
+
+    async def checker(session, actor, key):
+        asked.append(key)
+        return key in ("pt.read", "pt.config")
+    uow = SimpleNamespace(actor=SimpleNamespace(is_system=False, user_id=uuid.uuid4(), role="x"), permissions=checker,
+                          granted=None, session=SimpleNamespace(flush=_nothing))  # not kept between checks: each one is seen
+    svc = Detailed.__new__(Detailed)
+    svc.uow = uow
+    assert await svc.detail(7) == {"id": 7, "parts": []} and asked == ["pt.read"]
+    asked.clear()
+    assert await svc.touch(7) == {"id": 7, "parts": []} and asked == ["pt.config"]
+    async with uow_factory(actor_with("pt.config")) as u:
+        with pytest.raises(PermissionDenied):
+            await Detailed(u).detail(7)
+    async with uow_factory(RW) as u:
+        with pytest.raises(NotImplementedError):
+            await WidgetService(u).detail(7)
+
+
+async def _nothing():
+    return None

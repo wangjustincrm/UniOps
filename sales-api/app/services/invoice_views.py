@@ -90,8 +90,7 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
             if o is not None:
                 i.order_number, i.partner_code, i.po, i.status = o.order_number, o.partner_code, o.source_order_number, o.invoice_status
 
-    @requires(READ)
-    async def detail(self, id: int) -> InvoiceDetail:
+    async def _detail(self, id: int) -> InvoiceDetail:
         s = self.uow.session
         inv = await self.repo.get(id)
         base = await self._read_one(inv)
@@ -163,6 +162,3 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
         o = await self.uow.session.get(Order, body.order_id)
         return {"return_id": r.id, "invoice_status": o.invoice_status}
 
-    async def _detail_after(self, id: int) -> InvoiceDetail:
-        await self.uow.session.flush()
-        return await InvoiceService.detail.__wrapped__(self, id)  # already authorised

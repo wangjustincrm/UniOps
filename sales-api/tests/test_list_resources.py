@@ -6,11 +6,13 @@ import inspect
 import pathlib
 import pkgutil
 import re
+from types import SimpleNamespace
 
 import pytest
 
 import app.services as services
 from app.main import app
+from app.platform.authorization import PermissionDenied
 from app.platform.services import CrudService, ReadOnlyService
 from app.services.shadow import ShadowMatchService
 
@@ -100,6 +102,30 @@ def test_the_lists_with_a_history_are_the_configuration_tables():
     assert {c.__name__ for c in LISTS if c.resolved().history} == {
         "PartnerService", "ItemService", "PartnerCodeService", "DcRoutingService", "WarehouseService", "CarrierService",
         "ConnectionService", "NotificationRuleService"}
+
+
+DETAILED = [c for c in LISTS if c.resolved().detail is not None]
+
+
+def test_a_declared_detail_is_the_list_s_own_and_goes_through_the_one_check():
+    assert {c.__name__ for c in DETAILED} == {"OrderService", "TransferService", "InvoiceService"}
+    for c in DETAILED:
+        assert c.detail is ReadOnlyService.detail and c._detail is not ReadOnlyService._detail, c.__name__
+
+
+@pytest.mark.parametrize("svc", DETAILED, ids=lambda c: c.__name__)
+async def test_a_detail_is_refused_before_anything_is_read(svc):
+    async def nobody(session, actor, key):  # noqa: ARG001
+        return False
+    s = svc.__new__(svc)  # no session at all: a read before the check would fail otherwise
+    s.uow = SimpleNamespace(actor=SimpleNamespace(is_system=False, user_id=None, role="x"), permissions=nobody, granted={}, session=None)
+    with pytest.raises(PermissionDenied):
+        await s.detail(1)
+
+
+def test_no_service_calls_round_its_check():
+    root = pathlib.Path("app")
+    assert [str(p) for p in root.rglob("*.py") if "__wrapped__(" in p.read_text()] == []
 
 
 def test_every_labelled_list_has_its_page_compared():
