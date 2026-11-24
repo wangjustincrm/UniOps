@@ -122,6 +122,24 @@ async def test_the_press_alone_moves_the_order_so_a_second_page_looks_again(p5):
     assert isinstance(await says(press(p5, o.id, seen)), Stale)
 
 
+async def test_who_pressed_is_in_the_order_s_activity(p5):  # noqa: F811
+    o = await accepted(p5)
+    assert await says(press(p5, o.id, await version(p5, o.id))) is None
+    await says(press(p5, o.id, await version(p5, o.id)))  # refused (queued): not a second one
+    async with p5.factory(OP) as u:
+        timeline = (await OrderService(u).detail(o.id)).timeline
+    asked = [e for e in timeline if e.action == "fulfil_in_shopify"]
+    assert [(e.user_name, e.reason, e.before, e.after) for e in asked] == [(OP.name, "Shopify: fulfil at the 997", None, None)]
+    assert await p5.q("SELECT 1 FROM sales_log WHERE message LIKE 'Fulfil in Shopify now%'")  # the log line stays
+
+
+async def test_who_retried_a_shipment_is_in_its_audit(p5):  # noqa: F811
+    sid = await failed_shipment(p5)
+    assert await says(retry(p5, sid)) is None
+    [a] = await p5.q("SELECT user_name, reason, after FROM sales_audit WHERE entity = 'sales_shipments' AND entity_id = :i AND user_name = :n", i=str(sid), n=OP.name)
+    assert (a["reason"], a["after"]["shopify_status"]) == ("Shopify write-back: retry", "Pending")
+
+
 async def test_a_failed_write_can_be_asked_again(p5):  # noqa: F811
     o = await accepted(p5)
     p5.shop.fail["create_fulfillment"] = RuntimeError("connection reset")

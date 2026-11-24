@@ -55,6 +55,7 @@ from app.models.orders import Order, OrderLine
 from app.models.records import OutboxRecord
 from app.models.shipments import Shipment, ShipmentRow
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.audit import audit_act
 from app.platform.clock import clock, utc_now
 from app.platform.commands import VersionArg, check_version, touch
 from app.platform.errors import BusinessError
@@ -878,6 +879,7 @@ class Shipments:
         await self.refuse_fulfil(s, order)  # what is done or queued says so, whatever the version
         check_version(order, version, "this order")
         touch(uow, order)  # the same press from the same page is refused: the order has moved
+        audit_act(s, "fulfil_in_shopify", order)  # no field of the order moves yet: who pressed it is kept here
         kind = CLOSE_AT_997 if order.shopify_fulfillment_id else FULFILL_AT_997
         OUTBOX.add(s, kind, {"order_id": order.id}, entity=order)
         await oplog.write(s, "INFO", STEP, f"Fulfil in Shopify now: {kind} queued for order {order.label}", order_id=order.id)
