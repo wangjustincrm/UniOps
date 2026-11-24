@@ -8,7 +8,7 @@ const BASE = (import.meta.env.VITE_API_URL as string | undefined) || 'http://loc
 const EPMS_BASE = (import.meta.env.VITE_EPMS_API_URL as string | undefined) || 'http://localhost:8000'
 
 import { saveFile, type FileData } from '@/platform-ui/lib/files'
-import { exitToPortal, leaveFor, markSessionExpired } from './session'
+import { exitToPortal, leaveFor, markAccountInactive, markSessionExpired } from './session'
 
 export const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
 
@@ -102,8 +102,11 @@ async function authFetch(url: string, opts: { method?: string; body?: unknown } 
   const res = await fetch(url, { method: opts.method ?? 'GET', headers: h, body: bodyInit })
   if (res.status === 401) {
     // The layout sees the token gone and leaves through exitToPortal, which
-    // goes to /logout now (lib/session.ts: why, and the loop it prevents).
-    markSessionExpired()
+    // goes to /logout now (lib/session.ts: why, and the loop it prevents) —
+    // or, for an account that is not active, stays and says so.
+    const code = await res.clone().json().then((b: { error?: { code?: string } }) => b?.error?.code ?? '', () => '')
+    if (code === 'auth.user_inactive' || code === 'auth.user_missing') markAccountInactive(code)
+    else markSessionExpired()
     if (sessionExpiredListeners.size > 0) sessionExpiredListeners.forEach((l) => l())
     else {  // no layout listening (e.g. a page used on its own): leave from here
       const next = exitToPortal(PORTAL_URL, window.location.href)

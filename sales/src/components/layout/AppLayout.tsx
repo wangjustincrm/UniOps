@@ -297,7 +297,13 @@ export default function AppLayout() {
   if (!token) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-3 px-4 text-center text-sm text-neutral-500">
-        {exit?.kind === 'stop' ? (
+        {exit?.kind === 'inactive' ? (
+          <>
+            <p className="font-medium text-neutral-700">Your account cannot use Sales.</p>
+            <p className="max-w-md">{exit.code === 'auth.user_missing' ? 'This account no longer exists.' : 'This account is not active.'} Ask an administrator if you think this is wrong.</p>
+            <a href={`${PORTAL_URL}/logout`} className="font-medium text-primary-600 hover:underline">Sign out</a>
+          </>
+        ) : exit?.kind === 'stop' ? (
           <>
             <p className="font-medium text-neutral-700">We could not sign you in to Sales.</p>
             <p className="max-w-md">Your session has expired and could not be renewed automatically.</p>

@@ -1,6 +1,7 @@
 // API error parsing (review 2026-10-28): text first, JSON only if it is JSON.
-import { describe, expect, it } from 'vitest'
-import { toApiError } from './api'
+import { describe, expect, it, vi } from 'vitest'
+import { api, onSessionExpired, toApiError } from './api'
+import { exitToPortal } from './session'
 
 describe('API error parsing', () => {
   it('reads JSON error bodies, keeps the body', async () => {
@@ -19,3 +20,21 @@ describe('API error parsing', () => {
     expect(detail.message).toBe('field required')
   })
 })
+
+describe('a 401 for an account that is not active (user 2026-11-24)', () => {
+  it('ends the session and leaves Sales on a page that says so; any other 401 is an expiry as before', async () => {
+    sessionStorage.clear()
+    const stop = onSessionExpired(() => {})  // a layout is listening: nothing redirects from here
+    const body = (code: string) => new Response(JSON.stringify({ error: { code, message: 'x', details: {} } }), { status: 401 })
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(body('auth.user_inactive'))
+    await expect(api.get('/orders')).rejects.toThrow()
+    expect(exitToPortal('http://portal.test', 'http://sales.test/orders')).toEqual({ kind: 'inactive', code: 'auth.user_inactive' })
+    sessionStorage.clear()
+    fetchMock.mockResolvedValueOnce(body('auth.unauthorized'))
+    await expect(api.get('/orders')).rejects.toThrow()
+    expect(exitToPortal('http://portal.test', 'http://sales.test/orders')).toEqual({ kind: 'go', url: 'http://portal.test/logout' })
+    fetchMock.mockRestore()
+    stop()
+  })
+})
+

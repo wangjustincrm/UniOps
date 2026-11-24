@@ -11,6 +11,7 @@
 
 const EXPIRED = 'sales-session-expired'
 const BOUNCES = 'sales-portal-bounces'
+const INACTIVE = 'sales-account-inactive'
 export const EXPIRED_FOR_MS = 60_000
 export const MAX_BOUNCES = 3
 export const BOUNCE_WINDOW_MS = 30_000
@@ -32,13 +33,22 @@ export function markSessionExpired(now = Date.now()): void {
   } catch { /* ignore */ }
 }
 
+/** The server refused the token because its account is not active (auth.user_inactive / auth.user_missing, user
+ *  2026-11-24): the session is over, and signing in again cannot help — so no exit to the Portal (its own session
+ *  would hand the same token back: a loop), only a page that says so. */
+export function markAccountInactive(code: string): void {
+  markSessionExpired()
+  write(INACTIVE, code)
+}
+
 /** A fresh session arrived from the Portal. */
 export function clearSessionMarks(): void {
   write(EXPIRED, null)
   write(BOUNCES, null)
+  write(INACTIVE, null)
 }
 
-export type Exit = { kind: 'go'; url: string } | { kind: 'stop' }
+export type Exit = { kind: 'go'; url: string } | { kind: 'stop' } | { kind: 'inactive'; code: string }
 
 const recentBounces = (now: number): number[] =>
   (JSON.parse(read(BOUNCES) ?? '[]') as number[]).filter((t) => now - t < BOUNCE_WINDOW_MS)
@@ -48,6 +58,8 @@ const recentBounces = (now: number): number[] =>
  *  hand the same token back — or, after MAX_BOUNCES in BOUNCE_WINDOW_MS,
  *  nowhere: the caller shows "sign in again" instead of looping. */
 export function exitToPortal(portalUrl: string, here: string, now = Date.now()): Exit {
+  const inactive = read(INACTIVE)
+  if (inactive) return { kind: 'inactive', code: inactive }  // nowhere to go: say so (no redirect, no loop)
   if (recentBounces(now).length >= MAX_BOUNCES) return { kind: 'stop' }
   const expiredAt = Number(read(EXPIRED) ?? 0)
   if (expiredAt && now - expiredAt < EXPIRED_FOR_MS) return { kind: 'go', url: `${portalUrl}/logout` }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { BOUNCE_WINDOW_MS, MAX_BOUNCES, clearSessionMarks, exitToPortal, leaveFor, markSessionExpired } from './session'
+import { BOUNCE_WINDOW_MS, MAX_BOUNCES, clearSessionMarks, exitToPortal, leaveFor, markAccountInactive, markSessionExpired } from './session'
 
 // The Sales ↔ Portal loop on an expired session (dev2, 2026-10-30): a 401
 // must lead to the Portal's /logout (never back through ?returnUrl, which
@@ -56,4 +56,15 @@ describe('a 401 from the API', () => {
     expect(localStorage.getItem('sales-auth')).toBeNull()
     expect(exitToPortal(PORTAL_URL, HERE)).toEqual({ kind: 'go', url: `${PORTAL_URL}/logout` })
   })
+
+  it('an inactive account (user 2026-11-24) stays on a page that says so: no exit to the Portal, so no loop', () => {
+    localStorage.setItem('sales-auth', '{"state":{"token":"t"}}')
+    markAccountInactive('auth.user_inactive')
+    expect(localStorage.getItem('sales-auth')).toBeNull()  // the session is over
+    expect(exitToPortal(PORTAL, HERE, 1000)).toEqual({ kind: 'inactive', code: 'auth.user_inactive' })
+    expect(exitToPortal(PORTAL, HERE, 999_999)).toEqual({ kind: 'inactive', code: 'auth.user_inactive' })  // and stays
+    clearSessionMarks()  // a fresh session from the Portal
+    expect(exitToPortal(PORTAL, HERE, 1000).kind).toBe('go')
+  })
 })
+
