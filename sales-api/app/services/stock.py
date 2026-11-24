@@ -48,6 +48,7 @@ from app.platform.clock import clock
 from app.platform.errors import BusinessError
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
+from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.services import oplog
@@ -317,6 +318,7 @@ class StockItemService(ReadOnlyService[StockItem, StockItemRead]):
     repo_cls = StockItemRepository
     read_schema = StockItemRead
     read_permission = READ
+    resource = Resource(path="/inventory/items", tags=("inventory",), get=False)
 
 
 class StockLotService(ReadOnlyService[StockLot, StockLotRead]):
