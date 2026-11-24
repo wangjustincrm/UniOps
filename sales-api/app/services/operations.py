@@ -293,7 +293,10 @@ class DocumentActions(Service):
                 raise BusinessError("document.no_order", "this file is linked to no order: it cannot be sent again from here")
             return Owner("order", order_id, "sales.order.operate")
         if doc.kind == "943_EDI":
-            return Owner("transfer", int((doc.body_json or {})["transfer_id"]), "sales.transfer.manage")
+            transfer_id = (doc.body_json or {}).get("transfer_id")
+            if transfer_id is None:
+                raise BusinessError("document.no_transfer", "this file is linked to no transfer: it cannot be sent again from here")
+            return Owner("transfer", int(transfer_id), "sales.transfer.manage")
         row = (await self.s.execute(select(Invoice.id, Order.invoice_status).join(Order, Order.id == Invoice.order_id)
                                     .where(Invoice.document_id == doc.id))).first()
         if row is None:

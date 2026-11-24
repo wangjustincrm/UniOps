@@ -198,6 +198,18 @@ async def test_a_940_s_file_linked_to_no_order_is_said_on_both_ways(t):
     assert len(await docs(t.edi)) == 1 and len(await rows(t, SEND_940)) == 1  # nothing made, nothing queued
 
 
+async def test_a_943_s_file_of_no_transfer_is_said_on_both_ways(p7):  # noqa: F811
+    await s943.failed(p7)
+    did = await its_file(p7, "943_EDI")
+    async with p7.factory(SYSTEM_ACTOR) as u:
+        (await u.session.get(Document, did)).body_json = {"errors": []}
+        await u.commit()
+    e = await says(press(p7, did))
+    assert e.code == "document.no_transfer" and "linked to no transfer" in e.message
+    r = await act(p7, did)
+    assert (r.status, r.reason) == ("skipped", e.message) and len(await s943.n_943(p7)) == 1
+
+
 async def test_a_943_that_went_is_not_sent_again(p7):  # noqa: F811
     await s943.sent_transfer(p7)
     did = await its_file(p7, "943_EDI")
