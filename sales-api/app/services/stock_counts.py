@@ -28,6 +28,7 @@ from app.platform.authorization import authorize
 from app.platform.clock import clock
 from app.platform.errors import BusinessError
 from app.platform.repository import Repository
+from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService
 from app.schemas.stock import CountCompareRow, StockCountLineRead, StockCountRead
 from app.platform.audit import audit_also
@@ -92,6 +93,7 @@ class StockCountService(ReadOnlyService[StockCount, StockCountRead]):
     repo_cls = StockCountRepository
     read_schema = StockCountRead
     read_permission = READ
+    resource = Resource(path="/inventory/counts", tags=("inventory",), get=False, suggest=False, export_headers="labels")
 
     async def enrich(self, rows: list[StockCountRead], entities: list[StockCount]) -> None:
         ids = [e.id for e in entities]

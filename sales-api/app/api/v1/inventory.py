@@ -7,8 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from app.core.deps import get_uow
-from app.platform.crud_router import page_body, resource_router
-from app.platform.query import QuerySpec, query_spec
+from app.platform.crud_router import resource_router
 from app.schemas.stock import (AdjustIn, CountCompareRow, CountUndoIn, CountUpdateIn, CountVersionIn, StockCountLineRead,
                                StockCountRead, StockMoveRead)
 from app.services.record_files import MAX_BYTES
@@ -16,7 +15,6 @@ from app.services.stock import StockItemService, StockLotService, StockMoveServi
 from app.services.stock_counts import StockCountService
 
 UoW = Annotated[Any, Depends(get_uow)]
-Spec = Annotated[QuerySpec, Depends(query_spec)]
 
 routes = APIRouter(prefix="/inventory", tags=["inventory"])
 
@@ -29,16 +27,6 @@ async def adjust(u: UoW, body: AdjustIn):
 
 
 # ── Radiant's inventory reports (counts, user 2026-11-13) ────────────────────
-
-@routes.get("/counts", name="inventory_counts")
-async def counts(u: UoW, spec: Spec) -> dict:
-    return page_body(await StockCountService(u).list(spec))
-
-
-@routes.get("/counts/meta", name="inventory_counts_meta")
-async def counts_meta(u: UoW) -> dict:
-    return await StockCountService(u).meta()
-
 
 @routes.post("/counts", response_model=StockCountRead, status_code=201)
 async def upload_count(u: UoW, file: Annotated[UploadFile, File()], counted_at: Annotated[datetime, Form()],
@@ -89,5 +77,6 @@ router = APIRouter()
 for r in (resource_router(StockItemService, uow=get_uow),
           resource_router(StockLotService, uow=get_uow),
           resource_router(StockMoveService, uow=get_uow),
+          resource_router(StockCountService, uow=get_uow),
           routes):  # the lists' fixed paths before the hand-written ones
     router.include_router(r)
