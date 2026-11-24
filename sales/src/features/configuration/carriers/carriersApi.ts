@@ -23,4 +23,3 @@ export type CarrierUpdate = Pick<CarrierRead, Editable>
 export const CARRIERS_PATH = '/config/carriers'
 export const carriersClient = createResourceClient<CarrierRead, CarrierCreate, CarrierUpdate>(api, CARRIERS_PATH)
 export const fetchCarrierAudit = (id: number) => api.get<AuditEntry[]>(`${CARRIERS_PATH}/${id}/audit`)
-export const downloadCarriers = (path: string) => api.download(path, 'carriers.csv')

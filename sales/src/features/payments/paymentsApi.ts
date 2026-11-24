@@ -55,4 +55,3 @@ export interface PaymentRowRead {
 }
 
 export const paymentsClient = createResourceClient<PaymentRowRead, never>(api, '/payments')
-export const downloadPayments = (path: string) => api.download(path, 'payments.csv')

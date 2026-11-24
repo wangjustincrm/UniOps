@@ -3,7 +3,7 @@ import { Badge, CrudPage, type ColumnDef, type FieldSpec , columnsOf } from '@/p
 import { historyTab } from '../historyTab'
 import { partnerOptions } from '../lookups'
 import {
-  dcRoutingClient, downloadDcRouting, fetchDcRoutingAudit,
+  dcRoutingClient, fetchDcRoutingAudit,
   type DcRoutingCreate, type DcRoutingRead, type DcRoutingUpdate,
 } from './dcRoutingApi'
 
@@ -39,7 +39,6 @@ export default function DcRoutingPage() {
       immutableOnEdit={['partner_code', 'ship_to_gln']}
       emptyValues={{ partner_code: '', ship_to_gln: '', dc_number: '', notes: '', active: true }}
       toFormValues={(r) => ({ partner_code: r.partner_code, ship_to_gln: r.ship_to_gln, dc_number: r.dc_number, notes: r.notes, active: r.active })}
-      onExport={(path) => downloadDcRouting(path)}
       csvImport
       errorMessages={{ 'dc_routing.taken': 'This partner already routes this ship-to GLN.' }}
       recordTitle={(r) => `GLN ${r.ship_to_gln}`}

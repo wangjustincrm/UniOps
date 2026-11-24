@@ -11,14 +11,14 @@ const row: LotRead = {
   applied: true, shadow: false, order_id: 4, order_ref: 'LCL-4887314555', partner_code: 'AC-9898', partner_name: 'Loblaws',
   ship_to_city: 'Ajax', ship_to_postal: 'L1Z 1X3',
 }
-const meta: ListMeta = { version: 1, searchable: true, default_sort: ['-ship_date'], views: [], fields: [
+const meta: ListMeta = { version: 1, capabilities: { export: { allowed: true, computed: [] }, suggest: true, actions: [] }, searchable: true, default_sort: ['-ship_date'], views: [], fields: [
   { name: 'lot', label: 'Lot', type: 'text', enum_values: [], filterable: true, sortable: true, groupable: true, operators: ['eq', 'in'] },
   { name: 'qty_shipped_ea', label: 'Qty EA', type: 'number', enum_values: [], filterable: true, sortable: true, groupable: false, operators: ['eq'], summable: true },
 ] }
 const api = vi.hoisted(() => ({ list: vi.fn(), download: vi.fn() }))
 vi.mock('./lotsApi', async (orig) => {
   const real = await orig<typeof import('./lotsApi')>()
-  return { ...real, lotsClient: { ...real.lotsClient, list: api.list, meta: async () => meta }, exportLots: api.download }
+  return { ...real, lotsClient: { ...real.lotsClient, list: api.list, meta: async () => meta, exportCsv: api.download } }
 })
 const { default: LotsPage } = await import('./LotsPage')
 const { parseLots } = await import('./lotsApi')
@@ -59,7 +59,8 @@ describe('Lots: tracing and recall', () => {
     expect(banner).toHaveTextContent('Recall: LOT-A, LOT-B')
     await waitFor(() => expect(banner).toHaveTextContent('3 rows · 2 orders · 1 customer'))
     await waitFor(() => expect(lotFilter(api.list.mock.calls.at(-1)![0])).toEqual({ field: 'lot', op: 'in', value: ['LOT-A', 'LOT-B'] }))
-    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }))
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Export CSV' }), { key: 'Enter' })
+    fireEvent.click(await screen.findByText('All fields'))
     await waitFor(() => expect(api.download).toHaveBeenCalled())
     expect(lotFilter(api.download.mock.calls[0][0])).toEqual({ field: 'lot', op: 'in', value: ['LOT-A', 'LOT-B'] })
     fireEvent.click(screen.getByRole('button', { name: 'Clear recall' }))

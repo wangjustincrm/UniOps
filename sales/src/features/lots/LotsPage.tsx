@@ -1,11 +1,10 @@
 import { z } from 'zod'
 import { useState } from 'react'
-import { Download } from 'lucide-react'
 import {
-  Badge, Button, ListPage, type ColumnDef, type Filter, IconButton, Callout, useNotices, columnsOf, useRecordList, FormDialog, SchemaForm, type FieldSpec, Text, Cluster, Icon,
+  Badge, Button, ListPage, type ColumnDef, type Filter, Callout, columnsOf, useRecordList, FormDialog, SchemaForm, type FieldSpec, Text, Cluster,
 } from '@/platform-ui'
 import { PartnerCell } from '@/features/common/PartnerCell'
-import { exportLots, lotsClient, parseLots, type LotRead } from './lotsApi'
+import { lotsClient, parseLots, type LotRead } from './lotsApi'
 
 const colLotRead = columnsOf<LotRead>()
 
@@ -62,18 +61,6 @@ function RecallDialog({ open, onOpenChange, onApply }: { open: boolean; onOpenCh
  *  customer it went to — for tracing and recalls. A recall (one lot or a
  *  pasted list) lists every order and customer they reached, as CSV too.
  *  Nothing here is ever deleted (FR-OB-05). */
-/** Export CSV of what the list shows; the result in its status row. */
-function ExportLots({ spec }: { spec: Parameters<typeof exportLots>[0] }) {
-  const notices = useNotices()
-  return (
-    <IconButton label="Export CSV" icon={<Icon icon={Download} />} className="h-8 w-8 rounded-lg border border-neutral-200 bg-white"
-      onClick={() => {
-        exportLots(spec).then(() => notices.notify({ key: 'csv', tone: 'success', text: 'CSV exported' }),
-          (e: unknown) => notices.notify({ key: 'csv', tone: 'error', text: `Export failed: ${e instanceof Error ? e.message : String(e)}` }))
-      }} />
-  )
-}
-
 export default function LotsPage() {
   const [recall, setRecall] = useState<string[] | null>(null)
   const [asking, setAsking] = useState(false)
@@ -97,11 +84,8 @@ export default function LotsPage() {
             </Cluster>
           </Callout>
         )}
-        toolbar={(ctx) => (
-          <>
-            <Button size="sm" variant="secondary" onClick={() => setAsking(true)}>Recall…</Button>
-            <ExportLots spec={ctx.spec} />
-          </>
+        toolbar={() => (
+          <Button size="sm" variant="secondary" onClick={() => setAsking(true)}>Recall…</Button>
         )}
       />
       <RecallDialog open={asking} onOpenChange={setAsking} onApply={setRecall} />

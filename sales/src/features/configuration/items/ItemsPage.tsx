@@ -1,6 +1,6 @@
 import { Badge, CrudPage, type ColumnDef , columnsOf } from '@/platform-ui'
 import { historyTab } from '../historyTab'
-import { downloadItems, fetchItemAudit, itemsClient, unitsText, type ItemCreate, type ItemRead, type ItemUpdate } from './itemsApi'
+import { fetchItemAudit, itemsClient, unitsText, type ItemCreate, type ItemRead, type ItemUpdate } from './itemsApi'
 import { itemCreateSchema, itemEmptyValues, itemFields, itemToFormValues, itemUpdateSchema } from './itemSchema'
 
 const colItemRead = columnsOf<ItemRead>()
@@ -30,7 +30,6 @@ export default function ItemsPage() {
       client={itemsClient} columns={columns}
       writePermission="sales.config" createSchema={itemCreateSchema} updateSchema={itemUpdateSchema}
       fields={itemFields} immutableOnEdit={['item_code']} emptyValues={itemEmptyValues} toFormValues={itemToFormValues}
-      onExport={(path) => downloadItems(path)}
       csvImport errorMessages={errorMessages}
       recordTitle={(i) => i.item_code}
       recordSubtitle={(i) => [i.description, i.units.map((u) => `${u.unit} ${Number(u.factor_ea)} EA`).join(' · ')].filter(Boolean).join(' — ')}

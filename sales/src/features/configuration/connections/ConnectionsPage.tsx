@@ -14,7 +14,7 @@ import { HealthBadge } from './HealthBadge'
 import { RunNowButton } from './RunNowButton'
 import { connectionHealth } from './connectionHealth'
 import {
-  KIND_LABEL, gatewayOf, connectionsClient, downloadConnections, fetchConnectionAudit, scheduleLabel,
+  KIND_LABEL, gatewayOf, connectionsClient, fetchConnectionAudit, scheduleLabel,
   type ConnectionCreate, type ConnectionRead, type ConnectionUpdate,
 } from './connectionsApi'
 import {
@@ -93,7 +93,6 @@ export default function ConnectionsPage() {
       immutableOnEdit={['name']}
       emptyValues={connectionEmptyValues}
       toFormValues={connectionToFormValues}
-      onExport={(path) => downloadConnections(path)}
       csvImport
       errorMessages={errorMessages}
       fieldLabels={connectionFieldLabels}

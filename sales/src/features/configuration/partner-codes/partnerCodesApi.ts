@@ -19,4 +19,3 @@ export type PartnerCodeUpdate = Pick<PartnerCodeRead, 'item_code'>
 export const PARTNER_CODES_PATH = '/config/partner-codes'
 export const partnerCodesClient = createResourceClient<PartnerCodeRead, PartnerCodeCreate, PartnerCodeUpdate>(api, PARTNER_CODES_PATH)
 export const fetchPartnerCodeAudit = (id: number) => api.get<AuditEntry[]>(`${PARTNER_CODES_PATH}/${id}/audit`)
-export const downloadPartnerCodes = (path: string) => api.download(path, 'partner-codes.csv')

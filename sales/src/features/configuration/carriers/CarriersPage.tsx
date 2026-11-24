@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { Badge, CrudPage, type ColumnDef, type FieldSpec , columnsOf } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import {
-  carriersClient, downloadCarriers, fetchCarrierAudit,
+  carriersClient, fetchCarrierAudit,
   type CarrierCreate, type CarrierRead, type CarrierUpdate,
 } from './carriersApi'
 
@@ -41,7 +41,6 @@ export default function CarriersPage() {
       writePermission="sales.config" createSchema={createSchema} updateSchema={updateSchema} fields={fields}
       immutableOnEdit={['scac']} emptyValues={empty}
       toFormValues={(r) => ({ ...r, tracking_url: r.tracking_url ?? '' })}
-      onExport={(path) => downloadCarriers(path)}
       csvImport
       errorMessages={{ 'carrier.scac_taken': 'A carrier with this SCAC already exists.' }}
       recordTitle={(r) => r.name}

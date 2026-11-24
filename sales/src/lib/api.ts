@@ -137,8 +137,9 @@ async function fetchFile(url: string, fallbackName: string): Promise<FileData> {
 }
 
 /** Saves an authenticated GET (e.g. a CSV export) as a file. */
-async function download(url: string, fallbackName: string): Promise<void> {
-  saveFile(await fetchFile(url, fallbackName))
+async function download(url: string, name: string, own = false): Promise<void> {
+  const file = await fetchFile(url, name)
+  saveFile(own ? { ...file, name } : file)
 }
 
 function client(base: string) {
@@ -148,7 +149,8 @@ function client(base: string) {
     put:      <T>(path: string, body: unknown)  => request<T>(`${base}${path}`, 'PUT', body),
     delete:   <T>(path: string)                 => request<T>(`${base}${path}`, 'DELETE'),
     upload:   <T>(path: string, form: FormData) => request<T>(`${base}${path}`, 'POST', form),
-    download: (path: string, fallbackName = 'export.csv') => download(`${base}${path}`, fallbackName),
+    /** The name is the server's, else `name`; `own`: always `name`. */
+    download: (path: string, name = 'export.csv', own = false) => download(`${base}${path}`, name, own),
     file:     (path: string, fallbackName = 'file') => fetchFile(`${base}${path}`, fallbackName),
   }
 }

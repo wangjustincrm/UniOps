@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { Badge, CrudPage, type ColumnDef, type FieldSpec , columnsOf } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import {
-  WAREHOUSE_ROLES, downloadWarehouses, fetchWarehouseAudit, warehousesClient,
+  WAREHOUSE_ROLES, fetchWarehouseAudit, warehousesClient,
   type WarehouseCreate, type WarehouseRead, type WarehouseUpdate,
 } from './warehousesApi'
 
@@ -53,7 +53,6 @@ export default function WarehousesPage() {
       writePermission="sales.config" createSchema={createSchema} updateSchema={updateSchema} fields={fields}
       immutableOnEdit={['code']} emptyValues={empty}
       toFormValues={(r) => ({ ...r })}
-      onExport={(path) => downloadWarehouses(path)}
       csvImport
       errorMessages={{ 'warehouse.code_taken': 'A warehouse with this code already exists.' }}
       recordTitle={(r) => r.name}

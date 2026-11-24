@@ -1,6 +1,6 @@
 import { Badge, CrudPage, type ColumnDef , columnsOf } from '@/platform-ui'
 import { historyTab } from '../historyTab'
-import { downloadPartners, fetchPartnerAudit, partnersClient, type PartnerCreate, type PartnerRead, type PartnerUpdate } from './partnersApi'
+import { fetchPartnerAudit, partnersClient, type PartnerCreate, type PartnerRead, type PartnerUpdate } from './partnersApi'
 import {
   partnerCreateSchema, partnerEmptyValues, partnerFields, partnerToFormValues, partnerUpdateSchema,
 } from './partnerSchema'
@@ -43,7 +43,6 @@ export default function PartnersPage() {
       immutableOnEdit={['code']}
       emptyValues={partnerEmptyValues}
       toFormValues={partnerToFormValues}
-      onExport={(path) => downloadPartners(path)}
       csvImport
       errorMessages={errorMessages}
       recordTitle={(p) => p.name}

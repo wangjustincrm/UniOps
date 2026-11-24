@@ -3,7 +3,7 @@ import { Callout, ListPage, RecordSheet, StatusCell, ViewFileButton, formatDateT
 import { EMPTY_TEXT } from '@/features/help/pageHelp'
 import { paymentsClient, type PaymentRowRead } from '@/features/payments/paymentsApi'
 import { hiddenPaymentColumns, paymentColumns } from '@/features/payments/paymentsColumns'
-import { downloadSettlements, settlementPdf, settlementsClient, settlementsReportPdf, type SettlementRowRead } from './settlementsApi'
+import { settlementPdf, settlementsClient, settlementsReportPdf, type SettlementRowRead } from './settlementsApi'
 import { hiddenSettlementColumns, settlementColumns } from './settlementsColumns'
 
 const NOTE = (
@@ -66,7 +66,7 @@ export default function SettlementsPage() {
       resource={settlementsClient} title="Settlements"
       description="The deposits each payment provider paid to the bank, with the Shopify payments in them. Use the views by month and for what needs a look."
       columns={columns} defaultHidden={hiddenSettlementColumns} notice={NOTE} emptyTitle="No settlements yet"
-      emptyText={EMPTY_TEXT.settlements} onExport={downloadSettlements} renderDetail={(s) => <SettlementDetail s={s} />}
+      emptyText={EMPTY_TEXT.settlements} renderDetail={(s) => <SettlementDetail s={s} />}
       toolbar={({ spec }) => <ViewFileButton source={settlementsReportPdf(spec)}>Report (PDF)</ViewFileButton>}
     />
   )

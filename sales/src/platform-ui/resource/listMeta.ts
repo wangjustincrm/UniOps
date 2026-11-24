@@ -44,6 +44,15 @@ export interface ListMeta {
   views?: SystemView[]
   /** Columns only the page has (the server's views may name them beside the fields). */
   client_columns?: string[]
+  /** What the list offers, and whether this person may use it (the server still checks each use). */
+  capabilities?: ListCapabilities
+}
+
+export interface ListCapabilities {
+  /** Null: the list has no export. `computed`: the page's own columns the export can write. */
+  export: { allowed: boolean; computed: { id: string; label: string }[] } | null
+  suggest: boolean
+  actions: { id: string; allowed: boolean }[]
 }
 
 /** What a page and its server disagree on about column ids (2026-11-10): the system views' ids that

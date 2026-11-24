@@ -52,7 +52,6 @@ export interface SettlementRowRead {
 }
 
 export const settlementsClient = createResourceClient<SettlementRowRead, never>(api, '/settlements')
-export const downloadSettlements = (path: string) => api.download(path, 'settlements.csv')
 
 /** One deposit's settlement statement (PDF), in the viewer (Download / Print there). */
 export const settlementPdf = (s: Pick<SettlementRowRead, 'id' | 'batch_id'>): FileSource => ({

@@ -19,6 +19,7 @@ vi.mock('./partnersApi', async (orig) => {
     partnersClient: {
       ...real.partnersClient,
       list: vi.fn(async () => ({ items: [partner], total: 1 })),
+      meta: async () => ({ version: 1, fields: [], searchable: false, default_sort: [], views: [], capabilities: { export: { allowed: true, computed: [] }, suggest: false, actions: [] } }),
       update: vi.fn(),
     },
     fetchPartnerAudit: vi.fn(async () => [
@@ -52,7 +53,7 @@ describe('Partners page', () => {
   it('a reader without sales.config sees the list and a read-only partner with its history', async () => {
     renderAs(['sales.read'])
     expect(await screen.findByText('Walmart Canada')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeInTheDocument()  // an icon with its tooltip
+    expect(await screen.findByRole('button', { name: 'Export CSV' })).toBeInTheDocument()  // an icon with its tooltip
     expect(screen.queryByText('New')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Import CSV' })).not.toBeInTheDocument()
 

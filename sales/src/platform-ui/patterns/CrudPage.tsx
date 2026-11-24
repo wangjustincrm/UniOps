@@ -43,8 +43,6 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
   immutableOnEdit?: string[]
   emptyValues: Record<string, unknown>
   toFormValues: (row: T) => Record<string, unknown>
-  /** CSV export needs the business client's authenticated download (its promise: the result is said in the status row). */
-  onExport?: (path: string) => Promise<unknown> | void
   csvImport?: boolean
   errorMessages?: Record<string, string>
   /** Field names in the server's refusals → the words the form uses (a CSV row keeps the file's column name). */
@@ -101,7 +99,6 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
       errorMessages={props.errorMessages}
       notice={props.notice}
       notices={notices}
-      onExport={props.onExport}
       detailSize={props.detailSize ?? 'md'}
       renderDetail={(row, close) => (
         <RecordForm row={row} close={close} canWrite={canWrite} props={props}

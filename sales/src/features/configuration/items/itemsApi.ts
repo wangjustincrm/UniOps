@@ -31,7 +31,6 @@ export type ItemUpdate = Omit<Editable, 'item_code'>
 export const ITEMS_PATH = '/config/items'
 export const itemsClient = createResourceClient<ItemRead, ItemCreate, ItemUpdate>(api, ITEMS_PATH)
 export const fetchItemAudit = (id: number) => api.get<AuditEntry[]>(`${ITEMS_PATH}/${id}/audit`)
-export const downloadItems = (path: string) => api.download(path, 'items.csv')
 
 /** `EA=1; CASE=6 [Case (6 Cans)]` — the factors without trailing zeros, then
  * the unit's Shopify titles in brackets (sales-api domain/items.units_text). */

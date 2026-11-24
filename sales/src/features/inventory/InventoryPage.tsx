@@ -5,7 +5,7 @@ import {
   ActionButton, Button, Callout, IconButton, formatDate, formatNumber, ListPage, LocalTable, RecordSheet, SchemaForm, Section, columnsOf, useNotices, type ColumnDef, type FieldSpec, type QuerySpec, type RecordTab, useRecordList, Text, Cluster, Icon,
 } from '@/platform-ui'
 import {
-  PLACE, SOURCE, adjustStock, exportStock, stockItemsClient, stockLotsClient, stockMovesClient,
+  PLACE, SOURCE, adjustStock, stockItemsClient, stockLotsClient, stockMovesClient,
   type StockItemRead, type StockLotRead, type StockMoveRead,
 } from './inventoryApi'
 import { itemColumns, lotColumns } from './inventoryColumns'
@@ -85,7 +85,7 @@ function ItemSheet({ row }: { row: StockItemRead }) {
       <Section title="Every move, newest first" plain>
         <Cluster gap={2} align="center" size="xs" tone="muted">
           {(movesQ.data?.total ?? 0) > moves.length ? `The latest ${moves.length} of ${movesQ.data?.total}; the CSV has every one.` : 'Every move of this item.'}
-          <ExportButton client={stockMovesClient} spec={{ ...spec, pageSize: 50 }} name={`stock-card-${row.item_code}.csv`} />
+          <ExportCard spec={{ ...spec, pageSize: 50 }} name={`stock-card-${row.item_code}.csv`} />
         </Cluster>
         <LocalTable<StockMoveRead> ariaLabel="Moves" columns={moveColumns} rows={moves} rowKey={(m) => m.id} />
       </Section>
@@ -119,12 +119,13 @@ function ItemSheet({ row }: { row: StockItemRead }) {
   )
 }
 
-function ExportButton({ client, spec, name }: { client: { exportPath: (s: QuerySpec) => string }; spec: QuerySpec; name: string }) {
+/** The stock card's CSV: every move of the item, under its own name. */
+function ExportCard({ spec, name }: { spec: QuerySpec; name: string }) {
   const notices = useNotices()
   return (
     <IconButton label="Export CSV" icon={<Icon icon={Download} />} className="h-8 w-8 rounded-lg border border-neutral-200 bg-white"
       onClick={() => {
-        exportStock(client, spec, name).then(() => notices.notify({ key: 'csv', tone: 'success', text: 'CSV exported' }),
+        stockMovesClient.exportCsv(spec, undefined, name).then(() => notices.notify({ key: 'csv', tone: 'success', text: 'CSV exported' }),
           (e: unknown) => notices.notify({ key: 'csv', tone: 'error', text: `Export failed: ${e instanceof Error ? e.message : String(e)}` }))
       }} />
   )
@@ -156,10 +157,7 @@ export default function InventoryPage() {
         key="lots" resource={stockLotsClient} title="Inventory by lot"
         description="Each lot at Radiant: received − shipped (less returns) = on hand; on hand − in process (picked for an order, per Radiant's report) − on hold = available."
         columns={lotColumns} notice={NOTE} emptyTitle="No stock moves yet" emptyText={EMPTY_TEXT.inventory} help="page:inventory"
-        toolbar={(ctx) => (<>
-          {nav}
-          <ExportButton client={stockLotsClient} spec={ctx.spec} name="inventory-lots.csv" />
-        </>)}
+        toolbar={() => nav}
       />
     )
   }
@@ -170,10 +168,7 @@ export default function InventoryPage() {
       columns={itemColumns} notice={NOTE} emptyTitle="No stock moves yet" emptyText={EMPTY_TEXT.inventory} help="page:inventory"
       renderDetail={(r) => <ItemSheet row={r} />}
       expand={(r) => (r.lots > 0 || r.on_hand_ea !== 0 ? <ActiveLots item={r.item_code} /> : null)}
-      toolbar={(ctx) => (<>
-        {nav}
-        <ExportButton client={stockItemsClient} spec={ctx.spec} name="inventory-items.csv" />
-      </>)}
+      toolbar={() => nav}
     />
   )
 }

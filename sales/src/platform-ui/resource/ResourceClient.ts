@@ -8,6 +8,9 @@ export interface HttpClient {
   put: <T>(path: string, body: unknown) => Promise<T>
   /** multipart upload — needed for CSV import only */
   upload?: <T>(path: string, form: FormData) => Promise<T>
+  /** Saves an authenticated GET as a file — needed for exports only. The name is the server's, else `name`;
+   *  `own`: always `name`. */
+  download?: (path: string, name: string, own?: boolean) => Promise<void>
 }
 
 export interface RowIssue {
@@ -49,6 +52,8 @@ export interface ResourceClient<TRead, TCreate, TUpdate> {
   /** Every row the query selects, as a file the back end serves under the resource (default its
    *  CSV export; e.g. "report/settlements.pdf"): the list's filters and sort, no paging. */
   exportPath: (spec: QuerySpec, file?: string, columns?: string[]) => string
+  /** Saves the CSV of every row the query selects (its name is the server's, unless the page gives one). */
+  exportCsv: (spec: QuerySpec, columns?: string[], name?: string) => Promise<void>
   importCsv: (file: File, dryRun: boolean) => Promise<ImportReport>
   /** A record action on one record or many (`POST <resource>/actions/<id>`, platform/bulk_actions.py). */
   action: (actionId: string, body: ActionRunBody) => Promise<ActionOut>
@@ -73,6 +78,15 @@ export function createResourceClient<TRead, TCreate, TUpdate = TCreate>(
   basePath: string,
 ): ResourceClient<TRead, TCreate, TUpdate> {
   const base = basePath.replace(/\/$/, '')
+  const exportPath = (spec: QuerySpec, file = 'export.csv', columns?: string[]): string => {
+    const p = toSearchParams(spec)
+    p.delete('page')
+    p.delete('page_size')
+    if (columns?.length) p.set('columns', columns.join(','))  // the columns the user sees, in their order
+    const qs = p.toString()
+    const path = `${base}/${file.replace(/^\/+/, '')}`
+    return qs ? `${path}?${qs}` : path
+  }
   return {
     basePath: base,
     list: (spec) => http.get<Page<TRead>>(`${base}?${toSearchParams(spec)}`),
@@ -83,14 +97,11 @@ export function createResourceClient<TRead, TCreate, TUpdate = TCreate>(
     update: (id, data, version) =>
       http.put<TRead>(version === undefined ? `${base}/${id}` : `${base}/${id}?version=${version}`, data),
     deactivate: (id) => http.post<TRead>(`${base}/${id}/deactivate`),
-    exportPath: (spec, file = 'export.csv', columns) => {
-      const p = toSearchParams(spec)
-      p.delete('page')
-      p.delete('page_size')
-      if (columns?.length) p.set('columns', columns.join(','))  // the columns the user sees, in their order
-      const qs = p.toString()
-      const path = `${base}/${file.replace(/^\/+/, '')}`
-      return qs ? `${path}?${qs}` : path
+    exportPath,
+    exportCsv: (spec, columns, name) => {
+      if (!http.download) throw new Error('this API client cannot download files')
+      const fallback = `${base.replace(/^\/+/, '').replace(/\//g, '-')}.csv`
+      return http.download(exportPath(spec, undefined, columns), name ?? fallback, name !== undefined)
     },
     action: (actionId, body) => http.post<ActionOut>(`${base}/actions/${actionId}`, body),
     importCsv: (file, dryRun) => {

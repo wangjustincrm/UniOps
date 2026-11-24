@@ -21,4 +21,3 @@ export type DcRoutingUpdate = Pick<DcRoutingRead, 'dc_number' | 'notes' | 'activ
 export const DC_ROUTING_PATH = '/config/dc-routing'
 export const dcRoutingClient = createResourceClient<DcRoutingRead, DcRoutingCreate, DcRoutingUpdate>(api, DC_ROUTING_PATH)
 export const fetchDcRoutingAudit = (id: number) => api.get<AuditEntry[]>(`${DC_ROUTING_PATH}/${id}/audit`)
-export const downloadDcRouting = (path: string) => api.download(path, 'dc-routing.csv')

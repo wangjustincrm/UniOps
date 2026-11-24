@@ -76,10 +76,14 @@ export interface QueryTableProps<T> {
   /** How many first columns stay in place while the table scrolls sideways when the view does not say
    *  (default 1; 0 none). The user changes it from a column's menu; it saves with the view. */
   defaultLocked?: number
-  /** The visible columns an export can write, in their order: those /meta says each row carries
-   *  (a page's own computed cell is not a field). Told on every change. */
-  onExportColumns?: (ids: string[]) => void
+  /** The visible columns an export can write, in their order: those /meta says each row carries and the page's own
+   *  columns the server computes; and the names of those it cannot. Told on every change. */
+  onExportColumns?: (columns: ExportColumns) => void
 }
+
+export interface ExportColumns { ids: string[]; left: string[] }
+/** Columns of controls, not of data (checkbox, ⋯ menu, row buttons). */
+const isControl = (id: string) => id.startsWith('__') || id === 'actions'
 
 /** The chooser's two groups: the page's own columns, then every other field of the row. */
 const COLUMN_GROUPS = [{ id: 'page', label: 'On this list' }, { id: 'more', label: 'More fields' }]
@@ -209,8 +213,13 @@ function QueryTableView<T>({
   const asChosen = useMemo(() => new Map(allColumns.map((c) => [columnId(c), { ...c, meta: { ...c.meta, chosen: true } }])), [allColumns])
   const visible = order.filter((id) => !isHidden(id)).map((id) => (shownByDefault(id) ? byId.get(id)! : asChosen.get(id)!))
 
-  const exportIds = visible.map(columnId).filter((id) => fields.get(id)?.in_row).join(',')
-  useEffect(() => { onExportColumns?.(exportIds ? exportIds.split(',') : []) }, [exportIds])  // eslint-disable-line react-hooks/exhaustive-deps
+  const computed = new Set(meta?.capabilities?.export?.computed.map((c) => c.id))
+  const canExport = (id: string) => !!fields.get(id)?.in_row || computed.has(id)
+  const exportIds = visible.map(columnId).filter(canExport).join(',')
+  const leftOut = visible.filter((c) => !canExport(columnId(c)) && !isControl(columnId(c))).map((c) => headerText(c, fields.get(columnId(c)))).join('\n')
+  useEffect(() => {
+    onExportColumns?.({ ids: exportIds ? exportIds.split(',') : [], left: leftOut ? leftOut.split('\n') : [] })
+  }, [exportIds, leftOut])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const visibleIds = visible.map(columnId)
   const lockedCount = Math.min(layout.locked ?? defaultLocked, MAX_LOCKED, visibleIds.length)

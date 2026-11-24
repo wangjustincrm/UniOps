@@ -31,4 +31,3 @@ export type WarehouseUpdate = Pick<WarehouseRead, Editable>
 export const WAREHOUSES_PATH = '/config/warehouses'
 export const warehousesClient = createResourceClient<WarehouseRead, WarehouseCreate, WarehouseUpdate>(api, WAREHOUSES_PATH)
 export const fetchWarehouseAudit = (id: number) => api.get<AuditEntry[]>(`${WAREHOUSES_PATH}/${id}/audit`)
-export const downloadWarehouses = (path: string) => api.download(path, 'warehouses.csv')

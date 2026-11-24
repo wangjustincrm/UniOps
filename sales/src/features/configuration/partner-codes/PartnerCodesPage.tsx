@@ -3,7 +3,7 @@ import { CrudPage, type ColumnDef, type FieldSpec , columnsOf } from '@/platform
 import { historyTab } from '../historyTab'
 import { itemOptions, partnerOptions } from '../lookups'
 import {
-  downloadPartnerCodes, fetchPartnerCodeAudit, partnerCodesClient,
+  fetchPartnerCodeAudit, partnerCodesClient,
   type PartnerCodeCreate, type PartnerCodeRead, type PartnerCodeUpdate,
 } from './partnerCodesApi'
 
@@ -34,7 +34,6 @@ export default function PartnerCodesPage() {
       immutableOnEdit={['partner_code', 'buyer_part']}
       emptyValues={{ partner_code: '', buyer_part: '', item_code: '' }}
       toFormValues={(r) => ({ partner_code: r.partner_code, buyer_part: r.buyer_part, item_code: r.item_code })}
-      onExport={(path) => downloadPartnerCodes(path)}
       csvImport
       errorMessages={{ 'partner_code.taken': 'This partner already uses this buyer part.' }}
       recordTitle={(r) => `${r.partner_code} ${r.buyer_part}`}

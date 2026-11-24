@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import { createResourceClient, type QuerySpec } from '@/platform-ui'
+import { createResourceClient } from '@/platform-ui'
 
 /** One item at Radiant (design §15): every figure is a sum of its moves. */
 export interface StockItemRead {
@@ -79,7 +79,6 @@ export interface StockMoveRead {
 export const stockItemsClient = createResourceClient<StockItemRead, never>(api, '/inventory/items')
 export const stockLotsClient = createResourceClient<StockLotRead, never>(api, '/inventory/lots')
 export const stockMovesClient = createResourceClient<StockMoveRead, never>(api, '/inventory/moves')
-export const exportStock = (client: { exportPath: (s: QuerySpec) => string }, spec: QuerySpec, name: string) => api.download(client.exportPath(spec), name)
 
 export interface AdjustBody { item_code: string; lot: string | null; qty_ea: number; reason: string }
 export const adjustStock = (body: AdjustBody) => api.post<StockMoveRead>('/inventory/adjust', body)

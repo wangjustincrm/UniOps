@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import { createResourceClient, type QuerySpec } from '@/platform-ui'
+import { createResourceClient } from '@/platform-ui'
 
 /** A 945 row as a recall sees it: the lot, its shipment and the order and customer it went to. */
 export interface LotRead {
@@ -34,7 +34,6 @@ export interface LotRead {
 }
 
 export const lotsClient = createResourceClient<LotRead, never>(api, '/lots')
-export const exportLots = (spec: QuerySpec) => api.download(lotsClient.exportPath(spec), 'lots.csv')
 
 /** Lots pasted for a recall: one per line, or separated by commas, semicolons or spaces. */
 export function parseLots(text: string): string[] {

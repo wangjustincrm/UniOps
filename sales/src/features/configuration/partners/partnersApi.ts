@@ -41,4 +41,3 @@ export type PartnerUpdate = Omit<Editable, 'code'>
 export const PARTNERS_PATH = '/config/partners'
 export const partnersClient = createResourceClient<PartnerRead, PartnerCreate, PartnerUpdate>(api, PARTNERS_PATH)
 export const fetchPartnerAudit = (id: number) => api.get<AuditEntry[]>(`${PARTNERS_PATH}/${id}/audit`)
-export const downloadPartners = (path: string) => api.download(path, 'partners.csv')

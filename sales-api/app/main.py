@@ -85,6 +85,7 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+        expose_headers=["Content-Disposition"],  # a download's name is the server's
     )
 
     # The request log (≈ ABP AuditLog, user 2026-11-23): one JSON line per request with its id (platform/request_log.py).
