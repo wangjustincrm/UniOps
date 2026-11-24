@@ -1,5 +1,5 @@
 import { noticeIn, openTab } from '@/platform-ui/testing'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PermissionProvider, ToastProvider } from '@/platform-ui'
@@ -42,6 +42,12 @@ vi.mock('@/features/operations/operationsApi', async (orig) => {
   const real = await orig<typeof import('@/features/operations/operationsApi')>()
   return { ...real, runsClient: { ...real.runsClient, list: api.runs, get: api.getRun } }
 })
+// The settings panel's users: unmocked, it was a real request that failed at a random moment, and its error notice
+// replaced the one a test had just found (2026-11-24).
+vi.mock('../notifications/notificationsApi', async (orig) => ({ ...(await orig<typeof import('../notifications/notificationsApi')>()), fetchUsers: async () => [] }))
+// Nothing on this page may reach the network.
+const network = vi.spyOn(globalThis, 'fetch')
+afterEach(() => { expect(network.mock.calls.map((c) => String(c[0]))).toEqual([]); network.mockClear() })
 const { default: ConnectionsPage } = await import('./ConnectionsPage')
 const { connectionFields } = await import('./connectionSchema')
 
