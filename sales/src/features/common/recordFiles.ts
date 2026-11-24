@@ -51,6 +51,3 @@ export const recordFile = (d: RecordDocument): FileSource => ({
   load: () => api.file(`/documents/${d.id}/raw`, d.remote_name ?? `document-${d.id}`),
 })
 export const downloadRecordFile = (d: RecordDocument) => api.download(`/documents/${d.id}/raw`, d.remote_name ?? `document-${d.id}`)
-
-/** Who may attach to which record: its own change permission. */
-export const ATTACH_PERMISSION: Record<RecordType, string> = { order: 'sales.order.operate', transfer: 'sales.transfer.manage' }

@@ -60,6 +60,7 @@ export { useBreakpoint, useElementWidth, useMediaQuery, type Breakpoint } from '
 // ── resource ─────────────────────────────────────────────────────────────────
 export type { QuerySpec, Filter, Page } from './resource/querySpec'
 export { useListMeta } from './resource/listMeta'
+export type { ListCapabilities, ListMeta } from './resource/listMeta'
 export { createViewsClient } from './resource/viewsApi'
 export { requestOpen, requestView, type ViewRequest } from './resource/viewRequests'
 export { businessErrorOf } from './resource/businessError'

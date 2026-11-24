@@ -94,7 +94,7 @@ export function TransferSheet({ row }: { row: TransferRead }) {
               <ViewFileButton source={transferPdf(t.id, t.transfer_number)}>Transfer order (PDF)</ViewFileButton>
             </Cluster>
           </Section>
-          <Attachments type="transfer" id={t.id} />
+          <Attachments resource={transfersClient} type="transfer" id={t.id} />
           <Section title="Files received and sent">
             <RecordFilesTable documents={t.documents} empty="No file yet: the 943 goes when it is ready to send." />
           </Section>

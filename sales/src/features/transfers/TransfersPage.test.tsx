@@ -26,10 +26,12 @@ const detail: TransferDetail = { ...t104, ack_status: 'Accepted', file_status: '
 const draft: TransferRead = { ...t104, id: 2, transfer_number: '00105', status: 'Draft', version: 1 }
 const meta: ListMeta = { version: 1, searchable: true, default_sort: [], fields: [], views: [{ key: 'all', name: 'All', state: { version: 1 } }] }
 
+const person = vi.hoisted(() => ({ attaches: false }))  // what the server says of this person (/meta capabilities)
 const api = vi.hoisted(() => ({ list: vi.fn(), fetch: vi.fn(), create: vi.fn(), cancel: vi.fn(), ready: vi.fn(), update: vi.fn(), amend: vi.fn(), resolve: vi.fn() }))
 vi.mock('./transfersApi', async (orig) => {
   const real = await orig<typeof import('./transfersApi')>()
-  return { ...real, transfersClient: { ...real.transfersClient, list: api.list, meta: async () => meta },
+  return { ...real, transfersClient: { ...real.transfersClient, list: api.list, meta: async () => ({ ...meta, capabilities: { export: null, suggest: false, actions: [],
+    attachments: { type: 'transfer', allowed: person.attaches, max_bytes: 5 * 1024 * 1024, extensions: ['pdf', 'png'] } } }) },
     fetchTransfer: api.fetch, createTransfer: api.create, cancelTransfer: api.cancel, readyTransfer: api.ready, updateTransfer: api.update,
     amendTransfer: api.amend, resolveTransfer: api.resolve }
 })
@@ -55,12 +57,14 @@ describe('Transfers', () => {
   beforeEach(() => {
     Object.values(api).forEach((f) => f.mockReset())
     Object.values(files).forEach((f) => f.mockReset())
+    person.attaches = false
     api.list.mockResolvedValue({ items: [t104, draft], total: 2 })
     files.list.mockResolvedValue([{ id: 30, kind: 'ATTACHMENT', direction: 'IN', remote_name: 'BOL signed.pdf', created_at: '2026-10-08T12:00:00Z',
       file_status: null, ack_status: null, st02: null, sent_at: null, error: null, ack_detail: null, size: 2048, created_by_name: 'Op', note: 'signed BOL' }])
   })
 
   it('like an order: the list sums what was sent and received; the sheet has its files, attachments and activity', async () => {
+    person.attaches = true
     api.fetch.mockResolvedValue(detail)
     renderAs(['sales.read', 'sales.transfer.manage'])
     const row = (await screen.findByText('00104')).closest('tr')!
@@ -73,8 +77,12 @@ describe('Transfers', () => {
     expect(within(dialog).getByRole('table', { name: 'Attachments' })).toHaveTextContent('signed BOL')
     expect(within(dialog).getByRole('table', { name: 'Documents' })).toHaveTextContent('944-16468.edi')
     expect(within(dialog).queryByRole('table', { name: 'Documents' })).not.toHaveTextContent('BOL signed.pdf')
-    expect(within(dialog).getByRole('button', { name: /Attach file/ })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Remove BOL signed.pdf' })).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: /Attach file/ }))  // what may be attached: the server's word
+    const form = await screen.findByRole('dialog', { name: 'Attach a file' })
+    expect(form).toHaveTextContent('up to 5 MB')
+    expect(form.querySelector('input[type=file]')).toHaveAttribute('accept', '.pdf,.png')
+    fireEvent.click(within(form).getByRole('button', { name: 'Cancel' }))
     await openTab(dialog, 'Activity')
     expect(within(dialog).getByText('944 944-16468.edi (FR-OB-84)')).toBeInTheDocument()
   })

@@ -54,6 +54,8 @@ export interface ListCapabilities {
   suggest: boolean
   /** A record's audit history. */
   history?: boolean
+  /** A person's files on a record; null: none. `allowed`: this person may attach and remove. */
+  attachments?: { type: string; allowed: boolean; max_bytes: number; extensions: string[] } | null
   actions: { id: string; allowed: boolean }[]
 }
 

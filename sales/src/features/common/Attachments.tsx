@@ -2,18 +2,18 @@ import { useState } from 'react'
 import { Paperclip, Trash2 } from 'lucide-react'
 import { z } from 'zod'
 import {
-  Button, ConfirmAction, IconButton, LocalTable, Section, columnsOf, formatNumber, useCan, useFileViewer, useNotices, type ColumnDef, useLookup, FormDialog, SchemaForm, type FieldSpec, Text, Icon,
+  Button, ConfirmAction, IconButton, LocalTable, Section, columnsOf, formatNumber, useFileViewer, useListMeta, useNotices, type ColumnDef, type ListCapabilities, type ListMeta, useLookup, FormDialog, SchemaForm, type FieldSpec, Text, Icon,
 } from '@/platform-ui'
 import {
-  ATTACH_PERMISSION, attachFile, downloadRecordFile, listAttachments, recordFile, removeAttachment, type RecordDocument, type RecordType,
+  attachFile, downloadRecordFile, listAttachments, recordFile, removeAttachment, type RecordDocument, type RecordType,
 } from './recordFiles'
 
 const col = columnsOf<RecordDocument>()
-const MAX_MB = 20
-const ACCEPT = '.pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.tif,.tiff,.txt,.csv,.xls,.xlsx,.doc,.docx,.ppt,.pptx,.msg,.eml,.edi,.json,.xml'
+type Offer = NonNullable<ListCapabilities['attachments']>
+const megabytes = (o: Offer) => Math.floor(o.max_bytes / 1024 / 1024)
 const errorMessages: Record<string, string> = {
   'attachment.type': 'This kind of file cannot be attached: PDF, pictures, mail, Office, CSV, text or EDI.',
-  'attachment.too_large': `The file is too large: at most ${MAX_MB} MB.`,
+  'attachment.too_large': 'The file is too large.',
   'attachment.empty': 'The file is empty.',
   'attachment.already': 'This file is already attached here.',
   'auth.forbidden': 'You may not attach files here.',
@@ -24,17 +24,18 @@ const attachSchema = z.object({
   file: z.instanceof(File, { message: 'Choose a file' }),
   note: z.string().trim().max(500).nullable().optional(),
 })
-const attachFields: FieldSpec[] = [
-  { name: 'file', label: 'File to attach', type: 'file', required: true, accept: ACCEPT, maxBytes: MAX_MB * 1024 * 1024 },
+// What may be attached is the server's word (/meta capabilities).
+const attachFields = (o: Offer): FieldSpec[] => [
+  { name: 'file', label: 'File to attach', type: 'file', required: true, accept: o.extensions.map((e) => `.${e}`).join(','), maxBytes: o.max_bytes },
   { name: 'note', label: 'Note', type: 'textarea', placeholder: 'Optional: what it is' },
 ]
 
-function AttachDialog({ type, id, open, onOpenChange }: { type: RecordType; id: number; open: boolean; onOpenChange: (o: boolean) => void }) {
+function AttachDialog({ type, id, offer, open, onOpenChange }: { type: RecordType; id: number; offer: Offer; open: boolean; onOpenChange: (o: boolean) => void }) {
   return (
     <FormDialog open={open} onOpenChange={onOpenChange} title="Attach a file"
-      description={`A delivery note, a signed BOL, a photo, an email… up to ${MAX_MB} MB. It stays with this record; everyone who can see the record can open it.`}>
-      <SchemaForm schema={attachSchema} fields={attachFields} defaultValues={{ file: null, note: '' }} submitLabel="Attach"
-        errorMessages={errorMessages} onCancel={() => onOpenChange(false)}
+      description={`A delivery note, a signed BOL, a photo, an email… up to ${megabytes(offer)} MB. It stays with this record; everyone who can see the record can open it.`}>
+      <SchemaForm schema={attachSchema} fields={attachFields(offer)} defaultValues={{ file: null, note: '' }} submitLabel="Attach"
+        errorMessages={{ ...errorMessages, 'attachment.too_large': `The file is too large: at most ${megabytes(offer)} MB.` }} onCancel={() => onOpenChange(false)}
         done="Attached" invalidates={[['attachments', type, id]]} after={() => onOpenChange(false)}
         onSubmit={(v) => attachFile(type, id, v.file as File, (v.note as string | null)?.trim() || null)} />
     </FormDialog>
@@ -44,8 +45,9 @@ function AttachDialog({ type, id, open, onOpenChange }: { type: RecordType; id: 
 /** A person's files on an order or a transfer (user 2026-11-13): attach, look at, download, remove with a reason
  *  (it is taken off the record; the file itself is kept). Reading needs only sight of the record; attaching and
  *  removing need the record's own change permission. */
-export function Attachments({ type, id }: { type: RecordType; id: number }) {
-  const can = useCan(ATTACH_PERMISSION[type])
+export function Attachments({ resource, type, id }: { resource: { basePath: string; meta: () => Promise<ListMeta> }; type: RecordType; id: number }) {
+  const offer = useListMeta(resource).data?.capabilities?.attachments
+  const can = !!offer?.allowed
   const notices = useNotices()
   const { view, viewer } = useFileViewer()
   const [attaching, setAttaching] = useState(false)
@@ -72,7 +74,7 @@ export function Attachments({ type, id }: { type: RecordType; id: number }) {
         ? <LocalTable<RecordDocument> ariaLabel="Attachments" columns={columns} rows={rows} rowKey={(d) => d.id} />
         : <Text as="p" tone="muted" size="sm">{q.isLoading ? 'Loading…' : 'No file attached.'}</Text>}
       {viewer}
-      <AttachDialog type={type} id={id} open={attaching} onOpenChange={setAttaching} />
+      {offer && <AttachDialog type={type} id={id} offer={offer} open={attaching} onOpenChange={setAttaching} />}
       {removing && (
         <ConfirmAction open onOpenChange={(o) => { if (!o) setRemoving(null) }} destructive title={`Remove ${removing.remote_name ?? 'this file'}?`}
           description="It is taken off this record (kept in the log with why); the file itself is not deleted."

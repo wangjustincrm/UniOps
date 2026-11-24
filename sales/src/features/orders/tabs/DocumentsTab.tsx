@@ -4,7 +4,7 @@ import {
 import { Attachments } from '@/features/common/Attachments'
 import { RecordFilesTable } from '@/features/common/RecordFilesTable'
 import { useOrderInvoice } from '../useOrderInvoice'
-import { downloadPacket, invoicePdf, packingListPdf, poPdf, type OrderDetail } from '../ordersApi'
+import { downloadPacket, invoicePdf, ordersClient, packingListPdf, poPdf, type OrderDetail } from '../ordersApi'
 
 // Every document of the order in one place (user 2026-11-09): the printable ones as soon as they
 // can be made (the PO always, a packing list per applied 945, the invoice once it is built, the
@@ -35,7 +35,7 @@ export function DocumentsTab({ o }: { o: OrderDetail }) {
           {shipped.length ? '' : 'The packing list comes with the 945. '}{inv ? '' : 'The invoice comes at delivery confirmation.'}
         </Text>
       </Section>
-      <Attachments type="order" id={o.id} />
+      <Attachments resource={ordersClient} type="order" id={o.id} />
       <Section title="Files received and sent">
         <RecordFilesTable documents={o.documents} empty="No file yet: entered by hand and not sent yet." />
       </Section>
