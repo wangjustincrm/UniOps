@@ -41,7 +41,7 @@ from app.domain.order_status import (
 from app.domain.order_payment import PAYMENT_STATUSES
 from app.platform.clock import clock
 from app.services.order_columns import ORDER_COLUMNS
-from app.services.record_files import link_audit
+from app.services.record_files import timeline_of
 from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
 from app.domain.row_matching import identifiers, line_identifiers
 from app.domain.status import FULFILLMENT
@@ -58,7 +58,6 @@ from app.models.payments import (
     OrderRefundAdjustment,
     OrderRefundLine,
 )
-from app.models.records import AuditRecord
 from app.models.shipments import Shipment, ShipmentRow
 from app.platform.authorization import requires
 from app.platform.commands import VersionArg, check_version, touch
@@ -356,12 +355,6 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                                 .join(DocumentLink, DocumentLink.document_id == Document.id)
                                 .where(DocumentLink.entity_type == "order", DocumentLink.entity_id == id)
                                 .order_by(Document.id))).all()
-        line_ids = [str(ln.id) for ln in lines]
-        trail = (await s.execute(select(AuditRecord).where(or_(
-            (AuditRecord.entity == "sales_orders") & (AuditRecord.entity_id == str(id)),
-            (AuditRecord.entity == "sales_order_lines") & (AuditRecord.entity_id.in_(line_ids) if line_ids else False),
-            link_audit("order", id),  # its attachments, added and removed
-        )).order_by(AuditRecord.at.desc(), AuditRecord.id.desc()).limit(200))).scalars()
         base = self.to_read(o).model_dump()
         shipments = await self._shipments(id)
         return OrderDetail(
@@ -378,8 +371,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             payment_gateways=o.payment_gateways, discount_codes=o.discount_codes, tax_lines=o.tax_lines,
             **await self._payments(id),
             dc_number=await self._dc_number(o), ship_to_flags=address_flags(o.ship_to),
-            timeline=sorted([TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, audit_log_id=a.audit_log_id, before=a.before,
-                                           after=a.after, reason=a.reason) for a in trail] + await self._reorders(id),
+            timeline=sorted(await timeline_of(s, "order", id) + await self._reorders(id),
                             key=lambda e: e.at, reverse=True),
         )
 
