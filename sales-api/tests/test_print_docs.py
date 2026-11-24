@@ -34,6 +34,26 @@ async def test_the_transfer_order_prints(p7):  # noqa: F811
     assert name == f"TO-{x.transfer_number}.pdf" and pdf.startswith(b"%PDF")
 
 
+async def test_the_transfer_order_s_created_date_is_the_toronto_day(p7):  # noqa: F811
+    """User 2026-11-24: 01:30 UTC is still the evening before in Toronto (it printed the UTC day)."""
+    from datetime import datetime, timezone
+
+    from app.models.transfers import Transfer
+    from app.services.print_docs import transfer_pdf
+    from tests.test_order_ref import pdf_text
+    x = await create(p7)
+    async with p7.factory(OP) as u:
+        t = await u.session.get(Transfer, x.id)
+        for at, shown, not_shown in (
+                (datetime(2026, 7, 15, 1, 30, tzinfo=timezone.utc), b"14-Jul-2026", b"15-Jul-2026"),    # EDT
+                (datetime(2026, 1, 15, 4, 30, tzinfo=timezone.utc), b"14-Jan-2026", b"15-Jan-2026"),    # EST
+                (datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc), b"15-Jul-2026", b"14-Jul-2026")):   # the same day
+            t.created_at = at
+            text = pdf_text(await transfer_pdf(u.session, t))
+            assert shown in text and not_shown not in text
+        await u.rollback()
+
+
 async def test_the_documents_read_as_the_templates_do_and_fit_the_page(p6):  # noqa: F811
     """2026-11-12, after the user's templates: the seller with its address, the cards, words for
     headings, amounts with separators, the delivered quantity billed, a page count on every page."""

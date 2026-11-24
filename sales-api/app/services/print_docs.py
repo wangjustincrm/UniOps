@@ -271,7 +271,7 @@ async def transfer_pdf(s, t: Transfer) -> bytes:
     def wh(label: str, w: Warehouse | None) -> Card:
         return _address(label, {"name": w.name, "address1": w.address1, "city": w.city, "province": w.province, "zip": w.zip,
                                 "country": w.country}) if w else Card(label)
-    created = t.created_at.date() if t.created_at else None
+    created = clock().to_business(t.created_at).date() if t.created_at else None  # the Toronto day (user 2026-11-24)
     story = [
         L.header(company, th, "Transfer order", f"TO-{t.transfer_number}", [("Created", L.day(created)), ("Status", t.status)]),
         L.gap(4), L.section("Transfer Details", "Where the goods leave from and go to", th), L.gap(2.5),
