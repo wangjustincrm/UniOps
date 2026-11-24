@@ -325,12 +325,14 @@ class StockLotService(ReadOnlyService[StockLot, StockLotRead]):
     repo_cls = StockLotRepository
     read_schema = StockLotRead
     read_permission = READ
+    resource = Resource(path="/inventory/lots", tags=("inventory",), get=False)
 
 
 class StockMoveService(ReadOnlyService[StockMove, StockMoveRead]):
     repo_cls = StockMoveRepository
     read_schema = StockMoveRead
     read_permission = READ
+    resource = Resource(path="/inventory/moves", tags=("inventory",), get=False)
 
     @requires(ADJUST)
     async def adjust(self, *, item_code: str, lot: str | None, qty_ea: int, reason: str) -> StockMove:
