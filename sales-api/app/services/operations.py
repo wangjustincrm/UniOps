@@ -26,7 +26,7 @@ from app.models.shipments import (
 )
 from app.models.transfers import Receipt, Transfer
 from app.platform.authorization import requires
-from app.platform.commands import ANY_VERSION
+from app.platform.commands import ANY_VERSION, require_reason
 from app.platform.errors import BusinessError, NotFound
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
@@ -97,11 +97,16 @@ def no_order_reason(d: Document) -> str:
     return "Not linked to an order"
 
 
+def _document_actions():
+    from app.services.document_actions import DOCUMENT_ACTIONS  # it imports this module
+    return DOCUMENT_ACTIONS
+
+
 class DocumentService(ReadOnlyService[Document, DocumentRead]):
     repo_cls = DocumentRepository
     read_schema = DocumentRead
     read_permission = READ
-    resource = Resource(path="/documents", tags=("documents",), export=False)  # partner files' names and errors: not handed out in bulk until the user decides (2026-11-24)
+    resource = Resource(path="/documents", tags=("documents",), actions=lambda: _document_actions(), export=False)  # partner files' names and errors: not handed out in bulk until the user decides (2026-11-24)
 
     async def enrich(self, rows: list[DocumentRead], docs) -> None:
         """Each row's orders (the first MAX_REFS and the count) and transfers, two queries for the page."""
@@ -233,7 +238,10 @@ class DocumentActions(Service):
         doc = await self._doc(id)
         if not self._stuck(doc):
             raise BusinessError("document.not_failed", f"only a received file that failed can be read again (it is {doc.processing_status})")
-        content = (await self.s.execute(select(Document.content).where(Document.id == id))).scalar_one()
+        return await self._run_read_again(doc, tasks)
+
+    async def _run_read_again(self, doc: Document, tasks) -> Document:
+        content = (await self.s.execute(select(Document.content).where(Document.id == doc.id))).scalar_one()
         if content is None:
             raise BusinessError("document.no_content", "this record keeps no bytes of its own")
         c = classify(bytes(content))
@@ -251,13 +259,14 @@ class DocumentActions(Service):
         doc = await self._doc(id)
         if not self._stuck(doc):
             raise BusinessError("document.not_failed", f"only a received file that failed can be ignored (it is {doc.processing_status})")
-        if len(reason.strip()) < 3:
-            raise BusinessError("document.reason", "say why it is ignored", {"field": "reason"}, status_code=422)
-        self.uow.set_reason(f"ignored: {reason.strip()}")
+        return await self._run_ignore(doc, require_reason(reason, code="document.reason", message="say why it is ignored"), tasks)
+
+    async def _run_ignore(self, doc: Document, reason: str, tasks) -> Document:
+        self.uow.set_reason(f"ignored: {reason}")
         if doc.processing_status == InboundFile.PENDING.value:
             INBOUND_FILE.transition(doc, InboundFile.PROCESSING, actor=self.uow.actor, events=self.uow.events, reason="ignored")
-        INBOUND_FILE.transition(doc, InboundFile.SKIPPED, actor=self.uow.actor, events=self.uow.events, reason=reason.strip())
-        doc.error = f"Ignored by {self.uow.actor.name}: {reason.strip()}"
+        INBOUND_FILE.transition(doc, InboundFile.SKIPPED, actor=self.uow.actor, events=self.uow.events, reason=reason)
+        doc.error = f"Ignored by {self.uow.actor.name}: {reason}"
         await self._resolve(tasks, doc)
         await self.s.flush()
         return doc

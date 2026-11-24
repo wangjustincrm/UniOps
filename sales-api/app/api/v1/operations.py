@@ -53,7 +53,7 @@ async def connection_clear_latch(u: UoW, rt: Rt, id: int):
     return out
 
 
-documents = resource_router(DocumentService, uow=get_uow)
+documents = resource_router(DocumentService, uow=get_uow, runtime=get_runtime)
 
 
 @documents.get("/{id}/raw")
