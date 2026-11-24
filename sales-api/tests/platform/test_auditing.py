@@ -13,7 +13,7 @@ from app.platform.auditing import (
 from app.platform.auditing.contributors import _contributors
 from app.platform.auditing.store import NullAuditingStore
 from app.platform.exceptions import ExceptionNotification, ExceptionSubscriber, add_exception_subscriber, notify, _subscribers
-from app.platform.options import AuditingOptions, reset
+from app.platform.options import AuditingOptions, restore, snapshot
 from tests.test_order_payment import FINANCE, SETTLE_INPUT, _orders, api  # noqa: F401 — api is a fixture
 from tests.test_orders import env  # noqa: F401 — a fixture
 
@@ -22,9 +22,10 @@ from tests.test_orders import env  # noqa: F401 — a fixture
 def store():
     s = InMemoryAuditingStore()
     use_store(s)
+    before = snapshot()  # what the module configured stays for the next test
     yield s
     use_store(NullAuditingStore())
-    reset()
+    restore(before)
 
 
 def test_the_rules_abp_s_defaults_and_ours():

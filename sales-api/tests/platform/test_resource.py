@@ -11,7 +11,7 @@ from fastapi import APIRouter
 from app.platform import authorization
 from app.platform.authorization import PermissionDenied, authorize, may, on_denied
 from app.platform.crud_router import resource_router
-from app.platform.options import ResourceOptions, configure, reset
+from app.platform.options import ResourceOptions, configure, restore, snapshot
 from app.platform.query import QuerySpec
 from app.platform.resource import Computed, Resource, resolve
 from tests.platform.conftest import WidgetCreate, WidgetService, actor_with
@@ -21,8 +21,9 @@ RW = actor_with("pt.read", "pt.config")
 
 @pytest.fixture(autouse=True)
 def defaults():
+    before = snapshot()
     yield
-    reset()
+    restore(before)
 
 
 def test_a_field_comes_from_the_service_else_its_base_else_the_platform():

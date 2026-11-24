@@ -7,9 +7,6 @@ APP = pathlib.Path(__file__).resolve().parents[1] / "app"
 CUT = re.compile(r"\[:\s*(\d{3,4})\s*\]")
 
 ALLOWED = {  # (file, line text containing the cut) → why
-    "api/v1/invoices.py": "a search box's text (input)",
-    "api/v1/inventory.py": "a search box's text (input)",
-    "api/v1/lots.py": "a search box's text (input)",
     "services/shadow.py": "sales_shadow_matches.reference_number is varchar(100): a key, not error text",
     "services/problems.py": "tasks.title is varchar(255) in epms-api's shared table; the whole text is in the description",
     "services/returns_944.py": "a task title (tasks.title varchar(255), epms-api's table)",

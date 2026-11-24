@@ -112,6 +112,16 @@ def options(kind: type[T]) -> T:
     return found if found is not None else kind()
 
 
+def snapshot() -> dict[type, Any]:
+    """The options as they are (a test keeps what the module configured: `restore`)."""
+    return dict(_options)
+
+
+def restore(before: dict[type, Any]) -> None:
+    _options.clear()
+    _options.update(before)
+
+
 def reset() -> None:
     """Back to the defaults (tests)."""
     _options.clear()
@@ -119,4 +129,4 @@ def reset() -> None:
 
 __all__ = ["AuditingOptions", "AuthenticationOptions", "ClockOptions", "CorrelationOptions", "ExceptionHandlingOptions", "LoggingOptions", "ResourceOptions",
            "configure", "options",
-           "replace", "reset", "field"]
+           "replace", "reset", "restore", "snapshot", "field"]
