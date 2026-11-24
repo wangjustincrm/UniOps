@@ -510,16 +510,19 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
 
 
     @requires(OPERATE)
-    async def send_940_now(self, id: int, outbound, *, replace: bool = False) -> dict:
+    async def send_940_now(self, id: int, outbound, *, replace: bool = False, version: VersionArg = None, reason: str | None = None) -> dict:
         """FR-OB-03c: generate and queue the 940 now (any delay, a manual-mode
         partner, a resend after a rejection / failure / timeout, or a confirmed
-        replacement). Audited through the order's transitions."""
-        self.uow.set_reason("Send 940 now (replacement)" if replace else "Send 940 now")
-        doc = await outbound.send_now(self.uow, id, replace=replace)
+        replacement, which says why). Audited through the order's transitions."""
+        doc = await self._run_send_940(id, outbound, replace=replace, version=version, reason=reason)
         order = await self.repo.get(id)
         await self._load_runs_on()  # the next step needs it (else none is shown)
         return {"order": self.to_read(order).model_dump(mode="json"), "document_id": doc.id,
                 "file_status": doc.file_status, "control": doc.st02, "errors": (doc.body_json or {}).get("errors", [])}
+
+    async def _run_send_940(self, id: int, outbound, *, replace: bool, version: VersionArg, reason: str | None):
+        self.uow.set_reason(f"940 replaced: {(reason or '').strip()}" if replace else "Send 940 now")
+        return await outbound.send_now(self.uow, id, replace=replace, version=version, reason=reason)
 
     @requires(OPERATE)
     async def amend(self, id: int, body, outbound, version: VersionArg = None) -> dict:

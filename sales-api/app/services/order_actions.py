@@ -120,6 +120,28 @@ async def fulfil_run(uow, o: Order, data, ctx) -> None:  # noqa: ARG001
     await ctx.runtime.shipments.fulfil_at_997(uow, o.id, version=ANY_VERSION)  # run_action checked it
 
 
+async def send_940_check(uow, o: Order, ctx) -> str | None:
+    return await refusal(ctx.runtime.outbound.refuse_send(uow.session, o))
+
+
+async def replace_940_check(uow, o: Order, ctx) -> str | None:
+    return await refusal(ctx.runtime.outbound.refuse_send(uow.session, o, replace=True))
+
+
+async def _send_940(uow, o: Order, ctx, *, replace: bool) -> None:
+    doc = await OrderService(uow)._run_send_940(o.id, ctx.runtime.outbound, replace=replace, version=ANY_VERSION, reason=ctx.reason)  # run_action checked the version
+    errors = (doc.body_json or {}).get("errors", [])
+    ctx.note = f"the 940 failed its checks and was not sent: {'; '.join(errors)}" if errors else f"940 {doc.st02} queued"
+
+
+async def send_940_run(uow, o: Order, data, ctx) -> None:  # noqa: ARG001
+    await _send_940(uow, o, ctx, replace=False)
+
+
+async def replace_940_run(uow, o: Order, data, ctx) -> None:  # noqa: ARG001
+    await _send_940(uow, o, ctx, replace=True)
+
+
 ORDER_ACTIONS = ActionRegistry(OrderRepository, [
     *PAYMENT_ACTIONS.actions.values(),
     Action("recheck", label="Re-check", permission=OPERATE, check=recheck_check, run=recheck_run, prepare=recheck_prepare, context=True),
@@ -132,6 +154,12 @@ ORDER_ACTIONS = ActionRegistry(OrderRepository, [
            reason="required", sends="the Shopify write its hold stopped, when released to Shipped"),
     Action("fulfil_in_shopify", label="Fulfil in Shopify now", permission=OPERATE, check=fulfil_check, check_context=True, run=fulfil_run, context=True, bulk=False,
            sends="the fulfilment (or the archiving) of the order in Shopify"),
+    Action("send_940", label="Send 940 now", permission=OPERATE, check=send_940_check, check_context=True, run=send_940_run, context=True, bulk=False,
+           sends="a 940 to the warehouse"),
+    Action("replace_940", label="Replace 940", permission=OPERATE, check=replace_940_check, check_context=True, run=replace_940_run, context=True,
+           bulk=False, reason="required", sends="a new 940 to the warehouse, in place of the live one",
+           confirm="The live 940 is marked Replaced and a new 940 with a new control number is sent. The warehouse then holds two 940s for "
+                   "this order: make sure they cancel the first."),
     Action("submit_draft", label="Submit", permission=OPERATE, check=draft_check, run=submit_run, bulk=False),
     Action("cancel_draft", label="Cancel draft", permission=OPERATE, check=draft_check, run=cancel_draft_run, bulk=False),
 ])

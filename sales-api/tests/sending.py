@@ -34,6 +34,13 @@ async def set_row(t, id: int, **values) -> None:
         await u.commit()
 
 
+async def crash(t, id: int) -> None:
+    """The worker claims the row as it does, and the process dies before the outcome; its lease has passed since."""
+    _, claim = await t.worker._claim()
+    assert claim is not None and claim.row_id == id
+    await set_row(t, id, next_attempt_at=utc_now() - timedelta(minutes=1))
+
+
 async def rows(t, *kinds: str) -> list[dict]:
     return await t.q("SELECT id, kind, status, last_error FROM sales_outbox WHERE kind = ANY(:k) ORDER BY id", k=list(kinds))
 

@@ -32,6 +32,7 @@ from app.integrations.sftp import FakeSftp
 from app.models.config import Connection, Item, ItemUnit, Partner
 from app.models.orders import Order
 from app.models.shipments import ShipmentRow
+from app.platform.commands import ANY_VERSION
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.errors import BusinessError
 from app.platform.query import Filter, QuerySpec
@@ -195,7 +196,7 @@ async def ship(t, oid, rows, **k):
 
 async def send_now(t, oid):
     async with t.factory(OP) as u:
-        out = await OrderService(u).send_940_now(oid, t.rt.outbound)
+        out = await OrderService(u).send_940_now(oid, t.rt.outbound, version=ANY_VERSION)
         await u.commit()
         return out
 

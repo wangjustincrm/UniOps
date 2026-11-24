@@ -3,12 +3,13 @@ import { useState } from 'react'
 import {
   ActionButton, ConfirmAction, queryKeys, type ActionDone, Stack, Text,
 } from '@/platform-ui'
-import { ordersClient, send940, type OrderDetail, type Send940Result } from './ordersApi'
+import { ordersClient, replace940, send940, type OrderDetail, type Send940Result } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
 
 const errorMessages: Record<string, string> = {
   'send940.historical': 'A historical order is never sent to the warehouse.',
+  'entity.stale': 'The order changed since you opened it: it is read again here. Look, then decide again.',
   'send940.in_progress': 'A 940 for this order is already on its way.',
   'send940.live': 'A 940 for this order is live. Use Replace 940 to send a replacement.',
   'send940.nothing_to_replace': 'There is no live 940 to replace.',
@@ -46,12 +47,14 @@ export function Send940({ o }: { o: OrderDetail }) {
             description="The live 940 is marked Replaced and a new 940 with a new control number is sent. The warehouse then holds two 940s for this order: make sure they cancel the first."
             confirmLabel="Replace 940"
             destructive
+            reason={{ label: 'Why it is replaced' }}
+            record={o}
             errorMessages={errorMessages}
-            toStatusRow={isTestRunRefusal} {...sent} onConfirm={() => send940(o.id, true)}
+            toStatusRow={isTestRunRefusal} {...sent} onConfirm={(why) => replace940(o.id, o.version, why)}
           />
         </>
       ) : (
-        <ActionButton size="sm" permission={OPERATE} errorMessages={errorMessages} {...sent} onAction={() => send940(o.id, false)}>Send 940 now</ActionButton>
+        <ActionButton size="sm" permission={OPERATE} errorMessages={errorMessages} {...sent} onAction={() => send940(o.id, o.version)}>Send 940 now</ActionButton>
       )}
     </Stack>
   )

@@ -46,6 +46,7 @@ from app.models.orders import Order, OrderLine
 from app.models.records import OutboxRecord
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.clock import clock
+from app.platform.commands import VersionArg, check_version, require_reason
 from app.platform.errors import BusinessError
 from app.platform.outbox import Outbox, OutboxKind
 from app.platform.pipeline import isolated
@@ -54,6 +55,7 @@ from app.services.intake import ConnectionSnapshot
 from app.services.problems import (
     CHANGED_AFTER_940, EDI_940_FAILED, EDI_940_REJECTED, EDI_940_TIMEOUT, EDI_997_UNMATCHED, problem, send_refused,
 )
+from app.services.queued import refuse_queued
 from app.services.settings import ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, SETTINGS, SHADOW_MODE
 from app.services.doc_links import link
 
@@ -344,11 +346,9 @@ class Outbound940:
         return log
 
     # ── Send 940 now (FR-OB-03c) ─────────────────────────────────────────────
-    async def send_now(self, uow, order_id: int, *, replace: bool = False) -> Document:
-        s = uow.session
-        order = await s.get(Order, order_id, with_for_update=True)
-        if order is None:
-            raise BusinessError("order.not_found", "no such order", status_code=404)
+    async def refuse_send(self, s, order: Order, *, replace: bool = False) -> tuple[Partner, Document | None]:
+        """Why a person cannot send (or replace) this order's 940 now (the order locked), raised; else its partner and
+        its live 940."""
         partner = (await s.execute(select(Partner).where(Partner.code == order.partner_code))).scalar_one()
         if order.historical:
             raise BusinessError("send940.historical", "a historical order is never sent (FR-OB-17)")
@@ -356,6 +356,9 @@ class Outbound940:
             raise BusinessError("send940.shadow", TEST_RUN_REFUSAL)
         if order.shadow:
             raise BusinessError("send940.shadow_order", TEST_RUN_REFUSAL)
+        # Before the status (a stuck one says how it ends) and before any document is locked (the outbox locks the
+        # document, then the order).
+        await refuse_queued(s, (SEND_940,), order, f"the 940 of order {order.label}")
         status = F(order.fulfillment_status)
         live = await self.live_940(s, order.id)
         if status == F.GENERATED_940:
@@ -366,9 +369,6 @@ class Outbound940:
         if replace:
             if live is None or status not in (F.SENT_940, F.ACCEPTED_940):
                 raise BusinessError("send940.nothing_to_replace", "there is no live 940 to replace")
-            OUTBOUND_FILE.transition(live, OutboundFile.REPLACED, actor=uow.actor, events=uow.events,
-                                     reason="replaced by a confirmed resend (FR-OB-03c)")
-            await self.tasks.resolve_problem(s, CHANGED_AFTER_940, order.id, by=uow.actor.user_id)
         elif status == F.PENDING:
             o, p = facts_of(order, partner)
             ok, why = qualifies(o, type(p)(p.settlement_mode, "AUTOMATIC", 0), self.clock())  # now: no delay, any mode
@@ -376,7 +376,22 @@ class Outbound940:
                 raise BusinessError("send940.not_eligible", f"the order cannot be sent: {why}")
         elif status not in (F.REJECTED_940, F.TIMEOUT_940, F.FAILED_940):
             raise BusinessError("send940.not_allowed", f"a 940 cannot be sent for an order in {status}")
-        doc = await self.generate(uow, order, partner, reason="replacement resend (FR-OB-03c)" if replace else "Send 940 now (FR-OB-03c)")
+        return partner, live
+
+    async def send_now(self, uow, order_id: int, *, replace: bool = False, version: VersionArg = None, reason: str | None = None) -> Document:
+        """One 940 now. `replace`: a live one is Replaced by it, which says why (user 2026-11-24, kept with both files)."""
+        s = uow.session
+        why = require_reason(reason, code="send940.reason", message="say why the live 940 is replaced (a few words)") if replace else None
+        order = await s.get(Order, order_id, with_for_update=True)
+        if order is None:
+            raise BusinessError("order.not_found", "no such order", status_code=404)
+        partner, live = await self.refuse_send(s, order, replace=replace)  # what is done or under way says so, whatever the version
+        check_version(order, version, "this order")
+        if replace:
+            OUTBOUND_FILE.transition(live, OutboundFile.REPLACED, actor=uow.actor, events=uow.events,
+                                     reason=f"replaced by a confirmed resend (FR-OB-03c): {why}")
+            await self.tasks.resolve_problem(s, CHANGED_AFTER_940, order.id, by=uow.actor.user_id)
+        doc = await self.generate(uow, order, partner, reason=f"replacement resend (FR-OB-03c): {why}" if replace else "Send 940 now (FR-OB-03c)")
         if replace:
             live.replaced_by_id = doc.id
         for event in (EDI_940_REJECTED, EDI_940_TIMEOUT):

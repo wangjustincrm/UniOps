@@ -15,7 +15,7 @@ from app.domain.status import Fulfillment as F
 from app.models.config import Item, ItemUnit
 from app.models.orders import Order, OrderLine
 from app.models.shipments import Shipment
-from app.platform.commands import VersionArg, check_version, touch
+from app.platform.commands import ANY_VERSION, VersionArg, check_version, touch
 from app.platform.errors import BusinessError
 from app.services import oplog
 
@@ -89,9 +89,9 @@ async def amend_order(uow, outbound, order_id: int, lines: list[dict[str, Any]],
     status = F(o.fulfillment_status)
     sent = None
     if status in (F.SENT_940, F.ACCEPTED_940):
-        sent = await outbound.send_now(uow, o.id, replace=True)
+        sent = await outbound.send_now(uow, o.id, replace=True, version=ANY_VERSION, reason=reason)  # checked above
     elif status in (F.REJECTED_940, F.TIMEOUT_940, F.FAILED_940):
-        sent = await outbound.send_now(uow, o.id, replace=False)
+        sent = await outbound.send_now(uow, o.id, version=ANY_VERSION)
     await oplog.write(s, "INFO", "order", f"order {o.label} amended" + (", a new 940 goes" if sent else "") + f": {reason}",
                       order_id=o.id, document_id=sent.id if sent else None, context={"before": before, "after": after})
     await s.flush()

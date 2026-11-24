@@ -282,7 +282,7 @@ class DocumentActions(Service):
             await self._authorize("sales.order.operate")
             order_id = (await self.s.execute(select(DocumentLink.entity_id).where(
                 DocumentLink.document_id == doc.id, DocumentLink.entity_type == "order"))).scalar_one()
-            new = await rt.outbound.send_now(self.uow, order_id)
+            new = await rt.outbound.send_now(self.uow, order_id, version=ANY_VERSION)  # what is there now; a live 940 is replaced only from the order
             return f"940 {new.st02} queued for the order"
         if doc.kind == "943_EDI":
             await self._authorize("sales.transfer.manage")

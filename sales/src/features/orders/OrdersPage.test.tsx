@@ -44,12 +44,12 @@ const meta: ListMeta = {
   ],
 }
 
-const api = vi.hoisted(() => ({ resolve: vi.fn(), fetchOrder: vi.fn(), list: vi.fn(), send: vi.fn(),
+const api = vi.hoisted(() => ({ resolve: vi.fn(), fetchOrder: vi.fn(), list: vi.fn(), send: vi.fn(), replace: vi.fn(),
   preview: vi.fn(), create: vi.fn(), submit: vi.fn(), update: vi.fn(), prices: vi.fn(), amend: vi.fn(), reorder: vi.fn(), get: vi.fn() }))
 vi.mock('./ordersApi', async (orig) => {
   const real = await orig<typeof import('./ordersApi')>()
   return { ...real, ordersClient: { ...real.ordersClient, list: api.list, meta: async () => meta, get: api.get },
-    fetchOrder: api.fetchOrder, resolveReview: api.resolve, send940: api.send,
+    fetchOrder: api.fetchOrder, resolveReview: api.resolve, send940: api.send, replace940: api.replace,
     previewManual: api.preview, createManual: api.create, submitManual: api.submit, updateManual: api.update,
     setInvoicePrices: api.prices, amendOrder: api.amend, reorderOrder: api.reorder }
 })
@@ -198,7 +198,7 @@ describe('Orders: 940s (P4)', () => {
     remote_name: `940-SHOP-${st02}.edi`, created_at: order.created_at, file_status, ack_status, st02, sent_at: '2026-10-30T14:00:00Z',
     error: null, ack_detail: null })
   beforeEach(() => {
-    api.send.mockReset()
+    api.send.mockReset(); api.replace.mockReset()
     api.list.mockReset(); api.list.mockImplementation(async () => ({ items: [pending, sentOrder], total: 2 }))
   })
 
@@ -237,13 +237,13 @@ describe('Orders: 940s (P4)', () => {
     fireEvent.click(await screen.findByText('9303'))
     dialog = await screen.findByRole('dialog')
     fireEvent.click(await within(dialog).findByText('Send 940 now'))
-    await waitFor(() => expect(api.send).toHaveBeenCalledWith(5, false))
+    await waitFor(() => expect(api.send).toHaveBeenCalledWith(5, pending.version))
     await waitFor(() => expect(noticeIn(dialog)).toHaveTextContent('940 000000123 queued'))
   })
 
   it('a sent 940 shows Sent and the 997 apart; a change goes only through a confirmed replacement', async () => {
     api.fetchOrder.mockResolvedValue({ ...detail, ...sentOrder, documents: [out(30, 'Sent', 'Waiting', '000000122')], send_940: 'replace' })
-    api.send.mockResolvedValue({ order: sentOrder, document_id: 31, file_status: 'Ready To Send', control: '000000124', errors: [] })
+    api.replace.mockResolvedValue({ order: sentOrder, document_id: 31, file_status: 'Ready To Send', control: '000000124', errors: [] })
     renderAs(['sales.read', 'sales.order.operate'])
     fireEvent.click(await screen.findByText('9304'))
     const dialog = await screen.findByRole('dialog', { name: 'SHOP-9304' })
@@ -255,9 +255,30 @@ describe('Orders: 940s (P4)', () => {
     expect(within(dialog).queryByText('Send 940 now')).toBeNull()
     fireEvent.click(within(dialog).getByText('Replace 940'))
     const confirm = await screen.findByRole('alertdialog', { name: 'Replace the live 940?' })
-    expect(api.send).not.toHaveBeenCalled()
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Replace 940' }))  // nothing without why
+    expect(api.replace).not.toHaveBeenCalled()
+    fireEvent.change(within(confirm).getByLabelText(/^Why it is replaced/), { target: { value: 'wrong quantity' } })
     fireEvent.click(within(confirm).getByRole('button', { name: 'Replace 940' }))
-    await waitFor(() => expect(api.send).toHaveBeenCalledWith(6, true))
+    await waitFor(() => expect(api.replace).toHaveBeenCalledWith(6, sentOrder.version, 'wrong quantity'))
+  })
+
+  it('a replacement refused as changed keeps why, reads the order again, says what changed, and goes with the new version', async () => {
+    const seen = { ...detail, ...sentOrder, documents: [out(30, 'Sent', 'Waiting', '000000122')], send_940: 'replace' as const }
+    api.fetchOrder.mockResolvedValue(seen)
+    api.replace.mockRejectedValueOnce(Object.assign(new Error('409'), { body: { error: { code: 'entity.stale', message: 'this order was changed by someone else; reload it', details: {} } } }))
+    api.replace.mockResolvedValueOnce({ order: sentOrder, document_id: 31, file_status: 'Ready To Send', control: '000000124', errors: [] })
+    renderAs(['sales.read', 'sales.order.operate'])
+    fireEvent.click(await screen.findByText('9304'))
+    const dialog = await screen.findByRole('dialog', { name: 'SHOP-9304' })
+    fireEvent.click(await within(dialog).findByText('Replace 940'))
+    const confirm = await screen.findByRole('alertdialog', { name: 'Replace the live 940?' })
+    fireEvent.change(within(confirm).getByLabelText(/^Why it is replaced/), { target: { value: 'wrong quantity' } })
+    api.fetchOrder.mockResolvedValue({ ...seen, version: seen.version + 1, fulfillment_status: '940 Accepted' })
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Replace 940' }))
+    await waitFor(() => expect(within(confirm).getByRole('alert')).toHaveTextContent(/The order changed.*Updated:/))
+    expect(within(confirm).getByLabelText(/^Why it is replaced/)).toHaveValue('wrong quantity')
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Replace 940' }))
+    await waitFor(() => expect(api.replace).toHaveBeenLastCalledWith(6, seen.version + 1, 'wrong quantity'))
   })
 
   it('a 940 that fails its checks says why and that it was not sent', async () => {

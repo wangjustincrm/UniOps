@@ -16,7 +16,7 @@ from app.services.settings import SETTINGS, SHADOW_MODE
 from app.services.transfer_actions import TRANSFER_ACTIONS
 from app.services.transfer_views import TransferService
 from app.services.transfers import SEND_943
-from tests.sending import STATE_IDS, STATES, put_row, rows, said, says, set_row, twice, way_out
+from tests.sending import STATE_IDS, STATES, crash, put_row, rows, said, says, twice, way_out
 from tests.test_orders import OP, env  # noqa: F401 — a fixture
 from tests.test_outbound import edi as p4_edi  # noqa: F401 — a fixture
 from tests.test_transfers import create, p7, sent_transfer  # noqa: F401 — p7 is a fixture
@@ -84,7 +84,7 @@ async def test_a_943_lost_in_a_crash_says_how_it_ends_then_can_be_resent(p7):  #
         await u.commit()
     await p7.tr.queue_ready()
     [r] = await rows(p7, SEND_943)
-    await set_row(p7, r["id"], status="IN_FLIGHT")  # claimed; the process died before its outcome: its lease is over
+    await crash(p7, r["id"])
     e = await says(press(p7, x, (await tr(p7, x))["version"]))  # the transfer says 943 Generated: that alone would not say what to do
     assert said(e) == ("send.outcome_unknown", "unknown") and way_out(e)
     assert (await p7.worker.run_once()).failed == 1 and puts(p7) == []  # closed, not run again

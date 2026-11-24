@@ -431,6 +431,13 @@ class CancelOrderIn(BaseModel):
     reason: Reason
 
 
+class Send940In(BaseModel):
+    """Replacing a live 940 says why (the service asks: 422 with the field); a first send asks nothing."""
+    model_config = ConfigDict(extra="forbid")
+
+    reason: Annotated[str, Field(max_length=2000)] | None = None
+
+
 class ReleaseHoldIn(BaseModel):
     """Where the order goes: one of the detail's `hold_exits`."""
     model_config = ConfigDict(extra="forbid")

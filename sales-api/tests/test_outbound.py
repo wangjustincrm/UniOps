@@ -24,6 +24,7 @@ from app.models.documents import Document, DocumentLink
 from app.models.orders import Order
 from app.models.records import OutboxRecord
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError
 from app.platform.outbox import Outbox, OutboxWorker
 from app.services.order_views import OrderService
@@ -169,7 +170,7 @@ async def test_a_write_is_suppressed_with_write_off_or_without_a_write_host(edi)
     # the way out: once the switch is right a person sends it again
     edi.settings.sftp_write_hosts = frozenset({"commhub.example"})
     async with edi.env.factory(SYSTEM_ACTOR) as u:
-        await edi.out.send_now(u, o2.id)
+        await edi.out.send_now(u, o2.id, version=ANY_VERSION)
         await u.commit()
     assert (await edi.worker.run_once()).done == 1 and await status(edi, o2.id) == F.SENT_940
 
@@ -283,9 +284,9 @@ async def test_ac62_a_945_before_any_997_accepts_it_and_no_timeout_follows(edi):
 
 # ── Send 940 now (FR-OB-03c, AC-OB-24) ───────────────────────────────────────
 
-async def send_now(edi, oid, replace=False):
+async def send_now(edi, oid, replace=False, version=ANY_VERSION, reason="the quantity was wrong"):
     async with edi.env.factory(OP) as u:
-        out = await OrderService(u).send_940_now(oid, edi.out, replace=replace)
+        out = await OrderService(u).send_940_now(oid, edi.out, replace=replace, version=version, reason=reason if replace else None)
         await u.commit()
         return out
 
@@ -302,7 +303,7 @@ async def test_ac24_manual_partner_send_now_live_940_and_replacement(edi):
     assert first["file_status"] == "Ready To Send" and first["order"]["fulfillment_status"] == F.GENERATED_940
     with pytest.raises(BusinessError) as e:
         await send_now(edi, o.id)
-    assert e.value.code == "send940.in_progress"
+    assert (e.value.code, e.value.details["state"]) == ("send.queued", "pending")
     await edi.worker.run_once()
     with pytest.raises(BusinessError) as e:
         await send_now(edi, o.id)
@@ -334,7 +335,7 @@ async def test_send_now_needs_the_operate_permission(edi):
     from app.platform.authorization import PermissionDenied
     with pytest.raises(PermissionDenied):
         async with edi.env.factory(reader) as u:
-            await OrderService(u).send_940_now(o.id, edi.out)
+            await OrderService(u).send_940_now(o.id, edi.out, version=ANY_VERSION)
     assert await docs(edi) == []
 
 

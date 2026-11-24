@@ -25,7 +25,11 @@ export const reorderOrder = (id: number) => api.post<OrderRead>(`/orders/${id}/r
 
 
 export interface Send940Result { order: OrderRead; document_id: number; file_status: string; control: string; errors: string[] }
-export const send940 = (id: number, replace = false) => api.post<Send940Result>(`/orders/${id}/send-940${replace ? '?replace=true' : ''}`)
+/** By the version seen: an order that moved meanwhile is refused (entity.stale). */
+export const send940 = (id: number, version: number) => api.post<Send940Result>(`/orders/${id}/send-940?version=${version}`)
+/** A live 940 is replaced with why (kept in the order's history). */
+export const replace940 = (id: number, version: number, reason: string) =>
+  api.post<Send940Result>(`/orders/${id}/send-940?replace=true&version=${version}`, { reason })
 /** Fulfil in Shopify now (user 2026-11-16): the 997 step again — the whole order, no tracking, then archived. */
 export const fulfilInShopify = (id: number, version: number) =>
   api.post<{ order_id: number; queued: boolean }>(`/orders/${id}/shopify-fulfil?version=${version}`)

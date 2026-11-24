@@ -17,7 +17,7 @@ from app.services.order_views import OrderService
 from app.services.outbound import FULFILL_AT_997
 from app.services.settings import SETTINGS, SHADOW_MODE
 from app.services.shipments import CLOSE, CLOSE_AT_997, FULFILL
-from tests.sending import STATE_IDS, STATES, put_row, rows, said, says, set_row, twice, way_out
+from tests.sending import STATE_IDS, STATES, crash, put_row, rows, said, says, set_row, twice, way_out
 from tests.test_orders import OP, env  # noqa: F401 — a fixture
 from tests.test_outbound import ack997, sent_order, store_997
 from tests.test_outbound import edi as p4_edi  # noqa: F401 — a fixture
@@ -234,7 +234,7 @@ async def test_a_retry_stuck_by_a_crash_says_how_it_ends_then_goes(p5):  # noqa:
     [r] = [r for r in await rows(p5, FULFILL) if r["status"] == "PENDING"]
     e = await says(retry(p5, sid))
     assert said(e) == ("send.queued", "pending")
-    await set_row(p5, r["id"], status="IN_FLIGHT")  # claimed, and the process died: its lease is over
+    await crash(p5, r["id"])
     e = await says(retry(p5, sid))  # its shipment says Pending: that alone would not say what to do
     assert said(e) == ("send.outcome_unknown", "unknown") and way_out(e)
     assert (await p5.worker.run_once()).failed == 1

@@ -10,7 +10,7 @@ from app.platform.files import FileResult
 from app.runtime import Runtime, get_runtime
 from app.schemas.orders import (
     AmendOrderIn, CancelOrderIn, InvoicePricesIn, ReturnedIn, LinePreview, ManualLineIn, ManualOrderIn, OrderDetail, OrderRead,
-    ReleaseHoldIn, ResolveRowIn, ReviewResult, SettleIn, UnsettleIn,
+    ReleaseHoldIn, ResolveRowIn, ReviewResult, Send940In, SettleIn, UnsettleIn,
 )
 from app.services.order_holds import OrderActions
 from app.services.order_payment import OrderPaymentService
@@ -36,8 +36,8 @@ async def amend_order(u: UoW, rt: Rt, id: int, body: AmendOrderIn, version: Vers
 
 
 @routes.post("/{id}/send-940")
-async def send_940_now(u: UoW, rt: Rt, id: int, replace: bool = False) -> dict:
-    out = await OrderService(u).send_940_now(id, rt.outbound, replace=replace)
+async def send_940_now(u: UoW, rt: Rt, id: int, replace: bool = False, version: Version = None, body: Send940In | None = None) -> dict:
+    out = await OrderService(u).send_940_now(id, rt.outbound, replace=replace, version=version, reason=body.reason if body else None)
     await u.commit()
     return out
 
