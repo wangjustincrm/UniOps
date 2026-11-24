@@ -81,4 +81,4 @@ async def resolve(u: UoW, rt: Rt, id: int, body: ResolveIn, version: Version = N
     return out
 
 
-router = resource_router(TransferService, uow=get_uow, custom=routes)
+router = resource_router(TransferService, uow=get_uow, custom=routes, runtime=get_runtime)

@@ -45,11 +45,20 @@ class TransferRepository(Repository[Transfer]):
     )
 
 
+def not_on_hold(t: Transfer) -> str | None:
+    return None if t.status == T.ON_HOLD.value and t.status_before_hold else f"transfer {t.transfer_number} is not On Hold"
+
+
+def _actions():
+    from app.services.transfer_actions import TRANSFER_ACTIONS  # it imports this module
+    return TRANSFER_ACTIONS
+
+
 class TransferService(ReadOnlyService[Transfer, TransferRead]):
     repo_cls = TransferRepository
     read_schema = TransferRead
     read_permission = READ
-    resource = Resource(path="/transfers", detail=TransferDetail, timeline=TIMELINES["transfer"], attachments=RECORDS["transfer"], export_headers="labels",
+    resource = Resource(path="/transfers", detail=TransferDetail, actions=lambda: _actions(), timeline=TIMELINES["transfer"], attachments=RECORDS["transfer"], export_headers="labels",
                         export_fields=("id", "transfer_number", "from_warehouse", "from_warehouse_id", "to_warehouse", "to_warehouse_id",
                                        *(f for f in TransferRepository.list_fields if f not in ("id", "transfer_number", "from_warehouse_id", "to_warehouse_id"))))
 
@@ -128,11 +137,14 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
         """On Hold (a second, different 944: compared by a person) back to where it was, with why (as an order's hold).
         The first 944 stays applied; the second stays kept, not applied."""
         t = await load_for_command(self.uow.session, Transfer, id, version=version)
-        if t.status != T.ON_HOLD.value or not t.status_before_hold:
-            raise BusinessError("transfer.not_on_hold", f"transfer {t.transfer_number} is not On Hold")
+        if why := not_on_hold(t):
+            raise BusinessError("transfer.not_on_hold", why)
+        await self._run_release(t, reason)
+        return await self._detail_after(id)
+
+    async def _run_release(self, t: Transfer, reason: str) -> None:
         back = T(t.status_before_hold)
         self.uow.set_reason(f"hold released to {back.value}: {reason}")
         TRANSFER.transition(t, back, actor=self.uow.actor, events=self.uow.events, reason=reason)
         await oplog.write(self.uow.session, "INFO", "transfer", f"transfer {t.transfer_number} released to {back.value}: {reason}",
                           transfer_id=t.id)
-        return await self._detail_after(id)
