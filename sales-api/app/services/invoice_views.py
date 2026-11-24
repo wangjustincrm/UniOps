@@ -17,6 +17,7 @@ from app.platform.authorization import authorize, requires
 from app.platform.errors import BusinessError
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
+from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.schemas.invoices import ConfirmResult, InvoiceDetail, InvoiceLineRead, InvoiceRead
@@ -70,6 +71,7 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
     repo_cls = InvoiceRepository
     read_schema = InvoiceRead
     read_permission = READ
+    resource = Resource(path="/invoices", detail=InvoiceDetail, export_headers="labels")
 
     @requires(READ)
     async def pdf(self, invoice_id: int) -> tuple[str, bytes]:
