@@ -390,8 +390,8 @@ class Transfers:
 
     async def _pair(self, payload, uow):
         s = uow.session
-        return (await s.get(Document, payload["document_id"], with_for_update=True),
-                await s.get(Transfer, payload["transfer_id"], with_for_update=True))
+        t = await s.get(Transfer, payload["transfer_id"], with_for_update=True)  # the transfer, then its 943: everywhere
+        return await s.get(Document, payload["document_id"], with_for_update=True), t
 
     async def _pre_check(self, payload: dict[str, Any], uow) -> str | None:
         doc, t = await self._pair(payload, uow)
@@ -449,16 +449,16 @@ class Transfers:
         """`st` None: a group-level ack (no AK2, Radiant's real 997s) — the 943
         with that GS06, answered by AK9."""
         s = uow.session
-        docs = list((await s.execute(select(Document).where(
+        docs = list((await s.execute(select(Document.id).where(  # read without a lock: the transfer is locked before its 943
             Document.kind == "943_EDI", Document.direction == "OUT", Document.origin.in_(("UNIOPS", "ZOHO_MIGRATION")),
             func.ltrim(Document.gs06, "0") == g.group_control.lstrip("0"),
-            *([func.ltrim(Document.st02, "0") == st.control.lstrip("0")] if st is not None else [])).with_for_update())).scalars())
+            *([func.ltrim(Document.st02, "0") == st.control.lstrip("0")] if st is not None else [])))).scalars())
         if len(docs) != 1:
             return 0
-        doc = docs[0]
-        t = (await s.execute(select(Transfer).join(DocumentLink, (DocumentLink.entity_id == Transfer.id) &
-                                                   (DocumentLink.entity_type == "transfer"))
-                             .where(DocumentLink.document_id == doc.id).with_for_update())).scalar_one()
+        tid = (await s.execute(select(DocumentLink.entity_id).where(
+            DocumentLink.document_id == docs[0], DocumentLink.entity_type == "transfer"))).scalar_one()
+        t = await s.get(Transfer, tid, with_for_update=True)
+        doc = await s.get(Document, docs[0], with_for_update=True)
         codes = (" ".join(x for x in [st.code or "", *st.reasons] if x) if st is not None
                  else f"- / AK9 {g.code or '-'} (group level)")
         doc.ack_detail = f"997 {ack_doc.remote_name}: AK5 {codes}".strip()

@@ -138,8 +138,8 @@ class Outbound940:
                           on_failed=self._on_failed, on_suppressed=self._on_suppressed)
 
     async def _pre_check(self, payload: dict[str, Any], uow) -> str | None:
+        order = await uow.session.get(Order, payload["order_id"], with_for_update=True)  # the order, then its 940: everywhere
         doc = await uow.session.get(Document, payload["document_id"], with_for_update=True)
-        order = await uow.session.get(Order, payload["order_id"], with_for_update=True)
         if doc is None or order is None:
             return "the document or the order is gone"
         if await SETTINGS.get(uow.session, SHADOW_MODE):  # second barrier: a row queued before the switch-on
@@ -197,8 +197,8 @@ class Outbound940:
 
     async def _pair(self, row, uow) -> tuple[Document, Order]:
         p = row.payload
-        return (await uow.session.get(Document, p["document_id"], with_for_update=True),
-                await uow.session.get(Order, p["order_id"], with_for_update=True))
+        order = await uow.session.get(Order, p["order_id"], with_for_update=True)
+        return await uow.session.get(Document, p["document_id"], with_for_update=True), order
 
     async def _task(self, uow, event: str, order: Order, title: str, text_: str, *, urgent: bool = True) -> None:
         await self.tasks.raise_problem(uow.session, event, order.id, problem(event, title, text_, urgent=urgent))
@@ -473,10 +473,11 @@ class Outbound940:
             return await self._apply_ack_943(uow, ack_doc, g, st)
         if g.functional_id != "OW" or (st is not None and st.type != "940"):
             return 0  # another group
-        candidates = list((await s.execute(select(Document).where(
+        # Read without a lock: the order is locked before its 940 (as a person's replacement does), so neither waits for the other.
+        candidates = list((await s.execute(select(Document.id).where(
             Document.kind == "940_EDI", Document.direction == "OUT", Document.system == "RADIANT",
             func.ltrim(Document.gs06, "0") == g.group_control.lstrip("0"),
-            *([func.ltrim(Document.st02, "0") == st.control.lstrip("0")] if st is not None else [])).with_for_update())).scalars())
+            *([func.ltrim(Document.st02, "0") == st.control.lstrip("0")] if st is not None else [])))).scalars())
         set_ref = f"AK2 {st.control}" if st is not None else "no AK2"
         if len(candidates) != 1:
             await self.tasks.raise_problem(s, EDI_997_UNMATCHED, ack_doc.id, problem(
@@ -496,12 +497,11 @@ class Outbound940:
                 "matches no outbound 943 (FR-OB-22a). Review it."))
         return matched
 
-    async def _apply_ack_940(self, uow, ack_doc: Document, g, st, doc: Document) -> int:
+    async def _apply_ack_940(self, uow, ack_doc: Document, g, st, doc_id: int) -> int:
         """The 940's 997: per set (AK5) when there is an AK2, else the group's AK9."""
         s = uow.session
-        order = (await s.execute(select(Order).join(DocumentLink, and_(
-            DocumentLink.entity_id == Order.id, DocumentLink.entity_type == "order", DocumentLink.document_id == doc.id))
-            .with_for_update())).scalar_one()
+        order = await s.get(Order, await order_id_of(s, doc_id), with_for_update=True)
+        doc = await s.get(Document, doc_id, with_for_update=True)
         await link(s, ack_doc.id, "order", order.id)
         accepted = st.accepted if st is not None and st.code else g.accepted
         if doc.ack_status not in (Ack.WAITING, Ack.TIMEOUT):
@@ -560,14 +560,12 @@ class Outbound940:
 
     async def _timeout(self, uow, did: int, due: datetime, minutes: int) -> bool:
         s = uow.session
+        order = await s.get(Order, await order_id_of(s, did), with_for_update=True)  # the order, then its 940
         doc = (await s.execute(select(Document).where(Document.id == did, *self._overdue(due))
                                .with_for_update(skip_locked=True))).scalar_one_or_none()
         if doc is None:  # answered, or another run has it
             return False
         ACK.transition(doc, Ack.TIMEOUT, actor=uow.actor, events=uow.events, reason=f"no 997 within {minutes} minutes (FR-OB-23)")
-        order = (await s.execute(select(Order).join(DocumentLink, and_(
-            DocumentLink.entity_id == Order.id, DocumentLink.entity_type == "order",
-            DocumentLink.document_id == doc.id)).with_for_update())).scalar_one()
         if order.fulfillment_status == F.SENT_940:
             FULFILLMENT.transition(order, F.TIMEOUT_940, actor=uow.actor, events=uow.events, reason="no 997 (FR-OB-23)")
         sent = clock().to_business(doc.sent_at).strftime("%Y-%m-%d %H:%M")
@@ -580,6 +578,12 @@ class Outbound940:
     async def check_after_940(self, uow, order: Order, new_lines: dict[str, dict[str, Any]],
                               new_ship_to: dict[str, Any] | None) -> bool:
         return await changed_after_940(uow, self.tasks, order, new_lines, new_ship_to)
+
+
+async def order_id_of(session, document_id: int) -> int:
+    """The order a 940 belongs to (its link, which never changes): read without a lock."""
+    return (await session.execute(select(DocumentLink.entity_id).where(
+        DocumentLink.document_id == document_id, DocumentLink.entity_type == "order"))).scalar_one()
 
 
 async def latest_940(session, order_id: int, *, for_update: bool = False) -> Document | None:
