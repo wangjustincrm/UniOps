@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import { ActionButton, ConfirmAction, DetailList, LocalTable, MasterDetailForm, MoneyCell, RecordSheet, Section, StatusCell, formatDate, formatDateTime, formatMoney, numberColumn, queryKeys, readColumn, textColumn, type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab, compareRecord, useRefresh, Callout, useRecord, Text } from '@/platform-ui'
 import { editInvoice, fetchInvoice, invoicesClient, releaseInvoice, sendInvoice, type InvoiceDetail, type InvoiceRead } from './invoicesApi'
+import { RecordActivity } from '@/features/common/RecordActivity'
 import { partnerLabel } from '@/features/common/labels'
 
 const MANAGE = 'sales.invoice.manage'
@@ -130,6 +131,8 @@ export function InvoiceSheet({ row }: { row: InvoiceRead }) {
       <LocalTable ariaLabel="Invoice lines" columns={lineColumns(inv.currency)} rows={inv.lines} rowKey={(l) => l.id}
         footer={[null, null, null, null, 'Total', formatMoney(inv.total, inv.currency)]} />
     ) },
+    { id: 'activity', label: 'Activity', count: inv.timeline.length, empty: inv.timeline.length === 0 && 'Nothing recorded yet',
+      render: () => <RecordActivity entries={inv.timeline} /> },
   ]
   return (
     <>

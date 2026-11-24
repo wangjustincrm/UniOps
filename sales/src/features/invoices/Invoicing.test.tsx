@@ -1,4 +1,4 @@
-import { noticeIn } from '@/platform-ui/testing'
+import { noticeIn, openTab } from '@/platform-ui/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -25,7 +25,9 @@ const inv: InvoiceRead = {
   subtotal: '450.00', total: '450.00', document_id: null, sent_at: null, send_count: 0, error: null, version: 1, created_at: '2026-11-05T12:00:00Z',
   updated_by_name: null, order_number: 107, partner_code: 'LBL', po: 'PO-1', status: 'Blocked', order_ref: 'LBL-PO-1', partner_name: 'Loblaws', delivery_number: null,
 }
-const invDetail: InvoiceDetail = { ...inv, confirmed_date: '2026-11-05', lines: [
+const entry = { at: '2026-11-05T15:00:00Z', user_name: 'Op', entity: 'sales_invoices', action: 'update', reason: 'invoice edited: agreed price',
+  before: { 'Total': '500.00' }, after: { 'Total': '480.00' }, audit_log_id: '7d0f0f5c-0000-4000-8000-000000000001' }
+const invDetail: InvoiceDetail = { ...inv, confirmed_date: '2026-11-05', timeline: [entry], lines: [
   { id: 30, line_no: 1, item_code: 'CF0092', buyer_part: 'L-555', description: null, uom: 'CA', qty: 9, unit_price: '50.00000', amount: '450.00',
     po_price: '50.00000' }] }
 const meta: ListMeta = { version: 1, searchable: true, default_sort: [], fields: [], views: [{ key: 'all', name: 'All', state: { version: 1 } }] }
@@ -170,5 +172,20 @@ describe('Invoices', () => {
       reason: 'agreed promo', lines: [{ id: 30, qty: 9, unit_price: '48.5' }] }))
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Send' }))
     await waitFor(() => expect(api.send).toHaveBeenCalledWith(3))
+  })
+})
+
+describe("an invoice's Activity (user 2026-11-24)", () => {
+  it.each([[['sales.read'], false], [['sales.read', 'sales.config'], true]])('%s: who changed what and why; its request only for those who may see the audit log (%s)', async (keys, link) => {
+    Object.values(api).forEach((f) => f.mockReset())
+    api.invList.mockResolvedValue({ items: [inv], total: 1 }); api.fetchInvoice.mockResolvedValue(invDetail)
+    renderAs(keys, <InvoicesPage />)
+    fireEvent.click(await screen.findByText(inv.invoice_number))
+    const sheet = await screen.findByRole('dialog')
+    await openTab(sheet, 'Activity')
+    expect(await within(sheet).findByText('invoice edited: agreed price')).toBeInTheDocument()
+    expect(sheet).toHaveTextContent('Total: 500.00 → 480.00')
+    expect(within(sheet).queryAllByRole('button', { name: 'Open its request' })).toHaveLength(link ? 1 : 0)
+    expect(within(sheet).queryByRole('button', { name: /Attach file/ })).toBeNull()  // an Activity, not attachments
   })
 })

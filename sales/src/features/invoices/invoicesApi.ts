@@ -1,3 +1,4 @@
+import type { TimelineEntry } from '@/features/common/recordFiles'
 import { createResourceClient } from '@/platform-ui'
 import { api } from '@/lib/api'
 
@@ -42,7 +43,7 @@ export interface InvoiceLineRead {
   /** The PO's price for one invoice unit (CASE), from the order line now; read only. */
   po_price: string | null
 }
-export interface InvoiceDetail extends InvoiceRead { lines: InvoiceLineRead[]; confirmed_date: string | null }
+export interface InvoiceDetail extends InvoiceRead { lines: InvoiceLineRead[]; confirmed_date: string | null; timeline: TimelineEntry[] }
 export interface ConfirmResult { order_id: number; ok: boolean; invoice_id: number | null; status: string | null; sent?: boolean; error: string | null }
 
 export const invoicesClient = createResourceClient<InvoiceRead, never>(api, '/invoices')
