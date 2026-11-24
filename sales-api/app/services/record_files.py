@@ -13,6 +13,7 @@ import hashlib
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import or_, select
 
@@ -90,6 +91,16 @@ def link_audit(entity_type: str, entity_id: int):
 
 
 @dataclass(frozen=True)
+class RelatedField:
+    """One field of another record that says something of this one (an invoice's status is its order's column): the other
+    record's updates of that field, and nothing else of it."""
+    model: type
+    via: str                # this record's column that holds the other's id
+    field: str
+    word: str
+
+
+@dataclass(frozen=True)
 class TimelineKind:
     """What a record's Activity is read from: its own audit rows and its lines' (and its file links', where it has any).
     A declaration of its own (Resource.timeline): it says nothing of attachments."""
@@ -100,39 +111,68 @@ class TimelineKind:
     # columns, in words; a value computed from another record is not a change of this one, and an internal id says nothing.
     words: Mapping[str, str] | None = None
     internal: frozenset[str] = frozenset()
+    line_words: Mapping[str, str] | None = None  # the same for its lines: only these fields, and the entry says which line
+    files: frozenset[str] = frozenset()          # its columns that hold a document's id: the file's name is shown
+    related: tuple[RelatedField, ...] = ()
 
 
 TIMELINES = {
     "order": TimelineKind(Order, OrderLine, "order_id"),
     "transfer": TimelineKind(Transfer, TransferLine, "transfer_id"),
     "invoice": TimelineKind(Invoice, InvoiceLine, "invoice_id", internal=frozenset({"id", "order_id"}),
-                            words={"invoice_number": "Invoice", "document_id": "Document no.", "send_count": "Times sent", "sent_at": "Sent at",
+                            words={"invoice_number": "Invoice", "document_id": "Document", "send_count": "Times sent", "sent_at": "Sent at",
                                    "error": "Problem", "invoice_date": "Invoice date", "delivery_number": "Delivery no.",
                                    "payment_terms": "Payment terms", "method": "Method", "currency": "Currency", "subtotal": "Subtotal",
-                                   "total": "Total"}),
+                                   "total": "Total"},
+                            line_words={"qty": "Quantity", "unit_price": "Unit price", "amount": "Amount"}, files=frozenset({"document_id"}),
+                            related=(RelatedField(Order, "order_id", "invoice_status", "Status"),)),
 }
 
 
-def _in_words(k: TimelineKind, entity: str, values: dict | None) -> dict | None:
-    """The fields of the record's own row as people read them; another row's (a line's, a file link's) as it is."""
-    if values is None or k.words is None or entity != k.model.__tablename__:
+def _in_words(k: TimelineKind, entity: str, values: dict | None, files: Mapping[int, str | None]) -> dict | None:
+    """The fields of the record's own row, its lines' and its related field as people read them; another row's (a file
+    link's) as it is."""
+    if values is None:
+        return None
+    for r in k.related:
+        if entity == r.model.__tablename__:
+            return {r.word: values.get(r.field)}
+    if entity == k.line_model.__tablename__ and k.line_words is not None:
+        return {w: values[f] for f, w in k.line_words.items() if f in values}
+    if k.words is None or entity != k.model.__tablename__:
         return values
     own = {c.key for c in k.model.__table__.columns} - k.internal
-    return {k.words.get(f, f): v for f, v in values.items() if f in own}
+    return {k.words.get(f, f): (files.get(v) if f in k.files else v) for f, v in values.items() if f in own}
+
+
+def _about(k: TimelineKind, a: AuditRecord, lines: Mapping[str, Any]) -> str | None:
+    """Which line an entry is of, where the lines' fields are in words: "Line 1 · CF0092"."""
+    ln = lines.get(a.entity_id) if k.line_words is not None and a.entity == k.line_model.__tablename__ else None
+    return f"Line {ln.line_no}" + (f" · {ln.item_code}" if ln.item_code else "") if ln is not None else None
 
 
 async def timeline_of(s, entity_type: str, entity_id: int, *, limit: int = 200) -> list[TimelineEntry]:
     """The record's audit, its lines' and its attachments', newest first."""
     k = TIMELINES[entity_type]
     table, line_table = k.model.__tablename__, k.line_model.__tablename__
-    line_ids = [str(i) for i in (await s.execute(select(k.line_model.id).where(getattr(k.line_model, k.line_fk) == entity_id))).scalars()]
-    trail = (await s.execute(select(AuditRecord).where(or_(
+    lm = k.line_model
+    lines = {str(r.id): r for r in (await s.execute(select(lm.id, lm.line_no, lm.item_code).where(getattr(lm, k.line_fk) == entity_id))).all()}
+    related = []
+    for r in k.related:
+        other = (await s.execute(select(getattr(k.model, r.via)).where(k.model.id == entity_id))).scalar_one_or_none()
+        related.append((AuditRecord.entity == r.model.__tablename__) & (AuditRecord.entity_id == str(other))
+                       & (AuditRecord.action == "update") & AuditRecord.after.has_key(r.field))
+    trail = list((await s.execute(select(AuditRecord).where(or_(
         (AuditRecord.entity == table) & (AuditRecord.entity_id == str(entity_id)),
-        (AuditRecord.entity == line_table) & (AuditRecord.entity_id.in_(line_ids) if line_ids else False),
+        (AuditRecord.entity == line_table) & (AuditRecord.entity_id.in_(lines) if lines else False),
+        *related,
         *([link_audit(entity_type, entity_id)] if entity_type in RECORDS else []),
-    )).order_by(AuditRecord.at.desc(), AuditRecord.id.desc()).limit(limit))).scalars()
+    )).order_by(AuditRecord.at.desc(), AuditRecord.id.desc()).limit(limit))).scalars())
+    used = {v for a in trail if a.entity == table for side in (a.before, a.after) for f, v in (side or {}).items() if f in k.files and v}
+    files = dict((await s.execute(select(Document.id, Document.remote_name).where(Document.id.in_(used)))).all()) if used else {}
     return [TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, audit_log_id=a.audit_log_id,
-                          before=_in_words(k, a.entity, a.before), after=_in_words(k, a.entity, a.after), reason=a.reason) for a in trail]
+                          about=_about(k, a, lines),
+                          before=_in_words(k, a.entity, a.before, files), after=_in_words(k, a.entity, a.after, files), reason=a.reason) for a in trail]
 
 
 class Attachments(Service):

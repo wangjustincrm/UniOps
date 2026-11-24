@@ -193,6 +193,7 @@ class TimelineEntry(BaseModel):
     reason: str | None
     # sales36: the audit log (request / background scope) it was made in — Activity links to it (Operations → Audit log)
     audit_log_id: uuid.UUID | None = None
+    about: str | None = None  # which part of the record, where it is not the whole: "Line 1 · CF0092"
 
 
 class ShipmentRowRead(BaseModel):

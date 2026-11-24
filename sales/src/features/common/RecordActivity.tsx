@@ -6,7 +6,7 @@ import { AUDIT, fetchAuditLog } from '@/features/auditLog/auditLogApi'
 import type { TimelineEntry } from './recordFiles'
 
 const WARN = ['On Hold', 'Review', 'Blocked', 'Failed', '940 Rejected', '940 Failed', '940 Timeout', 'Discrepancy', 'Partially Received']
-const statusOf = (e: TimelineEntry) => String(e.after?.fulfillment_status ?? e.after?.invoice_status ?? e.after?.status ?? '')
+const statusOf = (e: TimelineEntry) => String(e.after?.fulfillment_status ?? e.after?.invoice_status ?? e.after?.status ?? e.after?.Status ?? '')
 const tone = (e: TimelineEntry): TimelineItem['tone'] => {
   const st = statusOf(e)
   if (e.action === 'create') return 'success'
@@ -16,7 +16,7 @@ const tone = (e: TimelineEntry): TimelineItem['tone'] => {
 }
 const ENTITY: Record<string, string> = {
   sales_orders: 'Order', sales_order_lines: 'Line', sales_invoices: 'Invoice', sales_shipments: 'Shipment',
-  sales_transfers: 'Transfer', sales_transfer_lines: 'Line',
+  sales_transfers: 'Transfer', sales_transfer_lines: 'Line', sales_invoice_lines: 'Line',
 }
 const ACTION: Record<string, string> = { create: 'created', update: 'updated', delete: 'deleted' }
 const HIDDEN = ['version', 'updated_at', 'updated_by', 'updated_by_name']
@@ -32,9 +32,10 @@ export function RecordActivity({ entries }: { entries: TimelineEntry[] }) {
       const keys = Object.keys(e.after ?? {}).filter((k) => !HIDDEN.includes(k))
       return {
         key: i, when: formatDateTime(e.at), who: e.user_name, tone: tone(e),
-        title: e.reason ?? `${ENTITY[e.entity] ?? e.entity.replace('sales_', '').replace(/_/g, ' ')} ${ACTION[e.action] ?? e.action}`,
+        title: e.reason ?? `${e.about ?? (keys.length === 1 && keys[0] === 'Status' ? 'Status' : ENTITY[e.entity] ?? e.entity.replace('sales_', '').replace(/_/g, ' '))} ${ACTION[e.action] ?? e.action}`,
         body: (
           <>
+            {e.reason && e.about && <Text as="p" tone="muted">{e.about}</Text>}
             {e.action === 'update' && keys.length > 0 && (
               <ul>{keys.slice(0, 6).map((k) => <Text key={k} as="li" wrap="break"><Text weight="medium">{k.replace(/_/g, ' ')}</Text>: {show(e.before?.[k])} → {show(e.after?.[k])}</Text>)}</ul>
             )}

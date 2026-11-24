@@ -1,4 +1,5 @@
 import { noticeIn, openTab } from '@/platform-ui/testing'
+import { RecordActivity } from '@/features/common/RecordActivity'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -200,5 +201,17 @@ describe("an invoice's Activity (user 2026-11-24)", () => {
     expect(sheet).toHaveTextContent('Total: 500.00 → 480.00')
     expect(within(sheet).queryAllByRole('button', { name: 'Open its request' })).toHaveLength(link ? 1 : 0)
     expect(within(sheet).queryByRole('button', { name: /Attach file/ })).toBeNull()  // an Activity, not attachments
+  })
+
+  it('says which line an entry is of, and the status, with or without a reason', () => {
+    const at = '2026-11-05T15:00:00Z'
+    renderAs(['sales.read'], <RecordActivity entries={[
+      { at, user_name: 'Op', entity: 'sales_invoice_lines', action: 'update', reason: 'invoice edited: agreed price', about: 'Line 1 · CF0092',
+        before: { 'Unit price': '50.00000' }, after: { 'Unit price': '45.00000' } },
+      { at, user_name: 'System', entity: 'sales_orders', action: 'update', reason: null, before: { Status: 'Queued' }, after: { Status: 'Sent' } },
+    ]} />)
+    expect(screen.getByText('Line 1 · CF0092')).toBeInTheDocument()
+    expect(screen.getByText('Status updated')).toBeInTheDocument()
+    expect(document.body).toHaveTextContent('Queued → Sent')
   })
 })

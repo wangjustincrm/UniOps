@@ -32,6 +32,8 @@ export interface TimelineEntry {
   reason: string | null
   /** sales36: the audit log (request / background scope) it was made in. */
   audit_log_id?: string | null
+  /** Which part of the record, where it is not the whole: "Line 1 · CF0092". */
+  about?: string | null
 }
 
 const base = (t: RecordType, id: number) => `/attachments/${t}/${id}`

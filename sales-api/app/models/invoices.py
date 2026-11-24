@@ -87,6 +87,7 @@ Invoice.partner_name_sql = column_property(
 
 class InvoiceLine(Base):
     __tablename__ = "sales_invoice_lines"
+    __audited_fields__ = frozenset({"qty", "unit_price", "amount"})  # what a person changes: an update is in the audit (2026-11-24)
     __table_args__ = (UniqueConstraint("invoice_id", "line_no", name="uq_sales_invoice_lines_line"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
