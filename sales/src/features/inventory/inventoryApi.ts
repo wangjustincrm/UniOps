@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import { createResourceClient } from '@/platform-ui'
+import { createResourceClient, runOne } from '@/platform-ui'
 
 /** One item at Radiant (design §15): every figure is a sum of its moves. */
 export interface StockItemRead {
@@ -167,6 +167,6 @@ export const fetchCountLines = (id: number) => api.get<StockCountLineRead[]>(`/i
 export const fetchCountCompare = (id: number) => api.get<CountCompareRow[]>(`/inventory/counts/${id}/compare`)
 export const updateCount = (id: number, version: number, countedAt: string | null, note: string | null) =>
   api.put<StockCountRead>(`/inventory/counts/${id}`, { version, counted_at: countedAt, note })
-export const applyCount = (id: number, version: number) => api.post<StockCountRead>(`/inventory/counts/${id}/apply`, { version })
+export const applyCount = (id: number, version: number) => runOne(stockCountsClient, 'apply', { id, version })
 export const undoCount = (id: number, version: number, reason: string) =>
-  api.post<StockCountRead>(`/inventory/counts/${id}/undo`, { version, reason })
+  runOne(stockCountsClient, 'undo', { id, version }, { reason })

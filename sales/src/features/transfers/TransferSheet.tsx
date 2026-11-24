@@ -1,7 +1,7 @@
 import { factTone } from '@/features/common/statusTones'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { ActionButton, ConfirmAction, DateCell, DetailList, LocalTable, ViewFileButton, RecordSheet, Section, StatusCell, queryKeys, useFileViewer, type ColumnDef, type RecordTab, compareRecord, useRefresh, columnsOf, useRecord, Text, Cluster } from '@/platform-ui'
+import { ActionButton, ConfirmAction, DateCell, DetailList, LocalTable, ViewFileButton, RecordSheet, Section, StatusCell, queryKeys, useFileViewer, type ColumnDef, type RecordTab, compareRecord, useActionSends, useRefresh, columnsOf, useRecord, Text, Cluster } from '@/platform-ui'
 import { Attachments } from '@/features/common/Attachments'
 import { RecordActivity } from '@/features/common/RecordActivity'
 import { RecordFilesTable } from '@/features/common/RecordFilesTable'
@@ -35,6 +35,9 @@ export function TransferSheet({ row }: { row: TransferRead }) {
     await qc.invalidateQueries({ queryKey: queryKeys.list(transfersClient) })
   }
   const t = q.data
+  const reread = [queryKeys.detail(transfersClient, id), queryKeys.list(transfersClient)]
+  const readySends = useActionSends(transfersClient, 'ready')
+  const resendSends = useActionSends(transfersClient, 'resend')
   const sent = t ? t.lines.reduce((n, l) => n + l.qty_ea, 0) : 0
   const received = t ? t.lines.reduce((n, l) => n + l.received_ea, 0) : 0
   const discrepant = !!t?.receipts.some((r) => r.discrepancies && r.discrepancies.length > 0)
@@ -122,9 +125,9 @@ export function TransferSheet({ row }: { row: TransferRead }) {
         ] : undefined}
         actions={t && !editing ? (
           <>
-            {t.status === 'Draft' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done="Ready to send: the 943 goes on the next pass" onAction={() => readyTransfer(id, t.version)} after={(d) => done(d as TransferDetail)}>Ready to send</ActionButton>}
+            {t.status === 'Draft' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done="Ready to send: the 943 goes on the next pass" sends={readySends} invalidates={reread} onAction={() => readyTransfer(id, t.version)}>Ready to send</ActionButton>}
             {t.status === 'Draft' && <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setEditing(true)}>Edit draft</ActionButton>}
-            {t.status === 'Failed' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done="943 queued again" onAction={() => resendTransfer(id, t.version)} after={(d) => done(d as TransferDetail)}>Resend 943</ActionButton>}
+            {t.status === 'Failed' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done="943 queued again" sends={resendSends} invalidates={reread} onAction={() => resendTransfer(id, t.version)}>Resend 943</ActionButton>}
             {t.status === 'On Hold' && <ActionButton size="sm" permission={MANAGE} onAction={() => setReleasing(true)}>Release hold…</ActionButton>}
             {AMENDABLE.includes(t.status) && t.receipts.every((r) => !r.applied) && !amending && !settling && (
               <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setAmending(true)}>Amend and send again…</ActionButton>)}
@@ -143,13 +146,13 @@ export function TransferSheet({ row }: { row: TransferRead }) {
         <ConfirmAction open={cancelling} onOpenChange={setCancelling} title={`Cancel transfer ${t.transfer_number}?`} destructive
           confirmLabel="Cancel transfer" reason={{ label: 'Why' }} errorMessages={errorMessages}
           description="Allowed before its 943 is sent, or after it was rejected. A queued 943 is withdrawn."
-          onConfirm={async (why) => done(await cancelTransfer(id, t.version, why))} />
+          record={t} invalidates={reread} onConfirm={(why) => cancelTransfer(id, t.version, why)} />
       )}
       {t && (
         <ConfirmAction open={releasing} onOpenChange={setReleasing} title={`Release transfer ${t.transfer_number}?`}
           confirmLabel={`Back to ${t.status_before_hold ?? 'its status'}`} reason={{ label: 'What you decided (compared both 944s)' }} errorMessages={errorMessages}
           description="A second, different 944 put it On Hold. The first 944 stays applied; the second stays kept, not applied."
-          onConfirm={async (why) => done(await releaseTransfer(id, t.version, why))} />
+          record={t} invalidates={reread} onConfirm={(why) => releaseTransfer(id, t.version, why)} />
       )}
     </>
   )

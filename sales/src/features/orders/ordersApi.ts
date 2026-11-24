@@ -1,4 +1,4 @@
-import { createResourceClient, type FileSource } from '@/platform-ui'
+import { createResourceClient, runOne, type FileSource } from '@/platform-ui'
 import { api } from '@/lib/api'
 import type { OrderRead } from './orderTypes'
 import type { Carrier, OrderDetail, ManualLine, ManualOrderIn, LinePreview } from './orderDetailTypes'
@@ -8,31 +8,32 @@ export * from './orderTypes'
 export * from './orderDetailTypes'
 
 export const ordersClient = createResourceClient<OrderRead, never>(api, '/orders')
-export const cancelOrder = (id: number, version: number, reason: string) => api.post<OrderRead>(`/orders/${id}/cancel?version=${version}`, { reason })
+export const cancelOrder = (id: number, version: number, reason: string) => runOne(ordersClient, 'cancel', { id, version }, { reason })
 export const releaseHold = (id: number, version: number, to: string, reason: string) =>
-  api.post<OrderRead>(`/orders/${id}/release-hold?version=${version}`, { to, reason })
+  runOne(ordersClient, 'release_hold', { id, version }, { input: { to }, reason })
 export const resolveRow = (shipmentId: number, rowId: number, orderLineId: number | null, reason: string | null) =>
   api.post<OrderRead>(`/orders/shipments/${shipmentId}/rows/${rowId}/resolve`, { order_line_id: orderLineId, reason })
 export const fetchOrder = (id: number) => api.get<OrderDetail>(`/orders/${id}`)
-export const resolveReview = (id: number) => api.post<{ order: OrderRead; remaining: string[] }>(`/orders/${id}/resolve-review`)
+/** Its `note`: what is still wrong ("still in review: …"); none: resolved. */
+export const resolveReview = (id: number, version: number) => runOne(ordersClient, 'recheck', { id, version })
 export const previewManual = (lines: ManualLine[]) => api.post<LinePreview[]>('/orders/manual/preview', lines)
 export const createManual = (data: ManualOrderIn) => api.post<OrderRead>('/orders/manual', data)
 export const updateManual = (id: number, data: ManualOrderIn, version: number) => api.put<OrderRead>(`/orders/manual/${id}?version=${version}`, data)
-export const submitManual = (id: number, version: number) => api.post<OrderRead>(`/orders/manual/${id}/submit?version=${version}`)
-export const cancelManual = (id: number, version: number) => api.post<OrderRead>(`/orders/manual/${id}/cancel?version=${version}`)
+export const submitManual = (id: number, version: number) => runOne(ordersClient, 'submit_draft', { id, version })
+export const cancelManual = (id: number, version: number) => runOne(ordersClient, 'cancel_draft', { id, version })
 /** Reorder for this customer (user 2026-11-19): a Draft manual order copied from this one, no lines. */
 export const reorderOrder = (id: number) => api.post<OrderRead>(`/orders/${id}/reorder`)
 
 
-export interface Send940Result { order: OrderRead; document_id: number; file_status: string; control: string; errors: string[] }
-/** By the version seen: an order that moved meanwhile is refused (entity.stale). */
-export const send940 = (id: number, version: number) => api.post<Send940Result>(`/orders/${id}/send-940?version=${version}`)
+/** By the version seen: an order that moved meanwhile is refused (entity.stale). Its `note`: "940 <control> queued"; its
+ *  `problem`: the 940 failed its checks and was not sent. */
+export const send940 = (id: number, version: number) => runOne(ordersClient, 'send_940', { id, version })
 /** A live 940 is replaced with why (kept in the order's history). */
 export const replace940 = (id: number, version: number, reason: string) =>
-  api.post<Send940Result>(`/orders/${id}/send-940?replace=true&version=${version}`, { reason })
+  runOne(ordersClient, 'replace_940', { id, version }, { reason })
 /** Fulfil in Shopify now (user 2026-11-16): the 997 step again — the whole order, no tracking, then archived. */
 export const fulfilInShopify = (id: number, version: number) =>
-  api.post<{ order_id: number; queued: boolean }>(`/orders/${id}/shopify-fulfil?version=${version}`)
+  runOne(ordersClient, 'fulfil_in_shopify', { id, version })
 /** The order's printable files (2026-11-12): each one looked at in FileViewer first, then downloaded or printed there. */
 export const poPdf = (o: Pick<OrderRead, 'id' | 'source_order_number' | 'order_number'>): FileSource => ({
   key: `po-${o.id}`, title: `Purchase order ${o.source_order_number ?? o.order_number}`,

@@ -27,12 +27,13 @@ const draft: TransferRead = { ...t104, id: 2, transfer_number: '00105', status: 
 const meta: ListMeta = { version: 1, searchable: true, default_sort: [], fields: [], views: [{ key: 'all', name: 'All', state: { version: 1 } }] }
 
 const person = vi.hoisted(() => ({ attaches: false }))  // what the server says of this person (/meta capabilities)
-const api = vi.hoisted(() => ({ list: vi.fn(), fetch: vi.fn(), create: vi.fn(), cancel: vi.fn(), ready: vi.fn(), update: vi.fn(), amend: vi.fn(), resolve: vi.fn() }))
+const api = vi.hoisted(() => ({ list: vi.fn(), fetch: vi.fn(), create: vi.fn(), cancel: vi.fn(), ready: vi.fn(), resend: vi.fn(), update: vi.fn(), amend: vi.fn(), resolve: vi.fn() }))
 vi.mock('./transfersApi', async (orig) => {
   const real = await orig<typeof import('./transfersApi')>()
-  return { ...real, transfersClient: { ...real.transfersClient, list: api.list, meta: async () => ({ ...meta, capabilities: { export: null, suggest: false, actions: [],
+  return { ...real, transfersClient: { ...real.transfersClient, list: api.list, meta: async () => ({ ...meta, capabilities: { export: null, suggest: false, actions: [
+    { id: 'ready', allowed: true, sends: 'the 943, on the next pass' }, { id: 'resend', allowed: true, sends: 'a new 943 to the warehouse' }],
     attachments: { type: 'transfer', allowed: person.attaches, max_bytes: 5 * 1024 * 1024, extensions: ['pdf', 'png'] } } }) },
-    fetchTransfer: api.fetch, createTransfer: api.create, cancelTransfer: api.cancel, readyTransfer: api.ready, updateTransfer: api.update,
+    fetchTransfer: api.fetch, createTransfer: api.create, cancelTransfer: api.cancel, readyTransfer: api.ready, resendTransfer: api.resend, updateTransfer: api.update,
     amendTransfer: api.amend, resolveTransfer: api.resolve }
 })
 const files = vi.hoisted(() => ({ list: vi.fn(), attach: vi.fn(), remove: vi.fn() }))
@@ -184,6 +185,30 @@ describe('Transfers', () => {
     fireEvent.click(save)
     await waitFor(() => expect(api.create).toHaveBeenCalledWith({ from_warehouse_id: 1, to_warehouse_id: 2, notes: null,
       lines: [{ item_code: 'CF0092', qty_ea: 600 }] }))
+  })
+
+  it('Ready to send and Resend say what they send; one that was left out is an error, not a success', async () => {
+    api.fetch.mockResolvedValue({ ...detail, ...draft, receipts: [], documents: [], timeline: [] })
+    api.ready.mockRejectedValue(Object.assign(new Error('x'), { body: { error: { code: 'transfer.not_draft', message: 'a transfer in Ready To Send is not a draft to send', details: {} } } }))
+    const { unmount } = renderAs(['sales.read', 'sales.transfer.manage'])
+    fireEvent.click(await screen.findByText('00105'))
+    let sheet = await screen.findByRole('dialog')
+    const ready = await within(sheet).findByRole('button', { name: 'Ready to send' })
+    await waitFor(() => expect(ready).toHaveAttribute('title', 'Sends the 943, on the next pass'))
+    fireEvent.click(ready)
+    await waitFor(() => expect(sheet).toHaveTextContent('is not a draft to send'))
+    expect(sheet).not.toHaveTextContent('Ready to send: the 943 goes on the next pass')
+    unmount()
+    api.fetch.mockResolvedValue({ ...detail, ...draft, status: 'Failed', receipts: [], documents: [], timeline: [] })
+    api.resend.mockResolvedValue({ id: 2, status: 'done' })
+    renderAs(['sales.read', 'sales.transfer.manage'])
+    fireEvent.click(await screen.findByText('00105'))
+    sheet = await screen.findByRole('dialog')
+    const resend = await within(sheet).findByRole('button', { name: 'Resend 943' })
+    await waitFor(() => expect(resend).toHaveAttribute('title', 'Sends a new 943 to the warehouse'))
+    fireEvent.click(resend)
+    await waitFor(() => expect(api.resend).toHaveBeenCalledWith(2, 1))
+    await waitFor(() => expect(sheet).toHaveTextContent('943 queued again'))
   })
 
   it('a draft is cancelled with a reason; a reader sees no actions', async () => {

@@ -3,6 +3,7 @@ import { Button, FormField } from '../primitives/shell'
 import { Textarea } from '../primitives/FieldInputs'
 import { AlertDialog } from '../primitives/AlertDialog'
 import { Dialog } from '../primitives/Dialog'
+import { Hint } from '../primitives/Text'
 import { errorText, isStale } from '../resource/businessError'
 import { DisabledReason } from '../help'
 import { useAfterAction, useReadAgain, type ActionOptions } from './useAction'
@@ -35,11 +36,13 @@ export interface ConfirmActionProps {
   /** The record it acts on, as the page has it now. When the server says it moved (entity.stale) the dialog stays, what was
    *  typed stays, the record is read again, and the dialog says which fields changed; the next press acts on the new one. */
   record?: unknown
+  /** What it sends out of the company (useActionSends): a line of the dialog. */
+  sends?: string
 }
 
 export function ConfirmAction({
   open, onOpenChange, title, description, confirmLabel = 'Confirm', destructive, onConfirm, errorMessages, reason,
-  done, refreshes, invalidates, after, toStatusRow, record,
+  done, refreshes, invalidates, after, toStatusRow, record, sends,
 }: ConfirmActionProps) {
   const afterAction = useAfterAction()
   const readAgain = useReadAgain()
@@ -98,6 +101,7 @@ export function ConfirmAction({
   )
   const body = (
     <>
+      {sends && <Hint as="p">Sends {sends}.</Hint>}
       {reason && (
         <FormField label={reason.label} htmlFor={reasonId} required>
           <Textarea id={reasonId} rows={2} value={text} disabled={pending} onChange={(e) => setText(e.target.value)} />

@@ -79,7 +79,7 @@ export function RecordActionDialog<T extends { id: number; version: number }>({ 
             onSubmit={(v) => host.run(action.id, { ...body(), input: toInput(v) })}
             done={(res) => {
               const out = res as ActionOut
-              return { key: `action:${action.id}`, tone: out.counts.failed ? 'warning' : 'success', text: resultText(action, out, nameOf) }
+              return { key: `action:${action.id}`, tone: out.counts.failed || out.results.some((r) => r.problem) ? 'warning' : 'success', text: resultText(action, out, nameOf) }
             }}
             after={() => { onOpenChange(false); onDone?.() }} />
         )}

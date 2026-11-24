@@ -1,5 +1,5 @@
 import type { TimelineEntry } from '@/features/common/recordFiles'
-import { createResourceClient, type ActionOut } from '@/platform-ui'
+import { createResourceClient, runOne, type ActionOut } from '@/platform-ui'
 import { api } from '@/lib/api'
 
 // Mirrors sales-api app/schemas/invoices.py (hand-written, see partnersApi.ts).
@@ -69,10 +69,10 @@ export interface InvoiceEditBody {
 export const editInvoice = (id: number, version: number, body: InvoiceEditBody) =>
   api.put<InvoiceDetail>(`/invoices/${id}?version=${version}`, body)
 /** By the version seen: an invoice that moved meanwhile is refused (entity.stale). */
-export const sendInvoice = (id: number, version: number) => api.post<InvoiceDetail>(`/invoices/${id}/send?version=${version}`)
+export const sendInvoice = (id: number, version: number) => runOne(invoicesClient, 'send', { id, version })
 /** An invoice already sent, once more: with why (kept in its Activity). */
 export const sendInvoiceAgain = (id: number, version: number, reason: string) =>
-  api.post<InvoiceDetail>(`/invoices/${id}/send?version=${version}`, { again: true, reason })
+  runOne(invoicesClient, 'send_again', { id, version }, { reason })
 /** `version`: the order's, as the person saw it; changed meanwhile → refused (entity.stale). */
 export const releaseInvoice = (order_id: number, version: number, reason: string) =>
   api.post<{ order_id: number; invoice_status: string }>('/invoices/release', { order_id, version, reason })

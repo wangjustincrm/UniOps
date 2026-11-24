@@ -71,6 +71,11 @@ export function columnMismatch(meta: ListMeta, pageIds: string[]): string[] {
   ]
 }
 
+/** What the server says an action sends, if anything (its `sends` in /meta): shown on its button and in its confirmation. */
+export function useActionSends(client: { basePath: string; meta: () => Promise<ListMeta> }, actionId: string): string | undefined {
+  return useListMeta(client).data?.capabilities?.actions.find((a) => a.id === actionId)?.sends ?? undefined
+}
+
 /** The list's metadata; fetched once per resource (it changes with a release). */
 export function useListMeta(source: { basePath: string; meta: () => Promise<ListMeta> } | undefined) {
   return useQuery({

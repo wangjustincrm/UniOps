@@ -7,8 +7,11 @@ import { compare945 } from './orderStatus'
 
 const cancelOrder = vi.fn(async () => ({}))
 const releaseHold = vi.fn(async () => ({}))
+const SENDS = 'the Shopify write its hold stopped, when released to Shipped'
 vi.mock('./ordersApi', async (orig) => ({
   ...(await orig<typeof import('./ordersApi')>()),
+  ordersClient: { basePath: '/orders', meta: async () => ({ version: 1, fields: [], searchable: false, default_sort: [], capabilities: { export: null, suggest: false,
+    actions: [{ id: 'release_hold', allowed: true, sends: SENDS }] } }) },
   cancelOrder: (...a: unknown[]) => (cancelOrder as (...x: unknown[]) => unknown)(...a),
   releaseHold: (...a: unknown[]) => (releaseHold as (...x: unknown[]) => unknown)(...a),
 }))
@@ -60,8 +63,21 @@ describe('Cancel order and Release hold', () => {
     expect(screen.getByRole('button', { name: 'Back to 940 Sent' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Mark as shipped' }))
     const dialog = await reason('the warehouse confirmed it left')
+    expect(dialog).toHaveTextContent(`Sends ${SENDS}.`)  // Shipped is where something may leave
     fireEvent.click(within(dialog).getByRole('button', { name: 'Mark as shipped' }))
     await waitFor(() => expect(releaseHold).toHaveBeenCalledWith(3, 7, 'Shipped', 'the warehouse confirmed it left'))
+  })
+
+  it('an exit that sends nothing says nothing of sending; one left out or stale is an error, not a success', async () => {
+    releaseHold.mockRejectedValueOnce(Object.assign(new Error('x'), { body: { error: { code: 'order.hold_exit', message: 'not on hold', details: {} } } }))
+    show({ ...base, on_hold_reason: 'Cancelled at Source', hold_exits: ['940 Sent'] })
+    fireEvent.click(screen.getByRole('button', { name: 'Release hold' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to 940 Sent' }))
+    const dialog = await reason('it goes on')
+    expect(dialog).not.toHaveTextContent('Sends')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Back to 940 Sent' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('That choice is no longer open for this order')
+    expect(within(dialog).getByRole('textbox')).toHaveValue('it goes on')
   })
 
   it('945 Conflict: the two side by side, then keep the applied one or cancel', async () => {

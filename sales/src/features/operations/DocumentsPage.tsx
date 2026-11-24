@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, ConfirmAction, DetailList, ListPage, LocalTable, RecordSheet, RefsCell, Section, StatusCell, formatDateTime, queryKeys, useOpenRecord, type ColumnDef, type RecordRef, Muted, ViewFileButton, businessErrorOf, columnsOf, Text,
+  ActionButton, ConfirmAction, DetailList, ListPage, LocalTable, RecordSheet, RefsCell, Section, StatusCell, formatDateTime, queryKeys, useOpenRecord, type ColumnDef, type RecordRef, Muted, ViewFileButton, businessErrorOf, columnsOf, Text, useActionSends,
 } from '@/platform-ui'
 import { documentFile, documentsClient, downloadOriginal, ignoreDocument, readAgain, sendAgain, type DocumentRead } from './operationsApi'
 import { EMPTY_TEXT } from '@/features/help/pageHelp'
@@ -73,6 +73,7 @@ function Detail({ d }: { d: DocumentRead }) {
   const qc = useQueryClient()
   const [ignoring, setIgnoring] = useState(false)
   const [resending, setResending] = useState(false)
+  const sends = useActionSends(documentsClient, 'send_again')
   const refresh = () => qc.invalidateQueries({ queryKey: queryKeys.list(documentsClient) })
   const stuck = d.direction === 'IN' && (d.processing_status === 'Failed' || (d.processing_status === 'Pending' && d.kind === 'OTHER'))
   return (
@@ -81,7 +82,7 @@ function Detail({ d }: { d: DocumentRead }) {
       description="It stays stored and is never read; its task is closed." reason={{ label: 'Why' }} errorMessages={ERRORS}
       onConfirm={async (why) => { await ignoreDocument(d.id, why ?? ''); await refresh() }} />
     <ConfirmAction open={resending} onOpenChange={setResending} title="Send this invoice again?" confirmLabel="Send again"
-      description="The partner has this invoice: it gets it a second time." reason={{ label: 'Why it is sent again' }} errorMessages={ERRORS}
+      description="The partner has this invoice: it gets it a second time." reason={{ label: 'Why it is sent again' }} sends={sends} errorMessages={ERRORS}
       done={(r) => (r as { result: string }).result} onConfirm={async (why) => { const r = await sendAgain(d.id, why); await refresh(); return r }} />
     <RecordSheet
       title={d.remote_name ?? `Document ${d.id}`}
@@ -104,7 +105,7 @@ function Detail({ d }: { d: DocumentRead }) {
             onAction={async () => { await readAgain(d.id); await refresh() }}>Read again</ActionButton>}
           {stuck && <ActionButton size="sm" variant="secondary" permission={RETRY} onAction={() => setIgnoring(true)}>Ignore</ActionButton>}
           {d.direction === 'OUT' && RESENDABLE.includes(d.kind) && <ActionButton size="sm" variant="secondary" permission={RETRY}
-            errorMessages={ERRORS} done={(r) => (r as { result: string } | null)?.result ?? null} onAction={async () => {
+            errorMessages={ERRORS} sends={sends} done={(r) => (r as { result: string } | null)?.result ?? null} onAction={async () => {
               if (INVOICE_KINDS.includes(d.kind) && d.file_status === 'Sent') { setResending(true); return null }
               try { const r = await sendAgain(d.id); await refresh(); return r } catch (e) {
                 // This file did not go, but its invoice did before: the server asks why.

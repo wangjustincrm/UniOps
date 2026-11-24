@@ -70,7 +70,7 @@ const SAID = 5  // notes said by name in the status row; the rest counted
 export function resultText(a: { done: (n: number) => string }, out: ActionOut, nameOf: (id: number) => string): string {
   const { done, skipped, failed } = out.counts
   const fails = out.results.filter((r) => r.status === 'failed').map((r) => `${nameOf(r.id)}: ${r.reason ?? 'failed'}`)
-  const notes = out.results.filter((r) => r.status === 'done' && r.note).map((r) => `${nameOf(r.id)}: ${r.note}`)
+  const notes = out.results.filter((r) => r.status === 'done' && (r.problem || r.note)).map((r) => `${nameOf(r.id)}: ${r.problem ?? r.note}`)
   // One record: the person must see which happened (left out and why, or failed), not a count.
   const why = out.results.length === 1 && skipped ? ` (${out.results[0].reason ?? 'left out'})` : ''
   return [a.done(done), skipped ? `${skipped} skipped${why}` : '', failed ? `${failed} failed (${fails.join('; ')})` : '', notes.slice(0, SAID).join('; ') + (notes.length > SAID ? `; and ${notes.length - SAID} more` : '')]

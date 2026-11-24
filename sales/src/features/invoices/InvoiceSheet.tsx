@@ -2,7 +2,7 @@ import { factTone } from '@/features/common/statusTones'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
-import { ActionButton, ConfirmAction, DetailList, LocalTable, MasterDetailForm, MoneyCell, RecordSheet, Section, StatusCell, formatDate, formatDateTime, formatMoney, numberColumn, queryKeys, readColumn, textColumn, type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab, compareRecord, useRefresh, Callout, useRecord, Text } from '@/platform-ui'
+import { ActionButton, ConfirmAction, DetailList, LocalTable, MasterDetailForm, MoneyCell, RecordSheet, Section, StatusCell, formatDate, formatDateTime, formatMoney, numberColumn, queryKeys, readColumn, textColumn, type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab, compareRecord, useActionSends, useRefresh, Callout, useRecord, Text } from '@/platform-ui'
 import { editInvoice, fetchInvoice, invoicesClient, releaseInvoice, sendInvoice, sendInvoiceAgain, type InvoiceDetail, type InvoiceRead } from './invoicesApi'
 import { RecordActivity } from '@/features/common/RecordActivity'
 import { partnerLabel } from '@/features/common/labels'
@@ -101,6 +101,8 @@ export function InvoiceSheet({ row }: { row: InvoiceRead }) {
   const [editing, setEditing] = useState(false)
   const [releasing, setReleasing] = useState(false)
   const [resending, setResending] = useState(false)
+  const sends = useActionSends(invoicesClient, 'send')
+  const againSends = useActionSends(invoicesClient, 'send_again')
   const refresh = async () => {
     await qc.invalidateQueries({ queryKey: queryKeys.detail(invoicesClient, id) })
     await qc.invalidateQueries({ queryKey: queryKeys.list(invoicesClient) })
@@ -160,7 +162,7 @@ export function InvoiceSheet({ row }: { row: InvoiceRead }) {
               <ActionButton size="sm" permission={MANAGE} onAction={() => setResending(true)}>Send again</ActionButton>
             ) : (
               <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done={`Invoice ${inv.invoice_number} queued to send`}
-                invalidates={reread} onAction={() => sendInvoice(id, inv.version)}>Send</ActionButton>
+                invalidates={reread} sends={sends} onAction={() => sendInvoice(id, inv.version)}>Send</ActionButton>
             ))}
             {['Ready', 'Failed', 'Sent', 'Blocked'].includes(inv.status ?? '') && (
               <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setEditing(true)}>Edit invoice</ActionButton>
@@ -175,7 +177,7 @@ export function InvoiceSheet({ row }: { row: InvoiceRead }) {
       {inv && (
         <ConfirmAction open={resending} onOpenChange={setResending} title={`Send invoice ${inv.invoice_number} again?`}
           description={`The partner has this invoice (sent ${inv.send_count}×): it gets it a second time.`} confirmLabel="Send again"
-          reason={{ label: 'Why it is sent again' }} record={inv} errorMessages={errorMessages} invalidates={reread}
+          reason={{ label: 'Why it is sent again' }} sends={againSends} record={inv} errorMessages={errorMessages} invalidates={reread}
           done={`Invoice ${inv.invoice_number} queued to send again`} onConfirm={(why) => sendInvoiceAgain(id, inv.version, why)} />
       )}
       {inv && (

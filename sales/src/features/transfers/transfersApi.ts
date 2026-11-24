@@ -1,4 +1,4 @@
-import { createResourceClient, type FileSource } from '@/platform-ui'
+import { createResourceClient, runOne, type FileSource } from '@/platform-ui'
 import { api } from '@/lib/api'
 import type { RecordDocument, TimelineEntry } from '@/features/common/recordFiles'
 
@@ -52,16 +52,16 @@ export const transfersClient = createResourceClient<TransferRead, never>(api, '/
 export const fetchTransfer = (id: number) => api.get<TransferDetail>(`/transfers/${id}`)
 export const createTransfer = (body: TransferIn) => api.post<TransferDetail>('/transfers', body)
 export const updateTransfer = (id: number, version: number, body: TransferIn) => api.put<TransferDetail>(`/transfers/${id}?version=${version}`, body)
-export const readyTransfer = (id: number, version: number) => api.post<TransferDetail>(`/transfers/${id}/ready?version=${version}`)
+export const readyTransfer = (id: number, version: number) => runOne(transfersClient, 'ready', { id, version })
 /** A sent transfer corrected and sent again (a new 943 replaces the live one), until a 944 answers it. */
 export const amendTransfer = (id: number, version: number, body: { notes: string | null; lines: { item_code: string; qty_ea: number }[]; reason: string }) =>
   api.post<TransferDetail>(`/transfers/${id}/amend?version=${version}`, body)
 /** A receipt difference settled: corrected to what arrived (our 943 was wrong) or accepted (the difference is real). */
 export const resolveTransfer = (id: number, version: number, how: 'corrected' | 'accepted', reason: string) =>
   api.post<TransferDetail>(`/transfers/${id}/resolve?version=${version}`, { how, reason })
-export const releaseTransfer = (id: number, version: number, reason: string) => api.post<TransferDetail>(`/transfers/${id}/release?version=${version}`, { reason })
-export const cancelTransfer = (id: number, version: number, reason: string) => api.post<TransferDetail>(`/transfers/${id}/cancel?version=${version}`, { reason })
-export const resendTransfer = (id: number, version: number) => api.post<TransferDetail>(`/transfers/${id}/resend?version=${version}`)
+export const releaseTransfer = (id: number, version: number, reason: string) => runOne(transfersClient, 'release', { id, version }, { reason })
+export const cancelTransfer = (id: number, version: number, reason: string) => runOne(transfersClient, 'cancel', { id, version }, { reason })
+export const resendTransfer = (id: number, version: number) => runOne(transfersClient, 'resend', { id, version })
 
 export const transferPdf = (id: number, number: string): FileSource => ({
   key: `transfer-${id}`, title: `Transfer order ${number}`, load: () => api.file(`/transfers/${id}/print.pdf`, `TO-${number}.pdf`) })

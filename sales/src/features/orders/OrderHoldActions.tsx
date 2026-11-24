@@ -1,7 +1,7 @@
 import { isTestRunRefusal } from '@/features/common/testRun'
 import { useState } from 'react'
 import {
-  ActionButton, ConfirmAction, DiffTable, FormSheet, Hint, queryKeys, Stack,
+  ActionButton, ConfirmAction, DiffTable, FormSheet, Hint, queryKeys, Stack, useActionSends,
 } from '@/platform-ui'
 import { cancelOrder, ordersClient, releaseHold, type OrderDetail } from './ordersApi'
 import { compare945 } from './orderStatus'
@@ -33,6 +33,7 @@ export function OrderHoldActions({ o }: { o: OrderDetail }) {
   const [cancelling, setCancelling] = useState(false)
   const [sheet, setSheet] = useState(false)
   const [choice, setChoice] = useState<string | null>(null)
+  const releaseSends = useActionSends(ordersClient, 'release_hold')
   const name = o.source_reference ?? o.order_number
   const exits = o.hold_exits ?? []
   const conflict = o.on_hold_reason === '945 Conflict'
@@ -49,7 +50,7 @@ export function OrderHoldActions({ o }: { o: OrderDetail }) {
       )}
       <ConfirmAction open={cancelling} onOpenChange={setCancelling} title={`Cancel order ${name}?`} description={NOTHING_WRITTEN} destructive
         confirmLabel="Cancel order" reason={{ label: 'Why it is cancelled' }} errorMessages={errorMessages} done={{ key: `cancel:${o.id}`, tone: 'success', text: `Order ${name} cancelled.` }} invalidates={orderKeys(o.id)}
-        toStatusRow={isTestRunRefusal} onConfirm={(why) => cancelOrder(o.id, o.version, why)} />
+        record={o} toStatusRow={isTestRunRefusal} onConfirm={(why) => cancelOrder(o.id, o.version, why)} />
       <FormSheet open={sheet} onOpenChange={setSheet} title={conflict ? 'Two 945s for this order' : 'Release hold'}
         description={conflict ? 'The applied 945 set the quantities; the second is stored and changed nothing.'
           : 'This order was cancelled at source after its 940. Decide where it goes.'}>
@@ -72,7 +73,7 @@ export function OrderHoldActions({ o }: { o: OrderDetail }) {
       <ConfirmAction open={choice !== null} onOpenChange={(v) => { if (!v) setChoice(null) }} title={picked ? `${picked.label}?` : ''} description={picked?.text}
         destructive={picked?.destructive} confirmLabel={picked?.label} reason={{ label: 'Why' }} errorMessages={errorMessages}
         done={{ key: `release:${o.id}`, tone: 'success', text: `Order ${name}: hold released to ${choice}.` }} invalidates={orderKeys(o.id)}
-        toStatusRow={isTestRunRefusal} after={() => setSheet(false)} onConfirm={(why) => releaseHold(o.id, o.version, choice!, why)} />
+        record={o} sends={choice === 'Shipped' ? releaseSends : undefined} toStatusRow={isTestRunRefusal} after={() => setSheet(false)} onConfirm={(why) => releaseHold(o.id, o.version, choice!, why)} />
     </>
   )
 }

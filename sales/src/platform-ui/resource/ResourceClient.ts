@@ -86,6 +86,8 @@ export interface ActionResultRow {
   id: number; status: 'done' | 'skipped' | 'failed'; reason?: string | null; version?: number | null
   /** Why it was not done, for the page's words (entity.stale …); what to say of a done one. */
   code?: string | null; note?: string | null
+  /** Done, and yet not what was asked for (a file that failed its checks): said as an error. */
+  problem?: string | null
 }
 export interface ActionOut { action: string; dry_run: boolean; results: ActionResultRow[]; counts: Record<'done' | 'skipped' | 'failed', number> }
 

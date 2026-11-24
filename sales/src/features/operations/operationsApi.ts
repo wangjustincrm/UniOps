@@ -1,4 +1,4 @@
-import { createResourceClient, type FileSource, type RecordRef } from '@/platform-ui'
+import { createResourceClient, runOne, type FileSource, type RecordRef } from '@/platform-ui'
 import { api } from '@/lib/api'
 
 // Mirrors sales-api app/schemas/operations.py (hand-written, see partnersApi.ts).
@@ -90,11 +90,11 @@ export const downloadOriginal = (d: DocumentRead) => downloadDocument(d.id, d.re
 export const documentFile = (id: number, name: string, title = name): FileSource => ({
   key: `document-${id}`, title, load: () => api.file(`/documents/${id}/raw`, name) })
 /** FR-OB-62: a received file that failed: read it again (the next pass reads it), or ignore it with a reason. */
-export const readAgain = (id: number) => api.post<DocumentRead>(`/documents/${id}/read-again`)
-export const ignoreDocument = (id: number, reason: string) => api.post<DocumentRead>(`/documents/${id}/ignore`, { reason })
+export const readAgain = (id: number) => runOne(documentsClient, 'read_again', { id, version: null })
+export const ignoreDocument = (id: number, reason: string) => runOne(documentsClient, 'ignore', { id, version: null }, { reason })
 /** FR-OB-24: a sent file again, by its order's, transfer's or invoice's own rules; an invoice already sent says why. */
-export const sendAgain = (id: number, reason?: string) =>
-  api.post<{ result: string }>(`/documents/${id}/send-again`, reason === undefined ? undefined : { reason })
+export const sendAgain = async (id: number, reason?: string): Promise<{ result: string }> =>
+  ({ result: (await runOne(documentsClient, 'send_again', { id, version: null }, reason === undefined ? {} : { reason })).note ?? 'Queued' })
 export const runNow = () => api.post<{ run_id: number }>('/runs/run-now')
 /** The system job alone, now (Health). */
 export const runSystemNow = () => api.post<{ run_id: number }>('/runs/run-now/system')

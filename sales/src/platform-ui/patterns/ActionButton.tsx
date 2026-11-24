@@ -27,6 +27,8 @@ export interface ActionButtonProps extends Omit<ButtonProps, 'onClick'> {
   /** Why it is disabled (with `disabled`): shown on tap, click or focus, and read as its description.
    *  A missing permission (whenDenied="disable") gives its own reason. */
   disabledReason?: string | null
+  /** What it sends out of the company (useActionSends): said on the button (hover, focus, its description). */
+  sends?: string
 }
 
 /** A button that cannot fire twice: aria-disabled while its action is pending (it keeps the focus), and
@@ -35,7 +37,7 @@ export interface ActionButtonProps extends Omit<ButtonProps, 'onClick'> {
  *  given, so it never submits a surrounding form. Inside a list or a sheet, a
  *  failure (and with `done`, a success) is said in its status row (useNotices). */
 export function ActionButton({
-  permission, whenDenied = 'hide', onAction, pendingLabel, disabled, children, done, errorMessages, failPrefix, refreshes, invalidates, after, disabledReason, ...rest
+  permission, whenDenied = 'hide', onAction, pendingLabel, disabled, children, done, errorMessages, failPrefix, refreshes, invalidates, after, disabledReason, sends, ...rest
 }: ActionButtonProps) {
   const allowed = useCan(permission)
   const { run, pending } = useAction({ done, errorMessages, failPrefix, refreshes, invalidates, after })
@@ -53,6 +55,7 @@ export function ActionButton({
   return (
     <Button
       type="button"
+      title={sends ? `Sends ${sends}` : undefined}
       {...rest}
       // Pending is aria-disabled, not disabled: a disabled button drops the focus (to the page, or out of the dialog it
       // opens, which then cannot give it back); useAction's guard already runs it once.

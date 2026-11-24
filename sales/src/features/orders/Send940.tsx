@@ -1,9 +1,9 @@
 import { isTestRunRefusal } from '@/features/common/testRun'
 import { useState } from 'react'
 import {
-  ActionButton, ConfirmAction, queryKeys, type ActionDone, Stack, Text,
+  ActionButton, ConfirmAction, queryKeys, useActionSends, type ActionDone, type ActionResultRow, Stack, Text,
 } from '@/platform-ui'
-import { ordersClient, replace940, send940, type OrderDetail, type Send940Result } from './ordersApi'
+import { ordersClient, replace940, send940, type OrderDetail } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
 
@@ -21,13 +21,15 @@ const errorMessages: Record<string, string> = {
  *  under Warehouse 940s. */
 export function Send940({ o }: { o: OrderDetail }) {
   const [confirming, setConfirming] = useState(false)
+  const sends = useActionSends(ordersClient, 'send_940')
+  const replaceSends = useActionSends(ordersClient, 'replace_940')
   // What happened, in the sheet's (or list's) status row: queued, or the checks it failed; the order reads again.
   const sent = {
     done: (res: unknown): ActionDone => {
-      const r = res as Send940Result
-      return r.errors.length > 0
-        ? { key: `send940:${o.id}`, tone: 'error', text: `The 940 failed its checks and was not sent: ${r.errors.join('; ')}` }
-        : { key: `send940:${o.id}`, tone: 'success', text: `940 ${r.control} queued: it is sent on the next outbox pass.` }
+      const r = res as ActionResultRow
+      return r.problem
+        ? { key: `send940:${o.id}`, tone: 'error', text: `${r.problem[0].toUpperCase()}${r.problem.slice(1)}` }
+        : { key: `send940:${o.id}`, tone: 'success', text: `${r.note ?? '940 queued'}: it is sent on the next outbox pass.` }
     },
     invalidates: [queryKeys.list(ordersClient), queryKeys.detail(ordersClient, o.id)],
   }
@@ -49,12 +51,13 @@ export function Send940({ o }: { o: OrderDetail }) {
             destructive
             reason={{ label: 'Why it is replaced' }}
             record={o}
+            sends={replaceSends}
             errorMessages={errorMessages}
             toStatusRow={isTestRunRefusal} {...sent} onConfirm={(why) => replace940(o.id, o.version, why)}
           />
         </>
       ) : (
-        <ActionButton size="sm" permission={OPERATE} errorMessages={errorMessages} {...sent} onAction={() => send940(o.id, o.version)}>Send 940 now</ActionButton>
+        <ActionButton size="sm" permission={OPERATE} errorMessages={errorMessages} sends={sends} {...sent} onAction={() => send940(o.id, o.version)}>Send 940 now</ActionButton>
       )}
     </Stack>
   )

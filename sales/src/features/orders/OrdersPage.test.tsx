@@ -103,14 +103,14 @@ describe('Orders: Re-check on Review orders', () => {
     expect(within(dialog).getByText('unmatched')).toBeInTheDocument()
     expect(within(dialog).queryByText('Re-check')).not.toBeInTheDocument()
     unmount()
-    api.resolve.mockResolvedValue({ order, remaining: ['line 5: item not in the Item Master'] })
+    api.resolve.mockResolvedValue({ id: 4, status: 'done', note: 'still in review: line 5: item not in the Item Master' })
     renderAs(['sales.read', 'sales.order.operate'])
     fireEvent.click(await screen.findByText('9302'))
     dialog = await screen.findByRole('dialog')
     fireEvent.click(await within(dialog).findByText('Re-check'))
-    await waitFor(() => expect(api.resolve).toHaveBeenCalledWith(4))
+    await waitFor(() => expect(api.resolve).toHaveBeenCalledWith(4, order.version))
     // the sheet's status row: that it ran, and what is still wrong
-    await waitFor(() => expect(noticeIn(dialog)).toHaveTextContent(/re-checked at .*: still 1 problem — line 5: item not in the Item Master/))
+    await waitFor(() => expect(noticeIn(dialog)).toHaveTextContent(/re-checked at .*: still in review: line 5: item not in the Item Master/))
   })
 
   it('a re-check shows the new reason and lines at once, without reopening or reloading', async () => {
@@ -118,7 +118,7 @@ describe('Orders: Re-check on Review orders', () => {
       lines: [{ ...detail.lines[0], item_code: 'CF0092', problem: 'the variant title looks like a pack size this item has no unit for' }] }
     api.resolve.mockImplementation(async () => {
       api.fetchOrder.mockResolvedValue(fixed)  // the server's state after the re-check
-      return { order, remaining: [fixed.review_reason] }
+      return { id: 4, status: 'done', note: `still in review: ${fixed.review_reason}` }
     })
     renderAs(['sales.read', 'sales.order.operate'])
     fireEvent.click(await screen.findByText('9302'))
@@ -131,14 +131,14 @@ describe('Orders: Re-check on Review orders', () => {
   })
 
   it('in the list: a row action on Review orders only, which does not open the order', async () => {
-    api.resolve.mockResolvedValue({ order, remaining: ['line 5: x'] })
+    api.resolve.mockResolvedValue({ id: 4, status: 'done', note: 'still in review: line 5: x' })
     renderAs(['sales.read', 'sales.order.operate'])
     const reviewRow = (await screen.findByText('9302')).closest('tr')!
     const pendingRow = screen.getByText('9303').closest('tr')!
     expect(within(pendingRow).queryByText('Re-check')).toBeNull()
     fireEvent.click(within(reviewRow).getByText('Re-check'))
-    await waitFor(() => expect(api.resolve).toHaveBeenCalledWith(4))
-    await waitFor(() => expect(noticeIn()).toHaveTextContent(/still 1 problem/))  // the list's status row
+    await waitFor(() => expect(api.resolve).toHaveBeenCalledWith(4, order.version))
+    await waitFor(() => expect(noticeIn()).toHaveTextContent(/still in review: line 5: x/))  // the list's status row
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 })
@@ -232,7 +232,7 @@ describe('Orders: 940s (P4)', () => {
     await within(dialog).findByRole('tab', { name: /^Activity/ })  // the detail has loaded
     expect(within(dialog).queryByText('Send 940 now')).toBeNull()
     unmount()
-    api.send.mockResolvedValue({ order: pending, document_id: 20, file_status: 'Ready To Send', control: '000000123', errors: [] })
+    api.send.mockResolvedValue({ id: 5, status: 'done', note: '940 000000123 queued' })
     renderAs(['sales.read', 'sales.order.operate'])
     fireEvent.click(await screen.findByText('9303'))
     dialog = await screen.findByRole('dialog')
@@ -243,7 +243,7 @@ describe('Orders: 940s (P4)', () => {
 
   it('a sent 940 shows Sent and the 997 apart; a change goes only through a confirmed replacement', async () => {
     api.fetchOrder.mockResolvedValue({ ...detail, ...sentOrder, documents: [out(30, 'Sent', 'Waiting', '000000122')], send_940: 'replace' })
-    api.replace.mockResolvedValue({ order: sentOrder, document_id: 31, file_status: 'Ready To Send', control: '000000124', errors: [] })
+    api.replace.mockResolvedValue({ id: 6, status: 'done', note: '940 000000124 queued' })
     renderAs(['sales.read', 'sales.order.operate'])
     fireEvent.click(await screen.findByText('9304'))
     const dialog = await screen.findByRole('dialog', { name: 'SHOP-9304' })
@@ -266,7 +266,7 @@ describe('Orders: 940s (P4)', () => {
     const seen = { ...detail, ...sentOrder, documents: [out(30, 'Sent', 'Waiting', '000000122')], send_940: 'replace' as const }
     api.fetchOrder.mockResolvedValue(seen)
     api.replace.mockRejectedValueOnce(Object.assign(new Error('409'), { body: { error: { code: 'entity.stale', message: 'this order was changed by someone else; reload it', details: {} } } }))
-    api.replace.mockResolvedValueOnce({ order: sentOrder, document_id: 31, file_status: 'Ready To Send', control: '000000124', errors: [] })
+    api.replace.mockResolvedValueOnce({ id: 6, status: 'done', note: '940 000000124 queued' })
     renderAs(['sales.read', 'sales.order.operate'])
     fireEvent.click(await screen.findByText('9304'))
     const dialog = await screen.findByRole('dialog', { name: 'SHOP-9304' })
@@ -283,8 +283,7 @@ describe('Orders: 940s (P4)', () => {
 
   it('a 940 that fails its checks says why and that it was not sent', async () => {
     api.fetchOrder.mockResolvedValue({ ...detail, ...pending, documents: [], send_940: 'send' })
-    api.send.mockResolvedValue({ order: pending, document_id: 21, file_status: 'Cancelled', control: '000000125',
-      errors: ['ship_to.zip is empty'] })
+    api.send.mockResolvedValue({ id: 5, status: 'done', problem: 'the 940 failed its checks and was not sent: ship_to.zip is empty' })
     renderAs(['sales.read', 'sales.order.operate'])
     fireEvent.click(await screen.findByText('9303'))
     const dialog = await screen.findByRole('dialog')
