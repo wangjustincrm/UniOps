@@ -4,6 +4,7 @@ path and needs sales.file.retry."""
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 
 from sqlalchemy import func, select, union_all
 
@@ -18,6 +19,7 @@ from app.domain.documents import (
 )
 from app.domain.intake import classify
 from app.domain.status import INBOUND_FILE, Ack, InboundFile, OutboundFile
+from app.domain.status import Invoice as Inv
 from app.models.documents import Document, DocumentLink, LogEntry, Run
 from app.models.invoices import Invoice
 from app.models.orders import Order
@@ -208,6 +210,15 @@ class LogService(ReadOnlyService[LogEntry, LogRead]):
     resource = Resource(path="/log", tags=("log",), export=False)  # the operations log: read here, never handed out in bulk
 
 
+@dataclass(frozen=True)
+class Owner:
+    """Whose file a sent document is."""
+    kind: str        # order | transfer | invoice
+    id: int
+    permission: str  # what sending it again needs beside FILE_RETRY
+    again: bool = False  # an invoice already sent: it says why
+
+
 class DocumentActions(Service):
     """The file register's actions (FR-OB-24 / 54 / 62; sales.file.retry): read a received file again,
     mark it ignored, or send a sent file again. A resend goes through the same rules as sending from its
@@ -271,26 +282,41 @@ class DocumentActions(Service):
         await self.s.flush()
         return doc
 
-    @requires(FILE_RETRY)
-    async def send_again(self, id: int, rt) -> str:
-        """A sent file again, as its owner would send it: the 940 of its order, the 943 of its transfer,
-        the invoice. Each keeps its own rules (a live 940 is replaced only from the order)."""
-        doc = await self._doc(id)
+    async def _owner(self, doc: Document) -> Owner:
+        """Whose file a sent document is, and so whose permission and rules send it again; raised: it is not sent from here."""
         if doc.direction != "OUT":
             raise BusinessError("document.not_outbound", "only a file we send can be sent again")
         if doc.kind == "940_EDI":
-            await self._authorize("sales.order.operate")
             order_id = (await self.s.execute(select(DocumentLink.entity_id).where(
                 DocumentLink.document_id == doc.id, DocumentLink.entity_type == "order"))).scalar_one()
-            new = await rt.outbound.send_now(self.uow, order_id, version=ANY_VERSION)  # what is there now; a live 940 is replaced only from the order
-            return f"940 {new.st02} queued for the order"
+            return Owner("order", order_id, "sales.order.operate")
         if doc.kind == "943_EDI":
-            await self._authorize("sales.transfer.manage")
-            await rt.transfers.resend(self.uow, int((doc.body_json or {})["transfer_id"]), ANY_VERSION)  # what is there now
+            return Owner("transfer", int((doc.body_json or {})["transfer_id"]), "sales.transfer.manage")
+        row = (await self.s.execute(select(Invoice.id, Order.invoice_status).join(Order, Order.id == Invoice.order_id)
+                                    .where(Invoice.document_id == doc.id))).first()
+        if row is None:
+            raise BusinessError("document.not_resendable", f"a {doc.kind} is not sent again from here")
+        return Owner("invoice", row.id, "sales.invoice.manage", again=row.invoice_status == Inv.SENT.value)
+
+    @requires(FILE_RETRY)
+    async def send_again(self, id: int, rt, reason: str | None = None) -> str:
+        """A sent file again, as its owner would send it: the 940 of its order, the 943 of its transfer,
+        the invoice (one already sent says why). Each keeps its own rules (a live 940 is replaced only from the order).
+        The document is only read: its owner is what is locked and changed."""
+        doc = await self.s.get(Document, id)
+        if doc is None:
+            raise NotFound("Document", id)
+        owner = await self._owner(doc)
+        await self._authorize(owner.permission)
+        return await self._run_send_again(owner, rt, reason)
+
+    async def _run_send_again(self, owner: Owner, rt, reason: str | None) -> str:
+        if owner.kind == "order":  # what is there now; a live 940 is replaced only from the order
+            self.uow.set_reason("Send 940 now (from its file)")
+            new = await rt.outbound.send_now(self.uow, owner.id, version=ANY_VERSION)
+            return f"940 {new.st02} queued for the order"
+        if owner.kind == "transfer":
+            await rt.transfers.resend(self.uow, owner.id, ANY_VERSION)
             return "943 queued for the transfer"
-        inv = (await self.s.execute(select(Invoice).where(Invoice.document_id == doc.id))).scalar_one_or_none()
-        if inv is not None:
-            await self._authorize("sales.invoice.manage")
-            await rt.invoicing.send(self.uow, inv.id, version=ANY_VERSION)
-            return f"invoice {inv.invoice_number} queued"
-        raise BusinessError("document.not_resendable", f"a {doc.kind} is not sent again from here")
+        inv = await rt.invoicing.send(self.uow, owner.id, version=ANY_VERSION, again=owner.again, reason=reason)
+        return f"invoice {inv.invoice_number} queued"

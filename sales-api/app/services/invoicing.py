@@ -116,6 +116,11 @@ async def rows_to_review(s, order_id: int) -> list[str | None]:
                                         ShipmentRow.needs_review.is_(True)))).scalars())
 
 
+def resend_reason(reason: str | None) -> str:
+    """Why a sent invoice goes once more (user 2026-11-24), wherever it is asked from."""
+    return require_reason(reason, code="invoice.resend_reason", message="say why the invoice is sent again (a few words)")
+
+
 class Invoicing:
     def __init__(self, *, uow_factory, tasks, sftp, email,
                  clock: Callable[[], datetime] = utc_now) -> None:
@@ -359,7 +364,7 @@ class Invoicing:
     async def send(self, uow, invoice_id: int, *, version: VersionArg = None, again: bool = False, reason: str | None = None) -> Invoice:
         """Queue it once. `again`: a sent invoice once more, which says why (user 2026-11-24, kept in its history)."""
         s = uow.session
-        why = require_reason(reason, code="invoice.resend_reason", message="say why the invoice is sent again (a few words)") if again else None
+        why = resend_reason(reason) if again else None
         pair = await self._lock(s, invoice_id)
         if pair is None:
             raise BusinessError("invoice.not_found", "no such invoice", status_code=404)

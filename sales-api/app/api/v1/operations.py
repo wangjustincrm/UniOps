@@ -68,6 +68,13 @@ class DocumentReason(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
 
 
+class SendAgainIn(BaseModel):
+    """Why, for an invoice already sent (the service asks: 422 with the field); the other files ask nothing."""
+    model_config = ConfigDict(extra="forbid")
+
+    reason: Annotated[str, Field(max_length=2000)] | None = None
+
+
 @documents.post("/{id}/read-again", response_model=DocumentRead)
 async def document_read_again(u: UoW, rt: Rt, id: int):
     doc = await DocumentActions(u).read_again(id, rt.tasks)
@@ -83,8 +90,8 @@ async def document_ignore(u: UoW, rt: Rt, id: int, body: DocumentReason):
 
 
 @documents.post("/{id}/send-again")
-async def document_send_again(u: UoW, rt: Rt, id: int) -> dict:
-    text = await DocumentActions(u).send_again(id, rt)
+async def document_send_again(u: UoW, rt: Rt, id: int, body: SendAgainIn | None = None) -> dict:
+    text = await DocumentActions(u).send_again(id, rt, body.reason if body else None)
     await u.commit()
     return {"result": text}
 

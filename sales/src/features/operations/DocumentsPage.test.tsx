@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { RouterOpenRecord } from '@/app/RouterOpenRecord'
@@ -17,9 +17,13 @@ const dup: DocumentRead = { ...base, id: 2, remote_name: 'b.945', has_content: f
   orders: [], orders_total: 0, no_order_reason: 'Duplicate of a file already read' }
 const page: DocumentRead = { ...base, id: 3, kind: 'SHOPIFY_ORDER_JSON', remote_name: 'orders page 1',
   orders: [{ id: 21, label: 'SHP-9601' }, { id: 22, label: 'SHP-9602' }, { id: 23, label: 'SHP-9603' }], orders_total: 3 }
+const out = (id: number, kind: string, file_status: string): DocumentRead => ({ ...base, id, kind, file_status, direction: 'OUT', processing_status: null,
+  remote_name: `${kind}-${file_status}`, orders: [], orders_total: 0 })
+const sent810 = out(4, '810_JSON', 'Sent'), failed810 = out(5, '810_JSON', 'Failed'), failed940 = out(6, '940_EDI', 'Failed')
+const api = vi.hoisted(() => ({ again: vi.fn() }))
 vi.mock('./operationsApi', async (orig) => {
   const real = await orig<typeof import('./operationsApi')>()
-  return { ...real, documentsClient: { ...real.documentsClient, list: vi.fn(async () => ({ items: [base, dup, page], total: 3 })) } }
+  return { ...real, documentsClient: { ...real.documentsClient, list: vi.fn(async () => ({ items: [base, dup, page, sent810, failed810, failed940], total: 6 })) }, sendAgain: api.again }
 })
 const { default: DocumentsPage } = await import('./DocumentsPage')
 
@@ -55,6 +59,42 @@ describe('Documents page', () => {
     expect(await screen.findByText('3 orders')).toBeInTheDocument()
     expect(screen.getAllByText('SHP-9603').length).toBe(1)
     expect(screen.queryByRole('dialog', { name: /orders page 1/ })).not.toBeInTheDocument()  // the row did not open
+  })
+
+  describe('Send again (its owner’s rules; an invoice already sent says why)', () => {
+    beforeEach(() => { api.again.mockReset(); api.again.mockResolvedValue({ result: 'queued' }) })
+    const open = async (name: string) => {
+      renderPage()
+      fireEvent.click(await screen.findByText(name))
+      const sheet = await screen.findByRole('dialog')
+      fireEvent.click(within(sheet).getByRole('button', { name: 'Send again' }))
+    }
+    const why = async () => {
+      const ask = await screen.findByRole('dialog', { name: 'Send this invoice again?' })
+      expect(within(ask).getByRole('button', { name: 'Send again' })).toHaveAttribute('aria-disabled', 'true')
+      fireEvent.change(within(ask).getByLabelText(/^Why it is sent again/), { target: { value: 'lost in the mail' } })
+      fireEvent.click(within(ask).getByRole('button', { name: 'Send again' }))
+    }
+
+    it('a sent invoice: nothing before a confirmation with why', async () => {
+      await open('810_JSON-Sent')
+      await screen.findByRole('dialog', { name: 'Send this invoice again?' })
+      expect(api.again).not.toHaveBeenCalled()
+      await why()
+      await waitFor(() => expect(api.again.mock.calls).toEqual([[4, 'lost in the mail']]))
+    })
+
+    it('a file that did not go, of an invoice that did before: the server asks, the page asks why', async () => {
+      api.again.mockRejectedValueOnce(Object.assign(new Error('422'), { body: { error: { code: 'invoice.resend_reason', message: 'say why', details: { field: 'reason' } } } }))
+      await open('810_JSON-Failed')
+      await why()
+      await waitFor(() => expect(api.again.mock.calls).toEqual([[5], [5, 'lost in the mail']]))
+    })
+
+    it('a 940 asks nothing', async () => {
+      await open('940_EDI-Failed')
+      await waitFor(() => expect(api.again.mock.calls).toEqual([[6]]))
+    })
   })
 
   it('a ref opens its order, not the document', async () => {
