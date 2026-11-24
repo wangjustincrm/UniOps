@@ -155,9 +155,17 @@ class ReadOnlyService(Service, Generic[T, R]):
                                {"columns": unknown, "field": "columns"})
         return columns
 
+    @classmethod
+    def export_labels(cls, columns: Sequence[str]) -> list[str]:
+        """The header of each column as people read it; a date-time says its zone."""
+        repo, computed = cls.repo_cls, cls.resolved().computed
+        place = f" ({cls.export_timezone.rsplit('/', 1)[-1].replace('_', ' ')})" if cls.export_timezone else ""
+        return [computed[c].label if c in computed else
+                (repo.labels.get(c) or _humanise(c)) + (place if repo.field_kind(c) == "datetime" else "") for c in columns]
+
     async def _export_columns(self, spec: QuerySpec, columns: list[str]) -> bytes:
-        repo, computed = self.repo_cls, self.resolved().computed
-        fields = {f["name"]: f for f in repo.field_meta(self.read_schema) if f["in_row"]}
+        computed = self.resolved().computed
+        fields = {f["name"]: f for f in self.repo_cls.field_meta(self.read_schema) if f["in_row"]}
         cols: list[str] = []
         for c in columns:  # an amount without its currency column beside it gets one, once
             cols.append(c)
@@ -166,13 +174,6 @@ class ReadOnlyService(Service, Generic[T, R]):
             if f.get("money") and cur and cur not in columns and cur not in cols:
                 cols.append(cur)
         zone = ZoneInfo(self.export_timezone) if self.export_timezone else None
-        place = self.export_timezone.rsplit("/", 1)[-1].replace("_", " ") if self.export_timezone else ""
-
-        def label(c: str) -> str:
-            if c in computed:
-                return computed[c].label
-            name = fields[c]["label"] if c in fields else repo.labels.get(c) or _humanise(c)
-            return name + (f" ({place})" if zone and repo.field_kind(c) == "datetime" else "")
 
         def shown(v: Any) -> Any:  # a date-time in the zone, to the minute; a date as YYYY-MM-DD
             if zone and isinstance(v, datetime):
@@ -192,7 +193,7 @@ class ReadOnlyService(Service, Generic[T, R]):
             if page_no * EXPORT_PAGE >= page.total:
                 break
             page_no += 1
-        return csv_bytes([label(c) for c in cols], rows)
+        return csv_bytes(self.export_labels(cols), rows)
 
     def to_read(self, entity: T) -> R:
         return self.read_schema.model_validate(entity, from_attributes=True)

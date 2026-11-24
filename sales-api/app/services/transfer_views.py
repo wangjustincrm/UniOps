@@ -29,7 +29,7 @@ class TransferRepository(Repository[Transfer]):
     search_fields = ("transfer_number", "notes")
     list_fields = ("id", "transfer_number", "from_warehouse_id", "to_warehouse_id", "status", "items", "sent_ea", "received_ea",
                    "receipt_date", "attachments", "notes", "error", "created_at", "updated_at")
-    labels = {"transfer_number": "Transfer", "from_warehouse_id": "From", "to_warehouse_id": "To", "sent_ea": "Sent EA",
+    labels = {"transfer_number": "Transfer", "from_warehouse": "From", "to_warehouse": "To", "from_warehouse_id": "From (ID)", "to_warehouse_id": "To (ID)", "sent_ea": "Sent EA",
               "received_ea": "Received EA", "receipt_date": "Received on", "items": "Items", "attachments": "Attachments"}
     enums = {"status": tuple(s.value for s in T)}
     default_sort = ("-created_at", "-transfer_number")
@@ -49,7 +49,8 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
     repo_cls = TransferRepository
     read_schema = TransferRead
     read_permission = READ
-    resource = Resource(path="/transfers", detail=TransferDetail, export_headers="labels")
+    resource = Resource(path="/transfers", detail=TransferDetail, export_headers="labels",
+                        export_fields=(*TransferRepository.list_fields, "from_warehouse", "to_warehouse"))
 
     @requires(READ)
     async def pdf(self, transfer_id: int) -> tuple[str, bytes]:

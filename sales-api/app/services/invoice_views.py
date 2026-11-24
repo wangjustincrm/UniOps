@@ -72,7 +72,8 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
     repo_cls = InvoiceRepository
     read_schema = InvoiceRead
     read_permission = READ
-    resource = Resource(path="/invoices", detail=InvoiceDetail, export_headers="labels")
+    resource = Resource(path="/invoices", detail=InvoiceDetail, export_headers="labels",
+                        export_fields=(*InvoiceRepository.list_fields, "order_ref", "order_number", "partner_name", "po", "status"))
 
     @requires(READ)
     async def pdf(self, invoice_id: int) -> tuple[str, bytes]:
