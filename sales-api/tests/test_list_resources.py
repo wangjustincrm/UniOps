@@ -128,6 +128,18 @@ def test_no_service_calls_round_its_check():
     assert [str(p) for p in root.rglob("*.py") if "__wrapped__(" in p.read_text()] == []
 
 
+def test_a_record_s_attachments_are_declared_by_its_list_and_by_nothing_else():
+    """Both ways: every kind the attachment routes serve is a list's, and every list that declares one is served."""
+    from app.services.record_files import ALLOWED, RECORDS
+    on = {c: c.resolved().attachments for c in LISTS if c.resolved().attachments is not None}
+    assert {k.entity_type: k for k in on.values()} == RECORDS and len(on) == len(RECORDS)
+    for c, k in on.items():
+        assert k.model is c.repo_cls.model and k.read == c.read_permission, c.__name__
+        assert all(ALLOWED.search(f"x.{e}") for e in k.extensions) and not ALLOWED.search("x.exe")
+    for m, p in (("GET", ""), ("POST", ""), ("POST", "/{document_id}/remove")):
+        assert (m, "/attachments/{entity_type}/{entity_id}" + p) in ROUTES
+
+
 def test_every_labelled_list_has_its_page_compared():
     assert set(PAGES) == {c.__name__ for c in LABELLED}
 

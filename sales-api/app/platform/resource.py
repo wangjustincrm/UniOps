@@ -47,6 +47,7 @@ class Resource:
     export_fields: tuple[str, ...] | None = INHERIT        # the full export's columns; None: the list's fields
     computed: Mapping[str, Computed] = INHERIT             # the page's own columns, by column id
     history: bool = INHERIT                  # GET /{id}/audit: what changed, when, by whom and why
+    attachments: Any = INHERIT               # a person's files on a record: its kind (entity_type, change, max_bytes, extensions)
     actions: Any = INHERIT                   # an ActionRegistry, or a function that gives it (import order)
 
 
@@ -63,6 +64,7 @@ class ResolvedResource:
     export_fields: tuple[str, ...] | None = None
     computed: Mapping[str, Computed] = field(default_factory=dict)
     history: bool = False
+    attachments: Any = None
     actions: Any = None
 
     @property

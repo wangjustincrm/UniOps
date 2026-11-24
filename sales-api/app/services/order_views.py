@@ -41,7 +41,7 @@ from app.domain.order_status import (
 from app.domain.order_payment import PAYMENT_STATUSES
 from app.platform.clock import clock
 from app.services.order_columns import ORDER_COLUMNS
-from app.services.record_files import timeline_of
+from app.services.record_files import RECORDS, timeline_of
 from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
 from app.domain.row_matching import identifiers, line_identifiers
 from app.domain.status import FULFILLMENT
@@ -311,7 +311,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
     read_permission = READ
     # Everyone who sees Orders may export them (user 2026-11-24); the full export is the list's fields and whatever else
     # the page or a view of it shows (tests/test_list_resources.py: never less than the page).
-    resource = Resource(path="/orders", detail=OrderDetail, actions=lambda: _order_actions(), computed=ORDER_COLUMNS,
+    resource = Resource(path="/orders", detail=OrderDetail, attachments=RECORDS["order"], actions=lambda: _order_actions(), computed=ORDER_COLUMNS,
                         export_headers="labels", export_fields=(*OrderRepository.list_fields, "partner_name", "payment_status", "ship_to_place", "order_status",
                                        "status_detail", "shopify", "total_amount", "returned_ea", "ordered_ea", "parent_reference",
                                        "delivery_due_date", "received_month"))

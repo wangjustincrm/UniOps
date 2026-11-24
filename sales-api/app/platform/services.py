@@ -276,6 +276,8 @@ class ReadOnlyService(Service, Generic[T, R]):
             "export": {"allowed": await may(self.uow, res.export_permission or self.read_permission),
                        "computed": [{"id": k, "label": c.label} for k, c in res.computed.items()]} if res.export else None,
             "history": res.history,
+            "attachments": {"type": kind.entity_type, "allowed": await may(self.uow, kind.change), "max_bytes": kind.max_bytes,
+                            "extensions": list(kind.extensions)} if (kind := res.attachments) is not None else None,
             "suggest": res.suggest and bool(self.repo_cls.suggestable),
             "actions": [{"id": a.id, "allowed": await may(self.uow, a.permission)} for a in registry.actions.values()]
             if registry is not None else []}

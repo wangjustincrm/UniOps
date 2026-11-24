@@ -87,3 +87,24 @@ async def test_a_transfer_on_hold_is_released_with_a_reason_and_shows_its_activi
     async with p7.factory(OP) as u:
         with pytest.raises(BusinessError):
             await TransferService(u).release(x.id, "again", ANY_VERSION)
+
+
+async def test_the_list_says_who_may_attach_what_and_an_order_s_activity_names_its_files(p6, monkeypatch):  # noqa: F811
+    from app.services.order_views import OrderService
+    o = await shipped_850(p6, "PO-A9")
+    async with p6.factory(OP) as u:
+        a = await Attachments(u).attach("order", o.id, name="pod.pdf", data=PDF, note=None)
+        await Attachments(u).remove("order", o.id, a.id, "wrong order")
+        await u.commit()
+    async with p6.factory(OP) as u:
+        d = await OrderService(u).detail(o.id)
+        cap = (await OrderService(u).meta())["capabilities"]["attachments"]
+    assert [t.reason for t in d.timeline if t.entity == "sales_document_links"][:2] == ["attachment removed: pod.pdf — wrong order", "file attached: pod.pdf"]
+    assert (cap["type"], cap["allowed"], cap["max_bytes"]) == ("order", True, 20 * 1024 * 1024) and "pdf" in cap["extensions"]
+
+    async def reader(session, actor, key):  # noqa: ARG001
+        return key == "sales.read"
+    monkeypatch.setattr(p6.factory, "permissions", reader)
+    async with p6.factory(READER) as u:
+        assert (await OrderService(u).meta())["capabilities"]["attachments"]["allowed"] is False
+        assert (await TransferService(u).meta())["capabilities"]["attachments"] == {**cap, "type": "transfer", "allowed": False}

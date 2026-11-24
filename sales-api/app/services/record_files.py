@@ -28,7 +28,9 @@ from app.services import oplog
 
 MAX_BYTES = 20 * 1024 * 1024
 # What a person may attach: documents, pictures, mail, spreadsheets, text (no programs, no archives).
-ALLOWED = re.compile(r"\.(pdf|png|jpe?g|gif|webp|heic|tiff?|txt|csv|xlsx?|docx?|pptx?|msg|eml|edi|json|xml)$", re.I)
+EXTENSIONS = ("pdf", "png", "jpg", "jpeg", "gif", "webp", "heic", "tif", "tiff", "txt", "csv", "xls", "xlsx", "doc", "docx", "ppt", "pptx",
+              "msg", "eml", "edi", "json", "xml")
+ALLOWED = re.compile(rf"\.({'|'.join(EXTENSIONS)})$", re.I)
 
 
 @dataclass(frozen=True)
@@ -40,8 +42,11 @@ class RecordKind:
     read: str
     change: str             # the permission to attach / remove
     label: str
+    max_bytes: int = MAX_BYTES
+    extensions: tuple[str, ...] = EXTENSIONS
 
 
+# Declared on the record's list (Resource.attachments); tests/test_list_resources.py holds the two together.
 RECORDS = {
     "order": RecordKind("order", Order, OrderLine, "order_id", "sales.read", "sales.order.operate", "order"),
     "transfer": RecordKind("transfer", Transfer, TransferLine, "transfer_id", "sales.read", "sales.transfer.manage", "transfer"),
