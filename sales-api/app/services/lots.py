@@ -8,6 +8,7 @@ from __future__ import annotations
 from app.models.lots import LotRow
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
+from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.domain.carriers import tracking_url
@@ -51,6 +52,7 @@ class LotService(ReadOnlyService[LotRow, LotRead]):
     repo_cls = LotRepository
     read_schema = LotRead
     read_permission = READ
+    resource = Resource(path="/lots", tags=("lots",), get=False)
 
     async def enrich(self, rows: list[LotRead], entities) -> None:
         """Each row's parcel tracking link, when its carrier has a template."""
