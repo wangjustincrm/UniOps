@@ -13,6 +13,7 @@ from app.models.config import ItemUnit
 from app.models.invoices import DeliveryConfirmation, Invoice, InvoiceLine
 from app.models.orders import Order, OrderLine
 from app.services import print_docs
+from app.services.record_files import TIMELINES, timeline_of
 from app.platform.authorization import authorize, requires
 from app.platform.errors import BusinessError
 from app.platform.query import FilterRule
@@ -72,7 +73,7 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
     repo_cls = InvoiceRepository
     read_schema = InvoiceRead
     read_permission = READ
-    resource = Resource(path="/invoices", detail=InvoiceDetail, export_headers="labels",
+    resource = Resource(path="/invoices", detail=InvoiceDetail, timeline=TIMELINES["invoice"], export_headers="labels",
                         export_fields=(*InvoiceRepository.list_fields, "order_ref", "order_number", "partner_name", "po", "status"))
 
     @requires(READ)
@@ -99,7 +100,7 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
             DeliveryConfirmation.order_id == inv.order_id))).scalar_one_or_none()
         lines = list(lines)
         po = await po_prices(s, [x.order_line_id for x in lines if x.order_line_id])
-        return InvoiceDetail(**base.model_dump(), confirmed_date=confirmed, lines=[
+        return InvoiceDetail(**base.model_dump(), confirmed_date=confirmed, timeline=await timeline_of(s, "invoice", id), lines=[
             InvoiceLineRead.model_validate(x).model_copy(update={"po_price": po.get(x.order_line_id)}) for x in lines])
 
     @requires(OPERATE)

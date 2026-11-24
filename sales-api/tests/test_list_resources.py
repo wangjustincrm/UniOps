@@ -143,6 +143,21 @@ def test_a_record_s_attachments_are_declared_by_its_list_and_by_nothing_else():
         assert (m, "/attachments/{entity_type}/{entity_id}" + p) in ROUTES
 
 
+def test_a_record_s_activity_is_declared_by_its_list_and_by_nothing_else():
+    """Both ways, and apart from attachments: an invoice has an Activity and no attachments (user 2026-11-24)."""
+    from app.services.record_files import RECORDS, TIMELINES
+    on = {c: c.resolved().timeline for c in LISTS if c.resolved().timeline is not None}
+    assert sorted(map(id, on.values())) == sorted(map(id, TIMELINES.values()))
+    for c, k in on.items():
+        assert k.model is c.repo_cls.model and "timeline" in c.resolved().detail.model_fields, c.__name__
+    for c in LISTS:  # a detail that carries one declares it
+        if c.resolved().detail is not None and "timeline" in c.resolved().detail.model_fields:
+            assert c in on, c.__name__
+    for name, r in RECORDS.items():  # what can be attached to has an Activity, of the same record
+        assert (TIMELINES[name].model, TIMELINES[name].line_model, TIMELINES[name].line_fk) == (r.model, r.line_model, r.line_fk)
+    assert {c.__name__ for c in LISTS if c.resolved().attachments is not None} == {"OrderService", "TransferService"}
+
+
 def test_every_labelled_list_has_its_page_compared():
     assert set(PAGES) == {c.__name__ for c in LABELLED}
 

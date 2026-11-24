@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from sqlalchemy import or_, select
 
 from app.models.documents import Document, DocumentLink
+from app.models.invoices import Invoice, InvoiceLine
 from app.models.orders import Order, OrderLine
 from app.models.records import AuditRecord
 from app.models.transfers import Transfer, TransferLine
@@ -87,18 +89,50 @@ def link_audit(entity_type: str, entity_id: int):
     return (AuditRecord.entity == DocumentLink.__tablename__) & or_(names(AuditRecord.after), names(AuditRecord.before))
 
 
+@dataclass(frozen=True)
+class TimelineKind:
+    """What a record's Activity is read from: its own audit rows and its lines' (and its file links', where it has any).
+    A declaration of its own (Resource.timeline): it says nothing of attachments."""
+    model: type
+    line_model: type
+    line_fk: str
+    # A field → the word people read. None: the fields as they are named (orders, transfers). Given: only the record's own
+    # columns, in words; a value computed from another record is not a change of this one, and an internal id says nothing.
+    words: Mapping[str, str] | None = None
+    internal: frozenset[str] = frozenset()
+
+
+TIMELINES = {
+    "order": TimelineKind(Order, OrderLine, "order_id"),
+    "transfer": TimelineKind(Transfer, TransferLine, "transfer_id"),
+    "invoice": TimelineKind(Invoice, InvoiceLine, "invoice_id", internal=frozenset({"id", "order_id"}),
+                            words={"invoice_number": "Invoice", "document_id": "Document no.", "send_count": "Times sent", "sent_at": "Sent at",
+                                   "error": "Problem", "invoice_date": "Invoice date", "delivery_number": "Delivery no.",
+                                   "payment_terms": "Payment terms", "method": "Method", "currency": "Currency", "subtotal": "Subtotal",
+                                   "total": "Total"}),
+}
+
+
+def _in_words(k: TimelineKind, entity: str, values: dict | None) -> dict | None:
+    """The fields of the record's own row as people read them; another row's (a line's, a file link's) as it is."""
+    if values is None or k.words is None or entity != k.model.__tablename__:
+        return values
+    own = {c.key for c in k.model.__table__.columns} - k.internal
+    return {k.words.get(f, f): v for f, v in values.items() if f in own}
+
+
 async def timeline_of(s, entity_type: str, entity_id: int, *, limit: int = 200) -> list[TimelineEntry]:
     """The record's audit, its lines' and its attachments', newest first."""
-    k = kind_of(entity_type)
+    k = TIMELINES[entity_type]
     table, line_table = k.model.__tablename__, k.line_model.__tablename__
     line_ids = [str(i) for i in (await s.execute(select(k.line_model.id).where(getattr(k.line_model, k.line_fk) == entity_id))).scalars()]
     trail = (await s.execute(select(AuditRecord).where(or_(
         (AuditRecord.entity == table) & (AuditRecord.entity_id == str(entity_id)),
         (AuditRecord.entity == line_table) & (AuditRecord.entity_id.in_(line_ids) if line_ids else False),
-        link_audit(entity_type, entity_id),
+        *([link_audit(entity_type, entity_id)] if entity_type in RECORDS else []),
     )).order_by(AuditRecord.at.desc(), AuditRecord.id.desc()).limit(limit))).scalars()
-    return [TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, audit_log_id=a.audit_log_id, before=a.before, after=a.after,
-                          reason=a.reason) for a in trail]
+    return [TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, audit_log_id=a.audit_log_id,
+                          before=_in_words(k, a.entity, a.before), after=_in_words(k, a.entity, a.after), reason=a.reason) for a in trail]
 
 
 class Attachments(Service):

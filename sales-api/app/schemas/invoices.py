@@ -7,6 +7,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from app.schemas.orders import TimelineEntry
+
 Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=2000)]
 
 
@@ -59,6 +61,7 @@ class InvoiceLineRead(BaseModel):
 class InvoiceDetail(InvoiceRead):
     lines: list[InvoiceLineRead] = []
     confirmed_date: date | None = None
+    timeline: list[TimelineEntry] = []  # its Activity (user 2026-11-24)
 
 
 class DeliveredLine(BaseModel):

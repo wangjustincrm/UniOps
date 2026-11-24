@@ -17,7 +17,7 @@ from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.services import oplog, print_docs
-from app.services.record_files import RECORDS, documents_of, timeline_of
+from app.services.record_files import RECORDS, TIMELINES, documents_of, timeline_of
 from app.schemas.transfers import ReceiptRead, ReceiptRowRead, TransferDetail, TransferLineRead, TransferRead
 
 READ = "sales.read"
@@ -49,7 +49,7 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
     repo_cls = TransferRepository
     read_schema = TransferRead
     read_permission = READ
-    resource = Resource(path="/transfers", detail=TransferDetail, attachments=RECORDS["transfer"], export_headers="labels",
+    resource = Resource(path="/transfers", detail=TransferDetail, timeline=TIMELINES["transfer"], attachments=RECORDS["transfer"], export_headers="labels",
                         export_fields=("id", "transfer_number", "from_warehouse", "from_warehouse_id", "to_warehouse", "to_warehouse_id",
                                        *(f for f in TransferRepository.list_fields if f not in ("id", "transfer_number", "from_warehouse_id", "to_warehouse_id"))))
 
