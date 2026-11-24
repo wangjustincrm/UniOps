@@ -98,6 +98,8 @@ class Savepoint:
 
     def __init__(self, uow: Any) -> None:
         self._uow = uow
+        self._tx: Any = None  # its transaction, and where its events begin: set when it starts
+        self._mark = 0
 
     @classmethod
     def of(cls, uow: Any) -> Savepoint:
@@ -105,9 +107,11 @@ class Savepoint:
 
     @classmethod
     async def begin(cls, uow: Any) -> Savepoint:
-        sp = cls(uow)
-        sp._tx, sp._mark = await uow.session.begin_nested(), uow.events.mark()
-        return sp
+        return await cls(uow)._start()
+
+    async def _start(self) -> Savepoint:
+        self._tx, self._mark = await self._uow.session.begin_nested(), self._uow.events.mark()
+        return self
 
     async def undo(self) -> None:
         await self._tx.rollback()
@@ -117,18 +121,17 @@ class Savepoint:
         await self._tx.commit()
 
     async def __aenter__(self) -> Savepoint:
-        self._tx, self._mark = await self._uow.session.begin_nested(), self._uow.events.mark()
-        return self
+        return await self._start()
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
-        if exc_type is None:
-            try:
-                await self.keep()  # flushes: a refused write undoes it too
-            except BaseException:
-                await self.undo()
-                raise
-        else:
+        if exc_type is not None:
             await self.undo()
+            return
+        try:
+            await self.keep()  # flushes: a refused write undoes it too
+        except BaseException:
+            await self.undo()
+            raise
 
 
 class UnitOfWorkFactory:
