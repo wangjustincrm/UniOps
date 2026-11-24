@@ -90,11 +90,16 @@ class StockCountRepository(Repository[StockCount]):
     default_sort = ("-counted_at",)
 
 
+def _count_actions():
+    from app.services.count_actions import COUNT_ACTIONS  # it imports this module
+    return COUNT_ACTIONS
+
+
 class StockCountService(ReadOnlyService[StockCount, StockCountRead]):
     repo_cls = StockCountRepository
     read_schema = StockCountRead
     read_permission = READ
-    resource = Resource(path="/inventory/counts", tags=("inventory",), get=False, suggest=False, export_headers="labels")
+    resource = Resource(path="/inventory/counts", tags=("inventory",), actions=lambda: _count_actions(), get=False, suggest=False, export_headers="labels")
 
     async def enrich(self, rows: list[StockCountRead], entities: list[StockCount]) -> None:
         ids = [e.id for e in entities]
@@ -163,28 +168,35 @@ class StockCountService(ReadOnlyService[StockCount, StockCountRead]):
 
     async def apply(self, count_id: int, *, version: int) -> StockCountRead:
         await authorize(self.uow, ADJUST)
-        s = self.uow.session
         c = await self._count(count_id, lock=True)
         if c.version != version:
             raise BusinessError("entity.stale", "someone changed this count: reload it", status_code=409)
         if c.applied_at is not None:
             raise BusinessError("stock_count.applied", "this count is already the start")
+        await self._run_apply(c)
+        return await self.get(c.id)
+
+    async def _run_apply(self, c: StockCount) -> None:
+        s = self.uow.session
         c.applied_at, c.applied_by_name = clock().now(), self.uow.actor.name
         self.uow.set_reason("Radiant count applied: every lot starts from Radiant's figure at its moment")
         await s.flush()
         n = await count_moves(s)
         await oplog.write(s, "INFO", "stock", f"Radiant count of {c.counted_at:%Y-%m-%d %H:%M} UTC applied by {self.uow.actor.name}: "
                           f"{n} lots set to Radiant's figure", document_id=c.document_id)
-        return await self.get(c.id)
 
     async def undo(self, count_id: int, *, version: int, reason: str) -> StockCountRead:
         await authorize(self.uow, ADJUST)
-        s = self.uow.session
         c = await self._count(count_id, lock=True)
         if c.version != version:
             raise BusinessError("entity.stale", "someone changed this count: reload it", status_code=409)
         if c.applied_at is None:
             raise BusinessError("stock_count.not_applied", "this count is not applied")
+        await self._run_undo(c, reason)
+        return await self.get(c.id)
+
+    async def _run_undo(self, c: StockCount, reason: str) -> None:
+        s = self.uow.session
         # Each move taken away is in the audit (its row as it was) with this reason (user 2026-11-23: record more).
         moves = list((await s.execute(select(StockMove).where(_own(c.id)))).scalars())
         for m in moves:
@@ -197,7 +209,6 @@ class StockCountService(ReadOnlyService[StockCount, StockCountRead]):
                           f"({gone} count moves taken away): {reason}", document_id=c.document_id,
                           context={"count_id": c.id, "moves": [{"id": m.id, "item_code": m.item_code, "lot": m.lot, "qty_ea": m.qty_ea}
                                                                for m in moves]})
-        return await self.get(c.id)
 
     async def lines(self, count_id: int) -> list[StockCountLineRead]:
         await authorize(self.uow, READ)
