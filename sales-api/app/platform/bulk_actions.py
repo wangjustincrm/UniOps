@@ -32,6 +32,7 @@ from app.platform.authorization import authorize
 from app.platform.commands import Stale, check_version
 from app.platform.errors import BusinessError, InvalidInput, NotFound
 from app.platform.query import QuerySpec, query_spec
+from app.platform.uow import Savepoint
 
 MAX_RECORDS = 500
 Check = Callable[[Any, Any], Awaitable[str | None]]          # (uow, record) → None, or why it is skipped
@@ -126,14 +127,8 @@ async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: A
     s = uow.session
     model = registry.repo_cls.model
     out: list[ActionResult] = []
-    events = uow.events
     for rid, version in (await _targets(uow, registry, body)).items():
-        sp = await s.begin_nested()
-        mark = events.mark()  # a record's events go with its writes: dropped on every rollback below
-
-        async def undo() -> None:
-            await sp.rollback()
-            events.truncate(mark)  # noqa: B023 — called in this iteration only
+        sp = await Savepoint.begin(uow)  # a record's events go with its writes: dropped on every undo below
         try:
             record = await s.get(model, rid, with_for_update=True, populate_existing=True)
             if record is None:
@@ -141,7 +136,7 @@ async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: A
             # The rule first: what is already done (a double click, someone else) is skipped whatever its version.
             why = await action.check(uow, record) if action.check else None
             if why:
-                await undo()
+                await sp.undo()
                 out.append(ActionResult(id=rid, status="skipped", reason=why, version=record.version))
                 continue
             if version is not None:
@@ -151,14 +146,14 @@ async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: A
                 await s.flush()
             out.append(ActionResult(id=rid, status="done", version=record.version))
             if body.dry_run:
-                await undo()
+                await sp.undo()
             else:
-                await sp.commit()
+                await sp.keep()
         except Stale:
-            await undo()
+            await sp.undo()
             out.append(ActionResult(id=rid, status="failed", reason="changed since you selected it: reload and look again"))
         except BusinessError as e:
-            await undo()
+            await sp.undo()
             out.append(ActionResult(id=rid, status="failed", reason=e.message))
     counts = {k: sum(1 for r in out if r.status == k) for k in ("done", "skipped", "failed")}
     return ActionOut(action=action_id, dry_run=body.dry_run, results=out, counts=counts)

@@ -88,6 +88,49 @@ class SqlAlchemyUnitOfWork:
             await self.session.close()
 
 
+class Savepoint:
+    """A part of a unit of work that may be undone alone (one record of many): its writes and the events it raised go
+    together — undone, both are dropped, so commit never dispatches an event whose writes were rolled back.
+
+        sp = await Savepoint.begin(uow)   … await sp.undo()  |  await sp.keep()
+        async with Savepoint.of(uow): …   # kept at the end, undone on an exception
+    """
+
+    def __init__(self, uow: Any) -> None:
+        self._uow = uow
+
+    @classmethod
+    def of(cls, uow: Any) -> Savepoint:
+        return cls(uow)
+
+    @classmethod
+    async def begin(cls, uow: Any) -> Savepoint:
+        sp = cls(uow)
+        sp._tx, sp._mark = await uow.session.begin_nested(), uow.events.mark()
+        return sp
+
+    async def undo(self) -> None:
+        await self._tx.rollback()
+        self._uow.events.truncate(self._mark)
+
+    async def keep(self) -> None:
+        await self._tx.commit()
+
+    async def __aenter__(self) -> Savepoint:
+        self._tx, self._mark = await self._uow.session.begin_nested(), self._uow.events.mark()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        if exc_type is None:
+            try:
+                await self.keep()  # flushes: a refused write undoes it too
+            except BaseException:
+                await self.undo()
+                raise
+        else:
+            await self.undo()
+
+
 class UnitOfWorkFactory:
     """What the composition root hands to services and jobs: one call per unit."""
 

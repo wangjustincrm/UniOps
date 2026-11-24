@@ -171,6 +171,30 @@ async def test_bulk_confirmation_takes_the_shipped_quantity_and_one_failure_stop
     assert await inv_status(p6, a.id) == await inv_status(p6, b.id) == "Ready"
 
 
+async def test_an_order_that_fails_in_bulk_leaves_no_event_behind(p6, monkeypatch):
+    """Review 2026-11-24 (the 965b7923 bug, here): what a failed order raised before it failed must not be dispatched."""
+    from app.platform.errors import BusinessError
+    from app.platform.events import StatusChanged
+    a, b = await shipped_850(p6, "PO-1"), await shipped_850(p6, "PO-3")
+    await p6.inv.advance()
+    real = p6.inv.confirm
+
+    async def confirm_then_fail(uow, oid, **kw):
+        out = await real(uow, oid, **kw)
+        uow.events.raise_(StatusChanged(actor=uow.actor, machine="test", entity="order", entity_id=oid, old="a", new="b"))
+        if oid == a.id:
+            raise BusinessError("test.refused", "refused after its writes")
+        return out
+    monkeypatch.setattr(p6.inv, "confirm", confirm_then_fail)
+    async with p6.factory(OP) as u:
+        res = await InvoiceService(u).confirm_bulk(p6.inv, ConfirmBulkIn(order_ids=[a.id, b.id], confirmed_date=date(2026, 11, 5)))
+        ours = [e.entity_id for e in u.events.drain() if getattr(e, "machine", "") == "test"]
+        others = {e.entity_id for e in u.events.dispatched}
+        await u.commit()
+    assert [r.ok for r in res] == [False, True] and ours == [b.id] and a.id not in others
+    assert await inv_status(p6, a.id) != "Ready" and await inv_status(p6, b.id) == "Ready"
+
+
 async def test_with_no_date_each_order_takes_its_due_date(p6):
     o = await shipped_850(p6, "PO-1")
     await p6.inv.advance()

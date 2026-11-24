@@ -19,6 +19,7 @@ from app.platform.query import FilterRule
 from app.platform.repository import Repository
 from app.platform.resource import Resource
 from app.platform.services import ReadOnlyService
+from app.platform.uow import Savepoint
 from app.platform.views import Preset
 from app.schemas.invoices import ConfirmResult, InvoiceDetail, InvoiceLineRead, InvoiceRead
 
@@ -128,7 +129,7 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
         out = []
         for oid in body.order_ids:
             try:
-                async with self.uow.session.begin_nested():
+                async with Savepoint.of(self.uow):  # its events with its writes
                     inv = await invoicing.confirm(self.uow, oid, confirmed_date=body.confirmed_date)
                     sent = body.send and await self._send_if_ready(invoicing, inv)
                 status = (await self.uow.session.get(Order, oid)).invoice_status
