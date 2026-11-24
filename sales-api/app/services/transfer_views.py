@@ -45,8 +45,9 @@ class TransferRepository(Repository[Transfer]):
     )
 
 
-def not_on_hold(t: Transfer) -> str | None:
-    return None if t.status == T.ON_HOLD.value and t.status_before_hold else f"transfer {t.transfer_number} is not On Hold"
+def not_on_hold(t: Transfer) -> BusinessError | None:
+    return None if t.status == T.ON_HOLD.value and t.status_before_hold else BusinessError(
+        "transfer.not_on_hold", f"transfer {t.transfer_number} is not On Hold")
 
 
 def _actions():
@@ -138,7 +139,7 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
         The first 944 stays applied; the second stays kept, not applied."""
         t = await load_for_command(self.uow.session, Transfer, id, version=version)
         if why := not_on_hold(t):
-            raise BusinessError("transfer.not_on_hold", why)
+            raise why
         await self._run_release(t, reason)
         return await self._detail_after(id)
 

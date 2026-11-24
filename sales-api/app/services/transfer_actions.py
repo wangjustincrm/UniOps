@@ -7,18 +7,19 @@ from app.domain.status import Transfer as T
 from app.models.transfers import Transfer
 from app.platform.bulk_actions import Action, ActionRegistry, refusal
 from app.platform.commands import ANY_VERSION
+from app.platform.errors import BusinessError
 from app.services.transfer_views import MANAGE, TransferRepository, TransferService, not_on_hold
 
 
-async def ready_check(uow, t: Transfer) -> str | None:  # noqa: ARG001
-    return None if t.status != T.READY_TO_SEND.value and TRANSFER.can(T(t.status), T.READY_TO_SEND) else f"a transfer in {t.status} is not a draft to send"
+async def ready_check(uow, t: Transfer) -> BusinessError | None:  # noqa: ARG001
+    return None if t.status != T.READY_TO_SEND.value and TRANSFER.can(T(t.status), T.READY_TO_SEND) else BusinessError("transfer.not_draft", f"a transfer in {t.status} is not a draft to send")
 
 
 async def ready_run(uow, t: Transfer, data, ctx) -> None:  # noqa: ARG001
     await ctx.runtime.transfers.ready(uow, t.id, ANY_VERSION)  # locked, its version checked: by run_action
 
 
-async def cancel_check(uow, t: Transfer, ctx) -> str | None:
+async def cancel_check(uow, t: Transfer, ctx) -> BusinessError | None:
     return await refusal(ctx.runtime.transfers.refuse_cancel(uow.session, t))
 
 
@@ -26,7 +27,7 @@ async def cancel_run(uow, t: Transfer, data, ctx) -> None:  # noqa: ARG001
     await ctx.runtime.transfers.cancel(uow, t.id, ANY_VERSION, ctx.reason)
 
 
-async def release_check(uow, t: Transfer) -> str | None:  # noqa: ARG001
+async def release_check(uow, t: Transfer) -> BusinessError | None:  # noqa: ARG001
     return not_on_hold(t)
 
 
@@ -34,7 +35,7 @@ async def release_run(uow, t: Transfer, data, ctx) -> None:  # noqa: ARG001
     await TransferService(uow)._run_release(t, ctx.reason)
 
 
-async def resend_check(uow, t: Transfer, ctx) -> str | None:
+async def resend_check(uow, t: Transfer, ctx) -> BusinessError | None:
     return await refusal(ctx.runtime.transfers.refuse_resend(uow.session, t))
 
 

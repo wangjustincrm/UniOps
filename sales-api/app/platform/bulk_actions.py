@@ -19,8 +19,9 @@ as the list's own query string with the count the person saw (at most MAX_RECORD
 - a record's domain events go with its writes: every rollback (skipped, failed, stale, dry run) also drops the events
   it raised, so commit dispatches only those of the records done.
 
-Each record's audit reason and log entry are its own (`run` sets them). The single-record endpoints keep their routes
-and call the same `run`.
+Each record's audit reason and log entry are its own (`run` sets them). One record and many are this one route (the
+single-record endpoints went with stage 3 l); one record that was left out or failed is said as an error by the page, and
+is kept on the request's audit log as one.
 """
 
 from collections.abc import Awaitable, Callable, Sequence
@@ -38,7 +39,8 @@ from app.platform.query import QuerySpec, query_spec
 from app.platform.uow import Savepoint
 
 MAX_RECORDS = 500
-Check = Callable[[Any, Any], Awaitable[str | None]]          # (uow, record) → None, or why it is skipped
+# (uow, record) → None, or why it is skipped: the words, or the rule's own BusinessError (its words and its code)
+Check = Callable[..., Awaitable["str | BusinessError | None"]]
 Run = Callable[..., Awaitable[None]]                         # (uow, record, input) — or with a context: (uow, record, input, ctx)
 
 
@@ -49,6 +51,7 @@ class ActionContext:
     reason: str | None = None
     prepared: Any = None
     note: str | None = None                # what to say of this record beside "done" (set by the run)
+    problem: str | None = None             # done, and yet not what was asked for (a file that failed its checks): said as an error
 
 
 @dataclass(frozen=True)
@@ -78,12 +81,12 @@ class Action:
 BulkAction = Action  # the name it had
 
 
-async def refusal(rule: Awaitable[Any]) -> str | None:
-    """A service's rule (it raises what refuses) as a `check` says it: why, or None."""
+async def refusal(rule: Awaitable[Any]) -> BusinessError | None:
+    """A service's rule (it raises what refuses) as a `check` says it: why (its words and its code), or None."""
     try:
         await rule
     except BusinessError as e:
-        return e.message
+        return e
     return None
 
 
@@ -119,6 +122,7 @@ class ActionResult(BaseModel):
     version: int | None = None
     code: str | None = None      # why it was not done, for the page's words: entity.stale, entity.not_found, the rule's own
     note: str | None = None      # what to say of a done one
+    problem: str | None = None   # done, and yet not what was asked for: never said as a success
 
 
 class ActionOut(BaseModel):
@@ -155,7 +159,8 @@ async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: A
     action = registry[action_id]
     await authorize(uow, action.permission)
     from app.platform.auditing.scope import current_scope
-    if (scope := current_scope()) is not None:  # ≈ AuditLogAction: the record action that runs
+    scope = current_scope()
+    if scope is not None:  # ≈ AuditLogAction: the record action that runs
         scope.add_action(f"{registry.repo_cls.model.__name__}Actions", action_id)
     data = None
     if action.input is not None and not body.dry_run:
@@ -185,7 +190,7 @@ async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: A
     if action.prepare is not None and not body.dry_run:
         ctx.prepared = await action.prepare(uow, list(targets), ctx)
     for rid, version in targets.items():
-        ctx.note = None
+        ctx.note = ctx.problem = None
         sp = await Savepoint.begin(uow)  # a record's events go with its writes: dropped on every undo below
         try:
             if registry.lock_first is not None and action.lock:
@@ -197,14 +202,15 @@ async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: A
             why = await action.check(uow, record, *([ctx] if action.check_context else [])) if action.check else None
             if why:
                 await sp.undo()
-                out.append(ActionResult(id=rid, status="skipped", reason=why, version=getattr(record, "version", None)))
+                code, words = (why.code, why.message) if isinstance(why, BusinessError) else (None, why)
+                out.append(ActionResult(id=rid, status="skipped", reason=words, code=code, version=getattr(record, "version", None)))
                 continue
             if version is not None and action.versioned:
                 check_version(record, version, "this record")
             if not body.dry_run:
                 await action.run(uow, record, data, *([ctx] if action.context else []))
                 await s.flush()
-            out.append(ActionResult(id=rid, status="done", version=getattr(record, "version", None), note=ctx.note))
+            out.append(ActionResult(id=rid, status="done", version=getattr(record, "version", None), note=ctx.note, problem=ctx.problem))
             if body.dry_run:
                 await sp.undo()
             else:
@@ -215,6 +221,9 @@ async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: A
         except BusinessError as e:
             await sp.undo()
             out.append(ActionResult(id=rid, status="failed", reason=e.message, code=e.code))
+    if scope is not None and not body.dry_run and len(out) == 1 and out[0].status != "done":
+        # One record refused: kept on the audit log as a refused request is (the answer itself is a result, not an error).
+        scope.add_exception(f"{out[0].code or 'action.skipped'}: {out[0].reason}", code=out[0].code or "action.skipped")
     counts = {k: sum(1 for r in out if r.status == k) for k in ("done", "skipped", "failed")}
     return ActionOut(action=action_id, dry_run=body.dry_run, results=out, counts=counts)
 

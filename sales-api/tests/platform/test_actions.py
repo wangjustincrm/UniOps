@@ -4,7 +4,8 @@ import pytest
 import sqlalchemy as sa
 
 from app.platform.authorization import PermissionDenied
-from app.platform.bulk_actions import Action, ActionIn, ActionRegistry, run_action
+from app.platform.auditing import begin_scope
+from app.platform.bulk_actions import Action, ActionIn, ActionRegistry, refusal, run_action
 from app.platform.errors import BusinessError, InvalidInput
 from app.platform.resource import Resource
 from tests.platform.conftest import Widget, WidgetCreate, WidgetRepository, WidgetService, actor_with
@@ -31,7 +32,21 @@ async def read_ahead(uow, ids, ctx):  # noqa: ARG001
     seen.append(("prepare", sorted(ids)))
     return {"n": len(ids)}
 
+
+async def not_open(uow, w):  # noqa: ARG001
+    return await refusal(rule(w))
+
+
+async def rule(w):
+    if w.name == "closed":
+        raise BusinessError("widget.closed", "the widget is closed")
+
+
+async def half(uow, w, data, ctx):  # noqa: ARG001
+    ctx.problem = f"{w.code} was written, and refused by its checks" if w.code == "A" else None
+
 REGISTRY = ActionRegistry(WidgetRepository, [
+    Action("open", permission="pt.read", run=half, check=not_open, context=True),
     Action("one", permission="pt.config", run=rename, check=already, bulk=False, reason="required", context=True, label="One", confirm="Sure?", sends="a file"),
     Action("many", permission="pt.read", run=rename, context=True, prepare=read_ahead),
     Action("unversioned", permission="pt.read", run=plain, versioned=False),
@@ -109,3 +124,38 @@ async def test_meta_says_each_action(uow_factory):
         acts = {a["id"]: a for a in (await svc(u).meta())["capabilities"]["actions"]}
     assert acts["one"] == {"id": "one", "allowed": False, "label": "One", "bulk": False, "reason": "required", "confirm": "Sure?", "sends": "a file"}
     assert acts["many"]["allowed"] is True and acts["many"]["bulk"] is True and acts["many"]["reason"] == "none"
+
+
+async def test_a_rule_s_own_code_is_said_with_its_words(uow_factory, two):
+    a, b = two
+    async with uow_factory(RW) as u:
+        (await u.session.get(Widget, a.id)).name = "closed"
+        await u.commit()
+    [x, y] = (await run(uow_factory, "open", {"ids": {a.id: a.version, b.id: b.version}})).results
+    assert (x.status, x.code, x.reason) == ("skipped", "widget.closed", "the widget is closed")
+    assert (y.status, y.code, y.reason, y.problem) == ("done", None, None, None)
+
+
+async def test_done_and_yet_not_what_was_asked_for_is_said_apart_and_not_carried_to_the_next(uow_factory, two):
+    a, b = two
+    [x, y] = (await run(uow_factory, "open", {"ids": {a.id: a.version, b.id: b.version}})).results
+    assert (x.status, x.problem, x.note) == ("done", "A was written, and refused by its checks", None) and y.problem is None
+
+
+async def test_one_record_refused_is_an_error_on_the_audit_log_many_and_a_preview_are_results(uow_factory, two):
+    a, b = two
+
+    async def logged(body):
+        async with begin_scope("request", "test") as scope:
+            await run(uow_factory, "open", body)
+        return scope.log.error_code, scope.log.exceptions
+
+    stale = {"ids": {a.id: a.version + 5}}
+    assert await logged(stale) == ("entity.stale", ["entity.stale: changed since you selected it: reload and look again"])
+    assert await logged(stale | {"dry_run": True}) == (None, [])
+    assert await logged({"ids": {a.id: a.version + 5, b.id: b.version}}) == (None, [])
+    assert await logged({"ids": {b.id: b.version}}) == (None, [])  # done
+    async with uow_factory(RW) as u:
+        (await u.session.get(Widget, a.id)).name = "closed"
+        await u.commit()
+    assert await logged({"ids": {a.id: a.version}}) == ("widget.closed", ["widget.closed: the widget is closed"])

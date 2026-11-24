@@ -230,6 +230,14 @@ async def test_each_refusal_stands_and_makes_nothing(t, monkeypatch):
     assert r.status == "skipped" and "already queued" in r.reason
 
 
+async def test_a_940_that_fails_its_checks_is_a_problem_not_a_success(t):
+    o = await a_paid_order(t.edi)
+    await set_order(t, o.id, ship_to={"name": "A B", "address1": "1 rue", "city": "Montreal", "province": "QC", "country": "CA"})  # no postal code
+    r = await act(t, "send_940", o.id, await version(t, o.id))
+    assert r.status == "done" and r.note is None and "failed its checks and was not sent" in r.problem
+    assert await status(t.edi, o.id) == F.FAILED_940 and await rows(t, SEND_940) == []  # kept as Failed, nothing queued
+
+
 async def test_one_at_a_time_and_no_940_in_bulk(t):
     for id in ("send_940", "replace_940", "cancel", "fulfil_in_shopify"):
         async with t.factory(OP) as u:

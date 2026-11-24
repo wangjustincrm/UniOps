@@ -6,12 +6,13 @@ from __future__ import annotations
 from app.models.documents import Document
 from app.platform.authorization import authorize
 from app.platform.bulk_actions import Action, ActionRegistry, refusal
+from app.platform.errors import BusinessError
 from app.services.invoicing import resend_reason
 from app.services.operations import FILE_RETRY, DocumentActions, DocumentRepository, Owner
 
 
-async def stuck_check(uow, d: Document) -> str | None:  # noqa: ARG001
-    return None if DocumentActions._stuck(d) else f"only a received file that failed (it is {d.processing_status})"
+async def stuck_check(uow, d: Document) -> BusinessError | None:  # noqa: ARG001
+    return None if DocumentActions._stuck(d) else BusinessError("document.not_failed", f"only a received file that failed (it is {d.processing_status})")
 
 
 async def read_again_run(uow, d: Document, data, ctx) -> None:  # noqa: ARG001
@@ -22,7 +23,7 @@ async def ignore_run(uow, d: Document, data, ctx) -> None:  # noqa: ARG001
     await DocumentActions(uow)._run_ignore(d, ctx.reason, ctx.runtime.tasks)
 
 
-async def send_again_check(uow, d: Document) -> str | None:
+async def send_again_check(uow, d: Document) -> BusinessError | None:
     return await refusal(DocumentActions(uow)._owner(d))
 
 

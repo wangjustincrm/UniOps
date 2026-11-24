@@ -57,16 +57,17 @@ ORDER_PROBLEMS = (ORDER_REVIEW, ORDER_ARCHIVED, EDI_940_FAILED, EDI_940_REJECTED
 RELEASED_BY_THE_ROW = (Inv.PENDING.value, Inv.AWAITING_REQUESTED_DATE.value)  # blocked by advance(), before any confirmation
 
 
-def shadow_refusal(o: Order) -> str | None:
-    return TEST_RUN_REFUSAL if o.shadow else None
+def shadow_refusal(o: Order) -> BusinessError | None:
+    return BusinessError("order.shadow", TEST_RUN_REFUSAL) if o.shadow else None
 
 
-def cancel_refusal(o: Order) -> str | None:
+def cancel_refusal(o: Order) -> BusinessError | None:
     """Why this order cannot be cancelled here; None: it can."""
     if can_cancel(o.fulfillment_status):
         return None
-    return (f"an order in {o.fulfillment_status} cannot be cancelled here"
-            + (": a 940 at the warehouse is cancelled through On Hold" if o.fulfillment_status in (F.SENT_940, F.ACCEPTED_940) else ""))
+    return BusinessError("order.not_cancellable", f"an order in {o.fulfillment_status} cannot be cancelled here"
+                         + (": a 940 at the warehouse is cancelled through On Hold" if o.fulfillment_status in (F.SENT_940, F.ACCEPTED_940) else ""),
+                         {"status": o.fulfillment_status})
 
 
 class OrderActions(Service):
@@ -103,7 +104,7 @@ class OrderActions(Service):
     async def cancel(self, id: int, reason: str, version: VersionArg = ANY_VERSION) -> Order:
         o = await self._order(id, version)
         if why := cancel_refusal(o):
-            raise BusinessError("order.not_cancellable", why, {"status": o.fulfillment_status})
+            raise why
         await self._run_cancel(o, reason)
         return o
 

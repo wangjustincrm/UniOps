@@ -8,6 +8,7 @@ from app.models.invoices import Invoice
 from app.models.orders import Order
 from app.platform.bulk_actions import Action, ActionRegistry, refusal
 from app.platform.commands import ANY_VERSION
+from app.platform.errors import BusinessError
 from app.services.invoice_views import MANAGE, InvoiceRepository
 
 SENDS = "the invoice to the partner (an 810 or an email), and the company's copy"
@@ -19,16 +20,16 @@ async def lock_order(uow, id: int) -> None:
         await uow.session.get(Order, order_id, with_for_update=True, populate_existing=True)
 
 
-async def _check(uow, inv: Invoice, ctx, *, again: bool) -> str | None:
+async def _check(uow, inv: Invoice, ctx, *, again: bool) -> BusinessError | None:
     order = await uow.session.get(Order, inv.order_id)  # locked by lock_order
     return await refusal(ctx.runtime.invoicing.refuse_send(uow.session, order, inv, again=again))
 
 
-async def send_check(uow, inv: Invoice, ctx) -> str | None:
+async def send_check(uow, inv: Invoice, ctx) -> BusinessError | None:
     return await _check(uow, inv, ctx, again=False)
 
 
-async def send_again_check(uow, inv: Invoice, ctx) -> str | None:
+async def send_again_check(uow, inv: Invoice, ctx) -> BusinessError | None:
     return await _check(uow, inv, ctx, again=True)
 
 

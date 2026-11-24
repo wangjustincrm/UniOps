@@ -1,5 +1,5 @@
 """The order's record actions (platform/bulk_actions.py; stage 3): one declaration each — the permission, the rule, the
-work, one or many, a reason. The single routes call the same rule and the same work.
+work, one or many, a reason.
 
 Most send nothing. Confirm delivery sends the invoice too when asked (as the bulk confirmation always could); Release hold
 may queue the Shopify write its hold had stopped (order_holds); Fulfil in Shopify now queues it (stage 3 g). What sends is
@@ -18,6 +18,7 @@ from app.domain.status import Invoice as Inv
 from app.models.orders import Order
 from app.platform.bulk_actions import Action, ActionRegistry, refusal
 from app.platform.commands import ANY_VERSION
+from app.platform.errors import BusinessError
 from app.services.invoice_views import MANAGE as INVOICE_MANAGE
 from app.services.invoice_views import InvoiceService
 from app.services.order_holds import OPERATE, OrderActions, cancel_refusal, shadow_refusal
@@ -26,7 +27,7 @@ from app.services.order_views import ManualOrderService, OrderRepository, OrderS
 from app.services.orders import BarcodeLookup, OrderSync
 
 
-async def cancel_check(uow, o: Order) -> str | None:  # noqa: ARG001
+async def cancel_check(uow, o: Order) -> BusinessError | None:  # noqa: ARG001
     return shadow_refusal(o) or cancel_refusal(o)
 
 
@@ -39,18 +40,18 @@ class ReleaseTo(BaseModel):
     to: str = Field(min_length=1, max_length=30)
 
 
-async def release_check(uow, o: Order) -> str | None:  # noqa: ARG001
+async def release_check(uow, o: Order) -> BusinessError | None:  # noqa: ARG001
     # What it may be released to depends on its 945s: the run decides. Here only whether it is held at all.
     held = hold_exits(o.fulfillment_status, o.fulfillment_status_before_hold, cancelled_at_source=o.source_cancelled_at is not None, applied_945=True)
-    return shadow_refusal(o) or (None if held else f"not on hold (it is {o.fulfillment_status})")
+    return shadow_refusal(o) or (None if held else BusinessError("order.hold_exit", f"not on hold (it is {o.fulfillment_status})"))
 
 
 async def release_run(uow, o: Order, data: ReleaseTo, ctx) -> None:
     await OrderActions(uow, ctx.runtime.tasks)._run_release(o, data.to, ctx.reason)
 
 
-async def recheck_check(uow, o: Order) -> str | None:  # noqa: ARG001
-    return None if o.fulfillment_status == F.REVIEW.value else "not in review"
+async def recheck_check(uow, o: Order) -> BusinessError | None:  # noqa: ARG001
+    return None if o.fulfillment_status == F.REVIEW.value else BusinessError("order.not_in_review", "not in review")
 
 
 async def recheck_prepare(uow, ids: list[int], ctx) -> dict[int, BarcodeLookup | None]:
@@ -75,13 +76,13 @@ async def recheck_run(uow, o: Order, data, ctx) -> None:  # noqa: ARG001
         ctx.note = "still in review: " + "; ".join(remaining)
 
 
-def _draft(o: Order) -> str | None:
+def _draft(o: Order) -> BusinessError | None:
     if o.source_type != "MANUAL":
-        return "not a manual order"
-    return None if o.fulfillment_status == F.DRAFT.value else f"not a draft (it is {o.fulfillment_status})"
+        return BusinessError("order.not_manual", "not a manual order")
+    return None if o.fulfillment_status == F.DRAFT.value else BusinessError("order.not_draft", f"not a draft (it is {o.fulfillment_status})")
 
 
-async def draft_check(uow, o: Order) -> str | None:  # noqa: ARG001
+async def draft_check(uow, o: Order) -> BusinessError | None:  # noqa: ARG001
     return _draft(o)
 
 
@@ -99,9 +100,9 @@ class ConfirmDelivery(BaseModel):
     send: bool = False                  # and send each invoice that is then Ready, as the bulk confirmation always could
 
 
-async def confirm_check(uow, o: Order) -> str | None:  # noqa: ARG001
+async def confirm_check(uow, o: Order) -> BusinessError | None:  # noqa: ARG001
     return shadow_refusal(o) or (None if o.invoice_status == Inv.WAITING_FOR_DELIVERY_CONFIRMATION.value else
-        f"the order's invoice is {o.invoice_status}, not waiting for delivery confirmation")
+        BusinessError("delivery.not_waiting", f"the order's invoice is {o.invoice_status}, not waiting for delivery confirmation"))
 
 
 async def confirm_run(uow, o: Order, data: ConfirmDelivery, ctx) -> None:
@@ -111,7 +112,7 @@ async def confirm_run(uow, o: Order, data: ConfirmDelivery, ctx) -> None:
         ctx.note = "sent"
 
 
-async def fulfil_check(uow, o: Order, ctx) -> str | None:
+async def fulfil_check(uow, o: Order, ctx) -> BusinessError | None:
     return await refusal(ctx.runtime.shipments.refuse_fulfil(uow.session, o))
 
 
@@ -120,18 +121,21 @@ async def fulfil_run(uow, o: Order, data, ctx) -> None:  # noqa: ARG001
     await ctx.runtime.shipments.fulfil_at_997(uow, o.id, version=ANY_VERSION)  # run_action checked it
 
 
-async def send_940_check(uow, o: Order, ctx) -> str | None:
+async def send_940_check(uow, o: Order, ctx) -> BusinessError | None:
     return await refusal(ctx.runtime.outbound.refuse_send(uow.session, o))
 
 
-async def replace_940_check(uow, o: Order, ctx) -> str | None:
+async def replace_940_check(uow, o: Order, ctx) -> BusinessError | None:
     return await refusal(ctx.runtime.outbound.refuse_send(uow.session, o, replace=True))
 
 
 async def _send_940(uow, o: Order, ctx, *, replace: bool) -> None:
     doc = await OrderService(uow)._run_send_940(o.id, ctx.runtime.outbound, replace=replace, version=ANY_VERSION, reason=ctx.reason)  # run_action checked the version
     errors = (doc.body_json or {}).get("errors", [])
-    ctx.note = f"the 940 failed its checks and was not sent: {'; '.join(errors)}" if errors else f"940 {doc.st02} queued"
+    if errors:
+        ctx.problem = f"the 940 failed its checks and was not sent: {'; '.join(errors)}"
+    else:
+        ctx.note = f"940 {doc.st02} queued"
 
 
 async def send_940_run(uow, o: Order, data, ctx) -> None:  # noqa: ARG001
