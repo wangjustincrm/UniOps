@@ -31,7 +31,7 @@ from sqlalchemy.orm.exc import StaleDataError
 
 from app.platform.actors import Actor
 from app.platform.audit import jsonable
-from app.platform.authorization import authorize, may
+from app.platform.authorization import authorize, may, note_action
 from app.platform.commands import check_version
 from app.platform.entities import Deactivatable, Versioned
 from app.platform.errors import BusinessError, InvalidInput
@@ -145,6 +145,7 @@ class ReadOnlyService(Service, Generic[T, R]):
         await self._authorize(self.read_permission)
         if key := self.resolved().export_permission:
             await self._authorize(key)
+        note_action(type(self).__name__, "export_csv")
 
     def _known_columns(self, columns: list[str]) -> list[str]:
         fields = {f["name"] for f in self.repo_cls.field_meta(self.read_schema) if f["in_row"]}

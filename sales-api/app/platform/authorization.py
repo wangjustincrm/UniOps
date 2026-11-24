@@ -103,7 +103,7 @@ async def may(uow: Any, key: str) -> bool:
     return granted[key]
 
 
-def _note_action(service: str, method: str) -> None:
+def note_action(service: str, method: str) -> None:
     from app.platform.auditing.scope import current_scope
     scope = current_scope()
     if scope is not None:
@@ -117,7 +117,7 @@ def requires(key: str, *, system: bool = False) -> Callable[[F], F]:
         @functools.wraps(fn)
         async def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
             await authorize(self.uow, key, system=system)
-            _note_action(type(self).__name__, fn.__name__)  # ≈ AuditLogAction: the service method that runs
+            note_action(type(self).__name__, fn.__name__)  # ≈ AuditLogAction: the service method that runs
             return await fn(self, *args, **kwargs)
         wrapper.__requires__ = (key, system)  # type: ignore[attr-defined]
         return wrapper  # type: ignore[return-value]
