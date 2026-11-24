@@ -396,6 +396,7 @@ class Invoicing:
             ln = known.get(int(x["order_line_id"]))
             if ln is None or int(x["qty_ea"]) <= 0 or int(x["qty_ea"]) > int(ln.shipped_ea or 0):
                 raise BusinessError("return.quantity", "each line must be on the order, with 1 … the shipped quantity")
+        await self._refuse_more_than_shipped(s, order, known, lines)
         uow.set_reason(f"{kind}: {reason}")
         rec = OrderReturn(order_id=order.id, kind=kind, reason=reason, lines=lines)
         s.add(rec)
@@ -411,6 +412,24 @@ class Invoicing:
                                     if stop else "The invoice was not affected.")))
         await s.flush()
         return rec
+
+    @staticmethod
+    async def _refuse_more_than_shipped(s, order: Order, known: dict[int, OrderLine], lines: list[dict[str, int]]) -> None:
+        """What is recorded as back or cancelled after shipment (either kind) is at most what shipped, per line, all records
+        together (user 2026-11-24). Under the order's lock, which every record takes. A line's `returned_ea` (set_returned) is
+        another figure and is not counted here."""
+        def total(entries) -> dict[int, int]:
+            out: dict[int, int] = {}
+            for x in entries:
+                out[int(x["order_line_id"])] = out.get(int(x["order_line_id"]), 0) + int(x["qty_ea"])
+            return out
+        asked = total(lines)
+        recorded = total(x for (was,) in (await s.execute(select(OrderReturn.lines).where(OrderReturn.order_id == order.id))).all() for x in was)
+        for id, qty in asked.items():
+            ln, already = known[id], recorded.get(id, 0)
+            if already + qty > int(ln.shipped_ea or 0):
+                raise BusinessError("return.more_than_shipped", f"line {ln.line_no}: {already} EA already recorded + {qty} EA asked is more than "
+                                    f"the {int(ln.shipped_ea or 0)} EA shipped", {"line_id": id, "field": "qty_ea"}, status_code=422)
 
     # ── sending (outbox) ─────────────────────────────────────────────────────
     def outbox_kind(self) -> OutboxKind:
