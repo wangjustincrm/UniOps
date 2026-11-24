@@ -16,6 +16,7 @@ from app.platform.actors import SYSTEM_ACTOR
 from app.schemas.invoices import ConfirmIn
 from app.services.invoice_views import InvoiceService
 from app.services.settings import INVOICE_CONNECTION_ID, SETTINGS
+from tests.test_invoicing import order_version  # noqa: E402
 from tests.test_invoicing import inv_status, p6, shipped_850  # noqa: F401 — p6 is a fixture
 from tests.test_orders import OP, env  # noqa: F401
 from tests.test_outbound import edi as p4_edi  # noqa: F401
@@ -56,7 +57,7 @@ async def test_confirm_and_send_puts_the_810_on_the_server(p6):  # noqa: F811
     p6.inv.sftp = gateway
 
     async with p6.factory(OP) as u:
-        await InvoiceService(u).confirm(p6.inv, ConfirmIn(order_id=o.id, confirmed_date=date(2026, 11, 5), send=True))
+        await InvoiceService(u).confirm(p6.inv, ConfirmIn(order_id=o.id, version=await order_version(u, o.id), confirmed_date=date(2026, 11, 5), send=True))
         await u.commit()
     assert await inv_status(p6, o.id) == "Queued"
     await p6.worker.run_once()

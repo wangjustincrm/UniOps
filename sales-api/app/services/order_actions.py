@@ -1,17 +1,24 @@
 """The order's record actions (platform/bulk_actions.py; stage 3): one declaration each — the permission, the rule, the
 work, one or many, a reason. The single routes call the same rule and the same work.
 
-None of these sends a file or an email. Release hold may queue the Shopify write its hold had stopped (order_holds)."""
+None of these sends a file or an email by itself, but Confirm delivery when asked to send too (as the bulk confirmation
+always could). Release hold may queue the Shopify write its hold had stopped (order_holds)."""
 from __future__ import annotations
 
 from typing import Any
+
+from datetime import date
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.order_rules import hold_exits
 from app.domain.status import Fulfillment as F
+from app.domain.status import Invoice as Inv
 from app.models.orders import Order
 from app.platform.bulk_actions import Action, ActionRegistry
+from app.platform.commands import ANY_VERSION
+from app.services.invoice_views import MANAGE as INVOICE_MANAGE
+from app.services.invoice_views import InvoiceService
 from app.services.order_holds import OPERATE, OrderActions, cancel_refusal, shadow_refusal
 from app.services.order_payment import ORDER_ACTIONS as PAYMENT_ACTIONS
 from app.services.order_views import ManualOrderService, OrderRepository, OrderService
@@ -85,9 +92,29 @@ async def cancel_draft_run(uow, o: Order, data: Any) -> None:  # noqa: ARG001
     await ManualOrderService(uow)._run_cancel(o)
 
 
+class ConfirmDelivery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirmed_date: date | None = None  # none: each order on the date its delivery was due
+    send: bool = False                  # and send each invoice that is then Ready, as the bulk confirmation always could
+
+
+async def confirm_check(uow, o: Order) -> str | None:  # noqa: ARG001
+    return shadow_refusal(o) or (None if o.invoice_status == Inv.WAITING_FOR_DELIVERY_CONFIRMATION.value else
+        f"the order's invoice is {o.invoice_status}, not waiting for delivery confirmation")
+
+
+async def confirm_run(uow, o: Order, data: ConfirmDelivery, ctx) -> None:
+    """FR-OB-31: in bulk, delivered = shipped less what is recorded as returned."""
+    inv = await ctx.runtime.invoicing.confirm(uow, o.id, version=ANY_VERSION, confirmed_date=data.confirmed_date)  # run_action checked it
+    if data.send and await InvoiceService(uow)._send_if_ready(ctx.runtime.invoicing, inv):
+        ctx.note = "sent"
+
+
 ORDER_ACTIONS = ActionRegistry(OrderRepository, [
     *PAYMENT_ACTIONS.actions.values(),
     Action("recheck", label="Re-check", permission=OPERATE, check=recheck_check, run=recheck_run, prepare=recheck_prepare, context=True),
+    Action("confirm_delivery", label="Confirm delivery", permission=OPERATE, input=ConfirmDelivery, check=confirm_check, run=confirm_run,
+           context=True, also=lambda d: [INVOICE_MANAGE] if d.send else [], sends="each invoice that is then Ready, when asked"),
     # One at a time (user 2026-11-24): each is a decision about one order.
     Action("cancel", label="Cancel order", permission=OPERATE, check=cancel_check, run=cancel_run, context=True, bulk=False, reason="required",
            confirm="It is Sales' own record: nothing is written to Shopify, the warehouse or a partner."),

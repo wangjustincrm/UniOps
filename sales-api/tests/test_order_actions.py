@@ -84,7 +84,7 @@ async def test_two_people_on_one_order_the_second_is_told(p6):  # noqa: F811
 async def test_a_shadow_order_is_refused_by_every_action_that_changes_it(p6):  # noqa: F811
     o = await _order(p6, "PO-OA4")
     await patch(p6, o.id, shadow=True)
-    for id, kw in (("cancel", {"reason": "why not"}), ("release_hold", {"reason": "why not", "input": {"to": "Cancelled"}})):
+    for id, kw in (("confirm_delivery", {"input": {}}), ("cancel", {"reason": "why not"}), ("release_hold", {"reason": "why not", "input": {"to": "Cancelled"}})):
         r = await act(p6, id, o.id, **kw)
         assert (r.status, r.reason) == ("skipped", TEST_RUN_REFUSAL), (id, r)
 
@@ -176,11 +176,15 @@ async def test_each_needs_the_operators_permission(p6, monkeypatch, id):  # noqa
     assert await status(p6, o.id) == "Pending"
 
 
-async def test_the_same_return_twice_and_a_release_from_an_old_page_are_refused(p6):  # noqa: F811
-    """M5 and U3: the order moves with a return, so the same page cannot record it again."""
+@pytest.mark.parametrize("invoice", ["Ready", "Sent", "Not Required", "Blocked"])
+async def test_the_same_return_twice_and_a_release_from_an_old_page_are_refused(p6, invoice):  # noqa: F811
+    """M5 and U3: the order moves with a return — also where no status moves with it (Not Required, already on hold) — so the same page
+    cannot record it again."""
     o = await shipped_850(p6, "PO-OA7")
     await p6.inv.advance()
     await confirm(p6, o.id)
+    if invoice != "Ready":
+        await patch(p6, o.id, invoice_status=invoice, **({"invoice_status_before_hold": "Ready"} if invoice == "Blocked" else {}))
     [line] = await p6.q("SELECT id FROM sales_order_lines WHERE order_id = :o", o=o.id)
     async with p6.factory(OP) as u:
         seen = await order_version(u, o.id)
@@ -195,6 +199,8 @@ async def test_the_same_return_twice_and_a_release_from_an_old_page_are_refused(
             await second
         await b.rollback()
     assert (await p6.q("SELECT count(*) n FROM sales_order_returns"))[0]["n"] == 1
+    if invoice != "Ready":
+        return
     async with p6.factory(OP) as u:
         for v, error in ((None, InvalidInput), (seen, Stale)):
             with pytest.raises(error):

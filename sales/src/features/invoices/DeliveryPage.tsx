@@ -6,6 +6,7 @@ import {
 } from '@/platform-ui'
 import { useTestRunRefusal } from '@/features/common/testRun'
 import { OrderList } from '@/features/orders/OrdersPage'
+import { DELIVERY_ACTIONS } from '@/features/orders/orderActions'
 import { fetchOrder, ordersClient, type LineRead, type OrderRead } from '@/features/orders/ordersApi'
 import { confirmBulk, confirmDelivery, invoicesClient, type ConfirmResult } from './invoicesApi'
 import { EMPTY_TEXT } from '@/features/help/pageHelp'
@@ -44,8 +45,9 @@ function ConfirmOne({ o, close }: { o: OrderRead; close: () => void }) {
   const refused = useTestRunRefusal()
   const q = useRecord(ordersClient, o.id, fetchOrder, { errors: 'inline' })
   if (!q.data) return <QueryState q={q}>{() => null}</QueryState>
-  const save = async (v: Record<string, unknown>, lines: Delivered[], send: boolean) => {
-    await confirmDelivery({ order_id: o.id, confirmed_date: String(v.confirmed_date), ...(send ? { send } : {}),
+  const seen = q.data.version
+  const save = async (v: Record<string, unknown>, lines: Delivered[], send: boolean, version = seen) => {
+    await confirmDelivery({ order_id: o.id, version, confirmed_date: String(v.confirmed_date), ...(send ? { send } : {}),
       lines: lines.map((d) => ({ order_line_id: d.line.id, delivered_qty: deliveredOf(d) })) }).catch(refused)
     await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
     await qc.invalidateQueries({ queryKey: queryKeys.list(invoicesClient) })
@@ -60,8 +62,9 @@ function ConfirmOne({ o, close }: { o: OrderRead; close: () => void }) {
         initial: q.data.lines.filter((l) => (l.shipped_ea ?? l.shipped_shadow_ea) != null)
           .map((line) => ({ line: { ...line, shipped_ea: line.shipped_ea ?? line.shipped_shadow_ea }, returned: String(line.returned_ea ?? 0) })) }}
       submitLabel="Confirm delivery"
-      alsoSubmit={canSend ? { label: 'Confirm and send', onSubmit: (v, lines) => save(v, lines, true) } : undefined}
-      onSubmit={(v, lines) => save(v, lines, false)}
+      alsoSubmit={canSend ? { label: 'Confirm and send', onSubmit: (v, lines, edit) => save(v, lines, true, edit.version) } : undefined}
+      version={seen}
+      onSubmit={(v, lines, edit) => save(v, lines, false, edit.version)}
     />
   )
 }
@@ -84,7 +87,7 @@ function ConfirmShown({ rows, refresh }: { rows: OrderRead[]; refresh: () => Pro
     },
     after: async () => { setOpen(false); await refresh() },
   }
-  const run = (send: boolean) => (v: Record<string, unknown>) => confirmBulk(rows.map((r) => r.id), (v.date as string | null) || null, send)
+  const run = (send: boolean) => (v: Record<string, unknown>) => confirmBulk(rows, (v.date as string | null) || null, send)
   return (
     <>
       <ActionButton size="sm" permission={OPERATE} disabled={rows.length === 0} disabledReason="No order is shown to confirm." onAction={() => setOpen(true)}>
@@ -109,6 +112,7 @@ export default function DeliveryPage() {
       title="Delivery confirmation"
       description="Shipped orders whose delivery is due: the requested date, or do-not-deliver-after for Walmart. No carrier reports the delivery, so it defaults to the due date. Change it if you know better: it becomes the invoice date."
       showDue
+      actions={DELIVERY_ACTIONS}
       emptyTitle="Nothing waits for a delivery confirmation"
       emptyText={EMPTY_TEXT.delivery}
       help="page:delivery"

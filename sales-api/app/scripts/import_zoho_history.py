@@ -57,6 +57,7 @@ from app.models.invoices import InvoiceLine
 from app.models.orders import Order
 from app.models.records import OutboxRecord
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.commands import ANY_VERSION
 from app.platform.outbox import CANCELLED, FAILED, PENDING
 from app.scripts.base import ScriptArgs, script_main
 from app.services import oplog
@@ -413,7 +414,7 @@ class History:
             if order.invoice_status != Inv.WAITING_FOR_DELIVERY_CONFIRMATION.value:
                 out.problems.append(f"invoice_from_{order.invoice_status}")
                 return
-            inv = await self.invoicing.confirm(u, order_id, confirmed_date=when, note="Zoho history: delivered per Zoho's invoice")
+            inv = await self.invoicing.confirm(u, order_id, version=ANY_VERSION, confirmed_date=when, note="Zoho history: delivered per Zoho's invoice")
             await s.flush()
             order = await s.get(Order, order_id, with_for_update=True)
             if order.invoice_status != Inv.READY.value:

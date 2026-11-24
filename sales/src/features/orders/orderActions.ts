@@ -58,6 +58,24 @@ export const ORDER_ACTIONS = defineActions<OrderRead>([
   },
 ])
 
+/** Delivery confirmation: the selected orders (user 2026-11-24), each on its due date or on one date. Sending an invoice
+ *  is asked for one order, or with Confirm all shown, as before: not here. */
+export const DELIVERY_ACTIONS = defineActions<OrderRead>([
+  {
+    id: 'confirm_delivery', label: 'Confirm delivery', permission: 'sales.order.operate', scope: 'group', placement: ['bulk'],
+    eligible: (o) => (o.shadow ? 'A test-run order' : o.invoice_status === 'Waiting for Delivery Confirmation' ? true : `Its invoice is ${o.invoice_status}`),
+    input: {
+      schema: z.object({ date: z.string().nullable().optional() }),
+      fields: [{ name: 'date', label: 'Delivered on (optional)', type: 'date', hint: "Empty: each order's Delivery due date. It becomes the invoice date." }] as FieldSpec[],
+      defaults: () => ({ date: '' }),
+      toBody: (v: Record<string, unknown>) => ({ confirmed_date: (v.date as string) || null }),
+    },
+    title: (n) => (n === 1 ? 'Confirm this delivery' : `Confirm ${n} deliveries`),
+    description: 'Each delivered in full: its shipped quantity, less what is recorded as returned. Nothing is sent.',
+    will: (n) => `${n} will be confirmed`, done: (n) => `${n} confirmed`,
+  },
+])
+
 export const orderName = (o: OrderRead) => o.source_reference ?? `#${o.order_number}`
 /** For an order sheet opened outside a list. */
 export const ORDER_ACTION_HOST: ActionHost<OrderRead> = { run: ordersClient.action, name: orderName }

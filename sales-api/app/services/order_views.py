@@ -484,6 +484,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                                     status_code=422)
             il.qty, il.amount = whole, amount(whole, il.unit_price)
         if inv is not None:
+            touch(self.uow, inv)  # its lines change, whatever the total
             inv.subtotal = inv.total = sum((il.amount for il in ilines.values()), Decimal(0))
         self.uow.set_reason(f"returned: {reason}")
         await oplog.write(s, "INFO", "invoice", f"order {o.label}: returned " + "; ".join(

@@ -69,7 +69,7 @@ describe('Delivery confirmation', () => {
     const ask = await screen.findByRole('dialog', { name: 'Confirm 1 deliveries' })
     fireEvent.change(within(ask).getByLabelText('Delivered on (optional)'), { target: { value: '2026-11-05' } })
     fireEvent.click(within(ask).getByRole('button', { name: 'Confirm' }))
-    await waitFor(() => expect(api.bulk).toHaveBeenCalledWith([7], '2026-11-05', false))
+    await waitFor(() => expect(api.bulk).toHaveBeenCalledWith([expect.objectContaining({ id: 7, version: 1 })], '2026-11-05', false))
     await waitFor(() => expect(noticeIn()).toHaveTextContent('1 confirmed'))  // the list's status row
   })
 
@@ -95,7 +95,7 @@ describe('Delivery confirmation', () => {
     fireEvent.change(within(form).getByLabelText('Returned CF0092'), { target: { value: '6' } })  // 60 shipped: 54 delivered
     fireEvent.change(within(form).getByLabelText(/Delivered on \(the invoice date\)/), { target: { value: '2026-11-05' } })
     fireEvent.click(within(form).getByRole('button', { name: 'Confirm delivery' }))
-    await waitFor(() => expect(api.confirm).toHaveBeenCalledWith({ order_id: 7, confirmed_date: '2026-11-05',
+    await waitFor(() => expect(api.confirm).toHaveBeenCalledWith({ order_id: 7, version: detail.version, confirmed_date: '2026-11-05',
       lines: [{ order_line_id: 70, delivered_qty: 54 }] }))
   })
 
@@ -106,7 +106,7 @@ describe('Delivery confirmation', () => {
     fireEvent.click(screen.getByRole('button', { name: /Confirm all shown \(1\)/ }))
     const ask = await screen.findByRole('dialog', { name: 'Confirm 1 deliveries' })
     fireEvent.click(within(ask).getByRole('button', { name: 'Confirm and send' }))
-    await waitFor(() => expect(api.bulk).toHaveBeenCalledWith([7], null, true))
+    await waitFor(() => expect(api.bulk).toHaveBeenCalledWith([expect.objectContaining({ id: 7, version: 1 })], null, true))
     await waitFor(() => expect(noticeIn()).toHaveTextContent('1 confirmed, 1 sent'))
   })
 
@@ -128,6 +128,19 @@ describe('Delivery confirmation', () => {
     renderAs(['sales.read'], <DeliveryPage />)
     await screen.findByText('PO-1')
     expect(screen.queryByRole('button', { name: /Confirm all shown/ })).toBeNull()
+  })
+})
+
+describe('Confirm delivery for a selection (user 2026-11-24)', () => {
+  it('is for a selection, asks an optional date, sends nothing, and goes to the server with the date only', async () => {
+    const { DELIVERY_ACTIONS } = await import('@/features/orders/orderActions')
+    const [a] = DELIVERY_ACTIONS
+    expect([a.id, a.placement, a.scope, a.permission]).toEqual(['confirm_delivery', ['bulk'], 'group', 'sales.order.operate'])
+    expect(a.eligible!(order)).toBe(true)
+    expect(a.eligible!({ ...order, invoice_status: 'Ready' })).toBe('Its invoice is Ready')
+    const input = a.input as { toBody: (v: Record<string, unknown>) => unknown; fields: { name: string }[] }
+    expect([input.toBody({ date: '' }), input.toBody({ date: '2026-11-05' })]).toEqual([{ confirmed_date: null }, { confirmed_date: '2026-11-05' }])
+    expect(input.fields.map((f) => f.name)).toEqual(['date'])  // no way to send from here
   })
 })
 

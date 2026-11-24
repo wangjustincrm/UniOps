@@ -55,8 +55,8 @@ from app.models.records import OutboxRecord
 from app.models.shipments import Shipment, ShipmentRow
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.clock import clock, utc_now
-from app.platform.commands import VersionArg, check_version, load_for_command, touch
-from app.platform.errors import BusinessError
+from app.platform.commands import VersionArg, check_version, touch
+from app.platform.errors import BusinessError, NotFound
 from app.platform.outbox import ONCE, Outbox, OutboxKind
 from app.platform.pipeline import isolated
 from app.services import oplog, print_docs
@@ -188,8 +188,19 @@ class Invoicing:
         if order.shadow:
             raise BusinessError("invoice.shadow_order", TEST_RUN_REFUSAL)
 
+    # ── the two rows, always in this order ───────────────────────────────────
+    @staticmethod
+    async def _lock(s, invoice_id: int) -> tuple[Order, Invoice] | None:
+        """The order, then its invoice (confirm, release and a returned quantity take the order first): one order of
+        locks, so no two of them wait for each other. The invoice's order never changes: it is read without a lock."""
+        order_id = (await s.execute(select(Invoice.order_id).where(Invoice.id == invoice_id))).scalar_one_or_none()
+        if order_id is None:
+            return None
+        order = await s.get(Order, order_id, with_for_update=True)
+        return order, await s.get(Invoice, invoice_id, with_for_update=True)
+
     # ── confirmation and the invoice ────────────────────────────────────────
-    async def confirm(self, uow, order_id: int, *, confirmed_date: date | None = None, delivered: dict[int, int] | None = None,
+    async def confirm(self, uow, order_id: int, *, version: VersionArg = None, confirmed_date: date | None = None, delivered: dict[int, int] | None = None,
                       note: str | None = None) -> Invoice:
         s = uow.session
         order = await s.get(Order, order_id, with_for_update=True)
@@ -200,6 +211,8 @@ class Invoicing:
         if order.invoice_status != Inv.WAITING_FOR_DELIVERY_CONFIRMATION.value:
             raise BusinessError("delivery.not_waiting", f"the order's invoice is {order.invoice_status}, not waiting for "
                                 "delivery confirmation", {"status": order.invoice_status})
+        # The quantities are those the person saw: an order that moved (a returned saved meanwhile) is looked at again.
+        check_version(order, version, "this order")
         if confirmed_date is None:  # no carrier reports a delivery: the date it was due, else today
             partner = (await s.execute(select(Partner).where(Partner.code == order.partner_code))).scalar_one()
             confirmed_date = delivery_due(order, partner) or self.today()
@@ -263,8 +276,11 @@ class Invoicing:
         is audited; a changed unit price needs a reason (user 2026-11-03), which
         the audit row carries, and each line's old and new price is logged."""
         s = uow.session
-        inv = await load_for_command(s, Invoice, invoice_id, version=version, what="this invoice")
-        order = await s.get(Order, inv.order_id, with_for_update=True)
+        pair = await self._lock(s, invoice_id)
+        if pair is None:
+            raise NotFound("Invoice", invoice_id)
+        order, inv = pair
+        check_version(inv, version, "this invoice")
         if Inv(order.invoice_status) not in EDITABLE:
             raise BusinessError("invoice.not_editable", f"the invoice is {order.invoice_status}")
         mine = {ln.id: ln for ln in (await s.execute(select(InvoiceLine).where(InvoiceLine.invoice_id == inv.id))).scalars()}
@@ -300,6 +316,8 @@ class Invoicing:
             ln.amount = amount(ln.qty, ln.unit_price)
         if invoice_date is not None:
             inv.invoice_date = invoice_date
+        if any(s.is_modified(ln) for ln in mine.values()):
+            touch(uow, inv)  # another quantity and price with the same total change only the lines
         inv.subtotal = inv.total = sum((ln.amount for ln in mine.values()), Decimal(0))
         await s.flush()
         return inv
@@ -307,10 +325,9 @@ class Invoicing:
     async def release(self, uow, order_id: int, reason: str, *, version: VersionArg = None) -> Order:
         s = uow.session
         order = await s.get(Order, order_id, with_for_update=True)
-        if order is not None:
-            check_version(order, version, "this order")
         if order is None or order.invoice_status != Inv.BLOCKED.value:
-            raise BusinessError("invoice.not_blocked", "the invoice is not on hold")
+            raise BusinessError("invoice.not_blocked", "the invoice is not on hold")  # already released says so
+        check_version(order, version, "this order")
         if await rows_to_review(s, order.id):  # the next cycle would only block it again
             raise BusinessError("invoice.rows_unresolved", "a 945 row matches no order line: resolve it on the order first "
                                 "(Shipments & lots): the invoice then follows")
@@ -323,10 +340,10 @@ class Invoicing:
 
     async def send(self, uow, invoice_id: int) -> Invoice:
         s = uow.session
-        inv = await s.get(Invoice, invoice_id, with_for_update=True)
-        if inv is None:
+        pair = await self._lock(s, invoice_id)
+        if pair is None:
             raise BusinessError("invoice.not_found", "no such invoice", status_code=404)
-        order = await s.get(Order, inv.order_id, with_for_update=True)
+        order, inv = pair
         await self._refuse_shadow(s, order)
         self._refuse_cancelled(order)
         status = Inv(order.invoice_status)
@@ -379,10 +396,10 @@ class Invoicing:
 
     async def _pre_check(self, payload: dict[str, Any], uow) -> str | None:
         s = uow.session
-        inv = await s.get(Invoice, payload["invoice_id"], with_for_update=True)
-        order = await s.get(Order, inv.order_id, with_for_update=True) if inv else None
-        if inv is None or order is None:
+        pair = await self._lock(s, payload["invoice_id"])
+        if pair is None or None in pair:
             return "the invoice or its order is gone"
+        order, inv = pair
         if await _shadow(s) or order.shadow:  # the second barrier
             await oplog.write(s, "WARNING", STEP, f"shadow run: invoice {inv.invoice_number} not sent", order_id=order.id)
             if order.invoice_status == Inv.QUEUED.value:
@@ -500,8 +517,8 @@ class Invoicing:
         return msg, invoice_pdf
 
     async def _pair(self, row, uow):
-        inv = await uow.session.get(Invoice, row.payload["invoice_id"], with_for_update=True)
-        return inv, await uow.session.get(Order, inv.order_id, with_for_update=True)
+        order, inv = await self._lock(uow.session, row.payload["invoice_id"])
+        return inv, order
 
     async def _done(self, row, exc, uow) -> None:
         inv, order = await self._pair(row, uow)

@@ -1,5 +1,5 @@
 import type { TimelineEntry } from '@/features/common/recordFiles'
-import { createResourceClient } from '@/platform-ui'
+import { createResourceClient, type ActionOut } from '@/platform-ui'
 import { api } from '@/lib/api'
 
 // Mirrors sales-api app/schemas/invoices.py (hand-written, see partnersApi.ts).
@@ -50,11 +50,15 @@ export interface ConfirmResult { order_id: number; ok: boolean; invoice_id: numb
 
 export const invoicesClient = createResourceClient<InvoiceRead, never>(api, '/invoices')
 export const fetchInvoice = (id: number) => api.get<InvoiceDetail>(`/invoices/${id}`)
-export const confirmDelivery = (body: { order_id: number; confirmed_date: string; lines: { order_line_id: number; delivered_qty: number }[]; note?: string | null; send?: boolean }) =>
+/** `version`: the order as the person saw it; changed meanwhile (a returned saved) → refused (entity.stale). */
+export const confirmDelivery = (body: { order_id: number; version: number; confirmed_date: string; lines: { order_line_id: number; delivered_qty: number }[]; note?: string | null; send?: boolean }) =>
   api.post<InvoiceDetail>('/invoices/confirm', body)
-/** No date: each order on the date its delivery was due. */
-export const confirmBulk = (order_ids: number[], confirmed_date: string | null, send = false) =>
-  api.post<ConfirmResult[]>('/invoices/confirm-bulk', { order_ids, confirmed_date, send })
+/** No date: each order on the date its delivery was due. Each by the version seen: one that changed meanwhile is left alone. */
+export const confirmBulk = async (orders: { id: number; version: number }[], confirmed_date: string | null, send = false): Promise<ConfirmResult[]> => {
+  const out = await api.post<ActionOut>('/orders/actions/confirm_delivery',
+    { ids: Object.fromEntries(orders.map((o) => [o.id, o.version])), input: { confirmed_date, send } })
+  return out.results.map((r) => ({ order_id: r.id, ok: r.status === 'done', invoice_id: null, status: null, sent: r.note === 'sent', error: r.status === 'done' ? null : r.reason ?? r.status }))
+}
 export interface InvoiceEditBody {
   invoice_date?: string | null
   delivery_number?: string | null

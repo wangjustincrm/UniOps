@@ -15,6 +15,7 @@ from app.models.orders import Order, OrderLine
 from app.services import print_docs
 from app.services.record_files import TIMELINES, timeline_of
 from app.platform.authorization import authorize, requires
+from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
@@ -108,7 +109,7 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
     async def confirm(self, invoicing, body) -> InvoiceDetail:
         if body.send:
             await authorize(self.uow, MANAGE)  # sending is invoice work: both permissions, before anything changes
-        inv = await invoicing.confirm(self.uow, body.order_id, confirmed_date=body.confirmed_date,
+        inv = await invoicing.confirm(self.uow, body.order_id, version=body.version, confirmed_date=body.confirmed_date,
                                       delivered={x.order_line_id: x.delivered_qty for x in body.lines}, note=body.note)
         if body.send:
             await self._send_if_ready(invoicing, inv)
@@ -132,7 +133,7 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
         for oid in body.order_ids:
             try:
                 async with Savepoint.of(self.uow):  # its events with its writes
-                    inv = await invoicing.confirm(self.uow, oid, confirmed_date=body.confirmed_date)
+                    inv = await invoicing.confirm(self.uow, oid, version=ANY_VERSION, confirmed_date=body.confirmed_date)  # no versions in this route: the action has them
                     sent = body.send and await self._send_if_ready(invoicing, inv)
                 status = (await self.uow.session.get(Order, oid)).invoice_status
                 out.append(ConfirmResult(order_id=oid, ok=True, invoice_id=inv.id, status=status, sent=sent))

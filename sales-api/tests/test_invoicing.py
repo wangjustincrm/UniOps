@@ -87,7 +87,7 @@ async def order_version(u, id: int) -> int:
 
 async def confirm(t, oid, *, when=date(2026, 11, 5), lines=None):
     async with t.factory(OP) as u:
-        out = await InvoiceService(u).confirm(t.inv, ConfirmIn(order_id=oid, confirmed_date=when, lines=lines or []))
+        out = await InvoiceService(u).confirm(t.inv, ConfirmIn(order_id=oid, version=await order_version(u, oid), confirmed_date=when, lines=lines or []))
         await u.commit()
         return out
 
@@ -217,7 +217,7 @@ async def test_confirm_and_send_queues_the_invoice_once(p6):
     o = await shipped_850(p6, "PO-1")
     await p6.inv.advance()
     async with p6.factory(OP) as u:
-        await InvoiceService(u).confirm(p6.inv, ConfirmIn(order_id=o.id, confirmed_date=date(2026, 11, 5), send=True))
+        await InvoiceService(u).confirm(p6.inv, ConfirmIn(order_id=o.id, version=await order_version(u, o.id), confirmed_date=date(2026, 11, 5), send=True))
         await u.commit()
     assert await inv_status(p6, o.id) == "Queued"
     assert len(await p6.q("SELECT 1 FROM sales_outbox WHERE kind = 'send_invoice'")) == 1
@@ -244,10 +244,10 @@ async def test_confirm_and_send_needs_the_invoice_permission_too(p6):
     factory = UnitOfWorkFactory(p6.factory.session_factory, permissions=no_invoice_work, audit=AuditTrail(AuditRecord))
     async with factory(OP) as u:
         with pytest.raises(PermissionDenied):
-            await InvoiceService(u).confirm(p6.inv, ConfirmIn(order_id=o.id, confirmed_date=date(2026, 11, 5), send=True))
+            await InvoiceService(u).confirm(p6.inv, ConfirmIn(order_id=o.id, version=await order_version(u, o.id), confirmed_date=date(2026, 11, 5), send=True))
     assert await inv_status(p6, o.id) == "Waiting for Delivery Confirmation"
     async with factory(OP) as u:  # a plain confirmation still works with order work alone
-        await InvoiceService(u).confirm(p6.inv, ConfirmIn(order_id=o.id, confirmed_date=date(2026, 11, 5)))
+        await InvoiceService(u).confirm(p6.inv, ConfirmIn(order_id=o.id, version=await order_version(u, o.id), confirmed_date=date(2026, 11, 5)))
         await u.commit()
     assert await inv_status(p6, o.id) == "Ready"
 

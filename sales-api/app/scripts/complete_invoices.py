@@ -25,6 +25,7 @@ from app.domain.status import Invoice as Inv
 from app.models.invoices import Invoice, InvoiceLine
 from app.models.orders import Order
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.commands import ANY_VERSION
 from app.scripts.base import ScriptArgs, script_main
 from app.services import oplog
 from app.services.invoicing import Invoicing
@@ -81,7 +82,7 @@ async def main(args: ScriptArgs) -> dict:
             if o.invoice_status != Inv.WAITING_FOR_DELIVERY_CONFIRMATION.value:
                 row["result"] = f"left: invoice is {o.invoice_status}"
                 continue
-            inv = await invoicing.confirm(u, o.id, confirmed_date=when, note="invoiced by Zoho (parallel run)")
+            inv = await invoicing.confirm(u, o.id, version=ANY_VERSION, confirmed_date=when, note="invoiced by Zoho (parallel run)")
             lines = list((await s.execute(select(InvoiceLine).where(InvoiceLine.invoice_id == inv.id).order_by(InvoiceLine.line_no))).scalars())
             data = await invoicing._810(s, inv, o, lines) if inv.method == "810_JSON" else None
             problems = checks(inv, lines, data, o.edi_mailbox)

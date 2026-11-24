@@ -74,6 +74,7 @@ class DeliveredLine(BaseModel):
 class ConfirmIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     order_id: int
+    version: int | None = None          # the order's, as the person saw it
     confirmed_date: date
     lines: list[DeliveredLine] = []     # empty: delivered = shipped
     note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] | None = None

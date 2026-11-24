@@ -202,7 +202,7 @@ async def send_now(t, oid):
 
 async def confirm(t, oid, lines=None):
     async with t.factory(OP) as u:
-        out = await InvoiceService(u).confirm(t.rt.invoicing, ConfirmIn(order_id=oid, confirmed_date=today(t), lines=lines or []))
+        out = await InvoiceService(u).confirm(t.rt.invoicing, ConfirmIn(order_id=oid, version=await order_version(u, oid), confirmed_date=today(t), lines=lines or []))
         await u.commit()
         return out
 
