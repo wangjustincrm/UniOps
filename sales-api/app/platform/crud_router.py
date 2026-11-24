@@ -43,6 +43,7 @@ def resource_router(
     *,
     uow: Callable[..., Any],
     custom: APIRouter | None = None,
+    runtime: Callable[..., Any] | None = None,
 ) -> APIRouter:
     """Every route the service's `resource` declares (platform/resource.py), and for a CrudService its writes. The
     fixed paths come first, then `custom` (the list's hand-written routes, on a router of the same prefix), and
@@ -74,7 +75,7 @@ def resource_router(
     if crud and service_cls.csv_columns and service_cls.csv_key:
         _import_route(r, service_cls, UoW)
     if (registry := res.action_registry()) is not None:
-        r.include_router(action_router(registry, uow))
+        r.include_router(action_router(registry, uow, runtime))
     if res.history:
         @r.get("/{id}/audit", response_model=list[AuditEntryRead])
         async def history(u: UoW, id: int):

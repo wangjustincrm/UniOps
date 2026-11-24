@@ -36,6 +36,18 @@ def check_version(entity: Any, version: VersionArg, what: str = "this record") -
         raise Stale(what, entity.version, version)  # type: ignore[arg-type]
 
 
+MIN_REASON = 3
+
+
+def require_reason(text: str | None, *, code: str = "reason.required", message: str = "say why (a few words)",
+                   field: str = "reason") -> str:
+    """A reason a person must give, trimmed; without one (or with fewer than MIN_REASON characters) a 422 naming the field."""
+    why = (text or "").strip()
+    if len(why) < MIN_REASON:
+        raise BusinessError(code, message, {"field": field}, status_code=422)
+    return why
+
+
 def touch(uow: Any, entity: Any) -> None:
     """The record changed through its parts (a line, a price) and not a column of its own: its version moves with the
     unit of work's flush (the mapper's version_id_col), so whoever saw it before is refused, as for any change. Who and

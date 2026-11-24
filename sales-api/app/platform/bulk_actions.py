@@ -3,7 +3,10 @@ records). The page (platform-ui/actions) defines the label, the form and where i
 and the work, here, once per action:
 
     ORDER_ACTIONS = ActionRegistry(OrderRepository, [
-        BulkAction("settle", permission=SETTLE, input=SettleIn, check=settle_check, run=settle_run)])
+        Action("settle", label="Mark settled", permission=SETTLE, input=SettleIn, check=settle_check, run=settle_run)])
+
+The service's resource declares the registry (Resource.actions): the route comes from it, and /meta says each action
+(its words, whether this person may use it, whether it fits many records, whether it needs a reason, what it sends).
 
 POST /<list>/actions/<id> (`action_router`) takes the records as {id: version} (what the person saw), or "all matching"
 as the list's own query string with the count the person saw (at most MAX_RECORDS). The server decides:
@@ -29,18 +32,27 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.datastructures import QueryParams
 
 from app.platform.authorization import authorize
-from app.platform.commands import Stale, check_version
+from app.platform.commands import Stale, check_version, require_reason
 from app.platform.errors import BusinessError, InvalidInput, NotFound
 from app.platform.query import QuerySpec, query_spec
 from app.platform.uow import Savepoint
 
 MAX_RECORDS = 500
 Check = Callable[[Any, Any], Awaitable[str | None]]          # (uow, record) → None, or why it is skipped
-Run = Callable[[Any, Any, Any], Awaitable[None]]             # (uow, record, input)
+Run = Callable[..., Awaitable[None]]                         # (uow, record, input) — or with a context: (uow, record, input, ctx)
+
+
+@dataclass
+class ActionContext:
+    """What a run needs beside its record: the module's long-lived objects, why, and what was read before any lock."""
+    runtime: Any = None
+    reason: str | None = None
+    prepared: Any = None
+    note: str | None = None                # what to say of this record beside "done" (set by the run)
 
 
 @dataclass(frozen=True)
-class BulkAction:
+class Action:
     id: str
     permission: str
     run: Run
@@ -48,14 +60,28 @@ class BulkAction:
     input: type[BaseModel] | None = None
     # Checks of the input alone (not of a record), e.g. a date not in the future: once, before any record (a 422).
     validate: Callable[[Any], None] | None = None
+    label: str = ""
+    bulk: bool = True                      # many records at once; False: one at a time (refused otherwise)
+    reason: Literal["none", "required"] = "none"  # the request's own `reason`, in the record's audit
+    versioned: bool = True                 # False: the record has no version (its status is the guard)
+    confirm: str | None = None             # what the confirm step says
+    sends: str | None = None               # what leaves the building, if anything (a file, an email)
+    context: bool = False                  # run and prepare take an ActionContext
+    # More permissions this input needs (e.g. sending too): checked once, before any record.
+    also: Callable[[Any], Sequence[str]] | None = None
+    # (uow, ids, ctx) → what the runs need from outside, read before any record is locked.
+    prepare: Callable[..., Awaitable[Any]] | None = None
+
+
+BulkAction = Action  # the name it had
 
 
 class ActionRegistry:
-    def __init__(self, repo_cls: type, actions: Sequence[BulkAction]) -> None:
+    def __init__(self, repo_cls: type, actions: Sequence[Action]) -> None:
         self.repo_cls = repo_cls
         self.actions = {a.id: a for a in actions}
 
-    def __getitem__(self, action_id: str) -> BulkAction:
+    def __getitem__(self, action_id: str) -> Action:
         if action_id not in self.actions:
             raise NotFound("action", action_id)
         return self.actions[action_id]
@@ -64,10 +90,11 @@ class ActionRegistry:
 class ActionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    ids: dict[int, int] | None = None              # id → the version the person saw
+    ids: dict[int, int | None] | None = None       # id → the version the person saw (null: the record has none)
     query: Annotated[str, Field(max_length=8000)] | None = None  # "all matching": the list's own query string
     expected: int | None = None                    # with `query`: how many the person was told match
     input: dict[str, Any] | None = None
+    reason: Annotated[str, Field(max_length=2000)] | None = None  # why, where the action asks for it
     dry_run: bool = False
 
 
@@ -76,6 +103,8 @@ class ActionResult(BaseModel):
     status: Literal["done", "skipped", "failed"]
     reason: str | None = None
     version: int | None = None
+    code: str | None = None      # why it was not done, for the page's words: entity.stale, entity.not_found, the rule's own
+    note: str | None = None      # what to say of a done one
 
 
 class ActionOut(BaseModel):
@@ -108,7 +137,7 @@ async def _targets(uow: Any, registry: ActionRegistry, body: ActionIn) -> dict[i
     return {i: None for i in ids}  # "all matching": as they are now
 
 
-async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: ActionIn) -> ActionOut:
+async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: ActionIn, runtime: Any = None) -> ActionOut:
     action = registry[action_id]
     await authorize(uow, action.permission)
     from app.platform.auditing.scope import current_scope
@@ -124,10 +153,23 @@ async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: A
                                            for err in e.errors()]}) from None
         if action.validate:
             action.validate(data)
+    for key in action.also(data) if action.also and not body.dry_run else ():
+        await authorize(uow, key)
+    ctx = ActionContext(runtime=runtime)
+    if action.reason == "required" and not body.dry_run:
+        ctx.reason = require_reason(body.reason)
+    if not action.bulk and (body.query is not None or len(body.ids or {}) > 1):
+        raise InvalidInput("action.single", "one record at a time")
+    if action.versioned and body.ids is not None and None in body.ids.values():
+        raise InvalidInput("entity.version_required", "send the version you edited", {"field": "ids"})
     s = uow.session
     model = registry.repo_cls.model
     out: list[ActionResult] = []
-    for rid, version in (await _targets(uow, registry, body)).items():
+    targets = await _targets(uow, registry, body)
+    if action.prepare is not None and not body.dry_run:
+        ctx.prepared = await action.prepare(uow, list(targets), ctx)
+    for rid, version in targets.items():
+        ctx.note = None
         sp = await Savepoint.begin(uow)  # a record's events go with its writes: dropped on every undo below
         try:
             record = await s.get(model, rid, with_for_update=True, populate_existing=True)
@@ -137,35 +179,41 @@ async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: A
             why = await action.check(uow, record) if action.check else None
             if why:
                 await sp.undo()
-                out.append(ActionResult(id=rid, status="skipped", reason=why, version=record.version))
+                out.append(ActionResult(id=rid, status="skipped", reason=why, version=getattr(record, "version", None)))
                 continue
-            if version is not None:
+            if version is not None and action.versioned:
                 check_version(record, version, "this record")
             if not body.dry_run:
-                await action.run(uow, record, data)
+                await action.run(uow, record, data, *([ctx] if action.context else []))
                 await s.flush()
-            out.append(ActionResult(id=rid, status="done", version=record.version))
+            out.append(ActionResult(id=rid, status="done", version=getattr(record, "version", None), note=ctx.note))
             if body.dry_run:
                 await sp.undo()
             else:
                 await sp.keep()
-        except Stale:
+        except Stale as e:
             await sp.undo()
-            out.append(ActionResult(id=rid, status="failed", reason="changed since you selected it: reload and look again"))
+            out.append(ActionResult(id=rid, status="failed", reason="changed since you selected it: reload and look again", code=e.code))
         except BusinessError as e:
             await sp.undo()
-            out.append(ActionResult(id=rid, status="failed", reason=e.message))
+            out.append(ActionResult(id=rid, status="failed", reason=e.message, code=e.code))
     counts = {k: sum(1 for r in out if r.status == k) for k in ("done", "skipped", "failed")}
     return ActionOut(action=action_id, dry_run=body.dry_run, results=out, counts=counts)
 
 
-def action_router(registry: ActionRegistry, get_uow: Callable[..., Any]) -> APIRouter:
-    """POST /actions/{action_id}: include it in the list's router BEFORE its /{id}/… routes."""
+def _no_runtime() -> None:
+    return None
+
+
+def action_router(registry: ActionRegistry, get_uow: Callable[..., Any], get_runtime: Callable[..., Any] | None = None) -> APIRouter:
+    """POST /actions/{action_id}: include it in the list's router BEFORE its /{id}/… routes. `get_runtime`: the module's
+    long-lived objects, for the actions that need them (ActionContext.runtime)."""
     router = APIRouter()
 
     @router.post("/actions/{action_id}", response_model=ActionOut)
-    async def run(action_id: str, body: ActionIn, u: Annotated[Any, Depends(get_uow)]) -> ActionOut:
-        out = await run_action(u, registry, action_id, body)
+    async def run(action_id: str, body: ActionIn, u: Annotated[Any, Depends(get_uow)],
+                  rt: Annotated[Any, Depends(get_runtime or _no_runtime)] = None) -> ActionOut:
+        out = await run_action(u, registry, action_id, body, rt)
         if not body.dry_run:
             await u.commit()
         return out

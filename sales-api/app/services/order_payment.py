@@ -24,7 +24,7 @@ from app.domain.shadow import TEST_RUN_REFUSAL
 from app.domain.status import Fulfillment as F
 from app.models.orders import Order
 from app.platform.authorization import requires
-from app.platform.bulk_actions import ActionRegistry, BulkAction
+from app.platform.bulk_actions import Action, ActionRegistry
 from app.platform.clock import clock
 from app.platform.commands import ANY_VERSION, VersionArg, check_version, load_for_command
 from app.platform.errors import BusinessError, InvalidInput
@@ -98,8 +98,8 @@ async def unsettle_run(uow, o: Order, body: UnsettleIn) -> None:
 def _order_actions() -> ActionRegistry:
     from app.services.order_views import OrderRepository  # order_views imports this module's neighbours
     return ActionRegistry(OrderRepository, [
-        BulkAction("settle", permission=SETTLE, input=SettleIn, validate=settle_validate, check=settle_check, run=settle_run),
-        BulkAction("unsettle", permission=SETTLE, input=UnsettleIn, check=unsettle_check, run=unsettle_run),
+        Action("settle", label="Mark settled", permission=SETTLE, input=SettleIn, validate=settle_validate, check=settle_check, run=settle_run),
+        Action("unsettle", label="Undo settled", permission=SETTLE, input=UnsettleIn, check=unsettle_check, run=unsettle_run),
     ])
 
 
