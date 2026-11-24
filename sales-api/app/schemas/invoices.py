@@ -32,6 +32,7 @@ class InvoiceRead(BaseModel):
     created_at: datetime
     updated_by_name: str | None = None
     # from the order (filled by the service)
+    order_version: int | None = None  # the order as it is: Release says the version seen
     order_number: int | None = None
     partner_code: str | None = None
     po: str | None = None
@@ -115,6 +116,7 @@ class InvoiceEdit(BaseModel):
 class ReleaseIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     order_id: int
+    version: int | None = None  # the order's, as the person saw it
     reason: Reason
 
 
@@ -127,6 +129,7 @@ class ReturnLine(BaseModel):
 class ReturnIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     order_id: int
+    version: int | None = None  # the order's, as the person saw it
     kind: Literal["Cancelled after shipment", "Returned"]
     reason: Reason
     lines: Annotated[list[ReturnLine], Field(min_length=1)]

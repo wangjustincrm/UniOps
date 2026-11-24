@@ -89,6 +89,7 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
         for i in items:
             o = orders.get(i.order_id)
             if o is not None:
+                i.order_version = o.version
                 i.order_number, i.partner_code, i.po, i.status = o.order_number, o.partner_code, o.source_order_number, o.invoice_status
 
     async def _detail(self, id: int) -> InvoiceDetail:
@@ -153,12 +154,12 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
 
     @requires(MANAGE)
     async def release(self, invoicing, body) -> dict:
-        o = await invoicing.release(self.uow, body.order_id, body.reason)
+        o = await invoicing.release(self.uow, body.order_id, body.reason, version=body.version)
         return {"order_id": o.id, "invoice_status": o.invoice_status}
 
     @requires(OPERATE)
     async def record_return(self, invoicing, body) -> dict:
-        r = await invoicing.record_return(self.uow, body.order_id, kind=body.kind, reason=body.reason,
+        r = await invoicing.record_return(self.uow, body.order_id, version=body.version, kind=body.kind, reason=body.reason,
                                           lines=[x.model_dump() for x in body.lines])
         o = await self.uow.session.get(Order, body.order_id)
         return {"return_id": r.id, "invoice_status": o.invoice_status}

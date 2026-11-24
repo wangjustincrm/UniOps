@@ -18,6 +18,8 @@ export interface InvoiceRead {
   send_count: number
   error: string | null
   version: number
+  /** The order's version: Release says which one was seen. */
+  order_version?: number | null
   created_at: string
   updated_by_name: string | null
   order_number: number | null
@@ -63,6 +65,8 @@ export interface InvoiceEditBody {
 export const editInvoice = (id: number, version: number, body: InvoiceEditBody) =>
   api.put<InvoiceDetail>(`/invoices/${id}?version=${version}`, body)
 export const sendInvoice = (id: number) => api.post<InvoiceDetail>(`/invoices/${id}/send`)
-export const releaseInvoice = (order_id: number, reason: string) => api.post<{ order_id: number; invoice_status: string }>('/invoices/release', { order_id, reason })
-export const recordReturn = (body: { order_id: number; kind: 'Cancelled after shipment' | 'Returned'; reason: string; lines: { order_line_id: number; qty_ea: number }[] }) =>
+/** `version`: the order's, as the person saw it; changed meanwhile → refused (entity.stale). */
+export const releaseInvoice = (order_id: number, version: number, reason: string) =>
+  api.post<{ order_id: number; invoice_status: string }>('/invoices/release', { order_id, version, reason })
+export const recordReturn = (body: { order_id: number; version: number; kind: 'Cancelled after shipment' | 'Returned'; reason: string; lines: { order_line_id: number; qty_ea: number }[] }) =>
   api.post<{ return_id: number; invoice_status: string }>('/invoices/returns', body)

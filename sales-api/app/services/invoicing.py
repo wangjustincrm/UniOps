@@ -55,7 +55,7 @@ from app.models.records import OutboxRecord
 from app.models.shipments import Shipment, ShipmentRow
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.clock import clock, utc_now
-from app.platform.commands import load_for_command
+from app.platform.commands import VersionArg, check_version, load_for_command, touch
 from app.platform.errors import BusinessError
 from app.platform.outbox import ONCE, Outbox, OutboxKind
 from app.platform.pipeline import isolated
@@ -304,9 +304,11 @@ class Invoicing:
         await s.flush()
         return inv
 
-    async def release(self, uow, order_id: int, reason: str) -> Order:
+    async def release(self, uow, order_id: int, reason: str, *, version: VersionArg = None) -> Order:
         s = uow.session
         order = await s.get(Order, order_id, with_for_update=True)
+        if order is not None:
+            check_version(order, version, "this order")
         if order is None or order.invoice_status != Inv.BLOCKED.value:
             raise BusinessError("invoice.not_blocked", "the invoice is not on hold")
         if await rows_to_review(s, order.id):  # the next cycle would only block it again
@@ -341,11 +343,12 @@ class Invoicing:
         await s.flush()
         return inv
 
-    async def record_return(self, uow, order_id: int, *, kind: str, reason: str, lines: list[dict[str, int]]) -> OrderReturn:
+    async def record_return(self, uow, order_id: int, *, version: VersionArg = None, kind: str, reason: str, lines: list[dict[str, int]]) -> OrderReturn:
         s = uow.session
         order = await s.get(Order, order_id, with_for_update=True)
         if order is None:
             raise BusinessError("order.not_found", "no such order", status_code=404)
+        check_version(order, version, "this order")
         if order.fulfillment_status not in (F.SHIPPED.value, F.ON_HOLD.value):
             raise BusinessError("return.not_shipped", "only an order that shipped can be cancelled or returned after shipment")
         known = {ln.id: ln for ln in (await s.execute(select(OrderLine).where(OrderLine.order_id == order.id))).scalars()}
@@ -356,6 +359,7 @@ class Invoicing:
         uow.set_reason(f"{kind}: {reason}")
         rec = OrderReturn(order_id=order.id, kind=kind, reason=reason, lines=lines)
         s.add(rec)
+        touch(uow, order)  # the same return again from the same page is refused: the order has moved
         stop = Inv(order.invoice_status) in INVOICE.holds[Inv.BLOCKED]
         if stop:
             INVOICE.transition(order, Inv.BLOCKED, actor=uow.actor, events=uow.events, reason=f"{kind} (FR-OB-19)")

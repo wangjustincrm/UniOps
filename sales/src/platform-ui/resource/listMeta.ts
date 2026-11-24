@@ -56,7 +56,7 @@ export interface ListCapabilities {
   history?: boolean
   /** A person's files on a record; null: none. `allowed`: this person may attach and remove. */
   attachments?: { type: string; allowed: boolean; max_bytes: number; extensions: string[] } | null
-  actions: { id: string; allowed: boolean }[]
+  actions: { id: string; allowed: boolean; label?: string; bulk?: boolean; reason?: string; confirm?: string | null; sends?: string | null }[]
 }
 
 /** What a page and its server disagree on about column ids (2026-11-10): the system views' ids that

@@ -185,7 +185,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
         <ConfirmAction open={releasing} onOpenChange={setReleasing} title={`Release the invoice of ${live.source_reference ?? live.order_number}?`}
           description="It goes back to Ready, to be sent." confirmLabel="Release" reason={{ label: 'Why it can go ahead' }}
           onConfirm={async (why) => {
-            await releaseInvoice(d.id, why)
+            await releaseInvoice(d.id, d.version, why)
             await qc.invalidateQueries({ queryKey: queryKeys.detail(ordersClient, o.id) })
             await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
           }} />

@@ -301,7 +301,7 @@ def shadow_figures(lines: list[OrderLine], packed: dict[int, list[PackingRead]])
 
 
 def _order_actions():
-    from app.services.order_payment import ORDER_ACTIONS  # it imports this module's repository
+    from app.services.order_actions import ORDER_ACTIONS  # it imports this module
     return ORDER_ACTIONS
 
 
@@ -832,7 +832,10 @@ class ManualOrderService(Service):
 
     @requires(OPERATE)
     async def submit(self, id: int, version: int | None) -> Order:
-        o = await self._draft(id, version)
+        return await self._run_submit(await self._draft(id, version))
+
+    async def _run_submit(self, o: Order) -> Order:
+        """The work of a submit, on a draft already locked and checked."""
         bad = list((await self.s.execute(select(OrderLine.line_no, OrderLine.problem).where(
             OrderLine.order_id == o.id, OrderLine.problem.is_not(None)))).all())
         if bad:
@@ -901,7 +904,9 @@ class ManualOrderService(Service):
 
     @requires(OPERATE)
     async def cancel(self, id: int, version: int | None) -> Order:
-        o = await self._draft(id, version)
+        return await self._run_cancel(await self._draft(id, version))
+
+    async def _run_cancel(self, o: Order) -> Order:
         self.uow.set_reason("manual order: cancel draft")
         FULFILLMENT.transition(o, F.CANCELLED, actor=self.uow.actor, events=self.uow.events, reason="draft cancelled")
         await self.s.flush()

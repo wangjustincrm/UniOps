@@ -50,7 +50,8 @@ export function ReturnAfterShipment({ o }: { o: OrderRead }) {
             blocked={(st) => (st.lines.some((b) => Number(b.qty) > 0) ? null : 'Enter the EA of at least one line.')}
             submitLabel="Record (holds the invoice)" onCancel={() => setOpen(false)}
             invalidates={[queryKeys.detail(ordersClient, o.id)]} after={() => setOpen(false)}
-            onSubmit={(v, lines) => recordReturn({ order_id: o.id, kind: v.kind as 'Returned' | 'Cancelled after shipment', reason: String(v.reason),
+            version={q.data.version}
+            onSubmit={(v, lines, edit) => recordReturn({ order_id: o.id, version: edit.version ?? o.version, kind: v.kind as 'Returned' | 'Cancelled after shipment', reason: String(v.reason),
               lines: lines.filter((b) => Number(b.qty) > 0).map((b) => ({ order_line_id: b.line.id, qty_ea: Number(b.qty) })) })}
           />
         )}

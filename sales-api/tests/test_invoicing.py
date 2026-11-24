@@ -80,6 +80,11 @@ async def tasks(t, type_):
     return [r["description"] for r in await t.q("SELECT description FROM tasks WHERE type = :t", t=f"sales_{type_}")]
 
 
+async def order_version(u, id: int) -> int:
+    """The order's version now (what a page opened now would send)."""
+    return (await u.session.execute(sa.text("SELECT version FROM sales_orders WHERE id = :i"), {"i": id})).scalar_one()
+
+
 async def confirm(t, oid, *, when=date(2026, 11, 5), lines=None):
     async with t.factory(OP) as u:
         out = await InvoiceService(u).confirm(t.inv, ConfirmIn(order_id=oid, confirmed_date=when, lines=lines or []))
@@ -154,7 +159,7 @@ async def test_a_part_case_is_never_invoiced_silently_short(p6):
     with pytest.raises(BusinessError):
         await send(p6, out.id)
     async with p6.factory(OP) as u:
-        await InvoiceService(u).release(p6.inv, ReleaseIn(order_id=o.id, reason="customer accepts 9 cases"))
+        await InvoiceService(u).release(p6.inv, ReleaseIn(order_id=o.id, version=await order_version(u, o.id), reason="customer accepts 9 cases"))
         await u.commit()
     assert await inv_status(p6, o.id) == "Ready"
 
@@ -275,8 +280,9 @@ async def test_confirming_and_a_return_need_order_operate_and_invoice_work_stays
     out = await confirm(p6, o.id)
     assert await inv_status(p6, o.id) == "Ready"
     [line] = await p6.q("SELECT id FROM sales_order_lines WHERE order_id = :o", o=o.id)
-    body = ReturnIn(order_id=o.id, kind="Returned", reason="damaged", lines=[{"order_line_id": line["id"], "qty_ea": 1}])
     async with p6.factory(OP) as u:
+        body = ReturnIn(order_id=o.id, version=await order_version(u, o.id), kind="Returned", reason="damaged",
+                        lines=[{"order_line_id": line["id"], "qty_ea": 1}])
         await InvoiceService(u).record_return(p6.inv, body)
         await u.commit()
     await only("sales.read")
@@ -426,7 +432,7 @@ async def test_fr19_a_return_after_shipment_holds_the_invoice_and_raises_a_task(
     await p6.inv.advance()
     [line] = await p6.q("SELECT id FROM sales_order_lines WHERE order_id = :o", o=o.id)
     async with p6.factory(OP) as u:
-        out = await InvoiceService(u).record_return(p6.inv, ReturnIn(order_id=o.id, kind="Returned", reason="damaged",
+        out = await InvoiceService(u).record_return(p6.inv, ReturnIn(order_id=o.id, version=await order_version(u, o.id), kind="Returned", reason="damaged",
                                                                      lines=[{"order_line_id": line["id"], "qty_ea": 6}]))
         await u.commit()
     assert out["invoice_status"] == "Blocked"

@@ -61,3 +61,14 @@ describe('Payment: Mark settled as a record action (user 2026-11-23)', () => {
     expect(screen.getByRole('button', { name: 'Undo settled' })).toHaveAttribute('aria-disabled', 'true')
   })
 })
+
+describe('Re-check in bulk (user 2026-11-24)', () => {
+  it('is for a selection only, for those who run orders, and says where it does not fit', () => {
+    const a = ORDER_ACTIONS.find((x) => x.id === 'recheck')!
+    expect([a.placement, a.scope, a.permission]).toEqual([['bulk'], 'group', 'sales.order.operate'])
+    expect(a.eligible!(order({ fulfillment_status: 'Review' }))).toBe(true)
+    expect(a.eligible!(order({ fulfillment_status: 'Pending' }))).toBe('Not in review')
+    renderAs(['sales.read', 'sales.order.operate'], <RecordActionButtons record={order()} actions={ORDER_ACTIONS} host={{ run: vi.fn(), name: () => '' }} />)
+    expect(screen.queryByRole('button', { name: /Re-check/ })).toBeNull()  // one order has its own button
+  })
+})

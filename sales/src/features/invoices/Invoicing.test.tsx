@@ -20,7 +20,7 @@ const order: OrderRead = {
 const detail: OrderDetail = { ...order, bill_to: null, dc_number: null, notes: null, documents: [], shipments: [], timeline: [], lines: [
   { id: 70, line_no: 1, item_code: 'CF0092', source: {}, ordered_qty: '10', order_unit: 'CASE', factor_ea: '6', qty_ea: 60, unit_price: '50',
     line_status: 'Active', removed: false, problem: null, shipped_ea: 60, delivered_qty: null }] }
-const inv: InvoiceRead = {
+const inv: InvoiceRead = { order_version: 4,
   id: 3, invoice_number: 'IN-107', order_id: 7, method: '810_JSON', invoice_date: '2026-11-05', currency: 'CAD', payment_terms: 'Net 30',
   subtotal: '450.00', total: '450.00', document_id: null, sent_at: null, send_count: 0, error: null, version: 1, created_at: '2026-11-05T12:00:00Z',
   updated_by_name: null, order_number: 107, partner_code: 'LBL', po: 'PO-1', status: 'Blocked', order_ref: 'LBL-PO-1', partner_name: 'Loblaws', delivery_number: null,
@@ -148,7 +148,7 @@ describe('Invoices', () => {
     expect(within(rel).getByRole('button', { name: 'Release' })).toHaveAttribute('aria-disabled', 'true')  // a reason first, saying so
     fireEvent.change(within(rel).getByLabelText(/Why it can go ahead/), { target: { value: 'customer accepts 9 cases' } })
     fireEvent.click(within(rel).getByRole('button', { name: 'Release' }))
-    await waitFor(() => expect(api.release).toHaveBeenCalledWith(7, 'customer accepts 9 cases'))
+    await waitFor(() => expect(api.release).toHaveBeenCalledWith(7, 4, 'customer accepts 9 cases'))
   })
 
   it('a ready invoice is edited, then sent', async () => {

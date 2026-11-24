@@ -171,4 +171,4 @@ async def release_hold(u: UoW, rt: Rt, id: int, body: ReleaseHoldIn, version: Ve
     return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
 
 
-router = resource_router(OrderService, uow=get_uow, custom=routes)
+router = resource_router(OrderService, uow=get_uow, custom=routes, runtime=get_runtime)

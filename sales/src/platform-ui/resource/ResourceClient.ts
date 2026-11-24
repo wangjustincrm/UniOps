@@ -74,13 +74,19 @@ export interface ResourceClient<TRead, TCreate, TUpdate> {
 /** What a record action is run on: {id: version} as the person saw them, or "all matching" (the list's query
  *  string, with how many the person was told match). `dry_run`: what would happen, nothing written. */
 export interface ActionRunBody {
-  ids?: Record<string, number>
+  ids?: Record<string, number | null>
   query?: string
   expected?: number
   input?: unknown
+  /** Why, where the action asks for it. */
+  reason?: string
   dry_run?: boolean
 }
-export interface ActionResultRow { id: number; status: 'done' | 'skipped' | 'failed'; reason?: string | null; version?: number | null }
+export interface ActionResultRow {
+  id: number; status: 'done' | 'skipped' | 'failed'; reason?: string | null; version?: number | null
+  /** Why it was not done, for the page's words (entity.stale …); what to say of a done one. */
+  code?: string | null; note?: string | null
+}
 export interface ActionOut { action: string; dry_run: boolean; results: ActionResultRow[]; counts: Record<'done' | 'skipped' | 'failed', number> }
 
 /** A client for one resource served by the back end's `resource_router`. The

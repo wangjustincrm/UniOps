@@ -57,6 +57,18 @@ ORDER_PROBLEMS = (ORDER_REVIEW, ORDER_ARCHIVED, EDI_940_FAILED, EDI_940_REJECTED
 RELEASED_BY_THE_ROW = (Inv.PENDING.value, Inv.AWAITING_REQUESTED_DATE.value)  # blocked by advance(), before any confirmation
 
 
+def shadow_refusal(o: Order) -> str | None:
+    return TEST_RUN_REFUSAL if o.shadow else None
+
+
+def cancel_refusal(o: Order) -> str | None:
+    """Why this order cannot be cancelled here; None: it can."""
+    if can_cancel(o.fulfillment_status):
+        return None
+    return (f"an order in {o.fulfillment_status} cannot be cancelled here"
+            + (": a 940 at the warehouse is cancelled through On Hold" if o.fulfillment_status in (F.SENT_940, F.ACCEPTED_940) else ""))
+
+
 class OrderActions(Service):
     def __init__(self, uow, tasks) -> None:
         super().__init__(uow)
@@ -90,14 +102,15 @@ class OrderActions(Service):
     @requires(OPERATE)
     async def cancel(self, id: int, reason: str, version: VersionArg = ANY_VERSION) -> Order:
         o = await self._order(id, version)
-        if not can_cancel(o.fulfillment_status):
-            raise BusinessError("order.not_cancellable", f"an order in {o.fulfillment_status} cannot be cancelled here"
-                                + (": a 940 at the warehouse is cancelled through On Hold" if o.fulfillment_status in
-                                   (F.SENT_940, F.ACCEPTED_940) else ""), {"status": o.fulfillment_status})
+        if why := cancel_refusal(o):
+            raise BusinessError("order.not_cancellable", why, {"status": o.fulfillment_status})
+        await self._run_cancel(o, reason)
+        return o
+
+    async def _run_cancel(self, o: Order, reason: str) -> None:
         self.uow.set_reason(f"order cancelled: {reason}")
         await self._cancel(o, reason)
         await self.s.flush()
-        return o
 
     async def _applied(self, order_id: int) -> list[Shipment]:
         return list((await self.s.execute(select(Shipment).where(Shipment.order_id == order_id, Shipment.applied.is_(True))
@@ -106,6 +119,10 @@ class OrderActions(Service):
     @requires(OPERATE)
     async def release_hold(self, id: int, to: str, reason: str, version: VersionArg = ANY_VERSION) -> Order:
         o = await self._order(id, version)
+        await self._run_release(o, to, reason)
+        return o
+
+    async def _run_release(self, o: Order, to: str, reason: str) -> None:
         applied = await self._applied(o.id)
         exits = hold_exits(o.fulfillment_status, o.fulfillment_status_before_hold,
                            cancelled_at_source=o.source_cancelled_at is not None, applied_945=bool(applied))
@@ -124,7 +141,6 @@ class OrderActions(Service):
                         sh.shopify_status = "Pending"
                         OUTBOX.add(self.s, CLOSE if sh.shopify_fulfillment_id else FULFILL, {"shipment_id": sh.id}, entity=sh)
         await self.s.flush()
-        return o
 
     @requires(OPERATE)
     async def resolve_row(self, shipment_id: int, row_id: int, order_line_id: int | None, reason: str | None) -> Order:

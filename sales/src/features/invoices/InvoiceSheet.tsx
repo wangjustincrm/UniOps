@@ -172,7 +172,7 @@ export function InvoiceSheet({ row }: { row: InvoiceRead }) {
       {inv && (
         <ConfirmAction open={releasing} onOpenChange={setReleasing} title={`Release invoice ${inv.invoice_number}?`}
           description="It goes back to Ready, to be sent." confirmLabel="Release" reason={{ label: 'Why it can go ahead' }}
-          errorMessages={errorMessages} onConfirm={async (why) => { await releaseInvoice(inv.order_id, why); await refresh() }} />
+          errorMessages={errorMessages} onConfirm={async (why) => { await releaseInvoice(inv.order_id, inv.order_version ?? 0, why); await refresh() }} />
       )}
     </>
   )

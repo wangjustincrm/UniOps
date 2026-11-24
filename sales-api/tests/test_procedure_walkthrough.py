@@ -44,6 +44,7 @@ from app.services.order_views import ManualOrderService, OrderRepository, OrderS
 from app.services.settings import EDI_CONNECTION_ID, INVOICE_CONNECTION_ID, SETTINGS, SHADOW_MODE
 from app.services.shadow import mark_open_orders
 from tests.test_orders import OP, env, shopify_order  # noqa: F401 — env is a fixture
+from tests.test_invoicing import order_version
 
 FIX = Path(__file__).parent / "fixtures"
 RADIANT_IN, TC_IN, TC_OUT = "/prod/out", "/tc/in", "/tc/out"
@@ -564,7 +565,7 @@ async def test_f_release_waits_for_the_row_and_accepting_it_lets_the_invoice_go(
     o = await blocked(t)
     with pytest.raises(BusinessError) as e:
         async with t.factory(OP) as u:
-            await InvoiceService(u).release(t.rt.invoicing, ReleaseIn(order_id=o, reason="extra sample, no charge"))
+            await InvoiceService(u).release(t.rt.invoicing, ReleaseIn(order_id=o, version=await order_version(u, o), reason="extra sample, no charge"))
     assert e.value.code == "invoice.rows_unresolved"
     with pytest.raises(BusinessError) as e:
         await resolve_row(t)
@@ -618,7 +619,7 @@ async def test_f_a_part_case_holds_the_invoice_and_release_lets_it_go(t):
     inv = await confirm(t, o)
     await see(t, o, "F24 part case at confirmation", "Shipped", "Blocked", "On Hold", reason="Invoice Blocked", short=True)
     async with t.factory(OP) as u:
-        await InvoiceService(u).release(t.rt.invoicing, ReleaseIn(order_id=o, reason="agreed with the buyer"))
+        await InvoiceService(u).release(t.rt.invoicing, ReleaseIn(order_id=o, version=await order_version(u, o), reason="agreed with the buyer"))
         await u.commit()
     await see(t, o, "F25 released", "Shipped", "Ready", "To Invoice", short=True)
     await system(t)

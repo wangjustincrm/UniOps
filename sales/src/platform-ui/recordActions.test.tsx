@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ListPage } from './patterns/ListPage'
 import { PermissionProvider } from './patterns/PermissionGate'
-import { defineActions } from './patterns/recordActions'
+import { defineActions, resultText } from './patterns/recordActions'
 import type { ActionOut, ActionRunBody } from './resource/ResourceClient'
 import type { ListMeta } from './resource/listMeta'
 
@@ -68,5 +68,25 @@ describe('record actions on a list', () => {
     const item = await screen.findByRole('menuitem', { name: /Finish/ })
     expect(item).toHaveAttribute('aria-disabled', 'true')
     expect(item).toHaveTextContent('Already finished')
+  })
+})
+
+describe('the words for a run', () => {
+  const name = (id: number) => `#${id}`
+  const a = { done: (n: number) => `${n} finished` }
+  const row = (id: number, status: 'done' | 'skipped' | 'failed', more = {}) => ({ id, status, ...more })
+  const out = (...results: ReturnType<typeof row>[]): ActionOut => ({ action: 'x', dry_run: false, results,
+    counts: { done: results.filter((r) => r.status === 'done').length, skipped: results.filter((r) => r.status === 'skipped').length, failed: results.filter((r) => r.status === 'failed').length } })
+
+  it('one record: which of the two happened, with its reason; many: counts', () => {
+    expect(resultText(a, out(row(1, 'skipped', { reason: 'already finished' })), name)).toBe('0 finished · 1 skipped (already finished)')
+    expect(resultText(a, out(row(1, 'failed', { reason: 'changed since you selected it', code: 'entity.stale' })), name)).toBe('0 finished · 1 failed (#1: changed since you selected it)')
+    expect(resultText(a, out(row(1, 'done'), row(2, 'skipped', { reason: 'already finished' })), name)).toBe('1 finished · 1 skipped')
+  })
+
+  it('what a done one still says is said by name, the first few', () => {
+    expect(resultText(a, out(row(1, 'done', { note: 'still in review: no item' })), name)).toBe('1 finished · #1: still in review: no item')
+    const many = Array.from({ length: 7 }, (_, i) => row(i + 1, 'done', { note: 'x' }))
+    expect(resultText(a, out(...many), name)).toMatch(/#5: x; and 2 more$/)
   })
 })

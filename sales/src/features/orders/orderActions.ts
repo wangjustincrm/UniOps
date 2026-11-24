@@ -29,6 +29,14 @@ const settleInput = {
 
 export const ORDER_ACTIONS = defineActions<OrderRead>([
   {
+    // One order: its own button (Recheck), in the row and the sheet. Many: the selected ones (user 2026-11-24).
+    id: 'recheck', label: 'Re-check', permission: 'sales.order.operate', scope: 'group', placement: ['bulk'],
+    eligible: (o) => (o.fulfillment_status === 'Review' ? true : 'Not in review'),
+    title: (n) => `Re-check ${n === 1 ? 'this order' : `${n} orders`}`,
+    description: 'Each order in review is checked again against today\'s Item Master. Nothing is sent to anyone.',
+    will: (n) => `${n} will be re-checked`, done: (n) => `${n} re-checked`,
+  },
+  {
     id: 'settle', label: 'Mark settled', permission: SETTLE, scope: 'group', placement: ['row', 'bulk', 'sheet'],
     eligible: (o) => (o.shadow ? 'A test-run order'
       : o.settled_on ? `Already settled on ${o.settled_on}`
