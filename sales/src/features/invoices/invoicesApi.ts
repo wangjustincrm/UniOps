@@ -68,7 +68,11 @@ export interface InvoiceEditBody {
 }
 export const editInvoice = (id: number, version: number, body: InvoiceEditBody) =>
   api.put<InvoiceDetail>(`/invoices/${id}?version=${version}`, body)
-export const sendInvoice = (id: number) => api.post<InvoiceDetail>(`/invoices/${id}/send`)
+/** By the version seen: an invoice that moved meanwhile is refused (entity.stale). */
+export const sendInvoice = (id: number, version: number) => api.post<InvoiceDetail>(`/invoices/${id}/send?version=${version}`)
+/** An invoice already sent, once more: with why (kept in its Activity). */
+export const sendInvoiceAgain = (id: number, version: number, reason: string) =>
+  api.post<InvoiceDetail>(`/invoices/${id}/send?version=${version}`, { again: true, reason })
 /** `version`: the order's, as the person saw it; changed meanwhile → refused (entity.stale). */
 export const releaseInvoice = (order_id: number, version: number, reason: string) =>
   api.post<{ order_id: number; invoice_status: string }>('/invoices/release', { order_id, version, reason })

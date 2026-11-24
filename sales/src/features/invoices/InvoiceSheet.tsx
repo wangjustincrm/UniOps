@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import { ActionButton, ConfirmAction, DetailList, LocalTable, MasterDetailForm, MoneyCell, RecordSheet, Section, StatusCell, formatDate, formatDateTime, formatMoney, numberColumn, queryKeys, readColumn, textColumn, type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab, compareRecord, useRefresh, Callout, useRecord, Text } from '@/platform-ui'
-import { editInvoice, fetchInvoice, invoicesClient, releaseInvoice, sendInvoice, type InvoiceDetail, type InvoiceRead } from './invoicesApi'
+import { editInvoice, fetchInvoice, invoicesClient, releaseInvoice, sendInvoice, sendInvoiceAgain, type InvoiceDetail, type InvoiceRead } from './invoicesApi'
 import { RecordActivity } from '@/features/common/RecordActivity'
 import { partnerLabel } from '@/features/common/labels'
 
@@ -11,7 +11,8 @@ const MANAGE = 'sales.invoice.manage'
 const errorMessages: Record<string, string> = {
   'invoice.not_sendable': 'The invoice cannot be sent in its current status.',
   'invoice.not_editable': 'The invoice cannot be edited in its current status.',
-  'entity.stale': 'Someone else changed this invoice. Close it and open it again.',
+  'entity.stale': 'The invoice changed since you opened it: it is read again here. Look, then decide again.',
+  'invoice.already_sent': 'The invoice is sent already. Send it again only on purpose, saying why.',
   'auth.forbidden': 'You do not have permission to manage invoices.',
   'invoice.reason_required': 'An invoice price changed: give the reason for the price change.',
 }
@@ -99,11 +100,13 @@ export function InvoiceSheet({ row }: { row: InvoiceRead }) {
   const sheetRefresh = useRefresh(q, { queryKey: queryKeys.detail(invoicesClient, id), compare: compareRecord, noChange: 'Up to date', auto: 'follow' })
   const [editing, setEditing] = useState(false)
   const [releasing, setReleasing] = useState(false)
+  const [resending, setResending] = useState(false)
   const refresh = async () => {
     await qc.invalidateQueries({ queryKey: queryKeys.detail(invoicesClient, id) })
     await qc.invalidateQueries({ queryKey: queryKeys.list(invoicesClient) })
   }
   const inv = q.data
+  const reread = [queryKeys.detail(invoicesClient, id), queryKeys.list(invoicesClient)]
   const sendable = inv && (inv.status === 'Ready' || inv.status === 'Failed' || inv.status === 'Sent')
   const tabs: RecordTab[] = !inv ? [] : editing ? [{
     id: 'edit', label: 'Edit invoice', render: () => (
@@ -153,12 +156,12 @@ export function InvoiceSheet({ row }: { row: InvoiceRead }) {
         ] : undefined}
         actions={inv && !editing ? (
           <>
-            {sendable && (
+            {sendable && (inv.status === 'Sent' ? (
+              <ActionButton size="sm" permission={MANAGE} onAction={() => setResending(true)}>Send again</ActionButton>
+            ) : (
               <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done={`Invoice ${inv.invoice_number} queued to send`}
-                invalidates={[queryKeys.detail(invoicesClient, id), queryKeys.list(invoicesClient)]} onAction={() => sendInvoice(id)}>
-                {inv.status === 'Sent' ? 'Send again' : 'Send'}
-              </ActionButton>
-            )}
+                invalidates={reread} onAction={() => sendInvoice(id, inv.version)}>Send</ActionButton>
+            ))}
             {['Ready', 'Failed', 'Sent', 'Blocked'].includes(inv.status ?? '') && (
               <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setEditing(true)}>Edit invoice</ActionButton>
             )}
@@ -169,6 +172,12 @@ export function InvoiceSheet({ row }: { row: InvoiceRead }) {
         ) : undefined}
         tabs={tabs}
       />
+      {inv && (
+        <ConfirmAction open={resending} onOpenChange={setResending} title={`Send invoice ${inv.invoice_number} again?`}
+          description={`The partner has this invoice (sent ${inv.send_count}×): it gets it a second time.`} confirmLabel="Send again"
+          reason={{ label: 'Why it is sent again' }} record={inv} errorMessages={errorMessages} invalidates={reread}
+          done={`Invoice ${inv.invoice_number} queued to send again`} onConfirm={(why) => sendInvoiceAgain(id, inv.version, why)} />
+      )}
       {inv && (
         <ConfirmAction open={releasing} onOpenChange={setReleasing} title={`Release invoice ${inv.invoice_number}?`}
           description="It goes back to Ready, to be sent." confirmLabel="Release" reason={{ label: 'Why it can go ahead' }}

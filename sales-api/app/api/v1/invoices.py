@@ -11,7 +11,7 @@ from app.platform.crud_router import resource_router
 from app.platform.files import FileResult
 from app.runtime import Runtime, get_runtime
 from app.schemas.invoices import (
-    ConfirmBulkIn, ConfirmIn, ConfirmResult, InvoiceDetail, InvoiceEdit, ReleaseIn, ReturnIn,
+    ConfirmBulkIn, ConfirmIn, ConfirmResult, InvoiceDetail, InvoiceEdit, ReleaseIn, ReturnIn, SendInvoiceIn,
 )
 from app.services.invoice_views import InvoiceService
 
@@ -63,10 +63,11 @@ async def edit_invoice(u: UoW, rt: Rt, id: int, body: InvoiceEdit, version: Anno
 
 
 @routes.post("/{id}/send", response_model=InvoiceDetail)
-async def send_invoice(u: UoW, rt: Rt, id: int):
-    out = await InvoiceService(u).send(rt.invoicing, id)
+async def send_invoice(u: UoW, rt: Rt, id: int, version: Annotated[int | None, Query()] = None, body: SendInvoiceIn | None = None):
+    body = body or SendInvoiceIn()
+    out = await InvoiceService(u).send(rt.invoicing, id, version, again=body.again, reason=body.reason)
     await u.commit()
     return out
 
 
-router = resource_router(InvoiceService, uow=get_uow, custom=routes)
+router = resource_router(InvoiceService, uow=get_uow, custom=routes, runtime=get_runtime)

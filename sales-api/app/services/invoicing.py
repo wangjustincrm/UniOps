@@ -54,8 +54,9 @@ from app.models.orders import Order, OrderLine
 from app.models.records import OutboxRecord
 from app.models.shipments import Shipment, ShipmentRow
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.audit import audit_act
 from app.platform.clock import clock, utc_now
-from app.platform.commands import VersionArg, check_version, touch
+from app.platform.commands import VersionArg, check_version, require_reason, touch
 from app.platform.errors import BusinessError, NotFound
 from app.platform.outbox import ONCE, Outbox, OutboxKind
 from app.platform.pipeline import isolated
@@ -68,6 +69,7 @@ from app.services.problems import (
     problem,
     send_refused,
 )
+from app.services.queued import refuse_queued
 from app.services.settings import (
     INVOICE_CONNECTION_ID,
     INVOICE_INTERNAL_EMAILS,
@@ -338,21 +340,37 @@ class Invoicing:
         await s.flush()
         return order
 
-    async def send(self, uow, invoice_id: int) -> Invoice:
-        s = uow.session
-        pair = await self._lock(s, invoice_id)
-        if pair is None:
-            raise BusinessError("invoice.not_found", "no such invoice", status_code=404)
-        order, inv = pair
+    async def refuse_send(self, s, order: Order, inv: Invoice, *, again: bool = False) -> None:
+        """Why this invoice (it and its order locked) is not sent — or, `again`, not sent once more — raised; nothing: it can.
+        The company's own copy (INTERNAL_COPY) never counts."""
         await self._refuse_shadow(s, order)
         self._refuse_cancelled(order)
+        await refuse_queued(s, (SEND_INVOICE,), inv, f"invoice {inv.invoice_number}")  # before the status: a stuck one says how it ends
         status = Inv(order.invoice_status)
         if status not in (Inv.READY, Inv.FAILED, Inv.SENT):
             raise BusinessError("invoice.not_sendable", f"the invoice is {status.value}", {"status": status.value})
         if inv.method == "NONE":
             raise BusinessError("invoice.method_none", "this partner is not invoiced (method None)")
-        uow.set_reason("invoice resend" if status == Inv.SENT else "invoice send")
-        if status != Inv.SENT:
+        if status == Inv.SENT and not again:
+            raise BusinessError("invoice.already_sent", "the invoice is sent already: send it again only on purpose, saying why", {"needs": "again"})
+        if again and status != Inv.SENT:
+            raise BusinessError("invoice.not_sent_yet", f"the invoice is {status.value}, it was not sent yet: send it", {"status": status.value})
+
+    async def send(self, uow, invoice_id: int, *, version: VersionArg = None, again: bool = False, reason: str | None = None) -> Invoice:
+        """Queue it once. `again`: a sent invoice once more, which says why (user 2026-11-24, kept in its history)."""
+        s = uow.session
+        why = require_reason(reason, code="invoice.resend_reason", message="say why the invoice is sent again (a few words)") if again else None
+        pair = await self._lock(s, invoice_id)
+        if pair is None:
+            raise BusinessError("invoice.not_found", "no such invoice", status_code=404)
+        order, inv = pair
+        await self.refuse_send(s, order, inv, again=again)  # what is done or under way says so, whatever the version
+        check_version(inv, version, "this invoice")
+        uow.set_reason(f"invoice sent again: {why}" if again else "invoice send")
+        touch(uow, inv)  # the same press from the same page is refused: the invoice has moved
+        if again:
+            audit_act(s, "send_again", inv)  # its fields move only when the system has sent it: who asked, and why, is kept here
+        else:
             INVOICE.transition(order, Inv.QUEUED, actor=uow.actor, events=uow.events, reason="invoice queued")
         OUTBOX.add(s, SEND_INVOICE, {"invoice_id": inv.id}, entity=inv)
         if await SETTINGS.get(s, INVOICE_INTERNAL_EMAILS):  # its own message: the partner's channel never holds it back

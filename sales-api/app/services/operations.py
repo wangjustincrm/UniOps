@@ -291,6 +291,6 @@ class DocumentActions(Service):
         inv = (await self.s.execute(select(Invoice).where(Invoice.document_id == doc.id))).scalar_one_or_none()
         if inv is not None:
             await self._authorize("sales.invoice.manage")
-            await rt.invoicing.send(self.uow, inv.id)
+            await rt.invoicing.send(self.uow, inv.id, version=ANY_VERSION)
             return f"invoice {inv.invoice_number} queued"
         raise BusinessError("document.not_resendable", f"a {doc.kind} is not sent again from here")

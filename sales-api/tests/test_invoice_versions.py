@@ -143,7 +143,7 @@ async def _edit(t, u, inv, ids):  # noqa: ARG001
 
 
 async def _send(t, u, inv, ids):  # noqa: ARG001
-    await InvoiceService(u).send(t.inv, inv.id)
+    await InvoiceService(u).send(t.inv, inv.id, ANY_VERSION)
 
 
 async def _pre_check(t, u, inv, ids):  # noqa: ARG001
@@ -190,7 +190,7 @@ async def test_an_invoice_that_is_gone_is_said_as_before(p6):  # noqa: F811
             await InvoiceService(u).edit(p6.inv, 99_999, InvoiceEdit(reason="x y z"), 1)
         assert (e.value.code, e.value.status_code) == ("entity.not_found", 404)
         with pytest.raises(BusinessError) as e:
-            await InvoiceService(u).send(p6.inv, 99_999)
+            await InvoiceService(u).send(p6.inv, 99_999, ANY_VERSION)
         assert e.value.code == "invoice.not_found"
     async with p6.factory(SYSTEM_ACTOR) as u:
         assert await p6.inv._pre_check({"invoice_id": 99_999}, u) == "the invoice or its order is gone"

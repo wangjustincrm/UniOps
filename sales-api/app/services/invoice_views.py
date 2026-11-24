@@ -15,7 +15,7 @@ from app.models.orders import Order, OrderLine
 from app.services import print_docs
 from app.services.record_files import TIMELINES, timeline_of
 from app.platform.authorization import authorize, requires
-from app.platform.commands import ANY_VERSION
+from app.platform.commands import ANY_VERSION, VersionArg
 from app.platform.errors import BusinessError
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
@@ -70,11 +70,16 @@ async def po_prices(s, order_line_ids: list[int]) -> dict[int, Decimal]:
     return out
 
 
+def _actions():
+    from app.services.invoice_actions import INVOICE_ACTIONS  # it imports this module
+    return INVOICE_ACTIONS
+
+
 class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
     repo_cls = InvoiceRepository
     read_schema = InvoiceRead
     read_permission = READ
-    resource = Resource(path="/invoices", detail=InvoiceDetail, timeline=TIMELINES["invoice"], export_headers="labels",
+    resource = Resource(path="/invoices", detail=InvoiceDetail, timeline=TIMELINES["invoice"], actions=lambda: _actions(), export_headers="labels",
                         export_fields=(*InvoiceRepository.list_fields, "order_ref", "order_number", "partner_name", "po", "status"))
 
     @requires(READ)
@@ -120,7 +125,7 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
         order = await self.uow.session.get(Order, inv.order_id)
         if order.invoice_status != Inv.READY.value or inv.method == "NONE":
             return False
-        await invoicing.send(self.uow, inv.id)
+        await invoicing.send(self.uow, inv.id, version=ANY_VERSION)  # built (or found Ready) in this unit
         return True
 
     @requires(OPERATE)
@@ -149,8 +154,8 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
         return await self._detail_after(id)
 
     @requires(MANAGE)
-    async def send(self, invoicing, id: int) -> InvoiceDetail:
-        await invoicing.send(self.uow, id)
+    async def send(self, invoicing, id: int, version: VersionArg = None, *, again: bool = False, reason: str | None = None) -> InvoiceDetail:
+        await invoicing.send(self.uow, id, version=version, again=again, reason=reason)
         return await self._detail_after(id)
 
     @requires(MANAGE)

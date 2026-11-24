@@ -110,7 +110,7 @@ class EntityChangeRepository(Repository[AuditRecord]):
     search_fields = ("entity", "entity_id", "user_name", "reason")
     list_fields = ("id", "at", "user_name", "action", "entity", "entity_id", "reason", "audit_log_id")
     labels = {"at": "Time", "user_name": "User", "entity": "Entity", "entity_id": "Id", "audit_log_id": "Audit log"}
-    enums = {"action": ("create", "update", "delete")}
+    enums = {"action": ("create", "update", "delete", "send_again")}
     default_sort = ("-at",)
     meta_hidden = ("audit_log_id",)  # a UUID: the row carries it (Open its request), never a column
     groupable = ("entity", "action", "user_name")

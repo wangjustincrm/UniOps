@@ -93,8 +93,11 @@ async def confirm(t, oid, *, when=date(2026, 11, 5), lines=None):
 
 
 async def send(t, invoice_id):
+    """As the page does: a sent one again, with why."""
     async with t.factory(OP) as u:
-        out = await InvoiceService(u).send(t.inv, invoice_id)
+        d = await InvoiceService(u).detail(invoice_id)
+        again = d.status == "Sent"
+        out = await InvoiceService(u).send(t.inv, invoice_id, d.version, again=again, reason="lost in the mail" if again else None)
         await u.commit()
         return out
 

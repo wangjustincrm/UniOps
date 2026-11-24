@@ -210,7 +210,7 @@ async def confirm(t, oid, lines=None):
 
 async def send_invoice(t, invoice_id):
     async with t.factory(OP) as u:
-        await InvoiceService(u).send(t.rt.invoicing, invoice_id)
+        await InvoiceService(u).send(t.rt.invoicing, invoice_id, ANY_VERSION)
         await u.commit()
 
 

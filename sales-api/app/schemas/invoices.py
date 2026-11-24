@@ -121,6 +121,13 @@ class ReleaseIn(BaseModel):
     reason: Reason
 
 
+class SendInvoiceIn(BaseModel):
+    """`again`: an invoice already sent, once more, on purpose; it says why (the service asks: 422 with the field)."""
+    model_config = ConfigDict(extra="forbid")
+    again: bool = False
+    reason: Annotated[str, Field(max_length=2000)] | None = None
+
+
 class ReturnLine(BaseModel):
     model_config = ConfigDict(extra="forbid")
     order_line_id: int

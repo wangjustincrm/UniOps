@@ -34,7 +34,7 @@ const invDetail: InvoiceDetail = { ...inv, confirmed_date: '2026-11-05', timelin
 const meta: ListMeta = { version: 1, searchable: true, default_sort: [], fields: [], views: [{ key: 'all', name: 'All', state: { version: 1 } }] }
 
 const api = vi.hoisted(() => ({ list: vi.fn(), fetchOrder: vi.fn(), bulk: vi.fn(), confirm: vi.fn(), invList: vi.fn(),
-  fetchInvoice: vi.fn(), send: vi.fn(), edit: vi.fn(), release: vi.fn() }))
+  fetchInvoice: vi.fn(), send: vi.fn(), again: vi.fn(), edit: vi.fn(), release: vi.fn() }))
 vi.mock('@/features/orders/ordersApi', async (orig) => {
   const real = await orig<typeof import('@/features/orders/ordersApi')>()
   return { ...real, ordersClient: { ...real.ordersClient, list: api.list, meta: async () => meta }, fetchOrder: api.fetchOrder }
@@ -42,7 +42,7 @@ vi.mock('@/features/orders/ordersApi', async (orig) => {
 vi.mock('./invoicesApi', async (orig) => {
   const real = await orig<typeof import('./invoicesApi')>()
   return { ...real, invoicesClient: { ...real.invoicesClient, list: api.invList, meta: async () => meta },
-    confirmBulk: api.bulk, confirmDelivery: api.confirm, fetchInvoice: api.fetchInvoice, sendInvoice: api.send,
+    confirmBulk: api.bulk, confirmDelivery: api.confirm, fetchInvoice: api.fetchInvoice, sendInvoice: api.send, sendInvoiceAgain: api.again,
     editInvoice: api.edit, releaseInvoice: api.release }
 })
 const { default: DeliveryPage } = await import('./DeliveryPage')
@@ -185,7 +185,29 @@ describe('Invoices', () => {
     await waitFor(() => expect(api.edit).toHaveBeenCalledWith(3, 1, { invoice_date: '2026-11-05', delivery_number: 'POD-4471',
       reason: 'agreed promo', lines: [{ id: 30, qty: 9, unit_price: '48.5' }] }))
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Send' }))
-    await waitFor(() => expect(api.send).toHaveBeenCalledWith(3))
+    await waitFor(() => expect(api.send).toHaveBeenCalledWith(3, 1))  // a first send asks nothing: by the version seen
+  })
+
+  it('a sent invoice goes again only after a confirmation with why; refused as changed it keeps why and goes with the new version', async () => {
+    const seen = { ...invDetail, status: 'Sent', sent_at: '2026-11-05T16:00:00Z', send_count: 1, version: 5 }
+    api.fetchInvoice.mockResolvedValue(seen)
+    api.again.mockRejectedValueOnce(Object.assign(new Error('409'), { body: { error: { code: 'entity.stale', message: 'this invoice was changed by someone else; reload it', details: {} } } }))
+    api.again.mockResolvedValueOnce({ ...seen, version: 7 })
+    renderAs(['sales.read', 'sales.invoice.manage'], <InvoicesPage />)
+    fireEvent.click(await screen.findByText('IN-107'))
+    const sheet = await screen.findByRole('dialog')
+    fireEvent.click(await within(sheet).findByRole('button', { name: 'Send again' }))
+    expect(api.again).not.toHaveBeenCalled()
+    expect(api.send).not.toHaveBeenCalled()
+    const ask = await screen.findByRole('dialog', { name: 'Send invoice IN-107 again?' })
+    expect(within(ask).getByRole('button', { name: 'Send again' })).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.change(within(ask).getByLabelText(/^Why it is sent again/), { target: { value: 'lost in the mail' } })
+    api.fetchInvoice.mockResolvedValue({ ...seen, version: 6, delivery_number: 'POD-1' })
+    fireEvent.click(within(ask).getByRole('button', { name: 'Send again' }))
+    await waitFor(() => expect(within(ask).getByRole('alert')).toHaveTextContent(/The invoice changed.*Updated:/))
+    expect(within(ask).getByLabelText(/^Why it is sent again/)).toHaveValue('lost in the mail')
+    fireEvent.click(within(ask).getByRole('button', { name: 'Send again' }))
+    await waitFor(() => expect(api.again.mock.calls).toEqual([[3, 5, 'lost in the mail'], [3, 6, 'lost in the mail']]))
   })
 })
 
