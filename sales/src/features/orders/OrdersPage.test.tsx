@@ -638,7 +638,7 @@ describe('Orders: backordered quantities and the invoice price before the invoic
     expect(within(sheet).getByRole('button', { name: 'Save prices' })).toBeDisabled()
     fireEvent.change(within(sheet).getByLabelText(/Reason for a price different from the PO/), { target: { value: 'agreed promo' } })
     fireEvent.click(within(sheet).getByRole('button', { name: 'Save prices' }))
-    await waitFor(() => expect(api.prices).toHaveBeenCalledWith(5, { reason: 'agreed promo', lines: [{ id: 2, invoice_unit_price: '145' }] }))
+    await waitFor(() => expect(api.prices).toHaveBeenCalledWith(5, detail.version, { reason: 'agreed promo', lines: [{ id: 2, invoice_unit_price: '145' }] }))
     const lines = await linesOf(sheet)
     expect(within(lines).getByText('CF0093').closest('tr')).toHaveTextContent('145.00 CAD /CASE')
   })
@@ -749,7 +749,7 @@ describe('the order sheet: facts, actions and tabs', () => {
     fireEvent.change(await within(sheet).findByRole('textbox', { name: /Quantity line/ }), { target: { value: '12' } })
     fireEvent.change(within(sheet).getByRole('textbox', { name: /What was wrong/ }), { target: { value: '12 cases, not 10' } })
     fireEvent.click(within(sheet).getByRole('button', { name: 'Amend and send again' }))
-    await waitFor(() => expect(api.amend).toHaveBeenCalledWith(5, { reason: '12 cases, not 10', lines: [{ id: 1, item_code: 'CF0092', ordered_qty: '12' }] }))
+    await waitFor(() => expect(api.amend).toHaveBeenCalledWith(5, detail.version, { reason: '12 cases, not 10', lines: [{ id: 1, item_code: 'CF0092', ordered_qty: '12' }] }))
   })
 
 })

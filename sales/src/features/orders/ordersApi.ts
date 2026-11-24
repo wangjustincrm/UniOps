@@ -42,13 +42,16 @@ export const packingListPdf = (orderId: number, shipmentId: number, label = ''):
 export const downloadPacket = (o: Pick<OrderRead, 'id' | 'source_reference' | 'order_number'>) =>
   api.download(`/orders/${o.id}/packet.zip`, `Order-${o.source_reference ?? o.order_number}.zip`)
 export interface InvoicePricesBody { reason: string | null; lines: { id: number; invoice_unit_price: string | null }[] }
-export const setInvoicePrices = (id: number, body: InvoicePricesBody) => api.put<OrderDetail>(`/orders/${id}/invoice-prices`, body)
+/** `version`: the order as the person saw it; changed meanwhile → refused (entity.stale). */
+export const setInvoicePrices = (id: number, version: number, body: InvoicePricesBody) =>
+  api.put<OrderDetail>(`/orders/${id}/invoice-prices?version=${version}`, body)
 /** What the customer returned per line, with why (user 2026-11-12): until the invoice is sent. */
 export interface ReturnedBody { reason: string; lines: { id: number; returned_ea: number }[] }
-export const setReturned = (id: number, body: ReturnedBody) => api.put<OrderDetail>(`/orders/${id}/returned`, body)
+export const setReturned = (id: number, version: number, body: ReturnedBody) => api.put<OrderDetail>(`/orders/${id}/returned?version=${version}`, body)
 /** An order sent wrong, corrected and sent again (user 2026-11-13): until the warehouse ships it. */
 export interface AmendBody { reason: string; carrier?: Carrier | null; lines: { id: number; item_code?: string; ordered_qty?: string; removed?: boolean }[] }
-export const amendOrder = (id: number, body: AmendBody) => api.post<{ order: OrderRead; sent: boolean; document_id: number | null }>(`/orders/${id}/amend`, body)
+export const amendOrder = (id: number, version: number, body: AmendBody) =>
+  api.post<{ order: OrderRead; sent: boolean; document_id: number | null }>(`/orders/${id}/amend?version=${version}`, body)
 export const retryShopify = (shipmentId: number) =>
   api.post<{ shipment_id: number; shopify_status: string }>(`/orders/shipments/${shipmentId}/shopify-retry`)
 

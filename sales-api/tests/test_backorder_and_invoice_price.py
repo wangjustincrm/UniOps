@@ -10,6 +10,7 @@ from decimal import Decimal
 import pytest
 import sqlalchemy as sa
 
+from app.platform.commands import ANY_VERSION
 from app.domain.lifecycle import backordered
 from app.domain.status import Fulfillment as F
 from app.models.orders import Order, OrderLine
@@ -73,7 +74,7 @@ async def test_a_shadow_945_shows_its_figure_applied_nowhere_and_a_removed_line_
 
 async def set_prices(t, oid, lines, reason=None):
     async with t.factory(OP) as u:
-        out = await OrderService(u).set_invoice_prices(oid, InvoicePricesIn(reason=reason, lines=lines))
+        out = await OrderService(u).set_invoice_prices(oid, InvoicePricesIn(reason=reason, lines=lines), ANY_VERSION)
         await u.commit()
         return out
 

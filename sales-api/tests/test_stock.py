@@ -5,6 +5,7 @@ import pytest
 import sqlalchemy as sa
 
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError
 from app.services.stock import StockItemService, StockLotService, StockMoveService, sync
 from app.platform.query import QuerySpec
@@ -63,7 +64,7 @@ async def test_a_945_takes_stock_out_and_a_final_delivery_splits_shipped_and_ret
     async with p6.factory(OP) as u:
         from app.schemas.orders import ReturnedIn
         from app.services.order_views import OrderService
-        await OrderService(u).set_returned(o.id, ReturnedIn(reason="one case refused", lines=[{"id": line["id"], "returned_ea": case}]))
+        await OrderService(u).set_returned(o.id, ReturnedIn(reason="one case refused", lines=[{"id": line["id"], "returned_ea": case}]), ANY_VERSION)
         await u.commit()
     await p6.inv.advance()
     inv = await confirm(p6, o.id, when=date(2026, 11, 5))

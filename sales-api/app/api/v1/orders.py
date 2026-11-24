@@ -28,8 +28,8 @@ async def eligibility_preview(u: UoW, rt: Rt) -> list[dict]:
 
 
 @routes.post("/{id}/amend")
-async def amend_order(u: UoW, rt: Rt, id: int, body: AmendOrderIn) -> dict:
-    out = await OrderService(u).amend(id, body, rt.outbound)
+async def amend_order(u: UoW, rt: Rt, id: int, body: AmendOrderIn, version: Version = None) -> dict:
+    out = await OrderService(u).amend(id, body, rt.outbound, version)
     await u.commit()
     return out
 
@@ -136,15 +136,15 @@ async def unsettle_order(u: UoW, id: int, body: UnsettleIn, version: Version = N
 
 
 @routes.put("/{id}/returned", response_model=OrderDetail)
-async def set_returned(u: UoW, id: int, body: ReturnedIn):
-    out = await OrderService(u).set_returned(id, body)
+async def set_returned(u: UoW, id: int, body: ReturnedIn, version: Version = None):
+    out = await OrderService(u).set_returned(id, body, version)
     await u.commit()
     return out
 
 
 @routes.put("/{id}/invoice-prices", response_model=OrderDetail)
-async def set_invoice_prices(u: UoW, id: int, body: InvoicePricesIn):
-    out = await OrderService(u).set_invoice_prices(id, body)
+async def set_invoice_prices(u: UoW, id: int, body: InvoicePricesIn, version: Version = None):
+    out = await OrderService(u).set_invoice_prices(id, body, version)
     await u.commit()
     return out
 

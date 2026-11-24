@@ -3,6 +3,7 @@ import pytest
 
 from app.models.orders import Order
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError
 from app.schemas.orders import AmendOrderIn
 from app.services.order_views import OrderService
@@ -27,7 +28,7 @@ async def test_a_rejected_order_is_amended_and_a_new_940_goes(p6):  # noqa: F811
     [ln] = await p6.q("SELECT id, item_code, qty_ea, factor_ea FROM sales_order_lines WHERE order_id = :o", o=o.id)
     async with p6.factory(OP) as u:
         out = await OrderService(u).amend(o.id, AmendOrderIn(reason="12 cases, not 10", lines=[
-            {"id": ln["id"], "item_code": ln["item_code"], "ordered_qty": "12"}]), p6.edi.out)
+            {"id": ln["id"], "item_code": ln["item_code"], "ordered_qty": "12"}]), p6.edi.out, ANY_VERSION)
         await u.commit()
     [after] = await p6.q("SELECT qty_ea, ordered_qty FROM sales_order_lines WHERE order_id = :o", o=o.id)
     assert after["qty_ea"] == 12 * int(ln["factor_ea"]) and float(after["ordered_qty"]) == 12
@@ -44,20 +45,20 @@ async def test_an_order_the_warehouse_shipped_or_a_bad_line_is_refused(p6):  # n
     async with p6.factory(OP) as u:
         with pytest.raises(BusinessError) as e:
             await OrderService(u).amend(o.id, AmendOrderIn(reason="too late", lines=[{"id": ln["id"], "item_code": ln["item_code"], "ordered_qty": "1"}]),
-                                        p6.edi.out)
+                                        p6.edi.out, ANY_VERSION)
     assert e.value.code == "order.amend"
     o2 = await _order(p6, "PO-AM3")  # Pending: amended, it goes on the next pass
     [l2] = await p6.q("SELECT id FROM sales_order_lines WHERE order_id = :o", o=o2.id)
     async with p6.factory(OP) as u:
         with pytest.raises(BusinessError) as e:
             await OrderService(u).amend(o2.id, AmendOrderIn(reason="wrong item", lines=[{"id": l2["id"], "item_code": "NOPE", "ordered_qty": "1"}]),
-                                        p6.edi.out)
+                                        p6.edi.out, ANY_VERSION)
         assert e.value.code == "order.amend_line"
         with pytest.raises(BusinessError) as e:
-            await OrderService(u).amend(o2.id, AmendOrderIn(reason="nothing left", lines=[{"id": l2["id"], "removed": True}]), p6.edi.out)
+            await OrderService(u).amend(o2.id, AmendOrderIn(reason="nothing left", lines=[{"id": l2["id"], "removed": True}]), p6.edi.out, ANY_VERSION)
         assert "at least one line" in e.value.message
     async with p6.factory(OP) as u:  # a fresh unit: the refused change above was never kept
         out = await OrderService(u).amend(o2.id, AmendOrderIn(reason="5 cases", lines=[{"id": l2["id"], "item_code": "CF0092", "ordered_qty": "5"}]),
-                                          p6.edi.out)
+                                          p6.edi.out, ANY_VERSION)
         await u.commit()
     assert out["sent"] is False and out["order"]["fulfillment_status"] == "Pending"

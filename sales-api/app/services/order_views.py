@@ -61,7 +61,7 @@ from app.models.payments import (
 from app.models.records import AuditRecord
 from app.models.shipments import Shipment, ShipmentRow
 from app.platform.authorization import requires
-from app.platform.commands import check_version
+from app.platform.commands import VersionArg, check_version, touch
 from app.platform.errors import BusinessError, InvalidInput, NotFound
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
@@ -390,7 +390,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                 for k in kids]
 
     @requires(INVOICE_MANAGE)
-    async def set_invoice_prices(self, id: int, body: InvoicePricesIn) -> OrderDetail:
+    async def set_invoice_prices(self, id: int, body: InvoicePricesIn, version: VersionArg = None) -> OrderDetail:
         """The invoice price per order line before the invoice exists (user
         2026-11-03): the draft copies it instead of the PO price. Equal to the PO
         price (or null) means "the PO price". A price that differs from the PO
@@ -398,6 +398,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         draft exists the invoice is the one place to change it."""
         s = self.uow.session
         o = await self.repo.get(id, for_update=True)
+        check_version(o, version, "this order")
         if (await s.execute(select(Invoice.id).where(Invoice.order_id == id))).first() is not None:
             raise BusinessError("order.invoice_exists", "the invoice is drafted: change the price on the invoice")
         if o.fulfillment_status == F.CANCELLED:
@@ -417,6 +418,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             raise BusinessError("invoice.reason_required", "say why the invoice price differs from the PO (a few words)",
                                 {"field": "reason"}, status_code=422)
         if changed:
+            touch(self.uow, o)
             self.uow.set_reason(f"invoice price: {reason}" if reason else "invoice price back to the PO price")
             await oplog.write(s, "INFO", "invoice", f"order {o.label}: invoice price " + "; ".join(
                 f"line {ln.line_no} {ln.item_code or ''} {ln.invoice_unit_price if ln.invoice_unit_price is not None else ln.unit_price}"
@@ -428,7 +430,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         return await self.detail(id)
 
     @requires(INVOICE_MANAGE)
-    async def set_returned(self, id: int, body: ReturnedIn) -> OrderDetail:
+    async def set_returned(self, id: int, body: ReturnedIn, version: VersionArg = None) -> OrderDetail:
         """What the customer returned (or refused) per line, before the invoice goes (user 2026-11-12):
         delivered = shipped − returned, and the invoice bills the delivered. With the delivery already
         confirmed the delivered follows, and a draft invoice's line too (whole cases only; its price
@@ -436,6 +438,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         Record a return. Every change has its reason, in the audit and the log."""
         s = self.uow.session
         o = await self.repo.get(id, for_update=True)
+        check_version(o, version, "this order")
         if o.fulfillment_status == F.CANCELLED:
             raise BusinessError("order.cancelled", "the order is cancelled")
         if o.invoice_status in (Inv.QUEUED.value, Inv.SENT.value):
@@ -461,6 +464,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                 changed.append((ln, ln.returned_ea, c.returned_ea))
         if not changed:
             return await self.detail(id)
+        touch(self.uow, o)  # only the lines (and a draft invoice) change: the order's version moves all the same
         reason = body.reason.strip()
         cases = dict((await s.execute(select(ItemUnit.item_code, ItemUnit.factor_ea).where(
             ItemUnit.item_code.in_({ln.item_code for ln, _, _ in changed if ln.item_code}), ItemUnit.unit == CASE_UNIT,
@@ -523,14 +527,14 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                 "file_status": doc.file_status, "control": doc.st02, "errors": (doc.body_json or {}).get("errors", [])}
 
     @requires(OPERATE)
-    async def amend(self, id: int, body, outbound) -> dict:
+    async def amend(self, id: int, body, outbound, version: VersionArg = None) -> dict:
         """User 2026-11-13: an order sent wrong, corrected and sent again (app/services/order_amend)."""
         from app.services.order_amend import amend_order
         lines = [x.model_dump() for x in body.lines]
         for x in lines:
             if not x["removed"] and (not x["item_code"] or x["ordered_qty"] is None):
                 raise BusinessError("order.amend_line", f"line {x['id']}: an item and a quantity, or take it off")
-        out = await amend_order(self.uow, outbound, id, lines, body.reason, carrier=body.carrier)
+        out = await amend_order(self.uow, outbound, id, lines, body.reason, carrier=body.carrier, version=version)
         order = await self.repo.get(id)
         await self._load_runs_on()  # the next step needs it (else none is shown)
         return {"order": self.to_read(order).model_dump(mode="json"), **out}

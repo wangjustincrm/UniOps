@@ -15,6 +15,7 @@ from app.domain.status import Fulfillment as F
 from app.models.config import Item, ItemUnit
 from app.models.orders import Order, OrderLine
 from app.models.shipments import Shipment
+from app.platform.commands import VersionArg, check_version, touch
 from app.platform.errors import BusinessError
 from app.services import oplog
 
@@ -22,11 +23,13 @@ AMENDABLE = (F.PENDING, F.SENT_940, F.ACCEPTED_940, F.REJECTED_940, F.TIMEOUT_94
 SOURCES = ("EDI_850", "MANUAL")
 
 
-async def amend_order(uow, outbound, order_id: int, lines: list[dict[str, Any]], reason: str, *, carrier: str | None = None) -> dict:
+async def amend_order(uow, outbound, order_id: int, lines: list[dict[str, Any]], reason: str, *, carrier: str | None = None,
+                      version: VersionArg = None) -> dict:
     s = uow.session
     o = await s.get(Order, order_id, with_for_update=True)
     if o is None:
         raise BusinessError("order.not_found", "no such order", status_code=404)
+    check_version(o, version, "this order")
     if o.historical:
         raise BusinessError("order.amend", "a historical order is not changed")
     if o.source_type not in SOURCES:
@@ -65,6 +68,7 @@ async def amend_order(uow, outbound, order_id: int, lines: list[dict[str, Any]],
         ln.factor_ea = units.get(code, {}).get(ln.order_unit or "", Decimal(1) if ln.order_unit == "EA" else None)
         ln.problem = None
         after.append({"line": ln.line_no, "item": code, "qty": str(qty), "unit": ln.order_unit, "ea": ea})
+    changed = any(s.is_modified(ln) for ln in current.values())  # before a query flushes them
     if problems:
         raise BusinessError("order.amend_line", "; ".join(problems))
     if all(ln.removed for ln in current.values()):
@@ -78,6 +82,8 @@ async def amend_order(uow, outbound, order_id: int, lines: list[dict[str, Any]],
         before.append({"carrier": o.shipping_method})
         o.shipping_method = carrier
         after.append({"carrier": carrier})
+    if changed:
+        touch(uow, o)
     uow.set_reason(f"order amended: {reason}")
     await s.flush()
     status = F(o.fulfillment_status)

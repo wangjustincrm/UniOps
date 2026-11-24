@@ -6,6 +6,7 @@ import { itemOptions } from '@/features/configuration/lookups'
 import { MANUAL_SETTINGS_KEY, amendOrder, carriersFor, fetchManualOrderSettings, isCarrier, lineNumbers, type OrderDetail } from './ordersApi'
 
 const errorMessages: Record<string, string> = {
+  'entity.stale': 'Someone else changed this order meanwhile. Nothing was saved: close this and open it again.',
   'order.amend': 'This order can no longer be amended: the warehouse has shipped it, or it is not waiting for its 940.',
   'order.amend_source': "A Shopify order's items come from the store: fix the item mapping instead.",
   'order.amend_line': 'A line could not be changed: check its item and quantity.',
@@ -54,11 +55,11 @@ export function AmendForm({ o, onSaved, onCancel }: { o: OrderDetail; onSaved: (
       lines={{ label: 'Order lines', columns, rowKey: (l) => l.id, problem, removable: true,
         initial: open.map((ln) => ({ id: ln.id, line_no: numbers.get(ln.line_no) ?? ln.line_no, item_code: ln.item_code ?? '',
           qty: String(Number(ln.ordered_qty)), unit: ln.order_unit ?? 'EA' })) }}
-      submitLabel="Amend and send again" errorMessages={errorMessages} onCancel={onCancel}
-      onSubmit={async (v, lines) => {
+      submitLabel="Amend and send again" errorMessages={errorMessages} onCancel={onCancel} version={o.version}
+      onSubmit={async (v, lines, edit) => {
         const kept = new Set(lines.map((l) => l.id))
         const carrier = isCarrier(v.carrier) ? v.carrier : null
-        await amendOrder(o.id, {
+        await amendOrder(o.id, edit.version ?? o.version, {
           reason: String(v.reason ?? '').trim(),
           ...(o.source_type === 'MANUAL' && carrier && carrier !== o.shipping_method ? { carrier } : {}),
           lines: [

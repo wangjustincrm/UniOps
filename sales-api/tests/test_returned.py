@@ -3,6 +3,7 @@ with a reason, before the invoice goes. Delivered = shipped − returned; the in
 delivered — at confirmation, and on a draft that already exists. Once sent it is locked."""
 import pytest
 
+from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError
 from app.schemas.orders import ReturnedIn, ReturnedLineIn
 from app.services.order_views import OrderService
@@ -13,7 +14,7 @@ from tests.test_outbound import edi as p4_edi  # noqa: F401 — a fixture
 
 async def set_returned(t, oid, line_id, ea, reason="customer refused 2 cases"):
     async with t.factory(OP) as u:
-        out = await OrderService(u).set_returned(oid, ReturnedIn(reason=reason, lines=[ReturnedLineIn(id=line_id, returned_ea=ea)]))
+        out = await OrderService(u).set_returned(oid, ReturnedIn(reason=reason, lines=[ReturnedLineIn(id=line_id, returned_ea=ea)]), ANY_VERSION)
         await u.commit()
         return out
 

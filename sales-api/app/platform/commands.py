@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Final, TypeVar
 
+from app.platform.clock import clock
 from app.platform.errors import BusinessError, InvalidInput, NotFound
 
 
@@ -33,6 +34,14 @@ def check_version(entity: Any, version: VersionArg, what: str = "this record") -
         raise InvalidInput("entity.version_required", "send the version you edited", {"field": "version"})
     if entity.version != version:
         raise Stale(what, entity.version, version)  # type: ignore[arg-type]
+
+
+def touch(uow: Any, entity: Any) -> None:
+    """The record changed through its parts (a line, a price) and not a column of its own: its version moves with the
+    unit of work's flush (the mapper's version_id_col), so whoever saw it before is refused, as for any change. Who and
+    when are kept on the record; no audit row (no audited field changed: the parts have theirs)."""
+    entity.updated_at = clock().now()
+    entity.updated_by, entity.updated_by_name = uow.actor.user_id, uow.actor.name
 
 
 async def load_for_command(session, model: type[T], id: int, *, version: VersionArg, what: str | None = None,

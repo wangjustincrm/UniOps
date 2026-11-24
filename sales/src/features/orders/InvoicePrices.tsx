@@ -5,6 +5,7 @@ import {
 import { lineNumbers, setInvoicePrices, type OrderDetail } from './ordersApi'
 
 const errorMessages: Record<string, string> = {
+  'entity.stale': 'Someone else changed this order meanwhile. Nothing was saved: close this and open it again.',
   'invoice.reason_required': 'An invoice price differs from the PO: give the reason.',
   'order.invoice_exists': 'The invoice is drafted: change the price on the invoice.',
   'order.cancelled': 'The order is cancelled.',
@@ -57,8 +58,8 @@ export function InvoicePricesForm({ o, onSaved, onCancel }: { o: OrderDetail; on
       // A price that differs from the PO needs its reason (the server refuses it without one).
       blocked={({ values, lines }) => (lines.some((l) => differs(l.price, l.po_price) || (l.po_price == null && l.price.trim() !== ''))
         && String(values.reason ?? '').trim().length < 3 ? 'An invoice price differs from the PO: give the reason.' : null)}
-      submitLabel="Save prices" errorMessages={errorMessages} onCancel={onCancel}
-      onSubmit={async (v, lines) => onSaved(await setInvoicePrices(o.id, {
+      submitLabel="Save prices" errorMessages={errorMessages} onCancel={onCancel} version={o.version}
+      onSubmit={async (v, lines, edit) => onSaved(await setInvoicePrices(o.id, edit.version ?? o.version, {
         reason: (v.reason as string | null) ?? null,
         lines: lines.map((l) => ({ id: l.id, invoice_unit_price: l.price.trim() === '' ? null : l.price.trim() })) }))}
     />

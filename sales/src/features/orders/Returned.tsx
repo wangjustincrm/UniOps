@@ -3,6 +3,7 @@ import { MasterDetailForm, readColumn, textColumn, type EditableColumn, type Fie
 import { lineNumbers, setReturned, type OrderDetail } from './ordersApi'
 
 const errorMessages: Record<string, string> = {
+  'entity.stale': 'Someone else changed this order meanwhile. Nothing was saved: close this and open it again.',
   'returned.invoice_sent': 'The invoice is sent: record a later return with Record a return.',
   'returned.more_than_shipped': 'A line cannot have more returned than shipped.',
   'returned.part_case': 'The invoice bills whole cases: what is delivered must be a whole number of cases.',
@@ -50,8 +51,8 @@ export function ReturnedForm({ o, onSaved, onCancel }: { o: OrderDetail; onSaved
       lines={{ label: 'Returned', columns, rowKey: (l) => l.id, problem, minRows: 0,
         initial: shipped.map((ln) => ({ id: ln.id, line_no: numbers.get(ln.line_no) ?? ln.line_no, item: ln.item_code ?? 'unmatched',
           shipped: ln.shipped_ea ?? 0, returned: String(ln.returned_ea ?? 0) })) }}
-      submitLabel="Save returned" errorMessages={errorMessages} onCancel={onCancel}
-      onSubmit={async (v, lines) => onSaved(await setReturned(o.id, {
+      submitLabel="Save returned" errorMessages={errorMessages} onCancel={onCancel} version={o.version}
+      onSubmit={async (v, lines, edit) => onSaved(await setReturned(o.id, edit.version ?? o.version, {
         reason: String(v.reason ?? '').trim(),
         lines: lines.map((l) => ({ id: l.id, returned_ea: l.returned.trim() === '' ? 0 : Number(l.returned) })) }))}
     />
