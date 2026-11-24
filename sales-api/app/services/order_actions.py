@@ -1,8 +1,9 @@
 """The order's record actions (platform/bulk_actions.py; stage 3): one declaration each — the permission, the rule, the
 work, one or many, a reason. The single routes call the same rule and the same work.
 
-None of these sends a file or an email by itself, but Confirm delivery when asked to send too (as the bulk confirmation
-always could). Release hold may queue the Shopify write its hold had stopped (order_holds)."""
+Most send nothing. Confirm delivery sends the invoice too when asked (as the bulk confirmation always could); Release hold
+may queue the Shopify write its hold had stopped (order_holds); Fulfil in Shopify now queues it (stage 3 g). What sends is
+queued in the outbox, once (app/services/queued.py), one order at a time."""
 from __future__ import annotations
 
 from typing import Any
@@ -15,7 +16,7 @@ from app.domain.order_rules import hold_exits
 from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
 from app.models.orders import Order
-from app.platform.bulk_actions import Action, ActionRegistry
+from app.platform.bulk_actions import Action, ActionRegistry, refusal
 from app.platform.commands import ANY_VERSION
 from app.services.invoice_views import MANAGE as INVOICE_MANAGE
 from app.services.invoice_views import InvoiceService
@@ -110,6 +111,15 @@ async def confirm_run(uow, o: Order, data: ConfirmDelivery, ctx) -> None:
         ctx.note = "sent"
 
 
+async def fulfil_check(uow, o: Order, ctx) -> str | None:
+    return await refusal(ctx.runtime.shipments.refuse_fulfil(uow.session, o))
+
+
+async def fulfil_run(uow, o: Order, data, ctx) -> None:  # noqa: ARG001
+    uow.set_reason("Shopify: fulfil at the 997")
+    await ctx.runtime.shipments.fulfil_at_997(uow, o.id, version=ANY_VERSION)  # run_action checked it
+
+
 ORDER_ACTIONS = ActionRegistry(OrderRepository, [
     *PAYMENT_ACTIONS.actions.values(),
     Action("recheck", label="Re-check", permission=OPERATE, check=recheck_check, run=recheck_run, prepare=recheck_prepare, context=True),
@@ -120,6 +130,8 @@ ORDER_ACTIONS = ActionRegistry(OrderRepository, [
            confirm="It is Sales' own record: nothing is written to Shopify, the warehouse or a partner."),
     Action("release_hold", label="Release hold", permission=OPERATE, input=ReleaseTo, check=release_check, run=release_run, context=True, bulk=False,
            reason="required", sends="the Shopify write its hold stopped, when released to Shipped"),
+    Action("fulfil_in_shopify", label="Fulfil in Shopify now", permission=OPERATE, check=fulfil_check, check_context=True, run=fulfil_run, context=True, bulk=False,
+           sends="the fulfilment (or the archiving) of the order in Shopify"),
     Action("submit_draft", label="Submit", permission=OPERATE, check=draft_check, run=submit_run, bulk=False),
     Action("cancel_draft", label="Cancel draft", permission=OPERATE, check=draft_check, run=cancel_draft_run, bulk=False),
 ])

@@ -6,6 +6,7 @@ const OPERATE = 'sales.order.operate'
 const errorMessages: Record<string, string> = {
   'order.not_accepted': 'Only an order whose 940 Radiant accepted is fulfilled before its 945.',
   'order.not_shopify': 'Only a Shopify order is fulfilled in Shopify.',
+  'entity.stale': 'The order changed since you opened it: it is read again here. Look, then press again.',
   'auth.forbidden': 'You do not have permission to do this.',
 }
 
@@ -17,7 +18,7 @@ export function FulfilInShopify({ o }: { o: OrderDetail }) {
   return (
     <ActionButton size="sm" variant="secondary" permission={OPERATE} errorMessages={errorMessages}
       done={{ key: `fulfil:${o.id}`, tone: 'success', text: 'Queued: Shopify is fulfilled and the order archived on the next outbox pass.' }}
-      invalidates={[queryKeys.detail(ordersClient, o.id)]} onAction={() => fulfilInShopify(o.id)}>
+      invalidates={[queryKeys.detail(ordersClient, o.id)]} onAction={() => fulfilInShopify(o.id, o.version)}>
       {o.shopify_fulfillment_id ? 'Archive in Shopify now' : 'Fulfil in Shopify now'}
     </ActionButton>
   )

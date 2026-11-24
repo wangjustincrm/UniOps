@@ -56,6 +56,7 @@ from app.models.records import OutboxRecord
 from app.models.shipments import Shipment, ShipmentRow
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.clock import clock, utc_now
+from app.platform.commands import VersionArg, check_version, touch
 from app.platform.errors import BusinessError
 from app.platform.outbox import ONCE, Outbox, OutboxKind
 from app.platform.pipeline import isolated
@@ -69,6 +70,7 @@ from app.services.problems import (
     SETTLED_BY_SHIPMENT,
     SHOPIFY_WRITE_FAILED, SHORT_SHIPMENT, problem, send_refused,
 )
+from app.services.queued import refuse_queued
 from app.services.settings import SETTINGS, SHADOW_MODE
 
 logger = logging.getLogger(__name__)
@@ -855,13 +857,8 @@ class Shipments:
                           order_id=row.payload["order_id"])
         await send_refused(self.tasks, uow.session, row, f"the Shopify write at the 997 for order {row.payload['order_id']}", exc)
 
-    async def fulfil_at_997(self, uow, order_id: int) -> Order:
-        """A person's "Fulfil in Shopify now" (sales.order.operate): the 997 step again, e.g. after Write was
-        off when the 997 came. One new row; the effect reads the order's fulfillments first."""
-        s = uow.session
-        order = await s.get(Order, order_id, with_for_update=True)
-        if order is None:
-            raise BusinessError("order.not_found", "no such order", status_code=404)
+    async def refuse_fulfil(self, s, order: Order) -> None:
+        """Why a person cannot have the 997 step again for this order (locked), raised; nothing: they can."""
         if order.source_type != "SHOPIFY" or not order.connection_id:
             raise BusinessError("order.not_shopify", "only a Shopify order is fulfilled in Shopify")
         if order.fulfillment_status != F.ACCEPTED_940.value:
@@ -869,6 +866,18 @@ class Shipments:
                                 "Radiant accepted is fulfilled before its 945")
         if order.shadow or await SETTINGS.get(s, SHADOW_MODE):
             raise BusinessError("order.shadow", TEST_RUN_REFUSAL)
+        await refuse_queued(s, (FULFILL_AT_997, CLOSE_AT_997), order, f"the Shopify write of order {order.label}")
+
+    async def fulfil_at_997(self, uow, order_id: int, *, version: VersionArg = None) -> Order:
+        """A person's "Fulfil in Shopify now" (sales.order.operate): the 997 step again, e.g. after Write was
+        off when the 997 came. One new row; the effect reads the order's fulfillments first."""
+        s = uow.session
+        order = await s.get(Order, order_id, with_for_update=True)
+        if order is None:
+            raise BusinessError("order.not_found", "no such order", status_code=404)
+        await self.refuse_fulfil(s, order)  # what is done or queued says so, whatever the version
+        check_version(order, version, "this order")
+        touch(uow, order)  # the same press from the same page is refused: the order has moved
         kind = CLOSE_AT_997 if order.shopify_fulfillment_id else FULFILL_AT_997
         OUTBOX.add(s, kind, {"order_id": order.id}, entity=order)
         await oplog.write(s, "INFO", STEP, f"Fulfil in Shopify now: {kind} queued for order {order.label}", order_id=order.id)
@@ -882,6 +891,7 @@ class Shipments:
         sh = await s.get(Shipment, shipment_id, with_for_update=True)
         if sh is None:
             raise BusinessError("shipment.not_found", "no such shipment", status_code=404)
+        await refuse_queued(s, (FULFILL, CLOSE), sh, "the Shopify write of this shipment")  # first: a stuck one says how it ends
         if sh.shopify_status not in ("Failed", "Suppressed"):
             raise BusinessError("shipment.not_failed", f"the Shopify write is {sh.shopify_status}")
         if sh.shadow or await SETTINGS.get(s, SHADOW_MODE):

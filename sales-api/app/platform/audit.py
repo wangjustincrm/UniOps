@@ -204,6 +204,13 @@ def audit_also(session: Any, action: str, obj: Any) -> None:
     pending.append((action, obj, None if action == "create" else {"before": _snapshot(obj), "after": None}))
 
 
+def audit_act(session: Any, action: str, obj: Any) -> None:
+    """Record what a person did to a record that changes none of its fields (a repeated send): the actor and the unit's
+    reason, with the record's next flush. The trail's own rows say what changed; this one only that it was done and why."""
+    _require_actor(session.info.get("actor"), obj)
+    session.info.setdefault("_audit_pending", []).append((action, obj, {"before": None, "after": None}))
+
+
 def _require_actor(actor: Any, obj: Any) -> None:
     if actor is None:
         raise RuntimeError(

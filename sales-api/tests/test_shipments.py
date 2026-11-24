@@ -16,6 +16,7 @@ from app.models.config import Connection, Partner
 from app.models.documents import Document
 from app.models.records import OutboxRecord
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.commands import ANY_VERSION
 from app.platform.outbox import Outbox, OutboxWorker
 from app.services.outbound import FULFILL_AT_997, SEND_940
 from app.services.settings import SETTINGS, SHADOW_MODE
@@ -309,12 +310,12 @@ async def test_write_off_at_the_997_skips_and_fulfil_in_shopify_now_does_it_late
     assert await p5.q("SELECT 1 FROM tasks WHERE type LIKE 'sales_shopify%'") == []  # skipped, not a failure
     await live_store(p5)
     async with p5.factory(SYSTEM_ACTOR) as u:
-        await p5.ships.fulfil_at_997(u, o.id)
+        await p5.ships.fulfil_at_997(u, o.id, version=ANY_VERSION)
         await u.commit()
     assert (await p5.worker.run_once()).done == 2
     assert writes(p5) == ["create_fulfillment", "close_order"]
     async with p5.factory(SYSTEM_ACTOR) as u:  # again: reads first, so the fulfillment is never made twice
-        await p5.ships.fulfil_at_997(u, o.id)  # fulfilled already: only the archive is queued
+        await p5.ships.fulfil_at_997(u, o.id, version=ANY_VERSION)  # fulfilled already: only the archive is queued
         await u.commit()
     await p5.worker.run_once()
     assert writes(p5).count("create_fulfillment") == 1
@@ -330,7 +331,7 @@ async def test_a_rejected_or_timed_out_940_writes_nothing_and_a_failed_archive_i
     assert writes(p5) == [] and await p5.q("SELECT 1 FROM sales_outbox WHERE kind LIKE 'shopify%'") == []
     with pytest.raises(BusinessError):
         async with p5.factory(SYSTEM_ACTOR) as u:
-            await p5.ships.fulfil_at_997(u, o.id)
+            await p5.ships.fulfil_at_997(u, o.id, version=ANY_VERSION)
 
 
 async def test_archiving_at_the_997_without_the_scope_is_a_task_that_opens_the_order(p5):

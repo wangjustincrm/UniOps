@@ -181,6 +181,18 @@ class Outbox:
         session.add(row)
         return row
 
+    async def waiting(self, session, kinds: tuple[str, ...], entity: Any) -> str | None:
+        """Whether an effect of these kinds is still under way for this entity: "unknown" (started, its lease passed, no
+        outcome: the worker's next pass closes it FAILED), "sending" (IN_FLIGHT), "pending", or None. Read it under the
+        entity's own lock, which every queueing of it takes: two requests cannot both see None."""
+        etype, eid = entity_ref(entity)
+        m = self.model
+        rows = (await session.execute(select(m.status, m.next_attempt_at).where(
+            m.entity_type == etype, m.entity_id == eid, m.kind.in_(kinds), m.status.in_((PENDING, IN_FLIGHT))))).all()
+        now = clock().now()
+        states = {"pending" if st == PENDING else "unknown" if due <= now else "sending" for st, due in rows}
+        return next((x for x in ("unknown", "sending", "pending") if x in states), None)
+
     async def _locked(self, session, row_id: int) -> Any:
         row = (await session.execute(
             select(self.model).where(self.model.id == row_id).with_for_update()

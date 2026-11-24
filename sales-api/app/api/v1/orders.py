@@ -68,8 +68,8 @@ async def retry_shopify(u: UoW, rt: Rt, shipment_id: int) -> dict:
 
 
 @routes.post("/{order_id}/shopify-fulfil")
-async def fulfil_at_997(u: UoW, rt: Rt, order_id: int) -> dict:
-    out = await OrderService(u).fulfil_at_997(order_id, rt.shipments)
+async def fulfil_at_997(u: UoW, rt: Rt, order_id: int, version: Version = None) -> dict:
+    out = await OrderService(u).fulfil_at_997(order_id, rt.shipments, version)
     await u.commit()
     return out
 

@@ -62,23 +62,37 @@ class Action:
     validate: Callable[[Any], None] | None = None
     label: str = ""
     bulk: bool = True                      # many records at once; False: one at a time (refused otherwise)
-    reason: Literal["none", "required"] = "none"  # the request's own `reason`, in the record's audit
+    reason: Literal["none", "optional", "required"] = "none"  # the request's own `reason`, in the record's audit
     versioned: bool = True                 # False: the record has no version (its status is the guard)
     confirm: str | None = None             # what the confirm step says
     sends: str | None = None               # what leaves the building, if anything (a file, an email)
     context: bool = False                  # run and prepare take an ActionContext
+    check_context: bool = False            # the check too (a rule that needs the runtime)
     # More permissions this input needs (e.g. sending too): checked once, before any record.
     also: Callable[[Any], Sequence[str]] | None = None
     # (uow, ids, ctx) → what the runs need from outside, read before any record is locked.
     prepare: Callable[..., Awaitable[Any]] | None = None
+    lock: bool = True                      # False: the record is only read (its owner is what changes, locked by the run)
 
 
 BulkAction = Action  # the name it had
 
 
+async def refusal(rule: Awaitable[Any]) -> str | None:
+    """A service's rule (it raises what refuses) as a `check` says it: why, or None."""
+    try:
+        await rule
+    except BusinessError as e:
+        return e.message
+    return None
+
+
 class ActionRegistry:
-    def __init__(self, repo_cls: type, actions: Sequence[Action]) -> None:
+    def __init__(self, repo_cls: type, actions: Sequence[Action], *, lock_first: Callable[[Any, int], Awaitable[None]] | None = None) -> None:
+        """`lock_first(uow, id)`: what is locked before the record itself, where every path takes another row first (one
+        order of locks, so no two of them wait for each other)."""
         self.repo_cls = repo_cls
+        self.lock_first = lock_first
         self.actions = {a.id: a for a in actions}
 
     def __getitem__(self, action_id: str) -> Action:
@@ -158,6 +172,8 @@ async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: A
     ctx = ActionContext(runtime=runtime)
     if action.reason == "required" and not body.dry_run:
         ctx.reason = require_reason(body.reason)
+    elif action.reason == "optional":
+        ctx.reason = (body.reason or "").strip() or None
     if not action.bulk and (body.query is not None or len(body.ids or {}) > 1):
         raise InvalidInput("action.single", "one record at a time")
     if action.versioned and body.ids is not None and None in body.ids.values():
@@ -172,11 +188,13 @@ async def run_action(uow: Any, registry: ActionRegistry, action_id: str, body: A
         ctx.note = None
         sp = await Savepoint.begin(uow)  # a record's events go with its writes: dropped on every undo below
         try:
-            record = await s.get(model, rid, with_for_update=True, populate_existing=True)
+            if registry.lock_first is not None and action.lock:
+                await registry.lock_first(uow, rid)
+            record = await s.get(model, rid, with_for_update=action.lock, populate_existing=True)
             if record is None:
                 raise NotFound(model.__name__, rid)
             # The rule first: what is already done (a double click, someone else) is skipped whatever its version.
-            why = await action.check(uow, record) if action.check else None
+            why = await action.check(uow, record, *([ctx] if action.check_context else [])) if action.check else None
             if why:
                 await sp.undo()
                 out.append(ActionResult(id=rid, status="skipped", reason=why, version=getattr(record, "version", None)))

@@ -685,11 +685,11 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         return {"shipment_id": sh.id, "shopify_status": sh.shopify_status}
 
     @requires(OPERATE)
-    async def fulfil_at_997(self, order_id: int, shipments) -> dict:
+    async def fulfil_at_997(self, order_id: int, shipments, version: VersionArg = None) -> dict:
         """Fulfil in Shopify now (user 2026-11-16): the 997 step for an order whose 940 Radiant accepted —
         fulfil in full without tracking, then archive; reads the order's fulfillments first."""
         self.uow.set_reason("Shopify: fulfil at the 997")
-        o = await shipments.fulfil_at_997(self.uow, order_id)
+        o = await shipments.fulfil_at_997(self.uow, order_id, version=version)
         return {"order_id": o.id, "queued": True}
 
     @requires(READ)
