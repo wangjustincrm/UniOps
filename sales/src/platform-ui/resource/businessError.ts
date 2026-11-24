@@ -36,6 +36,9 @@ export function plainFields(text: string, labels?: Record<string, string>): stri
   return names.length ? text.replace(new RegExp(`\\b(${names.join('|')})\\b`, 'g'), (n) => labels![n]) : text
 }
 
+/** The record moved since the page read it (409): it is read again, and the person looks and presses again. */
+export const isStale = (err: unknown): boolean => businessErrorOf(err)?.code === 'entity.stale'
+
 export function errorText(err: unknown, messages: Record<string, string> = {}): string {
   const be = businessErrorOf(err)
   if (be) return messages[be.code] ?? be.message

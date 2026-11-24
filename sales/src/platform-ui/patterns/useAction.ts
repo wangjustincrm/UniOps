@@ -1,6 +1,6 @@
 import { useCallback, useContext, useRef, useState } from 'react'
 import { QueryClientContext, type QueryKey } from '@tanstack/react-query'
-import { errorText } from '../resource/businessError'
+import { errorText, isStale } from '../resource/businessError'
 import { useNotices, type NoticeInput } from './notices'
 import { useActionErrorSlot } from './actionErrorContext'
 
@@ -39,6 +39,16 @@ export function useAfterAction() {
   }, [notices, qc])
 }
 
+/** A refused action whose record had moved (entity.stale): read again what it would have changed, as if it had worked. */
+export function useReadAgain() {
+  const qc = useContext(QueryClientContext)
+  return useCallback((error: unknown, invalidates?: QueryKey[]) => {
+    if (!isStale(error)) return
+    if (invalidates) for (const queryKey of invalidates) void qc?.invalidateQueries({ queryKey })
+    else void qc?.invalidateQueries()
+  }, [qc])
+}
+
 /** The one way an action runs (2026-11-10): ActionButton, RowActions, DownloadButton and a
  *  record sheet's More menu all use it. It never runs twice at once (a ref, so two clicks in
  *  one tick count once), says the result in the status row of the list or sheet it is in, and
@@ -47,6 +57,7 @@ export function useAction(opts: ActionOptions = {}) {
   const notices = useNotices()
   const slot = useActionErrorSlot()  // inside a dialog or panel: its failure is said there too
   const afterAction = useAfterAction()
+  const readAgain = useReadAgain()
   const [pending, setPending] = useState(false)
   const inFlight = useRef(false)
   const { done: baseDone, errorMessages: baseMessages, failPrefix: basePrefix, refreshes = true, invalidates, after } = opts
@@ -65,6 +76,7 @@ export function useAction(opts: ActionOptions = {}) {
       return true
     } catch (e) {
       const text = errorText(e, errorMessages)
+      readAgain(e, call.invalidates ?? invalidates)
       slot?.report(e, errorMessages)
       if (notices.inScope) notices.notify({ tone: 'error', text: failPrefix ? `${failPrefix}: ${text}` : text })
       else console.error(failPrefix ?? 'Action failed', e)
@@ -73,6 +85,6 @@ export function useAction(opts: ActionOptions = {}) {
       inFlight.current = false
       setPending(false)
     }
-  }, [baseDone, baseMessages, basePrefix, notices, refreshes, invalidates, after, afterAction, slot])
+  }, [baseDone, baseMessages, basePrefix, notices, refreshes, invalidates, after, afterAction, readAgain, slot])
   return { run, pending }
 }

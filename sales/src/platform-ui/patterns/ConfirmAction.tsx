@@ -3,9 +3,10 @@ import { Button, FormField } from '../primitives/shell'
 import { Textarea } from '../primitives/FieldInputs'
 import { AlertDialog } from '../primitives/AlertDialog'
 import { Dialog } from '../primitives/Dialog'
-import { errorText } from '../resource/businessError'
+import { errorText, isStale } from '../resource/businessError'
 import { DisabledReason } from '../help'
-import { useAfterAction, type ActionOptions } from './useAction'
+import { useAfterAction, useReadAgain, type ActionOptions } from './useAction'
+import { compareRecord } from './useRefresh'
 import { useNotices } from './notices'
 
 export interface ConfirmActionProps {
@@ -31,13 +32,19 @@ export interface ConfirmActionProps {
   /** Failures that end the dialog and are said in the status row instead of in it (e.g. a refusal that no
    *  change to the dialog's input can fix). Anything else stays in the dialog. */
   toStatusRow?: (error: unknown) => boolean
+  /** The record it acts on, as the page has it now. When the server says it moved (entity.stale) the dialog stays, what was
+   *  typed stays, the record is read again, and the dialog says which fields changed; the next press acts on the new one. */
+  record?: unknown
 }
 
 export function ConfirmAction({
   open, onOpenChange, title, description, confirmLabel = 'Confirm', destructive, onConfirm, errorMessages, reason,
-  done, refreshes, invalidates, after, toStatusRow,
+  done, refreshes, invalidates, after, toStatusRow, record,
 }: ConfirmActionProps) {
   const afterAction = useAfterAction()
+  const readAgain = useReadAgain()
+  const [seen, setSeen] = useState<unknown>(null)  // the record as it was when the server said it had moved
+  const changes = seen && record && record !== seen ? compareRecord(seen, record).text : null
   const notices = useNotices()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -55,6 +62,7 @@ export function ConfirmAction({
     try {
       const result = await onConfirm(text.trim())
       setText('')
+      setSeen(null)
       onOpenChange(false)
       await afterAction(result, { done, refreshes, invalidates, after })
     } catch (e) {
@@ -64,6 +72,8 @@ export function ConfirmAction({
         notices.notify({ tone: 'error', text: errorText(e, errorMessages) })
         return
       }
+      if (isStale(e)) setSeen(record)
+      readAgain(e, invalidates)
       setError(errorText(e, errorMessages))
     } finally {
       inFlight.current = false
@@ -71,10 +81,10 @@ export function ConfirmAction({
     }
   }
 
-  const change = (o: boolean) => { if (!pending) { setError(null); onOpenChange(o) } }
+  const change = (o: boolean) => { if (!pending) { setError(null); setSeen(null); onOpenChange(o) } }
   const footer = (
         <>
-          <Button type="button" variant="secondary" disabled={pending} onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button type="button" variant="secondary" disabled={pending} onClick={() => change(false)}>Cancel</Button>
           {missing && !pending ? (
             <DisabledReason reason={`Fill in "${reason!.label}" first (at least ${reason!.minLength ?? 3} characters).`}>
               <Button type="button" variant={destructive ? 'destructive' : 'primary'} className="cursor-not-allowed opacity-50">{confirmLabel}</Button>
@@ -93,7 +103,7 @@ export function ConfirmAction({
           <Textarea id={reasonId} rows={2} value={text} disabled={pending} onChange={(e) => setText(e.target.value)} />
         </FormField>
       )}
-      {error && <p role="alert" className="text-sm text-danger-700">{error}</p>}
+      {error && <p role="alert" className="text-sm text-danger-700">{error}{changes ? ` ${changes}.` : ''}</p>}
     </>
   )
   // A destructive confirm interrupts (shadcn's AlertDialog: role="alertdialog", no outside-click close); others are a Dialog.

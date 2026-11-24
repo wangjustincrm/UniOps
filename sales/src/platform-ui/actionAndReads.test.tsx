@@ -48,6 +48,44 @@ describe('useAction: done by result, after, invalidates', () => {
   })
 })
 
+describe('an action whose record had moved (entity.stale)', () => {
+  const moved = { body: { error: { code: 'entity.stale', message: 'this order was changed by someone else; reload it', details: {} } } }
+  const things = { basePath: '/things' }
+
+  it('a confirmation keeps what was typed, reads the record again, says what changed, and the next press acts on the new one', async () => {
+    let server = { id: 1, version: 4, status: 'Sent' }
+    const get = vi.fn(async () => server)
+    const send = vi.fn(async (version: number, why: string) => { if (version !== server.version) throw Object.assign(new Error('409'), moved); return why })
+    function Sheet() {
+      const q = useRecord(things, 1, get)
+      const r = q.data
+      return r ? <ConfirmAction open onOpenChange={() => {}} title="Replace?" reason={{ label: 'Why' }} record={r}
+        invalidates={[queryKeys.detail(things, 1)]} onConfirm={(why) => send(r.version, why)} /> : null
+    }
+    wrap(new QueryClient(), <Sheet />)
+    fireEvent.change(await screen.findByLabelText(/Why/), { target: { value: 'wrong quantity' } })
+    server = { id: 1, version: 5, status: 'Accepted' }
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Confirm' })) })
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/changed by someone else.*Updated: .*status/i))
+    expect(screen.getByLabelText(/Why/)).toHaveValue('wrong quantity')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Confirm' })) })
+    expect(send.mock.calls).toEqual([[4, 'wrong quantity'], [5, 'wrong quantity']])
+  })
+
+  it('a button reads again what it names; another failure reads nothing', async () => {
+    const qc = new QueryClient()
+    const spy = vi.spyOn(qc, 'invalidateQueries')
+    const key = queryKeys.detail(things, 7)
+    let error: Error = new Error('nope')
+    wrap(qc, <ActionButton onAction={async () => { throw error }} invalidates={[key]}>Go</ActionButton>)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Go' })) })
+    expect(spy).not.toHaveBeenCalled()
+    error = Object.assign(new Error('409'), moved)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Go' })) })
+    expect(spy).toHaveBeenCalledWith({ queryKey: key })
+  })
+})
+
 describe('useRecord / useLookup', () => {
   const things = { basePath: '/things' }
   it('fetches nothing without an id, then the record under its detail key', async () => {
