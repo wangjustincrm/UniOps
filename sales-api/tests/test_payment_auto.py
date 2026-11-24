@@ -53,13 +53,14 @@ CASES = {
     "9704": ([dict(tx="Transferred to the bank"), dict(tx=PAYPAL_IN_BALANCE)], NOT_SETTLED),  # partly settled
     "9705": ([dict(gateway="AlphaPay")], NOT_SETTLED),                                      # not via our gateways
     "9706": ([dict()], NOT_SETTLED),                                                        # not matched yet
+    "9708": ([dict(tx=CLOSED, gateway="authorize_net")], SETTLED),                          # the store's old name of it
     "9707": ([dict(tx=CLOSED, status="failure")], NOT_SETTLED),                             # nothing captured
 }
 
 
 def _python(pays, *, historical=False, net_zero=False):
     ok = [p for p in pays if p.get("status", "success") == "success"]
-    ours = [p for p in ok if p.get("gateway", "paypal") in ("paypal", "authorize.net")]
+    ours = [p for p in ok if p.get("gateway", "paypal") in ("paypal", "authorize.net", "authorize_net")]
     matched = [p for p in ours if "tx" in p]
     closed = [p for p in matched if p["tx"] not in ("none", PAYPAL_IN_BALANCE)]
     return payment_status(draft=False, cancelled=False, settled=False, invoice_sent=False, invoice_date=None, terms=None,
@@ -75,21 +76,38 @@ async def test_the_sql_and_the_python_rule_agree_on_every_case(api):  # noqa: F8
         got = (await _status(api, o[n]["id"]))["payment_status"]
         assert (got, _python(pays)) == (want, want), n
     r = (await api.get("/api/v1/orders?filter=payment_status:eq:Settled", headers=FINANCE)).json()
-    assert [x["source_order_number"] for x in r["items"]] == ["9701"]  # the list filters on the same rule
+    assert sorted(x["source_order_number"] for x in r["items"]) == ["9701", "9708"]  # the list filters on the same rule
     auto = await _status(api, o["9701"]["id"])
     assert auto["settled_on"] is None and auto["auto_settlement_label"].startswith("Authorize.Net settlement S")
     assert auto["auto_settled_on"] and auto["auto_settlement_id"]
 
 
-async def test_historical_and_nothing_left_to_receive_need_no_payment(api):  # noqa: F811
+async def test_a_historical_order_shows_what_its_gateway_proves_and_is_never_chased(api):  # noqa: F811
+    """User 2026-11-24: Settled (auto), with its settlement, for the old orders too; what is not proved is Not needed."""
+    cases = {"9741": ([dict(tx=CLOSED, gateway="authorize_net")], SETTLED), "9742": ([dict(tx=PAYPAL_IN_BALANCE)], WAITING),
+             "9743": ([dict(gateway="AlphaPay")], NOT_NEEDED), "9744": ([dict()], NOT_NEEDED), "9745": ([], NOT_NEEDED),
+             "9746": ([dict(tx=CLOSED, gateway="authorize.net"), dict(gateway="AlphaPay")], NOT_NEEDED)}
+    o = await _orders(api, *cases)
+    for n, (pays, want) in cases.items():
+        for p in pays:
+            await _pay(api, o[n]["id"], **p)
+        await _exec(api, f"UPDATE sales_orders SET historical = true WHERE id = {o[n]['id']}")
+        got = await _status(api, o[n]["id"])
+        assert (got["payment_status"], _python(pays, historical=True)) == (want, want), n
+        assert (got["auto_settlement_label"] is not None) == (want == SETTLED), n
+    q = "filter=payment_status:in:Overdue|Due|Not settled"
+    assert (await api.get(f"/api/v1/orders?{q}", headers=FINANCE)).json()["total"] == 0  # none of them is To settle
+
+
+async def test_nothing_left_to_receive_needs_no_payment(api):  # noqa: F811
     o = await _orders(api, 9711, 9712)
     for n in ("9711", "9712"):
         await _pay(api, o[n]["id"], tx=PAYPAL_IN_BALANCE)
-    await _exec(api, f"UPDATE sales_orders SET historical = true WHERE id = {o['9711']['id']}")
+    await _exec(api, f"UPDATE sales_orders SET net_amount = 0, total_refunded = total WHERE id = {o['9711']['id']}")
     await _exec(api, f"UPDATE sales_orders SET net_amount = 0, total_refunded = total WHERE id = {o['9712']['id']}")
     pays = [dict(tx=PAYPAL_IN_BALANCE)]
     assert [(await _status(api, o[n]["id"]))["payment_status"] for n in ("9711", "9712")] == [NOT_NEEDED, NOT_NEEDED]
-    assert (_python(pays, historical=True), _python(pays, net_zero=True)) == (NOT_NEEDED, NOT_NEEDED)
+    assert _python(pays, net_zero=True) == NOT_NEEDED
 
 
 async def test_the_manual_mark_wins_and_undo_falls_back_to_the_gateway(api):  # noqa: F811

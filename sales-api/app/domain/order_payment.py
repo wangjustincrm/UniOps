@@ -10,7 +10,8 @@ What a list shows (the rule, as SQL, is Order.payment_status_sql in models/invoi
   every captured payment is a gateway transaction (Authorize.Net / PayPal, as Payments matched it) that is in a closed
   settlement (PayPal: transferred to the bank, not "In PayPal balance"); its date and reference are the latest such
   settlement's. Undoing the manual mark falls back to this;
-- Not needed: cancelled and never invoiced, or historical (the history replay; uniops-3d 2026-11-23, easy to reverse);
+- Not needed: cancelled and never invoiced, or historical — unless a historical Shopify order's gateway says Settled or
+  Waiting (user 2026-11-24: what the gateway proves is shown for the old orders too; nothing else is chased for them);
 - Not needed also: a Shopify order with nothing left to receive (net 0: fully refunded, or free);
 - Waiting for the gateway: a Shopify order whose captured payments are all matched to gateway transactions, none yet in a
   closed settlement (PayPal: still in the PayPal balance). It settles by itself;
@@ -53,8 +54,6 @@ def payment_status(*, draft: bool, cancelled: bool, settled: bool, invoice_sent:
         return SETTLED
     if draft:
         return None
-    if historical:
-        return NOT_NEEDED
     if auto_settled(captured=captured, other=other, closed=closed):
         return SETTLED
     if cancelled and not invoice_sent:
@@ -63,6 +62,8 @@ def payment_status(*, draft: bool, cancelled: bool, settled: bool, invoice_sent:
         return NOT_NEEDED
     if captured and not other and matched == captured and closed == 0:
         return WAITING
+    if historical:
+        return NOT_NEEDED
     days = terms_days(terms)
     if invoice_sent and invoice_date is not None and days is not None:
         return OVERDUE if invoice_date + timedelta(days=days) < today else DUE

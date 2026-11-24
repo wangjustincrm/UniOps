@@ -9,7 +9,7 @@ user has not decided).
 sales.settle only — a finance key, not on sales.read or sales.order.operate. The rules (`settle_check`,
 `unsettle_check`) and the work (`settle_run`, `unsettle_run`) are one each, used by the single endpoints and by the
 record actions (ORDER_ACTIONS, platform/bulk_actions.py): a draft, a shadow order, one already settled, or one whose
-Payment is Not needed (cancelled with nothing invoiced, or historical — uniops-3d 2026-11-23, easy to reverse here)
+Payment is Not needed (cancelled with nothing invoiced, or historical and not settled by its gateway)
 is not settled. A later derived source (Shopify from the gateway settlements) goes beside the manual columns; the
 manual mark wins (app/domain/order_payment.py). An order the gateway settled (derived, user 2026-11-23) is not marked
 again ("already settled by PayPal settlement …"), and Undo applies only to a manual mark.

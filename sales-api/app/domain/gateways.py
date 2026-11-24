@@ -8,7 +8,8 @@ from __future__ import annotations
 GATEWAYS = ("AUTHORIZE_NET", "PAYPAL")
 LABELS = {"AUTHORIZE_NET": "Authorize.Net", "PAYPAL": "PayPal"}  # as Finance says it (the Method column)
 # Shopify's names of the gateways we read (OrderPayment.gateway, lower-cased); any other (AlphaPay, a gift card…) is not ours.
-SHOPIFY_GATEWAYS = ("authorize.net", "paypal")
+# authorize_net: the store's Authorize.Net before 2025-09-18 (the same account; its payments are matched and settled alike).
+SHOPIFY_GATEWAYS = ("authorize.net", "authorize_net", "paypal")
 # The PayPal "settlement" of what has not been transferred to the bank yet: the money is not settled (services/paypal_settlements.py).
 PAYPAL_IN_BALANCE = "In PayPal balance"
 TX_KINDS = ("sale", "refund", "void", "other")

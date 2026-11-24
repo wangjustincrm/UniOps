@@ -147,7 +147,7 @@ _LATEST = (select(GatewaySettlement.id).select_from(OrderPayment).join(GatewayTr
            .where(*_CAPTURED, *_CLOSED).order_by(GatewaySettlement.settled_at.desc(), GatewaySettlement.id.desc()).limit(1)
            .correlate_except(OrderPayment, GatewayTransaction, GatewaySettlement).scalar_subquery())
 AUTO_SETTLEMENT_ID = case((and_(Order.settled_on.is_(None), Order.fulfillment_status != F.DRAFT.value,
-                                Order.historical.is_(False), Order.source_type == "SHOPIFY", AUTO), _LATEST), else_=null())
+                                Order.source_type == "SHOPIFY", AUTO), _LATEST), else_=null())
 
 
 def _payment_status_sql():
@@ -161,11 +161,11 @@ def _payment_status_sql():
     return case(
         (Order.settled_on.is_not(None), SETTLED),                      # the manual mark always wins
         (Order.fulfillment_status == F.DRAFT.value, null()),
-        (Order.historical.is_(True), NOT_NEEDED),  # the history replay (uniops-3d 2026-11-23): no payment is chased
         (and_(shopify, AUTO), SETTLED),                                # derived: the gateway settled it
         (and_(Order.fulfillment_status == F.CANCELLED.value, not_(sent)), NOT_NEEDED),
         (and_(shopify, func.coalesce(Order.net_amount, Order.total) == 0), NOT_NEEDED),  # nothing left to receive
         (and_(shopify, CAPTURED_N > 0, OTHER_N == 0, MATCHED_N == CAPTURED_N, CLOSED_N == 0), WAITING),
+        (Order.historical.is_(True), NOT_NEEDED),  # the old orders: shown as the gateway proves (above), never chased
         (due < today, OVERDUE),
         (due.is_not(None), DUE),
         else_=NOT_SETTLED)

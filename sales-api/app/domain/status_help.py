@@ -93,7 +93,7 @@ PAYMENT_HELP: dict[str, Help] = {
     WAITING: Help("Shopify order: its payments are with the gateway (Authorize.Net, or in the PayPal balance) but in no "
                   "settlement yet. It becomes Settled (auto) by itself; nothing to do."),
     NOT_NEEDED: Help("No money is expected: cancelled and never invoiced, a Shopify order with nothing left to receive "
-                     "(fully refunded or free), or historical."),
+                     "(fully refunded or free), or an old (historical) order whose gateway does not say Settled."),
 }
 
 DETAIL_HELP: dict[str, Help] = {
