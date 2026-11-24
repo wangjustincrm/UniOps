@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Circle, TriangleAlert, XCircle } from 'lucide-react'
 import {
-  ActionButton, Badge, Callout, DateTimeInput, Hint, LocalTable, Section, ask, formatDateTime, queryKeys, type ColumnDef, Cluster, Stack, Text, Icon,
+  ActionButton, Badge, Callout, ConfirmAction, DateTimeInput, Hint, LocalTable, Section, ask, formatDateTime, queryKeys, type ColumnDef, Cluster, Stack, Text, Icon,
 } from '@/platform-ui'
 import { RunNowButton } from './RunNowButton'
 import { connectionHealth } from './connectionHealth'
@@ -72,17 +72,21 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
   const [result, setResult] = useState<ConnectionTest | null>(null)
   const changed = [queryKeys.list(connectionsClient)]  // what a change here reads again
   // Read / Write on or off right here, after a question that says what it will do (user 2026-11-12).
-  const toggle = async (which: 'can_read' | 'can_write') => {
-    const turnOn = !c[which]
+  const [writing, setWriting] = useState(false)  // turning Write on asks why (user 2026-11-24)
+  const doesOf = (which: 'can_read' | 'can_write') => {
     const sftpFolder = which === 'can_read' ? c.inbound_folder : c.outbound_folder
     const what = which === 'can_read'
       ? (sftp ? `Sales will read the files in ${sftpFolder ?? '(no read folder)'}` : gatewayOf(c.kind) ? gatewayOf(c.kind)!.reads : "Sales will pull the store's orders")
       : (sftp ? `Sales will put the files it sends (940, 943, 810) in ${sftpFolder ?? '(no write folder)'}`
         + (c.after_read !== 'LEAVE' ? ` and ${c.after_read === 'MOVE' ? `move what it reads to ${c.processed_folder}` : 'delete what it reads'}` : '')
         : 'Sales will send fulfilments and tracking to the store and close orders')
+    return `${what}. This is real work on the partner's side.`
+  }
+  const toggle = async (which: 'can_read' | 'can_write') => {
+    const turnOn = !c[which]
+    if (turnOn && which === 'can_write') { setWriting(true); return null }
     const ok = await ask(turnOn
-      ? { title: `Turn ${which === 'can_read' ? 'reading' : 'writing'} on for ${c.name}?`, description: `${what}. This is real work on the partner's side.`,
-        confirmLabel: 'Turn on', destructive: which === 'can_write' }
+      ? { title: `Turn reading on for ${c.name}?`, description: doesOf(which), confirmLabel: 'Turn on' }
       : { title: `Turn ${which === 'can_read' ? 'reading' : 'writing'} off for ${c.name}?`,
         description: which === 'can_read' ? 'Nothing will be read from this connection.' : 'Nothing will be written; what it would send is kept, not sent (Suppressed).',
         confirmLabel: 'Turn off' })
@@ -179,6 +183,9 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
         <LocalTable<FolderRow> ariaLabel="Test result" columns={folderColumns} rows={result.folders} rowKey={(f) => f.folder} />
       )}
       {(c.kind === 'SHOPIFY' || anet) && <Cursor c={c} onDone={refresh} />}
+      <ConfirmAction open={writing} onOpenChange={setWriting} title={`Turn writing on for ${c.name}?`} description={doesOf('can_write')} destructive
+        confirmLabel="Turn on" reason={{ label: 'Why it is turned on' }} errorMessages={TICK_ERRORS} done="Writing turned on" invalidates={changed}
+        onConfirm={(why) => connectionsClient.update(c.id, { can_write: true, reason: why }, c.version)} />
     </Section>
   )
 }

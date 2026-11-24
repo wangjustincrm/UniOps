@@ -32,6 +32,8 @@ class SettingsGroup:
     write_permission: ClassVar[str]
     reason: ClassVar[str] = "settings"
 
+    body: Any = None
+
     def __init__(self, uow) -> None:
         self.uow = uow
 
@@ -64,6 +66,7 @@ class SettingsGroup:
 
     async def update(self, body: BaseModel) -> BaseModel:
         await authorize(self.uow, self.write_permission)
+        self.body = body  # for the hooks: what was sent beside the settings (a reason)
         sent = {k: v for k, v in body.model_dump(exclude_unset=True).items() if k in self.fields}
         now = await self._values()
         changes = {k: v for k, v in sent.items() if v != now[k]}

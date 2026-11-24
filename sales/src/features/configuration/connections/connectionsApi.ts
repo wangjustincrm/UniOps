@@ -96,8 +96,9 @@ export interface ConnectionRead {
 type Editable = Omit<ConnectionRead, 'id' | 'version' | 'secret_present' | 'auth_failed_at' | 'auth_failed_reason' | 'cursor_updated_at'
   | 'created_at' | 'created_by_name' | 'updated_at' | 'updated_by_name' | 'last_run_at' | 'last_run_status' | 'last_run_summary'
   | 'last_error' | 'next_run_at'>
-export type ConnectionCreate = Editable
-export type ConnectionUpdate = Omit<Editable, 'name'>
+/** `reason`: why, where Write is turned on; kept in the history, not a field of the connection. */
+export type ConnectionCreate = Editable & { reason?: string | null }
+export type ConnectionUpdate = Omit<ConnectionCreate, 'name'>
 
 export interface ConnectionTest {
   host_key: { line: string; fingerprint: string; pinned: boolean; matches: boolean } | null
@@ -133,7 +134,7 @@ export const saveEdiSettings = (data: EdiSettings) => api.put<EdiSettings>('/con
 export interface SchedulerSettings { paused: boolean; system_minutes: number; enabled: boolean }
 export const fetchSchedulerSettings = () => api.get<SchedulerSettings>('/config/scheduler')
 /** Only what changes: saving the minutes never touches the switch. */
-export const saveSchedulerSettings = (data: { paused?: boolean; system_minutes?: number }) => api.put<SchedulerSettings>('/config/scheduler', data)
+export const saveSchedulerSettings = (data: { paused?: boolean; system_minutes?: number; reason?: string }) => api.put<SchedulerSettings>('/config/scheduler', data)
 
 /** This connection's job now (sales.file.retry): ignores its schedule, never its single flight. */
 export const runConnectionNow = (id: number) => api.post<{ run_id: number }>(`${CONNECTIONS_PATH}/${id}/run-now`)

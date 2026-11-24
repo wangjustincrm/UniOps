@@ -66,6 +66,11 @@ const cellOf = (row: HTMLElement, header: string) => {
   return within(row).getAllByRole('cell')[i]
 }
 
+async function turnWriteOn(status: HTMLElement) {
+  fireEvent.click(within(step(status, 'Writes')).getByRole('button', { name: 'Turn on' }))
+  return screen.findByRole('alertdialog')
+}
+
 async function open() {
   fireEvent.click(await screen.findByText('sftp-test'))
   return within(await screen.findByRole('dialog')).findByRole('region', { name: 'Connection status' })
@@ -400,8 +405,10 @@ describe('the Automatic runs switch', () => {
     expect(confirm).toHaveTextContent('The system job runs every 5 min')
     expect(confirm).toHaveTextContent('Sales acts on what it reads')
     expect(api.saveScheduler).not.toHaveBeenCalled()
+    expect(within(confirm).getByRole('button', { name: 'Turn on' })).toHaveAttribute('aria-disabled', 'true')  // why first (user 2026-11-24)
+    fireEvent.change(within(confirm).getByLabelText(/Why they are turned on/), { target: { value: 'go live' } })
     fireEvent.click(within(confirm).getByRole('button', { name: 'Turn on' }))
-    await waitFor(() => expect(api.saveScheduler).toHaveBeenCalledWith({ paused: false }))  // the switch alone
+    await waitFor(() => expect(api.saveScheduler).toHaveBeenCalledWith({ paused: false, reason: 'go live' }))  // the switch alone
   })
 
   it('Off needs no confirmation', async () => {
@@ -556,13 +563,14 @@ describe('Read and Write: in the list and turned on or off from the Overview', (
     api.list.mockResolvedValue({ items: [sftpConn], total: 1 })
     api.update.mockReset()
     api.update.mockResolvedValue({ ...sftpConn, can_write: true })
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderAs(['sales.read', 'sales.config'])
     const status = await open()
-    fireEvent.click(within(step(status, 'Writes')).getByRole('button', { name: 'Turn on' }))
-    await waitFor(() => expect(api.update).toHaveBeenCalledWith(sftpConn.id, { can_write: true }, sftpConn.version))
-    expect(confirm.mock.calls[0][0]).toContain('/to-partner')
-    confirm.mockRestore()
+    const ask = await turnWriteOn(status)
+    expect(ask).toHaveTextContent('/to-partner')
+    expect(within(ask).getByRole('button', { name: 'Turn on' })).toHaveAttribute('aria-disabled', 'true')  // why first (user 2026-11-24)
+    fireEvent.change(within(ask).getByLabelText(/Why it is turned on/), { target: { value: 'partner agreed' } })
+    fireEvent.click(within(ask).getByRole('button', { name: 'Turn on' }))
+    await waitFor(() => expect(api.update).toHaveBeenCalledWith(sftpConn.id, { can_write: true, reason: 'partner agreed' }, sftpConn.version))
   })
 
   it('a No changes nothing; without sales.config there is no button', async () => {
@@ -585,12 +593,11 @@ describe('Read and Write: in the list and turned on or off from the Overview', (
     api.list.mockResolvedValue({ items: [sftpConn], total: 1 })
     api.update.mockReset()
     api.update.mockRejectedValue(Object.assign(new Error('x'), { body: { error: { code: 'connection.go_live_gate', message: 'x' } } }))
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderAs(['sales.read', 'sales.config'])
-    const status = await open()
-    fireEvent.click(within(step(status, 'Writes')).getByRole('button', { name: 'Turn on' }))
+    const ask = await turnWriteOn(await open())
+    fireEvent.change(within(ask).getByLabelText(/Why it is turned on/), { target: { value: 'partner agreed' } })
+    fireEvent.click(within(ask).getByRole('button', { name: 'Turn on' }))
     expect(await screen.findByText(/Configuration → Notifications/)).toBeInTheDocument()
-    confirm.mockRestore()
   })
 })
 

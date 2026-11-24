@@ -15,6 +15,7 @@ from app.integrations import shopify as shopify_mod
 from app.integrations.sftp import readable
 from app.models.config import Partner
 from app.platform.clock import utc_now
+from app.platform.commands import require_reason
 from app.platform.errors import BusinessError, InvalidInput
 from sqlalchemy import case, or_, select
 from app.models.config import Connection
@@ -133,13 +134,21 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
         await self._partner_exists(data.partner_code)
         if data.can_write:
             await self._go_live_gate()
+            self._writing_on(data.reason)
+
+    def _writing_on(self, reason: str | None) -> None:
+        """Turning Write on says why (user 2026-11-24), kept with the change; turning it off never asks."""
+        why = require_reason(reason, code="connection.write_reason", message="say why writing is turned on (a few words), on the connection's page")
+        self.audit_reason(f"writing turned on: {why}")
 
     def build(self, values: dict[str, Any]) -> Connection:
+        values.pop("reason", None)  # said in the audit, not a column
         if values.get("schedule_minutes") is None:  # by kind (user 2026-11-02)
             values["schedule_minutes"] = DEFAULT_MINUTES.get(values.get("kind"), 5)
         return super().build(values)
 
     async def before_update(self, entity: Connection, changes: dict[str, Any]) -> None:
+        reason = changes.pop("reason", None)  # said in the audit, not a column
         check_connection({**{k: getattr(entity, k) for k in _RULE_FIELDS}, **changes})
         await self._partner_exists(changes.get("partner_code"))
         start = changes.get("active_from", entity.active_from)
@@ -149,6 +158,7 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
                                {"field": "active_to" if start is not None else "active_from"})
         if changes.get("can_write") and not entity.can_write:
             await self._go_live_gate()  # writing is where the real work starts
+            self._writing_on(reason)
 
     async def _go_live_gate(self) -> None:
         """PRD section 11 step 3 / AC-OB-71 (design §5.4): writing is turned on for a
@@ -321,4 +331,8 @@ class SchedulerSettingsService(SettingsGroup):
     def reason_for(self, changes: dict[str, Any]) -> str:
         if "paused" not in changes:
             return "scheduler settings"
-        return "automatic runs off" if changes["paused"] else "automatic runs on"
+        return "automatic runs off" if changes["paused"] else f"automatic runs on: {require_reason(self.body.reason)}"
+
+    async def check(self, changes: dict[str, Any]) -> None:
+        if changes.get("paused") is False:  # on: why (user 2026-11-24); off never asks
+            require_reason(self.body.reason, code="scheduler.reason", message="say why automatic runs are turned on (a few words)")

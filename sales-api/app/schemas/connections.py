@@ -62,6 +62,7 @@ class ConnectionCreate(BaseModel):
     stable_seconds: Seconds = 60
     can_read: bool = True
     can_write: bool = False
+    reason: Annotated[str, Field(max_length=500)] | None = None  # why, where Write is turned on (kept in the audit)
     secret_name: SecretName | None = None
     host_key: HostKeyLine | None = None
     api_version: ApiVersion | None = None
@@ -96,6 +97,7 @@ class ConnectionUpdate(BaseModel):
     stable_seconds: Seconds = None  # type: ignore[assignment]
     can_read: bool = None  # type: ignore[assignment]
     can_write: bool = None  # type: ignore[assignment]
+    reason: Annotated[str, Field(max_length=500)] | None = None  # why, where Write is turned on (kept in the audit)
     secret_name: SecretName | None = None
     host_key: HostKeyLine | None = None
     api_version: ApiVersion | None = None
@@ -231,3 +233,4 @@ class SchedulerUpdate(BaseModel):
 
     paused: bool | None = None
     system_minutes: Minutes | None = None
+    reason: Annotated[str, Field(max_length=500)] | None = None  # why, where automatic runs are turned on (kept in the audit)

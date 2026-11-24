@@ -70,20 +70,25 @@ async def test_the_switch_needs_sales_config_is_audited_and_says_which_way(http)
     assert (await http.get(S, headers=READER)).json()["paused"] is True
     assert (await http.put(S, json={"paused": False}, headers=READER)).status_code == 403
     assert (await http.get(S, headers=READER)).json()["paused"] is True  # the refusal changed nothing
-    r = await http.put(S, json={"paused": False}, headers=OP)
+    for reason in ({}, {"reason": " x "}):  # on: why (user 2026-11-24)
+        r = await http.put(S, json={"paused": False, **reason}, headers=OP)
+        assert r.status_code == 422 and (r.json()["error"]["code"], r.json()["error"]["details"]["field"]) == ("scheduler.reason", "reason")
+    assert (await http.get(S, headers=READER)).json()["paused"] is True
+    r = await http.put(S, json={"paused": False, "reason": " go live "}, headers=OP)
     assert r.status_code == 200 and r.json()["paused"] is False
-    assert (await http.put(S, json={"paused": True}, headers=OP)).status_code == 200
+    assert (await http.put(S, json={"paused": False}, headers=OP)).status_code == 200  # already on: nothing changes, nothing is asked
+    assert (await http.put(S, json={"paused": True}, headers=OP)).status_code == 200   # off: never asked
     async with http.runtime.uow_factory(SYSTEM_ACTOR) as u:
         rows = (await u.session.execute(sa.text(
             "SELECT reason, user_name FROM sales_audit WHERE entity = 'sales_settings' ORDER BY id"))).mappings().all()
-    assert [r["reason"] for r in rows][-2:] == ["automatic runs on", "automatic runs off"]
+    assert [r["reason"] for r in rows][-2:] == ["automatic runs on: go live", "automatic runs off"]
 
 
 async def test_saving_the_minutes_never_touches_the_switch(http):
     await http.put(S, json={"paused": True}, headers=OP)
     r = await http.put(S, json={"system_minutes": 7}, headers=OP)
     assert r.status_code == 200 and (r.json()["paused"], r.json()["system_minutes"]) == (True, 7)
-    await http.put(S, json={"paused": False}, headers=OP)
+    assert (await http.put(S, json={"paused": False, "reason": "go live"}, headers=OP)).status_code == 200
     assert (await http.get(S, headers=READER)).json()["system_minutes"] == 7
 
 

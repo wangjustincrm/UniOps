@@ -29,6 +29,7 @@ const fields = {
   stable_seconds: z.number({ error: 'Enter seconds' }).int('Whole seconds').min(0, 'Cannot be negative'),
   can_read: z.boolean(),
   can_write: z.boolean(),
+  reason: z.string().trim().max(500).nullable().optional(),
   secret_name: z.string().trim().max(100).refine((v) => v === '' || SECRET.test(v), SECRET_NAME_MESSAGE).nullable().optional(),
   host_key: z.string().trim().refine((v) => v === '' || KEY_LINE.test(v), HOST_KEY_MESSAGE).nullable().optional(),
   api_version: z.string().trim().refine((v) => v === '' || /^\d{4}-\d{2}$/.test(v), 'A version like 2026-04').nullable().optional(),
@@ -151,6 +152,8 @@ export const connectionFields: FieldSpec[] = [
     hint: (v) => (v.kind === 'SHOPIFY'
       ? 'Sales sends fulfilments and tracking to the store and closes orders. Turned on only when the go-live notifications are set (Health).'
       : 'Sales puts its files in the write folder and moves or deletes what it read. Turned on only when the go-live notifications are set (Health); the server must also allow writing to this address.') },
+  { name: 'reason', label: 'Why writing is turned on', section: 'Writing', showWhen: (v) => !gw(v) && !!v.can_write,
+    hint: 'Needed when you turn Write on; kept in the history. Not needed for any other change.' },
   ...WRITE_FOLDERS.map((f): FieldSpec => ({ name: f, label: folderLabel[f], section: 'Writing', showWhen: sftp, hint: folderHint[f] })),
 
   { name: 'api_version', label: 'API version', placeholder: '2026-04', section: 'Shopify', showWhen: shopify },
@@ -186,7 +189,7 @@ export const connectionFieldLabels: Record<string, string> = Object.fromEntries(
 export const connectionEmptyValues: Record<string, unknown> = {
   name: '', kind: 'SFTP', host: '', port: 22, username: '', inbound_folder: '', outbound_folder: '', processed_folder: '',
   error_folder: '', after_read: 'LEAVE', stable_seconds: 60,
-  can_read: true, can_write: false, secret_name: '', host_key: '', api_version: '', page_size: null, order_number_cutoff: null, partner_code: '',
+  can_read: true, can_write: false, reason: '', secret_name: '', host_key: '', api_version: '', page_size: null, order_number_cutoff: null, partner_code: '',
   schedule_minutes: 5, schedule_paused: false, active_from: '', active_to: '', active_days: [], active: true,
 }
 

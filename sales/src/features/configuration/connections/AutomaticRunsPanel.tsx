@@ -36,7 +36,7 @@ export function AutomaticRunsPanel() {
   const [confirming, setConfirming] = useState(false)
   const active = useRecordList(connectionsClient, state === 'off'
     ? { page: 1, pageSize: 100, filters: [{ field: 'active', op: 'eq', value: 'true' }], sort: [{ field: 'name' }] } : null)
-  const save = async (data: { paused?: boolean; system_minutes?: number }) => {
+  const save = async (data: { paused?: boolean; system_minutes?: number; reason?: string }) => {
     await saveSchedulerSettings(data)
     await Promise.all([qc.invalidateQueries({ queryKey: SCHEDULER_KEY }), qc.invalidateQueries({ queryKey: queryKeys.list(connectionsClient) }),
       qc.invalidateQueries({ queryKey: ['sales', 'health'] })])
@@ -63,7 +63,7 @@ export function AutomaticRunsPanel() {
       </Stack>
       <ConfirmAction open={confirming} onOpenChange={setConfirming} title="Turn automatic runs on?"
         description={willStart(active.data?.items ?? [], settings.system_minutes)}
-        confirmLabel="Turn on" onConfirm={() => save({ paused: false })} />
+        confirmLabel="Turn on" reason={{ label: 'Why they are turned on' }} onConfirm={(why) => save({ paused: false, reason: why })} />
       <Stack gap={2}>
         <SchemaForm key={settings.system_minutes} schema={minutesSchema} fields={minutesFields} readOnly={!canEdit}
           defaultValues={{ system_minutes: settings.system_minutes }} changesOnly

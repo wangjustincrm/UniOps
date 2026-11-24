@@ -260,8 +260,31 @@ async def test_ac71_writing_is_turned_on_only_through_the_notification_gate(api)
     assert r.status_code == 422 and r.json()["error"]["details"]["events"] == ["order_archived"]
     rid = next(g["rule_id"] for g in gate if g["event_type"] == "order_archived")
     await api.post(f"{R}/{rid}/test", headers=OP)
-    r = await api.put(f"/api/v1/config/connections/{c.id}?version=1", json={"can_write": True}, headers=OP)
+    url = f"/api/v1/config/connections/{c.id}"
+    for body in ({"can_write": True}, {"can_write": True, "reason": "ok"}):  # past the gate: why (user 2026-11-24)
+        r = await api.put(f"{url}?version=1", json=body, headers=OP)
+        assert r.status_code == 422 and (r.json()["error"]["code"], r.json()["error"]["details"]["field"]) == ("connection.write_reason", "reason")
+    r = await api.put(f"{url}?version=1", json={"can_write": True, "reason": "partner agreed to go live"}, headers=OP)
     assert r.status_code == 200 and r.json()["can_write"] is True
+    trail = (await api.get(f"{url}/audit", headers=READER)).json()
+    assert trail[0]["reason"] == "writing turned on: partner agreed to go live" and trail[0]["after"] == {"can_write": True}
+    r = await api.put(f"{url}?version=2", json={"host": "sftp-test2"}, headers=OP)  # on already: another change asks nothing
+    assert r.status_code == 200
+    r = await api.put(f"{url}?version=3", json={"can_write": False}, headers=OP)    # off: never asked
+    assert r.status_code == 200 and r.json()["can_write"] is False
+    new = {"name": "second", "kind": "SFTP", "host": "sftp-test", "username": "r", "after_read": "LEAVE", "can_write": True, "inbound_folder": "/in",
+           "outbound_folder": "/out", "secret_name": "SALES_SECRET_TEST", "stable_seconds": 0}
+    r = await api.post("/api/v1/config/connections", json=new, headers=OP)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "connection.write_reason"
+    r = await api.post("/api/v1/config/connections", json={**new, "reason": "its first day"}, headers=OP)
+    assert r.status_code == 201, r.text
+    csv = (await api.get("/api/v1/config/connections/export.csv?filter=name:eq:radiant", headers=OP)).content
+    head, row = csv.decode("utf-8-sig").splitlines()[:2]
+    cells = dict(zip(head.split(","), row.split(",")))
+    on = ",".join(str(True).lower() if k == "can_write" else v for k, v in cells.items())
+    files = {"file": ("c.csv", f"{head}\n{on}\n".encode(), "text/csv")}
+    rep = (await api.post("/api/v1/config/connections/import.csv?dry_run=true", files=files, headers=OP)).json()
+    assert [(e["code"], e["column"]) for e in rep["errors"]] == [("connection.write_reason", "reason")]  # a file cannot say why
 
 
 async def test_ac53_health_automatic_runs_not_available_warns_and_a_latch_fails(api):

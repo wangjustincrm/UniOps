@@ -71,6 +71,7 @@ const errorMessages: Record<string, string> = {
   'entity.stale': 'Someone else changed this connection. Close the form and open it again.',
   'auth.forbidden': 'You do not have permission to change connections.',
   'connection.go_live_gate': 'Writing can be turned on once every go-live notification has a recipient and was tested: Configuration → Notifications (Health lists what is missing).',
+  'connection.write_reason': 'Say why writing is turned on (Why writing is turned on, under Write). A CSV file cannot turn it on: use the connection\'s page.',
   'connection.folder_is_write_folder': 'The read, archive and error folders must not be the write folder.',
 }
 
